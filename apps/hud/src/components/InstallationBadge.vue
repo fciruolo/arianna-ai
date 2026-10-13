@@ -7,7 +7,7 @@ defineProps<{ info: InstallationInfo }>();
 
 <template>
   <span
-    class="inline-flex shrink-0 items-center rounded-[5px] border px-1.5 py-1 font-mono text-[10px] leading-none font-semibold tracking-[0.1em]"
+    class="inline-flex shrink-0 items-center rounded-[5px] border px-1.5 py-1 font-mono text-[12px] leading-none font-semibold tracking-[0.1em]"
     :class="info.mode === 'development' ? 'border-warn/70 bg-warn/10 text-warn' : 'border-ok/60 text-ok'"
     :title="`${MODE_HINT[info.mode]} · cartella ${info.home}${info.version === null ? '' : ` · ${info.version}`}`"
   >

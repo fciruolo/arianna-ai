@@ -2,12 +2,13 @@ import { computed, ref, shallowRef, watch } from 'vue';
 
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
-import { callErrorText, type CallInfo } from './lib/calls.ts';
+import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
+import { eraseFailedText } from './lib/erase.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, incognitoAction, officeMayNote, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
@@ -18,7 +19,12 @@ import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toas
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import { isSecretaryPath } from './lib/route.ts';
+import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+
+/** The events after which the cardwall reads its cards again (I-13, D-152). */
+const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -45,6 +51,8 @@ export function createChatStore() {
   /** Saved activity lines per task of the open conversation (D-083). */
   const activityCounts = ref<Record<string, number>>({});
   const approvals = ref<Approval[]>([]);
+  /** Goes up when a card of the cardwall or a commitment may have changed (I-13, D-152): the page reads the wall again. */
+  const cardsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
@@ -288,21 +296,36 @@ export function createChatStore() {
     }
   }
 
-  /** Deletes an archived conversation for good; closes it if it is open. */
-  async function purge(id: string): Promise<void> {
+  /** "Elimina" (D-157): the conversation goes for good, from the list or the archive; closes it if it is open. */
+  async function erase(id: string): Promise<void> {
     error.value = null;
     try {
-      await api.purgeConversation(id);
+      await api.eraseConversation(id);
       forget(id);
       await Promise.all([refreshAllConversations(), refreshApprovals()]);
     } catch (cause) {
-      fail(cause);
+      error.value = eraseFailedText(cause instanceof api.ApiError ? cause.status : undefined);
       // Another tab may have deleted it already.
       await refreshAllConversations().catch(() => undefined);
     }
   }
 
+  /** After an erase elsewhere (the `events.rewoven` line, D-157): the lists again, and the open conversation closed if it is gone. */
+  async function afterErase(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id !== undefined && !knownIncognito.has(id)) {
+      try {
+        await api.loadConversation(id);
+      } catch (cause) {
+        if (gone(cause)) forget(id);
+      }
+    }
+    await Promise.all([refreshAllConversations(), refreshApprovals()]);
+  }
+
   function forget(id: string): void {
+    conversations.value = conversations.value.filter((item) => item.id !== id);
+    systemChats.value = systemChats.value.filter((item) => item.id !== id);
     archived.value = archived.value.filter((item) => item.id !== id);
     if (chat.value?.conversationId === id) {
       chat.value = null;
@@ -442,7 +465,43 @@ export function createChatStore() {
     if (chat.value?.conversationId === state.conversationId) credits.value = creditsByMessage(listed);
   }
 
+  /** The "Segretaria" button (D-144): its conversation, created the first time, which no list holds. */
+  async function openSecretary(): Promise<void> {
+    try {
+      const conversation = await api.openSecretary();
+      await open(conversation.id, conversation);
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
+  /**
+   * The address `/segretaria` (D-156): a reload, a link or "back" opens the
+   * secretary's conversation without a new session (D-146: only the button
+   * opens one); the first time ever, when there is none yet, it is created as
+   * by the button.
+   */
+  async function openSecretaryAddress(): Promise<void> {
+    try {
+      const found = await api.findSecretary();
+      // The user went elsewhere meanwhile: the answer arrives late and opens nothing.
+      if (!isSecretaryPath(window.location.pathname)) return;
+      if (found !== null && chat.value?.conversationId === found.id) return;
+      const conversation = found ?? (await api.openSecretary());
+      if (!isSecretaryPath(window.location.pathname)) return;
+      await open(conversation.id, conversation);
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
   /** `known`: the conversation when the page already has it, as an incognito one, which no list holds (D-136). */
+  /** A conversation changed by the core (a new session of the Designer, D-185): the list and its messages read again. */
+  async function reloadConversation(id: string): Promise<void> {
+    await refreshConversations();
+    if (chat.value?.conversationId === id) await open(id);
+  }
+
   async function open(id: string, known?: Conversation): Promise<void> {
     error.value = null;
     draft.value = null;
@@ -537,19 +596,6 @@ export function createChatStore() {
     await api.declineCall(ringing.callId).catch(() => undefined);
   }
 
-  async function scheduleCall(at: Date): Promise<boolean> {
-    const id = chat.value?.conversationId;
-    if (id === undefined) return false;
-    try {
-      await api.scheduleCall(id, at);
-      await refreshCalls();
-      return true;
-    } catch {
-      callError.value = 'Non sono riuscito a programmare la chiamata: scegli un’ora nei prossimi sette giorni.';
-      return false;
-    }
-  }
-
   async function callWhenDone(taskId: string): Promise<void> {
     try {
       await api.callWhenDone(taskId);
@@ -614,7 +660,7 @@ export function createChatStore() {
    * the message must be sent again), sends the message, then opens the
    * conversation. False keeps the text in the field.
    */
-  async function sendDraft(body: string): Promise<boolean> {
+  async function sendDraft(body: string, design?: MessageDesign): Promise<boolean> {
     const start = draft.value;
     if (start === null || sending.value) return false;
     error.value = null;
@@ -638,7 +684,7 @@ export function createChatStore() {
       } else {
         id = step.conversationId;
       }
-      await api.sendMessage(id, body);
+      await api.sendMessage(id, body, design);
       // The user left the draft meanwhile: the message is in, the page stays where the user went.
       if (draft.value?.key !== start.key) return true;
       // An incognito conversation never enters a list (D-136): the page holds it alone.
@@ -659,6 +705,76 @@ export function createChatStore() {
     }
   }
 
+  /**
+   * The phone of an empty new conversation (D-158): creates the conversation
+   * as the first message would (once, as in sendDraft), opens it, then calls
+   * Arianna or the agent in it. Never in incognito.
+   */
+  async function callDraft(): Promise<void> {
+    const start = draft.value;
+    if (start === null || draftCallee(start) === undefined || sending.value || callSession.value !== null || callStarting.value) return;
+    error.value = null;
+    callError.value = null;
+    sending.value = true;
+    let id: string;
+    try {
+      const step = draftStep(start);
+      if (step.kind === 'create') {
+        const created = await api.createConversation(start.mode, start.project, start.agent);
+        id = created.id;
+        // The user left the draft while it was created: no call.
+        if (draft.value?.key !== start.key) return;
+        draft.value = { ...start, conversationId: id };
+        conversations.value = [created, ...conversations.value.filter((item) => item.id !== id)];
+      } else {
+        id = step.conversationId;
+      }
+      await open(id);
+      void refreshConversations().catch(() => undefined);
+    } catch (cause) {
+      fail(cause);
+      return;
+    } finally {
+      sending.value = false;
+    }
+    if (chat.value?.conversationId === id) await startCall();
+  }
+
+  /**
+   * The left side of the Studio (I-19, D-184): the direct chat with the
+   * Designer on a project, the latest one not archived; without one, a draft
+   * of it, so the conversation is born with the first message (D-108).
+   */
+  // Grows with each call: an answer that arrives after a change of project is dropped.
+  let studioChatToken = 0;
+  async function openStudioChat(project: string): Promise<void> {
+    const token = ++studioChatToken;
+    error.value = null;
+    if (projects.value.length === 0) await refreshProjects();
+    if (token !== studioChatToken) return;
+    const info = projects.value.find((entry) => entry.name === project);
+    if (info === undefined) {
+      close();
+      return;
+    }
+    // Read from the core: on a page opened at /studio the list may not be loaded yet.
+    const listed = await api.listConversations().catch(() => conversations.value);
+    if (token !== studioChatToken) return;
+    const found = listed.find(
+      (conversation) =>
+        conversation.agent === STUDIO_AGENT &&
+        (conversation.workspace === info.name || conversation.workspace === info.path) &&
+        conversation.archivedAt === null &&
+        conversation.incognito !== true,
+    );
+    if (found !== undefined) {
+      if (chat.value?.conversationId !== found.id) await open(found.id);
+      return;
+    }
+    if (draft.value?.agent === STUDIO_AGENT && draft.value.project === project) return;
+    openDraft({ mode: 'work', project, agent: STUDIO_AGENT });
+  }
+
   async function create(mode: ConversationMode, project?: string): Promise<void> {
     error.value = null;
     try {
@@ -670,7 +786,7 @@ export function createChatStore() {
     }
   }
 
-  async function send(body: string): Promise<boolean> {
+  async function send(body: string, design?: MessageDesign): Promise<boolean> {
     const state = chat.value;
     if (state === null || body.trim() === '') return false;
     error.value = null;
@@ -701,7 +817,7 @@ export function createChatStore() {
       }
       // Whatever is left must be a message: a command never reaches Arianna.
       if (!goesToArianna(body)) return false;
-      const { message, task } = await api.sendMessage(state.conversationId, body);
+      const { message, task } = await api.sendMessage(state.conversationId, body, design);
       if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
       tasks.value = { ...tasks.value, [task.id]: task };
       return true;
@@ -784,10 +900,10 @@ export function createChatStore() {
     }
   }
 
-  async function decide(approval: Approval, state: 'approved' | 'rejected'): Promise<void> {
+  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
     error.value = null;
     try {
-      await api.decide(approval.id, state);
+      await api.decide(approval.id, state, choice);
       approvals.value = approvals.value.filter((item) => item.id !== approval.id);
     } catch (cause) {
       fail(cause);
@@ -877,6 +993,7 @@ export function createChatStore() {
     const conversationId = payloadString(event, 'conversationId');
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
+    if (CARD_EVENTS.has(event.kind)) cardsVersion.value += 1;
     switch (event.kind) {
       case 'conversation.model':
       case 'conversation.pinned':
@@ -895,6 +1012,10 @@ export function createChatStore() {
       case 'conversation.purged':
         if (conversationId !== undefined) forget(conversationId);
         work.push(refreshAllConversations(), refreshApprovals());
+        break;
+      // A conversation erased (D-157): the line says nothing of which one.
+      case 'events.rewoven':
+        work.push(afterErase());
         break;
       case 'message.created': {
         work.push(refreshConversations());
@@ -1056,7 +1177,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

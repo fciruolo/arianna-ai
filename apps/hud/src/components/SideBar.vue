@@ -1,78 +1,120 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import type { IconName } from '../icons.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
+import { NAV_GROUPS, NAV_STORAGE_KEY, groupOf, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
 import type { LiveState } from '../lib/live.ts';
-import { activeText } from '../lib/sidebar.ts';
-import type { Pose } from '../lib/sprites.ts';
-import type { Theme } from '../lib/theme.ts';
-import type { CharacterListing, Conversation, StatusSnapshot } from '../lib/types.ts';
+import type { Conversation, StatusSnapshot } from '../lib/types.ts';
 import ConversationList from './ConversationList.vue';
 import Icon from './Icon.vue';
-import PixelAgent from './PixelAgent.vue';
 
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
- * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Pensieri, Conoscenza, Ufficio, Chiama, Impostazioni) and the theme; one compact row
- * of the agents that opens the right bar; the conversations, pinned first.
+ * name with the light of the link to the core; "Cerca"; "Nuova conversazione";
+ * the areas in three groups that fold (lib/nav-groups.ts); the
+ * conversations, pinned first. The theme and the agents are in the top bar
+ * (D-158).
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office' | 'projects';
-  theme: Theme;
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
   selected: string | null;
   rename: (id: string, title: string) => Promise<boolean>;
-  agentIds: string[];
-  characters: CharacterListing | null;
-  poseFor: (id: string) => Pose;
   status: StatusSnapshot | null;
-  /** Why "Chiama" cannot call now, or undefined. */
-  callBlocked: string | undefined;
-  callStarting: boolean;
   /** Open questions of "Sviluppo di Arianna" without an answer (D-120): a dot on "Impostazioni". */
   devPending: number;
+  /** The secretary's conversation is the one open (D-144): its button is marked. */
+  secretaryOpen: boolean;
 }>();
 const emit = defineEmits<{
   fold: [];
   home: [];
   search: [];
   create: [];
+  secretary: [];
+  god: [];
   thoughts: [];
   knowledge: [];
   projects: [];
+  clients: [];
+  finance: [];
+  cardwall: [];
+  studio: [];
   office: [];
-  call: [];
   settings: [];
-  theme: [theme: Theme];
-  agents: [];
   open: [id: string];
   archive: [id: string, archived: boolean];
   pin: [id: string, pinned: boolean];
-  purge: [id: string];
+  erase: [id: string];
 }>();
 
 const devDot = computed(() => pendingBadge(props.devPending));
 const devLabel = computed(() => pendingText(props.devPending));
-const active = computed(() => props.agentIds.filter((id) => props.poseFor(id) !== 'idle').length);
-const callOff = computed(() => props.callBlocked !== undefined || props.callStarting);
-function call(): void {
-  if (!callOff.value) emit('call');
-}
-const waiting = computed(() => props.agentIds.some((id) => props.poseFor(id) === 'waiting'));
-
-const THEMES: { value: Theme; text: string; icon: IconName }[] = [
-  { value: 'light', text: 'Chiaro', icon: 'theme-light' },
-  { value: 'dark', text: 'Scuro', icon: 'theme-dark' },
-  { value: 'system', text: 'Auto', icon: 'theme-system' },
-];
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const shortcut = isMac ? '⌘K' : 'Ctrl K';
+
+const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> = {
+  secretary: { label: 'Segretaria', icon: 'secretary', title: 'Di’ ad Arianna le cose da fare: le segna con il giorno' },
+  projects: { label: 'Progetti', icon: 'project' },
+  clients: { label: 'Clienti', icon: 'clients' },
+  cardwall: { label: 'Cardwall', icon: 'cardwall' },
+  // The Studio (I-19, D-184): the Designer's mockups, isolated, with comments and exports.
+  studio: { label: 'Studio', icon: 'studio' },
+  thoughts: { label: 'Pensieri', icon: 'thoughts' },
+  knowledge: { label: 'Conoscenza', icon: 'knowledge' },
+  // The finances (I-18, D-183): private, they never leave this Mac.
+  finance: { label: 'Finanze', icon: 'finance' },
+  // GOD (D-127): Arianna developed from inside Arianna, in a clone of its code.
+  god: { label: 'GOD', icon: 'god', title: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
+  office: { label: 'Ufficio', icon: 'office' },
+  settings: { label: 'Impostazioni', icon: 'settings' },
+};
+
+/** The area in view: the secretary is a conversation, the voice trial a part of the settings. */
+const current = computed<NavArea | null>(() => {
+  if (props.secretaryOpen) return 'secretary';
+  if (props.page === 'voice-trial') return 'settings';
+  return props.page === 'chat' ? null : props.page;
+});
+
+function readOpen(): NavGroupId[] {
+  try {
+    return parseOpen(localStorage.getItem(NAV_STORAGE_KEY));
+  } catch {
+    return parseOpen(null);
+  }
+}
+const openGroups = ref<NavGroupId[]>(readOpen());
+
+function fold(group: NavGroupId): void {
+  openGroups.value = toggle(openGroups.value, group);
+  try {
+    localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(openGroups.value));
+  } catch {
+    // Without storage the choice lasts until the page reloads.
+  }
+}
+
+function go(area: NavArea): void {
+  switch (area) {
+    case 'secretary': emit('secretary'); break;
+    case 'projects': emit('projects'); break;
+    case 'clients': emit('clients'); break;
+    case 'cardwall': emit('cardwall'); break;
+    case 'studio': emit('studio'); break;
+    case 'thoughts': emit('thoughts'); break;
+    case 'knowledge': emit('knowledge'); break;
+    case 'finance': emit('finance'); break;
+    case 'god': emit('god'); break;
+    case 'office': emit('office'); break;
+    case 'settings': emit('settings'); break;
+  }
+}
 
 function itemClass(on: boolean): string {
   return on ? 'bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:bg-surface-2 hover:text-ink';
@@ -95,7 +137,7 @@ function itemClass(on: boolean): string {
       <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-surface-2" title="Torna alla chat" @click="emit('home')">
         <span class="font-hud text-[17px] leading-none font-semibold tracking-[0.08em] uppercase">Arianna</span>
       </button>
-      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[10px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
+      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[12px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
         <span class="size-[7px] rounded-full" :class="live === 'open' ? 'bg-ok shadow-[0_0_8px_var(--ok)]' : 'animate-hud-blink bg-warn'" />
         {{ live === 'open' ? 'IN LINEA' : 'RICONN.' }}
       </span>
@@ -104,92 +146,63 @@ function itemClass(on: boolean): string {
     <!-- Cerca: a window in the middle of the page. -->
     <button
       type="button"
-      class="field flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-muted hover:border-line-strong"
+      class="field flex items-center gap-2 px-2.5 py-1.5 text-left text-[14px] text-muted hover:border-line-strong"
       aria-haspopup="dialog"
       @click="emit('search')"
     >
       <Icon name="search" :size="15" />
       <span class="flex-1">Cerca</span>
-      <kbd class="font-mono text-[10px] tracking-[0.04em]">{{ shortcut }}</kbd>
+      <kbd class="font-mono text-[12px] tracking-[0.04em]">{{ shortcut }}</kbd>
     </button>
 
-    <!-- Areas -->
-    <nav aria-label="Aree" class="flex flex-col gap-0.5 text-[13.5px]">
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted hover:bg-surface-2 hover:text-ink" aria-haspopup="dialog" @click="emit('create')">
-        <span class="text-accent"><Icon name="new" :size="16" /></span>Nuovo
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'thoughts')" :aria-current="page === 'thoughts' ? 'page' : undefined" @click="emit('thoughts')">
-        <Icon name="thoughts" :size="16" />Pensieri
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'knowledge')" :aria-current="page === 'knowledge' ? 'page' : undefined" @click="emit('knowledge')">
-        <Icon name="knowledge" :size="16" />Conoscenza
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'projects')" :aria-current="page === 'projects' ? 'page' : undefined" @click="emit('projects')">
-        <Icon name="project" :size="16" />Progetti
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'office')" :aria-current="page === 'office' ? 'page' : undefined" @click="emit('office')">
-        <Icon name="office" :size="16" />Ufficio
-      </button>
-      <!-- Not `disabled`: it stays reachable with Tab and says why it cannot call. -->
-      <button
-        type="button"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-55 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
-        :aria-disabled="callOff ? 'true' : undefined"
-        :aria-describedby="callBlocked !== undefined ? 'call-why' : undefined"
-        :title="callBlocked === undefined ? 'Chiama Arianna nella conversazione privata aperta, o in una privata nuova' : undefined"
-        @click="call"
-      >
-        <Icon name="phone" :size="16" />Chiama
-        <span v-if="callStarting" class="ml-auto font-mono text-[10px]">chiamo…</span>
-      </button>
-      <span v-if="callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
-      <button
-        type="button"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
-        :class="itemClass(page === 'settings' || page === 'voice-trial')"
-        :aria-current="page === 'settings' || page === 'voice-trial' ? 'page' : undefined"
-        @click="emit('settings')"
-      >
-        <Icon name="settings" :size="16" />Impostazioni
-        <!-- Questions of "Sviluppo di Arianna" that wait for an answer (D-120). -->
-        <span
-          v-if="devDot !== null"
-          role="img"
-          class="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
-          :title="devLabel ?? undefined"
-          :aria-label="devLabel ?? undefined"
-        >{{ devDot }}</span>
-      </button>
-    </nav>
-
-    <div class="grid grid-cols-3 gap-0.5 rounded-[9px] border border-line bg-surface-2 p-0.5" role="group" aria-label="Tema">
-      <button
-        v-for="option in THEMES"
-        :key="option.value"
-        type="button"
-        :aria-pressed="theme === option.value"
-        class="inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] font-medium"
-        :class="theme === option.value ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
-        @click="emit('theme', option.value)"
-      >
-        <Icon :name="option.icon" :size="13" />{{ option.text }}
-      </button>
-    </div>
-
-    <!-- Agents: one compact row; the right bar has the details. -->
     <button
       type="button"
-      class="flex items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-2.5 py-1.5 text-left hover:border-line-strong"
-      title="Apri la barra degli agenti"
-      @click="emit('agents')"
+      class="flex items-center justify-center gap-2 rounded-lg bg-accent px-2 py-1.5 text-[14.5px] font-semibold text-accent-ink hover:opacity-90"
+      aria-haspopup="dialog"
+      @click="emit('create')"
     >
-      <span class="flex shrink-0 items-end -space-x-1">
-        <PixelAgent v-for="id in agentIds.slice(0, 4)" :key="id" :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="1" />
-      </span>
-      <span class="hud-title">Agenti</span>
-      <span class="min-w-0 flex-1 truncate text-right font-mono text-[10.5px]" :class="waiting ? 'text-warn' : 'text-muted'">{{ waiting ? 'aspetta te' : activeText(active) }}</span>
-      <span class="text-muted"><Icon name="expand" :size="14" /></span>
+      <Icon name="new" :size="16" />Nuova conversazione
     </button>
+
+    <!-- Areas in three groups that fold; the group of the page in view stays open. -->
+    <nav aria-label="Aree" class="flex flex-col gap-1 text-[14.5px]">
+      <div v-for="group in NAV_GROUPS" :key="group.id" class="flex flex-col gap-0.5">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md px-2 pt-1 pb-0.5 text-left text-[12px] font-semibold tracking-[0.08em] text-muted uppercase hover:text-ink"
+          :aria-expanded="isOpen(group.id, openGroups, current)"
+          :title="groupOf(current) === group.id ? 'Resta aperto finché sei in una sua pagina' : undefined"
+          @click="fold(group.id)"
+        >
+          <span class="transition-transform" :class="isOpen(group.id, openGroups, current) ? 'rotate-90' : ''"><Icon name="expand" :size="12" /></span>
+          {{ group.title }}
+          <!-- Questions of "Sviluppo di Arianna" still visible with "Sistema" folded. -->
+          <span v-if="group.id === 'system' && devDot !== null && !isOpen(group.id, openGroups, current)" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? undefined" :aria-label="devLabel ?? undefined" />
+        </button>
+        <template v-if="isOpen(group.id, openGroups, current)">
+          <button
+            v-for="area in group.areas"
+            :key="area"
+            type="button"
+            class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+            :class="itemClass(current === area)"
+            :aria-current="current === area ? 'page' : undefined"
+            :title="AREAS[area].title"
+            @click="go(area)"
+          >
+            <Icon :name="AREAS[area].icon" :size="16" />{{ AREAS[area].label }}
+            <!-- Questions of "Sviluppo di Arianna" that wait for an answer (D-120). -->
+            <span
+              v-if="area === 'settings' && devDot !== null"
+              role="img"
+              class="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[12px] leading-5 font-semibold text-accent-ink"
+              :title="devLabel ?? undefined"
+              :aria-label="devLabel ?? undefined"
+            >{{ devDot }}</span>
+          </button>
+        </template>
+      </div>
+    </nav>
 
     <ConversationList
       :conversations="conversations"
@@ -200,10 +213,10 @@ function itemClass(on: boolean): string {
       @open="(id) => emit('open', id)"
       @archive="(id, value) => emit('archive', id, value)"
       @pin="(id, value) => emit('pin', id, value)"
-      @purge="(id) => emit('purge', id)"
+      @erase="(id) => emit('erase', id)"
     />
 
-    <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
+    <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[12px] leading-relaxed text-muted">
       Gateway attivo ·
       <template v-if="status.gateway.privateOut === 0">nessun dato Privato o Segreto è uscito oggi</template>
       <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: controlla il registro</span>

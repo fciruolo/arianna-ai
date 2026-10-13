@@ -6,7 +6,7 @@
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
-import { PROJECTS_DIR, type Project } from '@arianna/config';
+import { projectParts, PROJECTS_DIR, type Project } from '@arianna/config';
 import type { DoctorCheck } from '@arianna/core/doctor';
 
 /** True when `inner` is `outer` or inside it. */
@@ -34,7 +34,10 @@ export function folderProblem(absolute: string, home: string, name: string): str
   const realHome = realpathSync(home);
   if (within(realHome, real)) return `${absolute} contiene la cartella di Arianna`;
   if (within(real, realHome) && real !== join(realHome, PROJECTS_DIR, name)) return `${absolute} è dentro Arianna: lì un progetto può stare solo in ${PROJECTS_DIR}/${name}`;
-  if (!existsSync(join(real, '.git'))) return `${absolute} non è la cartella principale di un repository git (git init, poi un primo commit)`;
+  // D-145: a container that is not itself a repository is ready when at least one subfolder is (its parts).
+  if (!existsSync(join(real, '.git')) && projectParts({ name, path: name, absolute: real, label: 'L1' }).length === 0) {
+    return `${absolute} non è la cartella principale di un repository git (git init, poi un primo commit) né contiene sottocartelle con un proprio git`;
+  }
   return undefined;
 }
 
@@ -106,7 +109,7 @@ export function projectChecks(home: string, projects: readonly Project[]): Docto
   return projects.flatMap((project): DoctorCheck[] => {
     const problem = folderProblem(project.absolute, home, project.name);
     const checks: DoctorCheck[] = [
-      { id: `projects.${project.name}`, ok: problem === undefined, detail: problem ?? `${project.path} (${project.label}): a git repository, ready for the Coder` },
+      { id: `projects.${project.name}`, ok: problem === undefined, detail: problem ?? `${project.path} (${project.label}): a git repository or a container of git parts (D-145), ready for the Coder` },
     ];
     const link = linkState(home, project);
     if (link !== 'none') {

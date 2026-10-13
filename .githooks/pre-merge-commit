@@ -1,0 +1,5 @@
+#!/bin/sh
+# `git merge` runs this hook before its merge commit, never pre-commit: the
+# branches of GOD come in with git merge (D-127), so the same checks as a
+# commit (conflict markers, then pnpm check) refuse a merge that breaks them.
+exec "$(dirname "$0")/pre-commit" "$@"

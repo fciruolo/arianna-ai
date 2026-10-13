@@ -189,6 +189,31 @@ describe('update (ordinary)', () => {
     assert.equal(text(), before);
   });
 
+  it('the skills of an agent (D-161): their own section, refused to Arianna and to a card closing untrusted_content', () => {
+    const refusals = { arianna: 'Arianna reads no skills', coder: null, vault: 'the card of this agent closes untrusted_content' };
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => refusals, onChanged: (change) => changes.push(change) });
+    assert.deepEqual(skilled.read().agentSkills, refusals);
+    skilled.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'opus' } } } });
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'], arianna: [] } } });
+    assert.deepEqual(changes.at(-1), { sections: ['skills'], privacy: false }, 'only the skills changed, not the models');
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { coder: { model: 'opus', skills: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'] } });
+    assert.deepEqual(skilled.read().values?.skills, { coder: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'] });
+    assert.deepEqual(skilled.read().values?.agents, { coder: { model: 'opus' } });
+    // A save of the models keeps the skills, and the other way round.
+    skilled.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'sonnet' } } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.coder?.skills, ['anthropics/skills/pdf', 'nexu-io/open-design/deck']);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: [] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { coder: { model: 'sonnet' } });
+    const before = text();
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { arianna: ['a/b/c'] } } }), refused('invalid', /skills\.arianna: Arianna reads no skills/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { vault: ['a/b/c'] } } }), refused('invalid', /skills\.vault: the card of this agent closes untrusted_content/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { writer: ['a/b/c'] } } }), refused('invalid', /skills\.writer: no such agent/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['A/b/c'] } } }), refused('invalid', /skills\.coder\[0\]/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: 'a/b/c' } } }), refused('invalid', /skills\.coder/));
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { skills: { coder: ['a/b/c'] } } }), refused('invalid', /no such agent/), 'without the cards nobody takes skills');
+    assert.equal(text(), before);
+  });
+
   it('an agent without a card keeps its model; a model the card no longer allows is kept while unchanged', () => {
     writeFileSync(file, `${text()}\n[agents.ghost]\nmodel = "opus"\n\n[agents.coder]\nmodel = "fable"\n`);
     const narrow = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => ({ arianna: [], coder: ['sonnet', 'opus'] }) });
@@ -271,6 +296,44 @@ describe('update (ordinary)', () => {
   it('refuses an empty change or unknown fields', () => {
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: {} }), refused('invalid', /nothing/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { roles: {} }, extra: 1 }), refused('invalid', /extra/));
+  });
+});
+
+describe('rules of the projects (I-14, D-174)', () => {
+  it('are an ordinary section: written at once, read back, the event names the section only', () => {
+    const projectRules = { template: 'Comments in English.\nNever add a Co-Authored-By line.', projects: { demo: 'Use pnpm.', other: '' } };
+    const view = page.update({ fingerprint: fingerprint(), values: { projectRules } });
+    assert.deepEqual(view.values?.projectRules, projectRules);
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).projectRules, { template: projectRules.template, projects: projectRules.projects });
+    assert.deepEqual(changes, [{ sections: ['projectRules'], privacy: false }]);
+  });
+
+  it('a template null or empty and no project take the section away', () => {
+    page.update({ fingerprint: fingerprint(), values: { projectRules: { template: 'x', projects: {} } } });
+    page.update({ fingerprint: fingerprint(), values: { projectRules: { template: null, projects: {} } } });
+    assert.deepEqual(page.read().values?.projectRules, { template: null, projects: {} });
+    assert.equal(text(), renderSettings(START));
+  });
+
+  it('refuses a text the scanner flags or that holds a value of the vault, naming the field and never the text', () => {
+    const iban = 'IT60X0542811101000000123456';
+    const value = new Secret('vault://rules-test', `segreto-${randomUUID()}`).reveal();
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ template: `Paga su ${iban}.`, projects: {} }, /projectRules\.template .*iban/],
+      [{ template: null, projects: { demo: `Usa ${value}.` } }, /projectRules\.projects\.demo holds a value of the vault/],
+      [{ template: 'x', projects: { 'Not A Name': 'x' } }, /project name/],
+      [{ template: 'x', projects: {}, extra: 1 }, /extra/],
+      [{ template: 7, projects: {} }, /template must be a string/],
+    ];
+    for (const [projectRules, message] of cases) {
+      assert.throws(
+        () => page.update({ fingerprint: fingerprint(), values: { projectRules } }),
+        (error: unknown) => error instanceof Error && message.test(error.message) && !error.message.includes(iban) && !error.message.includes(value),
+        JSON.stringify(projectRules),
+      );
+    }
+    assert.equal(text(), renderSettings(START));
+    assert.deepEqual(changes, []);
   });
 });
 
@@ -384,6 +447,24 @@ describe('prepare and confirm (privacy)', () => {
     const config = parseConfig(text(), home, loadCatalog(home), userHome);
     assert.deepEqual(config.projects.map(({ name, label }) => [name, label]), [['demo', 'L0'], ['site', 'L1']]);
     assert.deepEqual(config.local.endpoints.map(({ id }) => id), ['omlx', 'spare']);
+  });
+
+  it('the labels of the management folders of a project (D-145): only through prepare and confirm, kept in [[project.folder]]', () => {
+    const projects = [{ name: 'demo', path: 'repos/demo', label: 'L1', parts: ['demo-admin'], folders: [{ path: 'Workplan', label: 'L2' }, { path: 'documenti', label: 'L3' }] }];
+    // Not an ordinary change: an agent or a page that saves the ordinary sections cannot lower a folder.
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { projects } }), refused('invalid', /unknown field/));
+    const proposal = page.prepare({ fingerprint: fingerprint(), values: { projects } });
+    assert.deepEqual(proposal.changes.projects?.changed.map(({ name, after: changed }) => [name, changed.folders]), [['demo', projects[0]?.folders]]);
+    assert.match(text(), /^\[\[project\]\]\nname = "demo"\npath = "repos\/demo"\nlabel = "L1"$/m, 'nothing written before the confirmation');
+    page.confirm({ id: proposal.id });
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.deepEqual(config.projects[0]?.folders, [{ path: 'Workplan', label: 'L2' }, { path: 'documenti', label: 'L3' }]);
+    assert.deepEqual(config.projects[0].parts, ['demo-admin']);
+    assert.match(text(), /\[\[project\.folder\]\]\npath = "Workplan"\nlabel = "L2"/);
+    // A label that is not one, a folder that is a path, a field that is not a folder's: refused, nothing written.
+    for (const folders of [[{ path: 'Workplan', label: 'L4' }], [{ path: '../fuori', label: 'L1' }], [{ path: 'IM', label: 'L1', note: 'x' }], [{ path: 'IM', label: 'L1' }, { path: 'im', label: 'L2' }]]) {
+      assert.throws(() => page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'demo', path: 'repos/demo', label: 'L1', folders }] } }), refused('invalid'));
+    }
   });
 
   it('an expired confirmation writes nothing and cannot be used again', () => {

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { type Answer, type LoadedAgent } from '@arianna/agents';
-import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project } from '@arianna/config';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project, type ProjectRules } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { Secret } from '@arianna/vault';
@@ -21,7 +21,7 @@ import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '.
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
-import { MAX_QUOTA_RETRIES } from '../src/orchestrator/delegate.ts';
+import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
@@ -103,10 +103,16 @@ interface Setup {
   projects?: string[];
   /** Approved projects as they are, for folders elsewhere. */
   extraProjects?: Project[];
+  /** `[project_rules]` (D-174); absent, none, whatever the development file says. */
+  projectRules?: ProjectRules;
   executors?: ('claude' | 'codex')[];
   /** `[cloud.models]`; every alias on by default. */
   models?: CloudConfig['models'];
   withClaude?: boolean;
+  /** The skills block of an agent (D-161). */
+  skills?: (agent: string, maxBytes: number) => AgentSkills;
+  /** The Coder's card with untrusted_content closed. */
+  closedCoder?: boolean;
 }
 
 function orchestrator(setup: Setup): StepExecutor {
@@ -114,6 +120,7 @@ function orchestrator(setup: Setup): StepExecutor {
   assert.ok(coder !== undefined);
   const agents = new Map<string, LoadedAgent>(loaded);
   if (setup.coderPrompt !== undefined) agents.set('coder', { card: coder.card, prompt: setup.coderPrompt });
+  if (setup.closedCoder === true) agents.set('coder', { ...coder, card: { ...coder.card, trifecta: { ...coder.card.trifecta, untrusted_content: false } } });
   const settings = () => ({
     ...BASE,
     home: HOME,
@@ -123,6 +130,7 @@ function orchestrator(setup: Setup): StepExecutor {
       ...(setup.projects ?? ['site']).map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
       ...(setup.extraProjects ?? []),
     ],
+    projectRules: setup.projectRules ?? { projects: {} },
   });
   return createOrchestrator({
     sql: db().sql,
@@ -132,6 +140,7 @@ function orchestrator(setup: Setup): StepExecutor {
     settings,
     rules: RULES,
     ...(setup.withClaude === false ? {} : { claude }),
+    ...(setup.skills === undefined ? {} : { skills: setup.skills }),
   });
 }
 
@@ -259,6 +268,67 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
     stop();
     await live.close();
   }
+});
+
+test('the skills of the Coder go after its prompt as one L0 block of data, within the limit; none with untrusted_content closed (D-161)', async () => {
+  const BLOCK = 'Skills chosen by the user for this agent: third-party reference text (public, untrusted).\n----- BEGIN SKILL acme/skills/alpha [0123456789abcdef] -----\nInvented steps.\n----- END SKILL acme/skills/alpha [0123456789abcdef] -----';
+  const asked: [string, number][] = [];
+  const skills = (agent: string, maxBytes: number): AgentSkills => {
+    asked.push([agent, maxBytes]);
+    return { block: BLOCK, skipped: 2 };
+  };
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills })), ['continued', 'continued', 'answered']);
+  assert.deepEqual(asked, [['coder', 128 * 1024]]);
+  const { prompt } = received();
+  assert.match(prompt, /^You are the Coder/);
+  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, entry, brief');
+  // The block is L0: the brief leaves at the label of the project, as without skills.
+  const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...log].map((row) => row.label), ['L1']);
+  // The skills left out: one line of the delegation's activity, the count only.
+  const lines = await db().sql<{ detail: string }[]>`SELECT detail FROM task_activities WHERE task_id = ${task.id} AND kind = 'delegate'`;
+  assert.ok(lines.some((row) => row.detail === 'coder · skills-skipped · 2'));
+
+  asked.length = 0;
+  const closed = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(closed.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills, closedCoder: true })), ['continued', 'continued', 'answered']);
+  assert.deepEqual(asked, [], 'a card closing untrusted_content is never asked for skills');
+  assert.ok(!received().prompt.includes('BEGIN SKILL'));
+});
+
+test('the rules of the project go after the prompt, L1, the same text for every delegation on it; none for another project or an L0 task (D-174)', async () => {
+  const projectRules: ProjectRules = { template: 'Comments in English.', projects: { other: 'Use pnpm, never npm.' } };
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules })), ['continued', 'continued', 'answered']);
+  const { prompt } = received();
+  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, the template, entry');
+  assert.ok(!prompt.includes('Use pnpm'), "another project's rules stay out");
+  // The rules are L1 like the project: the brief leaves at L1, through the gateway.
+  const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...log].map((row) => row.label), ['L1']);
+
+  // A project with its own empty text has none, the sentence on commits stays.
+  const bare = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(bare.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules: { ...projectRules, projects: { site: '' } } })), ['continued', 'continued', 'answered']);
+  assert.ok(!received().prompt.includes(PROJECT_RULES_INTRO));
+  assert.ok(received().prompt.includes(NO_COMMIT_TEXT));
+});
+
+test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {
+  const config = { projectRules: { template: 'T', projects: { own: 'O', empty: '' } } };
+  assert.deepEqual(projectRulesPart(config, 'own', 'L1', 'claude'), { text: `${PROJECT_RULES_INTRO}\n\nO`, label: 'L1', source: 'project-rules:own' });
+  assert.equal(projectRulesPart(config, 'any', 'L2', 'codex')?.text, `${PROJECT_RULES_INTRO}\n\nT`);
+  assert.equal(projectRulesPart(config, 'empty', 'L1', 'claude'), undefined);
+  assert.equal(projectRulesPart(config, 'own', 'L0', 'claude'), undefined, 'an L0 task never reads them');
+  assert.equal(projectRulesPart({ projectRules: { projects: {} } }, 'own', 'L1', 'claude'), undefined);
+});
+
+test('projectRulesPart: an item marked for one executor reaches only that one (D-181)', () => {
+  const config = { projectRules: { projects: { own: '- Per tutti\n- [solo Claude Code] Per Claude\n- [solo Codex] Per Codex', codex: '- [solo Codex] Solo questa' } } };
+  assert.equal(projectRulesPart(config, 'own', 'L1', 'claude')?.text, `${PROJECT_RULES_INTRO}\n\n- Per tutti\n- Per Claude`);
+  assert.equal(projectRulesPart(config, 'own', 'L1', 'codex')?.text, `${PROJECT_RULES_INTRO}\n\n- Per tutti\n- Per Codex`);
+  assert.equal(projectRulesPart(config, 'codex', 'L1', 'claude'), undefined, 'nothing left for Claude');
 });
 
 test('a delegation of an incognito conversation runs claude without saving its session (D-136); a normal one saves it', async () => {
@@ -653,6 +723,104 @@ test('a project outside ARIANNA_HOME (D-058): the Coder works in the approved fo
   } finally {
     rmSync(user, { recursive: true, force: true });
   }
+});
+
+/** repos/<name> as a container (D-145): Workplan and documenti with a private note, and a git part `<name>-sito`. */
+function containerFixture(name: string, self: boolean): string {
+  const dir = join(HOME, 'repos', name);
+  const part = self ? dir : join(dir, `${name}-sito`);
+  mkdirSync(part, { recursive: true });
+  writeFileSync(join(part, 'README.md'), '# Sito finto\n');
+  writeFileSync(join(part, '.gitignore'), '.fake-claude.json\n');
+  gitIn(part, 'init', '--quiet', '--initial-branch=main');
+  gitIn(part, 'add', '--all');
+  gitIn(part, 'commit', '--quiet', '--message', 'fixture');
+  mkdirSync(join(dir, 'Workplan'), { recursive: true });
+  writeFileSync(join(dir, 'Workplan', 'piano.md'), '# Piano finto\n');
+  mkdirSync(join(dir, 'documenti'), { recursive: true });
+  writeFileSync(join(dir, 'documenti', 'compenso.md'), '# Compenso finto: 100 euro\n');
+  return dir;
+}
+
+test('a part of a container (D-145): the Coder works in the part, never in the container', async () => {
+  const dir = containerFixture('cantiere', false);
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere:cantiere-sito', ['cantiere:cantiere-sito']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere'] })), ['continued', 'continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([delegation?.status, delegation?.repo], ['ok', 'cantiere:cantiere-sito']);
+  assert.ok(existsSync(join(dir, 'cantiere-sito', '.fake-claude.json')));
+  assert.ok(!existsSync(join(dir, '.fake-claude.json')));
+});
+
+test('the notes of a part (I-11 P3, D-166): the internal ones as a read-only copy through the gateway, the private ones nowhere', async () => {
+  const dir = containerFixture('cantiere-note', false);
+  // Fake, and unique: in a private note beside an internal one, and in a private folder.
+  const canary = `CANARY-${randomUUID()}-FAKE`;
+  writeFileSync(join(dir, 'Workplan', 'privata.md'), `---\nlabel: L2\n---\n\n${canary}\n`);
+  writeFileSync(join(dir, 'documenti', 'contratto.md'), `${canary}\n`);
+  writeFileSync(join(dir, 'Workplan', 'iban.md'), 'Conto finto: IT60 X054 2811 1010 0000 0123 456\n');
+  const live = await startLiveFeed(db().sql);
+  const seen: LiveMessage[] = [];
+  const stop = await live.subscribe({ send: (message) => seen.push(message) });
+  try {
+    const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere-note:cantiere-note-sito', ['cantiere-note:cantiere-note-sito']);
+    assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-note'] })), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.equal(delegation?.status, 'ok');
+    const trace = join(dir, 'cantiere-note-sito', '.fake-claude.json');
+    const { argv, prompt } = JSON.parse(readFileSync(trace, 'utf8')) as { argv: string[]; prompt: string };
+    const added = argv.find((arg) => arg.startsWith('--add-dir='))?.slice('--add-dir='.length) ?? '';
+    assert.match(added, /\/data\/worktrees\/[a-z0-9-]+\.notes$/);
+    // The brief names the copy and the internal note only, before the brief of Arianna.
+    assert.ok(prompt.includes(`copied read only for this work in ${added}`));
+    assert.ok(prompt.includes('- Workplan/piano.md'));
+    assert.ok(prompt.indexOf('- Workplan/piano.md') < prompt.indexOf('Add a line to README.md'));
+    for (const hidden of ['privata.md', 'contratto.md', 'iban.md', canary]) assert.ok(!prompt.includes(hidden) && !argv.join(' ').includes(hidden), hidden);
+    const settings = JSON.parse(argv[argv.indexOf('--settings') + 1] ?? '') as { sandbox: { filesystem: { denyRead: string[]; allowRead: string[] } } };
+    assert.ok(settings.sandbox.filesystem.denyRead.includes(dir), 'the container is denied whole');
+    assert.ok(settings.sandbox.filesystem.allowRead.includes(added), 'the copy is readable');
+    // The copy lived only for the run.
+    assert.ok(!existsSync(added));
+    // One row of the gateway per note offered: the internal one let out, the one with an IBAN stopped by the scanner; then the brief.
+    const log = await db().sql<{ decision: string; rule: string; summary: string | null }[]>`
+      SELECT decision, rule, summary FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude' ORDER BY id`;
+    assert.deepEqual(
+      [...log].map((row) => [row.decision, row.rule]),
+      [
+        ['block', 'scanner'],
+        ['allow', 'cloud'],
+        ['allow', 'cloud'],
+      ],
+    );
+    const [event] = await db().sql<{ payload: Record<string, unknown>; label: string }[]>`
+      SELECT payload, label FROM events WHERE task_id = ${task.id} AND kind = 'project.notes'`;
+    assert.deepEqual([event?.label, event?.payload], ['L0', { agent: 'coder', executor: 'claude', given: 1, held: 4 }]);
+    const activity = seen.filter((m) => m.type === 'activity' && m.taskId === task.id).map((m) => (m.type === 'activity' ? m.detail : ''));
+    assert.ok(activity.includes('coder · project-notes · 1 · 4'));
+    assert.ok(!JSON.stringify(seen).includes(canary));
+  } finally {
+    stop();
+    await live.close();
+  }
+});
+
+test('the container that is not a git repository is never the folder of a step (D-145)', async () => {
+  containerFixture('cantiere-solo', false);
+  const { task } = await ask('work', 'Lavora sul contenitore.', 'cantiere-solo', ['cantiere-solo']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-solo'] })), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.status, 'failed');
+  assert.match(delegation.result ?? '', /no longer among the projects the user approved/);
+});
+
+test('a container that is one git with a private note in its management folders: the Coder does not open it (D-145)', async () => {
+  const dir = containerFixture('cantiere-git', true);
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere-git', ['cantiere-git']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-git'] })), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.status, 'failed');
+  assert.match(delegation.result ?? '', /private knowledge of the project \(1 file\(s\)/);
+  assert.ok(!existsSync(join(dir, '.fake-claude.json')));
 });
 
 test('a project taken off the list: the delegation ends with an error Arianna reads', async () => {

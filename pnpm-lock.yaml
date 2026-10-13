@@ -175,6 +175,9 @@ importers:
       '@arianna/executors':
         specifier: workspace:*
         version: link:packages/executors
+      '@arianna/finance':
+        specifier: workspace:*
+        version: link:packages/finance
       '@arianna/policy':
         specifier: workspace:*
         version: link:packages/policy
@@ -217,9 +220,15 @@ importers:
       '@arianna/executors':
         specifier: workspace:*
         version: link:../../packages/executors
+      '@arianna/finance':
+        specifier: workspace:*
+        version: link:../../packages/finance
       '@arianna/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@arianna/pptx':
+        specifier: workspace:*
+        version: link:../../packages/pptx
       '@arianna/router':
         specifier: workspace:*
         version: link:../../packages/router
@@ -324,7 +333,11 @@ importers:
         specifier: workspace:*
         version: link:../policy
 
+  packages/finance: {}
+
   packages/policy: {}
+
+  packages/pptx: {}
 
   packages/router:
     dependencies:

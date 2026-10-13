@@ -224,12 +224,13 @@ export async function searchAll(sql: Sql, rawQuery: unknown, options: SearchOpti
   if (conversations === undefined) truncated = true;
 
   // The bodies above L2 are excluded before matching; their number alone, whatever the query, goes to `hidden`.
+  // So are those of a conversation of the Finances (I-18, D-183): found nowhere but in it.
   const messages = await bounded(sql, budget, async (tx) => {
     const rows = await tx.unsafe<(Omit<MessageHit, 'snippet' | 'highlight'> & { body: string })[]>(
       `SELECT m.id::text AS "messageId", m.conversation_id::text AS "conversationId", c.title, m.role, m.ts AS at,
          m.label, c.archived_at IS NOT NULL AS archived, m.body
        FROM messages m JOIN conversations c ON c.id = m.conversation_id
-       WHERE c.purged_at IS NULL AND NOT c.incognito AND m.label <= 'L2'
+       WHERE c.purged_at IS NULL AND NOT c.incognito AND NOT c.finance AND m.label <= 'L2'
          AND translate(lower(m.body), $2, $3) LIKE $1 ESCAPE '\\'
        ORDER BY m.id DESC
        LIMIT $4`,
@@ -237,7 +238,7 @@ export async function searchAll(sql: Sql, rawQuery: unknown, options: SearchOpti
     );
     const [above] = await tx<{ count: string }[]>`
       SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
-      WHERE c.purged_at IS NULL AND NOT c.incognito AND m.label > 'L2'`;
+      WHERE c.purged_at IS NULL AND NOT c.incognito AND (m.label > 'L2' OR c.finance)`;
     hidden += Number(above?.count ?? 0);
     return rows.map(({ body, ...row }) => ({ ...row, ...snippetAround(body, folded) }));
   });

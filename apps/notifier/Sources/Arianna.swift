@@ -10,6 +10,7 @@ let sentences: [String: (title: String, body: String)] = [
   "reply": ("Arianna ha risposto", "Clicca per aprire la conversazione."),
   "approval": ("Arianna aspetta una tua decisione", "Clicca per vedere cosa approvare."),
   "failure": ("Un lavoro è fallito", "Clicca per vedere cosa è successo."),
+  "reminder": ("Arianna ha un promemoria", "Clicca per aprire la segretaria."),
 ]
 
 /** Only a lowercase UUID leads into the chat: anything else opens its home. */

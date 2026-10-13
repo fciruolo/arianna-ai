@@ -105,7 +105,8 @@ export async function loadStatus(sql: Queryable, agents: readonly string[]): Pro
     SELECT date_trunc('day', now()) AS since,
       count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud') AS allowed_out,
       count(*) FILTER (WHERE decision = 'block') AS blocked,
-      count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud' AND label >= 'L2') AS private_out
+      -- The address of a link (D-154) leaves as L2 by the user's choice, checked by its own rules: not an alarm.
+      count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud' AND label >= 'L2' AND target_kind <> 'link') AS private_out
     FROM gateway_log WHERE ts >= date_trunc('day', now())`;
   const hours = await sql<{ count: string }[]>`
     SELECT count(g.id) AS count

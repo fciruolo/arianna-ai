@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clienti, ritocco</title>
+<!--
+  Anteprima della revisione della pagina Clienti (richiesta dell'utente del
+  2026-10-12, scelta «Anteprima, poi costruisco»). Stessi token della chat dopo
+  D-188 e la larghezza delle Finanze (D-189). File autonomo, niente rete; font
+  letti da node_modules di apps/hud con percorsi relativi. Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 500; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .note { padding: 12px 16px 0; max-width: 1100px; font-size: 14px; }
+  .note p { margin: 0 0 6px; } .note ul { margin: 0; padding-left: 20px; }
+  .page { max-width: 1440px; margin: 0 auto; padding: 16px; }
+  .view { display: none; } .view.on { display: block; }
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 14px 16px; min-width: 0; }
+  h3 { margin: 0 0 10px; font: 600 12px/1.2 "Chakra Petch", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  h3 small { font: 13px Figtree, sans-serif; letter-spacing: 0; text-transform: none; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 12.5px; white-space: nowrap; }
+  .chip.ok { color: var(--ok); border-color: currentColor; } .chip.l2 { color: var(--warn); border-color: currentColor; }
+  .logo { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; color: #fff; font: 600 11px Figtree; flex: none; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+
+  /* list */
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: grid; grid-template-columns: 40px minmax(0, 1.4fr) minmax(0, 1fr) repeat(3, 130px) 20px; gap: 14px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); cursor: pointer; }
+  .row:hover { border-color: var(--line-strong); }
+  .row .name { font-weight: 600; }
+  .row .sub { font-size: 13px; color: var(--muted); }
+  .row .k { text-align: right; }
+  .row .k b { display: block; font-size: 16px; }
+  .row .k span { font-size: 12px; color: var(--muted); }
+  .head { display: grid; grid-template-columns: 40px minmax(0, 1.4fr) minmax(0, 1fr) repeat(3, 130px) 20px; gap: 14px; padding: 0 14px 4px; font-size: 12.5px; color: var(--muted); }
+  .head span.r { text-align: right; }
+
+  /* cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .ccard { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .ccard:hover { border-color: var(--accent); box-shadow: 0 6px 20px #0000000f; }
+  .ccard header { display: flex; gap: 12px; align-items: center; }
+  .ccard .name { font-weight: 600; font-size: 16px; line-height: 1.3; }
+  .ccard .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .logo.big { width: 52px; height: 52px; border-radius: 12px; font-size: 12px; }
+  .ccard .contact { display: flex; flex-direction: column; font-size: 14px; }
+  .ccard .contact span { font-size: 13px; color: var(--muted); }
+  .ccard .projects { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+  .ccard .money { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); margin-top: auto; }
+  .ccard .money div { display: flex; flex-direction: column; }
+  .ccard .money span { font-size: 12px; color: var(--muted); }
+  .ccard .money b { font-size: 18px; }
+  .ccard .money .late b { color: var(--danger); }
+  .ccard .money .late small { font-size: 12px; color: var(--danger); }
+  .ccard .money.empty { display: block; font-size: 13px; color: var(--muted); }
+  .ccard .warn { font-size: 12.5px; color: var(--warn); }
+  .badge-late { position: absolute; top: 12px; right: 12px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 12px; font-weight: 600; }
+  .ccard.due { box-shadow: inset 3px 0 0 var(--danger); }
+  .ccard.add { align-items: center; justify-content: center; min-height: 220px; border-style: dashed; color: var(--muted); font-weight: 600; background: none; }
+  .ccard.add:hover { color: var(--accent); }
+
+  /* client */
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .top h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .top .facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; color: var(--muted); }
+  .warnbox { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 10px; font-size: 14px; margin-bottom: 12px; }
+  .warnbox .btn { margin-left: auto; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs span { padding: 8px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs span.on { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .kpi .v { font-size: 26px; font-weight: 600; line-height: 1.2; }
+  .kpi .d { font-size: 13px; color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .chart { display: grid; grid-template-columns: 56px 1fr; gap: 8px; }
+  .axis { display: flex; flex-direction: column; justify-content: space-between; height: 200px; text-align: right; font-size: 12px; color: var(--muted); }
+  .bars { display: flex; align-items: flex-end; gap: 10px; height: 200px; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to top, transparent 0 49px, var(--line) 49px 50px); }
+  .bars .m { flex: 1; display: flex; flex-direction: column-reverse; align-items: center; height: 100%; }
+  .bars i { width: 50%; max-width: 26px; }
+  .labels { display: flex; gap: 10px; margin-left: 64px; font-size: 12px; color: var(--muted); }
+  .labels span { flex: 1; text-align: center; }
+  .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line-strong); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  .track { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; margin: 4px 0; }
+  .track i { display: block; height: 100%; background: var(--accent); }
+
+  /* registry */
+  .form { max-width: 980px; display: flex; flex-direction: column; gap: 12px; }
+  .form .card h3 { margin-bottom: 12px; }
+  .fgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 14px; }
+  .f { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+  .f .hint { font-size: 12px; }
+  .s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; }
+  .missing .field { border-color: var(--warn); }
+  .savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); font-size: 14px; }
+  @media (max-width: 900px) { .row, .head { grid-template-columns: 40px 1fr 110px; } .row > :nth-child(3), .row > :nth-child(5), .row > :nth-child(6), .row > :nth-child(7), .head > :nth-child(3), .head > :nth-child(5), .head > :nth-child(6), .head > :nth-child(7) { display: none; } .kpis { grid-template-columns: repeat(2, 1fr); } .grid2 { grid-template-columns: 1fr; } .fgrid { grid-template-columns: 1fr 1fr; } .s3, .s4, .s6 { grid-column: span 2; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Clienti, ritocco</b>
+  <span>Vista</span>
+  <span class="seg" id="vseg">
+    <button data-v="elenco" aria-pressed="true">Elenco</button>
+    <button data-v="dashboard">Cliente · Dashboard</button>
+    <button data-v="anagrafica">Cliente · Anagrafica</button>
+  </span>
+  <span>Tema</span>
+  <span class="seg" id="tseg"><button data-t="light" aria-pressed="true">Chiaro</button><button data-t="dark">Scuro</button></span>
+</div>
+<div class="note" id="note"></div>
+
+<div class="page">
+  <!-- ELENCO -->
+  <section class="view" id="elenco">
+    <div class="tools">
+      <button class="btn p">+ Cliente</button>
+      <input class="field" style="max-width:340px" placeholder="Cerca per nome, partita IVA, contatto, progetto">
+      <select class="field" style="max-width:190px"><option>Attivi e potenziali</option></select>
+      <select class="field" style="max-width:190px"><option>Ordina: da incassare</option><option>Nome</option><option>Guadagno</option><option>Ultima modifica</option></select>
+      <span class="muted" style="margin-left:auto;font-size:13px">3 clienti · numeri del 2026</span>
+    </div>
+    <div class="cards">
+      <article class="ccard due">
+        <header><div class="logo big" style="background:#b0204d">ROSSI</div><div><div class="name">Pasticceria Finta Rossi Srl</div><div class="sub"><span class="chip ok">Attivo</span> Società · Italia</div></div></header>
+        <div class="contact"><b>Mario Rossi</b><span>mario@rossi.example · 329 666 0000</span></div>
+        <div class="projects"><span class="chip">demo</span><span class="chip">progetto-test</span></div>
+        <div class="money"><div><span>Guadagno 2026</span><b class="num">999 €</b></div><div><span>Da fatturare</span><b class="num">0 €</b></div><div class="late"><span>In attesa</span><b class="num">549 €</b><small>1 scaduta</small></div></div>
+        <div class="warn">⚠ Dati per la fattura elettronica incompleti</div>
+      </article>
+      <article class="ccard">
+        <header><div class="logo big" style="background:#3f6fa8">VB</div><div><div class="name">Studio Verdi &amp; Bianchi</div><div class="sub"><span class="chip ok">Attivo</span> Studio professionale · Italia</div></div></header>
+        <div class="contact"><b>Laura Verdi</b><span>laura@verdi.example</span></div>
+        <div class="projects"><span class="chip">sito-verdi</span></div>
+        <div class="money"><div><span>Guadagno 2026</span><b class="num">2.400 €</b></div><div><span>Da fatturare</span><b class="num">600 €</b></div><div><span>In attesa</span><b class="num">0 €</b></div></div>
+      </article>
+      <article class="ccard">
+        <header><div class="logo big" style="background:#8a8f8c">NG</div><div><div class="name">Nuova Gelateria Gialli</div><div class="sub"><span class="chip">Potenziale</span> Società · Italia</div></div></header>
+        <div class="contact"><b class="muted">Nessun contatto</b><span>&nbsp;</span></div>
+        <div class="projects"><span class="muted" style="font-size:13px">Nessun progetto</span></div>
+        <div class="money empty"><span>Ancora nessun IM: i numeri compaiono con il primo lavoro chiuso.</span></div>
+      </article>
+      <article class="ccard add"><span>+ Nuovo cliente</span></article>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:14px">🔒 Privato: i clienti restano su questo computer. Claude, Codex e Telegram non li vedono.</p>
+  </section>
+
+  <!-- CLIENTE (shared header) -->
+  <section class="view" id="cliente">
+    <div class="top">
+      <button class="btn">‹ Clienti</button>
+      <div class="logo" style="background:#b0204d;width:48px;height:48px">ROSSI</div>
+      <div>
+        <h1>Pasticceria Finta Rossi Srl</h1>
+        <div class="facts"><span class="chip ok">Attivo</span><span>Società · Italia</span><span>Mario Rossi · mario@rossi.example · 329 666 0000</span><span class="chip l2">Privato</span></div>
+      </div>
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="btn">Cambia logo</button><button class="btn">Archivia</button></span>
+    </div>
+    <div class="warnbox">⚠ Per la fattura elettronica mancano partita IVA, codice SDI o PEC, indirizzo della sede. <button class="btn" onclick="setV('anagrafica')">Completa</button></div>
+    <div class="tabs"><span data-tab="dashboard">Dashboard</span><span data-tab="anagrafica">Anagrafica</span><span>Contatti · 2</span><span>Progetti · 2</span><span>Documenti · 1</span></div>
+
+    <div id="dashboard" class="sub-view">
+      <div class="tools"><span class="seg" style="border-color:var(--line-strong)"><button style="color:var(--ink)" aria-pressed="true">2026</button><button style="color:var(--muted)">Tutto</button></span><span class="chip" style="border-color:var(--accent);color:var(--accent)">Tutti i progetti</span><span class="chip">demo</span><span class="chip">progetto-test</span><span style="margin-left:auto" class="chip">Competenza ▾</span></div>
+      <div class="kpis">
+        <div class="card kpi"><h3>Guadagno 2026</h3><div class="v num">999 €</div><div class="d">2 IM chiusi · 2025: 0 €</div></div>
+        <div class="card kpi"><h3>Da fatturare</h3><div class="v num">0 €</div><div class="d">niente da fatturare</div></div>
+        <div class="card kpi"><h3>In attesa</h3><div class="v num">549 €</div><div class="d"><span style="color:var(--danger)">1 fattura scaduta il 09/10</span></div></div>
+        <div class="card kpi"><h3>Incassato 2026</h3><div class="v num">450 €</div><div class="d">ultimo pagamento 10/10</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h3>Guadagni per mese <small>mese dell'IM</small></h3>
+          <div class="chart"><div class="axis"><span>1.000 €</span><span>750 €</span><span>500 €</span><span>250 €</span><span>0 €</span></div><div class="bars" id="cbars"></div></div>
+          <div class="labels" id="clabels"></div>
+          <div class="legend"><span><b style="background:var(--ok)"></b>Incassato</span><span><b style="background:var(--info)"></b>In fattura, non pagato</span><span><b style="background:var(--warn)"></b>Da fatturare</span></div>
+        </div>
+        <div class="card">
+          <h3>Per progetto</h3>
+          <div style="font-size:14px"><div style="display:flex;justify-content:space-between"><span>demo · 450 €/IM</span><b class="num">549 €</b></div><div class="track"><i style="width:55%"></i></div><div class="muted" style="font-size:12.5px">1 IM chiuso · prossimo IM-2 il 15/10</div></div>
+          <div style="font-size:14px;margin-top:10px"><div style="display:flex;justify-content:space-between"><span>progetto-test · 450 €/IM</span><b class="num">450 €</b></div><div class="track"><i style="width:45%"></i></div><div class="muted" style="font-size:12.5px">1 IM chiuso · prossimo IM-33 il 15/10</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Fatture <small>2</small></h3>
+        <table><thead><tr><th>Numero</th><th>Data</th><th>Progetto</th><th>IM</th><th style="text-align:right">Totale</th><th>Stato</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>D-1/2026</td><td>10/10/2026</td><td>demo</td><td>IM-1</td><td class="num" style="text-align:right">549,00 €</td><td style="color:var(--danger)">Scaduta il 09/10</td><td style="text-align:right"><button class="btn">Pagata…</button></td></tr>
+            <tr><td>T-1/2026</td><td>10/10/2026</td><td>progetto-test</td><td>IM-32</td><td class="num" style="text-align:right">450,00 €</td><td style="color:var(--ok)">Pagata il 10/10</td><td style="text-align:right"><button class="btn">Non ancora pagata</button></td></tr>
+          </tbody></table>
+      </div>
+    </div>
+
+    <div id="anagrafica" class="sub-view">
+      <div class="form">
+        <div class="card"><h3>Identità</h3>
+          <div class="fgrid">
+            <label class="f s2">Tipo<select class="field"><option>Società</option></select></label>
+            <label class="f s2">Stato<select class="field"><option>Attivo</option></select></label>
+            <label class="f s2">Settore<input class="field" value="Ristorazione"></label>
+            <label class="f s4">Ragione sociale<input class="field" value="Pasticceria Finta Rossi Srl"><span class="hint">Come va scritta in fattura.</span></label>
+            <label class="f s2">Nome nella lista<input class="field" placeholder="uguale alla ragione sociale"></label>
+            <label class="f s3">Email<input class="field" value="info@rossi.example"></label>
+            <label class="f s3">Sito<input class="field" placeholder="rossi.example"></label>
+            <label class="f s2">Telefono<input class="field"></label>
+            <label class="f s2">Cellulare<input class="field"></label>
+            <label class="f s2">Etichette<input class="field" placeholder="web, grafica"></label>
+          </div>
+        </div>
+        <div class="card"><h3>Fiscale e fattura elettronica <small>3 campi mancanti</small></h3>
+          <div class="fgrid">
+            <label class="f s2">Paese<select class="field"><option>Italia</option></select></label>
+            <label class="f s2 missing">Partita IVA<input class="field" placeholder="11 cifre"><span class="hint">Senza IT davanti.</span></label>
+            <label class="f s2">Codice fiscale<input class="field" placeholder="di solito = partita IVA"></label>
+            <label class="f s2 missing">Codice SDI<input class="field" placeholder="7 caratteri"></label>
+            <label class="f s2 missing">PEC<input class="field" placeholder="oppure la PEC"></label>
+            <label class="f s2">Aliquota IVA<input class="field" placeholder="22 %"></label>
+          </div>
+        </div>
+        <div class="card"><h3>Sede</h3>
+          <div class="fgrid">
+            <label class="f s4 missing">Indirizzo<input class="field" placeholder="Via e numero"></label>
+            <label class="f s2 missing">CAP<input class="field"></label>
+            <label class="f s3 missing">Comune<input class="field"></label>
+            <label class="f s1" style="grid-column:span 1">Prov.<input class="field"></label>
+            <label class="f s2">Nazione<input class="field" value="IT"></label>
+          </div>
+        </div>
+        <div class="savebar"><span class="muted">2 modifiche non salvate</span><span style="margin-left:auto"></span><button class="btn">Annulla</button><button class="btn p">Salva</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const months = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+  const bars = document.getElementById('cbars'), labels = document.getElementById('clabels');
+  months.forEach(m => {
+    const col = document.createElement('div'); col.className = 'm';
+    if (m === 'ott') col.innerHTML = '<i style="height:45%;background:var(--ok)"></i><i style="height:55%;background:var(--info);border-radius:3px 3px 0 0"></i>';
+    bars.appendChild(col);
+    const l = document.createElement('span'); l.textContent = m; labels.appendChild(l);
+  });
+  const notes = {
+    elenco: `<p><b>Ogni cliente è una card</b> (richiesta dell'utente), in una griglia che si adatta alla larghezza: tre o quattro per riga sullo schermo grande, una sul telefono.</p><ul>
+      <li><b>In alto</b> logo grande, nome, stato, tipo e paese; un filo rosso sul bordo sinistro quando c'è una fattura scaduta.</li>
+      <li><b>In mezzo</b> il contatto principale con email e telefono, poi i progetti come pillole.</li>
+      <li><b>In fondo</b> tre numeri dell'anno: guadagno, da fatturare, in attesa (rosso se c'è una scaduta); l'avviso se mancano i dati della fattura elettronica.</li>
+      <li>Esempio: vedi subito che Pasticceria Rossi ti deve 549 € con una fattura scaduta. Ultima card tratteggiata «+ Nuovo cliente»; nuovo menu «Ordina» (da incassare, nome, guadagno, ultima modifica).</li></ul>`,
+    dashboard: `<p><b>Il cliente si apre sulla Dashboard</b> (prima scheda; Anagrafica seconda).</p><ul>
+      <li>In testa, sotto il nome, i fatti che servono subito: stato, tipo, paese, contatto principale con email e telefono.</li>
+      <li>L'avviso della fattura elettronica ha <b>«Completa»</b>: porta all'Anagrafica con i campi mancanti evidenziati.</li>
+      <li>Grafico corretto: asse dei valori intero («1.000 €» non più tagliato), scritte dell'asse nel carattere normale e più piccole.</li></ul>`,
+    anagrafica: `<p><b>Anagrafica più stretta, a sezioni.</b></p><ul>
+      <li>Modulo largo al massimo 980 px, in tre riquadri (Identità, Fiscale e fattura elettronica, Sede) su una griglia a sei colonne: i campi corti (Telefono, CAP, Provincia, Aliquota) sono corti, quelli lunghi (Ragione sociale, Indirizzo) lunghi.</li>
+      <li>I campi che mancano per la fattura elettronica hanno il bordo ambra; il titolo della sezione dice quanti sono.</li>
+      <li>Barra di salvataggio in basso che dice quante modifiche non sono salvate.</li></ul>`
+  };
+  const root = document.documentElement;
+  function setV(v) {
+    document.querySelectorAll('#vseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.getElementById('elenco').classList.toggle('on', v === 'elenco');
+    document.getElementById('cliente').classList.toggle('on', v !== 'elenco');
+    document.getElementById('dashboard').style.display = v === 'dashboard' ? '' : 'none';
+    document.getElementById('anagrafica').style.display = v === 'anagrafica' ? '' : 'none';
+    document.querySelectorAll('.tabs span').forEach(s => s.classList.toggle('on', s.dataset.tab === v));
+    document.getElementById('note').innerHTML = notes[v];
+  }
+  function setT(t) { root.dataset.theme = t; document.querySelectorAll('#tseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t)); }
+  document.getElementById('vseg').onclick = e => e.target.dataset.v && setV(e.target.dataset.v);
+  document.getElementById('tseg').onclick = e => e.target.dataset.t && setT(e.target.dataset.t);
+  setV('elenco'); setT('light');
+</script>
+</body>
+</html>

@@ -58,6 +58,8 @@ const CODES: Record<string, readonly DetailKey[]> = {
   'tool.workspace': ['attempts'],
   'tool.kb': ['attempts'],
   'engine.lock-expired': [],
+  // "Ferma" of a subtask of GOD (D-127): stopped by the user.
+  'engine.stopped': [],
   'engine.step-failed': ['executor'],
   'engine.database': ['sqlstate', 'attempts'],
   'engine.unknown': ['error', 'attempts'],

@@ -23,3 +23,13 @@ test('in a git worktree up does nothing and every other command is refused', () 
   assert.deepEqual(composeGuard(worktree, '/repo/.git', ['down']), { run: false, exitCode: 1, message: 'docker compose down: refused in a git worktree; run it from the main folder' });
   assert.equal(composeGuard(worktree, '/repo/.git', []).run, false);
 });
+
+test('in a clone of GOD every command is refused, up included (D-127)', () => {
+  assert.deepEqual(composeGuard('/clone/.git', '/clone/.git', ['up', '--detach'], true), {
+    run: false,
+    exitCode: 1,
+    message: "docker compose up: refused in a clone of GOD (D-127); the database is the installation's",
+  });
+  assert.equal(composeGuard('/clone/.git', '/clone/.git', ['down'], true).run, false);
+  assert.equal(composeGuard('/clone/.git', '/clone/.git', ['down'], false).run, true);
+});

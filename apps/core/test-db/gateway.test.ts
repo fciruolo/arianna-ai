@@ -101,16 +101,27 @@ test('the gateway log is append-only', async () => {
   }
 });
 
+test('declassify: a context that has read finance data, or finance data itself, is refused before any approval (D-183)', async () => {
+  const { sql } = db();
+  const brief: Labeled<string> = { value: 'Fake brief written after reading fake expenses.', label: 'L2', source: 'model:orchestrator' };
+  const sealed = createContext('L2', 'L2', { finance: true });
+  const count = async (): Promise<number | undefined> => (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM approvals`)[0]?.count;
+  const before = await count();
+  await assert.rejects(requestDeclassify(sql, brief, 'L1', sealed), /finance data/);
+  await assert.rejects(requestDeclassify(sql, { ...brief, source: 'finance:derived' }, 'L1', createContext('L2', 'L2')), /finance data/);
+  assert.equal(await count(), before);
+});
+
 test('declassify: request, approval from the chat, change recorded, then the brief leaves', async () => {
   const { sql } = db();
   const brief: Labeled<string> = { value: 'Write tests for the fake invoice parser.', label: 'L2', source: 'model:orchestrator' };
-  const request = await requestDeclassify(sql, brief, 'L1');
+  const request = await requestDeclassify(sql, brief, 'L1', createContext('L2', 'L2'));
   assert.equal(request.state, 'pending');
   assert.equal(request.detail.text, brief.value);
-  await assert.rejects(applyDeclassify(sql, brief, 'L1', request.id), /is pending/);
+  await assert.rejects(applyDeclassify(sql, brief, 'L1', request.id, createContext('L2', 'L2')), /is pending/);
 
   await decideApproval(sql, request.id, 'approved', 'web');
-  const lowered = await applyDeclassify(sql, brief, 'L1', request.id);
+  const lowered = await applyDeclassify(sql, brief, 'L1', request.id, createContext('L2', 'L2'));
   assert.equal(lowered.label, 'L1');
 
   const [change] = await sql<{ subject: string; from_label: string; to_label: string; approval_id: string }[]>`
@@ -128,26 +139,26 @@ test('declassify: request, approval from the chat, change recorded, then the bri
 test('declassify: a rejected approval or an edited text changes nothing', async () => {
   const { sql } = db();
   const brief: Labeled<string> = { value: 'Refactor the fake parser.', label: 'L2', source: 'test' };
-  const rejected = await requestDeclassify(sql, brief, 'L1');
+  const rejected = await requestDeclassify(sql, brief, 'L1', createContext('L2', 'L2'));
   await decideApproval(sql, rejected.id, 'rejected', 'web');
-  await assert.rejects(applyDeclassify(sql, brief, 'L1', rejected.id), /is rejected/);
+  await assert.rejects(applyDeclassify(sql, brief, 'L1', rejected.id, createContext('L2', 'L2')), /is rejected/);
 
-  const approved = await requestDeclassify(sql, brief, 'L1');
+  const approved = await requestDeclassify(sql, brief, 'L1', createContext('L2', 'L2'));
   await decideApproval(sql, approved.id, 'approved', 'web');
-  await assert.rejects(applyDeclassify(sql, { ...brief, value: `${brief.value} And the clients.` }, 'L1', approved.id), /different text/);
-  await assert.rejects(applyDeclassify(sql, brief, 'L1', '00000000-0000-4000-8000-000000000000'), /does not exist/);
+  await assert.rejects(applyDeclassify(sql, { ...brief, value: `${brief.value} And the clients.` }, 'L1', approved.id, createContext('L2', 'L2')), /different text/);
+  await assert.rejects(applyDeclassify(sql, brief, 'L1', '00000000-0000-4000-8000-000000000000', createContext('L2', 'L2')), /does not exist/);
 });
 
 test('approvals are decided once and their content cannot change', async () => {
   const { sql, owner } = db();
-  const request = await requestDeclassify(sql, { value: 'fake', label: 'L2', source: 'test' }, 'L1');
+  const request = await requestDeclassify(sql, { value: 'fake', label: 'L2', source: 'test' }, 'L1', createContext('L2', 'L2'));
   await decideApproval(sql, request.id, 'approved', 'web');
   await assert.rejects(decideApproval(sql, request.id, 'rejected', 'web'), /already decided/);
   await assert.rejects(sql`UPDATE approvals SET state = 'rejected' WHERE id = ${request.id}`, /already approved/);
   await assert.rejects(sql`DELETE FROM approvals`, /permission denied/);
   await assert.rejects(owner`DELETE FROM approvals`, /append-only/);
 
-  const pending = await requestDeclassify(sql, { value: 'other', label: 'L2', source: 'test' }, 'L1');
+  const pending = await requestDeclassify(sql, { value: 'other', label: 'L2', source: 'test' }, 'L1', createContext('L2', 'L2'));
   await assert.rejects(sql`UPDATE approvals SET detail = '{"sha256":"x"}' WHERE id = ${pending.id}`, /only the decision/);
   assert.equal((await loadApproval(sql, pending.id))?.state, 'pending');
 });
@@ -173,7 +184,7 @@ test('the database refuses approvals that do not describe a valid declassificati
 
 test('a declassification is decided only from the web chat, which can show its text', async () => {
   const { sql } = db();
-  const request = await requestDeclassify(sql, { value: 'fake text for the card', label: 'L2', source: 'test' }, 'L1');
+  const request = await requestDeclassify(sql, { value: 'fake text for the card', label: 'L2', source: 'test' }, 'L1', createContext('L2', 'L2'));
   await assert.rejects(decideApproval(sql, request.id, 'approved', 'telegram'), /approvals_declassify_via_web/);
   await assert.rejects(decideApproval(sql, request.id, 'rejected', 'phone'), /approvals_declassify_via_web/);
   assert.equal((await decideApproval(sql, request.id, 'approved', 'web')).state, 'approved');
@@ -185,10 +196,10 @@ test('a declassification is decided only from the web chat, which can show its t
 test('an approval lets its text out once', async () => {
   const { sql } = db();
   const brief: Labeled<string> = { value: 'Fake brief, used once.', label: 'L2', source: 'test' };
-  const request = await requestDeclassify(sql, brief, 'L1');
+  const request = await requestDeclassify(sql, brief, 'L1', createContext('L2', 'L2'));
   await decideApproval(sql, request.id, 'approved', 'web');
-  await applyDeclassify(sql, brief, 'L1', request.id);
-  await assert.rejects(applyDeclassify(sql, brief, 'L1', request.id), /label_changes_approval_used_once/);
+  await applyDeclassify(sql, brief, 'L1', request.id, createContext('L2', 'L2'));
+  await assert.rejects(applyDeclassify(sql, brief, 'L1', request.id, createContext('L2', 'L2')), /label_changes_approval_used_once/);
 });
 
 test('a summary with a scanner match is not stored', async () => {
@@ -210,7 +221,7 @@ test('the database refuses a lowering without a matching approved approval; rais
   await assert.rejects(insert('document:1', 'L2', 'L2', null), /label_changes_is_a_change/);
 
   const brief: Labeled<string> = { value: 'fake brief', label: 'L2', source: 'test' };
-  const request = await requestDeclassify(sql, brief, 'L1');
+  const request = await requestDeclassify(sql, brief, 'L1', createContext('L2', 'L2'));
   const subject = `content:${String(request.detail.sha256)}`;
   await assert.rejects(insert(subject, 'L2', 'L1', request.id), /not covered/);
   await decideApproval(sql, request.id, 'approved', 'web');
@@ -228,4 +239,18 @@ test('local exits are logged as local, and a contaminated run is refused the clo
   assert.equal((await lastLog()).locality, 'local');
   const l1: Labeled<string>[] = [{ value: 'fake', label: 'L1', source: 'test' }];
   assert.equal((await passGateway(db().sql, l1, contaminated, CLAUDE)).rule, 'contaminated');
+});
+
+test('rows of the link target (D-154): L2 only with the rule of links, never a summary, a local locality or another target', async () => {
+  const { sql } = db();
+  const row = (target: string, locality: string, rule: string, summary: string | null, label = 'L2', decision = 'allow') => sql`
+    INSERT INTO gateway_log (target_kind, target, locality, label, decision, rule, reason, summary)
+    VALUES ('link', ${target}, ${locality}, ${label}::privacy_label, ${decision}, ${rule}, 'test', ${summary})`;
+  await row('link-list', 'cloud', 'link', null);
+  await row('link-click', 'cloud', 'scanner', null, 'L2', 'block');
+  await assert.rejects(row('link-click', 'cloud', 'link', 'https://example.org/', 'L1'), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'local', 'link', null), /gateway_log_link_fields/);
+  await assert.rejects(row('https://example.org/', 'cloud', 'link', null), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'cloud', 'cloud', null), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'cloud', 'link', null, 'L3'), /gateway_log_no_secret_out/);
 });

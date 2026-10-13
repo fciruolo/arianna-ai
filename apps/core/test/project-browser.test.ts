@@ -81,7 +81,7 @@ const busy: Queryable = { unsafe: () => Promise.resolve([{ id: '1' }]) } as unkn
 const code = (error: unknown): string => (error instanceof DelegationFileError ? error.code : String(error));
 
 test('only approved projects, with their folder for "Apri in VS Code"', async () => {
-  assert.deepEqual(browsableProjects(PROJECTS.slice(0, 1)), [{ name: 'orto', absolute: ROOT, hidden: false }]);
+  assert.deepEqual(browsableProjects(PROJECTS.slice(0, 1)), [{ name: 'orto', absolute: ROOT, hidden: false, project: 'orto', part: null }]);
   // D-135: the consent counts only for the folder it was given for.
   assert.deepEqual(browsableProjects(PROJECTS, new Map([['orto', ROOT], ['senza-git', '/srv/altrove']])).map(({ hidden }) => hidden), [true, false]);
   await assert.rejects(listProjectDir(PROJECTS, 'altro', ''), (error) => code(error) === 'not-approved');

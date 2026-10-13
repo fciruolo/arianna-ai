@@ -25,6 +25,7 @@ import VoiceClones from './VoiceClones.vue';
  * candidates write it; then one reply is spoken by each text-to-speech
  * candidate. Everything runs on this machine; nothing is saved.
  */
+const emit = defineEmits<{ back: [] }>();
 const trial = ref<VoiceTrial | null>(null);
 const problem = ref<string | null>(null);
 let poll: number | undefined;
@@ -194,6 +195,7 @@ onBeforeUnmount(() => {
   <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
     <div class="mx-auto flex max-w-[760px] flex-col gap-5">
       <header>
+        <button type="button" class="mb-2 text-xs text-muted hover:text-ink" @click="emit('back')"><span aria-hidden="true">‹ </span>Voce</button>
         <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">Provino della voce</h1>
         <p class="mt-1 text-sm text-muted">
           Scegli a orecchio chi ascolta e chi parla nelle chiamate. Tutto gira su questo computer e non viene salvato nulla.
@@ -213,7 +215,7 @@ onBeforeUnmount(() => {
       <section v-if="trial !== null && missing > 0" class="hud-card bg-surface px-4 py-3 text-sm">
         <h2 class="font-medium">Mancano dei modelli</h2>
         <p class="mt-1">
-          Per confrontarli tutti scarica i candidati con <code class="font-mono text-[12.5px]">pnpm arianna:models pull --trial</code>
+          Per confrontarli tutti scarica i candidati con <code class="font-mono text-[13.5px]">pnpm arianna:models pull --trial</code>
           ({{ sizeText(missing) }} ancora da scaricare in data/models). Puoi provare intanto quelli già presenti.
         </p>
       </section>
@@ -239,9 +241,9 @@ onBeforeUnmount(() => {
                   <input v-model="chosenStt" type="radio" name="stt" :value="model.id" :disabled="!model.present" />
                   {{ FAMILY_TEXT[model.family] ?? model.family }}
                 </label>
-                <span v-if="model.assigned" class="font-mono text-[10.5px] text-accent">IN USO</span>
-                <span v-if="!model.present" class="font-mono text-[10.5px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
-                <span v-for="result in transcripts.filter((item) => item.id === model.id)" :key="result.id" class="ml-auto font-mono text-[11px] text-muted">
+                <span v-if="model.assigned" class="font-mono text-[12px] text-accent">IN USO</span>
+                <span v-if="!model.present" class="font-mono text-[12px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
+                <span v-for="result in transcripts.filter((item) => item.id === model.id)" :key="result.id" class="ml-auto font-mono text-[12.5px] text-muted">
                   {{ result.seconds === undefined ? '' : secondsText(result.seconds) }}
                 </span>
               </div>
@@ -267,8 +269,8 @@ onBeforeUnmount(() => {
                 <input v-model="chosenTts" type="radio" name="tts" :value="model.id" :disabled="!model.present" />
                 {{ FAMILY_TEXT[model.family] ?? model.family }}
               </label>
-              <span v-if="model.assigned" class="font-mono text-[10.5px] text-accent">IN USO</span>
-              <span v-if="!model.present" class="font-mono text-[10.5px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
+              <span v-if="model.assigned" class="font-mono text-[12px] text-accent">IN USO</span>
+              <span v-if="!model.present" class="font-mono text-[12px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
               <span class="flex-1" />
               <select
                 v-if="model.voices.length > 0"
@@ -279,8 +281,8 @@ onBeforeUnmount(() => {
               >
                 <option v-for="name in model.voices" :key="name" :value="name">{{ VOICE_TEXT[name] ?? name }}</option>
               </select>
-              <span v-if="spoken[model.id]?.first !== undefined" class="font-mono text-[11px] text-accent">primo suono {{ secondsText(spoken[model.id]?.first ?? 0) }}</span>
-              <span v-if="spoken[model.id]?.seconds !== undefined" class="font-mono text-[11px] text-muted">tutta in {{ secondsText(spoken[model.id]?.seconds ?? 0) }}</span>
+              <span v-if="spoken[model.id]?.first !== undefined" class="font-mono text-[12.5px] text-accent">primo suono {{ secondsText(spoken[model.id]?.first ?? 0) }}</span>
+              <span v-if="spoken[model.id]?.seconds !== undefined" class="font-mono text-[12.5px] text-muted">tutta in {{ secondsText(spoken[model.id]?.seconds ?? 0) }}</span>
               <button type="button" class="btn" :disabled="!model.present || speaking !== null || model.voices.length === 0 || reply.trim() === ''" @click="speak(model.id, voiceOf(model))">
                 <Icon name="play" :size="16" />{{ speaking === model.id ? 'Genero…' : 'Ascolta' }}
               </button>
@@ -295,7 +297,7 @@ onBeforeUnmount(() => {
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
           <h2 class="hud-title">Notifiche delle chiamate</h2>
           <p class="text-sm">Quando Arianna ti chiama e la chat è chiusa, il browser mostra «Arianna ti chiama». La notifica passa da Apple, Google o Mozilla ma non porta nessun contenuto.</p>
-          <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: crea le chiavi con <code class="font-mono text-[12.5px]">pnpm voice:vapid</code> e segui le istruzioni.</p>
+          <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: crea le chiavi con <code class="font-mono text-[13.5px]">pnpm voice:vapid</code> e segui le istruzioni.</p>
           <p v-else-if="push.state === 'unsupported'" class="text-sm text-muted">Questo browser non supporta le notifiche push.</p>
           <p v-else-if="push.state === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito nelle impostazioni del browser.</p>
           <p v-else-if="push.state === 'on'" class="text-sm text-ok">Attive in questo browser.</p>
@@ -305,8 +307,8 @@ onBeforeUnmount(() => {
 
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
           <h2 class="hud-title">3 · La scelta</h2>
-          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[12.5px]">config/arianna.toml</code>: i ruoli si applicano senza riavvio, la voce dopo il riavvio del nucleo. Gli altri candidati puoi cancellarli da data/models.</p>
-          <pre class="overflow-x-auto rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[12.5px]">{{ snippet }}</pre>
+          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[13.5px]">config/arianna.toml</code>: i ruoli si applicano senza riavvio, la voce dopo il riavvio del nucleo. Gli altri candidati puoi cancellarli da data/models.</p>
+          <pre class="overflow-x-auto rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[13.5px]">{{ snippet }}</pre>
         </section>
       </template>
     </div>

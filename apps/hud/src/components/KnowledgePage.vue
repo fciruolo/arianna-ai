@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
-import { ApiError, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
+import { ApiError, deleteKnowledgePage, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
+import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import {
   advanceOrbit,
   blendView,
@@ -24,6 +25,7 @@ import {
   resolveWikilink,
   rotatePoint,
   sceneMode,
+  sourceTexts,
   seededRandom,
   starPosition,
   step,
@@ -74,6 +76,8 @@ import {
   type Segment,
   type Simulation3,
 } from '../lib/graph3d.ts';
+import type { KnowledgeSource } from '../lib/route.ts';
+import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -99,7 +103,12 @@ import MarkdownText from './MarkdownText.vue';
 const props = defineProps<{
   /** A node to select once the graph is loaded (D-090, `/conoscenza?nota=…`). */
   focus?: string | undefined;
+  /** The user's notes (kb/) or Arianna's own documents, read-only (D-155, `/conoscenza?fonte=arianna`). */
+  source?: KnowledgeSource | undefined;
 }>();
+const emit = defineEmits<{ source: [source: KnowledgeSource] }>();
+const source = computed<KnowledgeSource>(() => props.source ?? 'kb');
+const texts = computed(() => sourceTexts(source.value));
 
 const root = ref<HTMLDivElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -112,6 +121,10 @@ const filter = ref('');
 const selected = ref(-1);
 const hovered = ref(-1);
 const page = ref<KnowledgePage | null>(null);
+/** The page of the selected node waiting for the user to confirm its deletion for good (D-157). */
+const deletingPage = ref<string | null>(null);
+const removingPage = ref(false);
+const deletePageError = ref<string | null>(null);
 const pageLoading = ref(false);
 const pageError = ref<string | null>(null);
 const jumpNotice = ref<string | null>(null);
@@ -131,6 +144,8 @@ const DARK_KEY = 'arianna.knowledge.dark';
 /** "2d" or "3d" (D-104): a convenience of this browser (localStorage). */
 const VIEW_KEY = 'arianna.knowledge.view';
 const view3d = ref(false);
+/** The instructions of the 3D behind «?» (D-194): closed when the page opens. */
+const helpOpen = ref(false);
 /** The slow drift of the 3D camera when the graph is left alone. */
 const drifting = ref(true);
 
@@ -1351,9 +1366,28 @@ function focusOn(index: number): void {
   glideTo(centerOn(width - panel, height, at.x, at.y, Math.max(view.k, 1.4)));
 }
 
+/** "Elimina" confirmed: the file of the page goes for good, the graph is read again. */
+async function removePage(id: string): Promise<void> {
+  if (removingPage.value) return;
+  removingPage.value = true;
+  deletePageError.value = null;
+  try {
+    await deleteKnowledgePage(id);
+    deletingPage.value = null;
+    await select(-1);
+    await load();
+  } catch (failure) {
+    deletePageError.value = failure instanceof ApiError && failure.status === 404 ? 'La nota non c’è più o non si può eliminare da qui.' : 'Non ho eliminato la nota: riprova.';
+  } finally {
+    removingPage.value = false;
+  }
+}
+
 let pageRequest = 0;
 async function select(index: number): Promise<void> {
   selected.value = index;
+  deletingPage.value = null;
+  deletePageError.value = null;
   jumpNotice.value = null;
   requestFrame();
   const node = nodes.value[index];
@@ -1363,7 +1397,7 @@ async function select(index: number): Promise<void> {
   const request = ++pageRequest;
   pageLoading.value = true;
   try {
-    const loaded = await loadKnowledgePage(node.id);
+    const loaded = await loadKnowledgePage(node.id, source.value);
     if (request === pageRequest) page.value = loaded;
   } catch (failure) {
     if (request === pageRequest) pageError.value = failure instanceof ApiError && failure.status === 404 ? 'Pagina non più disponibile.' : 'Non riesco a leggere la pagina.';
@@ -1393,11 +1427,16 @@ function formatDate(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('it-IT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+let loadRequest = 0;
 async function load(): Promise<void> {
+  const request = ++loadRequest;
+  const from = source.value;
   loading.value = true;
   error.value = null;
   try {
-    const data = await loadKnowledgeGraph();
+    const data = await loadKnowledgeGraph(from);
+    // A switch of source meanwhile: this graph is not the one shown.
+    if (request !== loadRequest) return;
     const previousIds = graph.value?.nodes.map((node) => node.id) ?? [];
     const previous = new Map(sim?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y }]) ?? []);
     const previous3 = new Map(sim3?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y, z: node.z }]) ?? []);
@@ -1423,11 +1462,30 @@ async function load(): Promise<void> {
     applyFocus();
     requestFrame();
   } catch (failure) {
-    error.value = failure instanceof ApiError ? `Non riesco a caricare il grafo (${failure.message}).` : 'Non riesco a caricare il grafo.';
+    if (request === loadRequest) error.value = failure instanceof ApiError ? `Non riesco a caricare il grafo (${failure.message}).` : 'Non riesco a caricare il grafo.';
   } finally {
-    loading.value = false;
+    if (request === loadRequest) loading.value = false;
   }
 }
+
+/** Another source (D-155): a graph of its own, laid out from scratch, nothing selected. */
+watch(source, () => {
+  pageRequest += 1;
+  selected.value = -1;
+  hovered.value = -1;
+  page.value = null;
+  pageError.value = null;
+  pageLoading.value = false;
+  jumpNotice.value = null;
+  focusNotice.value = null;
+  filter.value = '';
+  graph.value = null;
+  sim = null;
+  sim3 = null;
+  adjacency = [];
+  pulses = [];
+  void load();
+});
 
 /** Selects the node the address asks for (a thought opened "in the graph"), once. */
 function applyFocus(): void {
@@ -1623,7 +1681,7 @@ onBeforeUnmount(() => {
       <div class="hud-card pointer-events-auto bg-surface/85 p-3 backdrop-blur-sm">
         <div class="flex items-center gap-2">
           <Icon name="knowledge" :size="16" />
-          <h1 class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Conoscenza</h1>
+          <h1 class="text-[17px] font-semibold">Conoscenza</h1>
           <button type="button" class="ml-auto rounded-md p-1 text-muted hover:text-ink" title="Ricentra" aria-label="Ricentra il grafo" @click="fit">
             <Icon name="focus" :size="15" />
           </button>
@@ -1631,32 +1689,60 @@ onBeforeUnmount(() => {
             <Icon name="retry" :size="15" />
           </button>
         </div>
-        <p class="mt-1.5 font-mono text-[11px] tracking-[0.04em] text-muted" aria-live="polite">
-          <span class="text-ink">{{ counts.notes }}</span> note · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
+        <div class="kp-seg plain mt-2" role="group" aria-label="Fonte della conoscenza">
+          <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">Le tue note</button>
+          <button
+            type="button"
+            :class="{ on: source === 'arianna' }"
+            :aria-pressed="source === 'arianna'"
+            title="I documenti di sviluppo di Arianna: decisioni, proposte, specifiche, novità (sola lettura)"
+            @click="emit('source', 'arianna')"
+          >
+            Arianna
+          </button>
+        </div>
+        <p v-if="texts.note !== ''" class="mt-1.5 text-[13px] leading-snug text-muted">{{ texts.note }}</p>
+        <p class="mt-1.5 text-[13px] text-muted" aria-live="polite">
+          <b class="font-semibold text-ink">{{ counts.notes }}</b> {{ texts.pages }} · <b class="font-semibold text-ink">{{ counts.links }}</b> collegamenti ·
           <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
-        <p v-if="view3d" class="mt-1 font-mono text-[10.5px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
-        <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 focus-within:border-accent">
+        <div v-if="view3d" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
+          <button
+            type="button"
+            class="grid size-6 shrink-0 place-items-center rounded-full border border-line-strong text-[13px] hover:text-ink"
+            aria-label="Come si muove il grafo"
+            aria-controls="kp-help"
+            :aria-expanded="helpOpen"
+            @click="helpOpen = !helpOpen"
+          >
+            ?
+          </button>
+          Come si muove il grafo
+        </div>
+        <p v-if="view3d" v-show="helpOpen" id="kp-help" class="mt-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px]">
+          Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo.
+        </p>
+        <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5">
           <Icon name="search" :size="14" />
           <input
             v-model="filter"
             type="search"
             class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
-            placeholder="Filtra per titolo o #tag"
+            :placeholder="texts.filterPlaceholder"
             aria-label="Filtra le note per titolo o tag"
             @keydown.enter.prevent="chooseResult"
           />
         </label>
         <ul v-if="filtering" class="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
           <li v-for="{ node, index } in results" :key="node.id">
-            <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] hover:bg-surface-2" @click="focusOn(index)">
+            <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(index)">
               <span class="size-2 shrink-0 rounded-full" :style="{ background: folderVar(node.folder) }" />
               <span class="min-w-0 flex-1 truncate">{{ node.title }}</span>
-              <span class="font-mono text-[10px] text-muted">{{ folderName(node.folder) }}</span>
+              <span class="font-mono text-[12px] text-muted">{{ folderName(node.folder) }}</span>
             </button>
           </li>
-          <li v-if="results.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna nota corrisponde.</li>
+          <li v-if="results.length === 0" class="px-2 py-1 text-[14px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
         </ul>
       </div>
       <p v-if="focusNotice !== null" role="status" class="pointer-events-auto rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ focusNotice }}</p>
@@ -1665,8 +1751,8 @@ onBeforeUnmount(() => {
 
     <!-- Legend -->
     <div v-if="legend.length > 0" class="hud-card pointer-events-auto absolute bottom-3 left-3 max-w-[calc(100%-24px)] bg-surface/85 px-3 py-2.5 backdrop-blur-sm">
-      <h2 class="hud-title mb-1.5">Legenda</h2>
-      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[11px]">
+      <h2 class="mb-1 text-[13px] font-semibold">Legenda</h2>
+      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 text-[13px]">
         <li v-for="item in legend" :key="item.folder" class="flex items-center gap-1.5">
           <span
             v-if="item.folder === '#'"
@@ -1678,7 +1764,7 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
-      <p class="mt-1.5 flex flex-wrap gap-x-3.5 font-mono text-[10.5px] text-muted">
+      <p class="mt-1.5 flex flex-wrap gap-x-3.5 text-[13px] text-muted">
         <span class="flex items-center gap-1.5"><span class="inline-block h-px w-5 bg-accent" />collegamento</span>
         <span class="flex items-center gap-1.5"><span class="inline-block w-5 border-t border-dashed border-muted" />tag in comune</span>
       </p>
@@ -1687,8 +1773,8 @@ onBeforeUnmount(() => {
     <!-- Empty -->
     <div v-if="!loading && error === null && nodes.length === 0" class="pointer-events-none absolute inset-0 grid place-items-center p-8 text-center">
       <div class="max-w-sm">
-        <p class="font-hud text-lg font-semibold tracking-[0.05em]">La rete è ancora vuota</p>
-        <p class="mt-2 text-sm text-muted">Salva un pensiero con «/nota» o «Salva in inbox»: ogni nota diventa un nodo, i collegamenti fra note diventano archi.</p>
+        <p class="font-hud text-lg font-semibold tracking-[0.05em]">{{ texts.emptyTitle }}</p>
+        <p class="mt-2 text-sm text-muted">{{ texts.emptyText }}</p>
       </div>
     </div>
     <p v-if="loading && nodes.length === 0" class="absolute inset-0 grid place-items-center font-mono text-xs tracking-[0.12em] text-muted">CARICO LA RETE…</p>
@@ -1701,7 +1787,7 @@ onBeforeUnmount(() => {
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
         <div class="min-w-0 flex-1">
-          <p class="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">
+          <p class="flex items-center gap-2 font-mono text-[12px] tracking-[0.06em] text-muted uppercase">
             <span class="inline-block size-2 rounded-full" :style="{ background: folderVar(selectedNode.folder) }" />
             {{ folderName(selectedNode.folder) }}
             <template v-if="selectedNode.kind !== null && selectedNode.kind !== 'tag'"> · {{ selectedNode.kind }}</template>
@@ -1714,13 +1800,13 @@ onBeforeUnmount(() => {
         </button>
       </header>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <p v-if="selectedNode.updatedAt !== null" class="font-mono text-[10.5px] text-muted">Aggiornata {{ formatDate(selectedNode.updatedAt) }}</p>
+        <p v-if="selectedNode.updatedAt !== null" class="font-mono text-[12px] text-muted">Aggiornata {{ formatDate(selectedNode.updatedAt) }}</p>
         <div v-if="selectedNode.tags.length > 0" class="mt-2 flex flex-wrap gap-1.5">
           <button
             v-for="tag in selectedNode.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[11px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
             :title="`Filtra #${tag}`"
             @click="filter = `#${tag}`"
           >
@@ -1728,14 +1814,32 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p v-if="jumpNotice !== null" class="mt-2 text-xs text-warn" role="status">{{ jumpNotice }}</p>
-        <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la nota…</p>
+        <template v-if="selectedNode.kind !== 'tag' && source === 'kb'">
+          <DeleteConfirm
+            v-if="deletingPage === selectedNode.id"
+            class="mt-3"
+            :subject="selectedNode.title"
+            :text="DELETE_NOTE_TEXT"
+            :extra="deletePageError"
+            :busy="removingPage"
+            @confirm="removePage(selectedNode.id)"
+            @cancel="
+              deletingPage = null;
+              deletePageError = null;
+            "
+          />
+          <button v-else type="button" class="btn mt-3 px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
+            <Icon name="delete" :size="14" />Elimina
+          </button>
+        </template>
+        <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la pagina…</p>
         <p v-else-if="pageError !== null" class="mt-3 text-sm text-danger">{{ pageError }}</p>
         <MarkdownText v-else-if="page !== null && page.id === selectedNode.id" class="mt-3" :source="page.body" :wikilink="followWikilink" />
         <section v-if="selectedNeighbours.length > 0" class="mt-4 border-t border-line pt-3">
           <h3 class="hud-title mb-1.5">{{ selectedNode.kind === 'tag' ? 'Note con questo tag' : 'Collegata a' }} · {{ selectedNeighbours.length }}</h3>
           <ul class="flex flex-col gap-0.5">
             <li v-for="item in selectedNeighbours" :key="item.node?.id">
-              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] hover:bg-surface-2" @click="focusOn(item.index)">
+              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(item.index)">
                 <span class="size-2 shrink-0 rounded-full" :style="{ background: item.node?.kind === 'tag' ? 'var(--muted)' : folderVar(item.node?.folder ?? '') }" />
                 <span class="min-w-0 flex-1 truncate">{{ item.node?.title }}</span>
               </button>
@@ -1867,7 +1971,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   backdrop-filter: blur(4px);
@@ -1899,7 +2003,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border-radius: 7px;
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   transition:
     color 0.15s,
@@ -1910,6 +2014,13 @@ onBeforeUnmount(() => {
 .kp-seg button:hover,
 .kp-seg button:focus-visible {
   color: var(--ink);
+}
+
+/* The switch of the source (D-194): in the normal font, not the HUD's capitals. */
+.kp-seg.plain button {
+  padding: 0 10px;
+  font: 600 13.5px/1 var(--font-sans);
+  letter-spacing: normal;
 }
 
 .kp-seg button.on {

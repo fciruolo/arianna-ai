@@ -1,18 +1,19 @@
 <script setup lang="ts">
 /**
- * Impostazioni → Modelli (I-3, D-137, stage M3): every model, local and
- * cloud, in a list on the left with filters and search, the chosen one in a
- * card on the right (below on a phone). Roles, the model of the characters
- * and the cloud switches are the parts of the settings the old sections
- * edited (`roles`, `sprites`, `cloudModels`): the card and the compact
- * panels below edit the same forms, one bar saves them in one write. Trials
- * of the orchestrator (D-081) start from the card. Read from
- * GET /api/models/overview, all L0. The actions on a local model (stage M4:
- * download, verify, unload, remove into the bin, empty the bin) ask for a
- * confirmation that says how much and where; a removal needs the id typed.
- * I-10 (D-139): models are searched on Hugging Face and added to the user
- * catalog from the panel above the list; the card of one added that way
- * promotes it to roles or takes it out of the catalog.
+ * Impostazioni → Modelli (I-3, D-137, revised in D-192): three numbers on
+ * top, then «Chi fa cosa» (which model does each task, and the model of the
+ * characters), then every model, local and cloud, in a list on the left with
+ * the chosen one in a card on the right (below on a phone); the search on
+ * Hugging Face closed at the bottom. Roles, the model of the characters and
+ * the cloud switches (one per model, in its row of the list) are the parts of
+ * the settings the old sections edited (`roles`, `sprites`, `cloudModels`):
+ * one bar saves them in one write. Trials of the orchestrator (D-081) start
+ * from the card. Read from GET /api/models/overview, all L0. The actions on a
+ * local model (stage M4: download, verify, unload, remove into the bin, empty
+ * the bin) ask for a confirmation that says how much and where; a removal
+ * needs the id typed. I-10 (D-139): models are searched on Hugging Face and
+ * added to the user catalog; the card of one added that way promotes it to
+ * roles or takes it out of the catalog.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -38,20 +39,22 @@ import {
   cardSources,
   chosenKey,
   cloudNotice,
-  contextText,
   countText,
   EMPTY_FILTER,
   filterModels,
   memorySummary,
   modelEntries,
   overviewErrorText,
+  pagesText,
   priceText,
   privacyText,
   providersOf,
+  reliabilityText,
   ROLE_NAME,
   shownName,
   sizeText,
   toggleRole,
+  unsavedCount,
   unsavedKeys,
   usageLines,
   USE_CHOICES,
@@ -65,6 +68,7 @@ import { MODEL_ROLES, ROLE_TEXT, roleOptions, type CatalogModel, type CloudModel
 import HubEntryPanel from './HubEntryPanel.vue';
 import HuggingFaceSearch from './HuggingFaceSearch.vue';
 import Icon from './Icon.vue';
+import SettingsSaveBar from './SettingsSaveBar.vue';
 
 interface ModelParts {
   roles: Partial<Record<ModelRole, string>>;
@@ -90,12 +94,21 @@ const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: []; cha
 // The list
 const overview = ref<ModelsOverview | null>(null);
 const loadError = ref<string | null>(null);
+const retrying = ref(false);
 async function load(): Promise<void> {
   try {
     overview.value = await loadModelsOverview();
     loadError.value = null;
   } catch (error) {
     loadError.value = errorText(error);
+  }
+}
+async function retry(): Promise<void> {
+  retrying.value = true;
+  try {
+    await load();
+  } finally {
+    retrying.value = false;
   }
 }
 
@@ -105,7 +118,7 @@ const providers = computed(() => providersOf(entries.value));
 const visible = computed(() => filterModels(entries.value, filter.value));
 const WHERE: { id: ModelFilter['where']; text: string }[] = [
   { id: 'all', text: 'Tutti' },
-  { id: 'local', text: 'Locali' },
+  { id: 'local', text: 'Sul Mac' },
   { id: 'cloud', text: 'Cloud' },
 ];
 
@@ -113,10 +126,13 @@ const wanted = ref<string | null>(null);
 const currentKey = computed(() => chosenKey(visible.value, wanted.value));
 const current = computed(() => entries.value.find((entry) => entry.key === currentKey.value));
 const detail = ref<HTMLElement | null>(null);
+/** The grid of list and card: one column when the page is narrow (a container query, D-150). */
+const pair = ref<HTMLElement | null>(null);
 async function choose(key: string): Promise<void> {
   wanted.value = key;
-  // On a narrow screen the card is under the list: bring it into view.
-  if (window.matchMedia('(max-width: 1023px)').matches) {
+  // When the card is under the list (narrow page, not only narrow window): bring it into view.
+  if (pair.value === null) return;
+  if (window.getComputedStyle(pair.value).gridTemplateColumns.trim().split(/\s+/).length < 2) {
     await nextTick();
     detail.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -124,14 +140,20 @@ async function choose(key: string): Promise<void> {
 
 const unsaved = computed(() => unsavedKeys(props.form, props.base));
 const dirty = computed(() => unsaved.value.size > 0 || props.form.sprites !== props.base.sprites);
+const changes = computed(() => unsavedCount(props.form, props.base));
 const memory = computed(() => (overview.value === null ? null : memorySummary(overview.value.memory, overview.value.local)));
 const localCount = computed(() => {
   const local = overview.value?.local ?? [];
-  return { total: local.length, present: local.filter((model) => model.present).length, loaded: local.filter((model) => model.state === 'loaded').length };
+  return { total: local.length, present: local.filter((model) => model.present).length, loaded: local.filter((model) => model.state === 'loaded').length, missing: local.filter((model) => !model.present).map((model) => model.id) };
 });
 const cloudCount = computed(() => {
   const cloud = overview.value?.cloud ?? [];
-  return { total: cloud.length, on: cloud.filter((model) => model.state === 'on').length, missing: cloud.filter((model) => model.state === 'not-connected').map((model) => model.alias) };
+  return {
+    total: cloud.length,
+    on: cloud.filter((model) => model.state === 'on').length,
+    missing: cloud.filter((model) => model.state === 'not-connected').map((model) => model.alias),
+    executorOff: cloud.some((model) => model.state === 'executor-off'),
+  };
 });
 const catalogErrors = computed(() => {
   const errors = overview.value?.errors;
@@ -139,6 +161,7 @@ const catalogErrors = computed(() => {
 });
 
 const TONE_CLASS: Record<Tone, string> = { ok: 'text-ok', warn: 'text-warn', info: 'text-info', muted: 'text-muted', danger: 'text-danger' };
+const PILL_CLASS: Record<Tone, string> = { ok: 'text-ok border-ok/50', warn: 'text-warn border-warn/55', info: 'text-info border-info/50', muted: '', danger: 'text-danger border-danger/50' };
 function badgeClass(view: LocalModelView | CloudModelView): string {
   if (view.locality === 'local') return 'text-ok';
   return view.executor === 'claude' ? 'text-accent' : 'text-info';
@@ -158,7 +181,7 @@ function savedRoles(id: string): ModelRole[] {
   return MODEL_ROLES.filter((role) => props.base.roles[role] === id);
 }
 
-// Roles of a local model, from its card: the same form as the panel below.
+// Roles of a local model, from its card: the same form as «Chi fa cosa».
 function holder(role: ModelRole): string | undefined {
   return props.form.roles[role];
 }
@@ -167,10 +190,17 @@ function flipRole(role: ModelRole, id: string): void {
   if (next === undefined) delete props.form.roles[role];
   else props.form.roles[role] = next;
 }
-/** The switch and exact name of the chosen cloud model: the same row as the panel below. */
+/** The row of a cloud model in the form: its switch in the list, its exact name in the card. */
+function rowOf(alias: string): CloudModelsForm['rows'][number] | undefined {
+  return props.form.cloudModels.rows.find((row) => row.alias === alias);
+}
+function setEnabled(alias: string, event: Event): void {
+  const row = rowOf(alias);
+  if (row !== undefined) row.enabled = (event.target as HTMLInputElement).checked;
+}
 const currentRow = computed(() => {
   const view = current.value?.view;
-  return view?.locality === 'cloud' ? props.form.cloudModels.rows.find((row) => row.alias === view.alias) : undefined;
+  return view?.locality === 'cloud' ? rowOf(view.alias) : undefined;
 });
 /** The exact name the card describes (context, output): the saved one, else the first of the catalog. */
 const currentName = computed(() => {
@@ -276,7 +306,7 @@ async function confirmAction(): Promise<void> {
     else if (shown.kind === 'cancel') await cancelModelAction(id);
     else if (shown.kind === 'unload') {
       const outcome = await unloadLocalModel(id);
-      actionNotice.value = outcome === 'unloaded' ? `${id} non è più in memoria.` : 'Il server locale non ha confermato: riprova fra poco, o riavvialo da Server locali.';
+      actionNotice.value = outcome === 'unloaded' ? `${id} non è più in memoria.` : 'Il server dei modelli non ha confermato: riprova fra poco, o riavvialo da Server dei modelli.';
     } else if (shown.kind === 'remove') {
       const folder = await removeModel(id, typed.value.trim());
       actionNotice.value = `Tolto dal disco: i file sono nel cestino, in ${folder}.`;
@@ -340,464 +370,412 @@ onBeforeUnmount(() => {
   window.clearTimeout(timer);
   window.clearTimeout(savedTimer);
 });
+
+const card = 'min-w-0 rounded-xl border border-line bg-surface-2 p-4';
+const fact = 'flex flex-col gap-0.5 bg-surface px-3 py-2';
+const factKey = 'text-[13px] text-muted';
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <p class="text-[13px] text-muted">Locali e cloud in un posto solo: cosa sono, chi li usa e come sono andati alle prove. Tutto ciò che vedi qui è Pubblico: numeri e nomi, nessun testo.</p>
-
-    <!-- Summary -->
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-      <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Memoria dei modelli locali</span>
+  <div class="flex flex-col gap-3.5">
+    <!-- Three numbers -->
+    <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
+      <div :class="card" class="flex flex-col gap-1">
+        <span class="text-[13.5px] text-muted">Memoria del Mac per i modelli</span>
         <template v-if="memory !== null">
-          <span class="font-hud text-lg leading-tight font-medium">{{ memory.value }}</span>
-          <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-surface-2">
+          <span class="text-[22px] leading-tight font-semibold tabular-nums">{{ memory.value }}</span>
+          <div class="my-1 h-1.5 overflow-hidden rounded-[3px] border border-line bg-bg">
             <i class="block h-full" :class="memory.ratio > 0.85 ? 'bg-warn' : 'bg-accent'" :style="{ width: `${Math.round(memory.ratio * 100)}%` }" />
           </div>
-          <span class="text-xs text-muted">{{ memory.detail }}</span>
+          <span class="text-[13.5px] text-muted">{{ memory.detail }}</span>
         </template>
-        <span v-else class="text-xs text-muted">Il nucleo non tiene il conto della memoria dei server locali.</span>
+        <span v-else class="text-[13.5px] text-muted">Arianna non tiene il conto della memoria dei server dei modelli.</span>
       </div>
-      <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Modelli locali</span>
-        <span class="font-hud text-lg leading-tight font-medium">{{ localCount.present }} di {{ localCount.total }} sul disco</span>
-        <span class="text-xs text-muted">{{ localCount.loaded === 1 ? '1 in memoria' : `${localCount.loaded} in memoria` }} · i mancanti si scaricano dalla loro scheda</span>
-        <span v-if="trash !== null" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+      <div :class="card" class="flex flex-col gap-1">
+        <span class="text-[13.5px] text-muted">Modelli sul Mac</span>
+        <span class="text-[22px] leading-tight font-semibold">{{ localCount.present }} di {{ localCount.total }} scaricati</span>
+        <span class="text-[13.5px] text-muted">
+          <template v-if="localCount.missing.length === 1">Manca {{ localCount.missing[0] }}: si scarica dalla sua scheda.</template>
+          <template v-else-if="localCount.missing.length > 1">Ne mancano {{ localCount.missing.length }}: si scaricano dalla loro scheda.</template>
+          <template v-else>{{ localCount.loaded === 1 ? '1 in memoria' : `${localCount.loaded} in memoria` }}.</template>
+        </span>
+        <span v-if="trash !== null" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-muted">
           Cestino: {{ trashText(trash) }}
-          <button v-if="trash.entries.length > 0" type="button" class="btn btn-danger px-2 py-0.5 text-xs" :disabled="actionBusy" @click="askEmptyTrash">Svuota il cestino…</button>
+          <button v-if="trash.entries.length > 0" type="button" class="btn btn-danger px-2 py-0.5 text-[13px]" :disabled="actionBusy" @click="askEmptyTrash">Svuota il cestino…</button>
         </span>
       </div>
-      <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Modelli cloud</span>
-        <span class="font-hud text-lg leading-tight font-medium">{{ cloudCount.on }} di {{ cloudCount.total }} accesi</span>
-        <span class="text-xs text-muted">
-          <template v-if="cloudCount.missing.length > 0">Non collegato: {{ cloudCount.missing.join(', ') }}. </template>La quota dell’abbonamento si misurerà qui più avanti.
+      <div :class="card" class="flex flex-col gap-1">
+        <span class="text-[13.5px] text-muted">Modelli cloud</span>
+        <span class="text-[22px] leading-tight font-semibold">{{ cloudCount.on }} di {{ cloudCount.total }} accesi</span>
+        <span class="text-[13.5px] text-muted">
+          <template v-if="cloudCount.missing.length > 0">Non collegati: {{ cloudCount.missing.join(', ') }}. </template>
+          <template v-if="cloudCount.executorOff">
+            Uno è spento in
+            <a href="/impostazioni/claude-e-codex" class="text-accent hover:underline" @click.prevent="emit('section', 'claude-e-codex')">Claude e Codex</a>.
+          </template>
+          <template v-else-if="cloudCount.missing.length === 0">Si accendono e spengono nell’elenco qui sotto.</template>
         </span>
       </div>
     </div>
 
-    <p v-if="loadError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">Non riesco a leggere i modelli: {{ loadError }}</p>
-    <p v-for="problem in catalogErrors" :key="problem" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]">
-      <span class="font-mono text-xs">{{ problem }}</span>
-    </p>
-
-    <HuggingFaceSearch @added="(id) => catalogChanged(id)" />
-
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-2" role="search">
-      <div class="inline-flex overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Dove gira">
-        <button
-          v-for="item in WHERE"
-          :key="item.id"
-          type="button"
-          class="border-line-strong px-3 py-1 text-[13px] not-first:border-l"
-          :class="filter.where === item.id ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
-          :aria-pressed="filter.where === item.id"
-          @click="filter.where = item.id"
-        >
-          {{ item.text }}
-        </button>
-      </div>
-      <select v-model="filter.provider" class="field px-2 py-1 text-[13px]" aria-label="Fornitore">
-        <option value="">Tutti i fornitori</option>
-        <option v-for="provider in providers" :key="provider" :value="provider">{{ provider }}</option>
-      </select>
-      <select v-model="filter.use" class="field px-2 py-1 text-[13px]" aria-label="Ruolo o passo">
-        <option value="">Tutti i ruoli e i passi</option>
-        <option v-for="choice in USE_CHOICES" :key="choice.value" :value="choice.value">{{ choice.text }}</option>
-      </select>
-      <label class="inline-flex items-center gap-1.5 text-[13px] text-muted"><input v-model="filter.inUse" type="checkbox" />solo in uso</label>
-      <input v-model="filter.query" type="search" class="field min-w-[160px] flex-1 px-2.5 py-1 text-[13px]" placeholder="Cerca un modello" aria-label="Cerca un modello" />
+    <div v-if="loadError !== null" role="alert" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2.5 text-[14px]">
+      <span class="min-w-[220px] flex-1">Non riesco a leggere i modelli: {{ loadError }}. Se il server dei modelli non risponde, riavvialo.</span>
+      <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="retrying" @click="retry">{{ retrying ? 'Riprovo…' : 'Riprova' }}</button>
+      <a href="/impostazioni/server-dei-modelli" class="btn px-2.5 py-1 text-[13px]" @click.prevent="emit('section', 'server-dei-modelli')">Apri Server dei modelli</a>
     </div>
+    <p v-for="problem in catalogErrors" :key="problem" role="alert" class="rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[14px]">{{ problem }}</p>
 
-    <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
-      <!-- The list -->
-      <section class="hud-card flex flex-col" aria-label="Elenco dei modelli">
-        <header class="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
-          <h2 class="hud-title flex-1">Elenco</h2>
-          <span class="text-xs text-muted">{{ countText(visible.length) }}</span>
-        </header>
-        <p v-if="overview === null && loadError === null" class="px-3.5 py-3 text-sm text-muted">Leggo i modelli…</p>
-        <p v-else-if="visible.length === 0 && entries.length > 0" class="px-3.5 py-3 text-xs text-muted">Nessun modello con questi filtri.</p>
-        <button
-          v-for="entry in visible"
-          :key="entry.key"
-          type="button"
-          class="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 border-t border-line px-3.5 py-2.5 text-left first-of-type:border-t-0 hover:bg-surface-2"
-          :class="entry.key === currentKey ? 'bg-surface-2 shadow-[inset_3px_0_0_var(--accent)]' : ''"
-          :aria-current="entry.key === currentKey ? 'true' : undefined"
-          @click="choose(entry.key)"
-        >
-          <span class="grid size-[34px] place-items-center rounded-[9px] border border-line-strong bg-surface-2 font-hud text-xs font-semibold" :class="badgeClass(entry.view)">{{ entry.badge }}</span>
-          <span class="min-w-0">
-            <!-- The whole id, wrapped: the chips sit on their own line below, so a long id is never cut or squeezed out. -->
-            <span class="block font-medium [overflow-wrap:anywhere]" :class="entry.view.locality === 'local' ? 'font-mono text-[12.5px]' : ''">
-              {{ entry.name }}<span v-if="unsaved.has(entry.key)" class="text-warn" title="Modifiche non salvate">&nbsp;<span aria-hidden="true">•</span><span class="sr-only">modifiche non salvate</span></span>
-            </span>
-            <span class="block truncate text-xs text-muted">{{ entry.sub }}</span>
-          </span>
-          <span class="col-start-2 flex flex-wrap gap-1">
-            <span class="chip" :class="TONE_CLASS[entry.state.tone]">{{ entry.state.text }}</span>
-            <span v-for="role in entry.roles" :key="role" class="chip text-accent">{{ ROLE_NAME[role].toLowerCase() }}</span>
-            <span v-if="entry.view.locality === 'local' && entry.view.lastEval !== null" class="chip" :class="TRIAL_CLASS[entry.view.lastEval.status]" title="Ultima prova">
-              prova: {{ MODEL_EVAL_STATUS_TEXT[entry.view.lastEval.status] }}
-            </span>
-          </span>
-        </button>
-      </section>
+    <!-- Who does what: roles and the model of the characters -->
+    <section :class="card" aria-labelledby="models-roles">
+      <h2 id="models-roles" class="mb-1 text-[16px] font-semibold">Chi fa cosa</h2>
+      <p class="mb-3 text-[14px] text-muted">Un compito ha un solo modello. Cambiarlo qui lo toglie a quello di prima; il nuovo si carica alla prossima richiesta.</p>
+      <div class="grid gap-x-3.5 gap-y-3 sm:grid-cols-6">
+        <div v-for="role in MODEL_ROLES" :key="role" class="grid content-start gap-1 sm:col-span-3">
+          <label :for="`models-role-${role}`" class="text-[14px] font-medium">{{ ROLE_TEXT[role].task }}</label>
+          <select :id="`models-role-${role}`" v-model="form.roles[role]" class="field min-w-0 px-2.5 py-1.5 text-[14px]">
+            <option :value="undefined">— nessuno —</option>
+            <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : ' (da scaricare)' }}</option>
+            <!-- A model of the file the catalog no longer has stays visible. -->
+            <option v-if="form.roles[role] !== undefined && !roleOptions(catalog, role).some((model) => model.id === form.roles[role])" :value="form.roles[role]">
+              {{ form.roles[role] }} (non più nel catalogo)
+            </option>
+          </select>
+          <span class="text-[12.5px] text-muted">{{ ROLE_TEXT[role].hint }}</span>
+        </div>
+        <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
+        <div class="grid content-start gap-1 sm:col-span-3">
+          <label for="models-role-sprites" class="text-[14px] font-medium">Disegna i personaggi</label>
+          <select id="models-role-sprites" v-model="form.sprites" class="field min-w-0 px-2.5 py-1.5 text-[14px]">
+            <option value="opus">Claude Opus (consigliato)</option>
+            <option value="sonnet">Claude Sonnet</option>
+            <option value="local">Il modello sul Mac</option>
+          </select>
+          <span class="text-[12.5px] text-muted">Con Claude escono nome e descrizione dell’agente, non i tuoi dati, e si usa l’abbonamento. Con il modello sul Mac non esce nulla.</span>
+        </div>
+      </div>
+    </section>
 
-      <!-- The card -->
-      <div ref="detail" class="min-w-0 scroll-mt-4" aria-live="polite">
-        <!-- A local model -->
-        <section v-if="current?.view.locality === 'local'" class="hud-card flex flex-col gap-3.5 px-4 py-4" :aria-label="`Scheda di ${current.name}`">
-          <div class="flex items-center gap-3">
-            <span class="grid size-[42px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface-2 font-hud text-sm font-semibold text-ok">{{ current.badge }}</span>
-            <div class="min-w-0">
-              <h2 class="font-mono text-[15px] font-semibold break-all">{{ current.view.id }}</h2>
-              <p class="text-[12.5px] text-muted">
-                {{ current.view.provider ?? 'Fornitore non indicato' }} · famiglia {{ current.view.family }} · runtime {{ current.view.runtime }}<template v-if="current.view.origin === 'huggingface'"> · <span class="chip text-info">da Hugging Face</span></template>
-              </p>
-            </div>
+    <!-- Every model -->
+    <section :class="card" aria-labelledby="models-all">
+      <h2 class="flex flex-wrap items-center gap-2.5 text-[16px] font-semibold">
+        <span id="models-all">Tutti i modelli</span>
+        <span class="ml-auto flex flex-wrap items-center gap-2 text-[14px] font-normal" role="search">
+          <span class="inline-flex overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Dove gira">
+            <button
+              v-for="item in WHERE"
+              :key="item.id"
+              type="button"
+              class="px-3 py-1 text-[14px]"
+              :class="filter.where === item.id ? 'bg-surface font-semibold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
+              :aria-pressed="filter.where === item.id"
+              @click="filter.where = item.id"
+            >
+              {{ item.text }}
+            </button>
+          </span>
+          <select v-model="filter.provider" class="field px-2 py-1 text-[14px]" aria-label="Fornitore">
+            <option value="">Ogni fornitore</option>
+            <option v-for="provider in providers" :key="provider" :value="provider">{{ provider }}</option>
+          </select>
+          <select v-model="filter.use" class="field px-2 py-1 text-[14px]" aria-label="Compito">
+            <option value="">Ogni compito</option>
+            <option v-for="choice in USE_CHOICES" :key="choice.value" :value="choice.value">{{ choice.text }}</option>
+          </select>
+          <label class="inline-flex items-center gap-1.5 text-muted"><input v-model="filter.inUse" type="checkbox" />solo in uso</label>
+          <input v-model="filter.query" type="search" class="field w-[200px] max-w-full px-2.5 py-1 text-[14px]" placeholder="Cerca un modello" aria-label="Cerca un modello" />
+        </span>
+      </h2>
+
+      <div ref="pair" class="mt-3 grid grid-cols-1 items-start gap-4 @4xl:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
+        <!-- The list -->
+        <div class="flex flex-col overflow-hidden rounded-xl border border-line bg-surface-2" :aria-label="`Elenco dei modelli, ${countText(visible.length)}`">
+          <p v-if="overview === null && loadError === null" class="px-3.5 py-3 text-[14px] text-muted">Leggo i modelli…</p>
+          <p v-else-if="visible.length === 0 && entries.length > 0" class="px-3.5 py-3 text-[14px] text-muted">Nessun modello con questi filtri: togline uno o svuota la ricerca.</p>
+          <div
+            v-for="entry in visible"
+            :key="entry.key"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line first-of-type:border-t-0"
+            :class="entry.key === currentKey ? 'bg-surface shadow-[inset_3px_0_0_var(--accent)]' : 'hover:bg-surface'"
+          >
+            <button type="button" class="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 py-2.5 pl-3 text-left" :aria-current="entry.key === currentKey ? 'true' : undefined" @click="choose(entry.key)">
+              <span class="grid size-[34px] place-items-center rounded-[9px] border border-line-strong bg-surface text-[12px] font-semibold" :class="badgeClass(entry.view)">{{ entry.badge }}</span>
+              <span class="min-w-0">
+                <!-- The whole name, wrapped: a long id is never cut. -->
+                <span class="block text-[14.5px] font-semibold [overflow-wrap:anywhere]">
+                  {{ entry.name }}<span v-if="unsaved.has(entry.key)" class="text-warn" title="Modifiche non salvate">&nbsp;<span aria-hidden="true">•</span><span class="sr-only">modifiche non salvate</span></span>
+                </span>
+                <span class="block text-[13px] text-muted">
+                  {{ entry.view.locality === 'local' ? 'Sul Mac' : 'Cloud' }} · <span :class="TONE_CLASS[entry.state.tone]">{{ entry.state.text }}</span
+                  ><template v-if="entry.roles.length > 0"> · {{ entry.roles.map((role) => ROLE_NAME[role].toLowerCase()).join(', ') }}</template
+                  ><template v-if="entry.view.locality === 'local' && entry.view.lastEval !== null"> · prova: {{ MODEL_EVAL_STATUS_TEXT[entry.view.lastEval.status] }}</template>
+                </span>
+              </span>
+            </button>
+            <!-- The one switch of a cloud model (D-192) -->
+            <span class="pr-3">
+              <input
+                v-if="entry.view.locality === 'cloud' && rowOf(entry.view.alias) !== undefined"
+                :checked="rowOf(entry.view.alias)?.enabled"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                :aria-label="`${entry.name} acceso`"
+                :title="rowOf(entry.view.alias)?.enabled ? 'Acceso' : 'Spento'"
+                @change="setEnabled(entry.view.alias, $event)"
+              />
+            </span>
           </div>
-          <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-2">
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Peso su disco</dt><dd class="text-[13px]">{{ sizeText(current.view.sizeBytes) }}</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">RAM minima</dt><dd class="text-[13px]">{{ current.view.ramMinGib }} GiB</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Contesto</dt><dd class="text-[13px]" :class="{ 'text-muted': current.view.contextTokens === null }">{{ contextText(current.view.contextTokens) }}</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Stato del catalogo</dt>
-              <dd><span class="chip" :class="current.view.status === 'verified' ? 'text-ok' : 'text-warn'">{{ current.view.status === 'verified' ? 'verificato' : 'sperimentale' }}</span></dd>
+        </div>
+
+        <!-- The card -->
+        <div ref="detail" class="min-w-0 scroll-mt-4" aria-live="polite">
+          <!-- A local model -->
+          <section v-if="current?.view.locality === 'local'" class="flex flex-col gap-3" :aria-label="`Scheda di ${current.name}`">
+            <div class="flex items-center gap-3">
+              <span class="grid size-[44px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface text-sm font-semibold text-ok">{{ current.badge }}</span>
+              <div class="min-w-0">
+                <h3 class="text-[18px] font-semibold [overflow-wrap:anywhere]">{{ current.name }}</h3>
+                <p class="text-[13px] text-muted">
+                  {{ current.view.provider ?? 'Fornitore non indicato' }} · sul Mac · <span class="font-mono text-[12.5px] [overflow-wrap:anywhere]">{{ current.view.id }}</span>
+                  <template v-if="current.view.origin === 'huggingface'"> · <span class="pill border-info/50 text-info">da Hugging Face</span></template>
+                </p>
+              </div>
             </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">File</dt>
-              <dd class="text-[13px]">
-                <span class="chip" :class="current.view.present ? 'text-ok' : 'text-warn'">{{ current.view.present ? 'presenti' : 'da scaricare' }}</span>
-              </dd>
-            </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">In memoria</dt>
-              <dd class="text-[13px]">
-                <template v-if="current.view.loaded.length > 0">
-                  <span v-for="place in current.view.loaded" :key="place.endpoint" class="block">
-                    <span class="chip text-ok">caricato da Arianna</span>
-                    su <span class="font-mono text-xs">{{ place.endpoint }}</span><template v-if="place.gib !== null"> · ≈ {{ place.gib }} GiB</template><template v-if="place.busy"> · in uso adesso</template>
-                  </span>
+            <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-line bg-line @2xl:grid-cols-3">
+              <div :class="fact"><dt :class="factKey">Spazio su disco</dt><dd class="text-[14.5px]">{{ sizeText(current.view.sizeBytes) }}<span v-if="!current.view.present" class="text-warn"> · da scaricare</span></dd></div>
+              <div :class="fact"><dt :class="factKey">Memoria che occupa</dt><dd class="text-[14.5px]">almeno {{ current.view.ramMinGib }} GB</dd></div>
+              <div :class="fact"><dt :class="factKey">Quanto testo ricorda</dt><dd class="text-[14.5px]" :class="{ 'text-muted': current.view.contextTokens === null }">{{ pagesText(current.view.contextTokens) }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Affidabilità</dt><dd class="text-[14.5px]" :class="current.view.status === 'verified' ? '' : 'text-warn'">{{ reliabilityText(current.view.status) }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Licenza</dt><dd class="text-[14.5px]" :class="{ 'text-muted': current.view.license === null }">{{ current.view.license ?? 'non indicata' }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Costo</dt><dd class="text-[14.5px]">nessuno, gira sul Mac</dd></div>
+            </dl>
+            <p class="text-[13.5px] text-muted">
+              <template v-if="current.view.loaded.length > 0">
+                <template v-for="(place, index) in current.view.loaded" :key="place.endpoint">
+                  <template v-if="index > 0"> · </template>In memoria su <span class="font-mono text-[12.5px]">{{ place.endpoint }}</span
+                  ><template v-if="place.gib !== null">, circa {{ place.gib }} GB</template><template v-if="place.busy">, sta lavorando adesso</template>
                 </template>
-                <span v-else class="text-muted">non caricato</span>
-              </dd>
-            </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Licenza</dt><dd class="text-[13px]" :class="{ 'text-muted': current.view.license === null }">{{ current.view.license ?? 'non indicata' }}</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Costo</dt><dd class="text-[13px]">nessuna quota: gira sul Mac</dd></div>
-          </dl>
-          <!-- Actions on the files and the memory (stage M4) -->
-          <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Azioni sul modello">
-            <h3 class="hud-title text-[10.5px]">File e memoria</h3>
-            <p v-if="!current.view.present && current.view.action?.status !== 'running'" class="text-xs text-muted">
-              I file mancano in <code class="font-mono">data/models/{{ current.view.id }}</code>: «Scarica» li prende dagli indirizzi del catalogo.<template v-if="current.view.suitedRoles.length > 0"> Si può già assegnare a un ruolo.</template>
+              </template>
+              <template v-else-if="current.view.present">Sul disco, non in memoria: si carica alla prima richiesta.</template>
+              <template v-else>I file non sono ancora sul Mac: «Scarica» li prende da internet.<template v-if="current.view.suitedRoles.length > 0"> Si può già scegliere in «Chi fa cosa».</template></template>
             </p>
+
+            <!-- Actions on the files and the memory (stage M4) and «Prova in chat» (D-142) -->
             <div v-if="current.view.action?.status === 'running'" class="flex flex-col gap-1" role="status">
-              <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-surface-2">
+              <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-bg">
                 <i class="block h-full bg-accent transition-[width]" :style="{ width: `${Math.round(progressOf(current.view.action).ratio * 100)}%` }" />
               </div>
-              <span class="text-xs text-muted">{{ progressOf(current.view.action).text }}</span>
+              <span class="text-[13px] text-muted">{{ progressOf(current.view.action).text }}</span>
             </div>
-            <p v-if="outcomeText(current.view.action) !== undefined" class="text-xs" :class="TONE_CLASS[outcomeText(current.view.action)?.tone ?? 'muted']">{{ outcomeText(current.view.action)?.text }}</p>
-            <div v-if="actionButtons(current.view, running).length > 0" class="flex flex-wrap items-center gap-2">
+            <p v-if="outcomeText(current.view.action) !== undefined" class="text-[13.5px]" :class="TONE_CLASS[outcomeText(current.view.action)?.tone ?? 'muted']">{{ outcomeText(current.view.action)?.text }}</p>
+            <div class="flex flex-wrap items-center gap-2" aria-label="Azioni sul modello">
+              <button v-if="canChatTrial(current.view)" type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="current.view.action?.status === 'running'" @click="emit('chatTrial', current.view.id)">Prova in chat</button>
               <button
                 v-for="button in actionButtons(current.view, running)"
                 :key="button.kind"
                 type="button"
-                class="btn px-3 py-1 text-[13px]"
-                :class="button.danger ? 'btn-danger' : ''"
+                class="btn px-3 py-1.5 text-[14px]"
+                :class="button.danger ? 'border-danger/50 text-danger' : ''"
                 :disabled="button.blocked !== undefined || actionBusy"
                 @click="ask(button.kind, current.view)"
               >
                 {{ button.text }}
               </button>
             </div>
-            <p v-for="reason in blockedReasons(actionButtons(current.view, running))" :key="reason" class="text-xs text-muted">{{ reason }}</p>
-            <p v-if="actionNotice !== null" class="text-xs text-ok" role="status">{{ actionNotice }}</p>
-            <!-- "Prova in chat" (D-142): an incognito conversation where only this model answers -->
-            <div v-if="canChatTrial(current.view)" class="flex flex-wrap items-center gap-2 border-t border-line pt-2">
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="current.view.action?.status === 'running'" @click="emit('chatTrial', current.view.id)">Prova in chat</button>
-              <span class="text-xs text-muted">Apre una conversazione incognita dove risponde solo questo modello, sul Mac. Si carica al primo messaggio.</span>
-            </div>
-          </div>
-          <HubEntryPanel v-if="current.view.origin === 'huggingface'" :view="current.view" :assigned="savedRoles(current.view.id)" @changed="catalogChanged()" @forgotten="catalogChanged()" />
+            <p v-if="canChatTrial(current.view)" class="-mt-1 text-[13px] text-muted">«Prova in chat» apre una conversazione in incognito dove risponde solo questo modello.</p>
+            <p v-for="reason in blockedReasons(actionButtons(current.view, running))" :key="reason" class="text-[13px] text-muted">{{ reason }}</p>
+            <p v-if="actionNotice !== null" class="text-[13.5px] text-ok" role="status">{{ actionNotice }}</p>
+            <HubEntryPanel v-if="current.view.origin === 'huggingface'" :view="current.view" :assigned="savedRoles(current.view.id)" @changed="catalogChanged()" @forgotten="catalogChanged()" />
 
-          <template v-if="current.view.strengths.length > 0">
-            <h3 class="hud-title text-[10.5px]">Punti di forza</h3>
-            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
-              <li v-for="line in current.view.strengths" :key="line">{{ line }}</li>
+            <template v-if="current.view.strengths.length > 0">
+              <h4 class="mt-1 text-[15px] font-semibold">Punti di forza</h4>
+              <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
+                <li v-for="line in current.view.strengths" :key="line">{{ line }}</li>
+              </ul>
+            </template>
+            <p v-if="current.view.notes !== null" class="text-[14px] text-muted">{{ current.view.notes }}</p>
+
+            <h4 class="mt-1 text-[15px] font-semibold">Cosa fa in Arianna</h4>
+            <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
+              <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
             </ul>
-          </template>
-          <p v-if="current.view.notes !== null" class="text-[13px] text-muted">{{ current.view.notes }}</p>
-
-          <h3 class="hud-title text-[10.5px]">Ruoli e uso in Arianna</h3>
-          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
-            <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
-          </ul>
-          <p v-else class="text-[13px] text-muted">Nessun ruolo: oggi Arianna non lo usa.</p>
-          <p class="text-xs text-muted">Dopo il salvataggio l’uso si aggiorna con i ruoli nuovi.</p>
-          <div v-if="current.view.suitedRoles.length > 0" class="flex flex-col gap-1.5">
-            <span class="text-xs text-muted">Adatto a questi ruoli (un ruolo ha un solo modello: sceglierlo qui lo toglie a quello di prima):</span>
-            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Ruoli del modello">
-              <button
-                v-for="role in current.view.suitedRoles"
-                :key="role"
-                type="button"
-                class="rounded-full border px-2.5 py-0.5 text-xs"
-                :class="holder(role) === current.view.id ? 'border-accent bg-glow text-ink' : 'border-line-strong text-muted hover:text-ink'"
-                :aria-pressed="holder(role) === current.view.id"
-                :title="holder(role) !== undefined && holder(role) !== current.view.id ? `Ora: ${holder(role)}` : undefined"
-                @click="flipRole(role, current.view.id)"
-              >
-                {{ ROLE_NAME[role] }}<template v-if="holder(role) !== undefined && holder(role) !== current.view.id"> · ora {{ holder(role) }}</template>
-              </button>
+            <p v-else class="text-[14px] text-muted">Nessun compito: oggi Arianna non lo usa.</p>
+            <div v-if="current.view.suitedRoles.length > 0" class="flex flex-col gap-1.5">
+              <span class="text-[13px] text-muted">Può fare questi compiti; sceglierne uno qui lo toglie al modello che lo ha ora:</span>
+              <div class="flex flex-wrap gap-1.5" role="group" aria-label="Compiti del modello">
+                <button
+                  v-for="role in current.view.suitedRoles"
+                  :key="role"
+                  type="button"
+                  class="rounded-full border px-2.5 py-0.5 text-[13px]"
+                  :class="holder(role) === current.view.id ? 'border-accent bg-accent/10 text-ink' : 'border-line-strong text-muted hover:text-ink'"
+                  :aria-pressed="holder(role) === current.view.id"
+                  :title="holder(role) !== undefined && holder(role) !== current.view.id ? `Ora: ${holder(role)}` : undefined"
+                  @click="flipRole(role, current.view.id)"
+                >
+                  {{ ROLE_TEXT[role].task }}<template v-if="holder(role) !== undefined && holder(role) !== current.view.id"> · ora {{ holder(role) }}</template>
+                </button>
+              </div>
             </div>
-          </div>
 
-          <!-- Trials (D-081) -->
-          <template v-if="triable !== undefined">
-            <h3 class="hud-title text-[10.5px]">Prove dell’orchestratore</h3>
-            <p class="text-xs text-muted">
-              Una prova fa girare i casi dell’orchestratore (<code class="font-mono">evals/orchestrator</code>, dati finti) su questo modello, senza cambiare quello in uso. Chiamate e task
-              hanno la precedenza. Il catalogo non viene mai modificato.
+            <!-- Trials (D-081) -->
+            <template v-if="triable !== undefined">
+              <h4 class="mt-1 text-[15px] font-semibold">Prove</h4>
+              <p class="text-[13.5px] text-muted">Una prova fa rispondere il modello a domande finte e conta quante ne azzecca. Non cambia il modello in uso; chiamate e lavori hanno la precedenza.</p>
+              <p v-if="promotionHint(trials, triable.id, triable.status)" class="text-[13.5px] text-ok">{{ promotionHint(trials, triable.id, triable.status) }}</p>
+              <p v-if="trialError !== null" role="alert" class="text-[13.5px] text-danger">{{ trialError }}</p>
+              <div v-if="trials.length > 0" class="overflow-x-auto">
+                <table class="w-full border-collapse text-[14px]">
+                  <thead>
+                    <tr class="text-left text-[13px] text-muted">
+                      <th class="border-b border-line-strong py-1.5 pr-2 font-semibold">Data</th>
+                      <th class="border-b border-line-strong px-2 py-1.5 font-semibold">Esito</th>
+                      <th class="border-b border-line-strong px-2 py-1.5 font-semibold">Risposte giuste</th>
+                      <th class="border-b border-line-strong px-2 py-1.5 font-semibold">Tempo medio</th>
+                      <th class="border-b border-line-strong py-1.5 pl-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="trial in trials" :key="trial.id" class="border-b border-line align-top">
+                      <td class="py-1.5 pr-2 whitespace-nowrap">{{ dateText(trial.requestedAt) }}</td>
+                      <td class="px-2 py-1.5">
+                        <span :class="TRIAL_CLASS[trial.status]">{{ MODEL_EVAL_STATUS_TEXT[trial.status] }}</span>
+                        <small v-if="modelEvalErrorText(trial.error) !== undefined" class="block text-[12.5px] text-muted">{{ modelEvalErrorText(trial.error) }}</small>
+                      </td>
+                      <td class="px-2 py-1.5 whitespace-nowrap tabular-nums">{{ scoreText(trial) }}</td>
+                      <td class="px-2 py-1.5 whitespace-nowrap tabular-nums">{{ latencyText(trial.latencyMedianMs) }}</td>
+                      <td class="py-1.5 pl-2 text-right">
+                        <button v-if="isOpen(trial)" type="button" class="btn px-2.5 py-0.5 text-[13px]" :disabled="trialBusy" @click="cancelTrial(trial.id)">Annulla</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else-if="trialError === null" class="text-[13.5px] text-muted">Nessuna prova finora: «Nuova prova» la fa partire.</p>
+              <p v-if="current.view.lastEval !== null && !current.view.lastEval.sameWeights" class="text-[13.5px] text-warn">L’ultima prova è stata fatta su file del modello diversi da quelli di adesso.</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="!canTry(trials, triable) || trialBusy" @click="tryModel(triable.id)">Nuova prova</button>
+                <span v-if="!triable.present" class="text-[13px] text-muted">Prima scarica i file.</span>
+                <span v-else-if="trials.some(isOpen)" class="text-[13px] text-muted">Una prova è già in corso.</span>
+              </div>
+            </template>
+
+            <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[13.5px]">{{ privacyText(current.view) }}</p>
+            <p v-if="current.view.source !== null" class="text-[12.5px] text-muted">
+              Pagina del modello:
+              <a :href="current.view.source" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 hover:text-ink hover:underline">{{ current.view.source }}<Icon name="external" :size="11" /></a>
             </p>
-            <div class="flex flex-wrap items-center gap-2">
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="!canTry(trials, triable) || trialBusy" @click="tryModel(triable.id)">Prova</button>
-              <span v-if="!triable.present" class="text-xs text-muted">Serve avere i file sul disco.</span>
-              <span v-else-if="trials.some(isOpen)" class="text-xs text-muted">Una prova è già in corso.</span>
-            </div>
-            <p v-if="promotionHint(trials, triable.id, triable.status)" class="text-xs text-ok">{{ promotionHint(trials, triable.id, triable.status) }}</p>
-            <p v-if="trialError !== null" role="alert" class="text-xs text-danger">{{ trialError }}</p>
-            <div v-if="trials.length > 0" class="overflow-x-auto">
-              <table class="w-full border-collapse text-[12.5px]">
-                <thead>
-                  <tr class="hud-title text-left">
-                    <th class="pr-2 pb-1.5 font-semibold">Data</th>
-                    <th class="px-2 pb-1.5 font-semibold">Esito</th>
-                    <th class="px-2 pb-1.5 font-semibold">Punteggio</th>
-                    <th class="px-2 pb-1.5 font-semibold">Mediana</th>
-                    <th class="px-2 pb-1.5 font-semibold">Pesi</th>
-                    <th class="pb-1.5 pl-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="trial in trials" :key="trial.id" class="border-t border-line align-top">
-                    <td class="py-1.5 pr-2 whitespace-nowrap">{{ dateText(trial.requestedAt) }}</td>
-                    <td class="px-2 py-1.5">
-                      <span :class="TRIAL_CLASS[trial.status]">{{ MODEL_EVAL_STATUS_TEXT[trial.status] }}</span>
-                      <small v-if="modelEvalErrorText(trial.error) !== undefined" class="block text-[11.5px] text-muted">{{ modelEvalErrorText(trial.error) }}</small>
-                    </td>
-                    <td class="px-2 py-1.5 whitespace-nowrap">{{ scoreText(trial) }}</td>
-                    <td class="px-2 py-1.5 whitespace-nowrap">{{ latencyText(trial.latencyMedianMs) }}</td>
-                    <td class="px-2 py-1.5 font-mono text-xs">{{ trial.weightsSha256?.slice(0, 8) ?? '—' }}</td>
-                    <td class="py-1.5 pl-2 text-right">
-                      <button v-if="isOpen(trial)" type="button" class="btn px-2.5 py-0.5 text-xs" :disabled="trialBusy" @click="cancelTrial(trial.id)">Annulla</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else-if="trialError === null" class="text-xs text-muted">Nessuna prova finora.</p>
-            <p v-if="current.view.lastEval !== null && !current.view.lastEval.sameWeights" class="text-xs text-warn">L’ultima prova è stata fatta su pesi diversi da quelli che il catalogo indica ora.</p>
-          </template>
+          </section>
 
-          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[12.5px]">{{ privacyText(current.view) }}</p>
-          <p v-if="current.view.source !== null" class="text-[11.5px] text-muted">
-            Pagina del modello:
-            <a :href="current.view.source" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 hover:text-ink hover:underline">{{ current.view.source }}<Icon name="external" :size="11" /></a>
-          </p>
-        </section>
+          <!-- A cloud model -->
+          <section v-else-if="current?.view.locality === 'cloud'" class="flex flex-col gap-3" :aria-label="`Scheda di ${current.name}`">
+            <div class="flex items-center gap-3">
+              <span class="grid size-[44px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface text-sm font-semibold" :class="badgeClass(current.view)">{{ current.badge }}</span>
+              <div class="min-w-0">
+                <h3 class="text-[18px] font-semibold">{{ current.name }}</h3>
+                <p class="text-[13px] text-muted">
+                  {{ current.provider }}<template v-if="current.view.card !== null"> · {{ current.view.card.family }}</template> · cloud, abbonamento {{ current.view.executor === 'codex' ? 'ChatGPT' : 'Claude' }}
+                </p>
+              </div>
+            </div>
+            <p v-if="cloudNotice(current.view) !== undefined" class="rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
+              {{ cloudNotice(current.view) }}
+              <a v-if="current.view.state === 'executor-off'" href="/impostazioni/claude-e-codex" class="text-accent hover:underline" @click.prevent="emit('section', 'claude-e-codex')">Apri Claude e Codex</a>
+              <template v-else-if="current.view.state === 'off'"> Si accende con l’interruttore nella sua riga dell’elenco.</template>
+            </p>
+            <p v-if="current.view.card === null" class="text-[14px] text-muted">Per questo modello non c’è ancora una scheda descrittiva.</p>
+            <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-line bg-line">
+              <div :class="fact"><dt :class="factKey">Quanto testo ricorda</dt><dd class="text-[14.5px]">{{ pagesText(currentName?.contextTokens) }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Risposta più lunga</dt><dd class="text-[14.5px]">{{ pagesText(currentName?.maxOutputTokens) }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Approvazione</dt><dd class="text-[14.5px]">{{ current.view.budgetApproval ? 'ogni passo aspetta il tuo sì' : 'non serve' }}</dd></div>
+              <div :class="fact"><dt :class="factKey">Costo</dt><dd class="text-[14.5px]">dentro l’abbonamento</dd></div>
+              <div v-if="priceText(current.view.card?.apiPrice) !== undefined" :class="fact" class="col-span-2">
+                <dt :class="factKey">Prezzo a consumo (solo per confronto)</dt>
+                <dd class="text-[14.5px]">{{ priceText(current.view.card?.apiPrice) }}<small class="block text-[12.5px] text-muted">L’abbonamento non si paga a richiesta: dice solo quanto pesa un modello rispetto a un altro.</small></dd>
+              </div>
+              <div v-if="current.view.card?.quotaRatio !== undefined" :class="fact" class="col-span-2">
+                <dt :class="factKey">Abbonamento consumato rispetto a {{ current.view.card.quotaRatio.relativeTo }}</dt>
+                <dd class="text-[14.5px]">circa {{ current.view.card.quotaRatio.times }} volte</dd>
+              </div>
+            </dl>
 
-        <!-- A cloud model -->
-        <section v-else-if="current?.view.locality === 'cloud'" class="hud-card flex flex-col gap-3.5 px-4 py-4" :aria-label="`Scheda di ${current.name}`">
-          <div class="flex items-center gap-3">
-            <span class="grid size-[42px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface-2 font-hud text-sm font-semibold" :class="badgeClass(current.view)">{{ current.badge }}</span>
-            <div class="min-w-0">
-              <h2 class="font-hud text-[17px] font-semibold tracking-[0.03em]">{{ current.name }}</h2>
-              <p class="text-[12.5px] text-muted">
-                {{ current.provider }}<template v-if="current.view.card !== null"> · {{ current.view.card.family }}</template> · esecutore <span class="font-mono">{{ current.view.executor }}</span> · alias
-                <span class="font-mono">{{ current.view.alias }}</span>
-              </p>
-            </div>
-          </div>
-          <p v-if="cloudNotice(current.view) !== undefined" class="rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[12.5px]">
-            {{ cloudNotice(current.view) }}
-            <a v-if="current.view.state === 'executor-off'" href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Apri Esecutori cloud</a>
-          </p>
-          <p v-if="current.view.card === null" class="text-[13px] text-muted">Nessuna scheda per questo modello in <code class="font-mono">config/cloud-models.catalog.yaml</code>.</p>
-          <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-2">
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Nome passato a --model</dt>
-              <dd class="text-[13px]" :class="current.view.name === null ? 'text-muted' : 'font-mono text-xs'">{{ current.view.name ?? 'il più recente (alias)' }}</dd>
-            </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Contesto · uscita massima</dt>
-              <dd class="text-[13px]">
-                {{ contextText(currentName?.contextTokens) }}<template v-if="currentName?.maxOutputTokens !== undefined"> · {{ contextText(currentName.maxOutputTokens) }}</template>
-              </dd>
-            </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Approvazione di budget</dt>
-              <dd class="text-[13px]">{{ current.view.budgetApproval ? 'sì: ogni passo aspetta il tuo sì' : 'no' }}</dd>
-            </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Costo in quota</dt>
-              <dd class="text-[13px] text-muted">non ancora misurato</dd>
-            </div>
-            <div v-if="priceText(current.view.card?.apiPrice) !== undefined" class="flex flex-col gap-0.5 bg-surface px-3 py-2 sm:col-span-2">
-              <dt class="hud-title text-[9.5px]">Prezzo dell’API (solo per confronto)</dt>
-              <dd class="text-[13px]">{{ priceText(current.view.card?.apiPrice) }}<small class="block text-[11.5px] text-muted">L’abbonamento non si paga a richiesta: dice solo quanto pesa un modello rispetto a un altro.</small></dd>
-            </div>
-            <div v-if="current.view.card?.quotaRatio !== undefined" class="flex flex-col gap-0.5 bg-surface px-3 py-2 sm:col-span-2">
-              <dt class="hud-title text-[9.5px]">Quota rispetto a {{ current.view.card.quotaRatio.relativeTo }}</dt>
-              <dd class="text-[13px]">circa {{ current.view.card.quotaRatio.times }} volte</dd>
-            </div>
-          </dl>
-
-          <template v-if="current.view.card !== null && current.view.card.names.length > 0">
-            <h3 class="hud-title text-[10.5px]">Nomi esatti</h3>
-            <ul class="flex flex-col gap-1 text-[13px]">
-              <li v-for="item in current.view.card.names" :key="item.name">
-                <span class="font-mono text-xs">{{ item.name }}</span><span v-if="item.description" class="text-muted"> — {{ item.description }}</span>
-              </li>
-            </ul>
-          </template>
-          <template v-if="current.view.card !== null && current.view.card.strengths.length > 0">
-            <h3 class="hud-title text-[10.5px]">Punti di forza</h3>
-            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
-              <li v-for="line in current.view.card.strengths" :key="line.text">{{ line.text }}</li>
-            </ul>
-          </template>
-          <p v-if="current.view.card?.notes" class="text-[13px] text-muted">{{ current.view.card.notes }}</p>
-
-          <h3 class="hud-title text-[10.5px]">Uso tipico in Arianna</h3>
-          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
-            <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
-          </ul>
-          <p v-else class="text-[13px] text-muted">Nessun passo del router lo usa.</p>
-
-          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[12.5px]">{{ privacyText(current.view) }}</p>
-          <p v-if="cardSources(current.view.card, overview?.sources ?? []).length > 0" class="text-[11.5px] text-muted">
-            Fonti della scheda, scritta a mano:
-            <template v-for="(source, index) in cardSources(current.view.card, overview?.sources ?? [])" :key="source.id">
-              <template v-if="index > 0">; </template>
-              <a :href="source.url" target="_blank" rel="noopener noreferrer" class="hover:text-ink hover:underline">{{ source.url }}</a> (letta il {{ source.read }})
+            <template v-if="current.view.card !== null && current.view.card.strengths.length > 0">
+              <h4 class="mt-1 text-[15px] font-semibold">Punti di forza</h4>
+              <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
+                <li v-for="line in current.view.card.strengths" :key="line.text">{{ line.text }}</li>
+              </ul>
             </template>
-            <template v-if="current.view.card?.terms">
-              · <a :href="current.view.card.terms" target="_blank" rel="noopener noreferrer" class="hover:text-ink hover:underline">condizioni del fornitore</a>
-            </template>
-          </p>
-          <div v-if="currentRow !== undefined" class="flex flex-wrap items-center gap-2.5 border-t border-line pt-3">
-            <label class="flex items-center gap-2 text-[13px]">
-              <input v-model="currentRow.enabled" type="checkbox" role="switch" class="switch" :aria-label="`${current.name} acceso`" />
-              {{ currentRow.enabled ? 'Acceso' : 'Spento' }}
-            </label>
-            <input
-              v-model="currentRow.name"
-              :list="`names-${current.view.alias}`"
-              class="field min-w-[180px] flex-1 px-2 py-1 font-mono text-xs"
-              :disabled="!currentRow.enabled"
-              :placeholder="current.view.executor === 'codex' ? 'il primo della scheda' : 'il più recente'"
-              :aria-label="`Nome esatto di ${current.view.alias}`"
-            />
-            <datalist :id="`names-${current.view.alias}`">
-              <option v-for="item in current.view.card?.names ?? []" :key="item.name" :value="item.name" />
-            </datalist>
-          </div>
-        </section>
-        <p v-else-if="overview !== null" class="text-sm text-muted">Scegli un modello dall’elenco.</p>
+            <p v-if="current.view.card?.notes" class="text-[14px] text-muted">{{ current.view.card.notes }}</p>
+
+            <h4 class="mt-1 text-[15px] font-semibold">Cosa fa in Arianna</h4>
+            <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
+              <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
+            </ul>
+            <p v-else class="text-[14px] text-muted">Per ora nessun lavoro lo usa.</p>
+
+            <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[13.5px]">{{ privacyText(current.view) }}</p>
+
+            <!-- The exact name of the model: rarely needed, closed -->
+            <details v-if="currentRow !== undefined" class="border-t border-line pt-2.5">
+              <summary class="cursor-pointer text-[14px] text-muted">Avanzate: versione esatta del modello</summary>
+              <div class="mt-2.5 grid content-start gap-1">
+                <label :for="`cloud-name-${current.view.alias}`" class="text-[14px] font-medium">Versione</label>
+                <input
+                  :id="`cloud-name-${current.view.alias}`"
+                  v-model="currentRow.name"
+                  :list="`names-${current.view.alias}`"
+                  class="field min-w-0 px-2.5 py-1.5 font-mono text-[12.5px]"
+                  :disabled="!currentRow.enabled"
+                  :placeholder="current.view.executor === 'codex' ? 'la prima della scheda' : 'la più recente'"
+                />
+                <datalist :id="`names-${current.view.alias}`">
+                  <option v-for="item in current.view.card?.names ?? []" :key="item.name" :value="item.name">{{ item.description }}</option>
+                </datalist>
+                <span class="text-[12.5px] text-muted">Vuoto: la più recente. Il modello con cui parte ogni agente si sceglie in
+                  <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="emit('section', 'agenti')">Agenti</a>.</span>
+              </div>
+              <ul v-if="current.view.card !== null && current.view.card.names.length > 0" class="mt-2 flex flex-col gap-1 text-[13.5px]">
+                <li v-for="item in current.view.card.names" :key="item.name">
+                  <span class="font-mono text-[12.5px]">{{ item.name }}</span><span v-if="item.description" class="text-muted"> — {{ item.description }}</span>
+                </li>
+              </ul>
+            </details>
+            <p v-if="cardSources(current.view.card, overview?.sources ?? []).length > 0" class="text-[12.5px] text-muted">
+              Fonti della scheda:
+              <template v-for="(source, index) in cardSources(current.view.card, overview?.sources ?? [])" :key="source.id">
+                <template v-if="index > 0">; </template>
+                <a :href="source.url" target="_blank" rel="noopener noreferrer" class="hover:text-ink hover:underline">{{ source.url }}</a> (letta il {{ source.read }})
+              </template>
+              <template v-if="current.view.card?.terms">
+                · <a :href="current.view.card.terms" target="_blank" rel="noopener noreferrer" class="hover:text-ink hover:underline">condizioni del fornitore</a>
+              </template>
+            </p>
+          </section>
+          <p v-else-if="overview !== null" class="text-[14px] text-muted">Scegli un modello dall’elenco.</p>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Roles and switches, compact: the same forms as the cards -->
-    <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-      <section class="hud-card flex flex-col gap-2.5 px-4 py-3.5" aria-labelledby="models-roles">
-        <h2 id="models-roles" class="hud-title">Ruoli dei modelli locali</h2>
-        <div class="flex flex-col">
-          <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1 border-t border-line py-2 first:border-t-0 first:pt-0 sm:grid-cols-[130px_minmax(0,1fr)] sm:gap-3">
-            <label :for="`models-role-${role}`" class="text-[13px] font-medium">
-              {{ ROLE_TEXT[role].title }}<small class="block text-[11.5px] font-normal text-muted">{{ ROLE_TEXT[role].hint }}</small>
-            </label>
-            <select :id="`models-role-${role}`" v-model="form.roles[role]" class="field min-w-0 px-2 py-1 text-[13px]">
-              <option :value="undefined">— nessuno —</option>
-              <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : ' (da scaricare)' }}</option>
-              <!-- A model of the file the catalog no longer has stays visible. -->
-              <option v-if="form.roles[role] !== undefined && !roleOptions(catalog, role).some((model) => model.id === form.roles[role])" :value="form.roles[role]">
-                {{ form.roles[role] }} (non nel catalogo)
-              </option>
-            </select>
-          </div>
-          <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
-          <div class="grid grid-cols-1 items-center gap-1 border-t border-line pt-2 sm:grid-cols-[130px_minmax(0,1fr)] sm:gap-3">
-            <label for="models-role-sprites" class="text-[13px] font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
-            <select id="models-role-sprites" v-model="form.sprites" class="field min-w-0 px-2 py-1 text-[13px]">
-              <option value="sonnet">Claude Sonnet</option>
-              <option value="opus">Claude Opus (predefinito)</option>
-              <option value="local">modello locale (quello dell’orchestratore)</option>
-            </select>
-          </div>
-        </div>
-        <p class="text-xs text-muted">
-          Con Claude, «Genera personaggio» manda verso il cloud, passando dal gateway, nome, descrizione e prompt dell’agente, tono e specializzazione e il tuo suggerimento (Interno), e usa la
-          tua quota; serve Claude attivo fra gli esecutori cloud. Con il modello locale non esce nulla. Cambiare modello non riavvia oMLX: lo carica per nome alla prossima richiesta.
-        </p>
-      </section>
-
-      <section class="hud-card flex flex-col gap-2.5 px-4 py-3.5" aria-labelledby="models-switches">
-        <h2 id="models-switches" class="hud-title">Modelli cloud accesi</h2>
-        <div class="flex flex-col">
-          <div v-for="row in form.cloudModels.rows" :key="row.alias" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-t border-line py-2 first:border-t-0 first:pt-0 sm:grid-cols-[auto_120px_minmax(0,1fr)]" :class="{ 'text-muted': !row.enabled }">
-            <input v-model="row.enabled" type="checkbox" role="switch" class="switch" :aria-label="`${row.alias} acceso`" />
-            <span class="text-[13px] whitespace-nowrap">{{ entries.find((entry) => entry.key === `cloud:${row.alias}`)?.name ?? row.alias }}</span>
-            <input v-model="row.name" class="field col-span-2 min-w-0 px-2 py-1 font-mono text-xs sm:col-span-1" :disabled="!row.enabled" placeholder="il più recente" :aria-label="`Nome esatto di ${row.alias}`" />
-          </div>
-        </div>
-        <p class="text-xs text-muted">
-          Un modello spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia del modello (es. <code class="font-mono">opus[1m]</code>); vuoto è il più
-          recente. Il modello con cui parte ogni agente si sceglie in
-          <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="emit('section', 'agenti')">Agenti</a>; accendere un esecutore resta in
-          <a href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Esecutori cloud</a>, con la sua conferma.
-        </p>
-      </section>
-    </div>
+    <HuggingFaceSearch @added="(id) => catalogChanged(id)" />
 
     <!-- The confirmation of an action: what happens, how much, where -->
     <div v-if="confirming" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">
-      <form class="hud-card flex max-w-lg flex-col gap-3 p-4" @submit.prevent="confirmAction">
-        <h2 id="model-action-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase break-all">{{ confirming.title }}</h2>
-        <p v-for="line in confirming.lines" :key="line" class="text-[13px]">{{ line }}</p>
-        <label v-if="confirming.typed !== undefined" class="flex flex-col gap-1 text-xs text-muted">
+      <form class="flex max-w-lg flex-col gap-3 rounded-[14px] border border-line-strong bg-surface-2 p-4" @submit.prevent="confirmAction">
+        <h2 id="model-action-title" class="text-[16px] font-semibold [overflow-wrap:anywhere]">{{ confirming.title }}</h2>
+        <p v-for="line in confirming.lines" :key="line" class="text-[14px]">{{ line }}</p>
+        <label v-if="confirming.typed !== undefined" class="flex flex-col gap-1 text-[13px] text-muted">
           Per confermare scrivi l’id del modello
-          <input v-model="typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="confirming.typed" autocomplete="off" spellcheck="false" />
+          <input v-model="typed" class="field px-2 py-1.5 font-mono text-[14px] text-ink" :placeholder="confirming.typed" autocomplete="off" spellcheck="false" />
         </label>
-        <p v-if="actionError !== null" class="text-xs text-danger" role="alert">{{ actionError }}</p>
+        <p v-if="actionError !== null" class="text-[13.5px] text-danger" role="alert">{{ actionError }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn px-2.5 py-1 text-xs" @click="closeConfirmation">Annulla</button>
-          <button type="submit" class="btn px-2.5 py-1 text-xs" :class="confirming.danger ? 'btn-danger' : 'btn-primary'" :disabled="actionBusy || !canConfirm(confirming, typed)">{{ confirming.button }}</button>
+          <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="closeConfirmation">Annulla</button>
+          <button type="submit" class="btn px-3 py-1.5 text-[14px]" :class="confirming.danger ? 'btn-danger' : 'btn-primary'" :disabled="actionBusy || !canConfirm(confirming, typed)">{{ confirming.button }}</button>
         </div>
       </form>
     </div>
 
-    <!-- One bar for roles, characters and switches -->
-    <div
-      v-if="dirty || working || savedNow || error"
-      class="sticky bottom-4 z-10 mx-auto flex max-w-full flex-wrap items-center gap-3 rounded-xl border bg-surface py-2 pr-3 pl-4 shadow-[0_10px_30px_#0006,0_0_0_4px_var(--glow)]"
-      :class="error ? 'border-danger' : 'border-accent'"
-      role="status"
-    >
-      <span class="min-w-0 text-[13px]" :class="{ 'text-danger': error }">
-        <template v-if="error">{{ error }}</template>
-        <template v-else-if="working || busy">Salvo…</template>
-        <template v-else-if="dirty">Modifiche non salvate ai modelli</template>
-        <template v-else>Salvato</template>
-      </span>
-      <template v-if="dirty">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="working || busy" @click="emit('cancel')">Annulla</button>
-        <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="working || busy" @click="saveAll">Salva</button>
-      </template>
-    </div>
+    <!-- One bar for roles, characters and switches (D-192) -->
+    <SettingsSaveBar :dirty="dirty" :count="changes" :busy="working || busy" :saved="savedNow" :error="error" @cancel="emit('cancel')" @save="saveAll" />
   </div>
 </template>

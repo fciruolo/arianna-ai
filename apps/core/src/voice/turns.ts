@@ -54,16 +54,16 @@ export interface VoicePrompt {
  * `history`, or when the window grew past the maximum, it starts again from
  * the latest messages.
  */
-export function voicePrompt(history: readonly Message[], floor: Label, anchor?: string): VoicePrompt {
+export function voicePrompt(history: readonly Message[], floor: Label, anchor?: string, system: { content: string; label: Label } = { content: VOICE_SYSTEM_PROMPT, label: 'L0' }): VoicePrompt {
   const spoken = history.filter((message) => message.role !== 'system');
   const from = anchor === undefined ? -1 : spoken.findIndex((message) => message.id === anchor);
   const kept = from !== -1 && spoken.length - from <= HISTORY_MAX_MESSAGES ? spoken.slice(from) : spoken.slice(-HISTORY_MESSAGES);
-  const label = kept.reduce<Label>((highest, message) => maxLabel(highest, message.label), floor);
+  const label = kept.reduce<Label>((highest, message) => maxLabel(highest, message.label), maxLabel(floor, system.label));
   return {
     label,
     anchor: kept[0]?.id,
     messages: [
-      { role: 'system', content: VOICE_SYSTEM_PROMPT, label: 'L0' },
+      { role: 'system', content: system.content, label: system.label },
       ...kept.map((message) => ({
         role: message.role === 'user' ? ('user' as const) : ('assistant' as const),
         content: message.body.length > HISTORY_CHARS ? `${message.body.slice(0, HISTORY_CHARS)}…` : message.body,
@@ -133,19 +133,78 @@ export type CallReadiness =
  * table written by hand must list it). It speaks with the voice of `[voice]`
  * when the tts model has it, else with the first of its own (D-067).
  */
-export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string): CallReadiness {
+export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string, voiceModel = true): CallReadiness {
   const stt = models.find((model) => model.kind === 'stt' && model.assigned && model.present);
   const tts = models.find((model) => model.kind === 'tts' && model.assigned && model.present);
   // A copied voice is a person's (D-069): never someone else's in its place.
   const fallback = tts?.family === 'qwen3-tts-base' ? undefined : tts?.voices[0];
   const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : fallback;
   const missing = [
-    ...(roles.voice === undefined || !voiceServed ? ['voice' as const] : []),
+    // An agent of a direct chat answers on its own model (D-158): the voice role is not needed then.
+    ...(voiceModel && (roles.voice === undefined || !voiceServed) ? ['voice' as const] : []),
     ...(stt === undefined ? ['stt' as const] : []),
     ...(tts === undefined || voice === undefined ? ['tts' as const] : []),
   ];
   if (stt === undefined || tts === undefined || voice === undefined || missing.length > 0) return { ready: false, missing };
   return { ready: true, stt: { id: stt.id, family: stt.family }, tts: { id: tts.id, family: tts.family }, voice };
+}
+
+/**
+ * What a local agent reads first in a call of its direct chat (D-158): our
+ * fixed frame for the spoken answer, then the instructions of its card.
+ */
+export const AGENT_VOICE_FRAME = [
+  'Sei un agente di Arianna e stai parlando al telefono con l’utente nella vostra chat diretta, senza Arianna in mezzo.',
+  'Rispondi sempre in italiano, con una o due frasi brevi e naturali: quello che scrivi viene letto ad alta voce.',
+  'Niente elenchi, niente markdown, niente emoji, niente link; i numeri scrivili come si dicono.',
+  'Non hai strumenti: se una richiesta ne ha bisogno, dillo in una frase. Non chiedere mai credenziali.',
+  'I messaggi precedenti della conversazione sono il contesto: possono venire dalla chat scritta.',
+  'Le tue istruzioni:',
+].join(' ');
+
+export function agentVoiceSystem(instructions: string): string {
+  return `${AGENT_VOICE_FRAME}\n${instructions}`;
+}
+
+/**
+ * Who answers a call (D-158): Arianna, a local agent of a direct chat on its
+ * own model, or a cloud agent (the Coder) through a local bridge.
+ */
+export type Speaker =
+  | { kind: 'arianna' }
+  | { kind: 'local'; agent: string; name: string; nameLabel: Label; model: string }
+  | { kind: 'cloud'; agent: string; name: string; nameLabel: Label };
+
+/** The Coder is "il Coder"; any other agent goes by its id, without an article. */
+function toAgent(name: string): string {
+  return name === 'Coder' ? 'al Coder' : `a ${name}`;
+}
+
+function lineOf(name: string): string {
+  return name === 'Coder' ? 'del Coder' : `di ${name}`;
+}
+
+/**
+ * A fixed greeting said by `speaker`: Arianna's as it is, an agent's with its
+ * name in place of hers (the cloud one says it passes the words on).
+ */
+export function greetingFor(text: string, speaker: Speaker): string {
+  if (speaker.kind === 'arianna') return text;
+  const rest = text.replace(/^Ciao, sono Arianna\.\s*/, '');
+  const intro = speaker.kind === 'cloud' ? `Ciao, sono la linea ${lineOf(speaker.name)}: quello che mi dici lo passo ${toAgent(speaker.name)}.` : `Ciao, sono ${speaker.name}.`;
+  return rest === '' ? intro : `${intro} ${rest}`;
+}
+
+/** The fixed texts of a call of a direct chat that differ from Arianna's (D-158). */
+export function agentCallText(name: string): { bridged: string; busy: string; stillWorking: string; taskWaiting: string; cannotRead: string; gone: string } {
+  return {
+    bridged: `Lo passo ${toAgent(name)}, ti dico quando ha finito.`,
+    busy: `${name} sta ancora lavorando alla richiesta di prima: aspetta la sua risposta, o fermalo in chat.`,
+    stillWorking: `${name} ci sta ancora lavorando: il risultato lo trovi in chat.`,
+    taskWaiting: `Per andare avanti ${name} ha bisogno di una tua risposta in chat.`,
+    cannotRead: `Questa frase ${name} non può leggerla: scrivila in chat.`,
+    gone: `${name} adesso non può rispondere: scrivigli in chat.`,
+  };
 }
 
 /** Spoken by the call itself, never by the model. */

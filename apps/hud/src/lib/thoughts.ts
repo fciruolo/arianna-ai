@@ -27,7 +27,22 @@ export interface NoteSummary {
 export interface Note extends NoteSummary {
   organizedAt: string | null;
   url: string | null;
+  /** When the link was downloaded and summarized (D-154). Optional: an older core sends none. */
+  fetchedAt?: string | null;
+  /** Why the last download failed, a code of the core (D-154). */
+  fetchFailed?: string | null;
   body: string;
+}
+
+/** "Scarica e riassumi" (D-154): a note with a link whose content is not in it yet (never downloaded, or failed). */
+export function canFetch(note: Pick<Note, 'url' | 'fetchedAt'> | null): boolean {
+  return note !== null && note.url !== null && (note.fetchedAt ?? null) === null;
+}
+
+/** A download asked from the panel is over: the note was organized again, or its outcome changed. */
+export function fetchSettled(before: Pick<Note, 'organizedAt' | 'fetchedAt' | 'fetchFailed'>, after: Pick<Note, 'organizedAt' | 'fetchedAt' | 'fetchFailed' | 'status'>): boolean {
+  if (after.status !== 'organized') return false;
+  return after.organizedAt !== before.organizedAt || (after.fetchedAt ?? null) !== (before.fetchedAt ?? null) || (after.fetchFailed ?? null) !== (before.fetchFailed ?? null);
 }
 
 export interface NoteListing {

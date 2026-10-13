@@ -1,10 +1,11 @@
 // Usage: node apps/core/src/main.ts
 // Starts the core: migrations, task worker, live feed, API, WebSocket and web chat.
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { AGENTS_DIR, loadAgents } from '@arianna/agents';
+import { AGENTS_DIR, isFinanceCard, loadAgents } from '@arianna/agents';
 import {
   catalogModelName,
   CLOUD_MODELS,
@@ -19,17 +20,25 @@ import {
   VOICE_ALIAS,
   voicePaths,
   watchConfig,
+  workParts,
   type TelegramConfig,
 } from '@arianna/config';
 import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
-import { createContext } from '@arianna/policy';
-import { createVault } from '@arianna/vault';
+import { createContext, spendAllowed } from '@arianna/policy';
+import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
-import { directPolicies } from './direct-chat.ts';
+import { directPolicies, type DirectPolicy } from './direct-chat.ts';
+import { createGodApi } from './god/api.ts';
+import { godGit } from './god/clone.ts';
+import { createGodLanding } from './god/land.ts';
+import { prepareGodClone } from './god/prepare.ts';
+import { createGodWork } from './god/work.ts';
+import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
+import { eraseConversation } from './erase.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
 import { createServiceManager } from './project-services.ts';
@@ -41,19 +50,34 @@ import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
+import { createDesignCatalog } from './design-catalog.ts';
+import { createLocalSummarizer } from './design-news.ts';
+import { createGithubClient } from './github-api.ts';
+import { createCloudText } from './cloud-text.ts';
+import { createStyleExamples } from './style-examples.ts';
+import { createSkillTranslations } from './skill-translations.ts';
+import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
+import { createImWatcher } from './im-watch.ts';
+import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
+import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
-import { delegationRoute } from './orchestrator/delegate.ts';
+import { delegationRoute, localAgentModel } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
+import { createProjectPages } from './project-knowledge.ts';
+import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { createNoteReleaser } from './note-release.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
+import { draftProjectRules } from './rules-draft.ts';
+import { NO_RULES, planRulesExport, writeRulesExport } from './rules-export.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
 import { createBotApi } from './telegram/api.ts';
@@ -84,6 +108,21 @@ function endpointPort(url: string | undefined): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+// A restart asked by GOD (D-179): the previous core must have let go of the port and the worker first.
+const restartAfter = Number(process.env.ARIANNA_RESTART_AFTER ?? '');
+delete process.env.ARIANNA_RESTART_AFTER;
+if (Number.isInteger(restartAfter) && restartAfter > 0) {
+  const gone = (): boolean => {
+    try {
+      process.kill(restartAfter, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (let waited = 0; waited < 300_000 && !gone(); waited += 200) await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
 const config = loadConfig();
@@ -329,11 +368,62 @@ try {
   if (config.cloud.executors.includes('codex')) console.error('codex off: its sandbox folders are refused (see the error above)');
 }
 const adapters = { claude: claude !== undefined, codex: codex !== undefined };
-const kb = createKb({ home: config.home, rules });
+// D-145: the knowledge of the approved projects is searched and read with kb/, on this computer only.
+// D-155: Arianna's own documents (docs/, CHANGELOG.md) too, read-only and L2 at least.
+const ariannaDocs = createAriannaDocs({ home: config.home, rules });
+const kb = createKb({
+  home: config.home,
+  rules,
+  projects: createProjectPages(() => settings.current().projects, { home: config.home, rules }),
+  arianna: ariannaDocs,
+});
+/**
+ * The gateway of a catalog of text from GitHub (D-160, D-161): only the
+ * address of the repository leaves, L0, towards the web, and the decision
+ * is spent on that exact text.
+ */
+function catalogGateway(source: string, summary: string): (repository: string) => Promise<void> {
+  return async (repository) => {
+    const decision = await passGateway(sql, [{ value: repository, label: 'L0', source }], createContext('L0'), { kind: 'web' }, { summary });
+    if (decision.decision !== 'allow') throw new Error(`${decision.rule}: ${decision.reason}`);
+    const spent = spendAllowed(decision);
+    if (spent?.target.kind !== 'web' || spent.texts[0] !== repository) throw new Error('the gateway decision cannot be spent');
+  };
+}
+// The catalog of skills (D-161): SKILL.md files of the GitHub repositories the user follows, as
+// text in data/catalogs/skills, downloaded only when the user presses the button. A skill reaches
+// an agent only when assigned in [agents.<id>] skills, as L0 data in its delivery; never Arianna,
+// never a card that closes untrusted_content.
+const skillsCatalog = createSkillsCatalog({
+  dir: join(config.paths.data, 'catalogs'),
+  gateway: catalogGateway('settings:skills-catalog', 'github.com: catalogo di skill'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  assigned: (agent) => {
+    const all = settings.current().agents;
+    return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
+  },
+  refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
+});
 const orchestrator = createOrchestrator({
   sql,
   agents,
+  // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
+  // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
+  skills: (agent, maxBytes, card) => {
+    const delivery = skillsCatalog.skillTexts(agent, card?.skills ?? [], maxBytes, card?.style ?? undefined);
+    const cardSkipped = delivery.refused !== undefined ? [...(card?.skills ?? [])] : delivery.skipped.map((item) => item.id).filter((id) => card?.skills.includes(id) === true);
+    return {
+      block: delivery.block,
+      skipped: delivery.skipped.length,
+      ...(delivery.styleSkipped === undefined ? {} : { styleSkipped: delivery.styleSkipped.slug }),
+      ...(cardSkipped.length === 0 ? {} : { cardSkipped }),
+    };
+  },
   kb,
+  // "Per il prossimo IM…" (D-167, P4b): the IM files of the approved projects, written by code on this computer.
+  ims: { projects: () => settings.current().projects, knowledge: { home: config.home, rules } },
   model: localModel,
   settings: () => settings.current(),
   rules,
@@ -386,6 +476,14 @@ const calls = createCalls({
   model: localModel,
   coreUrl: `http://${host}:${String(config.server.port)}`,
   onError: report,
+  // D-158: in a direct chat its agent answers the call, by the rules of its card.
+  agents: () => agents,
+  cloud: () => ({
+    claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+    codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+  }),
+  agentModel: (card, clearance, label) =>
+    localAgentModel({ sql, settings: () => settings.current(), model: localModel, ...(claude === undefined ? {} : { claude }), ...(codex === undefined ? {} : { codex }) }, card, clearance, label),
 });
 callActive = () => calls.active();
 const closed = await calls.closeLeftovers();
@@ -401,8 +499,12 @@ const settingsPage = createSettingsPage({
   dataDir: config.paths.data,
   running: () => settings.current(),
   agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
+  // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
+  agentSkills: () => Object.fromEntries([...agents].map(([id, agent]) => [id, skillRefusalOf(id, agent.card)])),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
+    // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.
+    settings.refresh();
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
   },
 });
@@ -489,6 +591,8 @@ const organizer = createNoteOrganizer({
       (id) => localServers.isAvailable(id),
       (id) => localServers.isSettling(id),
     ),
+  // Links of these sites downloaded and summarized (D-154), read at each note.
+  fetchSites: () => settings.current().capture.fetchSites,
   onError: report,
 });
 // "Genera personaggio" (D-123): the model of [sprites], read at each request; the brief passes the gateway.
@@ -505,10 +609,51 @@ const sprites = createSpriteGenerator({
   gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
   dataDir: config.paths.data,
 });
+// The catalog of Open Design (D-160): styles and skills as text in data/catalogs, downloaded
+// only when the user presses the button; the address of the repository passes the gateway
+// (L0, web) and is all that leaves. Nothing of the clone runs.
+const designCatalog = createDesignCatalog({
+  dir: join(config.paths.data, 'catalogs'),
+  gateway: catalogGateway('settings:design-catalog', 'github.com: catalogo di Open Design'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  // The news of Open Design (I-21, D-186): releases and comparison read from the public API of
+  // GitHub (only the name of the repository leaves, L0 through the gateway), grouped by the local
+  // model; the commits pass the gateway towards it as L0 data. Never fails the update.
+  news: {
+    get: createGithubClient(),
+    gateway: catalogGateway('settings:design-news', 'api.github.com: novità di Open Design'),
+    summarize: createLocalSummarizer({
+      model: localModel,
+      pass: async (data) => {
+        const decision = await passGateway(sql, [{ value: data, label: 'L0', source: 'design-news:github' }], createContext('L0'), { kind: 'executor', id: 'local', locality: 'local' }, { summary: 'novità di Open Design' });
+        const [text] = decision.decision === 'allow' ? decision.texts : [];
+        if (text === undefined) throw new Error('the gateway did not let the news reach the local model');
+        return text;
+      },
+    }),
+  },
+});
+// The examples of the styles and the Italian descriptions of the skills (I-20, D-185): public text, written by Sonnet
+// without tools through the gateway, only when the user asks; kept in data/catalogs and never made again for the same text.
+const askCloudText = createCloudText({ sql, claude, data: config.paths.data });
+const catalogEvent = (kind: string, payload: Record<string, string | number>): void => {
+  appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+};
+const styleExamples = createStyleExamples({
+  dir: join(config.paths.data, 'catalogs'),
+  source: { list: () => designCatalog.list(), styleText: (slug) => designCatalog.styleText(slug) },
+  ask: askCloudText,
+  onEvent: catalogEvent,
+});
+const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
-const approvedProjects = () => settings.current().projects;
+// D-145: the parts of the approved projects, read from the disk at each request: what the Coder and the tabs File, Git and Servizi work on.
+const approvedProjects = () => workParts(settings.current().projects);
+const projectContainers = () => settings.current().projects;
 // The tab Servizi of "Progetti" (D-134, tappa 2): each start and stop in the chain of events, project and service only.
 const services = createServiceManager({
   onEvent: (kind, payload) => {
@@ -517,6 +662,82 @@ const services = createServiceManager({
     });
   },
 });
+// "Scrivi il report" of an IM (D-167, P4c): Arianna on the local model or Claude
+// through the gateway, as the user picks each time; the input is built by code.
+const imReports = createImReporter({
+  projects: projectContainers,
+  env: { home: config.home, rules },
+  gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
+  claude,
+  localModel,
+  unavailable: (agent) => reportUnavailable(settings.current(), agent, claude !== undefined),
+  claudeModel: () => reportClaudeModel(settings.current()),
+  dataDir: config.paths.data,
+  onError: report,
+});
+// D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
+const directAgents = (): DirectPolicy[] =>
+  directPolicies(agents, {
+    claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+    codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+  });
+// GOD (D-127, G2-G3): the plans approved become subtasks, each in a clone of
+// its own with the direct chats of the Coder and the Reviewer; a tick moves
+// them on and starts the next ones within the quota.
+const prepareGod = prepareGodClone({ home: config.home });
+const godWork = createGodWork({
+  sql,
+  home: config.home,
+  data: config.paths.data,
+  parts: () => approvedProjects().map((project) => project.name),
+  projects: () => settings.current().projects,
+  policy: (agent) => directAgents().find((policy) => policy.agent === agent),
+  models: () => selectableModels(settings.current(), adapters).map((entry) => entry.model),
+  stopTask: (taskId) => worker.stopTask(taskId, 'god'),
+  prepareClone: prepareGod,
+  onError: report,
+});
+// «Prova», «Approva funzionalità», «Non funziona» (D-179): GOD's work in the installation, then a restart on it.
+const godLanding = createGodLanding({
+  home: config.home,
+  data: config.paths.data,
+  work: godWork,
+  git: godGit(config.home, config.paths.data),
+  development: () => app.development,
+  restart: restartCore,
+  onError: report,
+});
+/**
+ * A new core on the code now in the installation: this one stops in order
+ * (port, worker, services) and starts the new one, detached, as its last step
+ * (its log in data/logs/core.log); the new one waits for this pid to be gone.
+ */
+let restartAsked = false;
+function restartCore(): void {
+  restartAsked = true;
+  process.kill(process.pid, 'SIGTERM');
+}
+function spawnSuccessor(): void {
+  const logs = join(config.paths.data, 'logs');
+  mkdirSync(logs, { recursive: true, mode: 0o700 });
+  const log = openSync(join(logs, 'core.log'), 'a', 0o600);
+  const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+    cwd: process.cwd(),
+    env: { ...process.env, ARIANNA_RESTART_AFTER: String(process.pid) },
+    detached: true,
+    stdio: ['ignore', log, log],
+  });
+  child.unref();
+}
+// A trial of GOD left half-made by a core stopped in the middle goes back to main.
+await godLanding.recover().then(
+  (recovered) => {
+    if (recovered) console.error('GOD: a trial left half-made was undone, the installation is back on main');
+  },
+  (error: unknown) => {
+    report(error);
+  },
+);
 const server = await startApiServer({
   sql,
   live,
@@ -525,22 +746,82 @@ const server = await startApiServer({
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
+  projectContainers,
+  // The tab "Conoscenza" (D-145): kb/progetti of this ARIANNA_HOME for the projects that are one git.
+  knowledge: { home: config.home, rules },
+  // "Proponi bozza" (I-14 R2, D-175): the local model drafts the rules of a container; nothing is saved here.
+  rulesDraft: async (name) => {
+    const project = projectContainers().find((item) => item.name === name);
+    return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
+  },
+  // "Fai uscire una volta" of a Private note (I-11 P5, D-187): the hash of the master password is read from the vault at each try.
+  noteRelease: createNoteReleaser({
+    sql,
+    model: localModel,
+    projects: projectContainers,
+    knowledge: { home: config.home, rules },
+    checkPassword: async (password) => {
+      let hash: string;
+      try {
+        hash = (await createVault({ data: config.paths.data }).resolve(MASTER_PASSWORD_REF)).reveal();
+      } catch (error) {
+        // No vault, no key in it, or a vault the age key cannot open: as if no password were set.
+        if (error instanceof VaultError && ['no-vault', 'decrypt-failed', 'empty', 'sops-missing'].includes(error.code)) return 'unset';
+        throw error;
+      }
+      try {
+        return (await verifyMasterPassword(hash, password)) ? 'ok' : 'wrong';
+      } catch (error) {
+        // Something else than the line of pnpm vault:master under the key: set it again.
+        if (error instanceof RangeError) return 'unset';
+        throw error;
+      }
+    },
+  }),
+  // "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): the saved rules, in the parts of the container, on request.
+  rulesExport: {
+    plan: (name) => {
+      const project = projectContainers().find((item) => item.name === name);
+      return project === undefined ? null : (planRulesExport({ home: config.home }, project, settings.current().projectRules) ?? null);
+    },
+    write: (name, seen) => {
+      const project = projectContainers().find((item) => item.name === name);
+      return project === undefined ? NO_RULES : writeRulesExport({ home: config.home }, project, settings.current().projectRules, seen);
+    },
+  },
+  // The files attached to cards (D-152): private copies, outside git.
+  cards: { dir: join(config.home, 'data', 'cards') },
+  // The logos of the clients (D-168): private copies, outside git, shown only in the web chat.
+  clients: { dir: join(config.home, 'data', 'clients') },
   services,
+  designCatalog,
+  skillsCatalog,
+  styleExamples,
+  skillTranslations,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
   defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),
   agents: () => [...agents.keys()],
+  financeAgents: () => [...agents].filter(([, agent]) => isFinanceCard(agent.card)).map(([name]) => name),
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, voiceDirs.models, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
-  directAgents: () =>
-    directPolicies(agents, {
-      claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
-      codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
-    }),
+  directAgents,
+  // GOD (D-127): the clone of Arianna's code and GOD's conversations.
+  god: createGodApi({
+    sql,
+    home: config.home,
+    data: config.paths.data,
+    projects: () => settings.current().projects,
+    available: () => directAgents().some((policy) => policy.agent === GOD_AGENT),
+    prepare: prepareGod,
+    work: godWork,
+    landing: godLanding,
+    boot: `${String(process.pid)}-${String(Date.now())}`,
+  }),
   participantAgent: (name) => {
     const agent = agents.get(name);
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
@@ -556,13 +837,14 @@ const server = await startApiServer({
   settings: settingsPage,
   userAgents,
   sprites,
+  imReports,
   local: {
     status: () => localServers.status(),
     restart: (id) => localServers.restart(id),
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), arianna: ariannaDocs },
   modelEvals,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>
@@ -577,12 +859,14 @@ const server = await startApiServer({
   modelActions,
   huggingface,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
-  devProgress: { home: config.home },
+  devProgress: { home: config.home, news: () => designCatalog.news() },
   // "Novità": CHANGELOG.md at the root of the home, read only.
   changelog: { home: config.home },
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
   installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
+  // "Elimina" (D-157): the steps of the worker stop first, as for an incognito.
+  erase: (conversationId) => eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report }),
   incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
   onError: report,
 });
@@ -611,6 +895,8 @@ const ringer = createRinger({
   rules: () => voiceSettings().outgoing,
   voiceUp: () => voice.service.state === 'up',
   hold: (work) => voice.service.hold(work),
+  // D-158: a call of a direct chat whose agent cannot answer now is skipped, not rung.
+  check: (conversationId) => calls.check(conversationId, { answer: true }),
   // Read at each ring: [voice.push] changes without a restart.
   notify: () => {
     const pusher = voice.pusher();
@@ -650,6 +936,25 @@ const notifier = createNotifier({
 });
 const stopNotices = await live.subscribe(notifier.subscriber);
 
+// The reminders of the secretary (I-12 S2, D-149): the three moments of
+// [secretary], read at each tick (a change from the settings applies without
+// a restart), once per day and moment; started after the notifier, so that
+// a moment recovered at start-up notifies too.
+// The morning of the day before an IM also names it (D-167, P4c).
+const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, ims: { projects: projectContainers, env: { home: config.home, rules } }, onError: report });
+secretaryTicker.start();
+
+// The IM between meetings (D-167, P4b): the closing asked in the secretary
+// conversation once the meeting is over, and the items of a card in "Fatto".
+// The subtasks of GOD move on every 15 seconds (D-127).
+const godTicker = setInterval(() => {
+  godWork.tick().catch(report);
+}, 15_000);
+godTicker.unref();
+
+const imWatcher = createImWatcher({ sql, projects: projectContainers, env: { home: config.home, rules }, onError: report });
+imWatcher.start();
+
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
 // anyway: the web chat does not depend on it. Off by the user's choice (D-110,
@@ -664,6 +969,9 @@ async function shutdown(): Promise<void> {
   // The processes started from "Progetti" stop with the core (D-134 g); compose services stay with Docker.
   await services.stopAll();
   settings.close();
+  secretaryTicker.stop();
+  imWatcher.stop();
+  clearInterval(godTicker);
   incognitoWatch.stop();
   stopNotices();
   await telegram.close();
@@ -683,7 +991,10 @@ async function shutdown(): Promise<void> {
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     shutdown().then(
-      () => process.exit(0),
+      () => {
+        if (restartAsked) spawnSuccessor();
+        process.exit(0);
+      },
       (error: unknown) => {
         report(error);
         process.exit(1);

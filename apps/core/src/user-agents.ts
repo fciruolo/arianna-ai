@@ -120,6 +120,8 @@ export interface CardSummary {
   /** The label the gateway gives the prompt. */
   promptLabel: string;
   cloudMaxLabel?: string;
+  /** The user chooses where each card of the agent runs (D-159). */
+  executorChoice?: 'ask';
   executors: string[];
   tools: string[];
   trifecta: AgentCard['trifecta'];
@@ -196,6 +198,7 @@ function summary(agent: LoadedAgent): CardSummary {
     limits: { ...card.limits },
   };
   if (card.cloudMaxLabel !== undefined) result.cloudMaxLabel = card.cloudMaxLabel;
+  if (card.executorChoice === 'ask') result.executorChoice = 'ask';
   return result;
 }
 

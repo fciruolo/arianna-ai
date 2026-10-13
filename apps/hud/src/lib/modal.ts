@@ -4,8 +4,14 @@ import { onBeforeUnmount, onMounted, type Ref } from 'vue';
  * The behaviour of a modal window of the left bar (D-097), as in "Decisioni in
  * attesa" (D-091): Esc closes it before anything under it sees the key, Tab
  * stays inside, and the focus goes back where it was when it closes.
+ *
+ * `holder: true` is for a window that holds other windows and menus (the
+ * cardwall in the office, D-165): it hears the keys after everything inside
+ * it, and leaves alone a key they already took (a menu's Esc, the Tab of a
+ * card's detail), so Esc closes the innermost one first.
  */
-export function useModal(dialog: Ref<HTMLElement | null>, close: () => void, first?: Ref<HTMLElement | null>): void {
+export function useModal(dialog: Ref<HTMLElement | null>, close: () => void, first?: Ref<HTMLElement | null>, options: { holder?: boolean } = {}): void {
+  const capture = options.holder !== true;
   let opener: Element | null = null;
 
   function focusables(): HTMLElement[] {
@@ -17,9 +23,10 @@ export function useModal(dialog: Ref<HTMLElement | null>, close: () => void, fir
   }
 
   function onKey(event: KeyboardEvent): void {
+    if (!capture && event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      event.stopImmediatePropagation();
+      if (capture) event.stopImmediatePropagation();
       close();
       return;
     }
@@ -45,11 +52,11 @@ export function useModal(dialog: Ref<HTMLElement | null>, close: () => void, fir
 
   onMounted(() => {
     opener = document.activeElement;
-    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keydown', onKey, capture);
     (first?.value ?? dialog.value)?.focus();
   });
   onBeforeUnmount(() => {
-    window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('keydown', onKey, capture);
     if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
   });
 }

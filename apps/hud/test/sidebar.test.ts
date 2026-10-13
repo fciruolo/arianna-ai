@@ -18,7 +18,7 @@ import {
   textChanged,
   type SearchResult,
 } from '../src/lib/search.ts';
-import { activeText, callTarget, splitPinned } from '../src/lib/sidebar.ts';
+import { activeText, splitPinned } from '../src/lib/sidebar.ts';
 import type { Conversation } from '../src/lib/types.ts';
 
 function conversation(id: string, pinnedAt: string | null, extra: Partial<Conversation> = {}): Conversation {
@@ -59,19 +59,6 @@ test('pinned conversations come first, the latest pin on top, the others keep th
     ['a', 'c'],
   );
   assert.deepEqual(splitPinned([]), { pinned: [], others: [] });
-});
-
-test('"Chiama" calls in the open private conversation, otherwise in a new private one', () => {
-  const open = conversation('p', null);
-  assert.deepEqual(callTarget(open, true), { here: 'p' });
-  assert.equal(callTarget(open, false), 'new');
-  assert.equal(callTarget(undefined, true), 'new');
-  assert.equal(callTarget(conversation('w', null, { mode: 'work' }), true), 'new');
-  assert.equal(callTarget(conversation('x', null, { archivedAt: '2026-10-02T10:00:00.000Z' }), true), 'new');
-  assert.equal(callTarget(conversation('s', null, { origin: 'system' }), true), 'new');
-  // Never in an incognito conversation (D-136).
-  assert.equal(callTarget(conversation('i', null, { incognito: true }), true), 'new');
-  assert.deepEqual(callTarget(conversation('n', null, { incognito: false }), true), { here: 'n' });
 });
 
 test('the active agents are said in Italian', () => {

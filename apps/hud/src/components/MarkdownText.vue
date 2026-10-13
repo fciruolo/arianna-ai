@@ -4,7 +4,7 @@ import { computed, defineComponent, h, onBeforeUnmount, ref, type PropType, type
 import { copyText, COPY_FEEDBACK_MS, type ClipboardLike, type CopyResult } from '../lib/clipboard.ts';
 import { COPY_TEXT } from '../lib/italian.ts';
 import { splitWikilinks } from '../lib/graph.ts';
-import { inlineText, parseMarkdown, safeHref, type Block, type Inline } from '../lib/markdown.ts';
+import { inlineText, parseMarkdown, safeHref, type Block, type Inline, type TaskMark } from '../lib/markdown.ts';
 import Icon from './Icon.vue';
 
 /**
@@ -46,6 +46,10 @@ const CopyButton = defineComponent({
       ]);
   },
 });
+
+/** The boxes of a list of works (D-193): done ✓, moved →, dropped –; to do empty, in progress half full (style.css). */
+const TASK_GLYPH: Record<TaskMark, string> = { todo: '', doing: '', done: '✓', moved: '→', dropped: '–' };
+const TASK_TEXT: Record<TaskMark, string> = { todo: 'da fare', doing: 'in corso', done: 'fatto', moved: 'spostato', dropped: 'tolto' };
 
 /** Called with the target of a `[[wikilink]]` clicked; without it wikilinks stay plain text. */
 type Wikilink = ((target: string) => void) | undefined;
@@ -96,12 +100,24 @@ function block(node: Block, tail: VNode[], wikilink: Wikilink): VNode {
         h('pre', node.lang === null ? {} : { 'data-lang': node.lang }, [h('code', node.text), ...tail]),
         h(CopyButton, { text: node.text, lang: node.lang }),
       ]);
-    case 'list':
+    case 'list': {
+      const tasks = node.tasks;
       return h(
         node.ordered ? 'ol' : 'ul',
         node.ordered && node.start !== 1 ? { start: node.start } : {},
-        node.items.map((item, index) => h('li', blocks(item, index === node.items.length - 1 ? tail : [], wikilink))),
+        node.items.map((item, index) => {
+          const content = blocks(item, index === node.items.length - 1 ? tail : [], wikilink);
+          const task = tasks?.[index] ?? null;
+          if (task === null) return h('li', content);
+          // A box only to read (D-193): its state for screen readers, the mark for the eyes.
+          return h('li', { class: ['md-task', `md-task-${task}`] }, [
+            h('span', { class: 'md-box', 'aria-hidden': 'true' }, TASK_GLYPH[task]),
+            h('span', { class: 'sr-only' }, `${TASK_TEXT[task]}: `),
+            h('div', { class: 'md-task-text' }, content),
+          ]);
+        }),
       );
+    }
     case 'quote':
       return h('blockquote', blocks(node.blocks, tail, wikilink));
     case 'rule':

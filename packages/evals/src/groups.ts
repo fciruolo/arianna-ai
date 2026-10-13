@@ -1,34 +1,37 @@
 import { loadConfig } from '@arianna/config';
 import { createLocalModel, type LocalModel } from '@arianna/executors';
 
+import { createAnonymizeGroup } from './anonymize-group.ts';
 import { canary, matchesCanary } from './canary.ts';
 import { contract, matchesContract } from './contract.ts';
+import { createFinanceGroup, financePrompt } from './finance-group.ts';
 import { evaluateGateway } from './gateway.ts';
 import { ariannaPrompt, createOrchestratorGroup } from './orchestrator-group.ts';
 import { evaluateRouter, matchesRouterExpectation } from './router.ts';
 import type { EvalGroup } from './types.ts';
 
-/** The orchestrator on the configured local model, created at the first case. */
+let config: ReturnType<typeof loadConfig> | undefined;
+const configured = (): ReturnType<typeof loadConfig> => {
+  config ??= loadConfig();
+  return config;
+};
+
+let model: LocalModel | undefined;
+/** The configured local model, created at the first case of a group that needs it. */
+const configuredModel = (): LocalModel => {
+  if (model === undefined) {
+    const { local } = configured();
+    if (local.endpoints.length === 0) {
+      throw new Error('no [[local.endpoints]] in config/arianna.toml: install oMLX and configure it (task 1.4)');
+    }
+    model = createLocalModel({ endpoints: local.endpoints });
+  }
+  return model;
+};
+
+/** The orchestrator on the configured local model. */
 function orchestrator(): EvalGroup {
-  let config: ReturnType<typeof loadConfig> | undefined;
-  const configured = (): ReturnType<typeof loadConfig> => {
-    config ??= loadConfig();
-    return config;
-  };
-  let model: LocalModel | undefined;
-  return createOrchestratorGroup({
-    model: () => {
-      if (model === undefined) {
-        const { local } = configured();
-        if (local.endpoints.length === 0) {
-          throw new Error('no [[local.endpoints]] in config/arianna.toml: install oMLX and configure it (task 1.4)');
-        }
-        model = createLocalModel({ endpoints: local.endpoints });
-      }
-      return model;
-    },
-    prompt: () => ariannaPrompt(configured().home),
-  });
+  return createOrchestratorGroup({ model: configuredModel, prompt: () => ariannaPrompt(configured().home) });
 }
 
 /** Every group of docs/EVALS.md, with its tier and threshold. */
@@ -49,6 +52,8 @@ export const GROUPS: readonly EvalGroup[] = [
     subject: { status: 'active', evaluate: evaluateRouter },
   },
   orchestrator(),
+  createFinanceGroup({ model: configuredModel, prompt: () => financePrompt(configured().home) }),
+  createAnonymizeGroup(configuredModel),
   {
     name: 'extraction',
     tier: 'models',

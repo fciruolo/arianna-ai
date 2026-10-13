@@ -196,16 +196,16 @@ onBeforeUnmount(() => {
       cancella da qui.
     </p>
     <p v-if="base === undefined || !base.present" class="text-sm text-muted">
-      Serve il modello Qwen3-TTS Base: <code class="font-mono text-[12.5px]">pnpm arianna:models pull --trial</code>.
+      Serve il modello Qwen3-TTS Base: <code class="font-mono text-[13.5px]">pnpm arianna:models pull --trial</code>.
     </p>
     <p v-if="problem !== null" role="alert" class="text-sm text-danger">{{ problem }}</p>
 
     <ul v-if="voices.length > 0" class="flex flex-col gap-2">
       <li v-for="voice in voices" :key="voice.id" class="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2">
         <span class="font-medium">{{ voice.name }}</span>
-        <span class="font-mono text-[11px] text-muted">{{ voice.id }} · {{ secondsText(voice.seconds) }}</span>
+        <span class="font-mono text-[12.5px] text-muted">{{ voice.id }} · {{ secondsText(voice.seconds) }}</span>
         <span class="flex-1" />
-        <span v-if="heard[voice.id]?.first !== undefined" class="font-mono text-[11px] text-accent">primo suono {{ secondsText(heard[voice.id]?.first ?? 0) }}</span>
+        <span v-if="heard[voice.id]?.first !== undefined" class="font-mono text-[12.5px] text-accent">primo suono {{ secondsText(heard[voice.id]?.first ?? 0) }}</span>
         <button type="button" class="btn" :disabled="base === undefined || !base.present || speaking !== null" @click="listen(voice.id)">
           <Icon name="play" :size="16" />{{ speaking === voice.id ? 'Genero…' : 'Ascolta' }}
         </button>

@@ -8,7 +8,13 @@
  */
 export type ComposeGuard = { run: true } | { run: false; exitCode: number; message: string };
 
-export function composeGuard(gitDir: string | null, commonDir: string | null, args: readonly string[]): ComposeGuard {
+/**
+ * A clone of GOD (D-127, repos/arianna/<part>, marked in its git folder) is a
+ * full repository, not a linked worktree: there docker compose never runs,
+ * whatever the command, for the same reason.
+ */
+export function composeGuard(gitDir: string | null, commonDir: string | null, args: readonly string[], godClone = false): ComposeGuard {
+  if (godClone) return { run: false, exitCode: 1, message: `docker compose ${args[0] ?? ''}: refused in a clone of GOD (D-127); the database is the installation's` };
   // Not a repository (or no git): an installation, never a worktree.
   if (gitDir === null || commonDir === null) return { run: true };
   // In the main folder git-dir and git-common-dir are the same; in a linked worktree git-dir is .git/worktrees/<name>.

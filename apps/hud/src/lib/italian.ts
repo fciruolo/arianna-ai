@@ -18,6 +18,11 @@ const SCANNER_KIND_TEXT: Record<string, string> = {
   token: 'token o chiave di accesso',
 };
 
+/** A kind the scanner found (`iban`, `tax-code`…), in Italian. */
+export function scannerKindText(kind: string): string {
+  return SCANNER_KIND_TEXT[kind] ?? 'dati riservati';
+}
+
 const LIMIT_UNIT_TEXT: Record<string, string> = { steps: 'passi', minutes: 'minuti', euro: 'euro' };
 
 const REASONS: Record<string, string> = {
@@ -38,7 +43,30 @@ const REASONS: Record<string, string> = {
   'the local model keeps repeating the same call': 'il modello locale ripete la stessa chiamata',
   'approval needed: budget': 'serve la tua approvazione per il budget del modello',
   'approval needed: workspace': 'la cartella del progetto ha modifiche non committate: serve il tuo via libera',
+  // The secretary (D-144).
+  'the agent asked for an invalid confirmation': 'l’agente ha chiesto una conferma non valida',
+  'approval needed: commitment.add': 'aspetta la tua conferma per segnare l’impegno',
+  'approval needed: commitment.done': 'aspetta la tua conferma per segnare l’impegno come fatto',
+  'approval needed: commitment.move': 'aspetta la tua conferma per spostare l’impegno',
+  'approval needed: commitment.report': 'aspetta la tua conferma per annotare il resoconto',
+  'the secretary answers only in its conversation': 'la segretaria risponde solo nella sua conversazione',
+  'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
+  // The cardwall (D-159).
+  'approval needed: task.plan': 'aspetta che tu approvi le card del piano',
+  // The IM of a project (D-167).
+  'approval needed: im.add': 'aspetta la tua conferma per scrivere la voce nell’IM',
+  'the confirmation of the IM item is no longer readable': 'la conferma della voce dell’IM non è più leggibile',
+  'approval needed: card.executor': 'aspetta che tu scelga con chi lavora',
+  'the plan is no longer readable': 'il piano non è più leggibile',
+  'a plan is answered only in its conversation': 'un piano si approva solo nella sua conversazione',
 };
+
+/** The waits of a card of an agent (D-159): the agent's name, then why. */
+const CARD_REASONS: [RegExp, (agent: string) => string][] = [
+  [/^the user did not choose where ([a-z0-9-]+) works/, () => 'non hai scelto con chi lavora: «Riprendi» per scegliere di nuovo'],
+  [/^no way for ([a-z0-9-]+) to work on this card now$/, (agent) => `${agentTitle(agent)} non ha una strada per lavorarci ora (esecutori spenti o nessun modello locale)`],
+  [/^(claude|codex|local) can no longer take this card/, () => 'la strada scelta non è più ammessa: «Riprendi» per scegliere di nuovo'],
+];
 
 function actionName(action: string): string {
   return (ACTION_TEXT[action] ?? 'un’azione').toLowerCase();
@@ -52,6 +80,13 @@ export function reasonText(reason: string | null): string | undefined {
   if (reason === null) return undefined;
   const known = REASONS[reason];
   if (known !== undefined) return known;
+  for (const [pattern, text] of CARD_REASONS) {
+    const match = pattern.exec(reason);
+    if (match !== null) return text(match[1] ?? '');
+  }
+  // Why in the core's words stays out (never English here): the card says only who did not finish.
+  const unfinished = /^([a-z0-9-]+) could not finish the card: /.exec(reason);
+  if (unfinished !== null) return `${agentTitle(unfinished[1] ?? '')} non ha finito la card: «Riprendi» per riprovare`;
   const approval = /^approval needed: ([a-z_]+)$/.exec(reason);
   if (approval?.[1] !== undefined) return `serve la tua approvazione (${actionName(approval[1])})`;
   const limit = /^limit reached: ([\d.]+) of ([\d.]+) (steps|minutes|euro)$/.exec(reason);
@@ -111,6 +146,9 @@ const ERRORS: Record<string, string> = {
   'note not found': 'Nota non trovata: forse è stata spostata o è sopra Privato.',
   'the note is too large to read': 'La nota è troppo grande per essere letta qui.',
   'the note is already organized': 'La nota è già stata riordinata.',
+  'the note has no link': 'La nota non contiene un link da scaricare.',
+  'the link is already downloaded': 'Il contenuto del link è già nella nota.',
+  'the note cannot be organized again': 'Questa nota non si può riordinare di nuovo.',
   'notes cannot be organized now': 'Il riordino delle note non è disponibile adesso: manca il modello locale.',
   'status must be new or organized': 'Filtro di stato non valido.',
   // Trials of a model (D-081).
@@ -198,7 +236,7 @@ export function activityText(activity: Activity | SavedActivity): string {
     case 'write':
       return `Scrivo ${activity.detail}`;
     case 'card':
-      return `Creo la carta «${activity.detail}»`;
+      return `Creo la card «${activity.detail}»`;
     case 'plan':
       return `Piano: ${activity.detail}`;
     case 'error':
@@ -217,6 +255,27 @@ const TOOL_TEXT: Record<string, string> = { command: 'il terminale', file_change
 
 // `coder` when the step is handed over, `coder · claude/sonnet` when it starts.
 function delegateText(detail: string): string {
+  // `coder · skills-skipped · 2` (D-161): skills assigned that did not reach the delivery.
+  const skipped = /^(\S+) · skills-skipped · (\d+)$/.exec(detail);
+  if (skipped !== null) {
+    const [, agent = '', count = '0'] = skipped;
+    return count === '1'
+      ? `1 skill del ${agentName(agent)} non entra nella consegna (oltre il limite o non più nel catalogo)`
+      : `${count} skill del ${agentName(agent)} non entrano nella consegna (oltre il limite o non più nel catalogo)`;
+  }
+  // `coder · project-notes · 3 · 1` (D-166): notes of the project given to the run as a read-only copy, and those left local.
+  const notes = /^(\S+) · project-notes · (\d+) · (\d+)$/.exec(detail);
+  if (notes !== null) {
+    const [, agent = '', given = '0', held = '0'] = notes;
+    const read = given === '0' ? `Il ${agentName(agent)} non riceve note del progetto` : given === '1' ? `Il ${agentName(agent)} può leggere 1 nota interna del progetto` : `Il ${agentName(agent)} può leggere ${given} note interne del progetto`;
+    return held === '0' ? read : `${read}; ${held === '1' ? '1 nota resta' : `${held} note restano`} sul Mac`;
+  }
+  // `designer · style-skipped · <slug>` (D-163): the style chosen on the card did not reach the delivery.
+  const style = /^(\S+) · style-skipped · (\S+)$/.exec(detail);
+  if (style !== null) {
+    const [, agent = '', slug = ''] = style;
+    return `Lo stile «${slug}» non entra nella consegna del ${agentName(agent)} (oltre il limite o non più nel catalogo): lavora senza`;
+  }
   const started = /^(\S+) · (\w+)\/(\S+)$/.exec(detail);
   if (started === null) return `Passo delegato al ${agentName(detail)}`;
   const [, agent = '', executor = '', model = ''] = started;
@@ -238,11 +297,36 @@ function waitText(detail: string): string {
   return 'In attesa dell’esecutore';
 }
 
-const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna' };
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD', finanze: 'Finanze' };
 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
   return AGENT_TEXT[agent] ?? agent;
+}
+
+/** The agent as a title (D-158): its name with a capital initial, the id unchanged ("oroscopo" → "Oroscopo"). */
+export function agentTitle(agent: string): string {
+  const name = agentName(agent);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The descriptions of the official cards of `agents/` in Italian, for the
+ * chat (D-158): the cards keep their English text, which the router reads.
+ * Only the exact text of the card is translated: a description the user
+ * changed is shown as it is.
+ */
+const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
+  coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
+  reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
+  designer: { en: 'Designs pages and screens as self-contained HTML mockups in the project', it: 'Disegna pagine e schermate come mockup HTML autonomi nel progetto' },
+  god: { en: 'Develops Arianna from inside Arianna, in a clone of its code', it: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
+};
+
+/** The description of an agent's card as the chat shows it: the Italian text of an official card, the card's own otherwise. */
+export function agentDescription(agent: string, description: string): string {
+  const official = Object.hasOwn(OFFICIAL_DESCRIPTION, agent) ? OFFICIAL_DESCRIPTION[agent] : undefined;
+  return official !== undefined && official.en === description.trim() ? official.it : description;
 }
 
 /** The fixed name of a known agent; undefined for any other id (never the id itself). */

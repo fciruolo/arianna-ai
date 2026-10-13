@@ -20,6 +20,12 @@ export interface Conversation {
   mode: ConversationMode;
   clearance: Label;
   effectiveLabel: Label;
+  /**
+   * Has read finance data (D-183, migration 0056): the conversation with the
+   * agent of the Finances is born with it, a task that reads finance data
+   * sets it. Never false again: its tasks are born marked.
+   */
+  finance: boolean;
   workspace: string | null;
   /** The cloud model the user chose for delegated steps (router alias), work conversations only; null lets the router choose. */
   model: string | null;
@@ -50,6 +56,20 @@ export interface Conversation {
    * Chosen at creation, never changed; null elsewhere.
    */
   trialModel: string | null;
+  /**
+   * The conversation of the "Segretaria" button (I-12, D-144): private,
+   * answered by Arianna, one only, never archived; the chat opens it from its
+   * button, never from the list. Chosen at creation, never changed.
+   */
+  secretary: boolean;
+  /**
+   * When the current session of the secretary began (D-146): the last click on
+   * the "Segretaria" button. The model reads only the messages from here on.
+   * Null on every other conversation, and on the secretary's before a click.
+   */
+  secretarySessionAt: Date | null;
+  /** Where the session in force of a direct chat begins («Nuova sessione», I-20, D-185); null before the first. */
+  directSessionAt: Date | null;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -115,9 +135,9 @@ export class ChatError extends Error {
   }
 }
 
-const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
+const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.finance, c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel",
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt", c.direct_session_at AS "directSessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
@@ -125,7 +145,8 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
   CASE WHEN c.agent IS NULL THEN NULL ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
-    WHERE t.conversation_id = c.id AND d.status = 'ok' ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
+    WHERE t.conversation_id = c.id AND d.status = 'ok' AND d.created_at >= coalesce(c.direct_session_at, '-infinity'::timestamptz)
+    ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
   task_id::text AS "taskId", agent, model`;
@@ -149,7 +170,7 @@ export interface NewConversation {
    * Who answers in place of Arianna (D-111d), with what its card allows
    * (direct-chat.ts): the caller reads the card, this checks mode and project.
    */
-  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
+  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean; finance?: boolean };
   /** An incognito conversation (D-136): never with a direct agent. */
   incognito?: boolean;
   /** The local model under trial (D-142), already checked by the caller against the catalog: incognito and private only. */
@@ -187,9 +208,13 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
   if (incognito && options.agent !== undefined) throw new ChatError('invalid', 'an incognito conversation is answered by Arianna');
   // The trial chat of a local model (D-142) leaves nothing behind: incognito, private, nobody else answers.
   if (options.trialModel !== undefined && (!incognito || options.mode !== 'private')) throw new ChatError('invalid', 'a trial chat is an incognito private conversation');
+  // The agent of the Finances (D-183): private only, and marked from birth: it has read finance data (L2).
+  const finance = options.agent?.finance === true;
+  if (finance && options.mode !== 'private') throw new ChatError('invalid', `${options.agent?.name ?? ''} answers only a private conversation`);
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null})
+    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model, finance, effective_label)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null},
+      ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label)
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
@@ -246,7 +271,7 @@ export async function listConversations(
   const rows = await sql.unsafe<Conversation[]>(
     `SELECT * FROM (
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
-       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND ($2 OR c.origin = $3)
+       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND NOT c.secretary AND ($2 OR c.origin = $3)
      ) listed
      ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
@@ -304,6 +329,8 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     const conversation = await lockConversation(tx, id);
     if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (archived && conversation.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be archived');
+    // The secretary's conversation goes on in time (D-144): its button opens it, the list never shows it.
+    if (archived && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary cannot be archived');
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
@@ -323,6 +350,7 @@ export async function pinConversation(sql: Sql, id: string, pinned: boolean): Pr
     const conversation = await lockConversation(tx, id);
     if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (pinned && conversation.archivedAt !== null) throw new ChatError('archived', 'the conversation is archived: restore it to pin it');
+    if (pinned && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary has its own button');
     if ((conversation.pinnedAt !== null) !== pinned) {
       await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.pinned', label: 'L0', payload: { conversationId: id, pinned } });
@@ -455,6 +483,16 @@ export function taskTitle(body: string): string {
   return chars.length <= TITLE_LENGTH ? line : `${chars.slice(0, TITLE_LENGTH - 1).join('')}…`;
 }
 
+/** The agent of the direct chat whose messages may carry a style and skills (D-184); as DESIGNER_AGENT of cardwall.ts. */
+export const DESIGN_CHAT_AGENT = 'designer';
+
+export interface MessageOptions {
+  channel?: MessageChannel;
+  leave?: LeaveRule;
+  /** The style and skills chosen in the Studio (I-19, D-184), already checked against the catalogs. */
+  design?: { style: string | null; skills: readonly string[] };
+}
+
 /**
  * Writes the user's message and starts the task that answers it, in one
  * transaction. The message carries the conversation's clearance (the user
@@ -466,7 +504,7 @@ export async function postUserMessage(
   sql: Sql,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
+  options: MessageOptions = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   return sql.begin((tx) => writeUserMessage(tx, conversationId, body, options));
@@ -480,13 +518,13 @@ export async function writeUserMessage(
   tx: Queryable,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
+  options: MessageOptions = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
     ? (
-        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito FROM conversations
+        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean; finance: boolean }[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance FROM conversations
         WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
       )[0]
     : undefined;
@@ -498,6 +536,11 @@ export async function writeUserMessage(
     if (kinds.length > 0) {
       throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
     }
+  }
+
+  // The style and skills of the Studio (D-184): only in the direct chat with the Designer.
+  if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
+    throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
   }
 
   // The direct chat runs one Coder at a time in the project folder (D-111): the next message waits for the answer.
@@ -519,8 +562,13 @@ export async function writeUserMessage(
     assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
+  // Names of public text (D-184): the task's label stays what it is; the Designer reads them as a card's (D-163).
+  if (options.design !== undefined) {
+    await tx`UPDATE tasks SET design_style = ${options.design.style}, design_skills = ${[...options.design.skills]}::text[] WHERE id = ${task.id}`;
+  }
   // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
-  if (conversation.agent !== null) {
+  // The agent of the Finances (D-183) answers on the local model with its tools, as Arianna does: no delegation.
+  if (conversation.agent !== null && !conversation.finance) {
     await createDelegation(tx, {
       taskId: task.id,
       step: DIRECT_STEP,

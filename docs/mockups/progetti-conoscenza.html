@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Progetti, Conoscenza e Regole</title>
+<!--
+  Anteprima delle schede Conoscenza e Regole di Progetti (seguito di D-191).
+  Scelte dell'utente (2026-10-13): Conoscenza a tre colonne come una mail
+  (cartelle, elenco delle note, nota aperta); niente card; la nota si legge
+  impaginata. Regole alla larghezza della pagina (1440 px).
+  Stessi token della chat dopo D-188. File autonomo, niente rete; font letti
+  da node_modules di apps/hud con percorsi relativi. Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .explain { max-width: 1440px; margin: 0 auto; padding: 12px 16px 0; font-size: 14px; }
+  .explain p { margin: 0 0 6px; } .explain ul { margin: 0; padding-left: 20px; }
+  .page { max-width: 1440px; margin: 0 auto; padding: 16px; }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; white-space: nowrap; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.s { padding: 3px 9px; font-size: 13px; }
+  .btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+  .btn.ghost:hover { color: var(--danger); }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; outline: none; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; border: 1px solid currentColor; font: 12px/1.6 "JetBrains Mono", monospace; white-space: nowrap; }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .l1 { color: var(--ok); } .l2 { color: var(--warn); } .l3 { color: var(--danger); }
+  .pill { display: inline-flex; padding: 0 8px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+  .pill.done { color: var(--ok); border-color: currentColor; } .pill.next { color: var(--info); border-color: currentColor; }
+  .view { display: none; } .view.on { display: block; }
+
+  /* Testata e schede, come la pagina di oggi (D-191), ridotte */
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .head .av { width: 46px; height: 46px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); display: grid; place-items: center; font-weight: 600; color: var(--accent); }
+  .head h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .tabs { display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; font-size: 14.5px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+  .tabs .priv { margin-left: auto; padding-bottom: 10px; font-size: 13px; color: var(--muted); }
+
+  /* Conoscenza: tre colonne */
+  .kn { display: grid; grid-template-columns: 230px 360px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); overflow: hidden; height: 640px; }
+  .col { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .col + .col { border-left: 1px solid var(--line); }
+  .col .top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); min-height: 56px; }
+  .col .scroll { overflow: auto; flex: 1; }
+  .folders { background: var(--surface); }
+  .fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; border: 0; background: none; text-align: left; cursor: pointer; font-size: 14.5px; border-left: 3px solid transparent; }
+  .fold:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .fold.on { background: color-mix(in srgb, var(--accent) 10%, transparent); border-left-color: var(--accent); font-weight: 600; }
+  .fold .n { margin-left: auto; font-size: 13px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .fold .d { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .foot { padding: 12px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+  .list .search { display: flex; align-items: center; gap: 8px; height: 34px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 10px; color: var(--muted); flex: 1; background: var(--surface-2); }
+  .list .search input { border: 0; outline: none; background: none; width: 100%; font-size: 14px; color: var(--ink); }
+  .ghead { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; font-size: 13px; color: var(--muted); }
+  .ghead b { color: var(--ink); font-size: 14px; }
+  .ghead select { margin-left: auto; width: auto; padding: 2px 6px; font-size: 13px; }
+  .item { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; padding: 10px 14px; cursor: pointer; }
+  .item:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .item.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+  .item .r1 { display: flex; align-items: baseline; gap: 8px; }
+  .item .r1 b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .date { font-size: 12.5px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .item .ex { font-size: 13.5px; color: var(--muted); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .item .r3 { display: flex; gap: 6px; margin-top: 5px; align-items: center; }
+  .reader .top { justify-content: flex-end; }
+  .reader .top .crumbs { margin-right: auto; font-size: 13px; color: var(--muted); }
+  .doc { padding: 22px 32px 40px; max-width: 760px; }
+  .doc h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13.5px; color: var(--muted); margin-bottom: 18px; }
+  .meta dl { display: contents; } .meta dt { display: none; }
+  .doc h3 { font-size: 15.5px; margin: 20px 0 8px; font-weight: 600; }
+  .doc p { margin: 0 0 10px; }
+  .tasks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .tasks li { display: flex; gap: 10px; align-items: baseline; }
+  .box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--line-strong); flex: none; display: inline-grid; place-items: center; font-size: 11px; transform: translateY(3px); }
+  .box.x { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .box.half { border-color: var(--info); background: linear-gradient(90deg, var(--info) 50%, transparent 50%); }
+  .box.moved { border-color: var(--warn); color: var(--warn); }
+  .box.drop { border-color: var(--line-strong); color: var(--muted); }
+  .tasks li.dropped span:last-child { text-decoration: line-through; color: var(--muted); }
+  .tag { font: 12px "JetBrains Mono", monospace; color: var(--accent); }
+  .empty { display: grid; place-items: center; height: 100%; color: var(--muted); text-align: center; padding: 30px; font-size: 14px; }
+  .alert { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border-radius: 10px; border: 1px solid; font-size: 13.5px; }
+  .alert.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+  .alert.info { border-color: color-mix(in srgb, var(--info) 45%, transparent); background: color-mix(in srgb, var(--info) 8%, transparent); }
+  .form { padding: 18px 24px; display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+  .form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* Regole a tutta larghezza */
+  .rules { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  .box2 { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); padding: 16px 20px; }
+  .rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .rule:last-child { border-bottom: 0; }
+  .rh { padding: 14px 0 6px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
+  .aud { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; font-size: 13px; }
+  .aud button { border: 0; background: none; padding: 1px 10px; cursor: pointer; color: var(--muted); }
+  .aud button + button { border-left: 1px solid var(--line-strong); }
+  .aud button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+  .side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 60px; }
+  .side h4 { margin: 0 0 6px; font: 600 12px/1.2 "Chakra Petch", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .switch { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; width: 100%; }
+  .switch button { flex: 1; border: 0; background: var(--surface-2); padding: 6px; cursor: pointer; color: var(--muted); font-size: 14px; }
+  .switch button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+  .switch button + button { border-left: 1px solid var(--line-strong); }
+  code { font-family: "JetBrains Mono", monospace; font-size: 13px; }
+
+  @media (max-width: 1100px) {
+    .kn { grid-template-columns: 200px minmax(0, 1fr); }
+    .kn .reader { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+    .kn { height: auto; } .col .scroll { max-height: 520px; }
+    .rules { grid-template-columns: 1fr; } .side { position: static; }
+  }
+  @media (max-width: 700px) {
+    .kn { grid-template-columns: 1fr; }
+    .kn .col + .col { border-left: 0; border-top: 1px solid var(--line); }
+    .folders .scroll { display: flex; overflow-x: auto; max-height: none; }
+    .folders .fold { border-left: 0; border-bottom: 3px solid transparent; white-space: nowrap; width: auto; }
+    .folders .fold.on { border-bottom-color: var(--accent); }
+    .folders .foot { display: none; }
+    .grid2 { grid-template-columns: 1fr; }
+    .doc { padding: 18px 16px 30px; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Anteprima · Progetti</b>
+  <span class="seg" role="group" aria-label="Scheda"><button aria-pressed="true" data-v="kn">Conoscenza</button><button aria-pressed="false" data-v="rules">Regole</button></span>
+  <span class="seg" role="group" aria-label="Stato della colonna destra" id="states"><button aria-pressed="true" data-s="read">Nota aperta</button><button aria-pressed="false" data-s="none">Nessuna nota</button><button aria-pressed="false" data-s="new">+ Nota</button></span>
+  <span class="seg" role="group" aria-label="Tema"><button aria-pressed="true" data-t="light">Chiaro</button><button aria-pressed="false" data-t="dark">Scuro</button></span>
+  <span>Restringi la finestra per vedere il telefono.</span>
+</div>
+
+<div class="explain" id="explain"></div>
+
+<div class="page">
+  <div class="head">
+    <span class="av">PT</span>
+    <div><h1>progetto-test</h1><span class="small muted">Pasticceria Finta Rossi Srl · 2 parti · IM ogni giovedì alle 10:00</span></div>
+  </div>
+  <div class="tabs">
+    <button>File</button><button>Git</button><button>Servizi</button>
+    <button data-tab="kn" class="on">Conoscenza</button><button>IM</button><button data-tab="rules">Regole</button>
+    <span class="priv" id="priv">🔒 Solo su questo computer: il Coder non vede queste cartelle</span>
+  </div>
+
+  <!-- CONOSCENZA -->
+  <section class="view on" id="v-kn">
+    <div class="kn">
+      <nav class="col folders" aria-label="Cartelle">
+        <div class="top"><b style="font-size:15px">Cartelle</b><button class="btn p s" style="margin-left:auto" data-go="new">＋ Nota</button></div>
+        <div class="scroll" id="folders"></div>
+        <div class="foot">
+          <span>In <span class="mono">repos/progetto-test</span>, accanto alle parti di codice.</span>
+          <span>Una nota resta almeno al livello della sua cartella: l'intestazione può alzarlo, mai abbassarlo.</span>
+        </div>
+      </nav>
+      <div class="col list" aria-label="Note">
+        <div class="top"><label class="search"><span>⌕</span><input placeholder="Cerca fra le note" aria-label="Cerca fra le note"></label></div>
+        <div class="scroll" id="list"></div>
+      </div>
+      <article class="col reader" id="reader"></article>
+    </div>
+  </section>
+
+  <!-- REGOLE -->
+  <section class="view" id="v-rules">
+    <div class="rules">
+      <div class="box2">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><h2 style="margin:0;font-size:16px;font-weight:600;margin-right:auto">Regole per Claude Code e Codex</h2><button class="btn s">✎ Modifica come testo</button></div>
+        <p class="muted small" style="margin:0 0 4px">Ogni regola va a tutti e due o solo a uno: lo scegli accanto alla regola.</p>
+        <div class="rh">Comandi</div>
+        <div class="rule"><span>Usa <code>pnpm</code>, mai <code>npm</code> né <code>yarn</code></span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+        <div class="rule"><span>Prima di finire esegui <code>pnpm test</code> e <code>pnpm lint</code></span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+        <div class="rh">Codice</div>
+        <div class="rule"><span>TypeScript strict; niente <code>any</code></span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+        <div class="rule"><span>Componenti Vue con <code>&lt;script setup&gt;</code></span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+        <div class="rule"><span>Non toccare <code>public/</code></span><span class="aud"><button>Entrambi</button><button>Solo Claude Code</button><button class="on">Solo Codex</button></span></div>
+        <div class="rh">Lavoro</div>
+        <div class="rule"><span>Nessun commit: il commit lo fa l'utente</span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+        <div class="rule"><span>Niente tracce di IA nei messaggi e nei commenti</span><span class="aud"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+      </div>
+      <aside class="side">
+        <div class="box2">
+          <h4>Quali regole</h4>
+          <div class="switch"><button>Modello comune</button><button class="on">Regole proprie</button></div>
+          <p class="small muted" style="margin:8px 0 0">Partono da una copia del modello comune; vuote = nessuna regola.</p>
+        </div>
+        <div class="box2">
+          <h4>Bozza</h4>
+          <p class="small" style="margin:0 0 8px">Arianna può proporre regole guardando linguaggi, gestore di pacchetti e file di stile delle parti.</p>
+          <button class="btn s">Proponi bozza</button>
+        </div>
+        <div class="box2">
+          <h4>Esporta</h4>
+          <p class="small" style="margin:0 0 8px">Scrive le regole salvate in <code>CLAUDE.md</code> e <code>AGENTS.md</code> delle parti, dopo un'anteprima. Il commit lo fai tu.</p>
+          <button class="btn s">Esporta in CLAUDE.md e AGENTS.md…</button>
+        </div>
+        <ul class="small muted" style="margin:0;padding-left:18px">
+          <li>Il testo va al cloud come <b>Interno</b>, dal gateway: niente nomi di clienti, importi o password (il salvataggio li rifiuta).</li>
+          <li>Valgono dalla prossima conversazione con il Coder.</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+</div>
+
+<script>
+  const NOTES = [
+    { f: 'IM', t: 'IM-34', d: '22 ott', s: 'previsto', l: 'l1', ex: 'Lavori: Pagamento con carta — Parte 3; Fatture.' },
+    { f: 'IM', t: 'IM-33', d: '15 ott', s: 'previsto', l: 'l1', ex: 'Lavori: Pagamento con carta — Parte 2; Esportazione degli ordini in CSV; Fatture.' },
+    { f: 'IM', t: 'IM-32', d: '8 ott', s: 'chiuso', l: 'l1', ex: 'Lavori: Pagamento con carta — Parte 1 (fatto); filtro per anno dei contratti (fatto); CSV spostato al prossimo.' },
+    { f: 'IM', t: 'Riunione di avvio', d: '1 ott', l: 'l1', ex: 'Presenti Mario Finto e Anna Prova. Si parte dal pannello di amministrazione.' },
+    { f: 'IM', t: 'calendario', d: '1 ott', l: 'l1', ex: 'IM ogni giovedì alle 10:00, fino al 18 dicembre.' },
+    { f: 'Workplan', t: 'Piano di lavoro', d: '30 set', l: 'l1', ex: 'Milestone finte: pannello di amministrazione a maggio, portale clienti a giugno.' },
+    { f: 'Workplan', t: 'Compensi', d: '30 set', l: 'l2', up: true, ex: '450 € a IM, fatturati a fine mese.' },
+    { f: 'Workplan', t: 'Settimana 2026-W41', d: '11 ott', l: 'l1', ex: 'Riepilogo scritto da Arianna: 2 IM, 3 lavori chiusi, 1 spostato.' },
+    { f: 'Verbali', t: 'Verbale uno', d: '9 ott', l: 'l2', ex: 'Riunione finta del lunedì.' },
+    { f: 'documenti', t: 'Contratto', d: '28 set', l: 'l2', ex: 'Contratto inventato con Rossi Srl: durata dodici mesi.' },
+  ];
+  const FOLDERS = [
+    { n: 'IM', l: 'l1', lt: 'Interno' }, { n: 'Workplan', l: 'l1', lt: 'Interno' },
+    { n: 'Verbali', l: 'l2', lt: 'Privato' }, { n: 'documenti', l: 'l2', lt: 'Privato' },
+  ];
+  const LT = { l1: 'Interno', l2: 'Privato', l3: 'Segreto' };
+  let folder = 'IM', open = 'IM-32', state = 'read';
+
+  const chip = (l) => `<span class="chip ${l}">${LT[l]}</span>`;
+  const stat = (s) => s ? `<span class="pill ${s === 'chiuso' ? 'done' : 'next'}">${s}</span>` : '';
+
+  function renderFolders() {
+    const all = `<button class="fold ${folder === '*' ? 'on' : ''}" data-f="*">Tutte le note<span class="n">${NOTES.length}</span></button>`;
+    document.getElementById('folders').innerHTML = all + FOLDERS.map((f) =>
+      `<button class="fold ${folder === f.n ? 'on' : ''}" data-f="${f.n}"><span class="d ${f.l}" title="${f.lt}"></span>${f.n}<span class="n">${NOTES.filter((n) => n.f === f.n).length}</span></button>`).join('');
+  }
+  function renderList() {
+    const shown = folder === '*' ? FOLDERS.map((f) => f.n) : [folder];
+    document.getElementById('list').innerHTML = shown.map((name) => {
+      const f = FOLDERS.find((x) => x.n === name);
+      const notes = NOTES.filter((n) => n.f === name);
+      const head = `<div class="ghead"><b>${name}</b>${notes.length} note
+        <select class="field" aria-label="Etichetta della cartella ${name}" title="Etichetta della cartella: cambiarla chiede conferma">
+        ${['Pubblico', 'Interno', 'Privato', 'Segreto'].map((x) => `<option ${x === f.lt ? 'selected' : ''}>${x}</option>`).join('')}</select></div>`;
+      return head + notes.map((n) => `<button class="item ${open === n.t && state === 'read' ? 'on' : ''}" data-n="${n.t}">
+        <span class="r1"><b>${n.t}</b><span class="date">${n.d}</span></span>
+        <span class="ex">${n.ex}</span>
+        ${n.s || n.up ? `<span class="r3">${stat(n.s)}${n.up ? chip(n.l) + '<span class="small muted">alzata dall\'intestazione</span>' : ''}</span>` : ''}
+      </button>`).join('');
+    }).join('');
+  }
+  function renderReader() {
+    const r = document.getElementById('reader');
+    if (state === 'none') {
+      r.innerHTML = `<div class="empty"><div><div style="font-size:28px">☰</div>Scegli una nota a sinistra per leggerla.<br><span class="small">IM · 5 note</span></div></div>`;
+      return;
+    }
+    if (state === 'new') {
+      r.innerHTML = `<div class="top"><span class="crumbs">Nota nuova</span><button class="btn s" data-go="read">Annulla</button></div>
+      <form class="form" onsubmit="return false">
+        <div class="grid2">
+          <label>Cartella<select class="field"><option>IM</option><option>Workplan</option><option>Verbali</option><option>documenti</option><option>Nuova cartella…</option></select></label>
+          <label>Etichetta<select class="field"><option>Interno · come la cartella</option><option>Privato</option><option>Segreto</option></select></label>
+        </div>
+        <label>Titolo<input class="field" placeholder="Per esempio: Milestone di maggio"></label>
+        <label>Testo<textarea class="field" rows="10" placeholder="Quello che Arianna deve sapere di questo progetto"></textarea></label>
+        <div class="alert info"><span>ⓘ</span><span>Si salverà come <span class="chip l1">Interno</span> in <span class="mono">repos/progetto-test/IM</span>. L'etichetta si può alzare, non scendere sotto quella della cartella.</span></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" data-go="read">Annulla</button><button class="btn p">Salva la nota</button></div>
+      </form>`;
+      return;
+    }
+    r.innerHTML = `<div class="top"><span class="crumbs">IM › <span class="mono">IM-32.md</span></span>
+        <button class="btn s">✎ Modifica</button><button class="btn ghost s" title="Elimina per sempre">🗑</button><button class="btn ghost s" title="Chiudi" data-go="none">✕</button></div>
+      <div class="scroll"><div class="doc">
+        <h2>IM-32 · giovedì 8 ottobre 2026, 10:00</h2>
+        <div class="meta">${chip('l1')}<span>IM n. 32</span><span>8 ott 2026, 10:00</span>${stat('chiuso')}</div>
+        <h3>Lavori</h3>
+        <ul class="tasks">
+          <li><span class="box x">✓</span><span>Pagamento con carta — Parte 1</span></li>
+          <li><span class="box x">✓</span><span>Pagina dei contratti: filtro per anno</span></li>
+          <li><span class="box moved" title="Spostato al prossimo IM">→</span><span>Esportazione degli ordini in CSV <span class="small muted">· spostato al prossimo IM</span></span></li>
+          <li class="dropped"><span class="box drop" title="Tolto">–</span><span>Tema scuro dell'area riservata</span></li>
+        </ul>
+        <h3>Report</h3>
+        <p>Il pagamento con carta funziona in prova; manca la ricevuta via email. Il cliente chiede di vedere i contratti anche per mese.</p>
+        <h3>Note</h3>
+        <p class="muted">Nessuna nota.</p>
+      </div></div>`;
+  }
+  const EXPLAIN = {
+    kn: `<p><b>Conoscenza a tre colonne, come una mail.</b> Prova: clicca le cartelle e le note, poi «+ Nota» e «Nessuna nota» in alto.</p><ul>
+      <li><b>Cartelle</b> a sinistra, con quante note hanno e un pallino del colore dell'etichetta; «Tutte le note» le mostra tutte, raggruppate. Il select dell'etichetta della cartella sta sulla riga del gruppo, al centro (cambiarla chiede conferma come oggi).</li>
+      <li><b>Note in righe</b> al posto delle card: titolo, data, la prima riga del testo e, per gli IM, lo stato (previsto, chiuso). L'etichetta compare sulla riga solo se la nota è più alta della sua cartella (esempio: «Compensi» Privato dentro Workplan Interno). Le note più recenti in alto.</li>
+      <li><b>Nota aperta a destra</b>, senza spingere giù l'elenco: titolo, etichetta e i dati dell'intestazione in una riga leggibile (IM n. 32, data, stato) al posto di «im: 32 / data: … / stato: …»; le liste di lavori come caselle vere (fatto ✓, spostato →, tolto barrato). «Modifica», «Fai uscire una volta» (solo note Private) ed elimina restano nella barra della nota.</li>
+      <li><b>«+ Nota»</b> apre il modulo nella colonna destra; sotto i 1100 px la nota va sotto l'elenco, al telefono le cartelle diventano una fila che scorre.</li></ul>`,
+    rules: `<p><b>Regole alla larghezza della pagina.</b> Oggi la scheda è stretta a 980 px mentre le altre arrivano a 1440.</p><ul>
+      <li>Le regole occupano lo spazio largo, con il selettore «Entrambi / Solo Claude Code / Solo Codex» accanto a ognuna come oggi.</li>
+      <li>A destra una colonna con «Modello comune / Regole proprie», «Proponi bozza», «Esporta in CLAUDE.md e AGENTS.md…» e le due note sul cloud, che oggi stanno sopra e sotto l'elenco. La colonna resta ferma mentre scorri.</li>
+      <li>Sotto i 1100 px la colonna va sotto le regole. Barra di salvataggio, anteprima dell'esportazione e testo grezzo restano come oggi.</li></ul>`,
+  };
+  const PRIV = { kn: '🔒 Solo su questo computer: il Coder non vede queste cartelle', rules: '↗ Vanno a Claude e Codex come Interno' };
+
+  function show(v) {
+    document.querySelectorAll('.view').forEach((x) => x.classList.toggle('on', x.id === 'v-' + v));
+    document.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === v));
+    document.getElementById('states').style.display = v === 'kn' ? '' : 'none';
+    document.getElementById('explain').innerHTML = EXPLAIN[v];
+    document.getElementById('priv').textContent = PRIV[v];
+  }
+  function setState(s) {
+    state = s;
+    document.querySelectorAll('[data-s]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.s === s));
+    renderList(); renderReader();
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.v) show(t.dataset.v);
+    if (t.dataset.tab) show(t.dataset.tab);
+    if (t.dataset.s) setState(t.dataset.s);
+    if (t.dataset.go) setState(t.dataset.go);
+    if (t.dataset.t) { document.documentElement.dataset.theme = t.dataset.t; document.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-pressed', b === t)); }
+    if (t.dataset.f) { folder = t.dataset.f; renderFolders(); renderList(); }
+    if (t.dataset.n) { open = t.dataset.n; setState('read'); }
+    if (t.closest('.aud')) { t.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t)); }
+    if (t.closest('.switch')) { t.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t)); }
+  });
+  renderFolders(); renderList(); renderReader(); show('kn');
+</script>
+</body>
+</html>

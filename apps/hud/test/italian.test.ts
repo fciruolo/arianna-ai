@@ -23,6 +23,11 @@ test('the reasons the core writes become Italian', () => {
   assert.equal(reasonText('limit reached: 30 of 30 steps'), 'limite raggiunto: 30 su 30 passi');
   assert.equal(reasonText('limit reached: 0.75 of 0.5 euro'), 'limite raggiunto: 0,75 su 0,5 euro');
   assert.equal(reasonText('limit reached: 20 minutes'), 'limite raggiunto: 20 minuti');
+  // The cardwall (D-159).
+  assert.equal(reasonText('approval needed: card.executor'), 'aspetta che tu scelga con chi lavora');
+  assert.equal(reasonText('the user did not choose where designer works: resume the card to choose again'), 'non hai scelto con chi lavora: «Riprendi» per scegliere di nuovo');
+  assert.equal(reasonText('designer could not finish the card: the gateway refused the brief (secret)'), 'Designer non ha finito la card: «Riprendi» per riprovare');
+  assert.equal(reasonText('no way for coder to work on this card now'), 'Coder non ha una strada per lavorarci ora (esecutori spenti o nessun modello locale)');
 });
 
 test('a reason the page does not know is not shown in English', () => {
@@ -82,6 +87,13 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   const line = (kind: 'delegate' | 'tool' | 'wait' | 'error', detail: string) => activityText({ conversationId: 'c', taskId: 't', step: 2, kind, detail });
   assert.equal(line('delegate', 'coder'), 'Passo delegato al Coder');
   assert.equal(line('delegate', 'coder · claude/sonnet'), 'Il Coder lavora su Claude Code (Claude Sonnet)');
+  assert.equal(line('delegate', 'coder · skills-skipped · 2'), '2 skill del Coder non entrano nella consegna (oltre il limite o non più nel catalogo)');
+  assert.equal(line('delegate', 'coder · skills-skipped · 1'), '1 skill del Coder non entra nella consegna (oltre il limite o non più nel catalogo)');
+  // The notes of the project given to a run, and those left on the Mac (D-166).
+  assert.equal(line('delegate', 'coder · project-notes · 3 · 0'), 'Il Coder può leggere 3 note interne del progetto');
+  assert.equal(line('delegate', 'coder · project-notes · 1 · 2'), 'Il Coder può leggere 1 nota interna del progetto; 2 note restano sul Mac');
+  assert.equal(line('delegate', 'coder · project-notes · 0 · 1'), 'Il Coder non riceve note del progetto; 1 nota resta sul Mac');
+  assert.equal(line('delegate', 'designer · style-skipped · sabbia'), 'Lo stile «sabbia» non entra nella consegna del Designer (oltre il limite o non più nel catalogo): lavora senza');
   assert.equal(line('tool', 'Edit'), 'Il Coder usa Edit');
   // Codex names no tool, only the kind (D-140).
   assert.equal(line('tool', 'command'), 'Il Coder usa il terminale');

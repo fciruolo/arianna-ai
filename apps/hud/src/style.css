@@ -10,6 +10,40 @@
 @import "@fontsource/jetbrains-mono/latin-500.css";
 
 /*
+ * Laptop and big screen (D-150). `3xl` (100rem, 1600 px; PANEL_COLUMN_PX in
+ * lib/layout.ts) is where the right bar becomes a column: below it, as on a
+ * MacBook Pro 14" (about 1512 px), it is a drawer that starts closed. `short`
+ * is a window from md up lower than 56rem (896 px; the phone keeps its own
+ * rules): fewer vertical spacings, so the
+ * messages keep their room. Above both the layout stays the big screen's one.
+ */
+@theme {
+  --breakpoint-3xl: 100rem;
+  /* Readability (2026-10-12): the smallest Tailwind sizes one step up, as the arbitrary ones. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+}
+@custom-variant short (@media (min-width: 48rem) and (max-height: 56rem));
+/*
+ * `dark:` follows the theme the chat shows, as the tokens below do (D-158):
+ * the user's choice (data-theme on <html>) first, the system's otherwise.
+ * Tailwind's default reads the system only, so a light choice on a dark Mac
+ * kept the dark colors of those utilities.
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media not (prefers-color-scheme: light) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/*
  * Identity of the web chat (D-060, docs/mockups/arianna-hud.html): the OpenDots
  * layout fused with a Jarvis-style HUD. Dark first; light and warm when the
  * system is light, unless the user chose a theme (data-theme on <html>).
@@ -21,7 +55,7 @@
   --line: #1e363c;
   --line-strong: #2b4c53;
   --ink: #dcebe8;
-  --muted: #7f9b98;
+  --muted: #93aeaa;
   --accent: #4fd1c1;
   --accent-ink: #062a26;
   --bubble: #2a8f84;
@@ -35,7 +69,6 @@
   --l1: #4fd1c1;
   --l2: #f2b34b;
   --l3: #e2614b;
-  --grid: #4fd1c10a;
   /* Folders of the knowledge graph (D-087). */
   --graph-1: #4fd1c1;
   --graph-2: #7cc796;
@@ -65,7 +98,7 @@
     --line: #e3e4df;
     --line-strong: #cfd5d0;
     --ink: #24302e;
-    --muted: #687673;
+    --muted: #56635f;
     --accent: #23887c;
     --accent-ink: #ffffff;
     --bubble: #3d7e75;
@@ -79,7 +112,6 @@
     --l1: #23887c;
     --l2: #b9801c;
     --l3: #c24a35;
-    --grid: #23887c0d;
     --graph-1: #1f8a7d;
     --graph-2: #3f8a56;
     --graph-3: #3a6cb0;
@@ -103,7 +135,7 @@
   --line: #e3e4df;
   --line-strong: #cfd5d0;
   --ink: #24302e;
-  --muted: #687673;
+  --muted: #56635f;
   --accent: #23887c;
   --accent-ink: #ffffff;
   --bubble: #3d7e75;
@@ -117,7 +149,6 @@
   --l1: #23887c;
   --l2: #b9801c;
   --l3: #c24a35;
-  --grid: #23887c0d;
   --graph-1: #1f8a7d;
   --graph-2: #3f8a56;
   --graph-3: #3a6cb0;
@@ -169,13 +200,25 @@ body,
   height: 100%;
 }
 
+/*
+ * Every scrolling area holds what it positions: the screen-reader texts
+ * (`sr-only`, absolute) of a long list otherwise take the page as their box,
+ * stretch it below the screen and make the whole page scroll under the
+ * menus. In the base layer, so a `fixed` or `sticky` of the utilities wins.
+ */
+@layer base {
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    position: relative;
+  }
+}
+
 body {
   margin: 0;
   background-color: var(--bg);
-  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 28px 28px;
   color: var(--ink);
-  font: 14px/1.55 var(--font-sans);
+  font: 15px/1.55 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -250,7 +293,7 @@ body {
 @layer components {
   /* Section titles of the HUD: small caps, wide tracking. */
   .hud-title {
-    font: 600 10.5px/1 var(--font-hud);
+    font: 600 12px/1.2 var(--font-hud);
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
@@ -258,7 +301,7 @@ body {
 
   /* Label chips L0–L3, always visible (D-060). */
   .lab {
-    font: 500 10px/1 var(--font-mono);
+    font: 500 12px/1 var(--font-mono);
     padding: 3px 5px;
     border-radius: 4px;
     border: 1px solid currentColor;
@@ -357,11 +400,25 @@ body {
 
   /* A small fact next to a value: RAM, state, presence (settings page). */
   .chip {
-    font: 500 10.5px/1 var(--font-mono);
+    font: 500 12px/1 var(--font-mono);
     padding: 4px 7px;
     border-radius: 5px;
     background: var(--surface-2);
     border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  /* A word in a rounded pill, in the normal font (settings, D-192): when a change counts, a state, a grade. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--muted);
     white-space: nowrap;
   }
 
@@ -465,7 +522,7 @@ body {
     align-items: center;
     gap: 8px;
     color: var(--muted);
-    font: 10px/1 var(--font-mono);
+    font: 12px/1 var(--font-mono);
   }
   .md-code-lang {
     letter-spacing: 0.06em;
@@ -511,6 +568,57 @@ body {
   }
   .md li::marker {
     color: var(--muted);
+  }
+  /*
+   * A list of works (D-193, the IM of D-167): boxes only to read. Only the
+   * item with a box loses its bullet or number, and its box sits where the
+   * marker would: the plain items of a mixed list keep theirs.
+   */
+  .md li.md-task {
+    display: flex;
+    gap: 0.6em;
+    align-items: baseline;
+    list-style: none;
+    margin-left: -1.35em;
+  }
+  .md ol > li.md-task {
+    margin-left: -1.6em;
+  }
+  .md-task-text {
+    min-width: 0;
+    flex: 1;
+  }
+  .md-box {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1;
+    transform: translateY(2px);
+  }
+  .md-task-done .md-box {
+    border-color: var(--ok);
+    background: var(--ok);
+    color: var(--bg);
+  }
+  .md-task-doing .md-box {
+    border-color: var(--info);
+    background: linear-gradient(90deg, var(--info) 50%, transparent 50%);
+  }
+  .md-task-moved .md-box {
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+  .md-task-dropped .md-box {
+    color: var(--muted);
+  }
+  .md-task-dropped .md-task-text {
+    color: var(--muted);
+    text-decoration: line-through;
   }
   .md blockquote {
     padding-left: 0.85em;

@@ -6,8 +6,8 @@ import type { PushKind } from './voice/push.ts';
 
 /**
  * Notifications of the web chat (I-1). From the live feed the core picks
- * three kinds of event: the final reply of a task, an approval waiting, a
- * failed task. If `[notifications]` allows the kind and it is not quiet time,
+ * four kinds of event: the final reply of a task, an approval waiting, a
+ * failed task, a reminder of the secretary (D-149). If `[notifications]` allows the kind and it is not quiet time,
  * it tells every open page (which shows a browser notification when it is
  * not in view, or the conversation is another one) and, when no page is in
  * view, sends an empty Web Push. Nothing here carries text or a title: a
@@ -35,6 +35,8 @@ export function noticeOf(event: Pick<PublicEvent, 'kind' | 'taskId' | 'payload'>
   if (event.kind === 'message.created') {
     if (payload.role !== 'assistant' || typeof payload.conversationId !== 'string') return undefined;
     if ((payload.agent !== undefined && payload.direct !== true) || payload.callId !== undefined) return undefined;
+    // A moment of the secretary (D-149): written by the core, not the end of a task.
+    if (typeof payload.reminder === 'string') return { kind: 'reminder', conversationId: payload.conversationId };
     return { kind: 'reply', conversationId: payload.conversationId };
   }
   if (event.taskId === null) return undefined;
@@ -45,6 +47,8 @@ export function noticeOf(event: Pick<PublicEvent, 'kind' | 'taskId' | 'payload'>
 
 /** May a notice of `kind` go out at `now`? */
 export function noticeAllowed(kind: NoticeKind, config: NotificationsConfig, now: Date): 'yes' | 'off' | 'quiet' {
+  // A reminder has its own switch, `[secretary] enabled` (D-149): only the quiet hours hold it back.
+  if (kind === 'reminder') return inQuiet(now, config.quiet) ? 'quiet' : 'yes';
   const on = kind === 'reply' ? config.replies : kind === 'approval' ? config.approvals : config.failures;
   if (!on) return 'off';
   return inQuiet(now, config.quiet) ? 'quiet' : 'yes';

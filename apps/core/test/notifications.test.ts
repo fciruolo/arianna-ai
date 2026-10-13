@@ -235,7 +235,7 @@ test('Web Push of a notice: the gateway sees only the fixed sentence of its kind
   // The JWT names the push service and the contact, never a conversation.
   const claims = Buffer.from((posted[0]?.authorization ?? '').split('.')[1] ?? '', 'base64url').toString('utf8');
   assert.deepEqual(Object.keys(JSON.parse(claims) as object).sort(), ['aud', 'exp', 'sub']);
-  assert.deepEqual(Object.values(PUSH_TEXTS), ['Arianna ti chiama', 'Arianna ha risposto', 'Arianna aspetta una tua decisione', 'Un lavoro è fallito']);
+  assert.deepEqual(Object.values(PUSH_TEXTS), ['Arianna ti chiama', 'Arianna ha risposto', 'Arianna aspetta una tua decisione', 'Un lavoro è fallito', 'Arianna ha un promemoria']);
 });
 
 test('Web Push refused by the gateway: nothing is posted', async () => {

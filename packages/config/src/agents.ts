@@ -1,6 +1,6 @@
 import { CHARACTER_ID } from './characters.ts';
 import { CLOUD_MODELS, LEGACY_CODEX_ALIAS, LEGACY_CODEX_AS, type CloudModel } from './cloud.ts';
-import { asOneOf, asTable, ConfigError, onlyKeys } from './validate.ts';
+import { asArray, asOneOf, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 /** The settings of one agent in `[agents.<id>]` (D-116). */
 export interface AgentSettings {
@@ -10,6 +10,32 @@ export interface AgentSettings {
    * only while it is on and the agent's card allows it.
    */
   model?: CloudModel;
+  /**
+   * The skills of the catalog (D-161) the agent reads in each of its
+   * deliveries, as `<owner>/<repo>/<slug>`: third-party text, data and never
+   * an instruction to Arianna. A skill no longer in the catalog is skipped.
+   */
+  skills?: string[];
+}
+
+/** A skill of the catalog (D-161): the GitHub source in lowercase, then the slug of the skill. */
+export const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}\/[a-z0-9][a-z0-9-]{0,63}$/;
+/** Skills assigned to one agent. */
+export const MAX_AGENT_SKILLS = 20;
+/** The skills block of one delivery (D-161): to Claude or Codex, and to an agent on the local model, whose context is smaller. */
+export const SKILLS_DELIVERY_BYTES = { cloud: 128 * 1024, local: 16 * 1024 } as const;
+
+/** A list of skill ids, checked and without repetitions. */
+export function parseSkillIds(value: unknown, where: string): string[] {
+  const list = asArray(value, where);
+  if (list.length > MAX_AGENT_SKILLS) throw new ConfigError(`${where}: at most ${String(MAX_AGENT_SKILLS)} skills`);
+  const ids: string[] = [];
+  for (const [index, item] of list.entries()) {
+    const id = asString(item, `${where}[${String(index)}]`);
+    if (!SKILL_ID.test(id) || id.split('/')[1] === '.' || id.split('/')[1] === '..') throw new ConfigError(`${where}[${String(index)}]: a skill is <owner>/<repo>/<slug>, in lowercase`);
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 /** Agent id → its settings. */
@@ -43,18 +69,24 @@ export function parseAgents(value: unknown, legacy?: CloudModel): AgentsSettings
       if (!CHARACTER_ID.test(agent)) throw new ConfigError('agents: an agent id is lowercase letters, digits, - and _');
       const where = `agents.${agent}`;
       const settings = asTable(raw, where);
-      onlyKeys(settings, ['model'], where);
-      if (settings.model === undefined) {
-        agents[agent] = {};
-        continue;
+      onlyKeys(settings, ['model', 'skills'], where);
+      const parsed: AgentSettings = {};
+      if (settings.skills !== undefined) {
+        // Third-party text is never an instruction to Arianna (D-161).
+        if (agent === ORCHESTRATOR_AGENT) throw new ConfigError(`${where}.skills: Arianna reads no skills`);
+        const skills = parseSkillIds(settings.skills, `${where}.skills`);
+        if (skills.length > 0) parsed.skills = skills;
       }
-      if (agent === ORCHESTRATOR_AGENT) throw new ConfigError(`${where}.model: Arianna's model is the orchestrator of [roles], local only`);
-      // `codex` from before D-141 is read as sol; the page writes the new alias at the next save.
-      agents[agent] = { model: settings.model === LEGACY_CODEX_ALIAS ? LEGACY_CODEX_AS : asOneOf(settings.model, CLOUD_MODELS, `${where}.model`) };
+      if (settings.model !== undefined) {
+        if (agent === ORCHESTRATOR_AGENT) throw new ConfigError(`${where}.model: Arianna's model is the orchestrator of [roles], local only`);
+        // `codex` from before D-141 is read as sol; the page writes the new alias at the next save.
+        parsed.model = settings.model === LEGACY_CODEX_ALIAS ? LEGACY_CODEX_AS : asOneOf(settings.model, CLOUD_MODELS, `${where}.model`);
+      }
+      agents[agent] = parsed;
     }
   }
   if (legacy !== undefined && agents[LEGACY_DEFAULT_AGENT]?.model === undefined) {
-    agents[LEGACY_DEFAULT_AGENT] = { model: legacy };
+    agents[LEGACY_DEFAULT_AGENT] = { ...agents[LEGACY_DEFAULT_AGENT], model: legacy };
   }
   return agents;
 }

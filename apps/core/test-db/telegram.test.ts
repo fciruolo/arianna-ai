@@ -68,9 +68,13 @@ async function telegramMessages(sql: Sql) {
 }
 
 /** A task waiting for an approval, as the engine leaves it (engine.ts, outcome `approval`). */
+function actionOf(kind: 'action' | 'declassify' | 'plan' | 'executor'): string {
+  return kind === 'declassify' ? 'declassify' : kind === 'plan' ? 'task.plan' : kind === 'executor' ? 'card.executor' : 'send_external';
+}
+
 async function waitingApproval(
   sql: Sql,
-  options: { conversationId: string; title: string; label: 'L1' | 'L2'; kind: 'action' | 'declassify'; detail: Record<string, string> },
+  options: { conversationId: string; title: string; label: 'L1' | 'L2'; kind: 'action' | 'declassify' | 'plan' | 'executor'; detail: Record<string, string> },
 ): Promise<{ taskId: string; approvalId: string }> {
   return sql.begin(async (tx) => {
     const task = await createTask(tx, {
@@ -93,11 +97,11 @@ async function waitingApproval(
             RETURNING id::text`
         : await tx<{ id: string }[]>`
             INSERT INTO approvals (task_id, kind, action, detail, label)
-            VALUES (${task.id}, 'action', 'send_external', ${tx.json(options.detail)}, ${options.label}::privacy_label)
+            VALUES (${task.id}, ${options.kind}, ${actionOf(options.kind)}, ${tx.json(options.detail)}, ${options.label}::privacy_label)
             RETURNING id::text`;
     if (row === undefined) throw new Error('no approval');
     await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed', cause: 'approval', approvalId: row.id });
-    await appendEvent(tx, { kind: 'approval.requested', taskId: task.id, label: 'L0', payload: { approvalId: row.id, action: options.kind === 'declassify' ? 'declassify' : 'send_external' } });
+    await appendEvent(tx, { kind: 'approval.requested', taskId: task.id, label: 'L0', payload: { approvalId: row.id, action: actionOf(options.kind) } });
     return { taskId: task.id, approvalId: row.id };
   });
 }
@@ -286,6 +290,30 @@ test('a declassification arrives without buttons and cannot be decided from Tele
   assert.equal(fake.calls.filter((entry) => entry.method === 'answerCallbackQuery').at(-1)?.body.text, TEXTS.webOnly);
   const [approval] = await db().sql<{ state: string }[]>`SELECT state FROM approvals WHERE id = ${approvalId}`;
   assert.equal(approval?.state, 'pending');
+});
+
+test('a plan and the choice of an executor (D-159) arrive without buttons and cannot be decided from Telegram', async () => {
+  for (const [kind, head] of [
+    ['plan', 'Arianna propone un piano di card: si approva solo dalla chat web.'],
+    ['executor', 'Un lavoro di un agente aspetta che tu scelga chi lo fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'],
+  ] as const) {
+    const { approvalId } = await waitingApproval(db().sql, {
+      conversationId: channel.conversationId,
+      title: `Lavoro finto ${kind}`,
+      label: 'L1',
+      kind,
+      detail: { secret: `dettaglio finto ${kind}` },
+    });
+    const call = await eventually(() => fake.sent().find((entry) => entry.body.text === `${head}\nTask: Lavoro finto ${kind}`));
+    assert.equal(call.body.reply_markup, undefined);
+    assert.doesNotMatch(JSON.stringify(fake.calls), new RegExp(`dettaglio finto ${kind}`));
+    const presses = fake.calls.filter((entry) => entry.method === 'answerCallbackQuery').length;
+    fake.push(buttonPress(CHAT, `ap:${approvalId}:y`));
+    await eventually(() => fake.calls.filter((entry) => entry.method === 'answerCallbackQuery').length > presses);
+    assert.equal(fake.calls.filter((entry) => entry.method === 'answerCallbackQuery').at(-1)?.body.text, TEXTS.webOnly);
+    const [approval] = await db().sql<{ state: string }[]>`SELECT state FROM approvals WHERE id = ${approvalId}`;
+    assert.equal(approval?.state, 'pending');
+  }
 });
 
 test('the reply to a Telegram message goes back to Telegram; a reply to the web chat does not', async () => {

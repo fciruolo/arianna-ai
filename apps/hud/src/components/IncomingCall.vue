@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue';
 
-import { RING_TEXT } from '../lib/calls.ts';
+import { RING_TEXT, type Callee } from '../lib/calls.ts';
 import type { CharacterChoice } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
 
 /**
- * "Arianna ti chiama" (D-066, choice 3): a call of Arianna ringing in the
- * chat, with the reason, Rispondi and Rifiuta. The ring is made here with the
+ * "Arianna ti chiama" (D-066, choice 3): a call of Arianna, or of the agent
+ * of a direct chat (D-158), ringing in the chat, with the reason, Rispondi
+ * and Rifiuta. The ring is made here with the
  * Web Audio API: no sound file, nothing fetched.
  */
-const props = defineProps<{ reason: 'waiting' | 'task-done' | 'scheduled'; title: string; choice: CharacterChoice | undefined }>();
+const props = defineProps<{ reason: 'waiting' | 'task-done' | 'scheduled'; title: string; callee: Callee; choice: CharacterChoice | undefined }>();
 const emit = defineEmits<{ answer: []; decline: [] }>();
 
 let context: AudioContext | undefined;
@@ -52,10 +53,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-14 text-white" role="alertdialog" aria-label="Arianna ti chiama">
+  <div class="fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-14 text-white" role="alertdialog" :aria-label="`${props.callee.subject} ti chiama`">
     <div class="flex flex-col items-center gap-3 text-center">
       <p class="text-sm tracking-wide text-teal-200 uppercase">Chiamata in arrivo</p>
-      <p class="font-hud text-3xl font-semibold tracking-[0.08em]">Arianna ti chiama</p>
+      <p class="font-hud text-3xl font-semibold tracking-[0.08em]">{{ props.callee.subject }} ti chiama</p>
       <p class="max-w-sm text-white/80">{{ RING_TEXT[props.reason] }}</p>
       <p class="max-w-sm truncate text-sm text-white/60">{{ props.title }}</p>
     </div>

@@ -4,13 +4,14 @@ Idea I-1 di `docs/PROPOSTE.md` con le scelte dell'utente del 2026-10-05: browser
 
 ## Cosa notifica
 
-Il core ascolta il flusso degli eventi (`createNotifier` in `apps/core/src/notifications.ts`) e ne riconosce tre, solo dai metadati:
+Il core ascolta il flusso degli eventi (`createNotifier` in `apps/core/src/notifications.ts`) e ne riconosce quattro, solo dai metadati:
 
 | Evento | Tipo | Frase fissa |
 | --- | --- | --- |
 | `message.created` di Arianna (`role = assistant`), non di un agente delegato né di una chiamata | `reply` | Arianna ha risposto |
 | `approval.requested` | `approval` | Arianna aspetta una tua decisione |
 | `task.failed` | `failure` | Un lavoro è fallito |
+| `message.created` di Arianna con `reminder` (un momento della segretaria, D-149) | `reminder` | Arianna ha un promemoria |
 
 La conversazione di un'approvazione o di un fallimento si legge da `tasks.conversation_id`. Un avviso è solo `{ kind, conversationId }`: niente testo, titolo, etichetta, agente.
 

@@ -12,18 +12,6 @@ export function splitPinned(conversations: readonly Conversation[]): { pinned: C
   return { pinned, others };
 }
 
-/**
- * Where "Chiama" calls Arianna: in the private conversation open in the chat,
- * or in a new private one (a work conversation, an archived one, a system
- * chat or another page get a new private conversation).
- */
-export function callTarget(open: Pick<Conversation, 'id' | 'mode' | 'archivedAt' | 'origin' | 'incognito'> | undefined, onChat: boolean): { here: string } | 'new' {
-  if (open === undefined || !onChat) return 'new';
-  // Never in an incognito conversation (D-136): a call has its own trace, and the core refuses it there.
-  if (open.mode !== 'private' || open.archivedAt !== null || open.origin === 'system' || open.incognito === true) return 'new';
-  return { here: open.id };
-}
-
 /** "1 attivo", "3 attivi", "nessuno attivo". */
 export function activeText(count: number): string {
   if (count <= 0) return 'nessuno attivo';

@@ -55,6 +55,16 @@ export {
   type LocalModelOptions,
 } from './local/model.ts';
 export {
+  anonymize,
+  anonymizeInput,
+  ANONYMIZE_MODEL,
+  ANONYMIZE_PROMPT,
+  MAX_ANONYMIZE_TEXT,
+  readAnonymized,
+  type AnonymizeFailure,
+  type AnonymizeOutcome,
+} from './local/anonymize.ts';
+export {
   Watchdog,
   type RestartReason,
   type WatchdogEvent,
@@ -62,9 +72,21 @@ export {
   type WatchdogState,
 } from './local/watchdog.ts';
 export {
+  MAX_CODER_NOTES,
+  MAX_CODER_NOTES_BYTES,
+  prepareProjectNotes,
+  preparedNotes,
+  removeProjectNotes,
+  type NotesExecutor,
+  type PreparedNotes,
+  type PrepareNotesOptions,
+  type ProjectNoteInput,
+} from './notes.ts';
+export {
   prepareEmptyWorkspace,
   prepareWorkspace,
   preparedPath,
+  workspaceContainer,
   changedToolConfig,
   commitChanges,
   committedFiles,

@@ -80,6 +80,11 @@ const CATALOG: Record<string, (details: Details) => FailureText> = {
     explanation: `Uno strumento della base di conoscenza si è fermato.${attempts(details)}`,
     steps: ['Controlla che la cartella kb/ esista e sia leggibile.', RETRY],
   }),
+  'engine.stopped': () => ({
+    title: 'Fermato da te',
+    explanation: 'Hai fermato questo lavoro con «Ferma» nella pagina GOD.',
+    steps: ['Per continuare premi «Riprendi» nella pagina GOD, oppure scrivi un messaggio in questa chat.'],
+  }),
   'engine.lock-expired': () => ({
     title: 'Il nucleo si è fermato mentre lavorava',
     explanation: 'Il processo che eseguiva il task si è interrotto più volte (riavvio, arresto o crollo del nucleo).',

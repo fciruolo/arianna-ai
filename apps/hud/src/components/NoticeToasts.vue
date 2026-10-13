@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
   for (const timer of timers.values()) clearTimeout(timer.handle);
 });
 
-const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(--danger)' } as const;
+const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(--danger)', reminder: 'var(--accent)' } as const;
 </script>
 
 <template>
@@ -82,7 +82,7 @@ const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(
       >
         <img :src="NOTICE_ICON" alt="" width="48" height="48" class="toast-head size-12 flex-none rounded-[10px]" />
         <div class="min-w-0 flex-1">
-          <p class="toast-kicker truncate font-hud text-[10.5px] leading-none font-semibold tracking-[0.16em] uppercase">
+          <p class="toast-kicker truncate font-hud text-[12px] leading-none font-semibold tracking-[0.16em] uppercase">
             {{ TOAST_KICKER[toast.kind] }}<template v-if="toast.title !== null"> · {{ toast.title }}</template>
           </p>
           <p class="mt-1.5 text-[14.5px] font-semibold">{{ NOTICE_TITLE[toast.kind] }}</p>

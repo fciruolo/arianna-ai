@@ -1,17 +1,31 @@
+import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
+import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
+import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
+import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
+import type { NewsPair } from './design-news.ts';
+import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
+import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
+import type { ClientDashboard } from './client-dashboard.ts';
+import type { ClientDocument, DocumentForm } from './client-documents.ts';
+import type { Account, BankProfile, Budget, Category, FinanceAlert, ImportRecord, Preview, Rule, Summary, Tx } from './finance.ts';
+import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
+import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
+import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
+import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, TranslationsStatus } from './studio.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
-import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
+import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -30,7 +44,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
@@ -78,12 +92,117 @@ export async function attachQuestion(conversationId: string): Promise<Message> {
 }
 
 /** Deletes the texts of an archived conversation for good (D-057). */
-export async function purgeConversation(conversationId: string): Promise<void> {
-  await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/purge`, {});
+/** "Elimina" (D-157): the conversation and everything it left go for good; the user confirmed it. */
+export async function eraseConversation(conversationId: string): Promise<void> {
+  await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/erase`, {});
 }
 
 export async function loadConversation(conversationId: string): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}`)).conversation;
+}
+
+/** The secretary's conversation (D-144): the one there is, or a new one the first time. */
+export async function openSecretary(): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', '/api/secretary', {})).conversation;
+}
+
+/** The secretary's conversation for the address `/segretaria` (D-156): no new session (D-146); null before the first click. */
+export async function findSecretary(): Promise<Conversation | null> {
+  return (await call<{ conversation: Conversation | null }>('GET', '/api/secretary')).conversation;
+}
+
+/** "Fatto" on a commitment: the click is the confirmation. */
+export async function markCommitmentDone(id: string): Promise<Commitment> {
+  return (await call<{ commitment: Commitment }>('POST', `/api/commitments/${encodeURIComponent(id)}/done`, {})).commitment;
+}
+
+/** The cardwall (I-13, D-152): cards and commitments with their column, the projects and agents a card may name. */
+export async function loadCards(): Promise<CardWall> {
+  return call<CardWall>('GET', '/api/cards');
+}
+
+/** What the user writes on a card: `goal` is the "Descrizione" (Markdown), `criteria` "Fatto quando", `priority` 0-4, `planned` "Data esecuzione". */
+export interface CardFieldsInput {
+  title?: string;
+  project?: string | null;
+  assignee?: string;
+  due?: string | null;
+  goal?: string | null;
+  criteria?: string | null;
+  priority?: number;
+  planned?: string | null;
+  /** A style of Open Design, by slug; only on a Designer card (D-163). */
+  style?: string | null;
+  /** Skills of the catalog, `owner/repo/slug`; only on a Designer card (D-163). */
+  skills?: string[];
+}
+
+/** A card written on the wall: it starts in the inbox. Its id. */
+export async function createCard(input: CardFieldsInput & { title: string }): Promise<string> {
+  return (await call<{ card: { id: string } }>('POST', '/api/cards', input)).card.id;
+}
+
+/** Changes a card; null takes a project, a day or a text away. */
+export async function updateCard(id: string, fields: CardFieldsInput): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}`, fields);
+}
+
+/** The card in full: body, criteria, links, checklist, files, history (tasks only). */
+export async function loadCardDetail(id: string): Promise<CardDetailData> {
+  return (await call<{ card: CardDetailData }>('GET', `/api/cards/${encodeURIComponent(id)}`)).card;
+}
+
+export async function addCardLink(id: string, url: string, title?: string): Promise<CardLink> {
+  return (await call<{ link: CardLink }>('POST', `/api/cards/${encodeURIComponent(id)}/links`, { url, ...(title === undefined || title === '' ? {} : { title }) })).link;
+}
+
+export async function removeCardLink(id: string, link: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`, {});
+}
+
+export async function addChecklistItem(id: string, body: string): Promise<ChecklistItem> {
+  return (await call<{ item: ChecklistItem }>('POST', `/api/cards/${encodeURIComponent(id)}/checklist`, { body })).item;
+}
+
+export async function updateChecklistItem(id: string, item: string, fields: { body?: string; done?: boolean }): Promise<ChecklistItem> {
+  return (await call<{ item: ChecklistItem }>('POST', `/api/cards/${encodeURIComponent(id)}/checklist/${encodeURIComponent(item)}`, fields)).item;
+}
+
+export async function removeChecklistItem(id: string, item: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/checklist/${encodeURIComponent(item)}`, {});
+}
+
+/** Attaches a file: its bytes in base64, since the API takes only JSON. */
+export async function uploadCardFile(id: string, file: { name: string; type: string; data: string }): Promise<CardFile> {
+  return (await call<{ file: CardFile }>('POST', `/api/cards/${encodeURIComponent(id)}/files`, file)).file;
+}
+
+export async function removeCardFile(id: string, file: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/files/${encodeURIComponent(file)}`, {});
+}
+
+/** Where the browser opens (or downloads) an attached file; also the `src` of a thumbnail. */
+export function cardFileUrl(id: string, file: string): string {
+  return `/api/cards/${encodeURIComponent(id)}/files/${encodeURIComponent(file)}`;
+}
+
+/** A card moved by hand; the core refuses (409) a move it does not allow. */
+export async function moveCard(id: string, to: MoveTarget): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/move`, { to });
+}
+
+/** "Avvia", "Riprendi" and "Riprova" of a card (D-159); the core refuses (409) what it does not allow. */
+export async function cardAction(id: string, action: 'start' | 'resume' | 'retry'): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/${action}`, {});
+}
+
+/** "Aspetta anche…": `id` waits for `on` to be done. */
+export async function addCardDependency(id: string, on: string): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/dependencies`, { on });
+}
+
+export async function removeCardDependency(id: string, on: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(on)}`, {});
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {
@@ -143,6 +262,61 @@ export async function endIncognito(conversationId: string): Promise<EndResult | 
   return parseEndResult(await call<unknown>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/end`, {}));
 }
 
+/** The page of GOD (D-127): project, clone, conversations. */
+export async function loadGod(): Promise<GodStatus> {
+  return call<GodStatus>('GET', '/api/god');
+}
+
+/** "Crea il clone" / "Aggiorna il clone" (D-127): the core runs pnpm god:clone's steps. */
+export async function syncGodClone(): Promise<GodStatus> {
+  return call<GodStatus>('POST', '/api/god/clone', {});
+}
+
+/** The plans of GOD approved, the newest first, with their subtasks (D-127, G2-G3). */
+export async function loadGodPlans(): Promise<GodPlan[]> {
+  return (await call<{ plans: GodPlan[] }>('GET', '/api/god/plans')).plans;
+}
+
+/** The plan under an answer of GOD: the proposal checked by the core, and the approved plan if any. */
+export async function loadMessagePlan(messageId: string): Promise<MessagePlan> {
+  return call<MessagePlan>('GET', `/api/god/messages/${encodeURIComponent(messageId)}/plan`);
+}
+
+/** "Approva e avvia": the subtasks start, each in a clone of its own. */
+export async function approveGodPlan(messageId: string): Promise<GodPlan> {
+  return (await call<{ plan: GodPlan }>('POST', '/api/god/plans', { messageId })).plan;
+}
+
+/** Ferma, Riprendi, Scarta, Prepara il ramo of a subtask. */
+export async function actOnSubtask(id: string, action: SubtaskAction): Promise<GodSubtask> {
+  return (await call<{ subtask: GodSubtask }>('POST', `/api/god/subtasks/${encodeURIComponent(id)}/${action}`, {})).subtask;
+}
+
+/** «Prova», «Approva funzionalità», «Non funziona» (D-179) on a subtask or on a whole plan: the work goes on in the core. */
+export async function landGod(kind: 'subtasks' | 'plans', id: string, action: LandAction, text = ''): Promise<GodLandingView> {
+  return (await call<{ landing: GodLandingView }>('POST', `/api/god/${kind}/${encodeURIComponent(id)}/land/${action}`, action === 'reject' ? { text } : {})).landing;
+}
+
+/** "Riassumi e riparti" (D-127, G4): a new conversation with GOD from a summary of this one. */
+/** «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session; `open` is the mockup open in the Studio. */
+export async function startDesignerSession(conversationId: string, open?: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/session`, open === undefined ? {} : { open })).conversation;
+}
+
+export async function restartGodConversation(conversationId: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/god/conversations/${encodeURIComponent(conversationId)}/restart`, {})).conversation;
+}
+
+/** The summary a conversation with GOD restarts from, or null. */
+export async function loadGodCarry(conversationId: string): Promise<GodCarry | null> {
+  return (await call<{ carry: GodCarry | null }>('GET', `/api/god/conversations/${encodeURIComponent(conversationId)}/carry`)).carry;
+}
+
+/** "Parlane con GOD" (I-6, D-178): a new conversation with GOD about an entry of "Novità"; the core finds it again in git. */
+export async function discussWithGod(ref: ChangelogRef): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', '/api/god/changelog', ref)).conversation;
+}
+
 /** The agents the user may talk with directly now (D-111d). */
 export async function listDirectAgents(): Promise<DirectAgent[]> {
   return (await call<{ agents: DirectAgent[] }>('GET', '/api/direct-agents')).agents;
@@ -169,8 +343,9 @@ export async function listMessages(conversationId: string, beforeId?: string): P
   return (await call<{ messages: Message[] }>('GET', path)).messages;
 }
 
-export async function sendMessage(conversationId: string, body: string): Promise<{ message: Message; task: Task }> {
-  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body });
+/** `design`: the style and skills chosen in the Studio (I-19, D-184), only for the direct chat with the Designer. */
+export async function sendMessage(conversationId: string, body: string, design?: { style?: string; skills?: string[] }): Promise<{ message: Message; task: Task }> {
+  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
 }
 
 /** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
@@ -199,8 +374,9 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
   return (await call<{ approvals: Approval[] }>('GET', `/api/approvals?state=${state}&limit=${String(limit)}`)).approvals;
 }
 
-export async function decide(approvalId: string, state: 'approved' | 'rejected'): Promise<Approval> {
-  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state })).approval;
+/** `choice`: the executor chosen for a card, with an approval of kind executor (D-159). */
+export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<Approval> {
+  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state, ...(choice === undefined ? {} : { choice }) })).approval;
 }
 
 /** The status panel: agents, last router decision, gateway today. */
@@ -365,6 +541,76 @@ export async function forgetModel(modelId: string, confirm: string): Promise<voi
   await call<{ modelId: string }>('POST', `/api/models/${encodeURIComponent(modelId)}/forget`, { confirm });
 }
 
+/** The catalog of Open Design (D-160): adopted version, version waiting with the comparison, download running. */
+export async function loadDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('GET', '/api/design-catalog');
+}
+
+/** "Scarica/Aggiorna catalogo": starts the download in the background. */
+export async function updateDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/update', {});
+}
+
+/** "Usa questa versione": the commit the user saw in the summary. */
+export async function adoptDesignCatalog(commit: string): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/adopt', { commit });
+}
+
+/** "Scarta": the version waiting is deleted. */
+export async function discardDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/discard', {});
+}
+
+/** Styles and skills of the adopted version: slug, name, description. */
+export async function listDesignStyles(): Promise<DesignStyleListing> {
+  return call<DesignStyleListing>('GET', '/api/design-catalog/styles');
+}
+
+/** The text of one style, with the license notice at the head. */
+export async function loadDesignStyle(slug: string): Promise<DesignStyleText> {
+  return (await call<{ style: DesignStyleText }>('GET', `/api/design-catalog/styles/${encodeURIComponent(slug)}`)).style;
+}
+
+/** The catalog of skills (D-161): the sources followed with their versions, and the suggestions. */
+export async function loadSkillsCatalog(): Promise<SkillsStatus> {
+  return call<SkillsStatus>('GET', '/api/skills-catalog');
+}
+
+/** Follows https://github.com/<owner>/<repo>: nothing is downloaded yet. */
+export async function addSkillSource(url: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/sources', { url });
+}
+
+/** Stops following a source (`owner/repo`) and deletes its files. */
+export async function removeSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/remove', { source });
+}
+
+/** "Scarica/Aggiorna": the download of a source in the background. */
+export async function updateSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/update', { source });
+}
+
+/** "Usa questa versione": the commit the user saw in the summary of that source. */
+export async function adoptSkillSource(source: string, commit: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/adopt', { source, commit });
+}
+
+/** "Scarta": the version waiting of that source is deleted. */
+export async function discardSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/discard', { source });
+}
+
+/** Every skill of the adopted versions: id, name, description, license. */
+export async function listSkills(): Promise<SkillListing> {
+  return call<SkillListing>('GET', '/api/skills-catalog/skills');
+}
+
+/** The text of one skill (`owner/repo/slug`), with source, commit and license at the head. */
+export async function loadSkill(id: string): Promise<SkillText> {
+  return (await call<{ skill: SkillText }>('GET', `/api/skills-catalog/skill?id=${encodeURIComponent(id)}`)).skill;
+}
+
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */
 export async function requestModelEval(modelId: string): Promise<string> {
   return (await call<{ id: string }>('POST', '/api/model-evals', { modelId, role: 'orchestrator' })).id;
@@ -480,11 +726,6 @@ export async function declineCall(callId: string): Promise<void> {
   await call('POST', `/api/calls/${encodeURIComponent(callId)}/decline`, {});
 }
 
-/** "Chiamami alle…": a call of Arianna at that time, within a week. */
-export async function scheduleCall(conversationId: string, at: Date): Promise<CallInfo> {
-  return (await call<{ call: CallInfo }>('POST', '/api/calls/schedule', { conversationId, at: at.toISOString() })).call;
-}
-
 /** "Chiamami quando finisci": a call when the task is over. */
 export async function callWhenDone(taskId: string): Promise<CallInfo> {
   return (await call<{ call: CallInfo }>('POST', `/api/tasks/${encodeURIComponent(taskId)}/call-when-done`, {})).call;
@@ -521,6 +762,24 @@ export async function saveSettings(fingerprint: string, values: SettingsBody): P
 /** Cloud executors, Telegram, projects, local servers: what would change and leave, nothing written yet. */
 export async function preparePrivacy(fingerprint: string, values: Partial<Pick<SettingsValues, PrivacySection>>): Promise<PrivacyProposal> {
   return call<PrivacyProposal>('POST', '/api/settings/privacy/prepare', { fingerprint, values });
+}
+
+/** "Proponi bozza" (I-14 R2, D-175): the local model drafts the rules of a project; nothing is saved. */
+export async function draftProjectRules(project: string): Promise<{ text: string; model: string | null; partial?: string }> {
+  return call<{ text: string; model: string | null; partial?: string }>('POST', `/api/projects/${encodeURIComponent(project)}/rules-draft`, {});
+}
+
+/** new: not there; same: already the rules; arianna: written by Arianna, replaced; foreign: the user's, left alone (D-176). */
+export type RulesExportStatus = 'new' | 'same' | 'arianna' | 'foreign' | 'stale';
+
+/** The preview of "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176). */
+export async function previewRulesExport(project: string): Promise<{ text: string; files: { path: string; status: RulesExportStatus }[]; contents?: Record<'CLAUDE.md' | 'AGENTS.md', string> }> {
+  return call<{ text: string; files: { path: string; status: RulesExportStatus }[]; contents?: Record<'CLAUDE.md' | 'AGENTS.md', string> }>('GET', `/api/projects/${encodeURIComponent(project)}/rules-export`);
+}
+
+/** Writes the files of this preview; 409 when the rules or the files changed meanwhile. */
+export async function writeRulesExport(project: string, preview: { text: string; files: { path: string; status: RulesExportStatus }[] }): Promise<{ files: { path: string; status: 'written' | 'same' | 'foreign' | 'removed' }[] }> {
+  return call<{ files: { path: string; status: 'written' | 'same' | 'foreign' | 'removed' }[] }>('POST', `/api/projects/${encodeURIComponent(project)}/rules-export`, { text: preview.text, files: preview.files });
 }
 
 /** Writes exactly the change prepared with this id. */
@@ -573,14 +832,15 @@ export async function openDelegationFile(delegationId: string, index: number): P
   return (await call<{ url: string }>('POST', `/api/delegations/${encodeURIComponent(delegationId)}/open`, { index })).url;
 }
 
-/** The graph of kb/ (D-087): pages up to L2 with their links and tags, never their text. */
-export async function loadKnowledgeGraph(): Promise<GraphData> {
-  return call<GraphData>('GET', '/api/knowledge/graph');
+/** The graph of kb/ (D-087), or of Arianna's own documents (D-155): pages up to L2 with their links and tags, never their text. */
+export async function loadKnowledgeGraph(source: KnowledgeSource = 'kb'): Promise<GraphData> {
+  return call<GraphData>('GET', source === 'arianna' ? '/api/knowledge/graph?source=arianna' : '/api/knowledge/graph');
 }
 
-/** One page of kb/ with its text, up to L2; 404 for anything else. */
-export async function loadKnowledgePage(id: string): Promise<KnowledgePage> {
-  return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}`)).page;
+/** One page of kb/ (or of Arianna's documents) with its text, up to L2; 404 for anything else. */
+export async function loadKnowledgePage(id: string, source: KnowledgeSource = 'kb'): Promise<KnowledgePage> {
+  const from = source === 'arianna' ? '&source=arianna' : '';
+  return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}${from}`)).page;
 }
 
 /** The notes of kb/inbox (D-086), newest first: header fields only, never the text. */
@@ -593,9 +853,24 @@ export async function loadNote(name: string): Promise<Note> {
   return (await call<{ note: Note }>('GET', `/api/notes/${encodeURIComponent(name)}`)).note;
 }
 
+/** "Elimina" of a thought (D-157): its file goes for good; the user confirmed it. */
+export async function deleteNote(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/delete`, {});
+}
+
+/** "Elimina" of a page of the Conoscenza (D-157), by its id relative to kb/. */
+export async function deleteKnowledgePage(id: string): Promise<void> {
+  await call('POST', '/api/knowledge/page/delete', { path: id });
+}
+
 /** Queues a new note to be organized again by the local model. */
 export async function organizeNote(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/organize`, {});
+}
+
+/** "Scarica e riassumi" (D-154): the link of the note downloaded and summarized, whatever its site. */
+export async function fetchNoteLink(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/fetch`, {});
 }
 
 /** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */
@@ -614,6 +889,25 @@ export async function sendDevAnswer(key: string, text: string): Promise<{ key: s
   return call<{ key: string; at: string; logged: boolean }>('POST', '/api/dev/answers', { key, text });
 }
 
+/**
+ * Asks Claude Code to rewrite a question more clearly (D-153): a fixed entry in
+ * data/dev/RISPOSTE.md, no text of the user; `already` when one was still waiting.
+ */
+/** `logged` is missing for a request already there: its event was the first one's. */
+export async function askDevRewrite(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
+  return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/answers', { key, rewrite: true });
+}
+
+/** "Novità di Open Design" (I-21, D-186): the news of the version waiting and of the one in use, with what was already chosen. */
+export async function loadOdNews(): Promise<NewsPair> {
+  return (await call<{ news: NewsPair }>('GET', '/api/dev/od-news')).news;
+}
+
+/** "Da rifare nello Studio": the entry, named by its key only, goes to data/dev/RISPOSTE.md; `already` when it was there. */
+export async function sendOdNewsRedo(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
+  return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/od-news', { key });
+}
+
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */
 export async function loadChangelog(): Promise<Changelog> {
   return (await call<{ changelog: Changelog }>('GET', '/api/changelog')).changelog;
@@ -622,8 +916,68 @@ export async function loadChangelog(): Promise<Changelog> {
 // The page "Progetti" (D-134): an approved project, read only.
 const browse = (project: string): string => `/api/browse/${encodeURIComponent(project)}`;
 
-export async function listBrowsableProjects(): Promise<BrowsableProject[]> {
-  return (await call<{ projects: BrowsableProject[] }>('GET', '/api/browse')).projects;
+/** The parts File, Git and Servizi read, and the containers they belong to (D-145). */
+export async function listBrowsableProjects(): Promise<{ projects: BrowsableProject[]; containers: BrowsableContainer[] }> {
+  const body = await call<{ projects: BrowsableProject[]; containers?: BrowsableContainer[] }>('GET', '/api/browse');
+  return { projects: body.projects, containers: body.containers ?? [] };
+}
+
+/** The tab "Conoscenza" (D-145): the management folders of a container with their labels, and the notes. */
+export async function readProjectKnowledge(project: string): Promise<ProjectKnowledge> {
+  return (await call<{ knowledge: ProjectKnowledge }>('GET', `${browse(project)}/knowledge`)).knowledge;
+}
+
+/** "+ Conoscenza" (D-145): a new note; the header is written by the core, the label never below the folder's. */
+export async function addProjectNote(project: string, note: { folder: string; title: string; label: Label; text: string }): Promise<{ path: string; label: Label }> {
+  return (await call<{ note: { path: string; label: Label } }>('POST', `${browse(project)}/knowledge`, note)).note;
+}
+
+/** A note of a project opened in "Conoscenza", by its path there. */
+export async function readProjectNote(project: string, path: string): Promise<OpenedNote> {
+  return (await call<{ note: OpenedNote }>('GET', `${browse(project)}/knowledge/note?${new URLSearchParams({ path }).toString()}`)).note;
+}
+
+/** A note edited by hand: written only over the version opened; `lower` confirms a label that goes down. */
+export async function editProjectNote(project: string, note: { path: string; title: string; label: Label; header: string[]; text: string; version: string; lower: boolean }): Promise<OpenedNote> {
+  return (await call<{ note: OpenedNote }>('POST', `${browse(project)}/knowledge/note`, note)).note;
+}
+
+/** "Elimina" of a note of a project (D-157), by its path in the tab "Conoscenza". */
+export async function deleteProjectNote(project: string, path: string): Promise<void> {
+  await call('POST', `${browse(project)}/knowledge/delete`, { path });
+}
+
+/** A work conversation of the project a released note may go to (I-11 P5, D-187). */
+export interface ReleaseTarget {
+  id: string;
+  title: string | null;
+  workspace: string;
+  agent: string | null;
+}
+
+/** "Fai uscire una volta" (D-187): the work conversations of the project. */
+export async function noteReleaseTargets(project: string): Promise<ReleaseTarget[]> {
+  return (await call<{ targets: ReleaseTarget[] }>('GET', `${browse(project)}/knowledge/release`)).targets;
+}
+
+/** The anonymous version of a Private note by the local model, never saved; `warnings` are what the scanner still finds. */
+export async function anonymizeProjectNote(project: string, path: string): Promise<{ text: string; model: string; version: string; warnings: string[] }> {
+  return call('POST', `${browse(project)}/knowledge/anonymize`, { path });
+}
+
+/** The approved text leaves once, as a message of the chosen work conversation; the password is never kept. */
+export async function releaseProjectNote(project: string, input: { path: string; version: string; text: string; conversationId: string; password: string }): Promise<{ conversationId: string; messageId: string }> {
+  return call('POST', `${browse(project)}/knowledge/release`, input);
+}
+
+/** "Sposta" and "Ripristina" in the tab File (I-20, D-185): nothing already there is replaced. */
+export async function moveProjectPath(project: string, from: string, to: string): Promise<{ from: string; to: string; kind: 'file' | 'dir' }> {
+  return call('POST', `${browse(project)}/move`, { from, to });
+}
+
+/** "Elimina" in the tab File (I-20, D-185): for good, after the window. */
+export async function deleteProjectPath(project: string, path: string): Promise<{ path: string; kind: 'file' | 'dir'; entries: number }> {
+  return call('POST', `${browse(project)}/delete`, { path });
 }
 
 export async function listProjectDir(project: string, dir: string): Promise<{ entries: TreeEntry[]; more: number }> {
@@ -632,6 +986,100 @@ export async function listProjectDir(project: string, dir: string): Promise<{ en
 
 export async function readProjectFile(project: string, path: string): Promise<ProjectFile> {
   return (await call<{ file: ProjectFile }>('GET', `${browse(project)}/file?${new URLSearchParams({ path }).toString()}`)).file;
+}
+
+// The section "IM" of the cardwall (D-167): the Iteration Meetings of a project, read and written in their files by the core.
+export async function listIms(project: string): Promise<ImSummary[]> {
+  return (await call<{ ims: ImSummary[] }>('GET', `${browse(project)}/im`)).ims;
+}
+
+export async function readIm(project: string, number: number): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('GET', `${browse(project)}/im/${String(number)}`)).im;
+}
+
+/** "+ Voce": a new item in Da fare; 409 when the file changed since `version`. */
+export async function addImItem(project: string, number: number, title: string, version: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im/${String(number)}/items`, { title, version })).im;
+}
+
+/** An item moved to another column; 409 when the file changed since `version`. */
+export async function setImItemState(project: string, number: number, line: number, state: ImItemState, version: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im/${String(number)}/items/${String(line)}`, { state, version })).im;
+}
+
+/** "Nuovo IM": the next one; `date` ("YYYY-MM-DD HH:MM") only for the first IM of the project. */
+export async function createIm(project: string, date?: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im`, date === undefined ? {} : { date })).im;
+}
+
+/** The card of an item (D-167, P4b): made the first time, and the item's line gets `#card-<sigla>`; 409 when the item changed in the file. */
+export async function openImItemCard(project: string, number: number, item: ImItemRef): Promise<{ cardId: string; im: ImDetail }> {
+  return call('POST', `${browse(project)}/im/${String(number)}/card`, item);
+}
+
+/** "Scrivi il report" (D-167, P4c): 202 with the job; 409 `has-report` when the section has text and `replace` is not set. */
+export async function startImReport(project: string, number: number, agent: ReportAgent, language: ReportLanguage, replace = false): Promise<ImReportJob> {
+  return (await call<{ job: ImReportJob }>('POST', `${browse(project)}/im/${String(number)}/report`, replace ? { agent, language, replace } : { agent, language })).job;
+}
+
+/** The last report job of the IM since the core started; null when none. */
+export async function loadImReport(project: string, number: number): Promise<ImReportJob | null> {
+  return (await call<{ job: ImReportJob | null }>('GET', `${browse(project)}/im/${String(number)}/report`)).job;
+}
+
+// The tab "IM" of "Progetti" (P4d, D-169): the calendar in IM/calendario.md, prices and invoices Privati (L2) in the database.
+export async function readImOverview(project: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('GET', `${browse(project)}/im-overview`)).overview;
+}
+
+/** The calendar written in its file; `version` is the one read ('' when there is no file): 409 when it changed meanwhile. */
+export async function saveImCalendar(project: string, calendar: ImCalendar, version: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-calendar`, { ...calendar, version })).overview;
+}
+
+/** The last day of the IM (`fine` in IM/calendario.md, D-169); null takes it away and the IM go on. */
+export async function saveImEnd(project: string, end: string | null, version: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-end`, { end, version })).overview;
+}
+
+/** The price of one IM of the project, in cents; null: no price. */
+export async function saveImPrice(project: string, amountCents: number | null, currency: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-price`, { amountCents, currency })).overview;
+}
+
+/** The exception of one IM (its own price, null for the project's) and "non fatturato". */
+export async function saveImBilling(project: string, number: number, overrideCents: number | null, notBilled: boolean): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im/${String(number)}/billing`, { overrideCents, notBilled })).overview;
+}
+
+export async function createImInvoice(project: string, invoice: NewInvoice & { ims: number[] }): Promise<{ invoice: ImInvoice; overview: ImOverview }> {
+  return call('POST', `${browse(project)}/invoices`, invoice);
+}
+
+export async function updateImInvoice(project: string, id: string, change: { number?: string; issuedOn?: string; paidOn?: string | null; note?: string | null; documentCents?: number; dueOn?: string | null }): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}`, change)).overview;
+}
+
+export async function cancelImInvoice(project: string, id: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}/cancel`, {})).overview;
+}
+
+export async function removeFromImInvoice(project: string, id: string, im: number): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}/remove`, { im })).overview;
+}
+
+/** The closings of the IM asked in the secretary conversation, most recent first. */
+export async function listImClosings(): Promise<ImClosing[]> {
+  return (await call<{ closings: ImClosing[] }>('GET', '/api/im/closings')).closings;
+}
+
+export async function readImClosing(id: string): Promise<{ closing: ImClosing; im: ImDetail }> {
+  return call('GET', `/api/im/closings/${encodeURIComponent(id)}`);
+}
+
+/** One answer of a closing; `closed` when it was the last one (the IM is closed and the next one made); 409 when the item changed or the closing is over. */
+export async function answerImClosing(id: string, item: ImItemRef, outcome: ImOutcome): Promise<{ closing: ImClosing; im: ImDetail; closed: boolean }> {
+  return call('POST', `/api/im/closings/${encodeURIComponent(id)}/answer`, { ...item, outcome });
 }
 
 /** "Mostra" (D-135): a covered secret with its text, once; an event in the chain. */
@@ -671,4 +1119,276 @@ export async function startService(project: string, service: string, fingerprint
 
 export async function stopService(project: string, service: string): Promise<ServiceLog | null> {
   return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/stop`, { service })).run;
+}
+
+// ---------------------------------------------------------------------------
+// The clients (I-16, D-168): private (L2), only between this page and the core.
+// ---------------------------------------------------------------------------
+
+/** Every client, archived included, and the approved projects a client may take. */
+export async function listClients(): Promise<{ clients: ClientSummary[]; projects: string[] }> {
+  return call<{ clients: ClientSummary[]; projects: string[] }>('GET', '/api/clients');
+}
+
+/** The documents of a client (I-16 C2, D-171), the archived ones too. */
+export async function listClientDocuments(id: string): Promise<ClientDocument[]> {
+  return (await call<{ documents: ClientDocument[] }>('GET', `/api/clients/${encodeURIComponent(id)}/documents`)).documents;
+}
+
+/** A new document: its bytes in base64, since the API takes only JSON; the core checks them against the name. */
+export async function addClientDocument(id: string, document: DocumentForm & { fileName: string; data: string }): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents`, document)).document;
+}
+
+export async function updateClientDocument(id: string, document: string, change: Partial<DocumentForm>): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}`, change)).document;
+}
+
+export async function archiveClientDocument(id: string, document: string, archived: boolean): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}/archive`, { archived })).document;
+}
+
+/** "Apri" with the app of the Mac, or "Mostra nel Finder" (reveal): run by the core. */
+export async function openClientDocument(id: string, document: string, reveal: boolean): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}/open`, { reveal });
+}
+
+/** The dashboard of a client (I-16 C3, D-170): the money of the IM of its projects. */
+export async function readClientDashboard(id: string): Promise<ClientDashboard> {
+  return (await call<{ dashboard: ClientDashboard }>('GET', `/api/clients/${encodeURIComponent(id)}/dashboard`)).dashboard;
+}
+
+export async function readClient(id: string): Promise<Client> {
+  return (await call<{ client: Client }>('GET', `/api/clients/${encodeURIComponent(id)}`)).client;
+}
+
+export async function createClient(form: ClientForm): Promise<string> {
+  return (await call<{ client: { id: string } }>('POST', '/api/clients', form)).client.id;
+}
+
+export async function updateClient(id: string, form: Partial<ClientForm>): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}`, form);
+}
+
+export async function archiveClient(id: string, archived: boolean): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}/archive`, { archived });
+}
+
+export async function addClientContact(id: string, contact: ContactForm): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts`, contact)).contact;
+}
+
+export async function updateClientContact(id: string, contactId: string, contact: Partial<ContactForm>): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, contact)).contact;
+}
+
+export async function removeClientContact(id: string, contactId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, {});
+}
+
+export async function linkClientProject(id: string, project: string): Promise<ClientProject> {
+  return (await call<{ project: ClientProject }>('POST', `/api/clients/${encodeURIComponent(id)}/projects`, { project })).project;
+}
+
+export async function unlinkClientProject(id: string, linkId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/projects/${encodeURIComponent(linkId)}`, {});
+}
+
+/** The logo as base64 in JSON (the core takes only JSON); the core finds its type from the bytes. */
+export async function uploadClientLogo(id: string, data: string): Promise<ClientLogo> {
+  return (await call<{ logo: ClientLogo }>('POST', `/api/clients/${encodeURIComponent(id)}/logo`, { data })).logo;
+}
+
+export async function removeClientLogo(id: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/logo`, {});
+}
+
+/** The client of a project, for the header of "Progetti"; null when none has it. */
+export async function clientOfProject(project: string): Promise<{ id: string; displayName: string; logo: ClientLogo | null } | null> {
+  return (await call<{ client: { id: string; displayName: string; logo: ClientLogo | null } | null }>('GET', `/api/clients/of-project/${encodeURIComponent(project)}`)).client;
+}
+
+// ---------------------------------------------------------------------------
+// The finances (I-18, D-183, docs/FINANCE-API.md): private (L2, rule
+// `finance`), only between this page and the core of this Mac.
+// ---------------------------------------------------------------------------
+
+const FINANCE = '/api/finance';
+
+function financeId(id: string): string {
+  return encodeURIComponent(id);
+}
+
+export async function listFinanceAccounts(): Promise<Account[]> {
+  return (await call<{ accounts: Account[] }>('GET', `${FINANCE}/accounts`)).accounts;
+}
+
+export async function createFinanceAccount(name: string, currency?: string): Promise<Account> {
+  return (await call<{ account: Account }>('POST', `${FINANCE}/accounts`, currency === undefined ? { name } : { name, currency })).account;
+}
+
+export async function updateFinanceAccount(id: string, change: { name?: string; archived?: boolean }): Promise<Account> {
+  return (await call<{ account: Account }>('PATCH', `${FINANCE}/accounts/${financeId(id)}`, change)).account;
+}
+
+/** The file read in the browser, in base64; nothing is saved. */
+export interface ImportRequest {
+  account: string;
+  name: string;
+  data: string;
+  profile?: BankProfile;
+  sheet?: string;
+}
+
+export async function previewFinanceImport(request: ImportRequest): Promise<Preview> {
+  return (await call<{ preview: Preview }>('POST', `${FINANCE}/imports/preview`, request)).preview;
+}
+
+export async function runFinanceImport(request: ImportRequest & { profile: BankProfile }): Promise<ImportRecord> {
+  return (await call<{ import: ImportRecord }>('POST', `${FINANCE}/imports`, request)).import;
+}
+
+export async function listFinanceImports(account: string): Promise<ImportRecord[]> {
+  return (await call<{ imports: ImportRecord[] }>('GET', `${FINANCE}/imports?${new URLSearchParams({ account }).toString()}`)).imports;
+}
+
+/** "Annulla" an import: its rows go away. */
+export async function undoFinanceImport(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/imports/${financeId(id)}`, {});
+}
+
+/** `query` from `filterQuery` of finance.ts. */
+export async function listFinanceTransactions(query: string): Promise<{ transactions: Tx[]; total: number }> {
+  return call<{ transactions: Tx[]; total: number }>('GET', `${FINANCE}/transactions?${query}`);
+}
+
+export async function setTransactionCategory(id: string, category: string | null, rule: boolean): Promise<{ transaction: Tx; rule: Rule | null }> {
+  return call<{ transaction: Tx; rule: Rule | null }>('PATCH', `${FINANCE}/transactions/${financeId(id)}`, rule ? { category, rule: true } : { category });
+}
+
+export async function listFinanceCategories(): Promise<Category[]> {
+  return (await call<{ categories: Category[] }>('GET', `${FINANCE}/categories`)).categories;
+}
+
+export async function createFinanceCategory(name: string, kind: Category['kind']): Promise<Category> {
+  return (await call<{ category: Category }>('POST', `${FINANCE}/categories`, { name, kind })).category;
+}
+
+export async function renameFinanceCategory(id: string, name: string): Promise<void> {
+  await call('PATCH', `${FINANCE}/categories/${financeId(id)}`, { name });
+}
+
+export async function deleteFinanceCategory(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/categories/${financeId(id)}`, {});
+}
+
+export async function listFinanceRules(): Promise<Rule[]> {
+  return (await call<{ rules: Rule[] }>('GET', `${FINANCE}/rules`)).rules;
+}
+
+export async function createFinanceRule(match: string, category: string): Promise<Rule> {
+  return (await call<{ rule: Rule }>('POST', `${FINANCE}/rules`, { match, category })).rule;
+}
+
+export async function deleteFinanceRule(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/rules/${financeId(id)}`, {});
+}
+
+export async function listFinanceBudgets(): Promise<Budget[]> {
+  return (await call<{ budgets: Budget[] }>('GET', `${FINANCE}/budgets`)).budgets;
+}
+
+export async function setFinanceBudget(category: string, monthly: number): Promise<Budget> {
+  return (await call<{ budget: Budget }>('PUT', `${FINANCE}/budgets/${financeId(category)}`, { monthly })).budget;
+}
+
+export async function deleteFinanceBudget(category: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/budgets/${financeId(category)}`, {});
+}
+
+/** Without `from`/`to`, the last 12 months; without `account`, every account (and no balance). */
+export async function readFinanceSummary(filter: { account?: string; from?: string; to?: string }): Promise<Summary> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) if (value !== '') params.set(key, value);
+  const query = params.toString();
+  return call<Summary>('GET', `${FINANCE}/summary${query === '' ? '' : `?${query}`}`);
+}
+
+/** The checks of a month (`YYYY-MM`), the current one without it. */
+export async function readFinanceAlerts(month?: string): Promise<FinanceAlert[]> {
+  return (await call<{ alerts: FinanceAlert[] }>('GET', `${FINANCE}/alerts${month === undefined ? '' : `?${new URLSearchParams({ month }).toString()}`}`)).alerts;
+}
+
+// ---------------------------------------------------------------------------
+// The Studio (I-19, D-184, docs/STUDIO-API.md): the mockups of an approved
+// project, read and written only on this Mac.
+// ---------------------------------------------------------------------------
+
+/**
+ * Hands a built frame document to the core, which serves it back with a policy of its own
+ * (a srcdoc frame would inherit the chat's policy and lose the mockup's inline scripts and styles).
+ */
+export async function studioFrame(html: string, print = false): Promise<string> {
+  return (await call<{ url: string }>('POST', '/api/studio-frames', { html, print })).url;
+}
+
+function studioBase(project: string): string {
+  return `/api/studio/${encodeURIComponent(project)}`;
+}
+
+export async function listMockups(project: string): Promise<MockupList> {
+  return call<MockupList>('GET', `${studioBase(project)}/mockups`);
+}
+
+export async function readMockup(project: string, path: string): Promise<MockupText> {
+  return call<MockupText>('GET', `${studioBase(project)}/file?${new URLSearchParams({ path }).toString()}`);
+}
+
+/** The direct edit (O6): only when the file is still `base`; 409 `changed` otherwise. */
+export async function writeMockup(project: string, path: string, text: string, base: string): Promise<{ path: string; sha256: string }> {
+  return call<{ path: string; sha256: string }>('PUT', `${studioBase(project)}/file`, { path, text, base });
+}
+
+/** Deletes a mockup (D-184): it moves to `<folder>/eliminati/` of the project, only if it is still the version read. */
+export async function deleteMockup(project: string, path: string, base: string, permanent = false): Promise<{ path: string; retired: string | null }> {
+  return call<{ path: string; retired: string | null }>('POST', `${studioBase(project)}/delete`, { path, base, ...(permanent ? { permanent: true } : {}) });
+}
+
+/** The examples of the styles written by Sonnet (I-20, D-185). */
+export async function loadStyleExamples(): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('GET', '/api/design-catalog/examples');
+}
+
+/** Queues the example of one style, or every missing one without `style`. */
+export async function generateStyleExamples(style?: string): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('POST', '/api/design-catalog/examples', style === undefined ? {} : { style });
+}
+
+export async function readStyleExample(slug: string, kind: 'landing' | 'deck'): Promise<string> {
+  return (await call<{ text: string }>('GET', `/api/design-catalog/examples/${encodeURIComponent(slug)}/${kind}`)).text;
+}
+
+/** The Italian descriptions of the skills; `start` asks the core to translate the missing ones. */
+export async function skillTranslations(start = false): Promise<TranslationsStatus> {
+  return start ? call<TranslationsStatus>('POST', '/api/skills-catalog/translations', {}) : call<TranslationsStatus>('GET', '/api/skills-catalog/translations');
+}
+
+/** The small page of each style of the adopted catalog (I-20, D-185), by slug. */
+export async function listStyleSamples(): Promise<StyleSamples> {
+  return call<StyleSamples>('GET', '/api/design-catalog/samples');
+}
+
+/** The .pptx of a presentation, as a file to save. */
+export async function exportMockupPptx(project: string, path: string, deck: Deck): Promise<Blob> {
+  const response = await fetch(`${studioBase(project)}/pptx`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, deck }),
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
+  }
+  return response.blob();
 }

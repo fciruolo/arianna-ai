@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
+import SecretaryPanel from './components/SecretaryPanel.vue';
 import IncognitoClosed from './components/IncognitoClosed.vue';
 import IncognitoEndDialog from './components/IncognitoEndDialog.vue';
 import IncomingCall from './components/IncomingCall.vue';
@@ -16,19 +17,23 @@ import LabelLegend from './components/LabelLegend.vue';
 import NewConversationDialog from './components/NewConversationDialog.vue';
 import OfficePage from './components/OfficePage.vue';
 import ProjectsPage from './components/ProjectsPage.vue';
+import CardwallPage from './components/CardwallPage.vue';
+import ClientsPage from './components/ClientsPage.vue';
+import FinancePage from './components/FinancePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
-import ChangelogPage from './components/ChangelogPage.vue';
 import NewAgentPage from './components/NewAgentPage.vue';
-import DevProgressPage from './components/DevProgressPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
+import GodPage from './components/GodPage.vue';
+import StudioPage from './components/StudioPage.vue';
+import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { loadDevPending, loadInstallation } from './lib/api.ts';
 import { pendingText } from './lib/dev-progress.ts';
-import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
+import { callBlocker, calleeOf, conversationCallee, draftCallee, type Callee } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
 import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
@@ -36,40 +41,44 @@ import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitA
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
-import { isProjectsPath, PROJECTS_PATH } from './lib/projects.ts';
-import { callTarget } from './lib/sidebar.ts';
-import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
+import { folderFromSearch, invoiceFromSearch, isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projects.ts';
+import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
+import { financePathFor, financeTabFromPath, isFinancePath, type FinanceTab } from './lib/finance.ts';
+import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
+import { DESIGNER_AGENT, isStudioPath, messageDesign, NO_DESIGN, studioFromSearch, studioPathFor, type StudioAddress, type StudioDesign } from './lib/studio.ts';
+import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
-  CHANGELOG_PATH,
   conversationFromPath,
-  DEV_PATH,
   documentTitle,
-  isChangelogPath,
-  isDevPath,
   isKnowledgePath,
   isNewAgentPath,
   isOfficePath,
+  isSecretaryPath,
   isSettingsPath,
+  isGodPath,
   isThoughtsPath,
   isVoiceTrialPath,
-  KNOWLEDGE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  knowledgeSource,
   NEW_AGENT_PATH,
   OFFICE_PATH,
   pathFor,
   settingsPathFor,
   settingsSlug,
+  GOD_PATH,
   THOUGHTS_PATH,
   VOICE_TRIAL_PATH,
+  type KnowledgeSource,
 } from './lib/route.ts';
+import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
-import { loadTheme, saveTheme, themeAttribute, type Theme } from './lib/theme.ts';
-import type { Activity, Approval } from './lib/types.ts';
+import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
+import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -103,43 +112,45 @@ function leaveClosed(): void {
   setTitle(undefined);
 }
 
-// "Chiamami alle…" (D-066): a small form under the clock button.
-const showSchedule = ref(false);
-const scheduleAt = ref('');
-function openSchedule(): void {
-  scheduleAt.value = inAnHour();
-  showSchedule.value = !showSchedule.value;
-}
-async function confirmSchedule(): Promise<void> {
-  const at = localDateTime(scheduleAt.value);
-  if (at === undefined) return;
-  if (await store.scheduleCall(at)) showSchedule.value = false;
-}
+// Calls (D-066, D-158): the phone in the header of a private conversation with Arianna, of a direct chat with an agent, or of their empty new page.
+const callee = computed<Callee | undefined>(() => {
+  if (page.value !== 'chat') return undefined;
+  return current.value !== undefined ? conversationCallee(current.value) : draftCallee(draft.value);
+});
 
-// Calls (D-066): "Chiama" of the left bar (D-097) calls Arianna in the open private conversation, or in a new private one.
-const callBlocked = computed(() => callBlocker(voiceState.value, false, callSession.value !== null));
+/** Why the phone cannot call now, or undefined: the voice, an archived conversation, a call on; on a new page, an agent that cannot answer or a project not approved. */
+const callBlocked = computed(() => {
+  const blocked = callBlocker(voiceState.value, (current.value?.archivedAt ?? null) !== null, callSession.value !== null);
+  if (blocked !== undefined || current.value !== undefined) return blocked;
+  const start = draft.value;
+  if (start === null) return undefined;
+  if (start.agent !== undefined && !directAgents.value.some((entry) => entry.agent === start.agent)) return `${callee.value?.subject ?? 'L’agente'} non può rispondere adesso`;
+  return draftProjectProblem(start, projects.value.length > 0 ? projects.value.map((entry) => entry.name) : undefined);
+});
 
-/** True from the click on "Chiama" until the call started or failed: a second click does nothing. */
+/** True from the click on the phone until the call started or failed: a second click does nothing. */
 const calling = ref(false);
+const callOff = computed(() => callBlocked.value !== undefined || calling.value || callStarting.value || (draft.value !== null && sending.value));
 
-async function callArianna(): Promise<void> {
-  if (callBlocked.value !== undefined || calling.value || callStarting.value) return;
+async function placeCall(): Promise<void> {
+  if (callee.value === undefined || callOff.value) return;
   calling.value = true;
   try {
-    const target = callTarget(current.value, page.value === 'chat');
-    if (target === 'new') {
-      const before = chat.value?.conversationId;
-      await createConversation('private');
-      // The core refused the new conversation: no call in the one that was open.
-      if (chat.value === null || chat.value.conversationId === before) return;
-    } else if (chat.value?.conversationId !== target.here) {
-      return;
-    }
-    showSidebar.value = false;
-    await store.startCall();
+    if (current.value !== undefined) await store.startCall();
+    else await store.callDraft();
   } finally {
     calling.value = false;
   }
+}
+
+/** Who answers in the call of a conversation: Arianna, or the agent of its direct chat. */
+function calleeIn(id: string | undefined): Callee {
+  const conversation = current.value?.id === id ? current.value : conversations.value.find((item) => item.id === id);
+  return calleeOf(conversation?.agent);
+}
+/** The character of who answers, Arianna's when the agent has none. */
+function characterOf(who: Callee): CharacterChoice | undefined {
+  return (who.agent === null ? undefined : characters.value?.agents[who.agent]) ?? characters.value?.agents.arianna;
 }
 
 // Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser (D-097).
@@ -155,16 +166,20 @@ try {
 const layout = ref(loadLayout(storage));
 watch(layout, (value) => saveLayout(storage, value), { deep: true });
 
-/** Wide enough for the bar to be a column (Tailwind md, xl) rather than a drawer. */
+/** Wide enough for the left bar to be a column (Tailwind md) rather than a drawer. */
 function wide(rem: number): boolean {
   return typeof window !== 'undefined' && window.matchMedia(`(min-width: ${String(rem)}rem)`).matches;
 }
+/** The right bar is a column only from 3xl (D-150): on a laptop it is a drawer that starts closed. */
+function panelColumn(): boolean {
+  return wide(PANEL_COLUMN_PX / 16);
+}
 /** Followed live: a closed drawer is inert (out of Tab and of screen readers), a column never. */
 const wideSidebar = ref(wide(48));
-const widePanel = ref(wide(80));
+const widePanel = ref(panelColumn());
 function measureWidth(): void {
   wideSidebar.value = wide(48);
-  widePanel.value = wide(80);
+  widePanel.value = panelColumn();
 }
 
 /** The fold button of the left bar: a thin column on wide screens, the drawer closes on narrow ones. */
@@ -173,14 +188,9 @@ function foldSidebar(): void {
   showSidebar.value = false;
 }
 
-/** The right bar: a column from xl, a drawer below. */
-function openPanel(): void {
-  showSidebar.value = false;
-  if (wide(80)) layout.value.panel = false;
-  else showPanel.value = true;
-}
+/** The right bar: a column from 3xl, a drawer below (D-150); its button is in the top bar. */
 function closePanel(): void {
-  if (wide(80)) layout.value.panel = true;
+  if (panelColumn()) layout.value.panel = true;
   showPanel.value = false;
 }
 
@@ -323,9 +333,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -335,11 +345,6 @@ function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 
 
 function openVoiceTrial(): void {
   openPage('voice-trial', VOICE_TRIAL_PATH, 'Provino della voce');
-}
-
-/** "Sviluppo di Arianna" (D-102), reached from the settings. */
-function openDevProgress(): void {
-  openPage('dev', DEV_PATH, 'Sviluppo di Arianna');
 }
 
 /**
@@ -368,11 +373,6 @@ function openNewAgent(): void {
   openPage('new-agent', NEW_AGENT_PATH, 'Nuovo agente');
 }
 
-/** "Novità": the register of the versions, reached from the settings. */
-function openChangelog(): void {
-  openPage('changelog', CHANGELOG_PATH, 'Novità');
-}
-
 /** The section of the settings in the address (D-105): `/impostazioni/<slug>`; undefined is the first one. */
 const settingsSection = ref<string | undefined>(undefined);
 /** The settings hold edits not saved (D-105): the back button of the browser asks before leaving them. */
@@ -385,11 +385,24 @@ function openSettings(slug?: string): void {
 
 /** The node the knowledge page selects when it opens (D-090: "Apri nel grafo"). */
 const knowledgeNode = ref<string | undefined>(undefined);
+/** The notes of kb/ or Arianna's own documents (D-155). */
+const knowledgeFrom = ref<KnowledgeSource>('kb');
 
-/** The graph of the knowledge base (D-087), with a node selected when given. */
-function openKnowledge(nodeId?: string): void {
+/** The graph of the knowledge base (D-087), with a node selected when given; `source` picks Arianna's documents (D-155). */
+function openKnowledge(nodeId?: string, source: KnowledgeSource = 'kb'): void {
   knowledgeNode.value = nodeId;
-  openPage('knowledge', nodeId === undefined ? KNOWLEDGE_PATH : knowledgePathFor(nodeId), 'Conoscenza');
+  knowledgeFrom.value = source;
+  openPage('knowledge', knowledgePathFor(nodeId, source), 'Conoscenza');
+}
+
+/** GOD (D-127): its clone and its conversations. */
+function openGod(): void {
+  openPage('god', GOD_PATH, 'GOD');
+}
+
+/** A new conversation with GOD on a part of the container of Arianna's clones (D-127). */
+function openGodChat(workspace: string): void {
+  openDraft({ mode: 'work', project: workspace, agent: GOD_AGENT });
 }
 
 /** The thoughts (D-090). */
@@ -402,9 +415,98 @@ function openOffice(): void {
   openPage('office', OFFICE_PATH, 'Ufficio');
 }
 
-/** An approved project, read only (D-134). */
-function openProjects(): void {
-  openPage('projects', PROJECTS_PATH, 'Progetti');
+/** Grows at every opening of "Progetti": the page, already open, reads the address again (D-191: the grid or a project). */
+const projectsVisit = ref(0);
+/** An approved project, read only (D-134); `name` opens that one (from a client's page, D-168). */
+function openProjects(name?: string, folder?: string, invoice?: string): void {
+  openPage('projects', projectsPathFor(name, folder, invoice), 'Progetti');
+  projectsVisit.value += 1;
+}
+
+/** The client open in "Clienti" (D-168), from the address `/clienti/<id>`; null is the list. */
+const clientShown = ref<string | null>(null);
+
+/** The clients (I-16, D-168): the list, or one client. */
+function openClients(id: string | null = null): void {
+  clientShown.value = id;
+  openPage('clients', clientPathFor(id), 'Clienti');
+}
+
+/** The tab open in "Finanze" (I-18, D-183), from the address `/finanze/<tab>`; undefined is the summary. */
+const financeTab = ref<FinanceTab | undefined>(undefined);
+
+/** The finances (I-18, D-183): private, only on this Mac. */
+function openFinance(tab?: FinanceTab): void {
+  financeTab.value = tab;
+  openPage('finance', financePathFor(tab), 'Finanze');
+}
+
+/** What the Studio shows (I-19, D-184): the project and the mockup of its address. */
+const studioAddress = ref<StudioAddress>({});
+
+/**
+ * The Studio (I-19, D-184): the direct chat with the Designer of the chosen
+ * project on the left (its latest one not archived, or a draft of it), the
+ * canvas on the right. Another mockup of the same project changes only the
+ * address; another project opens its chat.
+ */
+function openStudio(address: StudioAddress = {}, how: 'push' | 'replace' = 'push'): void {
+  const sameProject = page.value === 'studio' && studioAddress.value.project === address.project;
+  studioAddress.value = address;
+  const path = studioPathFor(address);
+  if (sameProject) {
+    if (`${window.location.pathname}${window.location.search}` !== path) {
+      if (how === 'replace') window.history.replaceState(null, '', path);
+      else window.history.pushState(null, '', path);
+    }
+    return;
+  }
+  openPage('studio', path, 'Studio');
+  if (address.project !== undefined) void store.openStudioChat(address.project);
+}
+
+/** "Apri nello Studio" of a chat with the Designer (I-20, D-185): its project, by name or folder. */
+function openStudioOf(workspace: string): void {
+  const name = projects.value.find((entry) => entry.name === workspace || entry.path === workspace)?.name;
+  openStudio(name === undefined ? {} : { project: name });
+}
+
+/** The direct chat of the Studio: the Designer's conversation, or its draft before the first message. */
+const studioChatOpen = computed(() => {
+  if (page.value !== 'studio') return false;
+  // Only the chat of the project shown: never one of another project still open.
+  const name = studioAddress.value.project;
+  const info = projects.value.find((entry) => entry.name === name);
+  if (name === undefined || info === undefined) return false;
+  if (draft.value !== null) return draft.value.agent === DESIGNER_AGENT && draft.value.project === name;
+  // The core keeps the project by name (older conversations by folder): either one.
+  return current.value?.agent === DESIGNER_AGENT && (current.value.workspace === info.name || current.value.workspace === info.path);
+});
+
+/** Why the comments of the Studio cannot leave now, or undefined. */
+const studioChatBlocked = computed(() => {
+  if (!studioChatOpen.value) return 'Apri la conversazione col Designer di questo progetto per inviare i commenti.';
+  if (directAgents.value.length > 0 && !directAgents.value.some((entry) => entry.agent === DESIGNER_AGENT)) return 'Il Designer non può rispondere adesso: controlla Impostazioni → Agenti.';
+  if ((current.value?.archivedAt ?? null) !== null) return 'La conversazione col Designer è archiviata: ripristinala per inviare i commenti.';
+  return undefined;
+});
+
+/** The style and skills chosen in the Studio for its project (O2, D-184): every message of the Studio carries them. */
+const studioDesign = ref<StudioDesign>(NO_DESIGN);
+
+/** One message to the Designer from the Studio (typed in its chat, or the comments of O3); the first one creates the conversation. */
+async function sendToDesigner(body: string): Promise<boolean> {
+  if (studioChatBlocked.value !== undefined) return false;
+  const design = messageDesign(studioDesign.value);
+  return draft.value !== null ? store.sendDraft(body, design) : store.send(body, design);
+}
+
+/** Changes when a task of the open chat ends: the Studio reads its list of mockups again. */
+const studioVersion = computed(() => Object.values(tasks.value).filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'to_verify').length);
+
+/** The cards and the commitments in columns (I-13, D-152). */
+function openCardwall(): void {
+  openPage('cardwall', CARDWALL_PATH, 'Cardwall');
 }
 
 /** A "/" command of the chat (D-090). */
@@ -467,19 +569,22 @@ function followAddress(): void {
     return;
   }
   if (isKnowledgePath(window.location.pathname)) {
-    openKnowledge(knowledgeFocus(window.location.search));
+    openKnowledge(knowledgeFocus(window.location.search), knowledgeSource(window.location.search));
     return;
   }
-  if (isDevPath(window.location.pathname)) {
-    openDevProgress();
-    return;
-  }
-  if (isChangelogPath(window.location.pathname)) {
-    openChangelog();
+  // «Novità» and «Sviluppo di Arianna» are sections of the settings (D-192): their old addresses open them.
+  const legacy = legacySection(window.location.pathname);
+  if (legacy !== undefined) {
+    window.history.replaceState(window.history.state, '', settingsPathFor(legacy));
+    openSettings(legacy);
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
     openThoughts();
+    return;
+  }
+  if (isGodPath(window.location.pathname)) {
+    openGod();
     return;
   }
   if (isOfficePath(window.location.pathname)) {
@@ -487,10 +592,32 @@ function followAddress(): void {
     return;
   }
   if (isProjectsPath(window.location.pathname)) {
-    openProjects();
+    // The folder and the invoice too: "back" to an address with them does not push a new one (D-191).
+    openProjects(projectFromSearch(window.location.search), folderFromSearch(window.location.search), invoiceFromSearch(window.location.search));
+    return;
+  }
+  if (isClientsPath(window.location.pathname)) {
+    openClients(clientFromPath(window.location.pathname) ?? null);
+    return;
+  }
+  if (isFinancePath(window.location.pathname)) {
+    openFinance(financeTabFromPath(window.location.pathname));
+    return;
+  }
+  if (isCardwallPath(window.location.pathname)) {
+    openCardwall();
+    return;
+  }
+  if (isStudioPath(window.location.pathname)) {
+    openStudio(studioFromSearch(window.location.search), 'replace');
     return;
   }
   page.value = 'chat';
+  // The secretary's own address (D-156): its conversation, without a new session (D-146).
+  if (isSecretaryPath(window.location.pathname)) {
+    if (current.value?.secretary !== true || chat.value === null) void store.openSecretaryAddress();
+    return;
+  }
   // Incognito (D-136): the address never names the conversation; its entry's state does.
   if (isIncognitoPath(window.location.pathname)) {
     const entry = entryFromState(window.history.state);
@@ -516,11 +643,16 @@ function followAddress(): void {
     if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
   } else if (chat.value?.conversationId !== id) {
     void store.open(id);
+  } else if (current.value?.secretary === true) {
+    // An old `/c/<id>` entry of the secretary already open (back, forward): its own address (D-156).
+    window.history.replaceState(null, '', pathFor(id, true));
   }
 }
 watch(
   () => [chat.value?.conversationId ?? null, current.value !== undefined] as const,
   ([id, known]) => {
+    // The Studio holds the Designer's chat on its own page and address (I-19, D-184).
+    if (page.value === 'studio') return;
     if (id !== null) page.value = 'chat';
     else if (page.value !== 'chat') return;
     // Not yet read (opened by id, in no list): the address waits, so an incognito id never reaches the history (D-136).
@@ -536,9 +668,11 @@ watch(
       writeIncognito({ conversationId: id }, here !== undefined && 'draft' in here ? 'replace' : 'push');
       return;
     }
-    const path = pathFor(id);
+    const secretary = id !== null && current.value?.secretary === true;
+    const path = pathFor(id, secretary);
     if (window.location.pathname === path) return;
-    if (id === null) window.history.replaceState(null, '', path);
+    // `/c/<id>` of the secretary's conversation (a notice, an old link) becomes `/segretaria` in the same entry (D-156).
+    if (id === null || (secretary && conversationFromPath(window.location.pathname) === id)) window.history.replaceState(null, '', path);
     else window.history.pushState(null, '', path);
   },
 );
@@ -581,6 +715,16 @@ async function openConversation(id: string): Promise<void> {
   showSidebar.value = false;
   page.value = 'chat';
   await store.open(id);
+}
+
+/** The secretary's conversation (D-144) is the one open on the chat page: its list of commitments shows above it. */
+const secretaryOpen = computed(() => page.value === 'chat' && current.value?.secretary === true);
+
+/** "Segretaria" of the left bar (D-144): its one private conversation, created the first time. */
+async function openSecretary(): Promise<void> {
+  showSidebar.value = false;
+  page.value = 'chat';
+  await store.openSecretary();
 }
 
 async function createConversation(mode: 'work' | 'private', project?: string): Promise<void> {
@@ -639,47 +783,45 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
   <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
     <!-- Left bar (D-097): a column on wide screens, a drawer otherwise. -->
     <SideBar
-      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:static md:z-auto md:w-auto md:translate-x-0"
+      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:relative md:z-auto md:w-auto md:translate-x-0"
       :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
       :inert="!showSidebar && !wideSidebar"
       :live="live"
-      :page="page === 'dev' || page === 'changelog' || page === 'new-agent' ? 'settings' : page"
-      :theme="theme"
+      :page="page === 'new-agent' ? 'settings' : page"
       :conversations="conversations"
       :archived="archived"
       :system-chats="systemChats"
       :selected="chat?.conversationId ?? null"
       :rename="store.rename"
-      :agent-ids="agentIds"
-      :characters="characters"
-      :pose-for="poseFor"
       :status="status"
-      :call-blocked="callBlocked"
-      :call-starting="callStarting || calling"
       :dev-pending="devPending"
+      :secretary-open="secretaryOpen"
       @fold="foldSidebar"
       @home="openChat(); showSidebar = false"
       @search="openSearch"
       @create="openNew"
+      @secretary="openSecretary"
       @thoughts="openThoughts"
+      @god="openGod"
       @knowledge="openKnowledge()"
       @office="openOffice"
-      @projects="openProjects"
-      @call="callArianna"
+      @projects="openProjects()"
+      @clients="openClients()"
+      @finance="openFinance()"
+      @cardwall="openCardwall"
+      @studio="openStudio()"
       @settings="openSettings"
-      @theme="(value) => (theme = value)"
-      @agents="openPanel"
       @open="openConversation"
       @archive="store.archive"
       @pin="store.pin"
-      @purge="store.purge"
+      @erase="store.erase"
     />
     <div v-if="showSidebar" class="fixed inset-0 z-20 bg-black/50 md:hidden" aria-hidden="true" @click="showSidebar = false" />
 
     <!-- Main -->
     <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">
       <header
-        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5"
+        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5 short:h-[52px]"
         :class="incognitoHeader ? 'border-incognito-line bg-incognito text-incognito-ink' : 'border-line bg-bg/85'"
       >
         <button
@@ -704,25 +846,28 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <span v-if="devPendingText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <!-- Incognito (D-136): the mask and the word, never a title. -->
-        <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[12.5px]">
+        <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[13.5px]">
           <Icon name="incognito" :size="18" />
-          <b class="font-hud text-[13px] font-semibold tracking-[0.08em]">Incognito</b>
+          <b class="font-hud text-[14px] font-semibold tracking-[0.08em]">Incognito</b>
           <span v-if="incognitoMode !== undefined" class="truncate opacity-80">· {{ MODE_TEXT[incognitoMode] }}<template v-if="incognitoProject"> · {{ incognitoProject }}</template></span>
         </p>
-        <p v-else class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
-          <template v-if="current !== undefined">
+        <p v-else class="min-w-0 flex-1 truncate text-[13.5px] text-muted">
+          <template v-if="page === 'studio'">Arianna / <b class="font-medium text-ink">Studio</b><template v-if="studioAddress.project"> / {{ studioAddress.project }}</template></template>
+          <template v-else-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
-          <template v-else-if="page === 'voice-trial'">Impostazioni / <b class="font-medium text-ink">Provino della voce</b></template>
+          <template v-else-if="page === 'voice-trial'">Impostazioni / Voce / <b class="font-medium text-ink">Provino della voce</b></template>
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
-          <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
-          <template v-else-if="page === 'changelog'">Impostazioni / <b class="font-medium text-ink">Novità</b></template>
           <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
+          <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
+          <template v-else-if="page === 'clients'">Arianna / <b class="font-medium text-ink">Clienti</b></template>
+          <template v-else-if="page === 'finance'">Arianna / <b class="font-medium text-ink">Finanze</b></template>
+          <template v-else-if="page === 'cardwall'">Arianna / <b class="font-medium text-ink">Cardwall</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
         </p>
@@ -741,7 +886,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <button
           v-if="incognitoOpen && page === 'chat'"
           type="button"
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-incognito-line px-2.5 py-1 text-[12.5px] font-medium text-incognito-ink hover:bg-white/10 disabled:opacity-60"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-incognito-line px-2.5 py-1 text-[13.5px] font-medium text-incognito-ink hover:bg-white/10 disabled:opacity-60"
           :disabled="ending"
           title="Termina: Arianna ferma il lavoro in corso e cancella testi, riassunti e attività"
           aria-haspopup="dialog"
@@ -749,50 +894,52 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <Icon name="close" :size="14" />{{ ending ? 'Cancello…' : 'Termina' }}
         </button>
-        <!-- No call later from an incognito conversation (D-136): the core skips its outgoing calls. -->
-        <div v-if="current !== undefined && page === 'chat' && !incognitoOpen" class="relative">
-          <button
-            type="button"
-            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink disabled:opacity-60"
-            :disabled="voiceState === 'off' || current.archivedAt !== null"
-            aria-label="Fatti chiamare da Arianna più tardi"
-            title="Fatti chiamare da Arianna più tardi"
-            :aria-expanded="showSchedule"
-            @click="openSchedule"
-          >
-            <Icon name="clock" />
-          </button>
-          <form v-if="showSchedule" class="hud-card absolute top-11 right-0 z-40 flex w-64 flex-col gap-2 bg-surface p-3 text-sm" @submit.prevent="confirmSchedule">
-            <label class="flex flex-col gap-1">
-              Arianna ti chiama alle
-              <input v-model="scheduleAt" type="datetime-local" required class="rounded-md border border-line bg-surface-2 px-2 py-1" />
-            </label>
-            <p class="text-xs text-muted">Anche nelle fasce di silenzio; conta nel massimo di chiamate al giorno.</p>
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn px-2.5 py-1 text-xs" @click="showSchedule = false">Annulla</button>
-              <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs">Programma</button>
-            </div>
-          </form>
-        </div>
+        <!--
+          The phone (D-158): calls Arianna or the agent of the direct chat; on a new page it creates the conversation first.
+          Not `disabled`: it stays reachable with Tab and says why it cannot call. Never in incognito (D-136).
+        -->
+        <button
+          v-if="callee !== undefined"
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-lg text-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-60 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
+          :aria-disabled="callOff ? 'true' : undefined"
+          :aria-label="`Chiama ${callee.the}`"
+          :aria-describedby="callBlocked !== undefined ? 'call-why' : undefined"
+          :title="callBlocked === undefined ? `Chiama ${callee.the}` : `Chiama ${callee.the}: ${callBlocked}`"
+          @click="placeCall"
+        >
+          <Icon name="phone" />
+        </button>
+        <span v-if="callee !== undefined && callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
         <InstallationBadge v-if="installation !== undefined" :info="installation" />
-        <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
+        <span class="hidden font-mono text-[12.5px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
+        <!-- The theme (D-158): one button, each click Chiaro → Scuro → Auto; the icon is the active theme. Also in Impostazioni → Aspetto. -->
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 xl:hidden"
+          class="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink"
+          :aria-label="themeLabel(theme)"
+          :title="themeLabel(theme)"
+          @click="theme = nextTheme(theme)"
+        >
+          <Icon :name="THEME_ICON[theme]" />
+        </button>
+        <button
+          type="button"
+          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 3xl:hidden"
           :aria-label="showPanel ? 'Chiudi la barra degli agenti' : 'Apri la barra degli agenti'"
           @click="showPanel = !showPanel"
         >
           <Icon name="panel" />
           <span
             v-if="elsewhere.length > 0"
-            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[12px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
         <!-- Right bar folded (D-097): only its icon, with what waits elsewhere as a badge. -->
         <button
           v-if="layout.panel"
           type="button"
-          class="relative -mr-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink xl:grid"
+          class="relative -mr-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink 3xl:grid"
           aria-label="Apri la barra degli agenti"
           title="Apri la barra degli agenti"
           @click="layout.panel = false"
@@ -800,7 +947,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <Icon name="panel-expand" />
           <span
             v-if="elsewhere.length > 0"
-            class="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+            class="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[12px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
       </header>
@@ -821,21 +968,85 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <Icon name="incognito" :size="14" />
         <span class="flex-1">{{ incognitoSoon }}</span>
       </p>
-      <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo Arianna… la prima volta i modelli si caricano.</p>
+      <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo {{ (callee ?? calleeIn(incoming?.conversationId)).the }}… la prima volta i modelli si caricano.</p>
       <p v-if="strayCall !== null && callSession === null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">
         <Icon name="phone" :size="14" />
         <span class="flex-1">Una chiamata risulta ancora aperta (forse da una pagina chiusa o ricaricata).</span>
         <button type="button" class="btn px-2.5 py-1 text-xs" @click="store.closeStrayCall">Chiudila</button>
       </p>
 
-      <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
-      <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
-      <ChangelogPage v-else-if="page === 'changelog'" />
+      <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
-      <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
+      <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
-      <ProjectsPage v-else-if="page === 'projects'" />
+      <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
+      <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
+      <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />
+      <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
+      <StudioPage
+        v-else-if="page === 'studio'"
+        :projects="projects"
+        :address="studioAddress"
+        :version="studioVersion"
+        :send="sendToDesigner"
+        :chat-blocked="studioChatBlocked"
+        @design="(design) => (studioDesign = design)"
+        @projects="(name, folder) => openProjects(name, folder)"
+        @address="(address) => openStudio(address, address.project === studioAddress.project ? 'replace' : 'push')"
+      >
+        <template #chat>
+          <DraftChat
+            v-if="draft !== null && studioChatOpen"
+            :key="draft.key"
+            class="min-h-0 flex-1"
+            :draft="draft"
+            :project-problem="draftProjectProblem(draft, projects.length > 0 ? projects.map((entry) => entry.name) : undefined)"
+            :sending="sending"
+            :send="(text) => store.sendDraft(text, messageDesign(studioDesign))"
+            :arianna="characters?.agents.arianna"
+            :characters="characters?.agents"
+            :agents="directAgents"
+          />
+          <ChatView
+            v-else-if="chat !== null && current !== undefined && studioChatOpen"
+            class="min-h-0 flex-1"
+            :chat="chat"
+            :conversation="current"
+            :tasks="tasks"
+            :credits="credits"
+            :activity-counts="activityCounts"
+            :sending="sending"
+            :models="models"
+            :approvals="inChat"
+            :decide="store.decide"
+            :arianna="{ choice: characters?.agents.arianna, pose: ariannaHere }"
+            :status="status"
+            :calls="calls"
+            :participants="participants"
+            :characters="characters?.agents"
+            :direct-agents="directAgents"
+            @send="(body) => store.send(body, messageDesign(studioDesign))"
+            :studio-file="studioAddress.file"
+            @restarted="(id) => store.reloadConversation(id)"
+            @remove-participant="store.removeParticipant"
+            @call-when-done="store.callWhenDone"
+            @cancel-call="store.cancelScheduled"
+            @choose-model="store.chooseModel"
+            @restore="store.archive(current.id, false)"
+            @explain="store.explain"
+            @retry="store.retry"
+            @attach-question="store.attachQuestion"
+            @open="openConversation"
+            @command="runCommand"
+            @legend="showLegend = true"
+            @open-knowledge="openKnowledge"
+            @god-dashboard="openGod"
+          />
+          <p v-else class="p-4 text-sm text-muted">Apro la conversazione col Designer…</p>
+        </template>
+      </StudioPage>
+      <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
       <OfficePage
         v-else-if="page === 'office'"
         :status="status"
@@ -844,6 +1055,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :conversations="conversations"
         :characters="characters"
         :signals="officeSignals"
+        :cards-version="cardsVersion"
+        :decide="store.decide"
         @open="openConversation"
         @draft="(mode, project) => openDraft({ mode, project })"
       />
@@ -859,8 +1072,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :characters="characters?.agents"
         :agents="directAgents"
       />
+      <template v-else-if="chat !== null && current !== undefined">
+      <!-- The secretary's conversation (D-144): the mini cardwall of its commitments above it (D-156). -->
+      <SecretaryPanel v-if="current.secretary === true" :version="cardsVersion" @cardwall="openCardwall" />
       <ChatView
-        v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"
         :chat="chat"
         :conversation="current"
@@ -890,7 +1105,12 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @command="runCommand"
         @legend="showLegend = true"
         @open-knowledge="openKnowledge"
+        @god-dashboard="openGod"
+        studio-link
+        @studio="openStudioOf"
+        @restarted="(id) => store.reloadConversation(id)"
       />
+      </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">
           <PixelAgent :choice="characters?.agents.arianna" :pose="poseFor('arianna')" :scale="3" bubble label="Arianna" />
@@ -905,8 +1125,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
     <!-- Status panel: on the right on wide screens, a drawer otherwise -->
     <StatusPanel
-      class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform xl:static xl:z-auto xl:w-auto xl:translate-x-0"
-      :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { 'xl:hidden': layout.panel }]"
+      class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform 3xl:static 3xl:z-auto 3xl:w-auto 3xl:translate-x-0"
+      :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { '3xl:hidden': layout.panel }]"
       :inert="!showPanel && !widePanel"
       :status="status"
       :characters="characters"
@@ -920,7 +1140,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @close="closePanel"
       @open="(id) => { showPanel = false; void openConversation(id); }"
     />
-    <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
+    <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 3xl:hidden" aria-hidden="true" @click="showPanel = false" />
 
     <SearchDialog v-if="showSearch" @close="showSearch = false" @go="goTo" />
     <LabelLegend v-if="showLegend" @close="showLegend = false" />
@@ -935,7 +1155,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"
-      :agents="directAgents"
+      :agents="directAgents.filter((entry) => entry.container === undefined)"
       :characters="characters?.agents"
       :initial-agent="newWith"
       @close="showNew = false"
@@ -947,7 +1167,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       v-if="incoming !== null && callSession === null"
       :reason="incoming.reason"
       :title="conversations.find((item) => item.id === incoming?.conversationId)?.title ?? 'Conversazione'"
-      :choice="characters?.agents.arianna"
+      :callee="calleeIn(incoming.conversationId)"
+      :choice="characterOf(calleeIn(incoming.conversationId))"
       @answer="store.answerIncoming"
       @decline="store.declineIncoming"
     />
@@ -956,7 +1177,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :session="callSession"
       :title="conversations.find((item) => item.id === callSession?.call.conversationId)?.title ?? 'Chiamata'"
       :messages="chat?.conversationId === callSession.call.conversationId ? chat.messages : []"
-      :choice="characters?.agents.arianna"
+      :callee="calleeIn(callSession.call.conversationId)"
+      :choice="characterOf(calleeIn(callSession.call.conversationId))"
       @hang-up="store.hangUp"
     />
 

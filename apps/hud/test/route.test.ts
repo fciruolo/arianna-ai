@@ -6,13 +6,16 @@ import {
   documentTitle,
   isNewAgentPath,
   isOfficePath,
+  isSecretaryPath,
   isSettingsPath,
   isThoughtsPath,
   NEW_AGENT_PATH,
   OFFICE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  knowledgeSource,
   pathFor,
+  SECRETARY_PATH,
   THOUGHTS_PATH,
 } from '../src/lib/route.ts';
 
@@ -51,6 +54,18 @@ test('the thoughts page and the knowledge page with a node selected (D-090)', ()
   assert.equal(knowledgeFocus('?nota='), undefined);
 });
 
+test('the knowledge page of Arianna\'s own documents has its address, anything else is the notes (D-155)', () => {
+  assert.equal(knowledgePathFor(), '/conoscenza');
+  assert.equal(knowledgePathFor(undefined, 'arianna'), '/conoscenza?fonte=arianna');
+  const path = knowledgePathFor('arianna/decisioni/D-145.md', 'arianna');
+  assert.equal(path, '/conoscenza?fonte=arianna&nota=arianna%2Fdecisioni%2FD-145.md');
+  const search = path.slice(path.indexOf('?'));
+  assert.equal(knowledgeSource(search), 'arianna');
+  assert.equal(knowledgeFocus(search), 'arianna/decisioni/D-145.md');
+  assert.equal(knowledgeSource('?fonte=ARIANNA'), 'arianna');
+  for (const other of ['', '?fonte=', '?fonte=kb', '?fonte=docs', '?nota=arianna%2Fx.md']) assert.equal(knowledgeSource(other), 'kb', other);
+});
+
 test('the office has its own address, and nothing else is the office', () => {
   assert.equal(OFFICE_PATH, '/ufficio');
   assert.equal(isOfficePath('/ufficio'), true);
@@ -64,4 +79,16 @@ test('the page "Nuovo agente" has its own address, apart from the sections of th
   assert.ok(isNewAgentPath(`${NEW_AGENT_PATH}/`));
   assert.equal(isSettingsPath(NEW_AGENT_PATH), false);
   for (const path of ['/impostazioni/agenti', '/impostazioni/agenti/nuovo/x', '/agenti/nuovo']) assert.equal(isNewAgentPath(path), false, path);
+});
+
+test('the secretary has its own address (D-156): /segretaria, never its /c/<id>', () => {
+  assert.equal(SECRETARY_PATH, '/segretaria');
+  assert.equal(pathFor(ID, true), '/segretaria');
+  assert.equal(pathFor(ID, false), `/c/${ID}`);
+  assert.equal(pathFor(null, true), '/');
+  assert.ok(isSecretaryPath('/segretaria'));
+  assert.ok(isSecretaryPath('/segretaria/'));
+  assert.ok(!isSecretaryPath('/segretaria/altro'));
+  assert.ok(!isSecretaryPath('/segretari'));
+  assert.equal(conversationFromPath('/segretaria'), undefined);
 });

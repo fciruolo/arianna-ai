@@ -78,6 +78,26 @@ export function checkCaptureUrl(value: string): string {
   return parsed.href;
 }
 
+/**
+ * The first http(s) address in a text the user wrote, or undefined: for a link
+ * pasted as a thought, whose header has no `url` (D-154). Trailing
+ * punctuation of the sentence is not part of it.
+ */
+export function linkInText(text: string): string | undefined {
+  const match = /https?:\/\/[^\s<>"'`]+/i.exec(text);
+  if (match === null) return undefined;
+  // Sentence punctuation, Markdown emphasis and closing quotes; a ")" only when unbalanced (Roma_(città) keeps it).
+  let candidate = match[0].replace(/[.,;:!?*_»”’…\]}]+$/, '');
+  while (candidate.endsWith(')') && (candidate.match(/\)/g) ?? []).length > (candidate.match(/\(/g) ?? []).length) {
+    candidate = candidate.slice(0, -1).replace(/[.,;:!?*_»”’…\]}]+$/, '');
+  }
+  try {
+    return checkCaptureUrl(candidate);
+  } catch {
+    return undefined;
+  }
+}
+
 /** ASCII, lowercase, dashes: "Càparra dell'affitto!" → "caparra-dell-affitto". */
 export function slugOf(text: string): string {
   const slug = text

@@ -74,33 +74,46 @@ async function subscribe(): Promise<void> {
 </script>
 
 <template>
-  <section id="notifications-device" class="hud-card scroll-mt-4" aria-labelledby="notifications-device-title">
-    <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
-      <h2 id="notifications-device-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] uppercase">Questo dispositivo</h2>
-    </header>
-    <div class="flex flex-col gap-3 px-4 py-3.5">
-      <h3 class="hud-title">Con la chat aperta in un’altra scheda</h3>
-      <p v-if="permission === 'unsupported'" class="text-sm text-muted">Questo browser non mostra notifiche.</p>
-      <p v-else-if="permission === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito: riattivale dalle impostazioni del browser.</p>
-      <p v-else-if="permission === 'granted'" class="text-sm text-ok">Consentite in questo browser.</p>
-      <button v-else type="button" class="btn self-start" @click="allow"><Icon name="bell" :size="16" />Consenti le notifiche in questo browser</button>
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-[13px] text-muted">Prova una notifica:</span>
-        <button v-for="item in TRIALS" :key="item.kind" type="button" class="btn" :disabled="trying" @click="trial(item.kind)"><Icon name="bell" :size="16" />{{ item.label }}</button>
+  <!-- Revised in D-192: «Questo browser», applied at once without Salva; the keys for the chat closed come in the slot (Avanzate). -->
+  <section id="notifications-device" class="min-w-0 scroll-mt-4 rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="notifications-device-title">
+    <h2 class="mb-1 flex flex-wrap items-center gap-2.5 text-[16px] font-semibold">
+      <span id="notifications-device-title">Questo browser</span>
+      <span class="pill ml-auto border-ok/50 font-normal text-ok">Vale subito, solo qui</span>
+    </h2>
+    <p class="mb-3 text-[14px] text-muted">Queste scelte valgono solo per il browser che stai usando ora e non hanno bisogno di «Salva».</p>
+    <div class="flex flex-col">
+      <div class="flex flex-wrap items-center gap-3 pb-2.5">
+        <div class="min-w-[220px] flex-1">
+          <b class="font-semibold">Con la chat aperta in un’altra scheda</b>
+          <p v-if="permission === 'unsupported'" class="text-[13px] text-muted">Questo browser non mostra notifiche.</p>
+          <p v-else-if="permission === 'denied'" class="text-[13px] text-muted">Bloccate per questo sito: riattivale dalle impostazioni del browser.</p>
+          <p v-else-if="permission === 'granted'" class="text-[13px] text-ok">Consentite</p>
+          <p v-else class="text-[13px] text-muted">Non ancora consentite.</p>
+        </div>
+        <button v-if="permission === 'default'" type="button" class="btn px-2.5 py-1 text-[13px]" @click="allow"><Icon name="bell" :size="14" />Consenti</button>
       </div>
-      <p v-if="sent !== null" role="status" class="text-xs text-muted">{{ sent }}</p>
-
-      <h3 class="hud-title mt-1">Con la chat chiusa (Web Push)</h3>
-      <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: servono le chiavi di Impostazioni → Voce → Notifiche push (<code class="font-mono text-[12.5px]">pnpm voice:vapid</code>).</p>
-      <p v-else-if="push.state === 'unsupported'" class="text-sm text-muted">Questo browser non supporta le notifiche push (sul telefono servono HTTPS e la VPN).</p>
-      <p v-else-if="push.state === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito nelle impostazioni del browser.</p>
-      <p v-else-if="push.state === 'on'" class="text-sm text-ok">Questo dispositivo è iscritto.</p>
-      <button v-else type="button" class="btn self-start" :disabled="working" @click="subscribe"><Icon name="bell" :size="16" />Iscrivi questo dispositivo</button>
-      <p v-if="problem !== null" role="alert" class="text-sm text-danger">{{ problem }}</p>
-      <p class="text-xs text-muted">
-        La notifica dice solo “Arianna ha risposto”, “Arianna aspetta una tua decisione” o “Un lavoro è fallito”, con il link alla conversazione: mai il testo né il titolo.
-        La push passa dal servizio del browser (Apple, Google o Mozilla) senza contenuto, e non parte mentre una pagina della chat è in primo piano.
-      </p>
+      <div class="flex flex-wrap items-center gap-2 border-t border-line py-2.5">
+        <span class="text-[14px] text-muted">Prova una notifica:</span>
+        <button v-for="item in TRIALS" :key="item.kind" type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="trying" @click="trial(item.kind)">{{ item.label }}</button>
+      </div>
+      <p v-if="sent !== null" role="status" class="pb-2 text-[13px] text-muted">{{ sent }}</p>
+      <div class="flex flex-wrap items-center gap-3 border-t border-line py-2.5">
+        <div class="min-w-[220px] flex-1">
+          <b class="font-semibold">Con la chat chiusa, anche sul telefono</b>
+          <p v-if="push.state === 'off'" class="text-[13px] text-muted">Spente: manca la chiave del Mac (vedi Avanzate qui sotto).</p>
+          <p v-else-if="push.state === 'unsupported'" class="text-[13px] text-muted">Questo browser non le supporta (sul telefono servono HTTPS e la VPN).</p>
+          <p v-else-if="push.state === 'denied'" class="text-[13px] text-muted">Bloccate per questo sito nelle impostazioni del browser.</p>
+          <p v-else-if="push.state === 'on'" class="text-[13px] text-ok">Questo dispositivo è iscritto.</p>
+          <p v-else class="text-[13px] text-muted">Pronte: iscrivi questo dispositivo per riceverle.</p>
+        </div>
+        <button v-if="push.state !== 'on'" type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="working || push.state !== 'available'" @click="subscribe">Iscrivi questo dispositivo</button>
+      </div>
     </div>
+    <p v-if="problem !== null" role="alert" class="text-[14px] text-danger">{{ problem }}</p>
+    <p class="mt-1 text-[13px] text-muted">
+      La notifica dice solo «Arianna ha risposto», «Arianna aspetta una tua decisione», «Un lavoro è fallito» o «Arianna ha un promemoria», con il link alla conversazione: mai il testo
+      né il titolo. Con la chat chiusa passa dal servizio del browser (Apple, Google o Mozilla), senza contenuto.
+    </p>
+    <slot />
   </section>
 </template>

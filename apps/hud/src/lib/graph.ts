@@ -536,6 +536,36 @@ export function folderName(folder: string): string {
   return folder === '' ? 'kb' : folder === '#' ? 'tag' : folder;
 }
 
+/** The words of the "Conoscenza" page for each source: the user's notes, or Arianna's own documents (D-155). */
+export interface SourceTexts {
+  /** What a node is, plural: "note" or "pagine". */
+  pages: string;
+  /** One line under the counter; empty for the notes. */
+  note: string;
+  filterPlaceholder: string;
+  emptyTitle: string;
+  emptyText: string;
+}
+
+export function sourceTexts(source: 'kb' | 'arianna'): SourceTexts {
+  if (source === 'arianna') {
+    return {
+      pages: 'pagine',
+      note: 'Documenti di sviluppo di Arianna, sempre aggiornati e in sola lettura. Privato: li legge solo il modello locale.',
+      filterPlaceholder: 'Filtra per titolo, D-123 o cartella',
+      emptyTitle: 'Nessun documento di Arianna',
+      emptyText: 'I documenti di sviluppo (docs/ e CHANGELOG.md) non ci sono in questa installazione.',
+    };
+  }
+  return {
+    pages: 'note',
+    note: '',
+    filterPlaceholder: 'Filtra per titolo o #tag',
+    emptyTitle: 'La rete è ancora vuota',
+    emptyText: 'Salva un pensiero con «/nota» o «Salva in inbox»: ogni nota diventa un nodo, i collegamenti fra note diventano archi.',
+  };
+}
+
 // Motion of the settled graph (D-087b): pure, so the component only draws.
 
 /** A small deterministic hash of an index, in [0, 1). */

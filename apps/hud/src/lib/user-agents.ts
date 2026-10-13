@@ -13,6 +13,8 @@ export interface CardSummary {
   /** The label the gateway gives the prompt (tappa T3b). */
   promptLabel?: string;
   cloudMaxLabel?: string;
+  /** The user chooses where each card of the agent runs (D-159). */
+  executorChoice?: 'ask';
   executors: string[];
   tools: string[];
   trifecta: { private_data: boolean; untrusted_content: boolean; external_comms: boolean };
@@ -197,14 +199,14 @@ const TOOL_TEXT: Record<string, string> = {
   'repo.read': 'legge il codice del progetto',
   'repo.write': 'modifica il codice del progetto',
   'repo.test': 'esegue i test (su Claude solo se modifica anche il codice)',
-  'task.update': 'sposta le carte della conversazione',
+  'task.update': 'sposta le card della conversazione',
   'user.ask': 'ti fa domande in chat',
   'web.search': 'cerca sul web',
   'web.fetch': 'legge pagine web',
   'kb.search': 'cerca nella base di conoscenza',
   'kb.read': 'legge la base di conoscenza',
   'kb.write': 'scrive note in kb/inbox',
-  'task.create': 'crea carte in Inbox',
+  'task.create': 'crea card in Inbox',
   'task.delegate': 'delega passi ad altri agenti',
   'channel.send': 'manda messaggi su un canale esterno',
   'file.delete': 'cancella file',

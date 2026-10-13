@@ -19,6 +19,8 @@ export interface DirectAgent {
   modes: ConversationMode[];
   /** The conversation needs an approved project. */
   project: boolean;
+  /** Only on a part of this project (GOD, D-127): opened from its own entry, not from "+ Nuovo". */
+  container?: string;
 }
 
 export interface Conversation {
@@ -63,6 +65,37 @@ export interface Conversation {
    * this incognito private conversation. Optional: a core without it sends none.
    */
   trialModel?: string | null;
+  /**
+   * The conversation of the "Segretaria" button (I-12, D-144): one only,
+   * private, never in the list. Optional: a core without it sends none.
+   */
+  secretary?: boolean;
+  /**
+   * When the current session of the secretary began (D-146): the last click
+   * on its button. Arianna reads only the messages from here on. Optional: a
+   * core without it sends none.
+   */
+  secretarySessionAt?: string | null;
+  /** «Nuova sessione» of a direct chat with the Designer (I-20, D-185): the agent reads only from here on. */
+  directSessionAt?: string | null;
+}
+
+/** A commitment of the secretary (D-144): private (L2), shown only in this local page. */
+export interface Commitment {
+  id: string;
+  body: string;
+  /** "YYYY-MM-DD", local day of the core. */
+  day: string;
+  /** "HH:MM" or null. */
+  time: string | null;
+  status: 'open' | 'done' | 'not_done' | 'postponed' | 'cancelled';
+  /** Why it was not done or was postponed, as the user said it (D-151). */
+  reason: string | null;
+  /** The id of the postponed commitment this one was born from (D-151), or null. */
+  rescheduledFrom: string | null;
+  /** The day ("YYYY-MM-DD") of the commitment this one was postponed from (D-151), or null. */
+  postponedFrom: string | null;
+  label: Label;
 }
 
 /** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */
@@ -121,7 +154,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export interface Approval {
   id: string;
   taskId: string | null;
-  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace';
+  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment' | 'plan' | 'executor' | 'im';
   action: string;
   detail: Record<string, unknown>;
   label: Label;
@@ -132,7 +165,14 @@ export interface Approval {
   /** Of an incognito conversation (D-136): shown only in the page of that conversation. Optional: a core without it sends none. */
   incognito?: boolean;
   conversationId?: string | null;
+  /** The executor chosen on an approved approval of kind executor (D-159). Optional: a core without it sends none. */
+  choice?: ExecutorChoice | null;
+  /** The chat task an approval of kind executor shows under: the plan's, when the card came from one (D-159). */
+  chatTaskId?: string | null;
 }
+
+/** Where a card of an agent runs, as the user chooses it (D-159). */
+export type ExecutorChoice = 'claude' | 'codex' | 'local';
 
 /** An entry of the event log: ids and references only, never content. */
 export interface LiveEvent {

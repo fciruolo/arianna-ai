@@ -42,7 +42,7 @@ export {
   type CloudStrength,
   type QuotaRatio,
 } from './cloud-catalog.ts';
-export { LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, parseAgents, type AgentSettings, type AgentsSettings } from './agents.ts';
+export { LEGACY_DEFAULT_AGENT, MAX_AGENT_SKILLS, ORCHESTRATOR_AGENT, parseAgents, parseSkillIds, SKILL_ID, SKILLS_DELIVERY_BYTES, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';
 export { DEFAULT_SPRITE_MODEL, parseSprites, SPRITE_MODELS, type SpriteModel, type SpritesConfig } from './sprites.ts';
@@ -80,14 +80,27 @@ export {
 export { resolveHome, resolveInHome } from './home.ts';
 export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
 export {
+  defaultFolderLabel,
+  isFolderName,
+  isSinglePart,
+  managementFolders,
+  NOT_MANAGEMENT,
+  PART_NAME,
+  PART_SEPARATOR,
   parseProjects,
   PROJECT_LABELS,
   PROJECT_NAME,
   projectNamed,
+  projectParts,
   PROJECTS_DIR,
+  workParts,
+  type ManagementFolder,
   type Project,
+  type ProjectFolder,
   type ProjectLabel,
+  type ProjectPart,
 } from './projects.ts';
+export { MAX_PROJECT_RULES, parseProjectRules, ruleAudience, rulesFor, rulesOfProject, type ProjectRules, type RuleAudience } from './project-rules.ts';
 export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
 export {
   DEFAULT_NOTIFICATIONS,
@@ -98,6 +111,8 @@ export {
   type NotificationsConfig,
   type QuietHours,
 } from './notifications.ts';
+export { checkFetchSites, DEFAULT_CAPTURE, isFetchSite, MAX_FETCH_SITES, parseCapture, siteListed, type CaptureConfig } from './capture.ts';
+export { checkSecretary, DEFAULT_SECRETARY, isClock, parseSecretary, WEEKDAY_KEYS, type SecretaryConfig, type WeekdayKey } from './secretary.ts';
 export { type TelegramConfig } from './telegram.ts';
 export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
 export { ConfigError } from './validate.ts';

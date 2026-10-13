@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arianna · Clienti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<!--
+  Bozza delle due schede "in arrivo" della scheda cliente (I-16, D-168):
+  Dashboard (tappa C3, dopo P4d di D-167) e Documenti (tappa C2).
+  Solo un file locale: dati inventati (cliente "Pasticceria Finta Rossi Srl",
+  progetti "progetto-test" e "demo", importi inventati), niente rete oltre ai
+  caratteri. Stessi token di colore della chat.
+-->
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #7f9b98; --faint: #4f6a68; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c124;
+  --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0; --grid: #4fd1c10a; --l2: #f2b34b;
+  --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
+  --font-hud: "Chakra Petch", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --faint: #a3adaa; --accent: #23887c; --accent-ink: #fff; --glow: #23887c1a;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d; --l2: #b9801c; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --faint: #a3adaa; --accent: #23887c; --accent-ink: #fff; --glow: #23887c1a;
+  --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d; --l2: #b9801c; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 14px/1.55 var(--font-sans); color: var(--ink); background: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; min-height: 100vh;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus, select:focus, textarea:focus { outline: none; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+*:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+
+.hud { font: 600 10.5px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.num { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 5px 11px; font-size: 12.5px; white-space: nowrap; color: var(--ink); }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.small { padding: 2px 8px; font-size: 11.5px; }
+.lab { display: inline-flex; align-items: center; gap: 4px; border: 1px solid currentColor; border-radius: 6px; padding: 0 6px; font: 500 10.5px/18px var(--font-mono); white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 1px 9px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.chip.on { color: var(--ink); border-color: var(--accent); background: var(--glow); }
+button.chip:hover { color: var(--ink); }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .info { color: var(--info); } .danger { color: var(--danger); } .faint { color: var(--faint); }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+.app { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
+.side { border-right: 1px solid var(--line); padding: 16px 10px; background: color-mix(in srgb, var(--surface) 75%, transparent); display: flex; flex-direction: column; gap: 1px; position: sticky; top: 0; height: 100vh; }
+.side .brand { margin: 4px 10px 18px; font-size: 12px; color: var(--ink); }
+.side a { padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13.5px; }
+.side a.on { background: var(--glow); color: var(--ink); }
+main { padding: 20px 26px 40px; display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 1280px; }
+@media (max-width: 860px) { .app { grid-template-columns: 1fr; } .side { display: none; } main { padding: 16px; } }
+
+/* Open questions for the user (not part of the page) */
+.qs { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); border-radius: 12px; padding: 12px 14px; background: color-mix(in srgb, var(--warn) 6%, transparent); }
+.qs h3 { margin: 0 0 8px; font: 600 12px var(--font-hud); letter-spacing: .12em; text-transform: uppercase; color: var(--warn); }
+.qs ol { margin: 0; padding-left: 18px; display: grid; gap: 7px; font-size: 13px; }
+.qs .rec { color: var(--ok); }
+
+/* Client header, as in ClientsPage.vue */
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.logo { width: 56px; height: 56px; border-radius: 12px; display: grid; place-items: center; font: 600 19px var(--font-hud); color: var(--accent); background: var(--glow); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.head h2 { margin: 0; font: 600 21px/1.2 var(--font-hud); letter-spacing: .02em; }
+.head .meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px 10px; color: var(--muted); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+.panel { display: none; flex-direction: column; gap: 14px; }
+.panel.on { display: flex; animation: rise .2s ease-out; }
+
+.card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px 16px; min-width: 0; }
+.card > header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.card > header .grow { flex: 1; }
+.privacy { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.privacy .lab { color: var(--l2); }
+
+/* Dashboard */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.toolbar .grow { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 4px 11px; font-size: 12.5px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button.on { background: var(--glow); color: var(--ink); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 12px 14px; display: grid; gap: 4px; }
+.kpi b { font: 500 22px/1.1 var(--font-mono); }
+.kpi small { color: var(--muted); font-size: 12px; }
+.kpi .sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { font: 10.5px var(--font-mono); fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font: 600 10px var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th.num { text-align: right; }
+td { padding: 7px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.tbl-wrap { overflow-x: auto; }
+.bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: flex; }
+.bar span { display: block; height: 100%; }
+.proj { display: grid; gap: 12px; }
+.proj .row { display: grid; gap: 5px; }
+.proj .row div:first-child { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.alert { display: flex; gap: 8px; align-items: flex-start; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; }
+
+/* Documents */
+.drop { border: 1px dashed var(--line-strong); border-radius: 12px; padding: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.drop .grow { flex: 1; min-width: 220px; }
+.docs { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1000px) { .docs { grid-template-columns: 1fr; } }
+.search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 8px; padding: 4px 10px; min-width: 200px; }
+.search input { border: 0; background: none; width: 100%; font-size: 13px; }
+.doc-row { cursor: pointer; }
+.doc-row.on td { background: var(--glow); }
+.ftype { display: inline-grid; place-items: center; width: 30px; height: 22px; border-radius: 5px; font: 600 9.5px var(--font-mono); border: 1px solid var(--line-strong); color: var(--muted); }
+.preview .sheet { aspect-ratio: 1 / 1.25; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 18px; display: flex; flex-direction: column; gap: 8px; max-height: 360px; }
+.preview .sheet i { display: block; height: 7px; border-radius: 3px; background: var(--line-strong); }
+.preview dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; margin: 12px 0; }
+.preview dt { color: var(--muted); }
+.preview dd { margin: 0; }
+.preview .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="side" aria-label="Menu">
+    <div class="brand hud">Arianna</div>
+    <a href="#">Chat</a><a href="#">Progetti</a><a href="#" class="on">Clienti</a><a href="#">Conoscenza</a><a href="#">Impostazioni</a>
+  </nav>
+  <main>
+    <section class="qs" aria-label="Domande aperte">
+      <h3>Domande aperte (da decidere prima del codice)</h3>
+      <ol>
+        <li><b>IVA nei totali della dashboard?</b> <span class="rec">Consigliata: imponibile senza IVA</span> (i guadagni sono i prezzi degli IM; l'IVA compare solo nel dettaglio della fattura). Altra: totali con IVA, che però non sono guadagno.</li>
+        <li><b>In che mese conta un IM?</b> <span class="rec">Consigliata: mese dell'IM chiuso</span> (competenza: il grafico dice quando hai lavorato). Altra: mese dell'incasso (cassa), utile per le tasse ma vuoto finché non pagano.</li>
+        <li><b>Tipi di documento.</b> <span class="rec">Consigliata: elenco fisso</span> Contratto, Preventivo firmato, NDA, Ordine, Altro (filtri e promemoria affidabili). Altra: tipi liberi scritti a mano.</li>
+        <li><b>Scadenze dei contratti con promemoria?</b> <span class="rec">Consigliata: data di scadenza facoltativa, riga nel messaggio del mattino 30 giorni prima</span> (solo nome del cliente e tipo, mai il contenuto). Altra: nessuna scadenza.</li>
+      </ol>
+    </section>
+
+    <header class="head">
+      <button class="btn small" type="button">‹ Clienti</button>
+      <div class="logo" aria-hidden="true">PR</div>
+      <div style="flex:1;min-width:0">
+        <h2>Pasticceria Finta Rossi Srl</h2>
+        <div class="meta">
+          <span>Società</span><span class="lab ok">Italia</span><span class="lab ok">Attivo</span>
+          <span class="mono">P.IVA 01234567890</span><span class="lab" style="color:var(--l2)" title="Privato: resta su questo computer">L2</span>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Schede del cliente">
+      <button type="button">Anagrafica</button>
+      <button type="button">Contatti · 2</button>
+      <button type="button">Progetti · 2</button>
+      <button type="button" data-tab="docs">Documenti</button>
+      <button type="button" data-tab="dash" class="on">Dashboard</button>
+    </nav>
+
+    <!-- ===================== DASHBOARD (C3) ===================== -->
+    <section class="panel on" id="dash" aria-label="Dashboard">
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Anno">
+          <button type="button">2025</button><button type="button" class="on">2026</button><button type="button">Tutto</button>
+        </div>
+        <select class="btn" aria-label="Progetto"><option>Tutti i progetti</option><option>progetto-test</option><option>demo</option></select>
+        <span class="grow"></span>
+        <span class="privacy"><span class="lab">Privato (L2)</span> resta sul Mac, mai al cloud</span>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><small>Guadagno 2026 · 54 IM chiusi</small><b>21.150 €</b><small>2025: 9.600 € (da maggio)</small></div>
+        <div class="kpi"><small><i class="sw" style="background:var(--warn)"></i>Da fatturare · 2 IM</small><b class="warn">750 €</b><small>IM-60 progetto-test, IM-19 demo</small></div>
+        <div class="kpi"><small><i class="sw" style="background:var(--info)"></i>Fatturato in attesa di pagamento</small><b class="info">3.300 €</b><small>2 fatture · la prima scade il 30 ott</small></div>
+        <div class="kpi"><small><i class="sw" style="background:var(--ok)"></i>Incassato</small><b class="ok">17.100 €</b><small>ultimo pagamento 20 ago</small></div>
+      </div>
+
+      <div class="alert"><span class="warn">!</span><span>1 IM chiuso <b>senza prezzo</b> (demo, IM-9 del 12 marzo): non entra nei totali finché non gli dai un prezzo. <button class="btn small" type="button">Metti il prezzo</button> · 1 IM segnato <b>non fatturato</b> (progetto-test, IM-52): conta zero.</span></div>
+
+      <div class="grid2">
+        <div class="card chart">
+          <header><span class="hud">Guadagni per mese · 2026</span><span class="grow"></span><span class="muted" style="font-size:12px">somma calcolata dal codice, imponibile</span></header>
+          <svg id="bars" viewBox="0 0 640 210" role="img" aria-label="Guadagni per mese nel 2026"></svg>
+          <div class="legend"><span><i style="background:var(--ok)"></i>Incassato</span><span><i style="background:var(--info)"></i>In fattura, non pagato</span><span><i style="background:var(--warn)"></i>Da fatturare</span></div>
+        </div>
+        <div class="card">
+          <header><span class="hud">Per progetto · 2026</span></header>
+          <div class="proj">
+            <div class="row">
+              <div><span><b>progetto-test</b> <span class="muted">· 450 €/IM · admin + client</span></span><span class="mono">15.750 €</span></div>
+              <div class="bar" title="Incassato 12.600, in attesa 2.700, da fatturare 450"><span style="width:59.6%;background:var(--ok)"></span><span style="width:12.8%;background:var(--info)"></span><span style="width:2.1%;background:var(--warn)"></span></div>
+              <small class="muted">36 IM chiusi · 1 non fatturato · prossimo IM-61 giovedì 15 ottobre</small>
+            </div>
+            <div class="row">
+              <div><span><b>demo</b> <span class="muted">· 300 €/IM · ogni 2 settimane</span></span><span class="mono">5.400 €</span></div>
+              <div class="bar" title="Incassato 4.500, in attesa 600, da fatturare 300"><span style="width:21.3%;background:var(--ok)"></span><span style="width:2.8%;background:var(--info)"></span><span style="width:1.4%;background:var(--warn)"></span></div>
+              <small class="muted">18 IM chiusi · più 1 senza prezzo</small>
+            </div>
+          </div>
+          <p class="note">Le barre sono in scala sul totale del cliente. Il prezzo si fissa su ogni IM quando si chiude: cambiarlo nel progetto vale solo per gli IM ancora aperti.</p>
+          <table style="margin-top:10px">
+            <thead><tr><th>Anno</th><th class="num">IM</th><th class="num">Totale</th></tr></thead>
+            <tbody><tr><td>2026</td><td class="num">54</td><td class="num">21.150 €</td></tr><tr><td>2025</td><td class="num">24</td><td class="num">9.600 €</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="hud">Fatture</span><span class="grow"></span><button class="btn primary" type="button">+ Registra fattura</button></header>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Numero</th><th>Data</th><th>Progetto</th><th>IM compresi</th><th class="num">Totale</th><th>Stato</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">2026/015</td><td>30 set 2026</td><td>demo</td><td class="mono">IM-17, IM-18</td><td class="num">600 €</td><td><span class="lab info">In attesa</span></td><td><button class="btn small" type="button">Segna pagata</button></td></tr>
+              <tr><td class="mono">2026/014</td><td>30 set 2026</td><td>progetto-test</td><td class="mono">IM-54 … IM-59 <span class="muted">(6)</span></td><td class="num">2.700 €</td><td><span class="lab info">In attesa · scade 30 ott</span></td><td><button class="btn small" type="button">Segna pagata</button></td></tr>
+              <tr><td class="mono">2026/012</td><td>31 lug 2026</td><td>demo</td><td class="mono">IM-14, IM-15</td><td class="num">600 €</td><td><span class="lab ok">Pagata 20 ago</span></td><td></td></tr>
+              <tr><td class="mono">2026/011</td><td>31 lug 2026</td><td>progetto-test</td><td class="mono">IM-50, IM-51, IM-53</td><td class="num">1.350 €</td><td><span class="lab ok">Pagata 20 ago</span></td><td></td></tr>
+              <tr><td class="mono">2026/008</td><td>30 giu 2026</td><td>progetto-test</td><td class="mono">IM-46 … IM-49 <span class="muted">(4)</span></td><td class="num">1.800 €</td><td><span class="lab ok">Pagata 15 lug</span></td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Una fattura per progetto: comprende gli IM chiusi di tutte le sue parti (admin e client). Il totale è la somma dei prezzi fissati sugli IM, calcolata dal codice; si registrano numero, data e, quando arriva, la data di pagamento. Gli IM-60 (progetto-test) e IM-19 (demo) sono ancora da fatturare.</p>
+      </div>
+      <p class="privacy"><span class="lab">Privato (L2)</span> Prezzi, fatture e totali stanno nel database su questo Mac. Arianna (modello locale) può rispondere a "quanto ho guadagnato con Rossi quest'anno?"; Claude, Codex e Telegram non li vedono mai, e il file IM (Interno) non contiene prezzi.</p>
+    </section>
+
+    <!-- ===================== DOCUMENTI (C2) ===================== -->
+    <section class="panel" id="docs" aria-label="Documenti">
+      <div class="drop">
+        <span style="font-size:22px" aria-hidden="true">⇪</span>
+        <div class="grow"><b style="color:var(--ink)">Trascina qui un file</b> o scegli dal computer · PDF, immagini, documenti di Office, al più 25 MB<br><span class="mono" style="font-size:11.5px">data/clients/&lt;cliente&gt;/documenti/</span> · cartella Privata su questo computer</div>
+        <select class="btn" aria-label="Tipo del nuovo documento"><option>Contratto</option><option>Preventivo firmato</option><option>NDA</option><option>Ordine</option><option>Altro</option></select>
+        <button class="btn primary" type="button">Scegli file…</button>
+      </div>
+
+      <div class="toolbar">
+        <button class="chip on" type="button" data-f="">Tutti · 7</button>
+        <button class="chip" type="button" data-f="Contratto">Contratti · 2</button>
+        <button class="chip" type="button" data-f="Preventivo firmato">Preventivi firmati · 2</button>
+        <button class="chip" type="button" data-f="NDA">NDA · 1</button>
+        <button class="chip" type="button" data-f="Ordine">Ordini · 1</button>
+        <button class="chip" type="button" data-f="Altro">Altro · 1</button>
+        <span class="grow"></span>
+        <label class="search"><span class="muted">⌕</span><input type="search" placeholder="Cerca per nome" aria-label="Cerca un documento"></label>
+      </div>
+
+      <div class="docs">
+        <div class="card" style="padding:6px 8px">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th></th><th>Nome</th><th>Tipo</th><th>Progetto</th><th>Data</th><th class="num">Dim.</th></tr></thead>
+              <tbody id="doclist">
+                <tr class="doc-row on" data-t="Contratto"><td><span class="ftype">PDF</span></td><td>Contratto quadro sviluppo 2026.pdf<br><small class="warn">scade il 31 dic 2026</small></td><td>Contratto</td><td>progetto-test</td><td>12 gen 2026</td><td class="num">412 KB</td></tr>
+                <tr class="doc-row" data-t="Preventivo firmato"><td><span class="ftype">PDF</span></td><td>Preventivo P-2026-03 firmato.pdf</td><td>Preventivo firmato</td><td>demo</td><td>2 mar 2026</td><td class="num">188 KB</td></tr>
+                <tr class="doc-row" data-t="NDA"><td><span class="ftype">PDF</span></td><td>Accordo di riservatezza.pdf</td><td>NDA</td><td class="muted">—</td><td>8 mag 2025</td><td class="num">96 KB</td></tr>
+                <tr class="doc-row" data-t="Ordine"><td><span class="ftype">DOCX</span></td><td>Ordine modulo prenotazioni.docx</td><td>Ordine</td><td>progetto-test</td><td>4 set 2026</td><td class="num">54 KB</td></tr>
+                <tr class="doc-row" data-t="Preventivo firmato"><td><span class="ftype">PDF</span></td><td>Preventivo P-2025-11 firmato.pdf</td><td>Preventivo firmato</td><td>progetto-test</td><td>20 mag 2025</td><td class="num">201 KB</td></tr>
+                <tr class="doc-row" data-t="Contratto"><td><span class="ftype">PDF</span></td><td>Contratto manutenzione 2025.pdf<br><small class="muted">scaduto il 31 dic 2025</small></td><td>Contratto</td><td>progetto-test</td><td>15 mag 2025</td><td class="num">380 KB</td></tr>
+                <tr class="doc-row" data-t="Altro"><td><span class="ftype">PNG</span></td><td>Schizzo vetrina online.png</td><td>Altro</td><td>demo</td><td>18 mar 2026</td><td class="num">1,2 MB</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside class="card preview" aria-label="Anteprima">
+          <header><span class="hud">Anteprima</span><span class="grow"></span><span class="lab" style="color:var(--l2)">L2</span></header>
+          <div class="sheet" aria-hidden="true"><i style="width:55%;height:10px"></i><i></i><i style="width:92%"></i><i style="width:80%"></i><i></i><i style="width:60%"></i><i style="width:88%;margin-top:10px"></i><i style="width:74%"></i><i></i></div>
+          <dl>
+            <dt>Nome</dt><dd id="pv-name">Contratto quadro sviluppo 2026.pdf</dd>
+            <dt>Tipo</dt><dd>Contratto · scade il 31 dic 2026</dd>
+            <dt>Progetto</dt><dd>progetto-test</dd>
+            <dt>Aggiunto</dt><dd>12 gen 2026 · 412 KB · sha256 3f9a…c21e</dd>
+          </dl>
+          <div class="acts">
+            <button class="btn primary" type="button">Apri</button>
+            <button class="btn" type="button">Mostra nel Finder</button>
+            <button class="btn" type="button">Cambia tipo o progetto</button>
+            <button class="btn" type="button">Archivia</button>
+          </div>
+          <p class="note">L'anteprima si genera sul Mac; "Apri" usa l'app predefinita del sistema. Archiviare toglie il documento dalla lista senza cancellarlo.</p>
+        </aside>
+      </div>
+      <p class="privacy"><span class="lab">Privato (L2)</span> I documenti del cliente restano in questa cartella: non vanno mai al Coder, a Claude, a Codex né a Telegram, e non entrano nella conoscenza indicizzata del progetto.</p>
+    </section>
+  </main>
+</div>
+<script>
+// Tabs
+document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === b.dataset.tab));
+}));
+// Document filter and selection
+document.querySelectorAll('[data-f]').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === c));
+  document.querySelectorAll('#doclist tr').forEach(r => { r.style.display = !c.dataset.f || r.dataset.t === c.dataset.f ? '' : 'none'; });
+}));
+document.querySelectorAll('.doc-row').forEach(r => r.addEventListener('click', () => {
+  document.querySelectorAll('.doc-row').forEach(x => x.classList.toggle('on', x === r));
+  document.getElementById('pv-name').textContent = r.cells[1].firstChild.textContent;
+}));
+// Monthly bars (invented data): [month, paid, invoiced, to invoice]
+const months = [['gen',2400,0,0],['feb',2400,0,0],['mar',2850,0,0],['apr',2400,0,0],['mag',2700,0,0],['giu',2400,0,0],['lug',1950,0,0],['ago',0,900,0],['set',0,2400,0],['ott',0,0,750],['nov',0,0,0],['dic',0,0,0]];
+const svg = document.getElementById('bars'), NS = 'http://www.w3.org/2000/svg', max = 3000, h = 160, top = 14, left = 40, w = 46;
+const el = (n, a, t) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (t) e.textContent = t; svg.appendChild(e); return e; };
+for (const v of [0, 1000, 2000, 3000]) {
+  const y = top + h - v / max * h;
+  el('line', { x1: left, x2: 636, y1: y, y2: y, stroke: 'var(--line)', 'stroke-dasharray': v ? '2 4' : '' });
+  el('text', { x: left - 6, y: y + 3, 'text-anchor': 'end' }, v ? (v / 1000) + 'k' : '0');
+}
+months.forEach(([m, paid, inv, todo], i) => {
+  const x = left + 6 + i * (w + 2); let y = top + h;
+  for (const [v, c] of [[paid, 'var(--ok)'], [inv, 'var(--info)'], [todo, 'var(--warn)']]) {
+    if (!v) continue; const bh = v / max * h; y -= bh;
+    el('rect', { x, y, width: w - 10, height: bh, rx: 3, fill: c }).appendChild(document.createElementNS(NS, 'title')).textContent = m + ': ' + v.toLocaleString('it-IT') + ' €';
+  }
+  const tot = paid + inv + todo;
+  if (tot) el('text', { x: x + (w - 10) / 2, y: y - 4, 'text-anchor': 'middle' }, (tot / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 }) + 'k');
+  el('text', { x: x + (w - 10) / 2, y: top + h + 16, 'text-anchor': 'middle' }, m);
+});
+</script>
+</body>
+</html>

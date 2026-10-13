@@ -1,0 +1,21 @@
+# Finanze (I-18, D-183, tappa F4): the user's budget advisor on the expense
+# tracker. Runs on the local model only and reads the finance data through
+# read-only tools computed by the core (finance.*): nothing of it leaves this
+# machine, and the card lists no tool that could hand it on (no delegation,
+# no plan, no network, no channel). Its conversation is private and marked
+# from birth (migration 0056): the gateway refuses every cloud target for it.
+name: finanze
+description: Consigli di bilancio sulle spese, dai movimenti importati nelle Finanze
+max_label: L2
+executors: [local]
+tools: [finance.summary, finance.search, finance.alerts, user.ask]
+trifecta:
+  private_data: true
+  # Bank descriptions are written by third parties (shops, payees).
+  untrusted_content: true
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 12, max_minutes: 10, max_cost: 0 }
+approvals: []
+prompt: finanze.md

@@ -11,10 +11,15 @@ import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
+import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
-import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { localDay } from '../commitment-dates.ts';
+import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
   archiveConversation,
@@ -45,32 +50,89 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
+import { addContact, archiveClient, ClientError, PROJECT_NAME as CLIENT_PROJECT_NAME, clientOfProject, createClient, linkProject, listClients, readClient, readLogo, removeContact, removeLogo, setLogo, unlinkProject, updateClient, updateContact, type ClientNames } from '../clients.ts';
+import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format.ts';
+import { completeItemCard, itemCard } from '../im-cards.ts';
+import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
+import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
+import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
+import { readClientDashboard } from '../client-dashboard.ts';
+import {
+  alerts as financeAlerts,
+  createAccount as createFinanceAccount,
+  createCategory as createFinanceCategory,
+  createRule as createFinanceRule,
+  deleteBudget as deleteFinanceBudget,
+  deleteCategory as deleteFinanceCategory,
+  deleteRule as deleteFinanceRule,
+  ensureCategories as ensureFinanceCategories,
+  importFile as importFinanceFile,
+  listAccounts as listFinanceAccounts,
+  listBudgets as listFinanceBudgets,
+  listCategories as listFinanceCategories,
+  listImports as listFinanceImports,
+  listRules as listFinanceRules,
+  listTransactions as listFinanceTransactions,
+  previewFile as previewFinanceFile,
+  setBudget as setFinanceBudget,
+  setTransactionCategory as setFinanceTransactionCategory,
+  summary as financeSummary,
+  undoImport as undoFinanceImport,
+  updateAccount as updateFinanceAccount,
+  updateCategory as updateFinanceCategory,
+} from '../finance.ts';
+import { dayParam, FinanceError, MAX_IMPORT_BODY, monthParam } from '../finance-format.ts';
+import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
+import { IM_STATES } from '../im-format.ts';
+import { RELEASE_STATUS, ReleaseError, type NoteReleaser, type ProposalOutcome } from '../note-release.ts';
+import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
+import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
+import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
+import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
-import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
+import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveNewsRedo, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
+import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
+import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
+import { createSampleCache } from '../style-sample.ts';
+import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
+import type { SkillTranslations } from '../skill-translations.ts';
+import { openMockup, startDesignerSession } from '../designer-session.ts';
+import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
+import type { GodApi } from '../god/api.ts';
+import { changelogRefOf } from '../god/changelog-carry.ts';
+import { GodCloneError } from '../god/clone.ts';
+import { GodError } from '../god/work.ts';
+import type { SkillsCatalog } from '../skills-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
-import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
-import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
+import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, type GraphCache } from '../knowledge.ts';
+import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
+import { checkNoteName, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
-import type { DirectPolicy } from '../direct-chat.ts';
+import { projectFits, type DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
+import { eraseConversation, type EraseResult } from '../erase.ts';
+import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
+import { appendEvent, type NewEvent } from '../events.ts';
+import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
+import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
@@ -112,6 +174,8 @@ export interface ApiServerOptions {
   defaultModel?: () => string | undefined;
   /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
   agents?: () => readonly string[];
+  /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
+  financeAgents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
@@ -132,7 +196,14 @@ export interface ApiServerOptions {
    * `organize` queues the organizing of a note by the local model; without it
    * notes are saved and read, not organized.
    */
-  capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean> };
+  capture?: {
+    home: string;
+    rules: LabelRules;
+    organize?: (path: string) => Promise<boolean>;
+    /** "Scarica e riassumi" (D-154): organizes the note again with its link downloaded. */
+    fetch?: (path: string) => Promise<boolean>;
+    arianna?: AriannaDocs;
+  };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
@@ -141,6 +212,18 @@ export interface ApiServerOptions {
   modelActions?: ModelActions;
   /** Search and add models from Hugging Face, promote them, take them out (I-10, D-139); without it the routes answer 404. */
   huggingface?: HuggingFace;
+  /** The catalog of Open Design (D-160): download, adopt, discard, read a style; without it the routes answer 404. */
+  designCatalog?: DesignCatalog;
+  /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
+  skillsCatalog?: SkillsCatalog;
+  /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
+  studioPptx?: PptxCodec;
+  /** The examples of the styles written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  styleExamples?: StyleExamples;
+  /** The Italian descriptions of the skills written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  skillTranslations?: SkillTranslations;
+  /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
+  god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -148,10 +231,34 @@ export interface ApiServerOptions {
    * where the preview of a file changed by the Coder is read (D-082).
    */
   approvedProjects?: () => readonly Project[];
+  /**
+   * The approved projects as containers (D-145), read at each request: the
+   * page Progetti lists them with their parts, and the tab "Conoscenza" reads
+   * and writes the notes of their management folders. `approvedProjects` are
+   * their parts.
+   */
+  projectContainers?: () => readonly Project[];
+  /** ARIANNA_HOME and labels.toml for the tab "Conoscenza" (kb/progetti, D-145); without it its routes answer 404. */
+  knowledge?: KnowledgeEnv;
+  /** "Proponi bozza" of the tab "Regole" (I-14 R2, D-175): the local model drafts a container's rules; without it the route answers 503. */
+  rulesDraft?: (container: string) => Promise<DraftOutcome | undefined>;
+  /** "Fai uscire una volta" of a Private note (I-11 P5, D-187): anonymous proposal, master password, one message; without it the routes answer 503. */
+  noteRelease?: NoteReleaser;
+  /**
+   * "Esporta in CLAUDE.md e AGENTS.md" of the tab "Regole" (I-14 R3, D-176):
+   * the preview (null: the container has no rules) and the writing of the
+   * text the user saw; without it the routes answer 503.
+   */
+  rulesExport?: { plan: (container: string) => ExportPlan | null; write: (container: string, seen: ExportPlan) => ExportOutcome };
   /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
   devProgress?: DevProgressApi;
+  /** The cardwall (D-152): the folder of the files attached to cards (data/cards); without it the file routes answer 404. */
+  cards?: { dir: string };
+  /** The clients (D-168): the folder of their logos (data/clients); without it the logo routes answer 404. */
+  /** `opener`: "Apri" and "Mostra nel Finder" of the documents (D-171); `open` of macOS when absent, a fake in the tests. */
+  clients?: { dir: string; opener?: Opener };
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
@@ -174,6 +281,8 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
+  /** "Scrivi il report" of an IM (D-167, P4c); without it the routes answer 404. */
+  imReports?: ImReporter;
   /**
    * Closes an incognito conversation (D-136) stopping its work in progress;
    * without it the route closes it without stopping a step of the worker.
@@ -183,6 +292,11 @@ export interface ApiServerOptions {
     /** A local server keeps a cache of the prompts on the SSD (`--paged-ssd-cache-dir`, D-136): the opening card names it. Read at each request. */
     localCache?: () => boolean;
   };
+  /**
+   * "Elimina" of a conversation (D-157), stopping the steps of the worker
+   * first; without it the route erases with no stop (a step at work: 409).
+   */
+  erase?: (conversationId: string) => Promise<EraseResult>;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -235,6 +349,14 @@ export interface ApiServer {
 
 // A message of MAX_MESSAGE_LENGTH 4-byte characters, JSON-escaped, fits.
 export const MAX_BODY_BYTES = 128 * 1024;
+/** A file attached to a card, in base64 with its name: a third more than the file, and some room. */
+const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
+/** What the user writes on a card, new or changed (cardwall.ts). */
+const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills'];
+/** A logo comes as JSON with its bytes in base64: a third more than the image, and some room. */
+const MAX_LOGO_BODY = Math.ceil((MAX_LOGO_BYTES * 4) / 3) + 4 * 1024;
+const MAX_DOCUMENT_BODY = Math.ceil((MAX_DOCUMENT_BYTES * 4) / 3) + 64 * 1024;
+const DOCUMENT_FIELDS = ['name', 'kind', 'otherType', 'project', 'documentOn', 'expiresOn'];
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 /** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
@@ -322,10 +444,13 @@ function idParam(params: Params, key: string): string {
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
 interface RouteOptions {
+  cards: ApiServerOptions['cards'];
+  clients?: ApiServerOptions['clients'];
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
   defaultModel: () => string | undefined;
   agents: () => readonly string[];
+  financeAgents: () => readonly string[];
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
@@ -335,12 +460,20 @@ interface RouteOptions {
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
+  projectContainers: () => readonly Project[];
+  knowledge?: KnowledgeEnv | undefined;
+  rulesDraft?: ApiServerOptions['rulesDraft'];
+  rulesExport?: ApiServerOptions['rulesExport'];
+  noteRelease?: NoteReleaser | undefined;
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   incognito?: ApiServerOptions['incognito'];
+  erase?: ApiServerOptions['erase'];
+  designCatalog?: DesignCatalog | undefined;
+  skillsCatalog?: SkillsCatalog | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -402,17 +535,17 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
     route('POST', '/api/calls/schedule', async (request) => {
       const body = await readJson(request);
       onlyFields(body, ['conversationId', 'at']);
-      need();
+      const scheduling = need();
       if (typeof body.conversationId === 'string' && (await isIncognitoConversation(sql, body.conversationId))) return { status: 409, body: { error: 'incognito' } };
       const { conversationId, at } = body;
       if (typeof conversationId !== 'string' || !isUuid(conversationId) || typeof at !== 'string') throw new HttpError(400, 'conversationId and at (ISO time) are required');
-      return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at)) } };
+      return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at), new Date(), (id) => scheduling.check(id)) } };
     }),
     route('POST', '/api/tasks/:id/call-when-done', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
-      need();
+      const scheduling = need();
       if (await isIncognitoTask(sql, idParam(params, 'id'))) return { status: 409, body: { error: 'incognito' } };
-      return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id')) } };
+      return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id'), (id) => scheduling.check(id)) } };
     }),
     route('POST', '/api/calls/:id/cancel', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
@@ -576,6 +709,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       // "/nota" from an incognito conversation (D-136): nothing it says is kept.
       if (conversationId !== undefined && (typeof conversationId !== 'string' || !isUuid(conversationId))) throw new HttpError(400, 'conversationId must be a conversation id');
       if (conversationId !== undefined && (await isIncognitoConversation(sql, conversationId))) return { status: 409, body: { error: 'incognito' } };
+      // Nor from a conversation of the Finances (I-18, D-183): nothing of it goes to kb/.
+      if (conversationId !== undefined && (await isFinanceConversation(sql, conversationId))) return { status: 409, body: { error: 'finance' } };
       // A message of the chat saved once (D-089): its label and, without `text`, its text come from the database.
       if (messageId !== undefined && (typeof messageId !== 'string' || !/^[1-9]\d{0,18}$/.test(messageId))) {
         throw new HttpError(400, 'messageId must be a message id');
@@ -583,6 +718,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const message = messageId === undefined ? undefined : await loadMessage(sql, messageId);
       if (messageId !== undefined && message === undefined) throw new HttpError(404, 'message not found');
       if (message !== undefined && (await isIncognitoConversation(sql, message.conversationId))) return { status: 409, body: { error: 'incognito' } };
+      if (message !== undefined && (await isFinanceConversation(sql, message.conversationId))) return { status: 409, body: { error: 'finance' } };
       const text = body.text ?? message?.body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
@@ -630,6 +766,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (loaded === undefined) throw new HttpError(404, 'not found');
       // Nothing of an incognito conversation is ever saved (D-136): read as one without saves.
       if (loaded.incognito) return { body: { messageIds: [], notes: {}, conversation: false, conversationNote: null, conversationSavedAt: null } };
+      // Nor of a conversation of the Finances (I-18, D-183).
+      if (loaded.finance) return { status: 409, body: { error: 'finance' } };
       const saved = savedMessageNotes(capture.home, capture.rules);
       // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path and time only up to L2.
       const whole = findConversationNote(capture.home, capture.rules, id);
@@ -654,6 +792,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const conversation = await loadConversation(sql, id);
       if (conversation === undefined) throw new HttpError(404, 'not found');
       if (conversation.incognito) return { status: 409, body: { error: 'incognito' } };
+      if (conversation.finance) return { status: 409, body: { error: 'finance' } };
       const lines = await sql<SavedLine[]>`
         SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
       const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
@@ -668,8 +807,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       }
       return { status: 201, body: { path: note.path, label: note.label, replaced: note.replaced, organizing } };
     }),
-    ...noteRoutes(capture),
-    ...knowledgeRoutes(capture),
+    ...noteRoutes(sql, capture, onError),
+    ...knowledgeRoutes(sql, capture, onError),
   ];
 }
 
@@ -695,20 +834,47 @@ function searchRoutes(sql: Sql, capture: ApiServerOptions['capture']): Route[] {
  * L2, header fields only; the text of one page at a time, 404 for anything
  * outside kb/, hidden or above L2.
  */
-function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
+function knowledgeRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   const cache: GraphCache = new Map();
+  let arianna: AriannaDocs | undefined;
   const need = (): NonNullable<ApiServerOptions['capture']> => {
     if (capture === undefined) throw new HttpError(404, 'not found');
     return capture;
   };
+  /** `?source=arianna`: Arianna's own documents (D-155), read-only, a source apart from kb/. */
+  const ariannaSource = (url: URL): boolean => {
+    const source = url.searchParams.get('source');
+    if (source === null || source === 'kb') return false;
+    if (source === 'arianna') return true;
+    throw new HttpError(400, 'unknown source');
+  };
+  // The instance of main.ts (one cache in the core); without it, one of these routes.
+  const ariannaDocs = (): AriannaDocs => {
+    const { home, rules, arianna: given } = need();
+    arianna ??= given ?? createAriannaDocs({ home, rules });
+    return arianna;
+  };
   return [
-    route('GET', '/api/knowledge/graph', () => {
+    route('GET', '/api/knowledge/graph', (_request, url) => {
+      if (ariannaSource(url)) return Promise.resolve({ body: buildAriannaGraph(ariannaDocs()) });
       const { home, rules } = need();
       return Promise.resolve({ body: buildKnowledgeGraph(home, rules, cache) });
     }),
     route('GET', '/api/knowledge/page', (_request, url) => {
+      const path = url.searchParams.get('path') ?? '';
+      if (ariannaSource(url)) return Promise.resolve({ body: { page: readAriannaPage(ariannaDocs(), path) } });
       const { home, rules } = need();
-      return Promise.resolve({ body: { page: readKnowledgePage(home, rules, url.searchParams.get('path') ?? '') } });
+      return Promise.resolve({ body: { page: readKnowledgePage(home, rules, path) } });
+    }),
+    // "Elimina" of a page (D-157): the file goes for good; the user confirmed it in the page. Only up to L2, as the reading.
+    route('POST', '/api/knowledge/page/delete', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      const deleted = deleteKbPage(home, rules, body.path);
+      await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
+      return { body: { deleted: true } };
     }),
   ];
 }
@@ -717,7 +883,7 @@ function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
  * The notes of kb/inbox (D-086): listed by their header (never the body),
  * read one at a time up to L2, organized again on request.
  */
-function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
+function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   const need = (): NonNullable<ApiServerOptions['capture']> => {
     if (capture === undefined) throw new HttpError(404, 'not found');
     return capture;
@@ -742,6 +908,27 @@ function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
       if (organize === undefined) throw new HttpError(503, 'notes cannot be organized now');
       await organize(note.path);
       return { status: 202, body: { path: note.path, organizing: true } };
+    }),
+    // "Scarica e riassumi" (D-154): the link of the note downloaded once, whatever its site; only from the chat, on this machine.
+    route('POST', '/api/notes/:name/fetch', async (request, _url, params) => {
+      const { home, rules, fetch } = need();
+      onlyFields(await readJson(request), []);
+      const note = readNote(home, rules, params.name ?? '');
+      if (note.url === null) throw new HttpError(409, 'the note has no link');
+      if (note.fetchedAt !== null) throw new HttpError(409, 'the link is already downloaded');
+      if (note.status !== 'new' && note.status !== 'organized') throw new HttpError(409, 'the note cannot be organized again');
+      if (fetch === undefined) throw new HttpError(503, 'notes cannot be organized now');
+      await fetch(note.path);
+      return { status: 202, body: { path: note.path, organizing: true } };
+    }),
+
+    // "Elimina" of a thought (D-157): the note of kb/inbox goes for good, with its organizing; the user confirmed it in the page.
+    route('POST', '/api/notes/:name/delete', async (request, _url, params) => {
+      const { home, rules } = need();
+      onlyFields(await readJson(request), []);
+      const deleted = deleteKbPage(home, rules, `inbox/${checkNoteName(params.name ?? '')}`);
+      await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
+      return { body: { deleted: true } };
     }),
   ];
 }
@@ -828,6 +1015,177 @@ function huggingFaceRoutes(hub: HuggingFace | undefined): Route[] {
       onlyFields(body, ['confirm']);
       return { body: need().forget(params.id ?? '', body.confirm) };
     }),
+  ];
+}
+
+/**
+ * The catalog of Open Design in Impostazioni → Agenti (D-160): its status
+ * (polled while a download runs), "Scarica/Aggiorna catalogo" in the
+ * background (202), "Usa questa versione" with the commit the user saw,
+ * "Scarta", the list of styles and skills, the text of one style with the
+ * license notice at the head. A slug is checked by the catalog; no route
+ * takes a path.
+ */
+/**
+ * The examples of the styles and the Italian descriptions of the skills (I-20,
+ * D-185): made by Sonnet in the background when the user asks, read by the
+ * window of style and skills of the Studio.
+ */
+function exampleRoutes(examples: StyleExamples | undefined, translations: SkillTranslations | undefined): Route[] {
+  const needExamples = (): StyleExamples => {
+    if (examples === undefined) throw new HttpError(404, 'not found');
+    return examples;
+  };
+  const needTranslations = (): SkillTranslations => {
+    if (translations === undefined) throw new HttpError(404, 'not found');
+    return translations;
+  };
+  return [
+    route('GET', '/api/design-catalog/examples', () => Promise.resolve({ body: needExamples().status() })),
+    route('POST', '/api/design-catalog/examples', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['style']);
+      return { status: 202, body: body.style === undefined ? needExamples().generateMissing() : needExamples().generate(body.style) };
+    }),
+    route('GET', '/api/design-catalog/examples/:slug/:kind', (_request, _url, params) => Promise.resolve({ body: { text: needExamples().read(params.slug, params.kind) } })),
+    route('GET', '/api/skills-catalog/translations', () => Promise.resolve({ body: needTranslations().status() })),
+    route('POST', '/api/skills-catalog/translations', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: needTranslations().translateMissing() };
+    }),
+  ];
+}
+
+function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
+  const need = (): DesignCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  const samples = createSampleCache({ list: () => need().list(), styleText: (slug) => need().styleText(slug) });
+  return [
+    route('GET', '/api/design-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/design-catalog/update', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: need().update() };
+    }),
+    route('POST', '/api/design-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['commit']);
+      return { body: need().adopt(body.commit) };
+    }),
+    route('POST', '/api/design-catalog/discard', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: need().discard() };
+    }),
+    route('GET', '/api/design-catalog/styles', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/design-catalog/styles/:slug', (_request, _url, params) => Promise.resolve({ body: { style: need().styleText(params.slug ?? '') } })),
+    // The small page of each style in the window of the Studio (I-20, D-185): colors, fonts and corners read from its DESIGN.md.
+    route('GET', '/api/design-catalog/samples', () => Promise.resolve({ body: samples() })),
+  ];
+}
+
+/**
+ * The catalog of skills in Impostazioni → Agenti (D-161): the sources with
+ * their status (polled while a download runs), add and remove a GitHub
+ * repository, "Scarica/Aggiorna" in the background (202), "Usa questa
+ * versione" with the commit the user saw, "Scarta", the list of skills and
+ * the text of one with its notice. A source is `owner/repo`, a skill
+ * `owner/repo/slug` in the query: the catalog checks both, no route takes a path.
+ */
+/** The page of GOD (D-127): status of the project and the clone, the conversations, "Aggiorna il clone". */
+function godRoutes(god: GodApi | undefined): Route[] {
+  const need = (): GodApi => {
+    if (god === undefined) throw new HttpError(404, 'not found');
+    return god;
+  };
+  return [
+    route('GET', '/api/god', async () => ({ body: await need().status() })),
+    route('POST', '/api/god/clone', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: await need().syncClone() };
+    }),
+    // G2-G3: the plans approved, the plan under an answer of GOD, "Approva e avvia", the actions of a subtask.
+    route('GET', '/api/god/plans', async () => ({ body: { plans: await needWork().plans() } })),
+    route('GET', '/api/god/messages/:id/plan', async (_request, _url, params) => ({ body: await needWork().messagePlan(params.id ?? '') })),
+    route('POST', '/api/god/plans', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['messageId']);
+      if (typeof body.messageId !== 'string') throw new HttpError(400, 'messageId must be a string');
+      return { status: 201, body: { plan: await needWork().approve(body.messageId) } };
+    }),
+    // G4: "Riassumi e riparti", and the summary a conversation restarts from.
+    route('POST', '/api/god/conversations/:id/restart', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { status: 201, body: { conversation: await needWork().restart(idParam(params, 'id')) } };
+    }),
+    // I-6, D-178: "Parlane con GOD" from an entry of "Novità"; the core finds the entry again in the installation's main.
+    route('POST', '/api/god/changelog', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['version', 'section', 'text']);
+      return { status: 201, body: { conversation: await needWork().discuss(changelogRefOf(body)) } };
+    }),
+    route('GET', '/api/god/conversations/:id/carry', async (_request, _url, params) => ({ body: { carry: await needWork().carry(idParam(params, 'id')) } })),
+    // D-179: «Prova», «Approva funzionalità», «Non funziona» on a subtask or a whole plan; the work goes on in the background.
+    route('POST', '/api/god/:kind/:id/land/:action', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['text']);
+      const action = (['trial', 'approve', 'reject'] as const).find((item) => item === params.action);
+      const kind = params.kind === 'subtasks' ? 'subtask' : params.kind === 'plans' ? 'plan' : undefined;
+      const api = need();
+      if (action === undefined || kind === undefined || api.land === undefined) throw new HttpError(404, 'not found');
+      if (body.text !== undefined && typeof body.text !== 'string') throw new HttpError(400, 'text must be a string');
+      const id = params.id ?? '';
+      const target = kind === 'plan' ? { plan: id } : { subtask: id };
+      return { status: 202, body: { landing: await api.land(target, action, typeof body.text === 'string' ? body.text : '') } };
+    }),
+    route('POST', '/api/god/subtasks/:id/:action', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      const action = (['stop', 'resume', 'discard', 'branch'] as const).find((item) => item === params.action);
+      if (action === undefined) throw new HttpError(404, 'not found');
+      return { body: { subtask: await needWork().act(params.id ?? '', action) } };
+    }),
+  ];
+  function needWork(): NonNullable<GodApi['work']> {
+    const work = need().work;
+    if (work === undefined) throw new HttpError(404, 'not found');
+    return work;
+  }
+}
+
+function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
+  const need = (): SkillsCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  return [
+    route('GET', '/api/skills-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/skills-catalog/sources', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['url']);
+      return { status: 201, body: need().add(body.url) };
+    }),
+    route('POST', '/api/skills-catalog/remove', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().remove(body.source) };
+    }),
+    route('POST', '/api/skills-catalog/update', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { status: 202, body: need().update(body.source) };
+    }),
+    route('POST', '/api/skills-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source', 'commit']);
+      return { body: need().adopt(body.source, body.commit) };
+    }),
+    route('POST', '/api/skills-catalog/discard', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().discard(body.source) };
+    }),
+    route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/skills-catalog/skill', (_request, url) => Promise.resolve({ body: { skill: need().text(url.searchParams.get('id') ?? '') } })),
   ];
 }
 
@@ -925,7 +1283,465 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
   ];
 }
 
-const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
+const IM_OUTCOMES: readonly ImOutcome[] = ['done', 'part', 'not-done'];
+
+/** An item named in a body as the user saw it: its line, title and part (D-167). */
+function itemRefOf(body: Record<string, unknown>): ImItemRef {
+  const { line, title, part } = body;
+  if (typeof line !== 'number' || !Number.isInteger(line) || line < 1 || typeof title !== 'string' || (part !== null && (typeof part !== 'number' || !Number.isInteger(part)))) {
+    throw new HttpError(400, 'line, title and part are required');
+  }
+  return { line, title, part };
+}
+
+/**
+ * The IM with the rest of Arianna (D-167, P4b): the card of an item, made the
+ * first time it is opened; the closings asked in the secretary conversation,
+ * answered item by item from the buttons under the message.
+ */
+function imRoutes(sql: Sql, containers: () => readonly Project[], env: KnowledgeEnv | undefined, names: () => CardNames, onError: (error: unknown) => void): Route[] {
+  const need = (): KnowledgeEnv => {
+    if (env === undefined) throw new HttpError(404, 'not found');
+    return env;
+  };
+  const projectOf = (params: Params): Project => {
+    const name = params.project ?? '';
+    const project = PROJECT_PARAM.test(name) ? containers().find((item) => item.name === name) : undefined;
+    if (project === undefined) throw new HttpError(404, 'not found');
+    return project;
+  };
+  const closingOf = async (params: Params): Promise<ImClosing> => {
+    const id = params.id ?? '';
+    const closing = /^[1-9]\d{0,17}$/.test(id) ? await loadImClosing(sql, id) : undefined;
+    if (closing === undefined || !containers().some((project) => project.name === closing.project)) throw new HttpError(404, 'not found');
+    return closing;
+  };
+  return [
+    route('POST', '/api/browse/:project/im/:number/card', async (request, _url, params) => {
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['line', 'title', 'part']);
+      return { body: await itemCard(sql, containers(), need(), names(), project.name, number, itemRefOf(body)) };
+    }),
+    // The tab "IM" of "Progetti" (P4d, D-169): the calendar in the file, prices and invoices private (L2) in the database.
+    route('GET', '/api/browse/:project/im-overview', async (_request, _url, params) => {
+      const project = projectOf(params);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im-calendar', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['weekday', 'time', 'every', 'version']);
+      if (typeof body.weekday !== 'number' || typeof body.time !== 'string' || typeof body.every !== 'number' || typeof body.version !== 'string') {
+        throw new HttpError(400, 'weekday, time, every and version are required');
+      }
+      writeImCalendar(containers(), project.name, need(), { weekday: body.weekday, time: body.time, every: body.every }, body.version);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    // The last day of the IM (D-169), `fine` in the same file; null takes it away and the IM go on.
+    route('POST', '/api/browse/:project/im-end', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['end', 'version']);
+      if ((body.end !== null && typeof body.end !== 'string') || typeof body.version !== 'string') throw new HttpError(400, 'end (YYYY-MM-DD or null) and version are required');
+      writeImEnd(containers(), project.name, need(), body.end, body.version);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im-price', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['amountCents', 'currency']);
+      if ((body.amountCents !== null && typeof body.amountCents !== 'number') || typeof body.currency !== 'string' || !CURRENCY.test(body.currency)) {
+        throw new HttpError(400, 'amountCents (cents or null) and currency are required');
+      }
+      await setImPrice(sql, project.name, body.amountCents, body.currency);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im/:number/billing', async (request, _url, params) => {
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['overrideCents', 'notBilled']);
+      if ((body.overrideCents !== null && typeof body.overrideCents !== 'number') || typeof body.notBilled !== 'boolean') throw new HttpError(400, 'overrideCents (cents or null) and notBilled are required');
+      // Only an IM that is there.
+      if (!listIms(containers(), project.name, need()).some((im) => im.number === number)) throw new HttpError(404, 'not found');
+      await setImBilling(sql, project.name, number, body.overrideCents, body.notBilled);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['number', 'issuedOn', 'documentCents', 'dueOn', 'note', 'ims']);
+      const ims: unknown = body.ims;
+      if (typeof body.number !== 'string' || typeof body.issuedOn !== 'string' || typeof body.documentCents !== 'number' || !Array.isArray(ims) || !ims.every((im): im is number => typeof im === 'number')) {
+        throw new HttpError(400, 'number, issuedOn, documentCents and ims are required');
+      }
+      if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string');
+      if (body.dueOn !== undefined && body.dueOn !== null && typeof body.dueOn !== 'string') throw new HttpError(400, 'dueOn must be a string or null');
+      const invoice = await createInvoice(sql, containers(), need(), project.name, {
+        number: body.number,
+        issuedOn: body.issuedOn,
+        documentCents: body.documentCents,
+        dueOn: typeof body.dueOn === 'string' ? body.dueOn : null,
+        note: typeof body.note === 'string' ? body.note : null,
+        ims,
+      });
+      return { status: 201, body: { invoice, overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id', async (request, _url, params) => {
+      const project = projectOf(params);
+      const id = invoiceParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['number', 'issuedOn', 'paidOn', 'note', 'documentCents', 'dueOn']);
+      const change: InvoiceChange = {};
+      if (body.number !== undefined) {
+        if (typeof body.number !== 'string') throw new HttpError(400, 'number must be a string');
+        change.number = body.number;
+      }
+      if (body.issuedOn !== undefined) {
+        if (typeof body.issuedOn !== 'string') throw new HttpError(400, 'issuedOn must be a string');
+        change.issuedOn = body.issuedOn;
+      }
+      if (body.paidOn !== undefined) {
+        if (body.paidOn !== null && typeof body.paidOn !== 'string') throw new HttpError(400, 'paidOn must be a string or null');
+        change.paidOn = body.paidOn;
+      }
+      if (body.note !== undefined) {
+        if (body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string or null');
+        change.note = body.note;
+      }
+      if (body.documentCents !== undefined) {
+        if (typeof body.documentCents !== 'number') throw new HttpError(400, 'documentCents must be a number');
+        change.documentCents = body.documentCents;
+      }
+      if (body.dueOn !== undefined) {
+        if (body.dueOn !== null && typeof body.dueOn !== 'string') throw new HttpError(400, 'dueOn must be a string or null');
+        change.dueOn = body.dueOn;
+      }
+      await updateInvoice(sql, project.name, id, change);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id/cancel', async (_request, _url, params) => {
+      const project = projectOf(params);
+      await cancelInvoice(sql, project.name, invoiceParam(params));
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id/remove', async (request, _url, params) => {
+      const project = projectOf(params);
+      const id = invoiceParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['im']);
+      if (typeof body.im !== 'number' || !Number.isInteger(body.im)) throw new HttpError(400, 'im is required');
+      await removeFromInvoice(sql, project.name, id, body.im);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    // The dashboard of a client (I-16 C3, D-170): the money of the IM of its projects, private (L2), computed by the code.
+    route('GET', '/api/clients/:id/dashboard', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      try {
+        return { body: { dashboard: await readClientDashboard(sql, containers(), need(), id) } };
+      } catch (error) {
+        if (error instanceof ClientError && error.code === 'not-found') throw new HttpError(404, 'not found');
+        throw error;
+      }
+    }),
+    route('GET', '/api/im/closings', async () => {
+      const known = new Set(containers().map((project) => project.name));
+      return { body: { closings: (await listImClosings(sql)).filter((closing) => known.has(closing.project)) } };
+    }),
+    route('GET', '/api/im/closings/:id', async (_request, _url, params) => {
+      const closing = await closingOf(params);
+      return { body: { closing, im: readIm(containers(), closing.project, need(), closing.im) } };
+    }),
+    route('POST', '/api/im/closings/:id/answer', async (request, _url, params) => {
+      const closing = await closingOf(params);
+      if (closing.closedAt !== null) throw new HttpError(409, 'the closing is over');
+      const body = await readJson(request);
+      onlyFields(body, ['line', 'title', 'part', 'outcome']);
+      const outcome = IM_OUTCOMES.find((value) => value === body.outcome);
+      if (outcome === undefined) throw new HttpError(400, 'outcome must be done, part or not-done');
+      const ref = itemRefOf(body);
+      // The last IM (D-169): an item not finished keeps its card open in the cardwall, made now when missing.
+      if (outcome !== 'done' && isLastIm(containers(), closing.project, need(), closing.im)) await itemCard(sql, containers(), need(), names(), closing.project, closing.im, ref);
+      const { item } = closeImItem(containers(), closing.project, need(), closing.im, ref, outcome);
+      // In part, the card goes on with the next part: only a finished item moves it.
+      if (outcome === 'done') await completeItemCard(sql, containers(), need(), closing.project, item.card).catch(onError);
+      const closed = await finishClosing(sql, containers(), need(), closing);
+      return { body: { closing: await loadImClosing(sql, closing.id), im: readIm(containers(), closing.project, need(), closing.im), closed } };
+    }),
+  ];
+}
+
+/** The id of an invoice in the URL (P4d). */
+function invoiceParam(params: Params): string {
+  const value = params.id ?? '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) throw new HttpError(404, 'not found');
+  return value;
+}
+
+/** The number of an IM in the URL (D-167). */
+function imNumberParam(params: Params): number {
+  const value = params.number ?? '';
+  if (!/^[1-9]\d{0,5}$/.test(value)) throw new HttpError(404, 'not found');
+  return Number(value);
+}
+
+/** A project or a part of a container (`<project>:<part>`, D-145): one URL segment, never a path. */
+const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
+
+/**
+ * The project of an address (`/api/browse/:project/...`), decoded: the page
+ * writes a part as `progetto-test%3Aprogetto-test-admin` (encodeURIComponent),
+ * and the router hands parameters over as they are in the path. Undefined for
+ * a name that is not a project's, so the route answers 404.
+ */
+export function projectFromParam(raw: string | undefined): string | undefined {
+  let name: string;
+  try {
+    name = decodeURIComponent(raw ?? '');
+  } catch {
+    return undefined;
+  }
+  return PROJECT_PARAM.test(name) ? name : undefined;
+}
+
+/**
+ * The tab "Conoscenza" of "Progetti" (D-145, tappa P2): the management folders
+ * of a container with their labels and the notes in them; "+ Conoscenza"
+ * writes a new note. The labels of the folders are not written here: they are
+ * a privacy setting, changed only with the two steps of the Settings
+ * (`/api/settings/privacy`), never by an agent or a tool of Arianna.
+ */
+function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], env: KnowledgeEnv | undefined, onError: (error: unknown) => void): Route[] {
+  const need = (): KnowledgeEnv => {
+    if (env === undefined) throw new HttpError(404, 'not found');
+    return env;
+  };
+  const containerParam = (params: Params): Project => {
+    const name = params.project ?? '';
+    const project = PROJECT_PARAM.test(name) ? containers().find((item) => item.name === name) : undefined;
+    if (project === undefined) throw new HttpError(404, 'not found');
+    return project;
+  };
+  return [
+    route('GET', '/api/browse/:project/knowledge', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { knowledge: readProjectKnowledge(containers(), project.name, need()) } });
+    }),
+    route('POST', '/api/browse/:project/knowledge', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['folder', 'title', 'label', 'text']);
+      if (typeof body.folder !== 'string' || typeof body.title !== 'string' || typeof body.text !== 'string' || !isLabel(body.label)) {
+        throw new HttpError(400, 'folder, title, label and text are required');
+      }
+      const note = writeProjectNote(containers(), project.name, need(), { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
+      return { status: 201, body: { note } };
+    }),
+    // A note opened and edited by hand: the user sees every note of the tab, any label.
+    route('GET', '/api/browse/:project/knowledge/note', (_request, url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { note: readProjectNote(containers(), project.name, need(), url.searchParams.get('path') ?? '') } });
+    }),
+    route('POST', '/api/browse/:project/knowledge/note', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'title', 'label', 'header', 'text', 'version', 'lower']);
+      const header = body.header;
+      if (
+        typeof body.path !== 'string' ||
+        typeof body.title !== 'string' ||
+        typeof body.text !== 'string' ||
+        typeof body.version !== 'string' ||
+        !isLabel(body.label) ||
+        !Array.isArray(header) ||
+        !header.every((line): line is string => typeof line === 'string') ||
+        (body.lower !== undefined && typeof body.lower !== 'boolean')
+      ) {
+        throw new HttpError(400, 'path, title, label, header, text and version are required');
+      }
+      const note = editProjectNote(containers(), project.name, need(), body.path, { title: body.title, label: body.label, header, text: body.text, version: body.version, lower: body.lower === true });
+      return { body: { note } };
+    }),
+    // The IM of the project (D-167): the files of the folder IM, the items changed only while the file is the one the user saw.
+    route('GET', '/api/browse/:project/im', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { ims: listIms(containers(), project.name, need()) } });
+    }),
+    route('POST', '/api/browse/:project/im', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['date']);
+      if (body.date !== undefined && typeof body.date !== 'string') throw new HttpError(400, 'date must be a string');
+      return { status: 201, body: { im: createIm(containers(), project.name, need(), body.date) } };
+    }),
+    route('GET', '/api/browse/:project/im/:number', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { im: readIm(containers(), project.name, need(), imNumberParam(params)) } });
+    }),
+    route('POST', '/api/browse/:project/im/:number/items', async (request, _url, params) => {
+      const project = containerParam(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['title', 'version']);
+      if (typeof body.title !== 'string' || typeof body.version !== 'string') throw new HttpError(400, 'title and version are required');
+      return { status: 201, body: { im: addImItem(containers(), project.name, need(), number, body.title, body.version) } };
+    }),
+    route('POST', '/api/browse/:project/im/:number/items/:line', async (request, _url, params) => {
+      const project = containerParam(params);
+      const number = imNumberParam(params);
+      const lineText = params.line ?? '';
+      if (!/^[1-9]\d{0,6}$/.test(lineText)) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['state', 'version']);
+      const state = IM_STATES.find((value) => value === body.state);
+      if (state === undefined || typeof body.version !== 'string') throw new HttpError(400, 'state and version are required');
+      const im = setImItemState(containers(), project.name, need(), number, Number(lineText), state, body.version);
+      // An item checked moves its card to "Fatto" (D-167, P4b).
+      if (state === 'done') await completeItemCard(sql, containers(), need(), project.name, im.items.find((item) => item.line === Number(lineText))?.card ?? null).catch(onError);
+      return { body: { im } };
+    }),
+    // "Elimina" of a note of the project (D-157): the file goes for good; the user confirmed it in the tab.
+    route('POST', '/api/browse/:project/knowledge/delete', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      deleteProjectNote(containers(), project.name, need(), body.path);
+      await recordNoteDeleted(sql, 'project', body.path).catch(onError);
+      return { body: { deleted: true } };
+    }),
+  ];
+}
+
+/** Why a draft of the rules was not written, for the page: a closed list (D-175). */
+const DRAFT_FAILURE_STATUS: Record<DraftFailure, number> = { blocked: 403, unavailable: 503, timeout: 504, truncated: 502, 'bad-response': 502, 'model-error': 502 };
+
+/**
+ * "Proponi bozza" (I-14 R2, D-175): the draft of a container's rules by the
+ * local model, returned to the page and never saved; the user's "Salva" makes
+ * it rules. One at a time: the local model is one.
+ */
+function rulesDraftRoutes(containers: () => readonly Project[], draft: ApiServerOptions['rulesDraft']): Route[] {
+  let running = false;
+  return [
+    route('POST', '/api/projects/:project/rules-draft', async (request, _url, params) => {
+      if (draft === undefined) throw new HttpError(503, 'drafts are not available');
+      const name = params.project ?? '';
+      if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+      onlyFields(await readJson(request), []);
+      if (running) throw new HttpError(409, 'a draft is already being written');
+      running = true;
+      try {
+        const outcome = await draft(name);
+        if (outcome === undefined) throw new HttpError(404, 'not found');
+        if (!outcome.ok) throw new HttpError(DRAFT_FAILURE_STATUS[outcome.reason], `draft not written: ${outcome.reason}`);
+        return { body: { text: outcome.text, model: outcome.model, ...(outcome.partial === undefined ? {} : { partial: outcome.partial }) } };
+      } finally {
+        running = false;
+      }
+    }),
+  ];
+}
+
+/** Why the anonymous version was not written, for the page: a closed list (D-187). */
+const PROPOSAL_FAILURE_STATUS: Record<Exclude<ProposalOutcome, { ok: true }>['reason'], number> = {
+  blocked: 403,
+  unavailable: 503,
+  timeout: 504,
+  truncated: 502,
+  'bad-response': 502,
+  'model-error': 502,
+  'too-large': 413,
+};
+
+/**
+ * "Fai uscire una volta" of a Private note (I-11 P5, D-187): the work
+ * conversations of the project it may go to, the anonymous version by the
+ * local model (one at a time: the local model is one; never saved), and the
+ * release with the master password. The password is read from the body and
+ * never logged nor kept.
+ */
+function noteReleaseRoutes(containers: () => readonly Project[], releaser: NoteReleaser | undefined): Route[] {
+  let proposing = false;
+  const container = (params: Params): { name: string; found: NoteReleaser } => {
+    if (releaser === undefined) throw new HttpError(503, 'the release of a note is not available');
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+    return { name, found: releaser };
+  };
+  return [
+    route('GET', '/api/browse/:project/knowledge/release', async (_request, _url, params) => {
+      const { name, found } = container(params);
+      return { body: { targets: await found.targets(name) } };
+    }),
+    route('POST', '/api/browse/:project/knowledge/anonymize', async (request, _url, params) => {
+      const { name, found } = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      if (proposing) throw new HttpError(409, 'an anonymous version is already being written');
+      proposing = true;
+      try {
+        const outcome = await found.propose(name, body.path);
+        if (!outcome.ok) throw new HttpError(PROPOSAL_FAILURE_STATUS[outcome.reason], `anonymous version not written: ${outcome.reason}`);
+        return { body: { text: outcome.text, model: outcome.model, version: outcome.version, warnings: outcome.warnings } };
+      } finally {
+        proposing = false;
+      }
+    }),
+    route('POST', '/api/browse/:project/knowledge/release', async (request, _url, params) => {
+      const { name, found } = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'version', 'text', 'conversationId', 'password']);
+      const { path, version, text, conversationId, password } = body;
+      if (typeof path !== 'string' || typeof version !== 'string' || typeof text !== 'string' || typeof conversationId !== 'string' || typeof password !== 'string') {
+        throw new HttpError(400, 'path, version, text, conversationId and password are required');
+      }
+      return { status: 201, body: await found.release(name, { path, version, text, conversationId, password }) };
+    }),
+  ];
+}
+
+/**
+ * "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): GET is the preview,
+ * POST writes the files of the text the preview showed, and only the new ones
+ * and those Arianna wrote; the user's own files are never touched.
+ */
+function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiServerOptions['rulesExport']): Route[] {
+  const container = (params: Params): string => {
+    if (exporter === undefined) throw new HttpError(503, 'export is not available');
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  return [
+    route('GET', '/api/projects/:project/rules-export', (_request, _url, params) => {
+      const name = container(params);
+      const plan = exporter?.plan(name);
+      if (plan === undefined || plan === null) throw new HttpError(409, 'the project has no rules');
+      return Promise.resolve({ body: plan });
+    }),
+    route('POST', '/api/projects/:project/rules-export', async (request, _url, params) => {
+      const name = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['text', 'files']);
+      if (typeof body.text !== 'string') throw new HttpError(400, 'text must be the rules of the preview');
+      const files = Array.isArray(body.files) ? body.files : null;
+      const seen = files?.map((file: unknown) => {
+        if (file === null || typeof file !== 'object') return null;
+        const { path, status } = file as Record<string, unknown>;
+        return typeof path === 'string' && typeof status === 'string' && ['new', 'same', 'arianna', 'foreign', 'stale'].includes(status) ? { path, status: status as ExportPlan['files'][number]['status'] } : null;
+      });
+      if (seen === undefined || seen.length > 1000 || seen.some((file) => file === null)) throw new HttpError(400, 'files must be the files of the preview');
+      const outcome = exporter?.write(name, { text: body.text, files: seen.filter((file) => file !== null) });
+      if (outcome === undefined) throw new HttpError(503, 'export is not available');
+      if (!outcome.ok) throw new HttpError(409, outcome.reason === 'no-rules' ? 'the project has no rules' : 'the rules or the files changed after the preview');
+      return { body: { files: outcome.files } };
+    }),
+  ];
+}
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
@@ -934,10 +1750,11 @@ const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
  * in the project, nothing goes out. Hidden entries only with the consent of
  * D-135, which the core reads for each request.
  */
-function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks): Route[] {
+function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks, containers: () => readonly Project[]): Route[] {
+  const fileDeps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), sql };
   const projectParam = (params: Params): string => {
-    const name = params.project ?? '';
-    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    const name = projectFromParam(params.project);
+    if (name === undefined) throw new HttpError(404, 'not found');
     return name;
   };
   const pathParam = (url: URL, key: string, required: boolean): string => {
@@ -946,7 +1763,8 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
     return value;
   };
   return [
-    route('GET', '/api/browse', async () => ({ body: { projects: browsableProjects(approvedProjects(), await hiddenConsents(sql)) } })),
+    // The parts (D-145) and the containers they belong to.
+    route('GET', '/api/browse', async () => ({ body: { projects: browsableProjects(approvedProjects(), await hiddenConsents(sql)), containers: browsableContainers(containers()) } })),
     route('POST', '/api/browse/:project/hidden', async (request, _url, params) => {
       const name = projectParam(params);
       const body = await readJson(request);
@@ -980,6 +1798,19 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
       if (typeof body.path !== 'string' || body.path === '' || body.path.length > 4096) throw new HttpError(400, 'path must be a file of the project');
       return { body: await openBrowsedFile(approvedProjects(), openLinks, name, body.path) };
     }),
+    // The tab "File" moves and deletes after the window of the page (I-20, D-185): no link, hidden part or running agent.
+    route('POST', '/api/browse/:project/move', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['from', 'to']);
+      return { body: await moveProjectPath(fileDeps, name, { from: body.from, to: body.to }) };
+    }),
+    route('POST', '/api/browse/:project/delete', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      return { body: await deleteProjectPath(fileDeps, name, { path: body.path }) };
+    }),
     route('GET', '/api/browse/:project/git', async (_request, _url, params) => ({ body: { git: await readProjectGit(sql, approvedProjects(), projectParam(params)) } })),
     route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => {
       const name = projectParam(params);
@@ -1000,8 +1831,8 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
     return services;
   };
   const projectParam = (params: Params): string => {
-    const name = params.project ?? '';
-    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    const name = projectFromParam(params.project);
+    if (name === undefined) throw new HttpError(404, 'not found');
     return name;
   };
   const serviceParam = (value: unknown): string => {
@@ -1044,13 +1875,27 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
+  // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
+  const assignable = (): string[] => {
+    const finance = new Set(financeAgents());
+    return agents().filter((agent) => agent !== 'arianna' && !finance.has(agent));
+  };
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
-    ...projectBrowserRoutes(sql, approvedProjects, openLinks),
+    ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
+    ...rulesDraftRoutes(projectContainers, rulesDraft),
+    ...rulesExportRoutes(projectContainers, rulesExport),
+    ...noteReleaseRoutes(projectContainers, noteRelease),
+    ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
+    ...secretaryRoutes(sql),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
+    ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
+    ...financeRoutes(sql),
+    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1134,7 +1979,11 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       // Who answers in place of Arianna (D-111d): only here, at creation; no route changes it later. Its card says how.
       const policy = body.agent === undefined ? undefined : (directAgents?.() ?? []).find((item) => item.agent === body.agent);
       if (body.agent !== undefined && policy === undefined) throw new HttpError(400, 'agent is not one the user may talk with now');
-      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project };
+      // GOD only on a clone of Arianna's code (D-127).
+      if (policy !== undefined && !projectFits(policy, typeof body.project === 'string' ? body.project : undefined)) {
+        throw new HttpError(400, `${policy.agent} works only on the project ${policy.container ?? ''}`);
+      }
+      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
       const model = body.mode === 'work' ? defaultModel() : undefined;
@@ -1148,6 +1997,14 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
       return { status: 201, body: { conversation } };
+    }),
+
+    // «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session from a summary.
+    route('POST', '/api/conversations/:id/session', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['open']);
+      const open = openMockup(body.open);
+      return { body: { conversation: await startDesignerSession(sql, idParam(params, 'id'), open) } };
     }),
 
     route('GET', '/api/conversations/:id', async (_request, _url, params) => {
@@ -1208,6 +2065,14 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       return { body: { purged: id } };
     }),
 
+    // "Elimina" (D-157): the conversation and everything it left go for good, the log is sewn again; the user confirmed it in the page.
+    route('POST', '/api/conversations/:id/erase', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      const erased = erase === undefined ? await eraseConversation(sql, id) : await erase(id);
+      return { body: { erased: true, cards: erased.cards } };
+    }),
+
     // "Termina" of an incognito conversation (D-136): its work stops, its texts are deleted; the answer is the closing card.
     route('POST', '/api/conversations/:id/end', async (request, _url, params) => {
       const id = idParam(params, 'id');
@@ -1252,10 +2117,18 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     route('POST', '/api/conversations/:id/messages', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['body']);
+      onlyFields(body, ['body', 'style', 'skills']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
+      // The style and skills chosen in the Studio (I-19, D-184): checked as on a Designer card (D-163).
+      let design;
+      try {
+        design = checkDesignChoice(body, cardCatalog(designCatalog, skillsCatalog));
+      } catch (error) {
+        if (error instanceof CardError) throw new HttpError(400, error.message);
+        throw error;
+      }
       const leave = leaveRule?.();
-      const { message, task } = await postUserMessage(sql, id, body.body, leave === undefined ? {} : { leave });
+      const { message, task } = await postUserMessage(sql, id, body.body, { ...(leave === undefined ? {} : { leave }), ...(design === undefined ? {} : { design }) });
       return { status: 201, body: { message, task } };
     }),
 
@@ -1333,21 +2206,681 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     }),
 
     // The web chat is the channel of the decision: a declassification can be decided only here.
+    // `choice`: the executor chosen for a card (D-159), with an approval of kind executor only.
     route('POST', '/api/approvals/:id/decision', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['state']);
+      onlyFields(body, ['state', 'choice']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
+      if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
+      const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
       const current = await loadApproval(sql, id);
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
       try {
-        return { body: { approval: await recordDecision(sql, id, body.state, 'web') } };
+        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice) } };
       } catch (error) {
+        if (error instanceof ApprovalChoiceError) throw new HttpError(400, error.message);
         // Decided meanwhile (another tab, Telegram): the database refused the second decision.
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * The secretary (I-12, D-144): its conversation, opened by the "Segretaria"
+ * button (one only, created the first time), and the commitments for the
+ * list beside it with the "Fatto" button. The web chat is local: the text of
+ * a commitment (L2) goes nowhere else; notifications never carry it.
+ */
+function secretaryRoutes(sql: Sql): Route[] {
+  return [
+    route('POST', '/api/secretary', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: { conversation: await openSecretary(sql) } };
+    }),
+    // The address `/segretaria` of the chat (D-156): the conversation without a new session; null before the first click.
+    route('GET', '/api/secretary', async () => ({ body: { conversation: (await findSecretary(sql)) ?? null } })),
+    // The open commitments, the late ones first, and those of today in any status: written from SQL.
+    route('GET', '/api/commitments', async () => {
+      const today = localDay();
+      const [open, ofToday] = await Promise.all([listCommitments(sql), listCommitments(sql, { from: today, to: today })]);
+      const seen = new Set(open.map((item) => item.id));
+      const commitments = [...open, ...ofToday.filter((item) => !seen.has(item.id))].sort((a, b) =>
+        a.day === b.day ? (a.time ?? '99:99').localeCompare(b.time ?? '99:99') : a.day.localeCompare(b.day),
+      );
+      return { body: { today, commitments } };
+    }),
+    // "Fatto": the click is the user's confirmation.
+    route('POST', '/api/commitments/:id/done', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      try {
+        return { body: { commitment: await markDone(sql, id) } };
+      } catch (error) {
+        if (error instanceof CommitmentError) throw new HttpError(error.code === 'not-found' ? 404 : 409, error.code === 'not-found' ? 'not found' : 'the commitment is not open');
+        throw error;
+      }
+    }),
+  ];
+}
+
+/** A body of the Studio: the text of a mockup up to 2 MiB, JSON-escaped (a control character is six bytes), and some room. */
+const MAX_STUDIO_BODY = MAX_MOCKUP_BYTES * 6 + 64 * 1024;
+
+/**
+ * The Studio of design (I-19, D-184): the contract of docs/STUDIO-API.md.
+ * Mockups of an approved project, read, rewritten with their sha256 and
+ * exported as .pptx; errors answer `{ error: <code> }` (and the current
+ * `sha256` with `changed`).
+ */
+function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx: PptxCodec | undefined): Route[] {
+  const deps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), ...(pptx === undefined ? {} : { pptx }) };
+  const guard =
+    (handler: Handler): Handler =>
+    async (request, url, params) => {
+      try {
+        return await handler(request, url, params);
+      } catch (error) {
+        if (error instanceof StudioError) return { status: STUDIO_STATUS[error.code], body: { error: error.code, ...(error.sha256 === undefined ? {} : { sha256: error.sha256 }) } };
+        if (error instanceof HttpError) {
+          if (error.status === 413) return { status: 413, body: { error: 'too-large' } };
+          return error.status === 404 ? { status: 404, body: { error: 'not-found' } } : { status: 400, body: { error: 'invalid' } };
+        }
+        throw error;
+      }
+    };
+  // Frames handed over by the page (studio-frames.ts): one store per server, in memory only.
+  const frames = new FrameStore();
+  const projectParam = (params: Params): string => {
+    try {
+      return decodeURIComponent(params.project ?? '');
+    } catch {
+      throw new HttpError(404, 'not found');
+    }
+  };
+  return [
+    route(
+      'GET',
+      '/api/studio/:project/mockups',
+      guard(async (_request, _url, params) => ({ body: await listMockups(deps, projectParam(params)) })),
+    ),
+    route(
+      'GET',
+      '/api/studio/:project/file',
+      guard(async (_request, url, params) => ({ body: await readMockup(deps, projectParam(params), url.searchParams.get('path') ?? undefined) })),
+    ),
+    route(
+      'PUT',
+      '/api/studio/:project/file',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'text', 'base']);
+        return { body: await writeMockup(deps, project, { path: body.path, text: body.text, base: body.base }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/delete',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'base', 'permanent']);
+        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base, permanent: body.permanent }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/pptx',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'deck']);
+        const { name, bytes } = await exportPptx(deps, project, { path: body.path, deck: body.deck });
+        const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        const encoded = encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+        return { raw: bytes, type: PPTX_TYPE, headers: { 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}` }, noStore: true };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio-frames',
+      guard(async (request) => {
+        const body = await readJson(request, MAX_FRAME_BYTES * 6 + 1024);
+        onlyFields(body, ['html', 'print']);
+        const { html, print = false } = body;
+        if (typeof html !== 'string' || typeof print !== 'boolean') throw new HttpError(400, 'invalid frame');
+        if (Buffer.byteLength(html, 'utf8') > MAX_FRAME_BYTES) throw new HttpError(413, 'frame too large');
+        return { status: 201, body: { url: `/api/studio-frames/${frames.put({ html, print })}` } };
+      }),
+    ),
+    route('GET', '/api/studio-frames/:token', (_request, _url, params) => {
+      const token = params.token ?? '';
+      const found = /^[0-9a-f]{32}$/.test(token) ? frames.get(token) : undefined;
+      if (found === undefined) return Promise.resolve({ status: 404, body: { error: 'not-found' } });
+      return Promise.resolve({ raw: Buffer.from(found.html, 'utf8'), type: 'text/html; charset=utf-8', headers: frameHeaders(found.print), noStore: true });
+    }),
+  ];
+}
+
+/** The SQLSTATE of an error of PostgreSQL, undefined for any other error. */
+function postgresState(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'PostgresError') return undefined;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === 'string' ? code : 'XX000';
+}
+
+/**
+ * The expense tracker (I-18, D-183): the contract of docs/FINANCE-API.md.
+ * Private (L2, source finance:*): only the web chat reads and writes it, and
+ * nothing of it goes out. Errors answer `{ error: <code> }`, which the page
+ * translates; the file of an import comes as JSON with its bytes in base64
+ * (the API takes only JSON, security.ts), up to 10 MiB decoded.
+ */
+function financeRoutes(sql: Sql): Route[] {
+  const guard = (handler: Handler): Handler => async (request, url, params) => {
+    try {
+      return await handler(request, url, params);
+    } catch (error) {
+      if (error instanceof FinanceError) return { status: error.status, body: { error: error.code, ...(error.line === null ? {} : { line: error.line }) } };
+      if (error instanceof HttpError) {
+        const code = error.status === 413 ? 'too-large' : error.status === 404 ? 'not-found' : 'invalid';
+        return { status: error.status, body: { error: code } };
+      }
+      // A refusal of the database carries the values of the row in its detail (descriptions, amounts):
+      // answered with a code, and reported, if at all, by its SQLSTATE alone.
+      const state = postgresState(error);
+      if (state !== undefined) {
+        if (state === '23505' || state === '23503' || state === '40001' || state === '40P01') return { status: 409, body: { error: 'conflict' } };
+        if (state.startsWith('22') || state.startsWith('23')) return { status: 400, body: { error: 'invalid' } };
+        // eslint-disable-next-line preserve-caught-error -- the cause is the error with the row's values: never attached
+        throw new Error(`finance: the database refused the request (SQLSTATE ${state})`);
+      }
+      throw error;
+    }
+  };
+  const done: Result = { status: 204, body: null };
+  // A DELETE carries no body, or an empty object.
+  const noBody = async (request: IncomingMessage): Promise<void> => {
+    const declared = Number(request.headers['content-length'] ?? '0');
+    if (declared === 0 && request.headers['transfer-encoding'] === undefined) return;
+    onlyFields(await readJson(request), []);
+  };
+  const query = (url: URL, key: string): string | undefined => {
+    const value = url.searchParams.get(key);
+    return value === null || value === '' ? undefined : value;
+  };
+  const integer = (url: URL, key: string): number | undefined => {
+    const value = query(url, key);
+    if (value === undefined) return undefined;
+    if (!/^\d{1,9}$/.test(value)) throw new FinanceError('invalid', 400, `${key} must be a whole number`);
+    return Number(value);
+  };
+  const id = (params: Params, key: string): string => params[key] ?? '';
+  return [
+    route('GET', '/api/finance/accounts', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { accounts: await listFinanceAccounts(sql) } };
+    })),
+    route('POST', '/api/finance/accounts', guard(async (request) => ({ status: 201, body: { account: await createFinanceAccount(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/accounts/:id', guard(async (request, _url, params) => ({ body: { account: await updateFinanceAccount(sql, id(params, 'id'), await readJson(request)) } }))),
+
+    route('POST', '/api/finance/imports/preview', guard(async (request) => ({ body: { preview: await previewFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('POST', '/api/finance/imports', guard(async (request) => ({ status: 201, body: { import: await importFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('GET', '/api/finance/imports', guard(async (_request, url) => ({ body: { imports: await listFinanceImports(sql, url.searchParams.get('account')) } }))),
+    route('DELETE', '/api/finance/imports/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await undoFinanceImport(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/transactions', guard(async (_request, url) => {
+      const uncategorized = query(url, 'uncategorized');
+      if (uncategorized !== undefined && uncategorized !== '1' && uncategorized !== '0') throw new FinanceError('invalid', 400, 'uncategorized must be 1');
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      const category = query(url, 'category');
+      const q = query(url, 'q');
+      const listed = query(url, 'fingerprints');
+      const fingerprints = listed === undefined ? undefined : listed.split(',').map((item) => item.trim()).filter((item) => item !== '');
+      const limit = integer(url, 'limit');
+      const offset = integer(url, 'offset');
+      if (q !== undefined && q.length > 200) throw new FinanceError('invalid', 400, 'q is longer than 200 characters');
+      return {
+        body: await listFinanceTransactions(sql, {
+          ...(account === undefined ? {} : { account }),
+          ...(from === undefined ? {} : { from }),
+          ...(to === undefined ? {} : { to }),
+          ...(category === undefined ? {} : { category }),
+          uncategorized: uncategorized === '1',
+          ...(q === undefined ? {} : { q }),
+          ...(fingerprints === undefined ? {} : { fingerprints }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(offset === undefined ? {} : { offset }),
+        }),
+      };
+    })),
+    route('PATCH', '/api/finance/transactions/:id', guard(async (request, _url, params) => ({ body: await setFinanceTransactionCategory(sql, id(params, 'id'), await readJson(request)) }))),
+
+    route('GET', '/api/finance/categories', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { categories: await listFinanceCategories(sql) } };
+    })),
+    route('POST', '/api/finance/categories', guard(async (request) => ({ status: 201, body: { category: await createFinanceCategory(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/categories/:id', guard(async (request, _url, params) => ({ body: { category: await updateFinanceCategory(sql, id(params, 'id'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/categories/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceCategory(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/rules', guard(async () => ({ body: { rules: await listFinanceRules(sql) } }))),
+    route('POST', '/api/finance/rules', guard(async (request) => ({ status: 201, body: { rule: await createFinanceRule(sql, await readJson(request)) } }))),
+    route('DELETE', '/api/finance/rules/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceRule(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/budgets', guard(async () => ({ body: { budgets: await listFinanceBudgets(sql) } }))),
+    route('PUT', '/api/finance/budgets/:category', guard(async (request, _url, params) => ({ body: { budget: await setFinanceBudget(sql, id(params, 'category'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/budgets/:category', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceBudget(sql, id(params, 'category'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/summary', guard(async (_request, url) => {
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      return {
+        body: await financeSummary(sql, { ...(account === undefined ? {} : { account }), ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) }),
+      };
+    })),
+    route('GET', '/api/finance/alerts', guard(async (_request, url) => ({ body: { alerts: await financeAlerts(sql, monthParam(url.searchParams.get('month'), 'month')) } }))),
+  ];
+}
+
+/**
+ * The clients (I-16, D-168, tappa C1): the registry, the contacts, the
+ * projects and the logo. Private (L2): only the web chat reads and writes
+ * them, nothing goes out. A field that does not pass answers 400 with
+ * `issues` (field and why), which the chat shows next to the field.
+ */
+function clientRoutes(sql: Sql, names: () => ClientNames, clients: ApiServerOptions['clients']): Route[] {
+  const logosDir = (): string => {
+    if (clients === undefined) throw new HttpError(404, 'not found');
+    return clients.dir;
+  };
+  const guard = async (work: () => Promise<Result>): Promise<Result> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof ClientError) {
+        const status = error.code === 'not-found' ? 404 : error.code === 'invalid' ? 400 : 409;
+        return { status, body: { error: error.message, ...(error.issues.length > 0 ? { issues: error.issues } : {}) } };
+      }
+      throw error;
+    }
+  };
+  return [
+    route('GET', '/api/clients', async () => ({ body: { clients: await listClients(sql), projects: names().projects } })),
+    route('POST', '/api/clients', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, CLIENT_FIELDS);
+      return guard(async () => ({ status: 201, body: { client: await createClient(sql, body) } }));
+    }),
+    // The client of a project, for the header of the page Progetti.
+    route('GET', '/api/clients/of-project/:project', async (_request, _url, params) => {
+      const project = params.project ?? '';
+      if (!CLIENT_PROJECT_NAME.test(project)) throw new HttpError(404, 'not found');
+      return { body: { client: await clientOfProject(sql, project) } };
+    }),
+    route('GET', '/api/clients/:id', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { client: await readClient(sql, id, names()) } }));
+    }),
+    route('POST', '/api/clients/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CLIENT_FIELDS);
+      return guard(async () => ({ body: { client: await updateClient(sql, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/archive', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['archived']);
+      if (typeof body.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      const archived = body.archived;
+      return guard(async () => ({ body: { client: await archiveClient(sql, id, archived) } }));
+    }),
+    route('POST', '/api/clients/:id/contacts', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CONTACT_FIELDS);
+      return guard(async () => ({ status: 201, body: { contact: await addContact(sql, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/contacts/:contact', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const contact = idParam(params, 'contact');
+      const body = await readJson(request);
+      onlyFields(body, CONTACT_FIELDS);
+      return guard(async () => ({ body: { contact: await updateContact(sql, id, contact, body) } }));
+    }),
+    route('DELETE', '/api/clients/:id/contacts/:contact', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const contact = idParam(params, 'contact');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeContact(sql, id, contact);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/clients/:id/projects', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['project']);
+      return guard(async () => ({ status: 201, body: { project: await linkProject(sql, id, body.project, names()) } }));
+    }),
+    route('DELETE', '/api/clients/:id/projects/:link', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const link = idParam(params, 'link');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await unlinkProject(sql, id, link);
+        return { body: { ok: true } };
+      });
+    }),
+    // The logo comes as JSON with its bytes in base64: the API takes only JSON (security.ts).
+    route('POST', '/api/clients/:id/logo', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(request, MAX_LOGO_BODY);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) return { status: 413, body: { error: 'the logo is 1 MB at most', issues: [{ field: 'logo', code: 'too-long' }] } };
+        throw error;
+      }
+      onlyFields(body, ['type', 'data']);
+      return guard(async () => ({ body: { logo: await setLogo(sql, dir, id, body) } }));
+    }),
+    route('DELETE', '/api/clients/:id/logo', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeLogo(sql, dir, id);
+        return { body: { ok: true } };
+      });
+    }),
+    // The documents of the client (D-171, tappa C2): in its private folder, the file as JSON with base64 like the logo.
+    route('GET', '/api/clients/:id/documents', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { documents: await listDocuments(sql, id) } }));
+    }),
+    route('POST', '/api/clients/:id/documents', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(request, MAX_DOCUMENT_BODY);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) return { status: 413, body: { error: 'a document is 25 MB at most', issues: [{ field: 'file', code: 'too-long' }] } };
+        throw error;
+      }
+      onlyFields(body, [...DOCUMENT_FIELDS, 'fileName', 'data']);
+      return guard(async () => ({ status: 201, body: { document: await addDocument(sql, dir, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/documents/:document', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const body = await readJson(request);
+      onlyFields(body, DOCUMENT_FIELDS);
+      return guard(async () => ({ body: { document: await updateDocument(sql, id, document, body) } }));
+    }),
+    route('POST', '/api/clients/:id/documents/:document/archive', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const body = await readJson(request);
+      onlyFields(body, ['archived']);
+      if (typeof body.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      const archived = body.archived;
+      return guard(async () => ({ body: { document: await archiveDocument(sql, id, document, archived) } }));
+    }),
+    // "Apri" (the app of the Mac) and "Mostra nel Finder" (reveal): `open` of macOS, run by the core on this machine.
+    route('POST', '/api/clients/:id/documents/:document/open', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const dir = logosDir();
+      const body = await readJson(request);
+      onlyFields(body, ['reveal']);
+      if (typeof body.reveal !== 'boolean') throw new HttpError(400, 'reveal must be true or false');
+      const reveal = body.reveal;
+      return guard(async () => {
+        await openDocument(sql, dir, id, document, reveal, clients?.opener);
+        return { body: { ok: true } };
+      });
+    }),
+    route('GET', '/api/clients/:id/documents/:document/file', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const dir = logosDir();
+      return guard(async () => {
+        const { document: found, bytes } = await readDocument(sql, dir, id, document);
+        // The extension once: kept when the name already ends with it.
+        const file = found.name.toLowerCase().endsWith(`.${found.extension}`) ? found.name : `${found.name}.${found.extension}`;
+        const ascii = file.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        return {
+          raw: bytes,
+          // Only PDF and images in the page; the rest is a download, never shown as a page of ours.
+          type: found.preview ? found.mediaType : 'application/octet-stream',
+          headers: {
+            'content-disposition': `${found.preview ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+            // A PDF is shown in a frame of the page Documenti only (same origin), by the viewer of the browser; never run as a page of ours.
+            'content-security-policy':
+              found.mediaType === 'application/pdf' ? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" : "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+            ...(found.mediaType === 'application/pdf' ? { 'x-frame-options': 'SAMEORIGIN' } : {}),
+          },
+          noStore: true,
+        };
+      });
+    }),
+    route('GET', '/api/clients/:id/logo', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      return guard(async () => {
+        const { type, bytes } = await readLogo(sql, dir, id);
+        return {
+          raw: bytes,
+          type,
+          // An image of the user's is shown, never run; X-Content-Type-Options: nosniff goes with every answer (security.ts).
+          headers: { 'content-security-policy': "default-src 'none'; sandbox", 'x-content-type-options': 'nosniff' },
+          noStore: true,
+        };
+      });
+    }),
+  ];
+}
+
+/**
+ * What the adopted catalogs hold, for the style and the skills of a Designer
+ * card (D-163): read once per request, at the first check, as the menus of
+ * the chat list them. A catalog the core does not have holds nothing.
+ */
+function cardCatalog(design: DesignCatalog | undefined, skills: SkillsCatalog | undefined): CardCatalog {
+  let styles: ReadonlySet<string> | undefined;
+  let skillIds: ReadonlySet<string> | undefined;
+  return {
+    style: (slug) => (styles ??= new Set((design?.list().styles ?? []).map((item) => item.slug))).has(slug),
+    skill: (id) => (skillIds ??= new Set((skills?.list().skills ?? []).map((item) => item.id))).has(id),
+  };
+}
+
+/**
+ * The cardwall (I-13 tappe C1-C2, D-152): the cards and the commitments with
+ * their column, and what the user changes on a card by hand. Cards only
+ * (tasks without a conversation): a task of a chat is the engine's.
+ */
+function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOptions['cards']): Route[] {
+  const filesDir = (): string => {
+    if (cards === undefined) throw new HttpError(404, 'not found');
+    return cards.dir;
+  };
+  const guard = async <T>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof CardError) throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'invalid' ? 400 : 409, error.message);
+      throw error;
+    }
+  };
+  // Arianna does not take cards from the wall (the caller leaves her out, with the agents of the Finances).
+  const known = (): CardNames => {
+    const current = names();
+    return { projects: current.projects, agents: current.agents, ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
+  };
+  return [
+    route('GET', '/api/cards', async () => {
+      const today = localDay();
+      const current = known();
+      return { body: { today, cards: await listCards(sql, today), projects: current.projects, agents: current.agents } };
+    }),
+    route('POST', '/api/cards', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, CARD_FIELDS);
+      return guard(async () => ({ status: 201, body: { card: { id: (await createCard(sql, body, known())).id } } }));
+    }),
+    route('POST', '/api/cards/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CARD_FIELDS);
+      return guard(async () => ({ body: { card: { id: (await updateCard(sql, id, body, known())).id } } }));
+    }),
+    route('GET', '/api/cards/:id', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { card: await cardDetail(sql, id) } }));
+    }),
+    route('POST', '/api/cards/:id/links', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['url', 'title']);
+      return guard(async () => ({ status: 201, body: { link: await addLink(sql, id, body) } }));
+    }),
+    route('DELETE', '/api/cards/:id/links/:link', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const link = idParam(params, 'link');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeLink(sql, id, link);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/cards/:id/checklist', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['body']);
+      return guard(async () => ({ status: 201, body: { item: await addChecklistItem(sql, id, body) } }));
+    }),
+    route('POST', '/api/cards/:id/checklist/:item', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const item = idParam(params, 'item');
+      const body = await readJson(request);
+      onlyFields(body, ['body', 'done']);
+      return guard(async () => ({ body: { item: await updateChecklistItem(sql, id, item, body) } }));
+    }),
+    route('DELETE', '/api/cards/:id/checklist/:item', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const item = idParam(params, 'item');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeChecklistItem(sql, id, item);
+        return { body: { ok: true } };
+      });
+    }),
+    // A file comes as JSON with its bytes in base64: the API takes only JSON (security.ts).
+    route('POST', '/api/cards/:id/files', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = filesDir();
+      const body = await readJson(request, MAX_CARD_FILE_BODY);
+      onlyFields(body, ['name', 'type', 'data']);
+      return guard(async () => ({ status: 201, body: { file: await addFile(sql, dir, id, body) } }));
+    }),
+    route('GET', '/api/cards/:id/files/:file', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const fileId = idParam(params, 'file');
+      const dir = filesDir();
+      return guard(async () => {
+        const { file, bytes } = await readCardFile(sql, dir, id, fileId);
+        const inline = isInline(file.mediaType);
+        const ascii = file.name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        return {
+          raw: bytes,
+          type: !inline ? 'application/octet-stream' : file.mediaType === 'text/plain' ? 'text/plain; charset=utf-8' : file.mediaType,
+          headers: {
+            'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+            // A file of the user's is shown, never run: no script, no form, no frame of ours.
+            'content-security-policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+          },
+          noStore: true,
+        };
+      });
+    }),
+    route('DELETE', '/api/cards/:id/files/:file', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const fileId = idParam(params, 'file');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeFile(sql, id, fileId);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/cards/:id/move', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['to', 'reason']);
+      return guard(async () => ({ body: { card: { id, status: (await moveCard(sql, id, body.to, body.reason)).status } } }));
+    }),
+    // D-159: "Avvia" for an agent's card never started, "Riprendi" and "Riprova" for one the engine stopped.
+    route('POST', '/api/cards/:id/start', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await startCard(sql, id, known().agents)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/resume', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await resumeCard(sql, id)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/retry', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await retryCard(sql, id)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/dependencies', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['on']);
+      const on = typeof body.on === 'string' && isUuid(body.on) ? body.on : undefined;
+      if (on === undefined) throw new HttpError(400, 'on must be the id of a card');
+      return guard(async () => {
+        await addDependency(sql, id, on);
+        return { body: { ok: true } };
+      });
+    }),
+    route('DELETE', '/api/cards/:id/dependencies/:on', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const on = idParam(params, 'on');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeDependency(sql, id, on);
+        return { body: { ok: true } };
+      });
     }),
   ];
 }
@@ -1358,7 +2891,23 @@ export interface DevProgressApi {
   home: string;
   /** Tests only: the gateway and the event, which otherwise use the database of the core. */
   gate?: AnswerGate;
-  recorded?: (saved: { key: string; question: OpenQuestion }) => Promise<void>;
+  recorded?: (saved: { key: string; question: OpenQuestion; rewrite?: boolean }) => Promise<void>;
+  /** The news of Open Design (I-21, D-186), from the catalog; without it the section is empty. */
+  news?: () => NewsPair;
+  /** Tests only: the event of a news sent, which otherwise uses the database of the core. */
+  newsRecorded?: (key: string) => Promise<void>;
+}
+
+/** An entry of the news as the page gets it: with the answer already in RISPOSTE.md, if any. */
+function newsView(news: DesignNews | null, answers: Map<string, { state: string; at: string }>): (DesignNews & { items: (NewsItem & { answer: { state: 'new' | 'done'; at: string } | null })[] }) | null {
+  if (news === null) return null;
+  return {
+    ...news,
+    items: news.items.map((item) => {
+      const entry = answers.get(item.key);
+      return { ...item, answer: entry === undefined ? null : { state: entry.state === 'done' ? 'done' : 'new', at: entry.at } };
+    }),
+  };
 }
 
 /**
@@ -1367,7 +2916,9 @@ export interface DevProgressApi {
  * Code. The client names a question by its key only: the path is fixed and the
  * question's text comes from the documents. Claude Code is a cloud reader:
  * every answer passes the gateway as L1 towards it, logged in gateway_log, and
- * only the text it allows is written.
+ * only the text it allows is written. `{ key, rewrite: true }` in place of the
+ * text asks Claude to rewrite the question more clearly (D-153): a fixed entry
+ * written by the code, no text of the user, so nothing to pass the gateway.
  */
 function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: unknown) => void): Route[] {
   const need = (): DevProgressApi => {
@@ -1387,26 +2938,63 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
     route('POST', '/api/dev/answers', async (request) => {
       const { home, gate = viaGateway, recorded = (saved) => recordAnswer(sql, saved) } = need();
       const body = await readJson(request, 64 * 1024);
-      onlyFields(body, ['key', 'text']);
-      const { key, text } = body;
+      onlyFields(body, ['key', 'text', 'rewrite']);
+      const { key, text, rewrite } = body;
       if (typeof key !== 'string' || !/^[A-Za-z0-9#-]{1,80}$/.test(key)) throw new HttpError(400, 'key must be the key of a question');
-      if (typeof text !== 'string') throw new HttpError(400, 'text is required');
+      if (rewrite !== undefined && (rewrite !== true || text !== undefined)) throw new HttpError(400, 'rewrite must be true, without text');
+      if (rewrite === undefined && typeof text !== 'string') throw new HttpError(400, 'text is required');
       let saved;
       try {
-        saved = await saveAnswer(home, key, text, gate);
+        saved = typeof text === 'string' ? { ...(await saveAnswer(home, key, text, gate)), already: false } : saveRewrite(home, key);
       } catch (error) {
         if (!(error instanceof DevAnswerError)) throw error;
         throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
       }
-      // The answer is in the file: an event that fails is reported, and the answer is not sent twice.
+      // A rewrite already asked and not yet applied: the same request again, no second entry nor event.
+      if (saved.already) return { status: 200, body: { key: saved.key, at: saved.at, rewrite: true, already: true } };
+      // The entry is in the file: an event that fails is reported, and the entry is not sent twice.
       let logged = true;
       try {
-        await recorded(saved);
+        await recorded({ key: saved.key, question: saved.question, ...(rewrite === true ? { rewrite: true } : {}) });
       } catch (error) {
         logged = false;
         onError(error);
       }
-      return { status: 201, body: { key: saved.key, at: saved.at, logged } };
+      return { status: 201, body: { key: saved.key, at: saved.at, ...(rewrite === true ? { rewrite: true, already: false } : {}), logged } };
+    }),
+    // The news of Open Design (I-21, D-186): public text of the catalog (L0), with what was already sent.
+    route('GET', '/api/dev/od-news', () => {
+      const { home, news } = need();
+      const pair = news?.() ?? { pending: null, adopted: null, preparing: false };
+      const answers = answersByKey(home);
+      return Promise.resolve({ body: { news: { pending: newsView(pair.pending, answers), adopted: newsView(pair.adopted, answers), preparing: pair.preparing } } });
+    }),
+    // "Da rifare nello Studio": the client names an entry by its key only; its text comes from the news of the core.
+    route('POST', '/api/dev/od-news', async (request) => {
+      const { home, news, gate = viaGateway, newsRecorded = (key: string) => appendEvent(sql, { kind: 'dev.od_news_redo', label: 'L0', payload: { key: eventKey(key) } }) } = need();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['key']);
+      const { key } = body;
+      if (typeof key !== 'string' || !NEWS_KEY.test(key)) throw new HttpError(400, 'key must be the key of a news entry');
+      const pair = news?.() ?? { pending: null, adopted: null, preparing: false };
+      const found = [pair.pending, pair.adopted].flatMap((item) => (item === null ? [] : item.items.map((entry) => ({ entry, version: item.to })))).find(({ entry }) => entry.key === key);
+      if (found === undefined) throw new HttpError(404, 'the news entry is no longer there');
+      let saved;
+      try {
+        saved = await saveNewsRedo(home, found.entry, found.version, gate);
+      } catch (error) {
+        if (!(error instanceof DevAnswerError)) throw error;
+        throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
+      }
+      if (saved.already) return { status: 200, body: saved };
+      let logged = true;
+      try {
+        await newsRecorded(saved.key);
+      } catch (error) {
+        logged = false;
+        onError(error);
+      }
+      return { status: 201, body: { ...saved, logged } };
     }),
   ];
 }
@@ -1544,6 +3132,62 @@ function spriteRoutes(sprites: SpriteGenerator | undefined): Route[] {
   ];
 }
 
+const IM_REPORT_STATUS: Record<ImReportError['code'], number> = {
+  invalid: 400,
+  'not-found': 404,
+  'has-report': 409,
+  busy: 409,
+  'above-label': 403,
+  unavailable: 409,
+  blocked: 403,
+  quota: 429,
+  failed: 502,
+  empty: 502,
+  changed: 409,
+};
+
+/**
+ * "Scrivi il report" of an IM (D-167, P4c): POST starts it with the agent the
+ * user picked and in the language chosen (202 and the job; 409 `has-report` when the section has text,
+ * unless `replace`), GET says how the last job of the IM went.
+ */
+function imReportRoutes(reporter: ImReporter | undefined, containers: () => readonly Project[]): Route[] {
+  const need = (): ImReporter => {
+    if (reporter === undefined) throw new HttpError(404, 'not found');
+    return reporter;
+  };
+  const projectOf = (params: Params): string => {
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((item) => item.name === name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  return [
+    route('GET', '/api/browse/:project/im/:number/report', (_request, _url, params) => {
+      const service = need();
+      return Promise.resolve({ body: { job: service.status(projectOf(params), imNumberParam(params)) } });
+    }),
+    route('POST', '/api/browse/:project/im/:number/report', async (request, _url, params) => {
+      const service = need();
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['agent', 'replace', 'language']);
+      const agent = REPORT_AGENTS.find((value) => value === body.agent);
+      if (agent === undefined) throw new HttpError(400, 'agent must be arianna or claude');
+      if (body.replace !== undefined && typeof body.replace !== 'boolean') throw new HttpError(400, 'replace must be true or false');
+      // Italian or English, chosen each time like the agent (D-167); Italian when not said.
+      const language = body.language === undefined ? 'it' : REPORT_LANGUAGES.find((value) => value === body.language);
+      if (language === undefined) throw new HttpError(400, 'language must be it or en');
+      try {
+        return { status: 202, body: { job: service.start(project, number, agent, body.replace === true, language) } };
+      } catch (error) {
+        if (!(error instanceof ImReportError)) throw error;
+        return { status: IM_REPORT_STATUS[error.code], body: { error: error.message, code: error.code, detail: error.detail ?? null } };
+      }
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1633,7 +3277,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
   if (error instanceof TrialError || error instanceof CloneError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
   if (error instanceof CallError) {
-    const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
+    const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409, 'agent-off': 409 }[error.code];
     return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };
   }
   if (error instanceof SettingsError) {
@@ -1649,13 +3293,28 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
+  if (error instanceof ProjectFileError) return { status: PROJECT_FILE_STATUS[error.code], message: error.message };
+  if (error instanceof StyleExampleError) return { status: error.code === 'invalid' ? 400 : 404, message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
+    return { status, message: error.message };
+  }
+  if (error instanceof ImError) {
+    const status = { invalid: 400, 'not-found': 404, changed: 409, refused: 403, unavailable: 503, ended: 409 }[error.code];
+    return { status, message: error.message };
+  }
+  if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
+  if (error instanceof ReleaseError) return { status: RELEASE_STATUS[error.code], message: `${error.code}: ${error.message}` };
+  if (error instanceof KnowledgeError) {
+    const status = { changed: 409, invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
+  if (error instanceof GodCloneError) return { status: 409, message: error.message };
+  if (error instanceof GodError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
+  if (error instanceof DesignCatalogError) return { status: { invalid: 400, 'not-found': 404, conflict: 409, blocked: 403, failed: 502 }[error.code], message: error.message };
   if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
@@ -1731,6 +3390,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     models: options.models ?? (() => []),
     defaultModel: options.defaultModel ?? (() => undefined),
     agents: options.agents ?? (() => []),
+    financeAgents: options.financeAgents ?? (() => []),
     characters: options.characters,
     voice: options.voice,
     calls: options.calls,
@@ -1740,6 +3400,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     capture: options.capture,
     modelEvals: options.modelEvals,
     approvedProjects: options.approvedProjects ?? (() => []),
+    projectContainers: options.projectContainers ?? (() => []),
+    cards: options.cards,
+    clients: options.clients,
+    knowledge: options.knowledge,
+    rulesDraft: options.rulesDraft,
+    rulesExport: options.rulesExport,
+    noteRelease: options.noteRelease,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
@@ -1747,6 +3414,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     services: options.services,
     leaveRule: options.leaveRule,
     incognito: options.incognito,
+    erase: options.erase,
+    designCatalog: options.designCatalog,
+    skillsCatalog: options.skillsCatalog,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
@@ -1785,6 +3455,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
+  table.push(...imReportRoutes(options.imReports, options.projectContainers ?? (() => [])));
   // The "Modelli" page (I-3): one list, read only. /api/models stays the selector of a conversation.
   table.push(
     route('GET', '/api/models/overview', async () => {
@@ -1794,6 +3465,11 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   );
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
+  table.push(...designCatalogRoutes(options.designCatalog));
+  table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
+  table.push(...skillsCatalogRoutes(options.skillsCatalog));
+  table.push(...godRoutes(options.god));
+  table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
@@ -1891,6 +3567,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         } else if ('raw' in result) {
           response.writeHead(200, { ...headers, ...result.headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': result.noStore === true ? 'no-store' : 'no-cache' });
           response.end(result.raw);
+        } else if (result.status === 204) {
+          response.writeHead(204, { ...headers, 'cache-control': 'no-store' });
+          response.end();
         } else {
           sendJson(response, result.status ?? 200, result.body, headers);
         }

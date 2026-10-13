@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testata comune e ritocchi</title>
+<!--
+  Anteprima della testata comune (GOD, Pensieri, come Novità e Sviluppo
+  dentro Impostazioni) e dei ritocchi a Conoscenza (grafo), Segretaria,
+  Cardwall, Ufficio e Studio. Scelte dell'utente del 2026-10-13: testata
+  "come Novità e Sviluppo", tutti e quattro i ritocchi. Stessi token della
+  chat dopo D-188. File autonomo, niente rete; dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .explain { max-width: 1120px; margin: 0 auto; padding: 12px 16px 0; font-size: 14px; }
+  .explain p { margin: 0 0 6px; } .explain ul { margin: 0; padding-left: 20px; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 16px; }
+  .page.wide { max-width: 1440px; }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; white-space: nowrap; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.s { padding: 3px 10px; font-size: 13px; }
+  .view { display: none; } .view.on { display: block; }
+  .was { margin-top: 26px; padding-top: 12px; border-top: 1px dashed var(--line-strong); font-size: 13px; color: var(--muted); }
+  .was .old { font: 600 13px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
+
+  /* PageHeader: il componente comune */
+  .ph { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; margin-bottom: 18px; }
+  .ph .t { flex: 1; min-width: 260px; }
+  .ph h1 { margin: 0; font-size: 21px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .ph p { margin: 4px 0 0; color: var(--muted); font-size: 14.5px; max-width: 720px; }
+  .ph .act { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
+  .sprite { width: 22px; height: 28px; border-radius: 4px; background: linear-gradient(#8a6bd1 0 40%, #f1c9a5 40% 62%, #3d4b6b 62%); image-rendering: pixelated; }
+  .pill { display: inline-flex; padding: 0 9px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 14px 16px; }
+  .rowx { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .rowx:last-child { border-bottom: 0; }
+  .rowx .d { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .gtitle { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
+  .field { padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; outline: none; }
+  .tagl { font: 12.5px "JetBrains Mono", monospace; color: var(--muted); }
+  .ok { color: var(--ok); }
+  .tog { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+  .tog button { border: 0; background: var(--surface-2); padding: 4px 11px; cursor: pointer; font-size: 13.5px; color: var(--muted); }
+  .tog button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+  .tog button + button { border-left: 1px solid var(--line-strong); }
+
+  /* Grafo */
+  .graph { position: relative; height: 520px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: radial-gradient(circle at 60% 50%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%), var(--surface); }
+  .graph .dotn { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .panel { position: absolute; top: 12px; left: 12px; width: min(330px, calc(100% - 24px)); background: color-mix(in srgb, var(--surface-2) 92%, transparent); border: 1px solid var(--line-strong); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(4px); }
+  .panel h1 { margin: 0; font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .help { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-strong); background: none; cursor: pointer; font-size: 13px; color: var(--muted); }
+  .pop { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .legend { position: absolute; bottom: 12px; left: 12px; background: color-mix(in srgb, var(--surface-2) 92%, transparent); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; max-width: calc(100% - 24px); }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
+
+  /* Segretaria e Cardwall */
+  .cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .colh { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px; margin-bottom: 8px; }
+  .colh .n { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 13px; }
+  .colh.late { color: var(--warn); }
+  .mini { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 8px 10px; font-size: 14px; margin-bottom: 6px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+  .chipf { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 13.5px; background: var(--surface-2); }
+  .chipf.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+
+  /* Ufficio */
+  .office { height: 380px; border: 1px solid var(--line-strong); border-radius: 12px; background: repeating-linear-gradient(0deg, transparent 0 31px, var(--line) 31px 32px), repeating-linear-gradient(90deg, transparent 0 31px, var(--line) 31px 32px), var(--surface); }
+  .ohint { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+  .kbd { display: inline-block; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font: 12px "JetBrains Mono", monospace; color: var(--ink); background: var(--surface-2); }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
+
+  /* Studio */
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .sc { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow: hidden; cursor: pointer; text-align: left; padding: 0; }
+  .sc:hover { border-color: var(--accent); }
+  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .thumbs i { aspect-ratio: 4/3; border-radius: 4px; background: linear-gradient(var(--line-strong) 0 18%, var(--surface-2) 18% 100%); border: 1px solid var(--line); }
+  .sc .b { padding: 10px 12px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Anteprima · Testata e ritocchi</b>
+  <span class="seg" role="group" aria-label="Pagina">
+    <button aria-pressed="true" data-v="god">GOD</button><button aria-pressed="false" data-v="pens">Pensieri</button><button aria-pressed="false" data-v="kn">Conoscenza</button><button aria-pressed="false" data-v="seg">Segretaria e Cardwall</button><button aria-pressed="false" data-v="uff">Ufficio</button><button aria-pressed="false" data-v="stu">Studio</button>
+  </span>
+  <span class="seg" role="group" aria-label="Tema"><button aria-pressed="true" data-t="light">Chiaro</button><button aria-pressed="false" data-t="dark">Scuro</button></span>
+</div>
+<div class="explain" id="explain"></div>
+
+<!-- GOD -->
+<div class="page view on" id="v-god">
+  <header class="ph">
+    <div class="t"><h1><span class="sprite" aria-hidden="true"></span>GOD</h1><p>Arianna sviluppata da dentro Arianna: GOD propone un piano, ogni sottocompito lavora in un clone con soli dati finti, poi «Prova» e «Approva funzionalità».</p></div>
+    <div class="act"><button class="btn s">↻ Rileggi</button><button class="btn p">＋ Nuova conversazione con GOD</button></div>
+  </header>
+  <div class="card" style="margin-bottom:14px">
+    <h2>Clone</h2>
+    <div class="rowx"><span class="mono">repos/arianna/main · ramo main · commit d17dc8a</span><button class="btn s" style="margin-left:auto">Aggiorna il clone</button></div>
+    <p class="small muted" style="margin:6px 0 0">Quota di Claude: 1% previsto a fine finestra · 4 sottocompiti alla volta. GOD non vede mai il database, la cassaforte né le tue conversazioni.</p>
+  </div>
+  <div class="card">
+    <h2>Conversazioni con GOD</h2>
+    <div class="rowx">Prova dell'avviso di «Prova»: prepara un piano con un solo sottocompito<span class="d">11 ott, 20:58</span></div>
+    <div class="rowx">Ripresa: Prova di G4: chat lunga con GOD<span class="d">11 ott, 20:39</span></div>
+    <div class="rowx">A che punto siamo con lo sviluppo?<span class="d">11 ott, 14:31</span></div>
+  </div>
+  <div class="was">Oggi: <span class="old">GOD</span> in carattere HUD maiuscolo dentro un riquadro con gli angoli, colonna di 960 px, «Nuova conversazione con GOD» in mezzo al testo.</div>
+</div>
+
+<!-- PENSIERI -->
+<div class="page view" id="v-pens">
+  <header class="ph">
+    <div class="t"><h1>Pensieri</h1><p>Scrivi un pensiero e basta: il modello locale gli dà titolo, riassunto, collegamenti e tag. Restano in <span class="mono">kb/inbox</span>, Privati, su questo computer.</p></div>
+    <div class="act"><span class="pill">12 pensieri</span><button class="btn s">↻ Aggiorna</button></div>
+  </header>
+  <div class="card" style="margin-bottom:14px">
+    <textarea class="field" rows="3" placeholder="Scrivi un pensiero…"></textarea>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="small muted" style="flex:1">⌘/Ctrl+Invio per salvare · il tuo testo resta in fondo alla nota</span><button class="btn s" title="Dettatura: presto">🎙</button><button class="btn p">✓ Salva</button></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><input class="field" style="flex:1;min-width:200px" placeholder="Filtra per testo o #tag"><span class="tog"><button class="on">Tutti 12</button><button>Da riordinare 0</button><button>Riordinati 12</button></span></div>
+  <p class="gtitle">Ultimi 7 giorni</p>
+  <div class="card">
+    <div class="rowx"><span><b style="font-weight:600">Comando Laravel per resettare sessione</b><br><span class="small muted">Promemoria · <span class="ok">● Riordinato</span> · <span class="tagl">#laravel #sessione #comando</span></span></span><span class="d">10 ott, 02:02</span></div>
+    <div class="rowx"><span><b style="font-weight:600">Revisione sintattica e contenuti del sito</b><br><span class="small muted">Appunto · <span class="ok">● Riordinato</span> · <span class="tagl">#revisione #contenuti</span></span></span><span class="d">7 ott, 20:34</span></div>
+  </div>
+  <div class="was">Oggi: <span class="old">Pensieri</span> in carattere HUD dentro il riquadro del campo, «kb/inbox · Privato · resta qui» in carattere fisso a destra, filtri e tipi («PROMEMORIA», «APPUNTO») in maiuscolo fisso, colonna di 820 px.</div>
+</div>
+
+<!-- CONOSCENZA -->
+<div class="page wide view" id="v-kn">
+  <div class="graph">
+    <i class="dotn" style="left:58%;top:40%"></i><i class="dotn" style="left:66%;top:55%"></i><i class="dotn" style="left:51%;top:60%;--accent:var(--warn)"></i><i class="dotn" style="left:72%;top:35%"></i><i class="dotn" style="left:62%;top:70%"></i>
+    <div class="panel">
+      <h1>Conoscenza<span style="margin-left:auto;display:flex;gap:4px"><button class="btn s" title="Ricentra">⌖</button><button class="btn s" title="Aggiorna">↻</button></span></h1>
+      <span class="tog"><button class="on">Le tue note</button><button>Arianna</button></span>
+      <span class="small"><b>35</b> note · <b>93</b> collegamenti · <span style="color:var(--danger)">0</span> nascoste (Segreto)</span>
+      <input class="field" placeholder="Filtra per titolo o #tag">
+      <span style="display:flex;align-items:center;gap:8px" class="small muted"><button class="help" id="kh" aria-expanded="false">?</button>Come si muove il grafo</span>
+      <div class="pop" id="kpop" hidden>Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo.</div>
+    </div>
+    <div class="legend"><b style="font-weight:600">Legenda</b><span style="--c:#8a6bd1">kb 1</span><span style="--c:var(--accent)">inbox 12</span><span style="--c:var(--warn)">private 12</span><span style="--c:var(--ok)">public 4</span><span style="--c:var(--info)">work 6</span></div>
+  </div>
+  <div class="was">Oggi: titolo <span class="old">Conoscenza</span> e pulsanti <span class="old">Le tue note</span> / <span class="old">Arianna</span> in maiuscolo, conteggi e istruzioni in carattere fisso a 12 px sempre visibili, legenda in carattere fisso.</div>
+</div>
+
+<!-- SEGRETARIA E CARDWALL -->
+<div class="page wide view" id="v-seg">
+  <h2 style="margin-bottom:10px">Segretaria · impegni</h2>
+  <div class="cols">
+    <div><div class="colh late">In ritardo<span class="n">2</span></div><div class="mini">Rinnovare il dominio (prova)<br><span class="small muted">Card · venerdì 9 ottobre</span></div><div class="mini">Comprare il pane per la colazione</div></div>
+    <div><div class="colh">Oggi<span class="n">0</span></div><p class="small muted">Niente</p></div>
+    <div><div class="colh">Domani<span class="n">0</span></div><p class="small muted">Niente</p></div>
+    <div><div class="colh">Prossimi giorni<span class="n">1</span></div><div class="mini">Andare in banca per il mutuo<br><span class="small muted">venerdì 16 ottobre, 15:00</span></div></div>
+  </div>
+  <h2 style="margin:24px 0 10px">Cardwall</h2>
+  <div class="filters">
+    <button class="btn p s">＋ Card</button><span class="tog"><button class="on">Bacheca</button><button>Lista</button><button>IM</button></span>
+    <span class="chipf on">demo ✕</span><span class="chipf">Tipo ▾</span><span class="chipf">Chi la fa ▾</span><span class="chipf">Priorità ▾</span><span class="chipf">Scadenza ▾</span><span class="chipf">Etichetta ▾</span><span class="chipf">Ordina: scadenza ▾</span>
+  </div>
+  <div class="cols">
+    <div><div class="colh">Inbox<span class="n">6</span></div><div class="mini">Codice della landing (prova)</div><div class="mini">Design landing page</div></div>
+    <div><div class="colh">Da fare<span class="n">0</span></div><p class="small muted">Nessuna card: trascinane una qui</p></div>
+    <div><div class="colh">In corso<span class="n">0</span></div><p class="small muted">Nessuna card</p></div>
+    <div><div class="colh">Aspetta<span class="n">5</span></div><div class="mini">Sviluppo del codice<br><span class="small" style="color:var(--warn)">aspetta: Scrittura dei testi</span></div></div>
+  </div>
+  <div class="was">Oggi: titoli delle colonne <span class="old">In ritardo [3]</span>, <span class="old">Inbox</span>, <span class="old">Impegni</span> in carattere HUD maiuscolo; i filtri del Cardwall stanno su una riga sola che esce dallo schermo a destra (la colonna «Fallita» è tagliata).</div>
+</div>
+
+<!-- UFFICIO -->
+<div class="page view" id="v-uff">
+  <div class="office"></div>
+  <div class="ohint"><span>Clicca nell'ufficio o premi <span class="kbd">Tab</span>, poi cammina con le frecce. Vicino a un agente, <span class="kbd">E</span> apre la sua chat.</span><button class="btn s" id="oh" aria-expanded="false" style="margin-left:auto">? Comandi</button></div>
+  <div class="card" id="opop" hidden style="margin-top:8px">
+    <div class="keys">
+      <span><span class="kbd">←</span><span class="kbd">↑</span><span class="kbd">→</span><span class="kbd">↓</span> o <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></span><span>cammina; oppure clicca un punto del pavimento o un agente</span>
+      <span><span class="kbd">E</span> o <span class="kbd">Invio</span></span><span>vicino a un agente apre la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le decisioni in attesa; al muro, il cardwall</span>
+      <span><span class="kbd">Esc</span></span><span>esce dall'ufficio</span>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">L'ufficio mostra solo stati, etichette e nomi dei progetti, mai il testo delle conversazioni.</p>
+  </div>
+  <div class="was">Oggi: sotto la mappa un paragrafo di quattro righe con tutti i tasti e la nota sulla privacy, sempre visibile.</div>
+</div>
+
+<!-- STUDIO -->
+<div class="page wide view" id="v-stu">
+  <header class="ph">
+    <div class="t"><h1>Studio di design</h1><p>Scegli un progetto: a sinistra parli col Designer, a destra vedi i suoi mockup, lasci commenti sugli elementi e li esporti.</p></div>
+    <div class="act"><select class="field" style="width:auto"><option>Scegli un progetto…</option></select></div>
+  </header>
+  <div class="grid3">
+    <button class="sc"><div class="thumbs"><i></i><i></i><i></i></div><div class="b"><b style="font-weight:600">demo</b><br><span class="small muted">5 mockup · ultimo landing-4, 12 ott</span></div></button>
+    <button class="sc"><div class="thumbs"><i></i><i style="opacity:.3"></i><i style="opacity:.3"></i></div><div class="b"><b style="font-weight:600">progetto-test</b><br><span class="small muted">1 mockup · 10 ott</span></div></button>
+    <button class="sc"><div class="thumbs"><i style="opacity:.25"></i><i style="opacity:.25"></i><i style="opacity:.25"></i></div><div class="b"><b style="font-weight:600">demodue</b><br><span class="small muted">Nessun mockup: chiedine uno al Designer</span></div></button>
+  </div>
+  <p class="small muted" style="margin-top:12px">🔒 I mockup si vedono in una cornice isolata: niente rete, niente accesso alla chat.</p>
+  <div class="was">Oggi: pagina vuota con l'icona al centro e il solo select «Scegli un progetto…» in alto.</div>
+</div>
+
+<script>
+  const EXPLAIN = {
+    god: `<p><b>Testata comune (componente unico per GOD, Pensieri e Studio; Novità e Sviluppo ce l'hanno già così dentro Impostazioni).</b></p><ul>
+      <li>Titolo nel carattere normale a 21 px, una frase che dice a cosa serve la pagina, pulsanti a destra. Larghezza 1120 px come Impostazioni.</li>
+      <li>GOD: il personaggio accanto al titolo, «Nuova conversazione con GOD» in alto a destra; clone e quota in un riquadro «Clone», le conversazioni sotto. Il resto della pagina (piani, sottocompiti) resta com'è, solo con i titoli nel carattere normale.</li></ul>`,
+    pens: `<p><b>Pensieri con la testata comune.</b></p><ul>
+      <li>«kb/inbox · Privato · resta qui» diventa una frase leggibile sotto il titolo; il conteggio a destra.</li>
+      <li>Filtri e tipi («Promemoria», «Appunto») nel carattere normale invece del maiuscolo fisso; nessun bordo colorato quando scrivi nel campo (regola di CLAUDE.md, oggi violata qui).</li></ul>`,
+    kn: `<p><b>Conoscenza (grafo): pannello più leggibile.</b> Prova il «?».</p><ul>
+      <li>Titolo e interruttore «Le tue note / Arianna» nel carattere normale; conteggi in carattere normale.</li>
+      <li>Le istruzioni del 3D dietro un «?», non più sempre aperte. Legenda nel carattere normale.</li></ul>`,
+    seg: `<p><b>Segretaria e Cardwall: titoli delle colonne nel carattere normale.</b></p><ul>
+      <li>«In ritardo», «Oggi», «Inbox», «Aspetta» in semibold normale con il conteggio a destra, come le schede di Progetti. «In ritardo» resta ambra.</li>
+      <li>I filtri del Cardwall vanno a capo quando non ci stanno, invece di uscire dallo schermo.</li></ul>`,
+    uff: `<p><b>Ufficio: una riga corta e i comandi dietro «? Comandi».</b> Prova il pulsante.</p>`,
+    stu: `<p><b>Studio: la pagina vuota diventa l'elenco dei progetti.</b></p><ul>
+      <li>Testata comune con il select a destra; sotto una card per progetto con le miniature dei mockup (le prime tre, già servite nelle cornici isolate), quanti sono e l'ultimo. Un clic apre il progetto nello Studio.</li>
+      <li>Un progetto senza mockup ha la card spenta che invita a chiederne uno.</li></ul>`,
+  };
+  function show(v) {
+    document.querySelectorAll('.view').forEach((x) => x.classList.toggle('on', x.id === 'v-' + v));
+    document.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.getElementById('explain').innerHTML = EXPLAIN[v];
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.v) show(t.dataset.v);
+    if (t.dataset.t) { document.documentElement.dataset.theme = t.dataset.t; document.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-pressed', b === t)); }
+    if (t.id === 'kh' || t.id === 'oh') { const p = document.getElementById(t.id === 'kh' ? 'kpop' : 'opop'); p.hidden = !p.hidden; t.setAttribute('aria-expanded', !p.hidden); }
+    if (t.parentElement?.classList.contains('tog')) t.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t));
+  });
+  show('god');
+</script>
+</body>
+</html>

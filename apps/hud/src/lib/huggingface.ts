@@ -57,7 +57,7 @@ export const PROBLEM_TEXT: Record<HubProblem, string> = {
   gated: 'È ad accesso controllato: serve un account Hugging Face, e Arianna non fa login.',
   private: 'È privato: serve un account, e Arianna non fa login.',
   disabled: 'Hugging Face l’ha disattivato.',
-  'not-mlx': 'Non è in formato MLX: il server locale (oMLX) non lo può usare.',
+  'not-mlx': 'Non è in formato MLX: il server dei modelli (oMLX) non lo può usare.',
   'no-weights': 'Non ha pesi in formato .safetensors.',
   'no-sha256': 'Hugging Face non dà l’impronta di tutti i file: non si potrebbe verificare.',
   'small-files-too-big': 'I file piccoli (configurazione, tokenizer) superano i 64 MB.',
@@ -176,7 +176,7 @@ export function hubErrorText(cause: unknown): string {
       const match = pattern.exec(cause.message);
       if (match !== null) return text(match);
     }
-    if (cause.status === 404) return 'Il nucleo non ha la ricerca su Hugging Face: riavvialo dopo l’aggiornamento.';
+    if (cause.status === 404) return 'Questa versione di Arianna non ha la ricerca su Hugging Face: riavviala dopo l’aggiornamento.';
   }
   return errorText(cause);
 }

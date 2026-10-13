@@ -2,6 +2,7 @@ import { isAtMost, LABELS, type Label } from '@arianna/policy';
 
 import {
   APPROVAL_ACTIONS,
+  isFinanceTool,
   isToolId,
   toolSpec,
   TRIFECTA_SIDES,
@@ -45,7 +46,16 @@ export interface AgentCard {
    * of agents/ is L0, as the ones in git.
    */
   promptLabel?: Label;
+  /**
+   * `ask`: before each card of this agent, the user chooses where it runs
+   * (D-159): one of its cloud executors or the local model, among the ones
+   * allowed for that card. Absent: the router chooses, as for a delegation.
+   */
+  executorChoice?: 'ask';
 }
+
+/** Values of `executor_choice` (D-159). */
+export const EXECUTOR_CHOICES = ['ask'] as const;
 
 export class AgentCardError extends Error {
   override name = 'AgentCardError';
@@ -68,6 +78,7 @@ const KEYS = [
   'approvals',
   'prompt',
   'prompt_label',
+  'executor_choice',
 ];
 
 /**
@@ -78,7 +89,8 @@ const KEYS = [
  * - a cloud executor next to an L2 clearance needs `cloud_max_label` at most L1;
  * - every approval a tool needs is listed in `approvals`;
  * - autonomy above A1 needs the decision that granted it;
- * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance).
+ * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance);
+ * - `executor_choice: ask` needs at least two executors to choose from (D-159).
  */
 export function parseAgentCard(raw: unknown, name: string): AgentCard {
   const where = `agents/${name}.yaml`;
@@ -142,6 +154,16 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     for (const side of toolSpec(tool).opens) {
       if (!trifecta[side]) fail(`tool ${tool} opens ${side}, which the card declares removed`);
     }
+    // Private by nature (D-144): never on a card a cloud executor runs, nor on one that may not read L2.
+    if (toolSpec(tool).localOnly === true && (hasCloud || isAtMost(maxLabel, 'L1'))) {
+      fail(`tool ${tool} reads private data: only a card with max_label L2 or above that runs on the local model alone may list it`);
+    }
+  }
+  // Finance data never leaves this machine (D-183): a card that reads it lists the finance tools and user.ask, nothing else
+  // (a list of the allowed, so that a tool added later does not slip in).
+  if (tools.some(isFinanceTool)) {
+    const others = tools.filter((tool) => !isFinanceTool(tool) && tool !== 'user.ask');
+    if (others.length > 0) fail(`a card that reads finance data may not list ${others.join(', ')}: only finance.* and user.ask`);
   }
 
   const autonomy = oneOf(card.autonomy, AUTONOMY_LEVELS, `${where}: autonomy`);
@@ -185,6 +207,12 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     if (!isAtMost(promptLabel, maxLabel)) fail(`prompt_label ${promptLabel} is above max_label ${maxLabel}`);
   }
 
+  let executorChoice: 'ask' | undefined;
+  if (card.executor_choice !== undefined) {
+    executorChoice = oneOf(card.executor_choice, EXECUTOR_CHOICES, `${where}: executor_choice`);
+    if (executors.length < 2) fail('executor_choice ask needs at least two executors to choose from');
+  }
+
   const result: AgentCard = {
     name,
     description,
@@ -201,6 +229,7 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
   if (cloudMaxLabel !== undefined) result.cloudMaxLabel = cloudMaxLabel;
   if (autonomyDecision !== undefined) result.autonomyDecision = autonomyDecision;
   if (promptLabel !== undefined) result.promptLabel = promptLabel;
+  if (executorChoice !== undefined) result.executorChoice = executorChoice;
   return result;
 }
 

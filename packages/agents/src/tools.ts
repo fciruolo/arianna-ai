@@ -20,6 +20,12 @@ export interface ToolSpec {
   opens: readonly TrifectaSide[];
   /** Approval needed before each use; the card must list it in `approvals`. */
   approval?: ApprovalAction;
+  /**
+   * The tool reads or writes private data of the user by its nature (the
+   * commitments of the secretary, L2, D-144): only a card that reads L2 and
+   * runs on the local model alone may list it.
+   */
+  localOnly?: boolean;
 }
 
 export const TOOLS = {
@@ -27,6 +33,8 @@ export const TOOLS = {
   'kb.search': { description: 'Search the knowledge base within the clearance', opens: [] },
   'kb.write': { description: 'Write a knowledge base page (A1: inbox only)', opens: [] },
   'task.create': { description: 'Create a card (A1: inbox only)', opens: [] },
+  // The cards are created only once the user approves the plan in the web chat (D-159).
+  'task.plan': { description: 'Propose cards with their dependencies, created after the user approves them', opens: [] },
   'task.update': { description: 'Update a card of this conversation (status and note), never the task in progress', opens: [] },
   // Not external communication for the delegating agent, because the delegated
   // step runs in a separate per-task context that has read only the brief: the
@@ -35,6 +43,22 @@ export const TOOLS = {
   // The executor that receives the step is judged by its own card.
   'task.delegate': { description: 'Hand a step to another agent or executor, through the gateway', opens: [] },
   'user.ask': { description: 'Ask the user in the web chat', opens: [] },
+  // The secretary (I-12, D-144): the commitments are L2 and never leave this machine.
+  // Noting one or marking it done waits for the user's confirmation in the web chat.
+  'commitment.add': { description: 'Note a commitment of the user with its day, after the user confirms the day', opens: [], localOnly: true },
+  'commitment.list': { description: 'List the commitments of a day, written by the core from the database', opens: [], localOnly: true },
+  'commitment.done': { description: 'Mark a commitment done, after the user confirms it', opens: [], localOnly: true },
+  'commitment.move': { description: 'Move a commitment to another day or time, after the user confirms it', opens: [], localOnly: true },
+  'commitment.report': { description: 'Note how commitments went (done, not done, postponed) and why, after the user confirms it', opens: [], localOnly: true },
+  // The IM of a project (D-167, P4b): an item in an Interno file, reversible, written at once from a work
+  // conversation; from a step that read more than the IM holds, after the user confirms the exact text in
+  // the web chat. Written by code on this machine, never by a cloud executor.
+  'im.add': { description: 'Add an item to the current or next IM of a project; above the IM label, after the user confirms the text', opens: [], localOnly: true },
+  // The expense tracker (I-18, D-183): read only, computed by code from the database. Finance data never
+  // leaves this machine: the read marks the task, and the gateway sends nothing of it to the cloud.
+  'finance.summary': { description: 'Totals of the expense tracker per month and per category in a span, computed by the core', opens: [], localOnly: true },
+  'finance.search': { description: 'Movements of the expense tracker by text, category and span, at most a few', opens: [], localOnly: true },
+  'finance.alerts': { description: 'Checks of a month of the expense tracker: double charges, budgets, unusual expenses, changed subscriptions', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only
@@ -58,4 +82,16 @@ export function isToolId(value: unknown): value is ToolId {
 
 export function toolSpec(id: ToolId): ToolSpec {
   return TOOLS[id];
+}
+
+/** The tools that read finance data (D-183): a card listing one answers only in its own private conversation. */
+export const FINANCE_TOOLS = ['finance.summary', 'finance.search', 'finance.alerts'] as const satisfies readonly ToolId[];
+
+export function isFinanceTool(tool: ToolId): boolean {
+  return (FINANCE_TOOLS as readonly string[]).includes(tool);
+}
+
+/** A card that reads finance data (the agent of the Finances): any tool of FINANCE_TOOLS. */
+export function isFinanceCard(card: { readonly tools: readonly ToolId[] }): boolean {
+  return card.tools.some(isFinanceTool);
 }

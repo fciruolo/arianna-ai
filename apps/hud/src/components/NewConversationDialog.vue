@@ -22,21 +22,21 @@ function create(choice: DraftChoice): void {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[14vh]" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] sm:pt-[14vh]" @click.self="emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-title"
       tabindex="-1"
-      class="hud-card flex w-full max-w-[480px] flex-col bg-surface outline-none"
+      class="hud-card flex max-h-[84vh] w-full max-w-[34rem] flex-col overflow-y-auto bg-surface outline-none"
     >
-      <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
+      <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
         <span class="text-accent"><Icon name="new" :size="18" /></span>
         <h2 id="new-title" class="flex-1 font-medium">Nuova conversazione</h2>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
-      <div class="px-[15px] py-3.5">
+      <div class="px-4 py-4">
         <NewConversation :projects="projects" :agents="agents" :characters="characters" :initial-agent="initialAgent" @create="create" @refresh="emit('refresh')" />
       </div>
     </section>

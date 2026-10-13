@@ -287,6 +287,19 @@ describe('user agents, tappa T3 (D-119)', () => {
     assert.equal(service.list().official[0]?.works, 'claude');
   });
 
+  it('says which agent asks where each card runs (executor_choice: ask, D-159)', () => {
+    const designer = loadAgent(fileURLToPath(new URL('../../../agents', import.meta.url)), 'designer');
+    agents.set('designer', designer);
+    const listed = createUserAgents({ home, dataDir: join(home, 'data'), agents, official: new Set(['coder', 'designer']), now: () => clock }).list().official;
+    assert.deepEqual(
+      listed.map(({ name, card }) => [name, card.executorChoice]),
+      [
+        ['coder', undefined],
+        ['designer', 'ask'],
+      ],
+    );
+  });
+
   it('changes description and prompt, also of an active agent, at once', () => {
     make();
     service.activate('traduttore');

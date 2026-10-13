@@ -3,8 +3,14 @@ import { test } from 'node:test';
 
 import { isSettingsPath, SETTINGS_PATH } from '../src/lib/route.ts';
 import {
+  MAX_PROJECT_RULES,
+  projectRulesBody,
+  projectRulesForm,
+  projectRulesProblem,
   agentsBody,
   agentsForm,
+  skillsBody,
+  skillsForm,
   changeLines,
   charactersBody,
   chatId,
@@ -29,10 +35,18 @@ import {
   voiceBody,
   voiceForm,
   voiceProblem,
+  pushProblem,
+  pushChanged,
+  pushPart,
+  callsChanged,
+  withPush,
+  voiceSent,
+  voiceAfterSave,
   writeError,
   type AgentsForm,
   type CatalogModel,
   type VoiceValues,
+  fetchSiteOf,
 } from '../src/lib/settings.ts';
 
 const DEFAULTS: VoiceValues = {
@@ -108,6 +122,13 @@ test("agents' models (D-116): every agent with a card, '' is the router, sent ba
   assert.deepEqual(agentsBody({ arianna: '', coder: '' }), { arianna: { model: null }, coder: { model: null } });
 });
 
+test('skills of the agents (D-161): every agent with a card, an empty list for none, sent back whole', () => {
+  const form = skillsForm({ coder: ['anthropics/skills/pdf'], ghost: ['a/b/c'] }, { arianna: 'Arianna reads no skills', coder: null, writer: null });
+  assert.deepEqual(form, { arianna: [], coder: ['anthropics/skills/pdf'], ghost: ['a/b/c'], writer: [] }, 'an agent of the file keeps its list');
+  assert.deepEqual(skillsBody(form), form);
+  assert.deepEqual(skillsForm(undefined, undefined), {}, 'an older core: nothing');
+});
+
 test('a model of an agent says why it would not start a conversation now', () => {
   const values = (models: Partial<Record<'sonnet' | 'opus' | 'fable' | 'luna' | 'sol' | 'astra', boolean | string>>, executors: string[]) => ({
     cloudModels: { models: { sonnet: true, opus: true, fable: true, luna: true, sol: true, astra: true, ...models } },
@@ -165,6 +186,17 @@ test('executors keep their usual order and only the known ones', () => {
   assert.deepEqual(executorsBody(['other']), []);
 });
 
+test('the labels of the management folders of a project (D-145): each change, and "scende" when one goes down', () => {
+  const before = { name: 'box', path: 'repos/box', label: 'L1' as const, folders: [{ path: 'documenti', label: 'L2' as const }] };
+  const after = { ...before, folders: [{ path: 'documenti', label: 'L1' as const }, { path: 'Workplan', label: 'L3' as const }] };
+  assert.deepEqual(changeLines({ projects: { added: [], removed: [], changed: [{ name: 'box', before, after }] } }), [
+    { kind: 'change', text: 'Progetto box: cartella documenti: Privato → Interno (scende); cartella Workplan: come da nome → Segreto' },
+  ]);
+  // From the label by name too: documenti is Privata until chosen.
+  const lowered = { ...before, folders: [{ path: 'documenti', label: 'L2' as const }, { path: 'contratti', label: 'L0' as const }] };
+  assert.match(changeLines({ projects: { added: [], removed: [], changed: [{ name: 'box', before, after: lowered }] } })[0]?.text ?? '', /cartella contratti: come da nome → Pubblico \(scende\)$/);
+});
+
 test('the card lists what changes, section by section', () => {
   const lines = changeLines({
     executors: { before: ['claude', 'codex'], after: ['claude'] },
@@ -181,11 +213,11 @@ test('the card lists what changes, section by section', () => {
     },
   });
   assert.deepEqual(lines, [
-    { kind: 'remove', text: 'Esecutore Codex spento' },
+    { kind: 'remove', text: 'Codex spento' },
     { kind: 'add', text: 'Chat di Telegram 2' },
     { kind: 'add', text: 'Progetto site (Interno, ~/site)' },
     { kind: 'change', text: 'Progetto demo (Interno, repos/demo) → Pubblico, repos/demo' },
-    { kind: 'change', text: 'Server omlx: senza comando: il nucleo lo osserva soltanto' },
+    { kind: 'change', text: 'Server omlx: senza comando: Arianna lo controlla soltanto' },
   ]);
   assert.deepEqual(changeLines({ telegram: { before: null, after: { chats: [1] } } }), [{ kind: 'add', text: 'Telegram acceso (1 chat)' }]);
   assert.deepEqual(changeLines({ telegram: { before: { chats: [1] }, after: null } }), [{ kind: 'remove', text: 'Telegram spento' }]);
@@ -200,14 +232,16 @@ test('the card lists every exit after the change, not only the changed ones', ()
     endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:7001/v1', command: ['omlx', 'serve'] }],
   });
   assert.deepEqual(lines, [
-    'Claude Code potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: demo (Interno).',
+    'Verso Claude Code: il testo dei lavori che Arianna gli passa, solo Pubblico o Interno, e i file dei progetti demo (Interno).',
     'Telegram: 2 chat, al massimo Interno.',
-    'omlx (http://127.0.0.1:7001/v1) vede i dati Privati in chiaro; il nucleo esegue: omlx serve',
+    'omlx (http://127.0.0.1:7001/v1) vede i dati privati; Arianna lo avvia con: omlx serve',
+    'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».',
   ]);
   assert.deepEqual(exitLines({ executors: [], projects: [], telegram: null, endpoints: [{ id: 'x', url: 'u', command: null }] }), [
-    'Nessun esecutore cloud: niente esce verso Claude Code o Codex.',
+    'Claude e Codex spenti: nessun lavoro esce verso il cloud.',
     'Telegram spento.',
-    'x (u) vede i dati Privati in chiaro.',
+    'x (u) vede i dati privati.',
+    'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».',
   ]);
 });
 
@@ -295,7 +329,54 @@ test('the voice card is not saved with an empty number or half a push setting', 
   assert.equal(voiceProblem({ ...form, enabled: false, values: { ...form.values, port: '' as unknown as number } }), undefined);
   assert.match(voiceProblem({ ...form, values: { ...form.values, port: '' as unknown as number } }) ?? '', /numero/);
   assert.match(voiceProblem({ ...form, values: { ...form.values, limits: { ...form.values.limits, callMinutes: 1.5 } } }) ?? '', /numero/);
-  assert.match(voiceProblem({ ...form, push: true, publicKey: 'B', subject: ' ' }) ?? '', /push/);
+  // The push keys are checked by Notifiche (D-192), not by the voice.
+  assert.equal(voiceProblem({ ...form, push: true, publicKey: 'B', subject: ' ' }), undefined);
+  assert.match(pushProblem({ ...form, push: true, publicKey: 'B', subject: ' ' }) ?? '', /chiave pubblica/);
+  assert.equal(pushProblem({ ...form, push: true, publicKey: 'B', subject: 'mailto:a@example.org' }), undefined);
+  assert.equal(pushProblem({ ...form, push: false, publicKey: '', subject: '' }), undefined);
+});
+
+test('Voce and Notifiche each change their part of [voice] (D-192)', () => {
+  const base = voiceForm({ ...DEFAULTS, push: { publicKey: 'Bkey', subject: 'mailto:a@example.org' } }, DEFAULTS);
+  const keys = { ...base, publicKey: 'Bnew' };
+  assert.equal(pushChanged(keys, base), true);
+  assert.equal(callsChanged(keys, base), false);
+  const calls = { ...base, values: { ...base.values, voice: 'serena' } };
+  assert.equal(pushChanged(calls, base), false);
+  assert.equal(callsChanged(calls, base), true);
+  // Saving one part keeps the other as read: the voice of `calls` with the key of `keys`.
+  const merged = withPush(calls, keys);
+  assert.equal(merged.values.voice, 'serena');
+  assert.equal(merged.publicKey, 'Bnew');
+  assert.deepEqual(pushPart(withPush(keys, base)), pushPart(base));
+  // The copy is a new object: editing it leaves the source alone.
+  merged.values.limits.callMinutes = 99;
+  assert.notEqual(calls.values.limits.callMinutes, 99);
+});
+
+test('a save of one part of [voice] sends the other as read, and keeps its edits only when there are some', () => {
+  const push = { publicKey: 'Bkey', subject: 'mailto:a@example.org' };
+  const read = voiceForm({ ...DEFAULTS, push }, DEFAULTS);
+  const both = { ...read, publicKey: 'Bnew', values: { ...read.values, voice: 'serena' } };
+  // Voce sends its voice with the keys as read; Notifiche its keys with the voice as read.
+  assert.deepEqual(voiceSent('calls', both, read), { ...DEFAULTS, voice: 'serena', push });
+  assert.deepEqual(voiceSent('push', both, read), { ...DEFAULTS, push: { ...push, publicKey: 'Bnew' } });
+  // After saving the voice, the keys still edited stay in the page.
+  const savedVoice = voiceForm({ ...DEFAULTS, voice: 'serena', push }, DEFAULTS);
+  assert.equal(voiceAfterSave('calls', both, read, savedVoice).publicKey, 'Bnew');
+  assert.equal(voiceAfterSave('calls', both, read, savedVoice).values.voice, 'serena');
+  // Calls turned off and saved: [voice] is gone with its keys, and untouched keys follow the file (no phantom edit).
+  const off = { ...read, enabled: false };
+  assert.equal(voiceSent('calls', off, read), null);
+  const gone = voiceForm(null, DEFAULTS);
+  assert.deepEqual(voiceAfterSave('calls', off, read, gone), gone);
+  assert.equal(pushChanged(voiceAfterSave('calls', off, read, gone), gone), false);
+  // After saving the keys, the voice still edited stays; an untouched voice follows the file.
+  const savedKeys = voiceForm({ ...DEFAULTS, push: { ...push, publicKey: 'Bnew' } }, DEFAULTS);
+  assert.equal(voiceAfterSave('push', both, read, savedKeys).values.voice, 'serena');
+  assert.equal(voiceAfterSave('push', both, read, savedKeys).publicKey, 'Bnew');
+  const keysOnly = { ...read, publicKey: 'Bnew' };
+  assert.deepEqual(voiceAfterSave('push', keysOnly, read, savedKeys), savedKeys);
 });
 
 test('a 409 for a file that cannot be read says so, and still reloads', () => {
@@ -309,4 +390,30 @@ test('leaveAfterProblem (I-8, D-130): a whole number from 0 (never) to 100', asy
   const { leaveAfterProblem } = await import('../src/lib/settings.ts');
   for (const good of [0, 1, 10, 100]) assert.equal(leaveAfterProblem(good), undefined, String(good));
   for (const bad of [-1, 101, 2.5, '10', Number.NaN]) assert.match(leaveAfterProblem(bad) ?? '', /da 0 \(mai\) a 100/, String(bad));
+});
+
+test('the card "Domini approvati" (D-154): an address or a name becomes the host name', () => {
+  assert.equal(fetchSiteOf('x.com'), 'x.com');
+  assert.equal(fetchSiteOf('  https://www.YouTube.com/watch?v=1 '), 'youtube.com');
+  assert.equal(fetchSiteOf('mobile.x.com'), 'mobile.x.com');
+  for (const bad of ['', 'localhost', 'ftp://x.com', '10.0.0.1', 'x', 'a b.com', 'javascript:alert(1)']) assert.equal(fetchSiteOf(bad), undefined, bad);
+  assert.deepEqual(changeLines({ fetchSites: { before: ['x.com'], after: ['youtube.com'] } }), [
+    { kind: 'add', text: 'Link di youtube.com scaricati da soli' },
+    { kind: 'remove', text: 'Link di x.com non più scaricati da soli' },
+  ]);
+  assert.equal(
+    exitLines({ executors: [], projects: [], telegram: null, endpoints: [], fetchSites: ['x.com'] }).at(-1),
+    'Arianna scarica da sola i link di: x.com (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.',
+  );
+  assert.equal(sectionChanged('fetchSites', ['a.com', 'b.com'], ['b.com', 'a.com']), false);
+});
+
+test('rules of the projects (D-174): an empty template is none, the projects stay as written, the limit is the core’s', () => {
+  const form = projectRulesForm({ template: null, projects: { site: '' } });
+  assert.deepEqual(form, { template: '', projects: { site: '' } });
+  assert.deepEqual(projectRulesBody({ template: '  ', projects: { site: 'x' } }), { template: null, projects: { site: 'x' } });
+  assert.deepEqual(projectRulesBody({ template: 'Comments in English.', projects: {} }), { template: 'Comments in English.', projects: {} });
+  assert.deepEqual(projectRulesForm(undefined), { template: '', projects: {} });
+  assert.equal(projectRulesProblem({ template: 'a'.repeat(MAX_PROJECT_RULES), projects: {} }), undefined);
+  assert.match(projectRulesProblem({ template: '', projects: { site: 'a'.repeat(MAX_PROJECT_RULES + 1) } }) ?? '', /4000/);
 });

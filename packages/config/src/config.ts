@@ -6,15 +6,18 @@ import { parse as parseToml, TomlError } from 'smol-toml';
 
 import { parseAgents, type AgentsSettings } from './agents.ts';
 import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
+import { parseCapture, type CaptureConfig } from './capture.ts';
 import { parseCharacters, type CharacterChoices } from './characters.ts';
 import { legacyDefaultModel, parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { parseNotifications, type NotificationsConfig } from './notifications.ts';
 import { parsePersonas, type Personas } from './personas.ts';
+import { parseProjectRules, type ProjectRules } from './project-rules.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseParticipants, type ParticipantsConfig } from './participants.ts';
+import { parseSecretary, type SecretaryConfig } from './secretary.ts';
 import { parseSprites, type SpritesConfig } from './sprites.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
@@ -67,6 +70,8 @@ export interface AriannaConfig {
   cloud: CloudConfig;
   /** The folders a cloud executor may work on (D-058); applied without a restart. */
   projects: Project[];
+  /** `[project_rules]` (I-14, D-174): the rules a delegation on a project reads; applied without a restart. */
+  projectRules: ProjectRules;
   /** Agent → "<pack>/<character>" (D-060); applied without a restart. */
   characters: CharacterChoices;
   /** Agent → persona (D-107); an agent without one has the defaults. Applied without a restart. */
@@ -79,6 +84,10 @@ export interface AriannaConfig {
   participants: ParticipantsConfig;
   /** `[notifications]` (I-1): kinds and quiet hours; absent, the defaults. Applied without a restart. */
   notifications: NotificationsConfig;
+  /** `[secretary]` (I-12, D-144): reminders on or off, the three moments and the days; absent, the defaults. Applied without a restart. */
+  secretary: SecretaryConfig;
+  /** `[capture]` (D-154): the sites whose links are fetched and summarized by themselves; absent, none. Applied without a restart. */
+  capture: CaptureConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
@@ -107,7 +116,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -143,12 +152,15 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     local: parseLocal(root.local, roles),
     cloud,
     projects: parseProjects(root.project, home, userHome, data),
+    projectRules: parseProjectRules(root.project_rules),
     characters: parseCharacters(root.characters),
     personas: parsePersonas(root.personas),
     agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),
     sprites: parseSprites(root.sprites),
     participants: parseParticipants(root.participants),
     notifications: parseNotifications(root.notifications),
+    secretary: parseSecretary(root.secretary),
+    capture: parseCapture(root.capture),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
     ...(installation === undefined ? {} : { installation }),

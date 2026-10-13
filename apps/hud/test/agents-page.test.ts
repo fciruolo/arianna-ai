@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { agentEntries, changedAgents, filterEntries, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
+import { agentEntries, changedAgents, filterEntries, lengthText, permissionWords, tabLabel, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
 import { DEFAULT_PERSONA_FORM } from '../src/lib/persona.ts';
 import type { CardSummary, UserAgentListing, UserAgentView } from '../src/lib/user-agents.ts';
 
@@ -100,6 +100,9 @@ describe('tabsOf', () => {
     assert.equal(tabsOf(arianna).includes('card'), false);
     assert.equal(tabsOf(grafico).includes('card'), true);
   });
+  it('shows "Skill" for every agent, after the model (D-161)', () => {
+    for (const entry of agentEntries(listing, [])) assert.equal(tabsOf(entry)[3], 'skills');
+  });
 });
 
 describe('changedAgents', () => {
@@ -118,6 +121,15 @@ describe('changedAgents', () => {
     form.characters.grafico = 'miei/grafico';
     assert.deepEqual(changedAgents(form, base), ['coder', 'grafico', 'revisore']);
   });
+  it('names the agent whose skills changed, not one with an empty list as before (D-161)', () => {
+    const before: AgentParts = { ...copy(), skills: { coder: ['a/b/c'], revisore: [] } };
+    const form = structuredClone(before);
+    assert.deepEqual(changedAgents(form, before), []);
+    form.skills = { coder: ['a/b/c', 'a/b/d'], revisore: [] };
+    assert.deepEqual(changedAgents(form, before), ['coder']);
+    form.skills = { coder: ['a/b/c'], revisore: ['x/y/z'] };
+    assert.deepEqual(changedAgents(form, before), ['revisore']);
+  });
   it('names an agent whose character went back to the default', () => {
     const form = copy();
     delete form.characters.coder;
@@ -131,5 +143,27 @@ describe('unsavedNames', () => {
   });
   it('counts the others', () => {
     assert.equal(unsavedNames(['a', 'b', 'c', 'd', 'e']), 'a, b, c e altri 2');
+  });
+});
+
+describe('permissionWords (D-192)', () => {
+  it('says the grade and the autonomy in words', () => {
+    assert.deepEqual(permissionWords({ maxLabel: 'L1', autonomy: 'A1' }), { sees: 'Vede: dati di lavoro', can: 'Può: modificare file in una copia protetta' });
+    assert.deepEqual(permissionWords({ maxLabel: 'L0', autonomy: 'A0' }), { sees: 'Vede: solo dati pubblici', can: 'Può: solo proporre' });
+  });
+  it('shows an unknown code as it is', () => {
+    assert.deepEqual(permissionWords({ maxLabel: 'L9', autonomy: 'A9' }), { sees: 'Vede: L9', can: 'Può: A9' });
+  });
+});
+
+describe('tabLabel and lengthText (D-192)', () => {
+  it('counts the skills only on their tab, only when there are some', () => {
+    assert.equal(tabLabel('skills', 2), 'Skill · 2');
+    assert.equal(tabLabel('skills', 0), 'Skill');
+    assert.equal(tabLabel('persona', 3), 'Personalità');
+  });
+  it('says the characters used of the maximum', () => {
+    assert.equal(lengthText(68, 400), '68 di 400 caratteri');
+    assert.equal(lengthText(0, 4000), '0 di 4.000 caratteri');
   });
 });

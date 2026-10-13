@@ -86,6 +86,68 @@ describe('parseAgentCard', () => {
       assert.equal(parseAgentCard(raw, 'archivista').maxLabel, 'L1');
     });
 
+    it('im.add (D-167): local only, no approval to list', () => {
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = ['im.add'])), 'archivista').tools, ['im.add']);
+      rejects(
+        card((c) => {
+          c.tools = ['im.add'];
+          c.executors = ['local', 'claude'];
+          c.cloud_max_label = 'L1';
+        }),
+        /im\.add reads private data/,
+      );
+    });
+
+    it('the commitments of the secretary (D-144): only on a card that reads L2 and runs on the local model alone', () => {
+      const tools = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move', 'commitment.report'];
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);
+      for (const tool of tools) {
+        rejects(
+          card((c) => {
+            c.tools = [tool];
+            c.executors = ['local', 'claude'];
+            c.cloud_max_label = 'L1';
+          }),
+          new RegExp(`${tool.replace('.', '\\.')} reads private data`),
+        );
+        rejects(
+          card((c) => {
+            c.tools = [tool];
+            c.max_label = 'L1';
+            c.trifecta = { private_data: false, untrusted_content: false, external_comms: false };
+          }),
+          /reads private data/,
+        );
+      }
+    });
+
+    it('the finance tools (D-183): local alone at L2, and nothing that hands their data on', () => {
+      const tools = ['finance.summary', 'finance.search', 'finance.alerts', 'user.ask'];
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);
+      rejects(
+        card((c) => {
+          c.tools = ['finance.summary'];
+          c.executors = ['local', 'claude'];
+          c.cloud_max_label = 'L1';
+        }),
+        /finance\.summary reads private data/,
+      );
+      rejects(
+        card((c) => {
+          c.tools = ['finance.search'];
+          c.max_label = 'L1';
+          c.trifecta = { private_data: false, untrusted_content: false, external_comms: false };
+        }),
+        /reads private data/,
+      );
+      rejects(card((c) => (c.tools = ['finance.alerts', 'task.delegate'])), /may not list task\.delegate/);
+      rejects(card((c) => (c.tools = ['finance.summary', 'task.plan'])), /may not list task\.plan/);
+      // Only finance.* and user.ask: a tool that opens nothing is refused too.
+      rejects(card((c) => (c.tools = ['finance.summary', 'kb.read'])), /may not list kb\.read: only finance\.\* and user\.ask/);
+      rejects(card((c) => (c.tools = ['finance.search', 'user.ask', 'kb.write'])), /may not list kb\.write/);
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = ['finance.alerts'])), 'archivista').tools, ['finance.alerts']);
+    });
+
     it('rejects a tool that opens a side declared removed', () => {
       rejects(card((c) => (c.tools = ['kb.read', 'web.search'])), /web.search opens untrusted_content/);
       rejects(
@@ -268,6 +330,28 @@ describe('parseAgentCard', () => {
         /prompt_label L1 is above max_label L0/,
       );
       rejects(card((c) => (c.prompt_label = 'public')), /prompt_label/);
+    });
+  });
+
+  // D-159: the user chooses where each card of the agent runs.
+  describe('executor_choice', () => {
+    const cloud = (c: Record<string, unknown>) => {
+      c.executors = ['claude', 'codex', 'local'];
+      c.cloud_max_label = 'L1';
+    };
+    it('accepts ask on a card with several executors', () => {
+      assert.equal(parseAgentCard(card((c) => {
+        cloud(c);
+        c.executor_choice = 'ask';
+      }), 'archivista').executorChoice, 'ask');
+      assert.equal(parseAgentCard(card(cloud), 'archivista').executorChoice, undefined);
+    });
+    it('refuses another value, and ask with nothing to choose from', () => {
+      rejects(card((c) => {
+        cloud(c);
+        c.executor_choice = 'always';
+      }), /executor_choice: expected one of ask/);
+      rejects(card((c) => (c.executor_choice = 'ask')), /executor_choice ask needs at least two executors/);
     });
   });
 });

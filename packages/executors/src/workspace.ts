@@ -188,7 +188,7 @@ async function writeTree(repo: string, target: string, entries: readonly TreeEnt
   }
 }
 
-function workspacePath(options: WorkspaceOptions): string {
+export function workspacePath(options: WorkspaceOptions): string {
   if (!RUN_ID.test(options.runId)) throw new WorkspaceError(`invalid run id ${JSON.stringify(options.runId)}`);
   return join(options.data, WORKTREES_DIR, options.runId);
 }
@@ -254,6 +254,15 @@ export async function scanWorkspace(root: string): Promise<WorkspaceEntry[]> {
 // only these, can be the working directory of a cloud executor: a literal
 // `{ path }` could point anywhere.
 const prepared = new WeakMap<PreparedWorkspace, string>();
+// D-166: the container of a part opened by `openRepository`. The executors deny
+// it whole and open the part again (the narrower rule wins): the management
+// folders beside the part stay closed whatever their label.
+const containers = new WeakMap<PreparedWorkspace, string>();
+
+/** The real path of the container of a part `openRepository` opened (D-166); undefined for anything else. */
+export function workspaceContainer(workspace: unknown): string | undefined {
+  return typeof workspace === 'object' && workspace !== null ? containers.get(workspace as PreparedWorkspace) : undefined;
+}
 
 /** The real path of a workspace that `prepareWorkspace` allowed; undefined for anything else. */
 export function preparedPath(workspace: unknown): string | undefined {
@@ -315,8 +324,35 @@ export async function prepareWorkspace(options: PrepareOptions): Promise<Prepare
 export interface OpenRepositoryOptions {
   /** Absolute ARIANNA_HOME. */
   home: string;
-  /** A project of the user's approved list (`[[project]]` of arianna.toml, D-058). */
+  /** A project of the user's approved list (`[[project]]` of arianna.toml, D-058): the container (D-145). */
   project: { name: string; absolute: string; label: Label };
+  /**
+   * D-145: the part to open, a direct subfolder of the container by its name,
+   * when the container is not itself a git repository. Absent, the container
+   * is opened, and must be the top of a git repository as before.
+   */
+  part?: string;
+}
+
+/** The name of a part (`PART_NAME` of @arianna/config): one plain folder, never a path. */
+const PART = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/;
+
+/**
+ * The folder of a part (D-145): a plain name, a real folder directly inside
+ * the container, exactly itself on disk (no link), as the container is.
+ */
+async function partPath(container: string, name: string, part: string): Promise<string> {
+  if (!PART.test(part) || part === '.' || part === '..') throw new WorkspaceError(`${name}: the part must be a folder of the container, by its name`);
+  const absolute = join(container, part);
+  let real: string;
+  try {
+    real = await realpath(absolute);
+  } catch {
+    throw new WorkspaceError(`${name}: the part ${part} does not exist`);
+  }
+  if (real !== absolute) throw new WorkspaceError(`${name}: the part ${part} goes through a symbolic link`);
+  if (!(await lstat(real)).isDirectory()) throw new WorkspaceError(`${name}: the part ${part} is not a folder`);
+  return real;
 }
 
 export interface OpenedRepository extends PreparedWorkspace {
@@ -785,11 +821,23 @@ async function projectPath(options: OpenRepositoryOptions): Promise<string> {
  * stop their own use of Claude Code. Nothing is copied or created.
  */
 export async function openRepository(options: OpenRepositoryOptions): Promise<OpenedRepository> {
-  const repo = await projectPath(options);
+  const container = await projectPath(options);
+  // D-145: a part is opened only inside a container that is not itself a repository; the Coder never gets the container then.
+  const repo = options.part === undefined ? container : await partPath(container, options.project.name, options.part);
+  const shown = options.part === undefined ? options.project.name : `${options.project.name}:${options.part}`;
+  if (options.part !== undefined) {
+    let containerIsRepository = true;
+    try {
+      await checkedRepository(container);
+    } catch {
+      containerIsRepository = false;
+    }
+    if (containerIsRepository) throw new WorkspaceError(`${shown}: the container is a git repository, it is its only part`);
+  }
   try {
     await checkedRepository(repo);
   } catch (error) {
-    throw new WorkspaceError(`${options.project.name} is ${error instanceof Error ? error.message : 'not a git repository'}`);
+    throw new WorkspaceError(`${shown} is ${error instanceof Error ? error.message : 'not a git repository'}`);
   }
   const entries: WorkspaceEntry[] = [];
   const seen = new Set<string>();
@@ -840,6 +888,7 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
   const dirty = await repositoryStatus(repo);
   const opened: OpenedRepository = Object.freeze({ decision, path: repo, branch, dirty });
   prepared.set(opened, repo);
+  if (options.part !== undefined) containers.set(opened, container);
   return opened;
 }
 
@@ -911,7 +960,30 @@ export async function prepareEmptyWorkspace(options: WorkspaceOptions): Promise<
   return workspace;
 }
 
-/** Removes the workspace of a run. It is a plain folder: no repository is involved. */
+/** Removes the workspace of a run, and the copy of the project's notes made for it (D-166). It is a plain folder: no repository is involved. */
 export async function removeWorkspace(options: WorkspaceOptions): Promise<void> {
   await rm(workspacePath(options), { recursive: true, force: true });
+  await removeNotesFolder(notesPath(options));
+}
+
+/** Where the read-only copy of a project's notes for a run lives (D-166): beside its workspace; a run id has no dot, so no workspace is ever named so. */
+export function notesPath(options: WorkspaceOptions): string {
+  return `${workspacePath(options)}.notes`;
+}
+
+/** Removes a copy of notes: its folders are read only (0500), so write is given back first; never through a link. */
+export async function removeNotesFolder(folder: string): Promise<void> {
+  const open = async (dir: string): Promise<void> => {
+    let stats;
+    try {
+      stats = await lstat(dir);
+    } catch {
+      return;
+    }
+    if (!stats.isDirectory()) return;
+    await chmod(dir, 0o700);
+    for (const name of await readdir(dir)) await open(join(dir, name));
+  };
+  await open(folder);
+  await rm(folder, { recursive: true, force: true });
 }

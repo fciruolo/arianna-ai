@@ -2,6 +2,7 @@ export {
   AgentCardError,
   AUTONOMY_LEVELS,
   DIFFICULTIES,
+  EXECUTOR_CHOICES,
   EXECUTORS,
   labelCeiling,
   parseAgentCard,
@@ -13,6 +14,9 @@ export {
 export { AGENTS_DIR, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 export {
   APPROVAL_ACTIONS,
+  FINANCE_TOOLS,
+  isFinanceCard,
+  isFinanceTool,
   isToolId,
   TOOLS,
   toolSpec,
@@ -26,6 +30,8 @@ export {
   answerText,
   chatMessages,
   CODER_ONLY,
+  MAX_PLAN_CARDS,
+  MIN_PLAN_CARDS,
   offerable,
   readAnswer,
   RESPONSE_SCHEMA_NAME,
@@ -36,6 +42,7 @@ export {
   type Answer,
   type DelegateTarget,
   type ModelMessage,
+  type Planner,
   type ReadAnswer,
   type TurnMessage,
 } from './protocol.ts';

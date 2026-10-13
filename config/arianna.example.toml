@@ -78,19 +78,46 @@ luna = true
 sol = true
 astra = true
 
-# Projects (D-058): the folders a cloud executor may work on, as the user
-# does with the CLI. `path` is ~/<folder> under your home (never the home
-# itself, hidden folders, Library or Arianna) or repos/<name> for a folder
-# inside Arianna; it must be the top of a git repository. `label` is L0 or
-# L1 (default L1): every file of the project goes to the cloud with it. The
-# wizard links repos/<name> to each folder under your home, as a shortcut:
-# the executor always uses `path`. A privacy setting: only the user edits
-# it, never an agent; it applies without a restart.
+# Projects (D-058, D-145): the folders a cloud executor may work on, as the
+# user does with the CLI. `path` is ~/<folder> under your home (never the
+# home itself, hidden folders, Library or Arianna) or repos/<name> for a
+# folder inside Arianna. A project is a container: when `path` is the top
+# of a git repository it is one part, as before; otherwise its parts are
+# the direct subfolders that are the top of a git repository (or only those
+# listed in `parts = ["site-admin", "site-client"]`), and the Coder works
+# in one part at a time, never in the container. `label` is L0 or L1
+# (default L1): every file of a part goes to the cloud with it. The other
+# subfolders are management folders, the knowledge of the project, read
+# only on this computer: Workplan and IM are L1, every other one L2, unless
+# a [[project.folder]] gives its label (path = the folder name, label L0-L3;
+# the page Progetti writes them). The wizard links repos/<name> to each
+# folder under your home, as a shortcut: the executor always uses `path`.
+# A privacy setting: only the user edits it, never an agent; it applies
+# without a restart.
 #
 # [[project]]
 # name = "site"
 # path = "~/Projects/site"
 # label = "L1"
+#
+# [[project.folder]]
+# path = "Workplan"
+# label = "L1"
+
+# Rules of the projects (I-14, D-174): your text, L1 by your declaration,
+# at the head of every delegation on a project, the same for Claude and for
+# Codex, through the gateway: no personal data here. `template` is the
+# common model; a line of [project_rules.projects] (project = "text") gives
+# a project its own rules instead, an empty text none. At most 4000
+# characters each. Whatever the text says, the agents never commit: the
+# .git folder of the project is read only for them. Applies without a
+# restart.
+#
+# [project_rules]
+# template = "Comments in English. Never add a Co-Authored-By line."
+#
+# [project_rules.projects]
+# site = "Use pnpm, never npm."
 
 # Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder
 # of data/characters/ you copy there by hand (PNG sheets in the format of
@@ -126,9 +153,14 @@ astra = true
 # and the card in agents/<id>.yaml allows the cloud: never for arianna,
 # whose model is the orchestrator of [roles], local only. Not a privacy
 # setting: it never turns an executor on. Applies without a restart.
+# `skills` (D-161) are skills of the catalog in data/catalogs/skills, as
+# owner/repo/slug: their text goes in each delivery to the agent as
+# third-party data, never to arianna, never to an agent whose card closes
+# untrusted_content.
 #
 # [agents.coder]
 # model = "sonnet"
+# skills = ["anthropics/skills/pdf"]
 
 # Characters drawn by a model (D-123): `model` is the one that draws the
 # character of an agent from its name, description, prompt and persona:
@@ -215,6 +247,33 @@ port = 7420
 # approvals = true
 # failures = true
 # quiet = "22:00-07:00"
+
+# The secretary (I-12, D-144): the reminders of your commitments in three
+# moments of the day, local time and in this order: `morning` (the
+# commitments of the day), `afternoon` (those still open), `evening` (the
+# report of those not done); `days` among mon, tue, wed, thu, fri, sat,
+# sun. A reminder never carries the text of a commitment outside this
+# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a
+# restart.
+#
+# [secretary]
+# enabled = true
+# morning = "09:00"
+# afternoon = "14:30"
+# evening = "18:30"
+# days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+# Links fetched and summarized (D-154): the links of these sites saved in
+# kb/inbox are downloaded by the core and summarized by the local model
+# when the note is organized. A site covers its subdomains (x.com also
+# mobile.x.com). Downloading sends the address of the link to its site
+# (for x.com and twitter.com to publish.twitter.com, the official oEmbed of
+# X); nothing else leaves. A link of any other site stays a link, with a
+# "Scarica e riassumi" button in Pensieri. Absent: no site. Changed from the
+# settings page with a confirmation. Applies without a restart.
+#
+# [capture]
+# fetch_sites = ["x.com"]
 
 # What the web chat says this installation is (D-089): development while the
 # database uses the development passwords or while mode = "development";

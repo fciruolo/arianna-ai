@@ -19,11 +19,22 @@ export type Inline =
 
 export type Align = 'left' | 'center' | 'right' | null;
 
+/**
+ * The box of an item of a list of works (D-193, the IM of D-167, as the Tasks
+ * plugin of Obsidian): `[ ]` to do, `[/]` in progress, `[x]` done, `[>]`
+ * moved to the next IM, `[-]` dropped. Read only.
+ */
+export type TaskMark = 'todo' | 'doing' | 'done' | 'moved' | 'dropped';
+
+const TASK_BOX = /^\[([ xX/>-])\](?:[ \t]+|$)/;
+const TASK_MARKS: Readonly<Record<string, TaskMark>> = { ' ': 'todo', '/': 'doing', x: 'done', X: 'done', '>': 'moved', '-': 'dropped' };
+
 export type Block =
   | { kind: 'paragraph'; inlines: Inline[] }
   | { kind: 'heading'; level: number; inlines: Inline[] }
   | { kind: 'code'; lang: string | null; text: string }
-  | { kind: 'list'; ordered: boolean; start: number; items: Block[][] }
+  /** `tasks`: only when an item starts with a box (`- [x] …`, D-193), the mark of each item, null for a plain one. */
+  | { kind: 'list'; ordered: boolean; start: number; items: Block[][]; tasks?: (TaskMark | null)[] }
   | { kind: 'quote'; blocks: Block[] }
   | { kind: 'rule' }
   | { kind: 'table'; align: Align[]; head: Inline[][]; rows: Inline[][][] };
@@ -165,7 +176,16 @@ function parseList(lines: readonly string[], from: number, depth: number): [Bloc
     i++;
   }
   const start = ordered(marker) ? Number.parseInt(marker, 10) : 1;
-  return [{ kind: 'list', ordered: ordered(marker), start, items: items.map((content) => parseLines(content, depth + 1)) }, i];
+  // A box at the start of an item makes it a work: the box leaves the text.
+  const tasks = items.map((content): TaskMark | null => {
+    const box = TASK_BOX.exec(content[0] ?? '');
+    if (box === null) return null;
+    content[0] = (content[0] ?? '').slice(box[0].length);
+    return TASK_MARKS[group(box, 1)] ?? null;
+  });
+  const list: Extract<Block, { kind: 'list' }> = { kind: 'list', ordered: ordered(marker), start, items: items.map((content) => parseLines(content, depth + 1)) };
+  if (tasks.some((task) => task !== null)) list.tasks = tasks;
+  return [list, i];
 }
 
 function parseTable(lines: readonly string[], from: number): [Block, number] {

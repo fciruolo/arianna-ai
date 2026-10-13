@@ -68,6 +68,24 @@ describe('privacy filter', () => {
     assert.equal(pick(route(coding(), contaminated, FREE, CONFIG)), 'local/local-large');
   });
 
+  it('a context that has read finance data stays local, even for an agent that may send L2 to the cloud (D-183)', () => {
+    const agent: RouterAgent = { ...CODER, cloudMaxLabel: 'L2' };
+    const marked = createContext('L2', 'L2', { finance: true });
+    const decision = route(coding({ agent }), marked, FREE, CONFIG);
+    assert.equal(pick(decision), 'local/local-large');
+    assert.ok(decision.candidates.some((c) => c.model === 'sonnet' && c.outcome === 'privacy'));
+    assert.match(decision.reason, /finance data: local only/);
+    // The same agent without the mark. At L2 it stays local by the label alone (canSendTo: L2 never reaches the cloud,
+    // so a finance context, always L2, cannot be told apart by the pick): the reason does not name finance.
+    const unmarked = route(coding({ agent }), createContext('L2', 'L2'), FREE, CONFIG);
+    assert.equal(pick(unmarked), 'local/local-large');
+    assert.doesNotMatch(unmarked.reason, /finance/);
+    // At L1, the same agent goes to the cloud: the mark is what kept the first one local.
+    const clean = route(coding({ agent }), createContext('L2', 'L1'), FREE, CONFIG);
+    assert.equal(pick(clean), 'claude/sonnet');
+    assert.doesNotMatch(clean.reason, /finance/);
+  });
+
   it('a context not issued by the policy is read as L2', () => {
     const forged = { clearance: 'L1', effective: 'L0' } as Context;
     const decision = route(coding(), forged, FREE, CONFIG);

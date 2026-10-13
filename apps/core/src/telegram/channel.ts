@@ -6,12 +6,13 @@ import type { Queryable, Sql } from '../db/client.ts';
 import { recordDecisionIn } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import { isIncognitoTask } from '../incognito.ts';
+import { contextOf, outputSource } from '../finance-mark.ts';
 import { errorCode } from '../jobs.ts';
 import type { LiveFeed, LiveMessage, PublicEvent } from '../live.ts';
 import { loadTask } from '../tasks.ts';
 import { TelegramApiError, type BotApi, type InlineButton } from './api.ts';
 import { passToTelegram, splitCleared, type ClearedText, type Fragment } from './outgoing.ts';
-import { approvalNotice, scannerRefusal, TEXTS } from './texts.ts';
+import { approvalNotice, isWebOnly, scannerRefusal, TEXTS } from './texts.ts';
 import { decodeDecision, encodeDecision, isAllowed, parseUpdates, type Update } from './updates.ts';
 
 /**
@@ -257,7 +258,7 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
       if (decision === undefined) return;
       const approval = await loadApproval(tx, decision.approvalId);
       if (approval === undefined) return;
-      if (approval.kind === 'declassify') result.outcome = 'web-only';
+      if (isWebOnly(approval.kind)) result.outcome = 'web-only';
       else if (approval.state !== 'pending') result.outcome = 'decided';
       else {
         await recordDecisionIn(tx, approval.id, decision.state, 'telegram');
@@ -338,8 +339,10 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
     const task = approval.taskId === null ? undefined : await loadTask(sql, approval.taskId);
     // The title comes from the user's message: shown only when the task is at most L1.
     // The detail is never shown, whatever its label: it is read in the web chat.
-    const title = task !== undefined && isAtMost(task.label, 'L1') ? task.title : undefined;
-    const buttons = approval.kind === 'declassify' ? undefined : (['approved', 'rejected'] as const);
+    // Never for a task that has read finance data (D-183), whatever its label.
+    const title = task !== undefined && !task.finance && isAtMost(task.label, 'L1') ? task.title : undefined;
+    // Decided in the web chat only: a declassification, a commitment of the secretary (D-144), a plan and the choice of an executor (D-159).
+    const buttons = isWebOnly(approval.kind) ? undefined : (['approved', 'rejected'] as const);
 
     // The notice is written by the channel from the approval's metadata and the
     // title: its context has read the title's label only, not the whole task.
@@ -392,8 +395,9 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
     // The reply was written in the task's context: the gateway judges it there.
     const passed = await passToTelegram(
       sql,
-      [{ text: message.body, label: message.label, source: `message:${message.id}` }],
-      createContext(task.clearance, task.effectiveLabel),
+      // A task that has read finance data (D-183): marked, the gateway refuses it and only the reference goes.
+      [{ text: message.body, label: message.label, source: outputSource(task, `message:${message.id}`) }],
+      contextOf(task, task.effectiveLabel),
       { taskId: task.id, summary: 'chat reply' },
     );
     // Every listed chat is the user's own (D-044): the reply goes to all of them.

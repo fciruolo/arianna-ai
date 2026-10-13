@@ -42,6 +42,8 @@ export interface Scene {
   screens: ReadonlySet<string>;
   figures: readonly Figure[];
   decisionsWaiting: boolean;
+  /** The cardwall within reach of the user (D-165): underlined like a figure. */
+  boardNear: boolean;
 }
 
 const FRAME_W = 16;
@@ -90,6 +92,31 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     rect(C['rug-line'], x + w - 1, y, 1, h);
   };
   const { anchors } = map;
+
+  /**
+   * The cardwall (D-165), drawn once from the first tile of its run: a frame,
+   * a column per tile with a line on top and fixed notes in the theme's
+   * colours. A drawing, not the cards: nothing of them reaches the canvas.
+   */
+  const NOTES = [C.accent, C.warn, C.info, C.ok, C.danger];
+  const board = (x: number, y: number, c: number, r: number): void => {
+    let end = c;
+    while (tileAt(map, end + 1, r) === 'board') end++;
+    const w = (end - c + 1) * TILE;
+    rect(C.outline, x + 1, y + 1, w - 2, 13);
+    rect(C.paper, x + 2, y + 2, w - 4, 11);
+    const columns = (end - c + 1) * 2;
+    const step = (w - 4) / columns;
+    for (let i = 0; i < columns; i++) {
+      const left = Math.round(x + 2 + i * step);
+      if (i > 0) rect(C['wall-line'], left, y + 2, 1, 11);
+      const inner = Math.max(2, Math.round(step) - 2);
+      rect(C.outline, left + 1, y + 3, inner, 1);
+      const count = 1 + ((i * 5 + c) % 3);
+      for (let j = 0; j < count; j++) rect(NOTES[(i + j * 2) % NOTES.length] ?? C.accent, left + 1, y + 5 + j * 3, inner, 2);
+    }
+    if (scene.boardNear) rect(C.accent, x + 2, y + TILE, w - 4, 1);
+  };
   rug(anchors.private.room, C['rug-l2']);
   anchors.islands.forEach((island, slot) => {
     const kind = scene.islandRugs[slot];
@@ -100,7 +127,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   rug(anchors.decisions.room, C['rug-neutral']);
   rug(anchors.archive.room, C['rug-neutral']);
 
-  // Walls: a face where the floor is below, the top elsewhere; windows and a shelf on the faces.
+  // Walls: a face where the floor is below, the top elsewhere; windows, a shelf and the cardwall on the faces.
+  // The cardwall spans its run: drawn after every face, which would cover it.
+  const boards: Point[] = [];
   for (let r = 0; r < map.height; r++) {
     for (let c = 0; c < map.width; c++) {
       const kind = tileAt(map, c, r);
@@ -128,9 +157,12 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
           rect(books[i] ?? C.paper, x + 3 + i * 2, y + 3, 2, 4);
           rect(books[(i + 2) % 6] ?? C.paper, x + 3 + i * 2, y + 8, 2, 4);
         }
+      } else if (kind === 'board' && tileAt(map, c - 1, r) !== 'board') {
+        boards.push([c, r]);
       }
     }
   }
+  for (const [c, r] of boards) board(c * TILE, r * TILE, c, r);
   // The entrance: a door in the wall below it, a mat on the floor.
   const [ec, er] = anchors.entrance;
   if (isWall(tileAt(map, ec, er + 1))) {

@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
     />
     <span
       v-if="bubbleText !== undefined"
-      class="absolute -top-1.5 -right-2 rounded-md border bg-surface px-1 py-0.5 font-mono text-[11px] leading-none font-semibold"
+      class="absolute -top-1.5 -right-2 rounded-md border bg-surface px-1 py-0.5 font-mono text-[12.5px] leading-none font-semibold"
       :class="
         pose === 'waiting'
           ? 'animate-hud-blink border-warn text-warn'

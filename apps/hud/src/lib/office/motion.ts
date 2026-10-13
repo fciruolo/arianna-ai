@@ -1,4 +1,4 @@
-import { archiveTiles, deskTiles, isWalkable, seatFace, seatPoint, tileCenter, type OfficeMap, type Point, type Room } from './map.ts';
+import { archiveTiles, deskTiles, isWalkable, reachable, seatFace, seatPoint, tileCenter, type OfficeMap, type Point, type Room } from './map.ts';
 import { findPath, tileOf } from './path.ts';
 import type { OfficePlace } from './snapshot.ts';
 import { placeKey } from './snapshot.ts';
@@ -47,7 +47,35 @@ export function besideSeat(map: OfficeMap, main: Point, furniture: readonly Poin
   return [...along, ...floor.sort(order)][index - 1] ?? main;
 }
 
-/** The seat of a place on this map; a slot beyond the map's islands is the archive, a pause seat beyond its seats the last one. */
+/**
+ * The spot of a pause seat (D-106): the map's seats on the sofa and by the
+ * coffee first; past those, the free floor of the pause corner reached from
+ * the entrance, nearest the first seat first (then right before left, top
+ * before bottom), where the agent stands; with every spot taken, the spots
+ * are shared in turn, so no two agents share one while another is free.
+ */
+export function pauseSpot(map: OfficeMap, index: number): Point {
+  const { seats, room } = map.anchors.pause;
+  const first = seats[0];
+  if (first === undefined) return map.anchors.entrance;
+  const same = (a: Point, b: Point): boolean => a[0] === b[0] && a[1] === b[1];
+  const distance = (at: Point): number => Math.abs(at[0] - first[0]) + Math.abs(at[1] - first[1]);
+  const from = reachable(map, map.anchors.entrance);
+  // Never standing on a seat of another place, nor in the entrance, should the rooms touch.
+  const elsewhere: Point[] = [map.anchors.entrance, map.anchors.private.seat, map.anchors.archive.seat, ...map.anchors.islands.map((island) => island.seat)];
+  const floor: Point[] = [];
+  for (let r = room[1]; r <= room[3]; r++) {
+    for (let c = room[0]; c <= room[2]; c++) {
+      const at: Point = [c, r];
+      if (isWalkable(map, c, r) && from.has(r * map.width + c) && ![...seats, ...elsewhere].some((seat) => same(seat, at))) floor.push(at);
+    }
+  }
+  floor.sort((a, b) => distance(a) - distance(b) || b[0] - a[0] || a[1] - b[1]);
+  const spots = [...seats, ...floor];
+  return spots[Math.max(0, index) % spots.length] ?? first;
+}
+
+/** The seat of a place on this map; a slot beyond the map's islands is the archive, a pause seat beyond its seats a free spot of the corner. */
 export function seatOf(map: OfficeMap, place: OfficePlace): Point {
   const { anchors } = map;
   const archive = (index: number): Point => besideSeat(map, anchors.archive.seat, archiveTiles(map), 1, anchors.archive.room, index);
@@ -62,7 +90,7 @@ export function seatOf(map: OfficeMap, place: OfficePlace): Point {
     case 'archive':
       return archive(place.seat ?? 0);
     case 'pause':
-      return anchors.pause.seats[Math.min(place.seat, anchors.pause.seats.length - 1)] ?? anchors.entrance;
+      return pauseSpot(map, place.seat);
   }
 }
 

@@ -1,6 +1,6 @@
 // Service worker of the web chat (D-066, I-1): the notifications of Web Push.
 // A push carries no content. The worker asks the core what it was about (a
-// call, a reply, an approval, a failed task) over the chat's own connection,
+// call, a reply, an approval, a failed task, a reminder) over the chat's own connection,
 // never through the push service, and writes a fixed sentence: never the text
 // or the title of a conversation.
 const TEXTS = {
@@ -8,6 +8,7 @@ const TEXTS = {
   reply: { title: 'Arianna ha risposto', body: 'Clicca per aprire la conversazione.' },
   approval: { title: 'Arianna aspetta una tua decisione', body: 'Clicca per vedere cosa approvare.' },
   failure: { title: 'Un lavoro è fallito', body: 'Clicca per vedere cosa è successo.' },
+  reminder: { title: 'Arianna ha un promemoria', body: 'Clicca per aprire la segretaria.' },
 };
 const ICON = '/notification-icon.png';
 // The core unreachable, or nothing recent: still a notification (browsers require one), without saying what.

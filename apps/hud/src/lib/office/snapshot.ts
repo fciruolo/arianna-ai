@@ -103,7 +103,9 @@ export function assignIslands(projects: OfficeInput['projects'], slots: number):
   const valid: OfficeIsland[] = [];
   const archived: string[] = [];
   let unnamed = 0;
-  for (const project of projects) {
+  for (const listed of projects) {
+    // The parts of a container (D-145, `<project>:<part>`) share the island of their project (D-127: GOD's clones).
+    const project = { ...listed, name: containerOf(listed.name) };
     if (seen.has(project.name)) continue;
     seen.add(project.name);
     if (!PROJECT_NAME.test(project.name)) {
@@ -117,11 +119,17 @@ export function assignIslands(projects: OfficeInput['projects'], slots: number):
   return { islands: valid, archived, unnamed };
 }
 
+/** The project of a part (`demo:admin` → `demo`); a project of one part is its own name. */
+export function containerOf(name: string): string {
+  const at = name.indexOf(':');
+  return at < 0 ? name : name.slice(0, at);
+}
+
 /** The island of a repository the core names (a project name, or its path), or the archive. */
 export function placeOfRepo(repo: string | null, projects: OfficeInput['projects'], islands: readonly OfficeIsland[]): OfficePlace {
   if (repo !== null) {
     const project = projects.find((item) => item.name === repo || item.path === repo || item.path.split('/').at(-1) === repo);
-    const island = project === undefined ? undefined : islands.find((item) => item.project === project.name);
+    const island = project === undefined ? undefined : islands.find((item) => item.project === containerOf(project.name));
     if (island !== undefined) return { kind: 'island', slot: island.slot };
   }
   return { kind: 'archive' };
@@ -200,13 +208,14 @@ export function officeSnapshot(input: OfficeInput): OfficeSnapshot {
   // Places: the other agents first, so that Arianna takes the pause seat and
   // the island chair left free and nobody moves when she comes.
   const placing = [...ordered.filter((agent) => agent.id !== 'arianna'), ...ordered.filter((agent) => agent.id === 'arianna')];
-  let pauseSeat = 0;
   const places = new Map<string, OfficePlace>();
-  for (const agent of placing) {
+  // Each agent has its own pause spot, its place in this order: one that starts
+  // or stops working never moves the others (the corner has a spot for each).
+  for (const [index, agent] of placing.entries()) {
     const running = agent.state === 'thinking' || agent.state === 'working';
-    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => pauseSeat++));
+    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => index));
     else if (running) places.set(agent.id, placeOfRepo(agent.run?.repo ?? null, input.projects, islands));
-    else places.set(agent.id, { kind: 'pause', seat: pauseSeat++ });
+    else places.set(agent.id, { kind: 'pause', seat: index });
   }
   shareSeats(places, placing.map((agent) => agent.id));
   const agents = ordered.map((agent): OfficeAgent => {

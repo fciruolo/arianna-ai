@@ -10,10 +10,10 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { sheetUrl, type UploadedCharacter } from '../lib/api.ts';
-import { agentEntries, changedAgents, filterEntries, TAB_TEXT, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
+import { listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
+import { agentEntries, changedAgents, filterEntries, lengthText, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName } from '../lib/italian.ts';
-import { labelWord, MODEL_TEXT } from '../lib/labels.ts';
+import { MODEL_TEXT } from '../lib/labels.ts';
 import {
   ADDRESSES,
   characters as countCharacters,
@@ -30,6 +30,7 @@ import {
   TONES,
 } from '../lib/persona.ts';
 import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
+import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -56,10 +57,12 @@ import {
 } from '../lib/user-agents.ts';
 import CharacterGenerate from './CharacterGenerate.vue';
 import CharacterUpload from './CharacterUpload.vue';
+import FormField from './FormField.vue';
 import Icon from './Icon.vue';
 import PermissionConfirm from './PermissionConfirm.vue';
 import PermissionsPicker from './PermissionsPicker.vue';
 import PixelAgent from './PixelAgent.vue';
+import SettingsSaveBar from './SettingsSaveBar.vue';
 import SheetPreview from './SheetPreview.vue';
 
 /**
@@ -141,8 +144,8 @@ const FILTERS: { id: AgentFilter; text: string }[] = [
 ];
 const visible = computed(() => filterEntries(entries.value, query.value, filter.value, nameOf));
 const groups = computed(() => [
-  { id: 'official', title: 'Ufficiali', hint: 'nel repository, in agents/', items: visible.value.filter((entry) => entry.official) },
-  { id: 'mine', title: 'I miei', hint: 'in data/agents, fuori da git', items: visible.value.filter((entry) => !entry.official) },
+  { id: 'official', title: 'Ufficiali', items: visible.value.filter((entry) => entry.official) },
+  { id: 'mine', title: 'I miei', items: visible.value.filter((entry) => !entry.official) },
 ]);
 
 const selected = ref('arianna');
@@ -164,7 +167,45 @@ function choose(id: string): void {
 watch([current, tab], () => {
   const entry = current.value;
   if (entry !== undefined && !entry.official && tab.value === 'card') void loadTexts(entry.id);
+  if (tab.value === 'skills' && skillCatalog.value === null) void loadSkillCatalog();
 });
+
+// Skill (D-161): the skills of the catalog assigned to the agent, saved with the bar in [agents.<id>] skills
+const skillCatalog = ref<SkillSummary[] | null>(null);
+const skillCatalogError = ref('');
+const skillQuery = ref('');
+async function loadSkillCatalog(): Promise<void> {
+  try {
+    skillCatalog.value = (await listSkills()).skills;
+    skillCatalogError.value = '';
+  } catch (cause) {
+    skillCatalogError.value = skillsErrorText(cause);
+  }
+}
+/** The catalog changed (a source added, adopted or removed): read again when the tab is shown. */
+function skillsCatalogChanged(): void {
+  skillCatalog.value = null;
+  if (tab.value === 'skills') void loadSkillCatalog();
+}
+defineExpose({ skillsCatalogChanged });
+const skillsOf = (agent: string): string[] => props.form.skills?.[agent] ?? [];
+/** Why the agent takes no skills; undefined when it may (an older core says nothing: no tab content). */
+const skillRefusal = (agent: string): string | undefined => (props.view.agentSkills === undefined ? 'Arianna non gestisce ancora le skill: riavviala dopo l’aggiornamento.' : skillRefusalText(props.view.agentSkills[agent]));
+const skillOf = (id: string): SkillSummary | undefined => skillCatalog.value?.find((item) => item.id === id);
+const skillChoices = computed(() => {
+  const agent = current.value?.id;
+  if (agent === undefined) return [];
+  const taken = skillsOf(agent);
+  return filterSkills(skillCatalog.value ?? [], skillQuery.value).filter((item) => !taken.includes(item.id)).slice(0, 40);
+});
+function assignSkill(agent: string, id: string): void {
+  if (props.form.skills === undefined) return;
+  props.form.skills[agent] = withSkill(skillsOf(agent), id);
+}
+function unassignSkill(agent: string, id: string): void {
+  if (props.form.skills === undefined) return;
+  props.form.skills[agent] = withoutSkill(skillsOf(agent), id);
+}
 
 // Look (D-118, D-123, D-132)
 const characterOptions = computed(() =>
@@ -253,7 +294,7 @@ const unsaved = computed(() =>
   unsavedNames([...[...dirtyIds.value].map(nameOf).sort((a, b) => a.localeCompare(b)), ...(leaveChanged.value ? ['uscita degli agenti'] : [])]),
 );
 const working = ref(false);
-const barError = ref('');
+const saveError = ref('');
 const saved = ref(false);
 let savedTimer: number | undefined;
 watch(dirty, (now) => {
@@ -264,7 +305,7 @@ const blocked = computed(() => (changedSettings.value.length > 0 || leaveChanged
 async function saveAll(): Promise<void> {
   if (working.value || props.busy || blocked.value !== undefined) return;
   working.value = true;
-  barError.value = '';
+  saveError.value = '';
   try {
     if ((changedSettings.value.length > 0 || leaveChanged.value) && !(await props.save())) return;
     for (const name of changedTexts.value) {
@@ -287,7 +328,7 @@ async function saveAll(): Promise<void> {
       saved.value = false;
     }, 4000);
   } catch (cause) {
-    barError.value = userAgentErrorText(cause);
+    saveError.value = userAgentErrorText(cause);
   } finally {
     working.value = false;
   }
@@ -301,7 +342,7 @@ function textsSaved(name: string, edit: UserAgentEdit): void {
 function undo(): void {
   emit('cancel');
   for (const [name, draft] of Object.entries(texts.value)) if (draft) texts.value[name] = { ...draft, description: draft.savedDescription, prompt: draft.savedPrompt };
-  barError.value = '';
+  saveError.value = '';
 }
 
 // Immediate actions on the user's agents (D-119)
@@ -433,193 +474,206 @@ function splitLine(line: string): [string, string] {
   return at < 0 ? [line, ''] : [line.slice(0, at), line.slice(at + 2)];
 }
 const canChat = computed(() => current.value !== undefined && current.value.on && props.directAgents.some((agent) => agent.agent === current.value?.id));
+/** The text of the save bar: who holds edits not saved. */
+const barLabel = computed(() => `Modifiche non salvate a ${unsaved.value}`);
+const barError = computed(() => saveError.value || props.error || undefined);
+/** A plain card of the settings (D-192). */
+const CARD = 'flex flex-col gap-3.5 rounded-xl border border-line bg-surface-2 p-4';
+const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-60';
 </script>
 
 <template>
-  <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(250px,310px)_minmax(0,1fr)]">
+  <div class="grid grid-cols-1 items-start gap-4 @3xl:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
     <!-- The list -->
-    <aside class="flex flex-col gap-3 lg:sticky lg:top-0" aria-label="Elenco degli agenti">
+    <aside class="flex flex-col gap-2.5 @3xl:sticky @3xl:top-0" aria-label="Elenco degli agenti">
       <div class="flex items-center gap-2">
-        <span class="hud-title flex-1">Agenti</span>
-        <a href="/impostazioni/agenti/nuovo" class="btn btn-primary px-2.5 py-1 text-xs" @click.prevent="emit('newAgent')">+ Nuovo agente</a>
+        <input v-model="query" type="search" class="field min-w-0 flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Cerca un agente" aria-label="Cerca un agente" />
+        <a href="/impostazioni/agenti/nuovo" class="btn btn-primary shrink-0 px-3 py-1.5 text-[14px]" @click.prevent="emit('newAgent')">+ Nuovo agente</a>
       </div>
-      <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[13px]" placeholder="Cerca per nome o descrizione" aria-label="Cerca un agente" />
       <div class="flex gap-1.5" role="group" aria-label="Filtra">
         <button
           v-for="item in FILTERS"
           :key="item.id"
           type="button"
-          class="rounded-full border px-2.5 py-0.5 text-xs"
-          :class="filter === item.id ? 'border-accent bg-glow text-ink' : 'border-line-strong text-muted hover:text-ink'"
+          class="rounded-full border px-2.5 py-0.5 text-[13px]"
+          :class="filter === item.id ? 'border-accent bg-accent/10 text-ink' : 'border-line-strong text-muted hover:text-ink'"
           :aria-pressed="filter === item.id"
           @click="filter = item.id"
         >
           {{ item.text }}
         </button>
       </div>
-      <p v-if="loadError" class="text-xs text-danger" role="alert">{{ loadError }}</p>
+      <p v-if="loadError" class="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2 text-[14px]" role="alert">
+        <span class="min-w-0 flex-1">{{ loadError }}</span>
+        <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="load">Riprova</button>
+      </p>
       <template v-for="group in groups" :key="group.id">
         <template v-if="group.items.length > 0 || group.id === 'mine'">
-          <p class="mt-1 flex items-baseline gap-2">
-            <span class="hud-title text-[10px]">{{ group.title }}</span><small class="text-[11.5px] text-muted">{{ group.hint }}</small>
-          </p>
+          <p class="mt-1 text-[14px] font-semibold">{{ group.title }}</p>
           <div class="grid grid-cols-2 gap-2">
             <button
               v-for="entry in group.items"
               :key="entry.id"
               type="button"
-              class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 rounded-xl border bg-surface px-2.5 py-2 text-left transition-[border-color,transform] hover:-translate-y-px"
-              :class="[entry.id === current?.id ? 'border-accent shadow-[0_0_0_3px_var(--glow)]' : 'border-line hover:border-line-strong', { 'opacity-60 grayscale': !entry.on }]"
+              class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 rounded-xl border bg-surface-2 px-2.5 py-2 text-left transition-[border-color]"
+              :class="[entry.id === current?.id ? 'border-accent shadow-[0_0_0_3px_var(--glow)]' : 'border-line hover:border-line-strong', { 'opacity-60': !entry.on }]"
               :aria-current="entry.id === current?.id ? 'true' : undefined"
               :disabled="generating && entry.id !== current?.id"
               :title="generating && entry.id !== current?.id ? HOLD_TEXT : undefined"
               @click="choose(entry.id)"
             >
               <span class="row-span-2"><PixelAgent :choice="previewOf(entry.id)" pose="idle" :scale="1" :version="sheetVersion" /></span>
-              <span class="truncate text-[13.5px] font-semibold">
+              <span class="truncate text-[14.5px] font-semibold">
                 {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span>
               </span>
-              <span class="flex items-center gap-1.5 font-mono text-[10.5px] text-muted">
-                <span class="size-[7px] shrink-0 rounded-full" :class="entry.on ? 'bg-ok' : 'border-[1.5px] border-muted'" :title="entry.on ? 'attivo' : 'spento'" />
-                {{ entry.on ? '' : 'spento · ' }}{{ entry.where === 'cloud' ? 'Claude' : 'locale' }}
-              </span>
+              <span class="truncate text-[13px] text-muted">{{ entry.on ? '' : 'spento · ' }}{{ entry.where === 'cloud' ? 'con Claude' : 'sul Mac' }}</span>
             </button>
             <a
               v-if="group.id === 'mine'"
               href="/impostazioni/agenti/nuovo"
-              class="grid min-h-[62px] place-items-center rounded-xl border border-dashed border-line-strong text-[13px] text-muted hover:border-accent hover:text-accent"
+              class="grid min-h-[56px] place-items-center rounded-xl border border-dashed border-line-strong text-[14px] font-semibold text-muted hover:border-accent hover:text-accent"
               @click.prevent="emit('newAgent')"
             >+ Nuovo agente</a>
           </div>
+          <p v-if="group.id === 'mine' && group.items.length === 0 && query === '' && filter === 'all'" class="text-[13px] text-muted">
+            Non hai ancora agenti tuoi: con «+ Nuovo agente» ne crei uno, per esempio un revisore che rilegge i testi prima che li mandi.
+          </p>
         </template>
       </template>
-      <p v-if="visible.length === 0 && entries.length > 0" class="text-xs text-muted">Nessun agente con questi filtri.</p>
+      <p v-if="visible.length === 0 && entries.length > 0" class="text-[13px] text-muted">Nessun agente con questa ricerca: cambia il testo o scegli «Tutti».</p>
       <!-- Cards that could not be read: never loaded; a disabled one can be deleted -->
-      <div v-for="item in listing?.refused ?? []" :key="`${item.state}-${item.name}`" class="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger/50 px-2.5 py-2 text-xs">
+      <div v-for="item in listing?.refused ?? []" :key="`${item.state}-${item.name}`" class="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger/50 px-2.5 py-2 text-[13px]">
         <span class="min-w-0 flex-1">
-          <span class="font-mono">{{ item.name }}</span> (in {{ item.state === 'active' ? 'attivi' : 'disattivati' }}) non caricato: <span class="font-mono text-muted">{{ item.reason }}</span>
+          <b class="font-semibold">{{ item.name }}</b> ({{ item.state === 'active' ? 'attivo' : 'spento' }}) non si legge, e Arianna non lo usa: <span class="text-muted">{{ item.reason }}</span>
         </span>
-        <button v-if="item.state === 'disabled'" type="button" class="btn btn-danger px-2 py-0.5 text-xs" :disabled="busyName !== ''" @click="deleting = { name: item.name, typed: '' }; error = ''">Elimina…</button>
+        <button v-if="item.state === 'disabled'" type="button" class="btn btn-danger px-2 py-0.5 text-[13px]" :disabled="busyName !== ''" @click="deleting = { name: item.name, typed: '' }; error = ''">Elimina…</button>
       </div>
       <!-- For every agent: when one that entered a conversation leaves by itself (I-8, D-130) -->
-      <div class="flex flex-col gap-1 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
-        <label for="leave-after" class="flex flex-wrap items-center gap-2">
-          Un agente entrato in una conversazione esce da solo dopo
-          <input id="leave-after" v-model.number="form.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[13px]" />
-          tuoi messaggi senza lavori per lui
+      <div class="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 p-3">
+        <p class="text-[14.5px] font-semibold">Per tutti gli agenti</p>
+        <label for="leave-after" class="flex flex-wrap items-center gap-1.5 text-[13.5px]">
+          Esce da una conversazione dopo
+          <input id="leave-after" v-model.number="form.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[14px]" />
+          tuoi messaggi senza lavoro per lui
         </label>
-        <p class="text-xs text-muted">Saluta con una frase e rientra alla delega seguente. 0 vuol dire mai. Il Coder non esce da solo: lo togli tu.</p>
-        <p v-if="leaveAfterProblem(form.participants) !== undefined" class="text-xs text-warn">{{ leaveAfterProblem(form.participants) }}</p>
+        <p class="text-[13px] text-muted">Saluta e rientra quando gli serve un lavoro. 0 = resta sempre. Il Coder non esce da solo: lo togli tu.</p>
+        <p v-if="leaveAfterProblem(form.participants) !== undefined" class="text-[13px] text-warn">{{ leaveAfterProblem(form.participants) }}</p>
       </div>
     </aside>
 
     <!-- The detail -->
     <div v-if="current !== undefined" class="flex min-w-0 flex-col gap-3.5" aria-live="polite">
-      <section class="hud-card relative grid grid-cols-1 items-center gap-4 overflow-hidden px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)]">
-        <div class="grid h-[132px] w-[112px] place-items-end justify-center rounded-xl border border-line bg-surface-2 pb-2">
+      <section class="grid grid-cols-1 items-center gap-4 rounded-xl border border-line bg-surface-2 p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+        <div class="grid h-[120px] w-[104px] place-items-end justify-center rounded-xl border border-line bg-surface pb-2">
           <PixelAgent :choice="previewOf(current.id)" pose="idle" :scale="3" :version="sheetVersion" />
         </div>
         <div class="flex min-w-0 flex-col gap-2">
           <div class="flex flex-wrap items-center gap-1.5">
-            <span class="chip">{{ current.official ? 'ufficiale' : 'mio' }}</span>
-            <span class="chip" :class="current.where === 'cloud' ? 'text-info' : 'text-ok'">{{ current.where === 'cloud' ? '☁ va a Claude' : '⌂ resta sul computer' }}</span>
-            <label class="ml-auto flex items-center gap-2 text-[13px]" :title="current.official ? (current.id === 'arianna' ? 'Arianna è sempre attiva' : 'Le schede ufficiali sono sempre attive') : undefined">
+            <span class="pill">{{ current.official ? 'Ufficiale' : 'Mio' }}</span>
+            <span class="pill" :class="current.where === 'cloud' ? 'border-info/50 text-info' : 'border-ok/50 text-ok'">{{ current.where === 'cloud' ? 'Lavora con Claude (cloud)' : 'Lavora sul Mac' }}</span>
+            <template v-if="current.view">
+              <span class="pill">{{ permissionWords(current.view.card).sees }}</span>
+              <span class="pill">{{ permissionWords(current.view.card).can }}</span>
+            </template>
+            <label class="ml-auto flex items-center gap-2 text-[14px]" :title="current.official ? (current.id === 'arianna' ? 'Arianna è sempre attiva' : 'Gli agenti ufficiali sono sempre attivi') : undefined">
               {{ current.on ? 'Attivo' : 'Spento' }}
               <input type="checkbox" role="switch" class="switch" :checked="current.on" :disabled="current.official || busyName !== ''" :aria-label="`${nameOf(current.id)} attivo`" @change="toggle(current, $event)" />
             </label>
           </div>
-          <h2 class="font-hud text-[22px] leading-tight font-semibold tracking-[0.06em]">{{ nameOf(current.id) }}</h2>
-          <p v-if="current.description" class="max-w-[60ch] text-[13.5px] text-muted">{{ current.description }}</p>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <span class="chip font-mono">modello: {{ modelText(current) }}</span>
-            <span v-if="current.view" class="chip font-mono">{{ labelWord(current.view.card.maxLabel) }} · {{ current.view.card.autonomy }}</span>
-            <button v-if="canChat" type="button" class="btn px-2.5 py-0.5 text-xs" @click="emit('chat', current.id)">Apri una chat</button>
+          <h2 class="text-[22px] leading-tight font-semibold">{{ nameOf(current.id) }}</h2>
+          <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted">{{ current.description }}</p>
+          <div class="flex flex-wrap items-center gap-2 text-[13.5px] text-muted">
+            <span>Modello: <span :class="current.id === 'arianna' ? 'font-mono text-[12.5px]' : ''">{{ modelText(current) }}</span></span>
+            <button v-if="canChat" type="button" class="btn px-2.5 py-1 text-[13px]" @click="emit('chat', current.id)">Apri una chat</button>
           </div>
-          <p v-if="!current.official && current.view" class="text-xs" :class="current.view.works === null ? 'text-warn' : 'text-muted'">
+          <p v-if="!current.official && current.view" class="text-[13px]" :class="current.view.works === null ? 'text-warn' : 'text-muted'">
             {{ current.on ? 'Da attivo' : 'Quando è attivo' }} {{ workText(current.view.works) }}.
           </p>
         </div>
       </section>
 
-      <p v-if="error && !promoting && !demoting && !deleting && !confirming" class="text-xs text-danger" role="alert">{{ error }}</p>
-      <p v-if="notice" class="text-xs text-ok" role="status">{{ notice }}</p>
+      <p v-if="error && !promoting && !demoting && !deleting && !confirming" class="text-[13px] text-danger" role="alert">{{ error }}</p>
+      <p v-if="notice" class="text-[13px] text-ok" role="status">{{ notice }}</p>
 
-      <div class="flex gap-0.5 overflow-x-auto border-b border-line" role="tablist" aria-label="Sezioni dell’agente">
+      <div class="flex gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Sezioni dell’agente">
         <button
           v-for="item in tabs"
           :key="item"
           type="button"
           role="tab"
-          class="-mb-px border-b-2 px-3 py-2 font-hud text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap uppercase"
-          :class="tab === item ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
+          class="-mb-px border-b-2 px-3 py-2 text-[14px] whitespace-nowrap"
+          :class="tab === item ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
           :aria-selected="tab === item"
           :disabled="generating && tab !== item"
           :title="generating && tab !== item ? HOLD_TEXT : undefined"
           @click="tab = item"
         >
-          {{ TAB_TEXT[item] }}
+          {{ tabLabel(item, skillsOf(current.id).length) }}
         </button>
       </div>
 
       <fieldset :disabled="busy || working" class="m-0 flex min-w-0 flex-col gap-3.5 border-0 p-0">
         <!-- Personalità (D-107) -->
-        <section v-if="tab === 'persona' && form.personas[current.id]" class="hud-card flex flex-col gap-3.5 px-4 py-4" role="tabpanel">
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <span class="text-[13px] font-medium sm:pt-1">Tono<small class="block text-[11.5px] font-normal text-muted">come risponde</small></span>
-            <div class="flex flex-col gap-1.5">
+        <section v-if="tab === 'persona' && form.personas[current.id]" :class="CARD" role="tabpanel">
+          <div class="grid gap-3 sm:grid-cols-6">
+            <div class="grid content-start gap-1 sm:col-span-6">
+              <span class="text-[13px] font-medium text-muted">Tono</span>
               <div class="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tono">
                 <label
                   v-for="tone in TONES"
                   :key="tone"
-                  class="cursor-pointer rounded-[9px] border px-2.5 py-1 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
-                  :class="form.personas[current.id]?.tone === tone ? 'border-accent bg-accent/15 text-ink' : 'border-line-strong text-muted hover:text-ink'"
+                  class="cursor-pointer rounded-full border px-3 py-1 text-[14px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
+                  :class="form.personas[current.id]?.tone === tone ? 'border-accent bg-accent/10 text-ink' : 'border-line-strong text-muted hover:text-ink'"
                 >
                   <input v-model="form.personas[current.id]!.tone" type="radio" :name="`tone-${current.id}`" :value="tone" class="sr-only" />{{ TONE_TEXT[tone] }}
                 </label>
               </div>
-              <p class="text-xs text-muted">Esempio: <span class="text-ink italic">«{{ TONE_EXAMPLE[form.personas[current.id]!.tone] }}»</span></p>
+              <p class="text-[12.5px] text-muted">Così risponde: <span class="text-ink italic">«{{ TONE_EXAMPLE[form.personas[current.id]!.tone] }}»</span></p>
             </div>
+            <FormField :id="`address-${current.id}`" label="Ti dà del" :span="1">
+              <select :id="`address-${current.id}`" v-model="form.personas[current.id]!.address" :class="INPUT">
+                <option v-for="address in ADDRESSES" :key="address" :value="address">{{ address }}</option>
+              </select>
+            </FormField>
+            <FormField :id="`display-${current.id}`" label="Nome in chat" :hint="FIXED_NAMES.includes(current.id) ? 'Questo nome non si cambia.' : 'Anche nell’ufficio.'" :span="2">
+              <input
+                :id="`display-${current.id}`"
+                v-model="form.personas[current.id]!.displayName"
+                :maxlength="MAX_DISPLAY_NAME"
+                :disabled="FIXED_NAMES.includes(current.id)"
+                :placeholder="agentName(current.id)"
+                :class="INPUT"
+              />
+            </FormField>
+            <div class="hidden sm:col-span-3 sm:block" />
+            <FormField
+              :id="`spec-${current.id}`"
+              label="Specializzazione"
+              :problem="countCharacters(form.personas[current.id]!.specialization) > MAX_TEXT ? `Troppo lungo: ${lengthText(countCharacters(form.personas[current.id]!.specialization), MAX_TEXT)}.` : undefined"
+              :hint="`Si aggiunge al suo ruolo. ${lengthText(countCharacters(form.personas[current.id]!.specialization), MAX_TEXT)}.`"
+              :span="6"
+            >
+              <textarea :id="`spec-${current.id}`" v-model="form.personas[current.id]!.specialization" rows="2" :class="INPUT" placeholder="Per esempio: sviluppatore senior TypeScript, attento ai test e alla leggibilità." />
+            </FormField>
+            <FormField
+              :id="`traits-${current.id}`"
+              label="Come parla"
+              :problem="countCharacters(form.personas[current.id]!.traits) > MAX_TEXT ? `Troppo lungo: ${lengthText(countCharacters(form.personas[current.id]!.traits), MAX_TEXT)}.` : undefined"
+              :hint="`${lengthText(countCharacters(form.personas[current.id]!.traits), MAX_TEXT)}.`"
+              :span="6"
+            >
+              <textarea :id="`traits-${current.id}`" v-model="form.personas[current.id]!.traits" rows="2" :class="INPUT" placeholder="Per esempio: precisa e calma, frasi brevi." />
+            </FormField>
           </div>
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <label :for="`address-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Ti dà del</label>
-            <select :id="`address-${current.id}`" v-model="form.personas[current.id]!.address" class="field max-w-[160px] px-2 py-1.5 text-[13px]">
-              <option v-for="address in ADDRESSES" :key="address" :value="address">{{ address }}</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <label :for="`display-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Nome visualizzato<small class="block text-[11.5px] font-normal text-muted">in chat e nell’ufficio</small></label>
-            <input
-              :id="`display-${current.id}`"
-              v-model="form.personas[current.id]!.displayName"
-              :maxlength="MAX_DISPLAY_NAME"
-              :disabled="FIXED_NAMES.includes(current.id)"
-              :placeholder="FIXED_NAMES.includes(current.id) ? 'non si cambia' : agentName(current.id)"
-              class="field px-2 py-1.5 text-[13px] disabled:opacity-60"
-            />
-          </div>
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <label :for="`spec-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Specializzazione<small class="block text-[11.5px] font-normal text-muted">si aggiunge al ruolo della scheda</small></label>
-            <div class="flex flex-col gap-1">
-              <span class="self-end font-mono text-[10.5px]" :class="countCharacters(form.personas[current.id]!.specialization) > MAX_TEXT ? 'text-danger' : 'text-muted'">{{ countCharacters(form.personas[current.id]!.specialization) }}/{{ MAX_TEXT }}</span>
-              <textarea :id="`spec-${current.id}`" v-model="form.personas[current.id]!.specialization" rows="3" class="field px-2 py-1.5 text-[13px]" placeholder="Es. sviluppatore senior TypeScript, attento ai test e alla leggibilità." />
-            </div>
-          </div>
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <label :for="`traits-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Personalità<small class="block text-[11.5px] font-normal text-muted">come parla</small></label>
-            <div class="flex flex-col gap-1">
-              <span class="self-end font-mono text-[10.5px]" :class="countCharacters(form.personas[current.id]!.traits) > MAX_TEXT ? 'text-danger' : 'text-muted'">{{ countCharacters(form.personas[current.id]!.traits) }}/{{ MAX_TEXT }}</span>
-              <textarea :id="`traits-${current.id}`" v-model="form.personas[current.id]!.traits" rows="3" class="field px-2 py-1.5 text-[13px]" placeholder="Es. precisa e calma, con un debole per le metafore di cucina." />
-            </div>
-          </div>
-          <p class="flex items-start gap-2 text-xs text-warn"><Icon name="gateway" :size="14" class="mt-px" />{{ PERSONA_NOTICE }}</p>
-          <p class="text-xs text-muted">{{ costText(personaCost(form.personas[current.id]!)) }} {{ PERSONA_WHERE }}</p>
+          <p class="flex items-start gap-2 text-[13px] text-warn"><Icon name="gateway" :size="14" class="mt-0.5 shrink-0" />{{ PERSONA_NOTICE }}</p>
+          <p class="text-[12.5px] text-muted">{{ PERSONA_WHERE }} {{ costText(personaCost(form.personas[current.id]!)) }}</p>
         </section>
 
         <!-- Aspetto (D-118, D-123, D-132) -->
-        <section v-if="tab === 'look'" class="hud-card flex flex-col gap-3.5 px-4 py-4" role="tabpanel">
+        <section v-if="tab === 'look'" :class="CARD" role="tabpanel">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
             <div class="flex flex-wrap gap-2.5">
-              <div v-for="item in POSES" :key="item.pose" class="flex flex-col items-center gap-1 rounded-[10px] border border-line px-2.5 pt-2 pb-1.5 font-mono text-[10px] text-muted">
+              <div v-for="item in POSES" :key="item.pose" class="flex flex-col items-center gap-1 rounded-[10px] border border-line px-2.5 pt-2 pb-1.5 text-[12.5px] text-muted">
                 <PixelAgent :choice="previewOf(current.id)" :pose="item.pose" :scale="2" :version="sheetVersion" />{{ item.text }}
               </div>
             </div>
@@ -638,191 +692,215 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
               />
               <CharacterUpload :key="`upload-${current.id}`" :agent-label="nameOf(current.id)" keep="premi Salva nella barra in basso per tenerlo" @uploaded="(item) => emit('uploaded', current!.id, item)" />
               <div v-if="previewOf(current.id) || form.characters[current.id] !== undefined" class="flex flex-wrap gap-2">
-                <button v-if="previewOf(current.id)" type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="animationsOpen" @click="animationsOpen = !animationsOpen">
+                <button v-if="previewOf(current.id)" type="button" class="btn px-2.5 py-1 text-[13px]" :aria-expanded="animationsOpen" @click="animationsOpen = !animationsOpen">
                   {{ animationsOpen ? 'Chiudi le animazioni' : 'Tutte le animazioni' }}
                 </button>
-                <a v-if="previewOf(current.id)" class="btn px-2.5 py-1 text-xs" :href="sheetUrl(previewOf(current.id)!, sheetVersion)" :download="`${previewOf(current.id)!.character}.png`">Scarica PNG</a>
-                <button v-if="form.characters[current.id] !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="delete form.characters[current.id]">Torna al predefinito</button>
+                <a v-if="previewOf(current.id)" class="btn px-2.5 py-1 text-[13px]" :href="sheetUrl(previewOf(current.id)!, sheetVersion)" :download="`${previewOf(current.id)!.character}.png`">Scarica PNG</a>
+                <button v-if="form.characters[current.id] !== undefined" type="button" class="btn px-2.5 py-1 text-[13px]" @click="delete form.characters[current.id]">Torna al predefinito</button>
               </div>
             </div>
           </div>
           <SheetPreview v-if="animationsOpen && previewOf(current.id)" :src="sheetUrl(previewOf(current.id)!, sheetVersion)" :rows="previewOf(current.id)!.rows" />
-          <p class="text-xs text-muted">
-            Un foglio caricato con «Carica PNG» o disegnato con «Genera» va nel pacchetto <code class="font-mono">data/characters/miei</code>, fuori da git; un pacchetto intero si copia a mano in
-            <code class="font-mono">data/characters</code>, poi si ricarica questa pagina.
-          </p>
+          <p class="text-[12.5px] text-muted">Un personaggio caricato o disegnato qui resta sul Mac, fra i tuoi, e si può dare anche ad altri agenti.</p>
         </section>
 
         <!-- Modello -->
-        <section v-if="tab === 'model'" class="hud-card flex flex-col gap-3 px-4 py-4" role="tabpanel">
-          <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <template v-if="current.id === 'arianna'">
-              <span class="text-[13px] font-medium sm:pt-1">Modello</span>
-              <div class="flex flex-col gap-1">
-                <p class="flex flex-wrap items-center gap-2 text-[13px]"><span class="font-mono text-xs">{{ view.values?.roles.orchestrator ?? 'nessuno' }}</span><span class="chip text-ok">locale</span></p>
-                <p class="text-xs text-muted">
-                  Si cambia in
-                  <a href="/impostazioni/modelli" class="text-accent hover:underline" @click.prevent="emit('section', 'modelli')">Modelli</a>, ruolo Orchestratore: per Arianna solo modelli locali.
-                </p>
-              </div>
-            </template>
-            <template v-else-if="form.agents[current.id] !== undefined && modelsOf(current.id).length > 0">
-              <label :for="`model-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Modello delle conversazioni nuove</label>
-              <div class="flex flex-col gap-1.5">
-                <select :id="`model-${current.id}`" v-model="form.agents[current.id]" class="field max-w-[320px] px-2 py-1.5 text-[13px]">
-                  <option value="">automatico (sceglie il router)</option>
-                  <option v-for="model in modelsOf(current.id)" :key="model" :value="model">{{ MODEL_TEXT[model] ?? model }}{{ blockerOf(model) === undefined ? '' : ` (${blockerOf(model)})` }}</option>
-                  <!-- A model of the file the card no longer allows stays visible: it is kept, and ignored. -->
-                  <option v-if="form.agents[current.id] !== '' && !modelsOf(current.id).includes(form.agents[current.id] as CloudModelAlias)" :value="form.agents[current.id]">
-                    {{ MODEL_TEXT[form.agents[current.id] ?? ''] ?? form.agents[current.id] }} (non consentito dalla scheda)
-                  </option>
-                </select>
-                <p class="text-xs text-muted">
-                  Il selettore della chat lo cambia per una conversazione, e il router lo usa finché nessuna regola lo esclude. Un modello spento o con l’esecutore spento si può scegliere, ma
-                  vale solo quando è acceso; non accende mai un esecutore.
-                </p>
-              </div>
-            </template>
-            <template v-else>
-              <span class="text-[13px] font-medium">Modello</span>
-              <div class="flex flex-col gap-1">
-                <p class="text-[13px]">{{ current.where === 'cloud' ? 'sceglie il router' : 'solo modelli locali: sceglie il router' }}</p>
-                <p class="text-xs text-muted">{{ current.where === 'cloud' ? 'La scheda non elenca modelli cloud da scegliere.' : 'La scheda non permette esecutori cloud.' }}</p>
-              </div>
-            </template>
+        <section v-if="tab === 'model'" :class="CARD" role="tabpanel">
+          <template v-if="current.id === 'arianna'">
+            <p class="flex flex-wrap items-center gap-2 text-[14px]">Modello: <span class="font-mono text-[12.5px]">{{ view.values?.roles.orchestrator ?? 'nessuno' }}</span><span class="pill border-ok/50 text-ok">sul Mac</span></p>
+            <p class="text-[13px] text-muted">
+              Si cambia in
+              <a href="/impostazioni/modelli" class="text-accent hover:underline" @click.prevent="emit('section', 'modelli')">Modelli</a>, alla voce «Ragiona e risponde in chat»: Arianna usa solo modelli sul Mac.
+            </p>
+          </template>
+          <div v-else-if="form.agents[current.id] !== undefined && modelsOf(current.id).length > 0" class="grid gap-3 sm:grid-cols-6">
+            <FormField
+              :id="`model-${current.id}`"
+              label="Modello delle conversazioni nuove"
+              hint="Nella chat lo cambi per una sola conversazione. Un modello spento si può scegliere, ma vale solo quando è acceso."
+              :span="3"
+            >
+              <select :id="`model-${current.id}`" v-model="form.agents[current.id]" :class="INPUT">
+                <option value="">automatico (sceglie Arianna)</option>
+                <option v-for="model in modelsOf(current.id)" :key="model" :value="model">{{ MODEL_TEXT[model] ?? model }}{{ blockerOf(model) === undefined ? '' : ` (${blockerOf(model)})` }}</option>
+                <!-- A model of the file the card no longer allows stays visible: it is kept, and ignored. -->
+                <option v-if="form.agents[current.id] !== '' && !modelsOf(current.id).includes(form.agents[current.id] as CloudModelAlias)" :value="form.agents[current.id]">
+                  {{ MODEL_TEXT[form.agents[current.id] ?? ''] ?? form.agents[current.id] }} (non consentito per questo agente)
+                </option>
+              </select>
+            </FormField>
           </div>
+          <template v-else>
+            <p class="text-[14px]">{{ current.where === 'cloud' ? 'Il modello lo sceglie Arianna a ogni lavoro.' : 'Lavora solo con i modelli sul Mac: lo sceglie Arianna.' }}</p>
+            <p class="text-[13px] text-muted">{{ current.where === 'cloud' ? 'Questo agente non ha modelli cloud fra cui scegliere.' : 'Questo agente non può usare Claude né Codex.' }}</p>
+          </template>
+        </section>
+
+        <!-- Skill (D-161): third-party text the agent reads in its delegations and local cards, as data -->
+        <section v-if="tab === 'skills'" :class="CARD" role="tabpanel">
+          <p v-if="skillRefusal(current.id)" class="text-[14px] text-muted">{{ skillRefusal(current.id) }}</p>
+          <template v-else>
+            <p class="text-[13px] text-muted">
+              Le skill assegnate arrivano a questo agente insieme al suo prompt, come testo da consultare: mai come istruzioni per Arianna, mai nelle chiamate. Si tengono con «Salva» nella barra in basso.
+              <a href="/impostazioni/skill-e-stili" class="text-accent hover:underline" @click.prevent="emit('section', 'skill-e-stili')">Gestisci le raccolte in Skill e stili</a>.
+            </p>
+            <p v-if="skillsOf(current.id).length === 0" class="text-[14px] text-muted">Nessuna skill assegnata: scegline una dall’elenco qui sotto.</p>
+            <ul v-else class="m-0 flex list-none flex-col gap-1.5 p-0">
+              <li v-for="id in skillsOf(current.id)" :key="id" class="flex items-start gap-2 rounded-[10px] border border-line px-3 py-2 text-[14px]">
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span class="truncate font-medium">{{ skillOf(id)?.name ?? id }}</span>
+                  <span v-if="skillCatalog !== null && skillOf(id) === undefined" class="text-[13px] text-warn">Non è più fra le skill scaricate: non arriva all’agente finché non torna.</span>
+                  <span v-else-if="skillOf(id)" class="text-[13px] text-muted">{{ skillLicenseText(skillOf(id)?.license ?? null) }}</span>
+                </span>
+                <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Togli ${skillOf(id)?.name ?? id}`" @click="unassignSkill(current.id, id)">Togli</button>
+              </li>
+            </ul>
+            <div class="flex flex-col gap-1.5">
+              <input v-model="skillQuery" type="search" class="field px-2.5 py-1.5 text-[14px]" placeholder="Cerca una skill da assegnare" aria-label="Cerca una skill da assegnare" />
+              <p v-if="skillCatalogError" class="flex flex-wrap items-center gap-2 text-[13px] text-danger" role="alert">
+                <span class="min-w-0 flex-1">{{ skillCatalogError }}</span>
+                <button type="button" class="btn px-2.5 py-0.5 text-[13px]" @click="loadSkillCatalog">Riprova</button>
+              </p>
+              <p v-else-if="skillCatalog === null" class="text-[13px] text-muted">Leggo le skill…</p>
+              <p v-else-if="skillCatalog.length === 0" class="text-[13px] text-muted">
+                Nessuna skill scaricata:
+                <a href="/impostazioni/skill-e-stili" class="text-accent hover:underline" @click.prevent="emit('section', 'skill-e-stili')">segui una raccolta in Skill e stili</a>, poi torna qui.
+              </p>
+              <p v-else-if="skillChoices.length === 0" class="text-[13px] text-muted">Nessuna skill con questa ricerca.</p>
+              <ul v-else class="m-0 flex max-h-[300px] list-none flex-col overflow-auto rounded-[10px] border border-line p-0">
+                <li v-for="item in skillChoices" :key="item.id" class="flex items-start gap-2 border-b border-line px-2.5 py-1.5 last:border-b-0">
+                  <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span class="truncate text-[14px] font-medium">{{ item.name }}</span>
+                    <span v-if="item.description" class="text-[13px] text-muted">{{ item.description }}</span>
+                    <span class="text-[12.5px] text-muted">{{ skillLicenseText(item.license) }}</span>
+                  </span>
+                  <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Assegna ${item.name}`" @click="assignSkill(current.id, item.id)">Assegna</button>
+                </li>
+              </ul>
+            </div>
+          </template>
         </section>
       </fieldset>
 
       <!-- Permessi: changed only after the confirmation of what changes, never by the bar -->
-      <section v-if="tab === 'permissions'" class="hud-card flex flex-col gap-3 px-4 py-4" role="tabpanel">
+      <section v-if="tab === 'permissions'" :class="CARD" role="tabpanel">
         <ul v-if="current.view" class="m-0 grid list-none gap-2 p-0">
-          <li v-for="line in permissionLines(current.view.card)" :key="line" class="rounded-[10px] border border-line px-3 py-2 text-[13px]">
-            <b class="font-semibold">{{ splitLine(line)[0] }}</b><span v-if="splitLine(line)[1]" class="block text-xs text-muted">{{ splitLine(line)[1] }}</span>
+          <li v-for="line in permissionLines(current.view.card)" :key="line" class="rounded-[10px] border border-line px-3 py-2 text-[14px]">
+            <b class="font-semibold">{{ splitLine(line)[0] }}</b><span v-if="splitLine(line)[1]" class="block text-[13px] text-muted">{{ splitLine(line)[1] }}</span>
           </li>
         </ul>
-        <p v-else class="text-xs text-muted">La scheda di questo agente non è fra quelle caricate dal nucleo.</p>
+        <p v-else class="text-[13px] text-muted">Arianna non ha caricato la scheda di questo agente: riavviala, e se resta così chiedi a Claude Code di controllarla.</p>
         <template v-if="current.official">
-          <p class="text-xs text-muted">Le schede ufficiali si cambiano in <code class="font-mono">agents/{{ current.id }}.yaml</code>.</p>
-          <div v-if="current.view?.fromPage" class="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <span>Nato da questa pagina e promosso.</span>
-            <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busyName !== ''" @click="demoting = current.view!; error = ''">Riporta fra i miei…</button>
+          <p class="text-[13px] text-muted">I permessi di un agente ufficiale si cambiano a mano, con Claude Code.</p>
+          <div v-if="current.view?.fromPage" class="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+            <span>Creato da questa pagina e poi promosso.</span>
+            <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="demoting = current.view!; error = ''">Riporta fra i miei…</button>
           </div>
         </template>
         <template v-else-if="current.view">
-          <p class="rounded-[10px] border border-warn/40 bg-warn/7 px-3 py-2.5 text-[12.5px]">
-            Tetto finché resta fra i tuoi agenti: al massimo <b>Interno</b> e <b>A1</b>, qualunque cosa dica la scheda.
+          <p class="rounded-[10px] border border-warn/40 bg-warn/7 px-3 py-2.5 text-[13.5px]">
+            Finché resta fra i tuoi agenti vede al massimo <b>dati di lavoro</b> e modifica file solo <b>in una copia protetta</b>, qualunque cosa dica la scheda.
           </p>
           <div v-if="editingPermissions?.name === current.id && sources" class="flex flex-col gap-2.5 rounded-[10px] border border-line p-3">
             <PermissionsPicker v-model="editingPermissions.permissions" :sources="sources" :id-prefix="`edit-${current.id}`" />
             <div class="flex justify-end gap-2">
-              <button type="button" class="btn px-2.5 py-1 text-xs" @click="editingPermissions = null; error = ''">Annulla</button>
-              <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busyName !== ''" @click="reviewPermissions">Rivedi e salva…</button>
+              <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="editingPermissions = null; error = ''">Annulla</button>
+              <button type="button" class="btn btn-warn px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="reviewPermissions">Rivedi e salva…</button>
             </div>
           </div>
           <div v-else-if="sources && current.view.permissions" class="flex flex-wrap items-center gap-2">
-            <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busyName !== ''" @click="startPermissions(current.view)">Modifica permessi…</button>
-            <span class="text-xs text-muted">Ti mostra cosa cambia prima di salvare.</span>
+            <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="startPermissions(current.view)">Modifica permessi…</button>
+            <span class="text-[13px] text-muted">Prima di salvare ti mostra cosa cambia.</span>
           </div>
-          <p v-else-if="current.view.permissions === null" class="text-xs text-muted">La scheda è stata cambiata a mano oltre l’elenco ammesso: si cambia solo nel file.</p>
+          <p v-else-if="current.view.permissions === null" class="text-[13px] text-muted">La scheda è stata cambiata a mano oltre quello che questa pagina permette: si cambia solo a mano, con Claude Code.</p>
         </template>
       </section>
 
       <!-- Scheda e prompt: the user's agents only -->
       <template v-if="tab === 'card' && !current.official">
-        <section class="hud-card flex flex-col gap-3.5 px-4 py-4" role="tabpanel">
-          <p v-if="!texts[current.id]" class="text-xs text-muted">Leggo il prompt…</p>
-          <fieldset v-else :disabled="working" class="m-0 flex min-w-0 flex-col gap-3.5 border-0 p-0">
-            <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-              <label :for="`desc-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Descrizione<small class="block text-[11.5px] font-normal text-muted">una riga, la legge Arianna per scegliere</small></label>
-              <input :id="`desc-${current.id}`" v-model="texts[current.id]!.description" class="field px-2 py-1.5 text-[13px]" maxlength="200" />
-            </div>
-            <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[160px_minmax(0,1fr)]">
-              <label :for="`prompt-${current.id}`" class="text-[13px] font-medium sm:pt-1.5">Prompt<small class="block text-[11.5px] font-normal text-muted">le istruzioni dell’agente</small></label>
-              <div class="flex flex-col gap-1">
-                <span class="self-end font-mono text-[10.5px] text-muted">{{ texts[current.id]!.prompt.length }}/{{ MAX_USER_PROMPT }}</span>
-                <textarea :id="`prompt-${current.id}`" v-model="texts[current.id]!.prompt" rows="8" class="field px-2 py-1.5 text-[13px]" :maxlength="MAX_USER_PROMPT" />
-              </div>
-            </div>
-            <p class="text-xs text-muted">
-              {{ current.on ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano Interno per tua dichiarazione, possono
-              arrivare a un esecutore cloud (non scriverci dati personali) e passano dagli stessi controlli della creazione.
+        <section :class="CARD" role="tabpanel">
+          <p v-if="!texts[current.id]" class="text-[13px] text-muted">Leggo il prompt…</p>
+          <fieldset v-else :disabled="working" class="m-0 grid min-w-0 gap-3 border-0 p-0 sm:grid-cols-6">
+            <FormField :id="`desc-${current.id}`" label="Descrizione" hint="Una riga: Arianna la legge per scegliere a chi passare un lavoro." :span="6">
+              <input :id="`desc-${current.id}`" v-model="texts[current.id]!.description" :class="INPUT" maxlength="200" />
+            </FormField>
+            <FormField :id="`prompt-${current.id}`" label="Prompt" :hint="`Le istruzioni dell’agente. ${lengthText(texts[current.id]!.prompt.length, MAX_USER_PROMPT)}.`" :span="6">
+              <textarea :id="`prompt-${current.id}`" v-model="texts[current.id]!.prompt" rows="8" :class="INPUT" :maxlength="MAX_USER_PROMPT" />
+            </FormField>
+            <p class="text-[13px] text-muted sm:col-span-6">
+              {{ current.on ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Contano come dati di lavoro e possono arrivare a
+              Claude: non scriverci dati personali.
             </p>
           </fieldset>
         </section>
-        <section v-if="current.view" class="hud-card danger flex flex-col gap-3 px-4 py-4">
+        <section v-if="current.view" class="flex flex-col gap-3 rounded-xl border border-danger/40 bg-surface-2 p-4">
           <div class="flex flex-wrap items-center gap-3">
-            <span class="min-w-0 flex-1 text-[13px] font-medium">Promuovi a ufficiale<small class="block text-[11.5px] font-normal text-muted">passa in agents/, in git; cade il tetto Interno/A1</small></span>
-            <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busyName !== '' || changedTexts.includes(current.id)"
+            <span class="min-w-0 flex-1 text-[14px] font-medium">Promuovi a ufficiale<small class="block text-[13px] font-normal text-muted">entra fra gli agenti del repository; cade il limite a dati di lavoro e copia protetta</small></span>
+            <button
+              type="button"
+              class="btn btn-warn px-2.5 py-1 text-[13px]"
+              :disabled="busyName !== '' || changedTexts.includes(current.id)"
               :title="changedTexts.includes(current.id) ? 'Prima salva o annulla descrizione e prompt' : undefined"
               @click="promoting = current.view!; error = ''"
-              >Promuovi…</button>
+            >Promuovi…</button>
           </div>
           <div class="flex flex-wrap items-center gap-3">
-            <span class="min-w-0 flex-1 text-[13px] font-medium">Elimina<small class="block text-[11.5px] font-normal text-muted">solo da spento; va in data/agents/eliminati</small></span>
-            <button type="button" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busyName !== '' || current.on" :title="current.on ? 'Prima spegnilo' : undefined" @click="deleting = { name: current.id, typed: '' }; error = ''">Elimina…</button>
+            <span class="min-w-0 flex-1 text-[14px] font-medium">Elimina<small class="block text-[13px] font-normal text-muted">solo da spento; i file si recuperano a mano</small></span>
+            <button type="button" class="btn btn-danger px-2.5 py-1 text-[13px]" :disabled="busyName !== '' || current.on" :title="current.on ? 'Prima spegnilo' : undefined" @click="deleting = { name: current.id, typed: '' }; error = ''">Elimina…</button>
           </div>
         </section>
       </template>
     </div>
-    <p v-else class="text-sm text-muted">Leggo gli agenti…</p>
+    <p v-else-if="!loadError" class="text-[14px] text-muted">Leggo gli agenti…</p>
 
-    <!-- One bar for look, persona, model and texts: the cards' own buttons are gone -->
-    <div
-      v-if="dirty || working || saved || barError"
-      class="sticky bottom-4 z-10 mx-auto flex max-w-full flex-wrap items-center gap-3 rounded-xl border bg-surface py-2 pr-3 pl-4 shadow-[0_10px_30px_#0006,0_0_0_4px_var(--glow)] lg:col-span-2"
-      :class="barError || props.error || blocked ? 'border-danger' : 'border-accent'"
-      role="status"
-    >
-      <span class="min-w-0 text-[13px]" :class="{ 'text-danger': barError || props.error || blocked }">
-        <template v-if="barError || props.error">{{ barError || props.error }}</template>
-        <template v-else-if="working || busy">Salvo…</template>
-        <template v-else-if="dirty && blocked">{{ blocked }}</template>
-        <template v-else-if="dirty">Modifiche non salvate a <b>{{ unsaved }}</b></template>
-        <template v-else>Salvato</template>
-      </span>
-      <template v-if="dirty">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="working || busy" @click="undo">Annulla</button>
-        <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="working || busy || blocked !== undefined" @click="saveAll">Salva</button>
-      </template>
+    <!-- One bar for look, persona, model and texts (D-192): only with edits, saving or an error -->
+    <div class="@3xl:col-span-2">
+      <SettingsSaveBar
+        :dirty="dirty"
+        :label="barLabel"
+        :busy="working || busy"
+        :saved="saved"
+        :error="barError"
+        :invalid="dirty ? blocked : undefined"
+        @cancel="undo"
+        @save="saveAll"
+      />
     </div>
 
     <!-- Promotion: what changes, then the user's click -->
     <div v-if="promoting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="promote-title">
-      <div class="hud-card warn flex max-w-lg flex-col gap-3 p-4">
-        <h2 id="promote-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Promuovere {{ promoting.name }} a ufficiale?</h2>
-        <p class="text-[13px]">
-          La scheda passa da <code class="font-mono">data/agents</code> a <code class="font-mono">agents/</code>, la cartella del repository in git, e l’agente diventa attivo. Cosa cambia:
-        </p>
-        <ul class="list-disc pl-5 text-[13px]">
-          <li>il tetto Interno e A1 cade: valgono etichette, strumenti e azioni scritti nella scheda;</li>
+      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+        <h2 id="promote-title" class="text-[16px] font-semibold">Promuovere {{ promoting.name }} a ufficiale?</h2>
+        <p class="text-[14px]">L’agente passa fra quelli ufficiali, nella cartella del repository, e diventa attivo. Cosa cambia:</p>
+        <ul class="list-disc pl-5 text-[14px]">
+          <li>cade il limite a dati di lavoro e copia protetta: vale quello che dice la sua scheda;</li>
           <li>oggi la scheda dice: {{ permissionLines(promoting.card).slice(0, 2).join('; ') }};</li>
-          <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a Privato;</li>
-          <li>i file risultano nuovi in git: un commit li rende visibili a chi ha il repository, e un push li pubblica.</li>
+          <li>chi modifica a mano la sua scheda può dargli di più, fino ai dati privati;</li>
+          <li>i suoi file diventano parte del repository: un commit li rende visibili a chi lo ha, e un push li pubblica.</li>
         </ul>
-        <p class="text-xs text-muted">Si torna indietro da questa pagina con «Riporta fra i miei», finché la scheda resta quella scritta qui.</p>
-        <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+        <p class="text-[13px] text-muted">Si torna indietro da questa pagina con «Riporta fra i miei», finché la scheda resta quella scritta qui.</p>
+        <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn px-2.5 py-1 text-xs" @click="promoting = null; error = ''">Annulla</button>
-          <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busyName !== ''" @click="promote">Promuovi</button>
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="promoting = null; error = ''">Annulla</button>
+          <button type="button" class="btn btn-warn px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="promote">Promuovi</button>
         </div>
       </div>
     </div>
 
     <!-- A promotion taken back -->
     <div v-if="demoting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="demote-title">
-      <div class="hud-card flex max-w-lg flex-col gap-3 p-4">
-        <h2 id="demote-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
-        <ul class="list-disc pl-5 text-[13px]">
-          <li>la scheda torna in <code class="font-mono">data/agents/disattivati</code>, fuori da git, e l’agente si ferma: Arianna non gli passa più lavoro finché non lo riattivi;</li>
-          <li>torna il tetto Interno e A1;</li>
-          <li>se i file di <code class="font-mono">agents/{{ demoting.name }}</code> erano già in un commit, git li vedrà come tolti: il prossimo commit lo registra.</li>
+      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-line-strong bg-surface-2 p-4">
+        <h2 id="demote-title" class="text-[16px] font-semibold">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
+        <ul class="list-disc pl-5 text-[14px]">
+          <li>la scheda esce dal repository e torna fra i tuoi agenti, spenta: Arianna non gli passa più lavoro finché non lo riattivi;</li>
+          <li>torna il limite a dati di lavoro e copia protetta;</li>
+          <li>se i suoi file erano già in un commit, il prossimo commit li registra come tolti.</li>
         </ul>
-        <p class="text-xs text-muted">Una scheda cambiata a mano oltre i permessi ammessi non può tornare: resta ufficiale.</p>
-        <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+        <p class="text-[13px] text-muted">Una scheda cambiata a mano oltre i permessi ammessi non può tornare: resta ufficiale.</p>
+        <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn px-2.5 py-1 text-xs" @click="demoting = null; error = ''">Annulla</button>
-          <button type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busyName !== ''" @click="demote">Riporta fra i miei</button>
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="demoting = null; error = ''">Annulla</button>
+          <button type="button" class="btn btn-primary px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="demote">Riporta fra i miei</button>
         </div>
       </div>
     </div>
@@ -840,19 +918,17 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
 
     <!-- Deletion: the name typed by the user -->
     <div v-if="deleting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-      <form class="hud-card flex max-w-lg flex-col gap-3 p-4" @submit.prevent="remove">
-        <h2 id="delete-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Eliminare {{ deleting.name }}?</h2>
-        <p class="text-[13px]">
-          L’agente sparisce dalla pagina e Arianna non lo vede più. I due file (scheda e prompt) vanno in <code class="font-mono">data/agents/eliminati</code>: da lì si recuperano solo a mano.
-        </p>
-        <label class="flex flex-col gap-1 text-xs text-muted">
+      <form class="flex max-w-lg flex-col gap-3 rounded-xl border border-danger/60 bg-surface-2 p-4" @submit.prevent="remove">
+        <h2 id="delete-title" class="text-[16px] font-semibold">Eliminare {{ deleting.name }}?</h2>
+        <p class="text-[14px]">L’agente sparisce dalla pagina e Arianna non lo vede più. Scheda e prompt vanno nel cestino degli agenti, sul Mac: da lì si recuperano solo a mano.</p>
+        <label class="flex flex-col gap-1 text-[13px] text-muted">
           Per confermare scrivi il nome dell’agente
-          <input v-model.trim="deleting.typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="deleting.name" autocomplete="off" />
+          <input v-model.trim="deleting.typed" class="field px-2 py-1.5 text-[14px] text-ink" :placeholder="deleting.name" autocomplete="off" />
         </label>
-        <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+        <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn px-2.5 py-1 text-xs" @click="deleting = null; error = ''">Annulla</button>
-          <button type="submit" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busyName !== '' || deleting.typed !== deleting.name">Elimina</button>
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="deleting = null; error = ''">Annulla</button>
+          <button type="submit" class="btn btn-danger px-2.5 py-1 text-[13px]" :disabled="busyName !== '' || deleting.typed !== deleting.name">Elimina</button>
         </div>
       </form>
     </div>

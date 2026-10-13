@@ -97,7 +97,7 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
 
 <template>
   <!-- `relative`: the sr-only status below is absolute; without a positioned box here it hangs off the page and makes it scroll past the chat. -->
-  <span class="msg-actions relative inline-flex items-center gap-2.5 font-mono text-[10.5px] text-muted" :class="{ 'msg-actions-busy': busy }">
+  <span class="msg-actions relative inline-flex items-center gap-2.5 font-mono text-[12px] text-muted" :class="{ 'msg-actions-busy': busy }">
     <button type="button" class="action" :class="{ 'text-warn': copyState === 'unavailable' }" :title="COPY_HINT" @click="copy">
       <Icon :name="copyState === 'copied' ? 'saved' : 'copy'" :size="12" />{{ COPY_TEXT[copyState] }}
     </button>

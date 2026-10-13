@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { MAX_NOTE_BYTES } from '../src/lib/capture.ts';
 import { THOUGHT_EMPTY_TEXT, THOUGHT_TOO_LARGE_TEXT } from '../src/lib/italian.ts';
 import {
+  canFetch,
   displayTitle,
+  fetchSettled,
   filterThoughts,
   graphId,
   groupThoughts,
@@ -123,4 +125,21 @@ test('wikilinks: a thought of the inbox opens here, any other page in the graph'
 test('names and graph ids of a note path', () => {
   assert.equal(noteName('kb/inbox/x.md'), 'x.md');
   assert.equal(graphId('kb/inbox/x.md'), 'inbox/x.md');
+});
+
+test('"Scarica e riassumi" (D-154): only for a link whose content is not in the note yet', () => {
+  assert.equal(canFetch({ url: 'https://x.com/a/status/1', fetchedAt: null }), true);
+  // An older core sends no fetchedAt: the button is there.
+  assert.equal(canFetch({ url: 'https://x.com/a/status/1' }), true);
+  assert.equal(canFetch({ url: 'https://x.com/a/status/1', fetchedAt: '2026-10-10T02:05:00+02:00' }), false);
+  assert.equal(canFetch({ url: null, fetchedAt: null }), false);
+  assert.equal(canFetch(null), false);
+});
+
+test('a download asked from the panel is over once the note is organized again or its outcome changes', () => {
+  const before = { organizedAt: '2026-10-10T02:03:00+02:00', fetchedAt: null, fetchFailed: null };
+  assert.equal(fetchSettled(before, { ...before, status: 'organized' }), false);
+  assert.equal(fetchSettled(before, { ...before, status: 'organized', organizedAt: '2026-10-10T02:06:00+02:00' }), true);
+  assert.equal(fetchSettled(before, { ...before, status: 'organized', fetchFailed: 'timeout' }), true);
+  assert.equal(fetchSettled({ organizedAt: null, fetchedAt: null }, { organizedAt: null, fetchedAt: null, status: 'new' }), false);
 });

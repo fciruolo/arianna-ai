@@ -29,7 +29,7 @@ const lines = computed(() => noticeLines(notice.value ?? assumedNotice(props.mod
 </script>
 
 <template>
-  <section class="rounded-lg border border-incognito-line bg-incognito px-3.5 py-3 text-left text-[13px] leading-snug text-incognito-ink" aria-labelledby="incognito-notice-title">
+  <section class="rounded-lg border border-incognito-line bg-incognito px-3.5 py-3 text-left text-[14px] leading-snug text-incognito-ink" aria-labelledby="incognito-notice-title">
     <h3 id="incognito-notice-title" class="mb-1.5 flex items-center gap-2 font-medium"><Icon name="incognito" :size="15" />Cosa resta fuori da Arianna</h3>
     <ul class="flex list-disc flex-col gap-1 pl-4.5 opacity-90">
       <li v-for="line in lines" :key="line">{{ line }}</li>

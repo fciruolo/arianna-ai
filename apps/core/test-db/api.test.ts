@@ -8,6 +8,7 @@ import { after, before, test } from 'node:test';
 import WebSocket from 'ws';
 
 import { resolveHome } from '@arianna/config';
+import { createContext } from '@arianna/policy';
 
 import { applyDeclassify } from '../src/gateway.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepContext, type StepExecutor, type StepOutcome } from '../src/engine.ts';
@@ -234,6 +235,19 @@ test('only an archived conversation with no task at work is deleted for good thr
   assert.equal((await call('GET', `/api/conversations/${empty}`)).status, 404);
   assert.equal((await call('POST', `/api/conversations/${empty}/purge`, { body: {} })).status, 404);
   assert.equal((await call('POST', '/api/conversations/not-a-uuid/purge', { body: {} })).status, 404);
+});
+
+test('a conversation is erased for good from the list, without the archive (D-157)', async () => {
+  const id = await newConversation('private');
+  await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Messaggio finto da eliminare' } });
+  assert.equal((await call('POST', `/api/conversations/${id}/erase`, { body: { force: true } })).status, 400);
+  // Its task waits in the queue, no step claimed it: it goes with the conversation.
+  const erased = await call('POST', `/api/conversations/${id}/erase`, { body: {} });
+  assert.equal(erased.status, 200);
+  assert.equal((await call('GET', `/api/conversations/${id}`)).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${id}/erase`, { body: {} })).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${randomUUID()}/erase`, { body: {} })).status, 404);
+  assert.equal((await call('POST', '/api/conversations/not-a-uuid/erase', { body: {} })).status, 404);
 });
 
 test('bad input gets a clear status and no internal detail', async () => {
@@ -500,7 +514,7 @@ function declassifier(): StepExecutor & { seen: StepContext[] } {
       seen.push(ctx);
       if (ctx.approval === undefined) return { kind: 'declassify', text: 'Brief finto per Claude Code', to: 'L1' };
       if (ctx.approval.state !== 'approved') return { kind: 'wait-user', reason: 'the user refused the brief' };
-      const lowered = await applyDeclassify(db().sql, { value: 'Brief finto per Claude Code', label: 'L2', source: `task:${ctx.task.id}` }, 'L1', ctx.approval.id);
+      const lowered = await applyDeclassify(db().sql, { value: 'Brief finto per Claude Code', label: 'L2', source: `task:${ctx.task.id}` }, 'L1', ctx.approval.id, createContext(ctx.task.clearance, ctx.task.effectiveLabel));
       const reply = await openReply(db().sql, ctx.task.id, { runId: ctx.runId });
       await reply.finish(`Inviato: ${lowered.label}`, 'L2');
       return { kind: 'done', evidence: [{ kind: 'declassified', label: lowered.label }] };

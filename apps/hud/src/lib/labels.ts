@@ -15,6 +15,14 @@ export const LABEL_TEXT: Record<Label, string> = {
 };
 
 /** The colour of each label (tokens --l0 … --l3). */
+/** One line per label for a select: how protected it is, from the least to the most. */
+export const LABEL_OPTION: Record<Label, string> = {
+  L0: 'Pubblico · la meno protetta, può uscire ovunque',
+  L1: 'Interno · va a Claude e Codex, dal gateway',
+  L2: 'Privato · resta su questo computer',
+  L3: 'Segreto · la più protetta, nessun modello la legge',
+};
+
 export const LABEL_CLASS: Record<Label, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 /** The legend: what each label means, an example, and where it may go. */
@@ -76,6 +84,37 @@ export const ACTION_TEXT: Record<string, string> = {
   send_external: 'Invio all’esterno',
   payment: 'Pagamento',
   call: 'Chiamata',
+  // The secretary (D-144).
+  'commitment.add': 'Segno questo impegno?',
+  'commitment.done': 'Lo segno come fatto?',
+  'commitment.move': 'Lo sposto?',
+  'commitment.report': 'Annoto il resoconto?',
+  // The cardwall (D-159).
+  'task.plan': 'Creo queste card?',
+  'card.executor': 'Con chi lavora?',
+  // The IM of a project (D-167).
+  'im.add': 'Scrivo nell’IM?',
+};
+
+/** The ways a card of an agent may run, as the user chooses them (D-159). */
+export const CHOICE_TEXT: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'ChatGPT',
+  local: 'Modello locale',
+};
+
+/** Why a way is not offered for a card (D-159, apps/core/src/orchestrator/card-run.ts). */
+export const EXCLUDED_TEXT: Record<string, string> = {
+  label: 'la card è privata: nel cloud l’agente legge al massimo dati Interni',
+  project: 'la card non ha un progetto approvato con la sua cartella',
+  off: 'è spento in questo momento',
+};
+
+/** The same, for a work Arianna hands to an agent from the chat (D-159): no card there. */
+export const EXCLUDED_WORK_TEXT: Record<string, string> = {
+  label: 'la conversazione ha dati privati: nel cloud l’agente legge al massimo dati Interni',
+  project: 'la conversazione non ha un progetto approvato con la sua cartella',
+  off: 'è spento in questo momento',
 };
 
 /** The cloud models as the user reads them; an alias not listed is shown as it is. */

@@ -3,9 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
-import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type StoredApproval } from './approvals.ts';
+import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
+import { applyPlanApproval } from './card-plans.ts';
+import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { contextOf, outputSource } from './finance-mark.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
 import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue } from './jobs.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
@@ -21,7 +24,7 @@ import {
   touchRuns,
   type RunUsage,
 } from './runs.ts';
-import { createTask, loadTask, moveTask, setTaskLimits, TaskError, type NewTask, type Task } from './tasks.ts';
+import { createTask, loadTask, moveTask, openDependencies, setTaskLimits, STEP_QUEUE, TaskError, type NewTask, type Task } from './tasks.ts';
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -34,7 +37,7 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
  * After a crash the job comes back to the queue and the step runs again,
  * resuming the interrupted run's session: steps must be idempotent.
  */
-export const STEP_QUEUE = 'task.step';
+export { STEP_QUEUE };
 /** Longest text a declassification may cover: the user reads all of it on the card. */
 export const MAX_DECLASSIFY_LENGTH = 20_000;
 /** A `retry` outcome waits at least this long: an executor that just refused is not asked again at once. */
@@ -107,6 +110,13 @@ export type StepOutcome = (
    * again at `at`, without the user. The task stays at work; the run failed.
    */
   | { kind: 'retry'; at: Date; reason: string }
+  /**
+   * The executor wrote an approval of kind `commitment` with the step's turn
+   * (the secretary, D-144), `plan` (Arianna's cards, D-159) or `executor` (the
+   * choice of where a card runs, D-159): the task waits for the user to
+   * decide it. The next step finds the decided approval in `approval`.
+   */
+  | { kind: 'confirm'; approvalId: string }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
   | { kind: 'wait-user'; reason: string }
   /** `failure`: the readable error, when the executor knows it (D-064); otherwise a generic one naming the executor. */
@@ -132,6 +142,8 @@ export type StepResult =
   | 'limit'
   | 'failed'
   | 'skipped'
+  /** The task waits for another task to be done (D-152): its step goes on when that one is. */
+  | 'blocked'
   | 'interrupted'
   | 'lost';
 
@@ -197,6 +209,20 @@ export async function processStepJob(
     // Stale or malformed job: nothing to do.
     await completeJob(sql, job.id, worker);
     return 'skipped';
+  }
+
+  // A task that has not started yet waits for its dependencies (D-152): the
+  // step is held back and queued again when the last one is done (tasks.ts).
+  if (task.status === 'ready' && (await openDependencies(sql, task.id)) > 0) {
+    const held = await sql.begin(async (tx) => {
+      if (!(await holds(tx, job, worker))) return false;
+      // Done in the meantime: the step goes on below.
+      if ((await openDependencies(tx, task.id, true)) === 0) return undefined;
+      await appendEvent(tx, { kind: 'task.blocked', taskId: task.id, label: 'L0', payload: {} });
+      await completeJob(tx, job.id, worker);
+      return true;
+    });
+    if (held !== undefined) return held ? 'blocked' : 'lost';
   }
 
   // A run left running belongs to a worker that died: close it at its last heartbeat.
@@ -406,7 +432,16 @@ export async function processStepJob(
           await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
           return 'waiting-user';
         }
-        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: `task:${task.id}` }, outcome.to, {
+        // A task that has read finance data never asks one (D-183): nothing of it leaves, even with the user's approval.
+        // An invalid request, with its fixed reason (the chat has its Italian text). The mark is read again, the row
+        // locked: a finance tool of this very step saved it after the task was loaded.
+        const [marked] = await tx<{ finance: boolean }[]>`SELECT finance FROM tasks WHERE id = ${task.id} FOR UPDATE`;
+        if (task.finance || marked?.finance !== false) {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
+          return 'waiting-user';
+        }
+        // The task's context, with its finance mark: the policy refuses a marked one too.
+        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: outputSource(task, `task:${task.id}`) }, outcome.to, contextOf(task, task.effectiveLabel), {
           taskId: task.id,
         });
         await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: declassify', cause: 'approval', approvalId: created.id });
@@ -416,6 +451,31 @@ export async function processStepJob(
           runId,
           label: 'L0',
           payload: { approvalId: created.id, action: 'declassify', from, to: outcome.to },
+        });
+        return 'waiting-approval';
+      }
+      case 'confirm': {
+        // Only a pending confirmation of this very task: anything else is the executor's mistake.
+        const [pending] = await tx<{ action: string; state: string }[]>`
+          SELECT action, state FROM approvals
+          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind IN ('commitment', 'plan', 'executor', 'im')`;
+        // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
+        if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
+          await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });
+          return 'continued';
+        }
+        if (pending?.state !== 'pending') {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid confirmation', cause: 'approval' });
+          return 'waiting-user';
+        }
+        await moveTask(tx, task.id, 'waiting_user', { reason: `approval needed: ${pending.action}`, cause: 'approval', approvalId: outcome.approvalId });
+        // The action only: the text of the commitment or of the plan stays in the approval.
+        await appendEvent(tx, {
+          kind: 'approval.requested',
+          taskId: task.id,
+          runId,
+          label: 'L0',
+          payload: { approvalId: outcome.approvalId, action: pending.action },
         });
         return 'waiting-approval';
       }
@@ -456,24 +516,30 @@ export async function recordDecision(
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
+  choice?: ExecutorChoice,
 ): Promise<StoredApproval> {
-  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via));
+  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice));
 }
 
-/** `recordDecision` inside a transaction the caller holds. */
+/** `recordDecision` inside a transaction the caller holds. `choice`: the executor of an approval of kind `executor` (D-159). */
 export async function recordDecisionIn(
   tx: Queryable,
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
+  choice?: ExecutorChoice,
 ): Promise<StoredApproval> {
-  const decided = await decideApproval(tx, approvalId, state, via);
+  const decided = await decideApproval(tx, approvalId, state, via, choice);
   await appendEvent(tx, {
     kind: 'approval.decided',
     ...(decided.taskId === null ? {} : { taskId: decided.taskId }),
     label: 'L0',
     payload: { approvalId, state, via },
   });
+  // A confirmed commitment (D-144) is noted or marked done with the decision, whatever the task does next.
+  if (decided.kind === 'commitment' && state === 'approved') await applyCommitmentApproval(tx, decided);
+  // An approved plan (D-159): its cards and their dependencies are created with the decision.
+  if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
   if (decided.taskId !== null) {
     const task = await loadTask(tx, decided.taskId);
     if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {
@@ -489,14 +555,18 @@ export async function recordDecisionIn(
  * Approvals the task was still waiting for expire: they belong to the old context.
  */
 export async function resumeTask(sql: Sql, taskId: string, limits?: NonNullable<NewTask['limits']>): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`
-      UPDATE approvals SET state = 'expired', decided_at = now()
-      WHERE task_id = ${taskId} AND state = 'pending'`;
-    if (limits !== undefined) await setTaskLimits(tx, taskId, limits);
-    await moveTask(tx, taskId, 'ready', { cause: 'user' });
-    await mustSchedule(tx, taskId);
-  });
+  await sql.begin((tx) => resumeTaskIn(tx, taskId, limits));
+}
+
+/** `resumeTask` inside a transaction the caller holds (the cardwall, D-159). */
+export async function resumeTaskIn(tx: Queryable, taskId: string, limits?: NonNullable<NewTask['limits']>): Promise<Task> {
+  await tx`
+    UPDATE approvals SET state = 'expired', decided_at = now()
+    WHERE task_id = ${taskId} AND state = 'pending'`;
+  if (limits !== undefined) await setTaskLimits(tx, taskId, limits);
+  const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
+  await mustSchedule(tx, taskId);
+  return task;
 }
 
 /**
@@ -506,19 +576,22 @@ export async function resumeTask(sql: Sql, taskId: string, limits?: NonNullable<
  * task of an archived or deleted conversation.
  */
 export async function retryTask(sql: Sql, taskId: string): Promise<Task> {
-  return sql.begin(async (tx) => {
-    const [row] = await tx<{ status: string; archived: boolean | null }[]>`
-      SELECT t.status, c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL AS archived
-      FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
-      WHERE t.id = ${taskId} FOR UPDATE OF t`;
-    if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
-    if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
-    if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
-    const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
-    await mustSchedule(tx, taskId);
-    await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
-    return task;
-  });
+  return sql.begin((tx) => retryTaskIn(tx, taskId));
+}
+
+/** `retryTask` inside a transaction the caller holds (the cardwall, D-159). */
+export async function retryTaskIn(tx: Queryable, taskId: string): Promise<Task> {
+  const [row] = await tx<{ status: string; archived: boolean | null }[]>`
+    SELECT t.status, c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL AS archived
+    FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.id = ${taskId} FOR UPDATE OF t`;
+  if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
+  if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
+  if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
+  const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
+  await mustSchedule(tx, taskId);
+  await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
+  return task;
 }
 
 export interface WorkerOptions extends EngineOptions {
@@ -544,15 +617,19 @@ export interface WorkerOptions extends EngineOptions {
  * timeout, it takes back the jobs of dead workers: this is what makes a task
  * resume after `kill -9` of the core.
  */
+/** Why a step is stopped for good: an incognito closing (D-136), an erased conversation (D-157), "Ferma" of a subtask of GOD (D-127). */
+export type StopCause = 'incognito' | 'erase' | 'god';
+
 export interface Worker {
   start(): Promise<void>;
   stop(): Promise<void>;
   /**
    * Stops the step of `taskId` this worker is running now, for good (D-136,
-   * cause `incognito`): the run ends `interrupted` and the job fails with the
-   * code `incognito`, never back in the queue. False when no step of it runs here.
+   * cause `incognito`; D-157, cause `erase`): the run ends `interrupted` and the
+   * job fails with the cause as its code, never back in the queue. False when
+   * no step of it runs here.
    */
-  stopTask(taskId: string, cause: 'incognito'): boolean;
+  stopTask(taskId: string, cause: StopCause): boolean;
 }
 
 export function createWorker(options: WorkerOptions): Worker {
@@ -592,12 +669,12 @@ export function createWorker(options: WorkerOptions): Worker {
     try {
       const result = await processStepJob(sql, options.executor, job, worker, options, AbortSignal.any([controller.signal, lost.signal, halt.signal]));
       // Stopped for good (D-136): the job fails without another attempt, so the step never runs again.
-      if (halt.signal.aborted && !lost.signal.aborted) await failJob(sql, job.id, worker, 'incognito', null);
+      if (halt.signal.aborted && !lost.signal.aborted) await haltedForGood(job.id, taskId, halt.signal);
       // Stopped on purpose: give the job back now instead of after the lock timeout.
       else if (result === 'interrupted' && controller.signal.aborted && !lost.signal.aborted) await queue.release(job.id, worker);
     } catch (error) {
       if (halt.signal.aborted && !lost.signal.aborted) {
-        await failJob(sql, job.id, worker, 'incognito', null);
+        await haltedForGood(job.id, taskId, halt.signal);
         return;
       }
       options.onError?.(error);
@@ -616,6 +693,20 @@ export function createWorker(options: WorkerOptions): Worker {
       clearInterval(beat);
       if (taskId !== undefined && halts.get(taskId) === halt) halts.delete(taskId);
     }
+  }
+
+  /**
+   * A step stopped for good: its job fails without another attempt. Stopped
+   * by "Ferma" of GOD (D-127) the task fails too, so that its chat is free for
+   * the next message (an incognito or an erased conversation goes away).
+   */
+  async function haltedForGood(jobId: string, taskId: string | undefined, signal: AbortSignal): Promise<void> {
+    const cause = stopCause(signal);
+    await sql.begin(async (tx) => {
+      const result = await failJob(tx, jobId, worker, cause, null);
+      // Only a step still running here: one that already ended (its job done, the next one queued) is left as it is.
+      if (cause === 'god' && result === 'failed' && taskId !== undefined) await failTask(tx, taskId, { origin: 'engine', code: 'engine.stopped', details: {} });
+    });
   }
 
   let lastSweep = 0;
@@ -665,6 +756,12 @@ export function createWorker(options: WorkerOptions): Worker {
       return true;
     },
   };
+}
+
+/** The cause a step was stopped with for good: `incognito` unless it was `erase` or `god`. */
+function stopCause(signal: AbortSignal): StopCause {
+  if (signal.reason === 'erase') return 'erase';
+  return signal.reason === 'god' ? 'god' : 'incognito';
 }
 
 /** A step that kept failing: the task fails with the reason the user reads, its open runs are closed. */

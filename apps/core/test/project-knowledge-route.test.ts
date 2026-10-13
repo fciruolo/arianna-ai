@@ -1,0 +1,146 @@
+// The routes of the page Progetti for containers (I-11, D-145): the parts and
+// the containers listed, a part read by its name, the tab "Conoscenza" read
+// and written; the labels of the folders never through these routes.
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import { dirname, join } from 'node:path';
+import { after, test } from 'node:test';
+
+import { resolveHome, workParts, type Project } from '@arianna/config';
+import { createLabelRules } from '@arianna/policy';
+
+import type { Sql } from '../src/db/client.ts';
+import type { LiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
+
+const HOME = join(resolveHome({}), 'data', 'test-tmp', `knowledge-route-${randomUUID()}`);
+const BOX = join(HOME, 'repos', 'progetto-test');
+after(() => {
+  rmSync(HOME, { recursive: true, force: true });
+});
+for (const [path, content] of Object.entries({
+  'Workplan/piano.md': '# Piano finto\n',
+  'documenti/contratto.md': '# Contratto finto\n',
+  'progetto-test-admin/.git/HEAD': 'ref: refs/heads/main\n',
+  'progetto-test-admin/README.md': '# Admin finto\n',
+})) {
+  mkdirSync(dirname(join(BOX, path)), { recursive: true });
+  writeFileSync(join(BOX, path), content);
+}
+const CONTAINERS: Project[] = [{ name: 'progetto-test', path: 'repos/progetto-test', absolute: BOX, label: 'L1' }];
+
+function send(port: number, method: string, path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({ host: '127.0.0.1', port, method, path, headers: { 'content-type': 'application/json' } }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => (text += chunk));
+      response.on('end', () => {
+        resolve({ status: response.statusCode ?? 0, body: JSON.parse(text || '{}') as Record<string, unknown> });
+      });
+    });
+    request.on('error', reject);
+    request.end(body === undefined ? undefined : JSON.stringify(body));
+  });
+}
+
+test('parts and containers, the tab Conoscenza, a note written; the labels of the folders are not written here', async (t) => {
+  const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
+  t.after(async () => {
+    await server.close();
+  });
+
+  const listed = await send(server.port, 'GET', '/api/browse');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.projects, [{ name: 'progetto-test:progetto-test-admin', absolute: join(BOX, 'progetto-test-admin'), hidden: false, project: 'progetto-test', part: 'progetto-test-admin' }]);
+  assert.deepEqual(listed.body.containers, [{ name: 'progetto-test', absolute: BOX, label: 'L1', single: false, parts: ['progetto-test:progetto-test-admin'] }]);
+
+  // A part is read by its name; the container is no part, its tree is not served.
+  const tree = await send(server.port, 'GET', '/api/browse/progetto-test:progetto-test-admin/tree?dir=');
+  assert.equal(tree.status, 200);
+  assert.deepEqual((tree.body.entries as { name: string }[]).map(({ name }) => name), ['.git', 'README.md']);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/tree?dir=')).status, 403);
+
+  const knowledge = await send(server.port, 'GET', '/api/browse/progetto-test/knowledge');
+  assert.equal(knowledge.status, 200);
+  const read = knowledge.body.knowledge as { folders: { path: string; label: string }[]; notes: { path: string; label: string }[] };
+  assert.deepEqual(read.folders.map(({ path, label }) => [path, label]), [['documenti', 'L2'], ['Workplan', 'L1']]);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test:progetto-test-admin/knowledge')).status, 404);
+  assert.equal((await send(server.port, 'GET', '/api/browse/altro/knowledge')).status, 404);
+
+  const note = { folder: 'Workplan', title: 'Milestone', label: 'L1', text: 'Consegna finta.' };
+  // A field that would change a folder, a label below the folder, a folder that is a part: refused.
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge', { ...note, folders: [{ path: 'documenti', label: 'L0' }] })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge', { ...note, folder: 'documenti' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge', { ...note, folder: 'progetto-test-admin' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge', { ...note, label: 'L7' })).status, 400);
+  const written = await send(server.port, 'POST', '/api/browse/progetto-test/knowledge', note);
+  assert.equal(written.status, 201);
+  const saved = written.body.note as { path: string; label: string };
+  assert.equal(saved.label, 'L1');
+  assert.match(readFileSync(join(BOX, saved.path), 'utf8'), /^---\nlabel: L1\n/);
+  // Still Privata: nothing here wrote a label of a folder.
+  const again = (await send(server.port, 'GET', '/api/browse/progetto-test/knowledge')).body.knowledge as { folders: { path: string; label: string }[] };
+  assert.equal(again.folders.find(({ path }) => path === 'documenti')?.label, 'L2');
+});
+
+test('the IM of a project (D-167): created, read, an item added and moved, a stale version refused', async (t) => {
+  const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
+  t.after(async () => {
+    await server.close();
+  });
+
+  assert.deepEqual((await send(server.port, 'GET', '/api/browse/progetto-test/im')).body.ims, []);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/im', {})).status, 400);
+  const created = await send(server.port, 'POST', '/api/browse/progetto-test/im', { date: '2026-10-15 10:00' });
+  assert.equal(created.status, 201);
+  const first = created.body.im as { number: number; version: string };
+  assert.equal(first.number, 1);
+
+  const added = await send(server.port, 'POST', '/api/browse/progetto-test/im/1/items', { title: 'Fatture', version: first.version });
+  assert.equal(added.status, 201);
+  const withItem = added.body.im as { version: string; items: { line: number; state: string; title: string }[] };
+  const line = withItem.items[0]?.line ?? 0;
+  const moved = await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'done', version: withItem.version });
+  assert.equal(moved.status, 200);
+  assert.equal((moved.body.im as { items: { state: string }[] }).items[0]?.state, 'done');
+  // The version the user saw is no longer the file: refused, nothing written.
+  assert.equal((await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'todo', version: withItem.version })).status, 409);
+  assert.match(readFileSync(join(BOX, 'IM', 'IM-1.md'), 'utf8'), /- \[x\] Fatture/);
+
+  const list = await send(server.port, 'GET', '/api/browse/progetto-test/im');
+  assert.deepEqual((list.body.ims as { number: number; counts: { done: number } }[]).map(({ number, counts }) => [number, counts.done]), [[1, 1]]);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/im/2')).status, 404);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/im/01')).status, 404);
+  assert.equal((await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'boh', version: 'x' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/im/1/items', { title: '  ', version: (moved.body.im as { version: string }).version })).status, 400);
+  assert.equal((await send(server.port, 'GET', '/api/browse/altro/im')).status, 404);
+});
+
+test('a note opened and edited by hand: a stale version, an extra field, a hidden label refused', async (t) => {
+  const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
+  t.after(async () => {
+    await server.close();
+  });
+
+  const opened = await send(server.port, 'GET', `/api/browse/progetto-test/knowledge/note?${new URLSearchParams({ path: 'documenti/contratto.md' }).toString()}`);
+  assert.equal(opened.status, 200);
+  const note = opened.body.note as { title: string; label: string; floor: string; header: string[]; body: string; version: string };
+  assert.deepEqual([note.title, note.label, note.floor, note.body], ['contratto', 'L2', 'L2', '# Contratto finto\n']);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/knowledge/note?path=progetto-test-admin%2FREADME.md')).status, 404);
+
+  const edit = { path: 'documenti/contratto.md', title: 'Contratto', label: 'L3', header: ['cliente: Rossi finto'], text: 'Testo nuovo.', version: note.version };
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, folder: 'Workplan' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, header: ['label: L0'] })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, label: 'L1' })).status, 400);
+  const saved = await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', edit);
+  assert.equal(saved.status, 200);
+  assert.equal(readFileSync(join(BOX, 'documenti', 'contratto.md'), 'utf8'), '---\nlabel: L3\ntitle: "Contratto"\ncliente: Rossi finto\n---\n\nTesto nuovo.\n');
+  // The version opened before the save is no longer the file.
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', edit)).status, 409);
+});

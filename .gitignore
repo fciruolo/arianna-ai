@@ -32,6 +32,8 @@ __pycache__/
 
 # Pages written by agents in the development knowledge base (kb.write, A1)
 kb/inbox/
+# Notes of the projects that are one git (D-145): written by "+ Conoscenza", never in git
+kb/progetti/
 
 # Repositories the Coder may work on (cloud.allowlist): the user's projects, never in this git
 repos/

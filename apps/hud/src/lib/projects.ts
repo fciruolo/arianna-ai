@@ -1,6 +1,6 @@
 import { ApiError } from './api.ts';
 import { errorText } from './italian.ts';
-import type { DiffHunk, FileChangeKind } from './types.ts';
+import type { DiffHunk, FileChangeKind, Label } from './types.ts';
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
@@ -14,11 +14,147 @@ export function isProjectsPath(pathname: string): boolean {
   return pathname === PROJECTS_PATH || pathname === `${PROJECTS_PATH}/`;
 }
 
+/**
+ * The page with a project chosen (from the page of its client, D-168):
+ * `/progetti?progetto=<name>`; from the Studio (I-20, D-185) also the folder
+ * of the mockups opened in File: `&cartella=<folder>`.
+ */
+export function projectsPathFor(name?: string, folder?: string, invoice?: string): string {
+  if (name === undefined || name === '') return PROJECTS_PATH;
+  return `${PROJECTS_PATH}?${new URLSearchParams({
+    progetto: name,
+    ...(folder === undefined || folder === '' ? {} : { cartella: folder }),
+    ...(invoice === undefined || invoice === '' ? {} : { fattura: invoice }),
+  }).toString()}`;
+}
+
+/** The invoice whose "Totale e scadenza…" the address opens in the IM tab (D-190): an id, or undefined. */
+export function invoiceFromSearch(search: string): string | undefined {
+  const id = new URLSearchParams(search).get('fattura')?.trim();
+  return id === undefined || !/^[0-9a-f-]{8,64}$/i.test(id) ? undefined : id;
+}
+
+/** The project the address chooses, or undefined. */
+export function projectFromSearch(search: string): string | undefined {
+  const name = new URLSearchParams(search).get('progetto')?.trim();
+  return name === undefined || name === '' ? undefined : name;
+}
+
+/** The folder the address opens in File (I-20): relative, no empty, `.` or `..` part; undefined otherwise. */
+export function folderFromSearch(search: string): string | undefined {
+  const folder = new URLSearchParams(search).get('cartella')?.trim();
+  if (folder === undefined || folder === '' || folder.length > 1024 || folder.startsWith('/') || folder.includes('\\')) return undefined;
+  return folder.split('/').some((part) => part === '' || part === '.' || part === '..') ? undefined : folder;
+}
+
+/** A part of a project (D-145): `name` is `<project>` or `<project>:<part>`; File, Git and Servizi read it. */
 export interface BrowsableProject {
   name: string;
   absolute: string;
-  /** "Mostra nascosti" is on for this project (D-135). */
+  /** "Mostra nascosti" is on for this part (D-135). */
   hidden: boolean;
+  /** The container. */
+  project: string;
+  /** The folder of the part in the container; null when the container is itself the part. */
+  part: string | null;
+}
+
+/** A project as a container (D-145): its parts by name; `single` when it is itself its only part. */
+export interface BrowsableContainer {
+  name: string;
+  absolute: string;
+  label: 'L0' | 'L1';
+  single: boolean;
+  parts: string[];
+}
+
+/** A management folder of a container (D-145) and its label; `defaultLabel` the one it has by its name. */
+export interface KnowledgeFolder {
+  path: string;
+  label: Label;
+  defaultLabel: Label;
+  chosen: boolean;
+}
+
+export interface KnowledgeNote {
+  folder: string;
+  path: string;
+  title: string;
+  label: Label;
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` (header `data`, `date`, `captured_at`, else the file's change), or null (D-193). */
+  date: string | null;
+  /** The `stato` of the header (an IM: previsto, in corso, chiuso), or null. */
+  status: string | null;
+  /** The first line of text of the note, at most about 160 characters, or null. */
+  excerpt: string | null;
+}
+
+/** The tab "Conoscenza" (D-145). */
+export interface ProjectKnowledge {
+  /** One git: the notes live in kb/progetti/<project> of Arianna, outside the code. */
+  inKb: boolean;
+  /** Where the management folders are, as the user reads it. */
+  where: string;
+  folders: KnowledgeFolder[];
+  notes: KnowledgeNote[];
+  more: number;
+  /** One git: management folders found inside the repository itself. */
+  repoFolders: KnowledgeFolder[];
+}
+
+/** A note opened in "Conoscenza": what the user reads and edits by hand. */
+export interface OpenedNote {
+  path: string;
+  title: string;
+  label: Label;
+  /** The lowest label the note may have: its folder's. */
+  floor: Label;
+  /** The other lines of the header, `key: value` (label and title have their own fields). */
+  header: string[];
+  body: string;
+  /** The file as read: a save goes only over this same file. */
+  version: string;
+}
+
+/** The label a new folder takes by its name (D-145): Workplan and IM Interne, every other Privata. */
+export function folderLabelByName(name: string): Label {
+  return ['workplan', 'im'].includes(name.trim().toLowerCase()) ? 'L1' : 'L2';
+}
+
+/** A folder name the core takes: one plain name, not hidden, no separator. */
+export function isFolderName(name: string): boolean {
+  return name.length > 0 && name.length <= 100 && !name.startsWith('.') && name.trim() === name && !/[/\\\p{Cc}]/u.test(name);
+}
+
+const LABEL_RANK: Readonly<Record<Label, number>> = { L0: 0, L1: 1, L2: 2, L3: 3 };
+
+/** True when `to` is below `from`: lowering a folder asks an explicit confirmation (D-145). */
+export function lowers(from: Label, to: Label): boolean {
+  return LABEL_RANK[to] < LABEL_RANK[from];
+}
+
+/** The labels a note in a folder may have: the folder's or higher (a note is never below its folder). */
+export function noteLabels(folder: Label): Label[] {
+  return (['L0', 'L1', 'L2', 'L3'] as const).filter((label) => LABEL_RANK[label] >= LABEL_RANK[folder]);
+}
+
+/**
+ * The projects of the settings with one management folder relabeled (D-145):
+ * what "Conoscenza" sends to the two steps of the Settings. The folder goes
+ * in `folders` with its label, also when it equals the one by name: the
+ * user chose it. Every other project and field as it is.
+ */
+export function withFolderLabel<T extends { name: string; folders?: { path: string; label: Label }[] }>(projects: readonly T[], project: string, folder: string, label: Label): T[] {
+  return projects.map((item) => {
+    if (item.name !== project) return { ...item };
+    const others = (item.folders ?? []).filter((entry) => entry.path.toLowerCase() !== folder.toLowerCase());
+    return { ...item, folders: [...others, { path: folder, label }].sort((a, b) => a.path.localeCompare(b.path, 'it')) };
+  });
+}
+
+/** The name of a part as the page shows it: the folder, or the project when the container is the part. */
+export function partTitle(part: Pick<BrowsableProject, 'project' | 'part'>): string {
+  return part.part ?? part.project;
 }
 
 export interface TreeEntry {

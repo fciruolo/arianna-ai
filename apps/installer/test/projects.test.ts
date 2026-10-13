@@ -54,6 +54,11 @@ test('folderProblem: a real folder at the top of a git repository is fine; missi
   assert.match(check(join(USER, 'Projects', 'plain')) ?? '', /repository git/);
   writeFileSync(join(USER, 'Projects', 'file.txt'), 'x');
   assert.match(check(join(USER, 'Projects', 'file.txt')) ?? '', /non è una cartella/);
+  // D-145: a container whose parts are its git subfolders is fine; a folder with only management folders is not.
+  mkdirSync(join(USER, 'Projects', 'plain', 'Workplan'));
+  assert.match(check(join(USER, 'Projects', 'plain')) ?? '', /sottocartelle con un proprio git/);
+  execFileSync('git', ['init', '--quiet', join(USER, 'Projects', 'plain', 'plain-admin')], { env: gitEnv() });
+  assert.equal(check(join(USER, 'Projects', 'plain')), undefined);
 });
 
 test('folderProblem: the folder of Arianna, folders around it, and inside it anything but repos/<name>', () => {

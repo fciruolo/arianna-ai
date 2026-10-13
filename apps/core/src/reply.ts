@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { createContext, isAtMost, isLabel, maxLabel, type Decision, type Label } from '@arianna/policy';
+import { isAtMost, isLabel, maxLabel, type Decision, type Label } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 import { loadMessage, type Message } from './conversations.ts';
 import type { Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { contextOf, outputSource } from './finance-mark.ts';
 import { passGateway } from './gateway.ts';
 import { loadTask, type Task } from './tasks.ts';
 
@@ -133,8 +134,9 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       const stored = maxLabel(isLabel(label) ? label : 'L2', current.effectiveLabel);
       // The task's clearance is within the conversation's (database trigger).
       if (!isAtMost(stored, current.clearance)) return { stored: false, reason: 'above-clearance', label: stored };
-      const context = createContext(current.clearance, current.effectiveLabel);
-      const decision = await passGateway(sql, [{ value: body, label: stored, source: `task:${taskId}` }], context, { kind: 'channel', id: 'web' }, {
+      // A task that has read finance data writes finance:derived, in a marked context (D-183): only local targets take it.
+      const context = contextOf(current, current.effectiveLabel);
+      const decision = await passGateway(sql, [{ value: body, label: stored, source: outputSource(current, `task:${taskId}`) }], context, { kind: 'channel', id: 'web' }, {
         taskId,
         ...(options.runId === undefined ? {} : { runId: options.runId }),
       });

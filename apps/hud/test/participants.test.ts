@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { executorText, isAddingLine, isEventLine, participantPose, removeText, withoutParticipant } from '../src/lib/participants.ts';
+import { executorText, isAddingLine, isEventLine, participantPose, removeText, stackOf, withoutParticipant, withText } from '../src/lib/participants.ts';
 import type { Participant } from '../src/lib/types.ts';
 
 const coder: Participant = { agent: 'coder', addedBy: 'arianna', addedAt: '2026-10-05T10:00:00.000Z', executor: 'claude' };
@@ -43,4 +43,21 @@ test('a participant moves while the core says it works, else stands still', () =
   assert.equal(participantPose('coder', [{ id: 'coder', state: 'waiting' }]), 'idle');
   assert.equal(participantPose('coder', [{ id: 'traduttore', state: 'working' }]), 'idle');
   assert.equal(participantPose('coder', undefined), 'idle');
+});
+
+test('the status line names who is in the chat, the first three and "+N" for the others (D-162)', () => {
+  assert.equal(withText([]), '');
+  assert.equal(withText([{ agent: 'designer' }]), 'con Designer');
+  assert.equal(withText([{ agent: 'designer' }, { agent: 'coder' }]), 'con Designer, Coder');
+  assert.equal(withText([{ agent: 'designer' }, { agent: 'coder' }, { agent: 'traduttore' }]), 'con Designer, Coder, traduttore');
+  assert.equal(withText([{ agent: 'designer' }, { agent: 'coder' }, { agent: 'traduttore' }, { agent: 'a' }, { agent: 'b' }]), 'con Designer, Coder, traduttore +2');
+  assert.equal(withText([{ agent: 'designer' }, { agent: 'coder' }], 1), 'con Designer +1');
+});
+
+test('the head shows the avatars one by one up to four, the rest behind "+N"; never a "+1" (D-162)', () => {
+  assert.deepEqual(stackOf([]), { shown: [], hidden: [] });
+  assert.deepEqual(stackOf([1, 2, 3]), { shown: [1, 2, 3], hidden: [] });
+  assert.deepEqual(stackOf([1, 2, 3, 4, 5]), { shown: [1, 2, 3, 4, 5], hidden: [] });
+  assert.deepEqual(stackOf([1, 2, 3, 4, 5, 6]), { shown: [1, 2, 3, 4], hidden: [5, 6] });
+  assert.deepEqual(stackOf([1, 2, 3], 1), { shown: [1], hidden: [2, 3] });
 });

@@ -4,8 +4,8 @@ import { join, relative, sep } from 'node:path';
 export const ROOT = join(import.meta.dirname, '..', '..');
 
 const SKIPPED_DIRS = new Set(['node_modules', '.git', 'data', 'dist']);
-/** Other checkouts of the repository: the worktrees Claude Code makes for its agents. */
-const SKIPPED_PATHS = new Set(['.claude/worktrees']);
+/** Other checkouts of the repository: the worktrees Claude Code makes for its agents, and the projects in repos/ (the clones of GOD among them, D-127). */
+const SKIPPED_PATHS = new Set(['.claude/worktrees', 'repos']);
 
 /** Repository files as POSIX paths relative to the root, without dependencies and runtime data. */
 export function listFiles(dir: string = ROOT): string[] {

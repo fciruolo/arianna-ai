@@ -5,8 +5,11 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
+  checkFetchSites,
+  checkSecretary,
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
+  DEFAULT_SECRETARY,
   CONFIG_FILE,
   DEFAULT_LEAVE_AFTER,
   DEFAULT_SPRITE_MODEL,
@@ -19,6 +22,8 @@ import {
   loadCatalog,
   MODEL_ROLES,
   parseConfig,
+  PROJECT_NAME,
+  parseSkillIds,
   parseQuiet,
   quietText,
   readSettings,
@@ -37,11 +42,12 @@ import {
   type ModelRole,
   type NotificationsConfig,
   type ProjectSettings,
+  type SecretaryConfig,
   type Settings,
   type SpriteModel,
   type VoiceConfig,
 } from '@arianna/config';
-import { scanText } from '@arianna/policy';
+import { isLabel, scanText } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 /**
@@ -66,8 +72,8 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications'] as const;
-export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary'] as const;
+export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
 type Section = OrdinarySection | PrivacySection | 'database' | 'server';
@@ -109,8 +115,12 @@ export interface SettingsValues {
   characters: Record<string, string>;
   /** Agent → persona (D-107), as `[personas]` holds it; an agent without one has the defaults. */
   personas: Record<string, Persona>;
+  /** `[project_rules]` (I-14, D-174): the common template (null when none) and the projects with their own rules. */
+  projectRules: { template: string | null; projects: Record<string, string> };
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModel }>;
+  /** Agent → the skills of the catalog it reads in each delivery (D-161): `[agents.<id>] skills`. */
+  skills: Record<string, string[]>;
   /** The model that draws a character (D-123): opus when the file has no [sprites] (D-132). */
   sprites: SpriteModel;
   /** Messages of the user before an idle agent leaves (I-8, D-130): `[participants] leave_after`; 0 never, ten when absent. */
@@ -118,10 +128,14 @@ export interface SettingsValues {
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   /** `[notifications]` (I-1); `quiet` as "HH:MM-HH:MM", null for none. The defaults when the file has no section. */
   notifications: NotificationsValues;
+  /** `[secretary]` (I-12, D-144); the defaults when the file has no section. */
+  secretary: SecretaryConfig;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectSettings[];
   endpoints: EndpointSettings[];
+  /** `[capture] fetch_sites` (D-154): the sites whose links are downloaded by themselves; empty when absent. */
+  fetchSites: string[];
 }
 
 export interface CatalogModel {
@@ -154,6 +168,8 @@ export interface SettingsView {
   voiceDefaults: NonNullable<SettingsValues['voice']>;
   /** Agent → the cloud models its card allows as its model, on or off (D-116); empty for Arianna. */
   agentModels: Record<string, CloudModel[]>;
+  /** Agent → why it may receive no skills (D-161), null when it may: every agent with a card. */
+  agentSkills: Record<string, string | null>;
 }
 
 /** What a privacy change would change, section by section. */
@@ -162,6 +178,7 @@ export interface PrivacyChanges {
   telegram?: { before: { chats: number[] } | null; after: { chats: number[] } | null };
   projects?: { added: ProjectSettings[]; removed: ProjectSettings[]; changed: { name: string; before: ProjectSettings; after: ProjectSettings }[] };
   endpoints?: { added: EndpointSettings[]; removed: EndpointSettings[]; changed: { id: string; before: EndpointSettings; after: EndpointSettings }[] };
+  fetchSites?: { before: string[]; after: string[] };
 }
 
 /** After the change: who may receive what. */
@@ -173,6 +190,8 @@ export interface PrivacyExits {
   telegram: { chats: number } | null;
   /** Local servers: they see L2 in clear, and with `command` the core runs that program. */
   endpoints: { id: string; url: string; command: string[] | null }[];
+  /** Sites whose links the core downloads by itself (D-154): each receives the address of its links. */
+  fetchSites: string[];
 }
 
 export interface PrivacyProposal {
@@ -202,6 +221,8 @@ export interface SettingsPageOptions {
   running: () => AriannaConfig;
   /** Agent → the cloud models its card allows (D-116): `[agents]` names only these agents and models. */
   agentModels: () => Record<string, readonly CloudModel[]>;
+  /** Agent → why it may receive no skills, null when it may (D-161); absent, no agent may. */
+  agentSkills?: () => Record<string, string | null>;
   /** After each write, for the event log. */
   onChanged?: (change: SettingsChange) => void;
   now?: () => number;
@@ -299,7 +320,10 @@ function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudMo
   const table = record(value, 'agents');
   const agents: NonNullable<Settings['agents']> = {};
   for (const [agent, settings] of Object.entries(current ?? {})) {
-    if (!Object.hasOwn(allowed, agent) && settings.model !== undefined) agents[agent] = { model: settings.model };
+    // The skills are their own section (D-161): a save of the models keeps them.
+    const skills = settings.skills === undefined ? {} : { skills: [...settings.skills] };
+    if (!Object.hasOwn(allowed, agent) && settings.model !== undefined) agents[agent] = { model: settings.model, ...skills };
+    else if (settings.skills !== undefined) agents[agent] = skills;
   }
   for (const [agent, raw] of Object.entries(table)) {
     if (!AGENT_KEY.test(agent)) invalid('agents: an agent id is lowercase letters, digits, - and _');
@@ -313,9 +337,42 @@ function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudMo
     if (!unchanged && !models.includes(item.model as CloudModel)) {
       invalid(models.length === 0 ? `${where}.model: this agent runs on local models only` : `${where}.model must be one of ${models.join(', ')} or null`);
     }
-    agents[agent] = { model: item.model as CloudModel };
+    agents[agent] = { ...agents[agent], model: item.model as CloudModel };
   }
   return agents;
+}
+
+/**
+ * `skills` from the page (D-161): agent → the ids of the catalog, every
+ * agent offered. Arianna and an agent whose card closes untrusted_content
+ * are refused with the reason; a list sent back unchanged is kept (a card
+ * changed since), and the agents the page does not offer keep theirs. The
+ * models stay as they are.
+ */
+function skillsFromBody(value: unknown, refusals: Record<string, string | null>, current: Settings['agents']): NonNullable<Settings['agents']> {
+  const table = record(value, 'skills');
+  const agents = new Map(Object.entries(structuredClone(current ?? {})));
+  for (const [agent, raw] of Object.entries(table)) {
+    if (!AGENT_KEY.test(agent)) invalid('skills: an agent id is lowercase letters, digits, - and _');
+    const where = `skills.${agent}`;
+    let skills: string[];
+    try {
+      skills = parseSkillIds(raw, where);
+    } catch (error) {
+      invalid(error instanceof Error ? error.message : String(error));
+    }
+    const before = current !== undefined && Object.hasOwn(current, agent) ? (current[agent]?.skills ?? []) : [];
+    const unchanged = before.length === skills.length && before.every((id, index) => id === skills[index]);
+    if (!unchanged && skills.length > 0) {
+      if (!Object.hasOwn(refusals, agent)) invalid(`${where}: no such agent`);
+      const refused = refusals[agent];
+      if (refused !== null && refused !== undefined) invalid(`${where}: ${refused}`);
+    }
+    const { model } = agents.get(agent) ?? {};
+    if (skills.length === 0 && model === undefined) agents.delete(agent);
+    else agents.set(agent, { ...(model === undefined ? {} : { model }), ...(skills.length === 0 ? {} : { skills }) });
+  }
+  return Object.fromEntries(agents);
 }
 
 function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceConfig | undefined {
@@ -376,6 +433,26 @@ function notificationsFromBody(value: unknown): NotificationsConfig {
   return next;
 }
 
+/** `[secretary]` from the page (D-144): the switch, three clocks "HH:MM" in order, the days. */
+function secretaryFromBody(value: unknown): SecretaryConfig {
+  const table = record(value, 'secretary');
+  only(table, ['enabled', 'morning', 'afternoon', 'evening', 'days'], 'secretary');
+  if (typeof table.enabled !== 'boolean') invalid('secretary.enabled must be true or false');
+  if (!Array.isArray(table.days) || !table.days.every((day) => typeof day === 'string')) invalid('secretary.days must be a list of days');
+  try {
+    return checkSecretary({
+      enabled: table.enabled,
+      morning: text(table.morning, 'secretary.morning'),
+      afternoon: text(table.afternoon, 'secretary.afternoon'),
+      evening: text(table.evening, 'secretary.evening'),
+      days: table.days as SecretaryConfig['days'],
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
+}
+
 function notificationsOf(notifications: NotificationsConfig | undefined): NotificationsValues {
   const { replies, approvals, failures, quiet } = notifications ?? DEFAULT_NOTIFICATIONS;
   return { replies, approvals, failures, quiet: quiet === undefined ? null : quietText(quiet) };
@@ -428,12 +505,50 @@ function personasFromBody(value: unknown): NonNullable<Settings['personas']> {
   return personas;
 }
 
+/**
+ * `[project_rules]` from the page (I-14, D-174): `{ template, projects }`,
+ * template null or empty for none; a project's line, empty text included,
+ * stays its own. The user's text is L1 by declaration and reaches the cloud:
+ * a finding of the scanner or a value of the vault refuses it, naming the
+ * field and the kind, never the text; parseConfig checks the rest.
+ */
+function projectRulesFromBody(value: unknown): Settings['projectRules'] {
+  const table = record(value, 'projectRules');
+  only(table, ['template', 'projects'], 'projectRules');
+  const checked = (item: unknown, where: string): string => {
+    const given = text(item, where);
+    const kinds = [...new Set(scanText(given).map((finding) => finding.kind))];
+    if (kinds.length > 0) invalid(`${where} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
+    if (knownSecrets.find(given).length > 0) invalid(`${where} holds a value of the vault: not saved`);
+    return given;
+  };
+  const projects: Record<string, string> = {};
+  for (const [name, item] of Object.entries(table.projects === undefined || table.projects === null ? {} : record(table.projects, 'projectRules.projects'))) {
+    if (!PROJECT_NAME.test(name)) invalid('projectRules.projects: a project name is lowercase letters, digits and dashes');
+    projects[name] = checked(item, `projectRules.projects.${name}`);
+  }
+  const template = table.template === undefined || table.template === null || table.template === '' ? undefined : checked(table.template, 'projectRules.template');
+  if (template === undefined && Object.keys(projects).length === 0) return undefined;
+  return { ...(template === undefined ? {} : { template }), projects };
+}
+
 function executorsFromBody(value: unknown): Settings['cloud']['executors'] {
   const executors = strings(value, 'executors');
   for (const executor of executors) {
     if (!CLOUD_EXECUTORS.includes(executor as (typeof CLOUD_EXECUTORS)[number])) invalid(`executors: ${JSON.stringify(executor).slice(0, 40)} is not one of ${CLOUD_EXECUTORS.join(', ')}`);
   }
   return executors as Settings['cloud']['executors'];
+}
+
+/** `[capture] fetch_sites` from the page (D-154): host names, lowercase, each once. */
+function fetchSitesFromBody(value: unknown): string[] {
+  const sites = strings(value, 'fetchSites');
+  try {
+    return checkFetchSites(sites, 'fetchSites');
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
 }
 
 function telegramFromBody(value: unknown, current: Settings['telegram']): Settings['telegram'] {
@@ -451,10 +566,24 @@ function projectsFromBody(value: unknown): ProjectSettings[] {
   return value.map((item, index) => {
     const where = `projects[${String(index)}]`;
     const project = record(item, where);
-    only(project, ['name', 'path', 'label'], where);
+    only(project, ['name', 'path', 'label', 'parts', 'folders'], where);
     const label = text(project.label, `${where}.label`);
     if (label !== 'L0' && label !== 'L1') invalid(`${where}.label must be L0 or L1`);
-    return { name: text(project.name, `${where}.name`), path: text(project.path, `${where}.path`), label };
+    const next: ProjectSettings = { name: text(project.name, `${where}.name`), path: text(project.path, `${where}.path`), label };
+    // D-145: the parts the user listed and the labels of the management folders; parseConfig checks the rest.
+    if (project.parts !== undefined && project.parts !== null) next.parts = strings(project.parts, `${where}.parts`);
+    if (project.folders !== undefined && project.folders !== null) {
+      if (!Array.isArray(project.folders)) invalid(`${where}.folders must be a list`);
+      next.folders = project.folders.map((item, at) => {
+        const place = `${where}.folders[${String(at)}]`;
+        const folder = record(item, place);
+        only(folder, ['path', 'label'], place);
+        const folderLabel = text(folder.label, `${place}.label`);
+        if (!isLabel(folderLabel)) invalid(`${place}.label must be L0, L1, L2 or L3`);
+        return { path: text(folder.path, `${place}.path`), label: folderLabel };
+      });
+    }
+    return next;
   });
 }
 
@@ -483,6 +612,18 @@ function cloudModelsOf(cloud: Settings['cloud']): SettingsValues['cloudModels'] 
   return { models };
 }
 
+/** The agents with skills, as compared and shown (D-161). */
+function skillsOf(settings: Settings): SettingsValues['skills'] {
+  const skills: SettingsValues['skills'] = {};
+  for (const [agent, item] of Object.entries(settings.agents ?? {})) if (item.skills !== undefined && item.skills.length > 0) skills[agent] = [...item.skills];
+  return skills;
+}
+
+/** `[project_rules]` as compared and shown (I-14, D-174). */
+function projectRulesOf(settings: Settings): SettingsValues['projectRules'] {
+  return { template: settings.projectRules?.template ?? null, projects: { ...(settings.projectRules?.projects ?? {}) } };
+}
+
 /** The agents with a model, as compared and shown. */
 function agentsOf(settings: Settings): SettingsValues['agents'] {
   const agents: SettingsValues['agents'] = {};
@@ -502,15 +643,19 @@ export function valuesOf(settings: Settings): SettingsValues {
     cloudModels: cloudModelsOf(settings.cloud),
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
+    projectRules: projectRulesOf(settings),
     agents: agentsOf(settings),
+    skills: skillsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
     voice: voiceOf(settings.voice),
     notifications: notificationsOf(settings.notifications),
+    secretary: structuredClone(settings.secretary ?? DEFAULT_SECRETARY),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
     projects: settings.projects.map((project) => ({ ...project })),
     endpoints: structuredClone(settings.endpoints),
+    fetchSites: [...(settings.fetchSites ?? [])],
   };
 }
 
@@ -521,14 +666,22 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return cloudModelsOf(settings.cloud);
     case 'agents':
       return agentsOf(settings);
+    case 'skills':
+      return skillsOf(settings);
+    case 'projectRules':
+      return projectRulesOf(settings);
     case 'sprites':
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
     case 'participants':
       return settings.leaveAfter ?? DEFAULT_LEAVE_AFTER;
     case 'notifications':
       return settings.notifications;
+    case 'secretary':
+      return settings.secretary;
     case 'executors':
       return settings.cloud.executors;
+    case 'fetchSites':
+      return settings.fetchSites ?? [];
     case 'database':
     case 'server':
     case 'roles':
@@ -567,6 +720,7 @@ function privacyChanges(before: SettingsValues, after: SettingsValues, sections:
     const { added, removed, changed } = listDiff(before.projects, after.projects, (project) => project.name);
     changes.projects = { added, removed, changed: changed.map(({ key, ...rest }) => ({ name: key, ...rest })) };
   }
+  if (sections.includes('fetchSites')) changes.fetchSites = { before: before.fetchSites, after: after.fetchSites };
   if (sections.includes('endpoints')) {
     const { added, removed, changed } = listDiff(before.endpoints, after.endpoints, (endpoint) => endpoint.id);
     changes.endpoints = { added, removed, changed: changed.map(({ key, ...rest }) => ({ id: key, ...rest })) };
@@ -580,6 +734,7 @@ function exitsOf(values: SettingsValues): PrivacyExits {
     projects: values.projects.map(({ name, label }) => ({ name, label })),
     telegram: values.telegram === null ? null : { chats: values.telegram.chats.length },
     endpoints: values.endpoints.map(({ id, url, command }) => ({ id, url, command: command ?? null })),
+    fetchSites: values.fetchSites,
   };
 }
 
@@ -695,6 +850,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       restartOnly: RESTART_SECTIONS,
       voiceDefaults: { ...structuredClone(DEFAULT_VOICE), push: null },
       agentModels: Object.fromEntries(Object.entries(options.agentModels()).map(([agent, models]) => [agent, [...models]])),
+      agentSkills: { ...(options.agentSkills?.() ?? {}) },
     };
     let labels: string | null;
     try {
@@ -738,8 +894,18 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         if (Object.keys(personas).length === 0) delete next.personas;
         else next.personas = personas;
       }
+      if (given.projectRules !== undefined) {
+        const rules = projectRulesFromBody(given.projectRules);
+        if (rules === undefined) delete next.projectRules;
+        else next.projectRules = rules;
+      }
       if (given.agents !== undefined) {
         const agents = agentsFromBody(given.agents, options.agentModels(), settings.agents);
+        if (Object.keys(agents).length === 0) delete next.agents;
+        else next.agents = agents;
+      }
+      if (given.skills !== undefined) {
+        const agents = skillsFromBody(given.skills, options.agentSkills?.() ?? {}, next.agents);
         if (Object.keys(agents).length === 0) delete next.agents;
         else next.agents = agents;
       }
@@ -757,6 +923,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         else next.voice = voice;
       }
       if (given.notifications !== undefined) next.notifications = notificationsFromBody(given.notifications);
+      if (given.secretary !== undefined) next.secretary = secretaryFromBody(given.secretary);
       const sections = check(settings, next, catalog, ORDINARY_SECTIONS);
       if (sections.length > 0) {
         write(next, catalog, fingerprint);
@@ -777,6 +944,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       }
       if (given.projects !== undefined) next.projects = projectsFromBody(given.projects);
       if (given.endpoints !== undefined) next.endpoints = endpointsFromBody(given.endpoints);
+      if (given.fetchSites !== undefined) next.fetchSites = fetchSitesFromBody(given.fetchSites);
       const sections = check(settings, next, catalog, PRIVACY_SECTIONS);
       if (sections.length === 0) invalid('values: nothing changes');
       const privacy = sections as PrivacySection[];

@@ -13,7 +13,8 @@ import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
 import { nodeToolchain } from '../claude/run.ts';
 import type { StreamFailure } from '../claude/stream.ts';
-import { preparedPath } from '../workspace.ts';
+import { preparedNotes } from '../notes.ts';
+import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { codexArgs, codexEnv, userInstructionFiles, type CodexAccess, type CodexModel } from './profile.ts';
 import { CodexStream, type CodexEvent, type CodexUsage } from './stream.ts';
 
@@ -88,6 +89,8 @@ export interface CodexLaunch {
   sessionRef?: string;
   /** False: `--ephemeral`, nothing of the session is saved and it cannot be resumed (D-136). Default true. */
   persistSession?: boolean;
+  /** From `prepareProjectNotes` for `codex` (D-166): the read-only copy of the project's notes the gateway let out, opened for reading. */
+  notes?: unknown;
 }
 
 export interface CodexStart extends Omit<CodexLaunch, 'sessionRef'> {
@@ -242,13 +245,18 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
       throw new CodexError('invalid-options', 'codex: the session was not saved (persistSession false), so it cannot be resumed');
     }
     const modelName = options.modelName?.(launch.model);
-    const build = (workspace: string): string[] => {
+    // D-166: the copy of the project's notes opened for reading, the container of a part denied whole.
+    const build = (workspace: string, extra: { notes?: string; container?: string } = {}): string[] => {
       try {
         return codexArgs({
           model: launch.model,
           ...(modelName === undefined ? {} : { modelName }),
           access: launch.access,
-          sandbox: { workspace, ...folders },
+          sandbox: {
+            workspace,
+            readable: [...folders.readable, ...(extra.notes === undefined ? [] : [extra.notes])],
+            denied: [...folders.denied, ...(extra.container === undefined || folders.denied.includes(extra.container) ? [] : [extra.container])],
+          },
           ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
           ...(launch.persistSession === undefined ? {} : { persistSession: launch.persistSession }),
         });
@@ -269,7 +277,19 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
     } catch (cause) {
       throw new CodexError('workspace', 'codex: the workspace folder is gone or was replaced', { cause });
     }
-    return { cwd: path, args: build(path), model: modelName ?? '', limits };
+    let notes: string | undefined;
+    if (launch.notes !== undefined) {
+      const copy = preparedNotes(launch.notes);
+      if (copy?.executor !== CODEX_EXECUTOR) throw new CodexError('workspace', 'codex: the notes were not prepared for codex by prepareProjectNotes');
+      try {
+        if ((await realpath(copy.path)) !== copy.path || !(await stat(copy.path)).isDirectory()) throw new Error('replaced');
+      } catch (cause) {
+        throw new CodexError('workspace', 'codex: the notes folder is gone or was replaced', { cause });
+      }
+      notes = copy.path;
+    }
+    const container = workspaceContainer(launch.workspace);
+    return { cwd: path, args: build(path, { ...(notes === undefined ? {} : { notes }), ...(container === undefined ? {} : { container }) }), model: modelName ?? '', limits };
   }
 
   const launch = (start: CodexStart, sessionRef?: string): CodexRun => {

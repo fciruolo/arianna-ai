@@ -134,7 +134,7 @@ async function keep(replace: boolean): Promise<void> {
       </p>
       <label class="flex flex-col gap-1 text-xs text-muted">
         <span class="flex gap-2">Suggerimento (facoltativo)<span class="ml-auto font-mono">{{ hint.length }}/{{ MAX_HINT }}</span></span>
-        <textarea v-model="hint" rows="2" :maxlength="MAX_HINT" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="capelli verdi, felpa gialla, occhiali tondi" />
+        <textarea v-model="hint" rows="2" :maxlength="MAX_HINT" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="capelli verdi, felpa gialla, occhiali tondi" />
       </label>
       <div v-if="drawn && dataUrl" class="flex flex-col gap-2.5">
         <div class="flex flex-wrap items-end gap-3">
@@ -147,10 +147,10 @@ async function keep(replace: boolean): Promise<void> {
         <SheetPreview :src="dataUrl" :rows="drawn.rows" />
         <label class="flex flex-col gap-1 text-xs text-muted sm:max-w-xs">
           Nome del personaggio
-          <input v-model="characterName" maxlength="40" class="field px-2 py-1.5 text-[13px] text-ink" :disabled="existing !== null" @keydown.enter.prevent="keep(false)" />
+          <input v-model="characterName" maxlength="40" class="field px-2 py-1.5 text-[14px] text-ink" :disabled="existing !== null" @keydown.enter.prevent="keep(false)" />
         </label>
         <p v-if="characterName.trim() !== '' && !nameValid" class="text-xs text-warn">Il nome deve avere almeno una lettera senza accenti strani o una cifra, su una riga sola.</p>
-        <div v-if="existing" class="flex flex-col gap-2 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]" role="alert">
+        <div v-if="existing" class="flex flex-col gap-2 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[14px]" role="alert">
           <p>Fra i tuoi personaggi c’è già «{{ existing.name }}». Vuoi sostituirlo con questo disegno? Chi lo usa vedrà quello nuovo.</p>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busy" @click="keep(true)">Sostituisci «{{ existing.name }}»</button>

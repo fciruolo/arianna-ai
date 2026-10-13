@@ -10,7 +10,8 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
-import { preparedPath } from '../workspace.ts';
+import { preparedNotes } from '../notes.ts';
+import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { claudeArgs, claudeEnv, type ClaudeModel, type ClaudeTool } from './profile.ts';
 import { ClaudeStream, type ClaudeEvent, type ClaudeUsage, type StreamFailure } from './stream.ts';
 
@@ -108,6 +109,12 @@ export interface ClaudeLaunch {
    * the launch is refused (`invalid-options`). Default true.
    */
   persistSession?: boolean;
+  /**
+   * From `prepareProjectNotes` for `claude` (D-166): the read-only copy of the
+   * project's notes the gateway let out, readable by the file tools
+   * (`--add-dir`) and by sandboxed commands; never written.
+   */
+  notes?: unknown;
 }
 
 export interface ClaudeStart extends Omit<ClaudeLaunch, 'sessionRef'> {
@@ -244,17 +251,23 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       throw new ClaudeError('invalid-options', 'claude: the session was not saved (persistSession false), so it cannot be resumed');
     }
     const modelName = options.modelName?.(launch.model);
-    const profile = (workspace: string) => ({
+    // D-166: the copy of the project's notes opened, the container of a part closed whole.
+    const profile = (workspace: string, extra: { notes?: string; container?: string } = {}) => ({
       model: launch.model,
       ...(modelName === undefined ? {} : { modelName }),
       tools: launch.tools,
-      sandbox: { workspace, ...folders },
+      sandbox: {
+        workspace,
+        readable: [...folders.readable, ...(extra.notes === undefined ? [] : [extra.notes])],
+        denied: [...folders.denied, ...(extra.container === undefined || folders.denied.includes(extra.container) ? [] : [extra.container])],
+      },
+      ...(extra.notes === undefined ? {} : { addDirs: [extra.notes] }),
       ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
       ...(launch.persistSession === undefined ? {} : { persistSession: launch.persistSession }),
     });
-    const build = (workspace: string): string[] => {
+    const build = (workspace: string, extra?: { notes?: string; container?: string }): string[] => {
       try {
-        return claudeArgs(profile(workspace));
+        return claudeArgs(profile(workspace, extra));
       } catch (cause) {
         throw new ClaudeError('invalid-options', 'claude: the profile refuses these options', { cause });
       }
@@ -273,7 +286,19 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
     } catch (cause) {
       throw new ClaudeError('workspace', 'claude: the workspace folder is gone or was replaced', { cause });
     }
-    return { cwd: path, args: build(path), limits };
+    let notes: string | undefined;
+    if (launch.notes !== undefined) {
+      const copy = preparedNotes(launch.notes);
+      if (copy?.executor !== CLAUDE_EXECUTOR) throw new ClaudeError('workspace', 'claude: the notes were not prepared for claude by prepareProjectNotes');
+      try {
+        if ((await realpath(copy.path)) !== copy.path || !(await stat(copy.path)).isDirectory()) throw new Error('replaced');
+      } catch (cause) {
+        throw new ClaudeError('workspace', 'claude: the notes folder is gone or was replaced', { cause });
+      }
+      notes = copy.path;
+    }
+    const container = workspaceContainer(launch.workspace);
+    return { cwd: path, args: build(path, { ...(notes === undefined ? {} : { notes }), ...(container === undefined ? {} : { container }) }), limits };
   }
 
   const launch = (start: ClaudeStart, sessionRef?: string): ClaudeRun => {

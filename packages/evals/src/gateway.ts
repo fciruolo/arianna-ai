@@ -1,11 +1,13 @@
 // Subject of the `gateway` eval group: the real gatewayCheck and declassify.
 import {
+  checkCoderNote,
   checkProject,
   checkWorkspace,
   contentHash,
   createLabelRules,
   declassify,
   derive,
+  deriveSource,
   gatewayCheck,
   secretMatcher,
   type DeclassifyApproval,
@@ -14,18 +16,36 @@ import {
   type Target,
   type WorkspaceDecision,
   type WorkspaceEntry,
+  createContext,
+  isAtMost,
+  isLabel,
 } from '@arianna/policy';
 
 import { contextOf, type ContextInput } from './context-input.ts';
 
 /**
  * A payload fragment. `derivedFrom` lists the labels of the inputs a model read
- * to write it: its label is then the taint of those inputs, not `label`.
+ * to write it, or `{ label, source }` for an input with its source: its label
+ * and source are then the taint of those inputs, not `label` and `source`.
+ * `source` defaults to `eval`; `finance:*` is finance data (D-183).
  */
 interface FragmentInput {
   value: unknown;
   label?: unknown;
+  source?: unknown;
   derivedFrom?: unknown[];
+}
+
+/** An input of `derivedFrom`: a label, or `{ label, source }` with no other key (a typo must fail the case, not be ignored). */
+function derivedInput(from: unknown): Labeled<unknown> {
+  if (typeof from === 'object' && from !== null && !Array.isArray(from)) {
+    const input = from as Record<string, unknown>;
+    const unknown = Object.keys(input).filter((key) => key !== 'label' && key !== 'source');
+    if (unknown.length > 0) throw new Error(`"derivedFrom": unknown key(s) ${unknown.join(', ')}`);
+    if (typeof input.source !== 'string') throw new Error('"derivedFrom": "source" must be a string');
+    return { value: null, label: input.label as Label, source: input.source };
+  }
+  return { value: null, label: from as Label, source: 'eval' };
 }
 
 
@@ -64,6 +84,54 @@ interface ProjectInput {
   };
 }
 
+/**
+ * The notes of a project offered to the Coder (I-11 P3, D-166): each one
+ * through `checkCoderNote`, then, when it passes, alone through the gateway
+ * towards `target`, as the core does. `canary` is a fake unique string: it
+ * leaks when it is in a path or a text that would reach the run.
+ */
+interface CoderNotesInput {
+  coderNotes: {
+    target: 'claude' | 'codex';
+    notes: { path: unknown; label: unknown; link?: unknown; text: string }[];
+    canary?: string;
+  };
+}
+
+/** Paths given, in order; the notes held, by reason (a refusal of the gateway is its rule); whether the canary would leave. */
+export interface CoderNotesOutcome {
+  given: string[];
+  held: Record<string, number>;
+  leaked: boolean;
+}
+
+function evaluateCoderNotes(input: CoderNotesInput['coderNotes']): CoderNotesOutcome {
+  const given: string[] = [];
+  const texts: string[] = [];
+  const held: Record<string, number> = {};
+  const hold = (reason: string): void => {
+    held[reason] = (held[reason] ?? 0) + 1;
+  };
+  for (const note of input.notes) {
+    const check = checkCoderNote({ path: note.path, label: note.label, link: note.link });
+    if (check.decision === 'skip') {
+      hold(check.reason);
+      continue;
+    }
+    const label = isLabel(note.label) ? note.label : 'L2';
+    const decision = gatewayCheck([{ value: note.text, label, source: 'eval:note' }], createContext('L1', isAtMost(label, 'L1') ? label : 'L1'), { kind: 'executor', id: input.target, locality: 'cloud' }, secretMatcher([]));
+    if (decision.decision === 'block') {
+      hold(decision.rule);
+      continue;
+    }
+    given.push(String(note.path));
+    texts.push(...decision.texts);
+  }
+  const canary = input.canary;
+  const leaked = canary !== undefined && canary !== '' && [...given, ...texts].some((text) => text.includes(canary));
+  return { given, held, leaked };
+}
+
 const WORKSPACE_RULES = [
   { path: 'repos', label: 'L1' as const },
   { path: 'repos/site/private', label: 'L2' as const },
@@ -81,10 +149,12 @@ export type WorkspaceOutcome =
   | { decision: 'block'; rule: 'not-allowlisted' | 'workspace-scan'; findings?: string[] };
 
 function toFragment(input: FragmentInput): Labeled<unknown> {
-  const label = Array.isArray(input.derivedFrom)
-    ? derive(input.derivedFrom.map((from) => ({ value: null, label: from as Label, source: 'eval' })))
-    : (input.label as Label);
-  return { value: input.value, label, source: 'eval' };
+  const source = typeof input.source === 'string' ? input.source : 'eval';
+  if (Array.isArray(input.derivedFrom)) {
+    const inputs = input.derivedFrom.map(derivedInput);
+    return { value: input.value, label: derive(inputs), source: deriveSource(inputs, source) };
+  }
+  return { value: input.value, label: input.label as Label, source };
 }
 
 function outcomeOf(decision: WorkspaceDecision): WorkspaceOutcome {
@@ -99,8 +169,9 @@ function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome
   return outcomeOf(checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules }));
 }
 
-export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome {
+export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome | CoderNotesOutcome {
   if (typeof raw === 'object' && raw !== null && 'workspace' in raw) return evaluateWorkspace((raw as WorkspaceInput).workspace);
+  if (typeof raw === 'object' && raw !== null && 'coderNotes' in raw) return evaluateCoderNotes((raw as CoderNotesInput).coderNotes);
   if (typeof raw === 'object' && raw !== null && 'project' in raw) {
     const { label, entries } = (raw as ProjectInput).project;
     return outcomeOf(checkProject({ label, entries }));
@@ -108,6 +179,7 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
   const input = raw as GatewayInput;
   if (!Array.isArray(input.payload)) throw new Error('"payload" must be a list');
   let payload = input.payload.map(toFragment);
+  const { context, deniedReads } = contextOf(input.context);
 
   if (input.declassify !== undefined) {
     const [item] = payload;
@@ -120,13 +192,12 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
       detail: { sha256: spec.sha256 === 'exact' ? contentHash(item.value) : spec.sha256, from: spec.from, to: spec.to },
     };
     try {
-      payload = [declassify(item, to, approval).item];
+      payload = [declassify(item, to, approval, context).item];
     } catch {
       return { declassify: 'refused' };
     }
   }
 
-  const { context, deniedReads } = contextOf(input.context);
   const denied = deniedReads === 0 ? {} : { deniedReads };
   const secrets = secretMatcher(input.secrets ?? []);
   const decision = gatewayCheck(payload, context, input.target, secrets);

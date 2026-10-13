@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { LoadedAgent } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { directPolicies, directPolicyOf } from '../src/direct-chat.ts';
+import { directPolicies, directPolicyOf, projectFits } from '../src/direct-chat.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
 const loaded = committedAgents(resolveHome({}));
@@ -54,4 +54,22 @@ test('never Arianna; the Coder first in the list', () => {
   assert.equal(directPolicyOf('arianna', arianna, { claude: true, codex: false }), undefined);
   const agents = new Map<string, LoadedAgent>([['zeta', answering('L1')], ['coder', coder], ['arianna', arianna], ['alfa', answering('L1')]]);
   assert.deepEqual(directPolicies(agents, { claude: true, codex: false }).map((policy) => policy.agent), ['coder', 'alfa', 'zeta']);
+});
+
+test('GOD (D-127): read only, on Claude or Codex, and only on a part of the container of Arianna\'s clones', () => {
+  const god = loaded.get('god');
+  assert.ok(god !== undefined);
+  assert.deepEqual(god.card.tools, ['repo.read'], 'GOD never writes: the subtasks do');
+  assert.equal(god.card.maxLabel, 'L1');
+  const policy = directPolicyOf('god', god, { claude: true, codex: true });
+  assert.ok(policy !== undefined);
+  assert.equal(policy.container, 'arianna');
+  assert.deepEqual(policy.executors, ['claude', 'codex']);
+  assert.equal(directPolicyOf('coder', coder, { claude: true, codex: false })?.container, undefined);
+  assert.equal(projectFits(policy, 'arianna:main'), true);
+  assert.equal(projectFits(policy, 'arianna'), true);
+  assert.equal(projectFits(policy, 'demo'), false);
+  assert.equal(projectFits(policy, 'ariannax:main'), false);
+  assert.equal(projectFits(policy, undefined), false);
+  assert.equal(projectFits({}, 'demo'), true, 'an agent without a container: any project');
 });

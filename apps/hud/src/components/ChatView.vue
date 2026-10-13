@@ -4,13 +4,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
+import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
-import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
+import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
+import { listImClosings } from '../lib/api.ts';
+import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
+import { releaseProject } from '../lib/note-release.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
   inboxNodeId,
@@ -28,19 +32,32 @@ import {
   type SavedNotes,
 } from '../lib/message-actions.ts';
 import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
-import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
+import { isAddingLine, isEventLine, participantPose, withText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
+import ImClosingCard from './ImClosingCard.vue';
 import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
+import GodCarryNote from './GodCarryNote.vue';
+import DesignerCarryProposal from './DesignerCarryProposal.vue';
+import GodCarryProposal from './GodCarryProposal.vue';
+import GodPlanCard from './GodPlanCard.vue';
+import { GOD_AGENT } from '../lib/god.ts';
+import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
+import ParticipantStack from './ParticipantStack.vue';
+import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
+import SessionLine from './SessionLine.vue';
+import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
+import { startDesignerSession } from '../lib/api.ts';
+import { errorText } from '../lib/italian.ts';
 
 const props = defineProps<{
   chat: ChatState;
@@ -54,7 +71,7 @@ const props = defineProps<{
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
   /** The calls of this conversation (D-066), shown as receipts among the messages. */
@@ -64,12 +81,20 @@ const props = defineProps<{
   characters: Record<string, CharacterChoice> | undefined;
   /** Who the user may talk with directly (D-111d): where the agent of this conversation runs. */
   directAgents?: DirectAgent[] | undefined;
+  /** "Apri nello Studio" in a direct chat with the Designer on a project (I-20, D-185); off inside the Studio itself. */
+  studioLink?: boolean;
+  /** The mockup open in the Studio, for the summary of «Riparti» (D-185). */
+  studioFile?: string | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
 const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
   send: [body: string];
+  /** "Apri nello Studio": the project of this chat with the Designer (I-20, D-185). */
+  studio: [workspace: string];
+  /** «Nuova sessione» of the Designer started in this conversation (D-185): the page reads it again. */
+  restarted: [id: string];
   /** "Cosa vogliono dire le etichette?": the legend (etichette parlanti). */
   legend: [];
   chooseModel: [model: string | null];
@@ -88,10 +113,53 @@ const emit = defineEmits<{
   command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
   /** "Apri nella Conoscenza" after "Salva in inbox": the note selected in the graph of kb/. */
   openKnowledge: [nodeId: string];
+  /** The cruscotto of GOD (D-127), from the card of an approved plan. */
+  godDashboard: [];
 }>();
+
+/** An answer of GOD with a plan block (D-127, G2): the card of the plan under it. */
+function godPlanIn(message: { agent: string | null; body: string }): boolean {
+  return message.agent === GOD_AGENT && hasPlanBlock(message.body);
+}
 
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
+/** "Allega nota privata" (D-187): the project of a work chat whose Private notes may leave once into it. */
+const attachProject = computed(() => releaseProject(props.conversation));
+const attaching = ref(false);
+// Another conversation opened: the panel was for the one before, its text must never go there unseen.
+watch(
+  () => props.conversation.id,
+  () => {
+    attaching.value = false;
+  },
+);
+/** The secretary's conversation (D-146): the index of the first message of its current session, -1 elsewhere. */
+const session = computed(() =>
+  props.conversation.secretary === true
+    ? sessionStart(props.chat.messages, props.conversation.secretarySessionAt)
+    : props.conversation.agent === DESIGNER_AGENT
+      ? sessionStart(props.chat.messages, props.conversation.directSessionAt)
+      : -1,
+);
+const sessionText = computed(() => (props.conversation.secretary === true ? SESSION_LINE : DESIGNER_SESSION_LINE));
+
+// «Nuova sessione» of the Designer at any time (I-20, D-185): the same as the proposal, asked by the user.
+const sessionBusy = ref(false);
+const sessionProblem = ref<string | null>(null);
+async function newDesignerSession(): Promise<void> {
+  const id = props.conversation.id;
+  sessionBusy.value = true;
+  sessionProblem.value = null;
+  try {
+    await startDesignerSession(id, props.studioFile);
+    emit('restarted', id);
+  } catch (cause) {
+    sessionProblem.value = `Sessione nuova non aperta. ${errorText(cause)}`;
+  } finally {
+    sessionBusy.value = false;
+  }
+}
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
 function canCallWhenDone(task: Task | undefined): boolean {
@@ -280,16 +348,43 @@ function editsOf(message: Message): LiveEdit[] {
   return liveEdits(props.chat, message.taskId, props.tasks[message.taskId]?.status);
 }
 
+/** The task an approval shows under: its own, or the plan's for the choice of a card that came from one (D-159). */
+function placeOf(approval: Approval): string | null {
+  return approval.chatTaskId ?? approval.taskId;
+}
+
 /** The approvals a user message's task waits for. */
 function approvalsOf(message: Message): Approval[] {
-  return message.role === 'user' && message.taskId !== null ? props.approvals.filter((approval) => approval.taskId === message.taskId) : [];
+  return message.role === 'user' && message.taskId !== null ? props.approvals.filter((approval) => placeOf(approval) === message.taskId) : [];
 }
 
 /** Approvals whose message is not on this page (older history): shown at the end. */
 const unplaced = computed(() => {
   const shown = new Set(props.chat.messages.filter((message) => message.role === 'user').map((message) => message.taskId));
-  return props.approvals.filter((approval) => !shown.has(approval.taskId));
+  return props.approvals.filter((approval) => !shown.has(placeOf(approval)));
 });
+
+/**
+ * The closings of the IM (D-167, P4b) in the secretary's conversation, by the
+ * message of Arianna they show under; read when it opens and whenever a
+ * message arrives (the core writes the closing's message with it).
+ */
+const closings = ref<Map<string, ImClosing>>(new Map());
+let closingsRead = 0;
+async function readClosings(): Promise<void> {
+  const request = ++closingsRead;
+  if (props.conversation.secretary !== true) {
+    closings.value = new Map();
+    return;
+  }
+  try {
+    const listed = await listImClosings();
+    if (request === closingsRead) closings.value = closingsByMessage(listed);
+  } catch {
+    // Keeps the last ones: the next message reads them again.
+  }
+}
+watch(() => [props.conversation.secretary === true, props.chat.conversationId, props.chat.messages.length], () => void readClosings(), { immediate: true });
 
 /** The Coder's run while it works for this conversation: shown in the persona header. */
 const coderRun = computed(() => props.status?.agents.find((agent) => agent.id === 'coder')?.run ?? null);
@@ -420,24 +515,61 @@ function resize(): void {
   element.style.height = `${String(Math.min(element.scrollHeight, 192))}px`;
 }
 
-// Follow new messages and fragments, unless the user scrolled up to read.
+// The list stays at its last message until the user scrolls up to read (user's request, 2026-10-09):
+// on opening, on new messages and fragments, and when the list changes height without a scroll,
+// as when the secretary's commitments arrive above it after the messages.
+const NEAR_BOTTOM = 80;
+let stuck = true;
+function toBottom(): void {
+  if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+}
+function onListScroll(): void {
+  const element = list.value;
+  if (element !== null) stuck = element.scrollHeight - element.scrollTop - element.clientHeight < NEAR_BOTTOM;
+}
 watch(
-  () => [props.chat.messages.length, props.chat.streaming.map((reply) => reply.text.length).join(), props.approvals.length],
+  // What arrives after the messages too (credits, activity logs, closing cards, GOD's proposal once
+  // `sending` turns false): it grows the list, which the ResizeObserver alone may not see in time
+  // (a hidden tab); GOD's proposal (G4) then stayed below the bottom.
+  () => [
+    props.chat.messages.length,
+    props.chat.streaming.map((reply) => reply.text.length).join(),
+    props.approvals.length,
+    props.credits.size,
+    steps.value.size,
+    closings.value.size,
+    props.sending,
+  ],
   async () => {
-    const element = list.value;
-    if (element === null) return;
-    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
     await nextTick();
-    if (atBottom) element.scrollTop = element.scrollHeight;
+    observeContent();
+    if (stuck) toBottom();
   },
 );
 watch(
   () => props.chat.conversationId,
   async () => {
+    stuck = true;
     await nextTick();
-    if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+    observeContent();
+    toBottom();
   },
+  { immediate: true },
 );
+// The list and what it holds now: Vue may replace the content element when the conversation or
+// its messages change, so the observer follows the current one (content loaded later, as the
+// activity logs of a delegation, grows it without a new message).
+let resizes: ResizeObserver | undefined;
+function observeContent(): void {
+  resizes ??= new ResizeObserver(() => {
+    if (stuck) toBottom();
+  });
+  resizes.disconnect();
+  if (list.value === null) return;
+  resizes.observe(list.value);
+  for (const child of list.value.children) resizes.observe(child);
+}
+onBeforeUnmount(() => resizes?.disconnect());
 
 // D-091: the card or message asked for (the "Decisioni in attesa" window, or #approval-<id> / #message-<id>
 // in the address) is brought into view once on the page and lit for a moment. After the watchers above, so it wins.
@@ -448,6 +580,8 @@ async function focusAsked(): Promise<void> {
   const element = anchor === undefined ? null : document.getElementById(anchor);
   if (element === null || list.value?.contains(element) !== true) return;
   clearFocus();
+  // The card asked for wins over the bottom: the list stops following.
+  stuck = false;
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   element.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
   element.classList.add(...HIGHLIGHT_CLASSES);
@@ -481,8 +615,8 @@ onBeforeUnmount(() => clearInterval(clock));
 
 <template>
   <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
-    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
-      <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5">
+    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
+      <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5 short:gap-3.5 short:pt-4 short:pb-5">
         <!-- Persona header with the HUD ring -->
         <section class="flex items-center gap-4 border-b border-line pb-4">
           <div class="relative grid size-[74px] shrink-0 place-items-center">
@@ -496,30 +630,55 @@ onBeforeUnmount(() => clearInterval(clock));
             <PixelAgent v-if="direct !== null" :choice="characters?.[direct]" :pose="directPose" :scale="2" bubble :label="directName" />
             <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble label="Arianna" />
           </div>
+          <!-- Who else is here (D-162, presenting D-125): small avatars overlapping the ring, each opens its menu -->
+          <ParticipantStack
+            v-if="participants.length > 0"
+            class="-ml-8 shrink-0 self-end"
+            :participants="participants"
+            :characters="characters"
+            :agents="status?.agents"
+            @remove="(agent) => emit('removeParticipant', agent)"
+          />
           <div class="min-w-0">
             <h2 class="flex flex-wrap items-center gap-2 font-hud text-lg leading-tight font-semibold tracking-[0.05em]">
               {{ directName }}
               <span
                 v-if="cloud"
-                class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-l1"
+                class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-l1"
                 :title="`Ogni messaggio va così com'è a ${providerText(targets)}: Arianna non lo filtra.`"
               ><Icon name="coder" :size="11" />va a {{ targetName }}</span>
               <span
                 v-if="incognito"
-                class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-incognito-ink"
+                class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-incognito-ink"
                 title="Alla chiusura Arianna cancella i testi di questa conversazione"
               ><Icon name="incognito" :size="11" />incognito</span>
             </h2>
-            <p class="mt-1 flex items-center gap-2 text-[12.5px] text-muted">
+            <p class="mt-1 flex items-center gap-2 text-[13.5px] text-muted">
               <span v-if="(directPose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
                 <i v-for="dot in 3" :key="dot" class="animate-hud-bob size-[5px] rounded-full bg-accent" :style="{ animationDelay: `${String((dot - 1) * 0.15)}s` }" />
               </span>
-              {{ POSE_TEXT[directPose] }}
+              <span class="min-w-0 truncate" :title="participants.length > 0 ? withText(participants) : undefined">{{ POSE_TEXT[directPose] }}<template v-if="participants.length > 0"> · {{ withText(participants) }}</template></span>
             </p>
             <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
+            <button
+              v-if="studioLink === true && direct === DESIGNER_AGENT && conversation.workspace"
+              type="button"
+              class="btn mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              title="I mockup di questo progetto nello Studio, con questa conversazione a sinistra"
+              @click="emit('studio', conversation.workspace)"
+            ><Icon name="studio" :size="13" />Apri nello Studio</button>
+            <button
+              v-if="direct === DESIGNER_AGENT && conversation.workspace && conversation.archivedAt === null"
+              type="button"
+              class="btn mt-1.5 ml-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              title="Il Designer smette di rileggere la sessione di prima e riparte da un breve riassunto; la conversazione resta qui"
+              :disabled="sessionBusy || sending"
+              @click="newDesignerSession"
+            ><Icon name="new" :size="13" />{{ sessionBusy ? 'Apro…' : 'Nuova sessione' }}</button>
+            <p v-if="sessionProblem !== null" class="mt-1 text-xs text-danger" role="alert">{{ sessionProblem }}</p>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
             <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
-            <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
+            <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[12px] text-muted">
               <span>CONTESTO</span>
               <span
                 class="relative h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"
@@ -532,7 +691,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <b class="font-medium text-ink">{{ meter.text }}</b>
             </div>
           </div>
-          <div class="ml-auto hidden text-right font-mono text-[10.5px] leading-[1.7] text-muted sm:block">
+          <div class="ml-auto hidden text-right font-mono text-[12px] leading-[1.7] text-muted sm:block">
             <div>
               CONVERSAZIONE <b class="font-medium text-ink">{{ direct === null ? MODE_TEXT[conversation.mode].toLowerCase() : `${MODE_TEXT[conversation.mode].toLowerCase()} con ${directName}` }}<template v-if="conversation.workspace"> · {{ conversation.workspace.split('/').at(-1) }}</template></b>
             </div>
@@ -540,7 +699,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <div v-if="conversation.mode === 'work' && (direct === null || cloud)">
               <label class="inline-flex items-center gap-1">
                 {{ answersDirect ? 'RISPONDE →' : cloud ? 'MODELLO →' : 'CODER →' }}
-                <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[10.5px]" :aria-label="selectorName" @change="onModel">
+                <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[12px]" :aria-label="selectorName" @change="onModel">
                   <option :value="AUTO">{{ autoText }}</option>
                   <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
                   <option v-if="offModel !== null" :value="offModel" disabled>{{ MODEL_TEXT[offModel] ?? offModel }} (spento: {{ autoText }})</option>
@@ -580,25 +739,6 @@ onBeforeUnmount(() => clearInterval(clock));
           <span v-else-if="wholeSaved && wholeWhen !== undefined" class="text-muted" :title="wholePath === null ? wholeWhen.full : `${wholeWhen.full} · ${wholePath}`">{{ wholeWhen.text }}</span>
         </div>
 
-        <!-- Who else is here (D-125): the agents Arianna brought in, each can be taken out -->
-        <section v-if="participants.length > 0" class="flex flex-wrap items-center gap-2" aria-label="Partecipanti della conversazione">
-          <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-muted uppercase">Con te e Arianna</span>
-          <div v-for="participant in participants" :key="participant.agent" class="hud-card flex items-center gap-2 py-1 pr-1 pl-2">
-            <PixelAgent :choice="characters?.[participant.agent]" :pose="participantPose(participant.agent, status?.agents)" :scale="1" :label="agentName(participant.agent)" />
-            <div class="min-w-0 leading-tight">
-              <div class="text-[13px] font-medium">{{ agentName(participant.agent) }}</div>
-              <div class="font-mono text-[10.5px] text-muted">{{ executorText(participant) }}</div>
-            </div>
-            <button
-              type="button"
-              class="grid size-6 place-items-center rounded-md text-muted hover:text-ink"
-              :aria-label="removeText(participant)"
-              :title="removeText(participant)"
-              @click="emit('removeParticipant', participant.agent)"
-            ><Icon name="close" :size="14" /></button>
-          </div>
-        </section>
-
         <!-- The model selector on small screens -->
         <label v-if="conversation.mode === 'work' && (direct === null || cloud)" class="flex items-center gap-2 text-xs text-muted sm:hidden">
           {{ answersDirect ? 'Risponde' : cloud ? 'Modello' : 'Coder su' }}
@@ -611,7 +751,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <!-- A system chat (D-064): what it is about and what the user can do -->
         <section v-if="conversation.origin === 'system'" class="hud-card" aria-label="Chat di sistema">
-          <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[13px]">
+          <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[14px]">
             <p class="flex items-center gap-2 font-medium"><Icon name="system" :size="16" />Chat di sistema</p>
             <p class="text-muted">
               L’ha aperta il sistema per un task fallito. Chi risponde vede solo l’errore; la domanda del task la vede solo se la alleghi tu.
@@ -652,22 +792,28 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
         </section>
 
+        <!-- GOD (D-127, G4): the context a conversation starts from (a summary, an entry of "Novità"). -->
+        <GodCarryNote v-if="conversation.agent === GOD_AGENT" :conversation-id="conversation.id" @open="(id) => emit('open', id)" />
+
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
-        <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
-          <Icon name="phone" :size="12" />{{ receiptText(call) }}
+        <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[12.5px] text-muted">
+          <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
           <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
         </p>
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
+          <!-- The secretary (D-146): where the session Arianna reads begins -->
+          <SessionLine v-if="index === session" :text="sessionText" />
           <!-- User -->
           <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
               {{ message.body }}
             </div>
-            <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
+            <!-- D-150: each piece whole (never "Attende / te"); when the row is short they go under, aligned on the right. -->
+            <div class="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-0.5 px-1 font-mono text-[12px] whitespace-nowrap text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -682,7 +828,7 @@ onBeforeUnmount(() => clearInterval(clock));
                   title="Perché è fallito"
                   @click="emit('explain', taskOf(message)!)"
                 >!</button>
-                <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
+                <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined" class="max-w-full min-w-0 truncate" :title="reasonText(taskOf(message)!.waitingReason)">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
                 <button
                   v-if="canCallWhenDone(taskOf(message))"
                   type="button"
@@ -695,37 +841,39 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
 
           <!-- A line of the system about a task: who joined, who left, a wait closed (D-125, D-109) -->
-          <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[12px] text-muted">
-            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-[12.5px] font-medium text-ink' : ''">{{ message.body }}</span>
-            <MessageTime class="font-mono text-[10.5px]" :ts="message.ts" :now="now" />
+          <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[13px] text-muted">
+            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-[13.5px] font-medium text-ink' : ''">{{ message.body }}</span>
+            <MessageTime class="font-mono text-[12px]" :ts="message.ts" :now="now" />
           </p>
 
           <!-- A report of the agent Arianna delegated to -->
           <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-              <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
-              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
+              <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
-            <MarkdownText class="px-[15px] py-3" :source="message.body" />
+            <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
+            <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
+            <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
           </article>
 
           <!-- Arianna (or a system note) -->
           <div v-else :id="messageAnchor(message.id)" class="msg-row max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
-              <span class="font-hud text-[10px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
               </span>
-              <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
-              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
-              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
+              <span v-if="message.model !== null" class="font-mono text-[12px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
+              <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
+              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[12px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <LabelBadge :label="message.label" />
               <span
                 v-if="repliesToTelegram(message)"
-                class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info"
+                class="inline-flex items-center gap-1 font-mono text-[12px] text-info"
                 title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
               ><Icon name="telegram" :size="12" />Telegram</span>
               <MessageActions
@@ -746,12 +894,12 @@ onBeforeUnmount(() => clearInterval(clock));
           <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directName}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="flex-1 font-medium">{{ directName }} al lavoro</span>
-              <span class="font-mono text-[10.5px] tracking-[0.08em] text-accent uppercase">In corso</span>
+              <span class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
-            <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[13px]">
+            <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[14px]">
               <li v-for="(line, index) in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2.5">
                 <span
-                  class="w-4 shrink-0 text-center font-mono text-[11px]"
+                  class="w-4 shrink-0 text-center font-mono text-[12.5px]"
                   :class="
                     index === activityOf(message).length - 1
                       ? 'animate-hud-blink text-accent'
@@ -770,18 +918,42 @@ onBeforeUnmount(() => clearInterval(clock));
           <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
-          <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
-            <Icon name="phone" :size="12" />{{ receiptText(call) }}
+          <ImClosingCard v-if="closings.get(message.id) !== undefined" :key="`im-closing-${closings.get(message.id)!.id}`" :closing="closings.get(message.id)!" />
+          <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[12.5px] text-muted">
+            <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
+        <SessionLine v-if="session === chat.messages.length" :text="sessionText" />
 
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
-          <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
+          <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
+
+        <!-- The Designer (I-20, D-185): with a heavy context it proposes to restart from a summary. -->
+        <DesignerCarryProposal
+          v-if="conversation.agent === DESIGNER_AGENT && conversation.workspace !== null && conversation.archivedAt === null"
+          :conversation-id="conversation.id"
+          :context-tokens="conversation.contextTokens"
+          :last-role="chat.messages.filter((message) => message.role !== 'system').at(-1)?.role"
+          :sending="sending || chat.streaming.length > 0"
+          :name="directName"
+          :open="studioFile"
+          @restarted="(id) => emit('restarted', id)"
+        />
+
+        <!-- GOD (D-127, G4): in a long chat, GOD proposes to restart from a summary. -->
+        <GodCarryProposal
+          v-if="conversation.agent === GOD_AGENT && conversation.archivedAt === null"
+          :conversation-id="conversation.id"
+          :messages="chat.messages"
+          :sending="sending || chat.streaming.length > 0"
+          :name="directName"
+          @open="(id) => emit('open', id)"
+        />
       </div>
     </div>
 
@@ -789,7 +961,7 @@ onBeforeUnmount(() => clearInterval(clock));
       <span>Conversazione archiviata: ripristinala per scrivere.</span>
       <button type="button" class="btn btn-primary" @click="emit('restore')"><Icon name="restore" :size="16" />Ripristina</button>
     </div>
-    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
+    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5 short:pt-2 short:pb-2.5">
       <div class="relative mx-auto max-w-[780px]">
         <!-- The "/" menu (D-090) -->
         <div v-if="menuOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
@@ -801,7 +973,7 @@ onBeforeUnmount(() => clearInterval(clock));
               :key="command.name"
               role="option"
               :aria-selected="index === activeCommand"
-              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[13px]"
+              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[14px]"
               :class="index === activeCommand ? 'bg-surface-2 text-ink' : 'text-muted'"
               @mousedown.prevent
               @mouseenter="activeCommand = index"
@@ -809,16 +981,26 @@ onBeforeUnmount(() => clearInterval(clock));
             >
               <span class="w-36 shrink-0 font-mono sm:w-40" :class="index === activeCommand ? 'text-accent' : 'text-ink'">{{ usage(command) }}</span>
               <span class="min-w-0 flex-1 truncate">{{ command.description }}</span>
-              <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[10.5px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
+              <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[12px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
             </li>
           </ul>
-          <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[13px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
-          <p class="px-3.5 pt-1.5 font-mono text-[10px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
+          <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[14px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
+          <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
         <form
           class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
           @submit.prevent="submit()"
         >
+          <button
+            v-if="attachProject !== null"
+            type="button"
+            class="mb-1 grid size-[30px] shrink-0 place-items-center rounded-full text-muted hover:text-ink"
+            :title="`Allega una nota privata di ${attachProject}: esce una volta, anonima, con la master password`"
+            aria-label="Allega nota privata"
+            @click="attaching = true"
+          >
+            <Icon name="gateway" :size="16" />
+          </button>
           <label for="composer" class="sr-only">Messaggio</label>
           <textarea
             id="composer"
@@ -847,7 +1029,8 @@ onBeforeUnmount(() => clearInterval(clock));
           </button>
         </form>
       </div>
-      <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+      <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false" />
+      <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">
           Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
         </span>
@@ -855,10 +1038,10 @@ onBeforeUnmount(() => clearInterval(clock));
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
-      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
-        <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
-        <span class="inline-flex flex-wrap items-center gap-1.5">
+      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted short:mt-1.5">
+        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
+        <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
+        <span>
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
         </span>

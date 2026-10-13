@@ -11,9 +11,11 @@ import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, 
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
-import type { ProjectLabel } from './projects.ts';
+import type { ProjectRules } from './project-rules.ts';
+import type { ProjectFolder, ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
+import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
 import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
@@ -30,6 +32,10 @@ export interface ProjectSettings {
   name: string;
   path: string;
   label: ProjectLabel;
+  /** D-145: the parts the user listed; absent, every git subfolder of the container. */
+  parts?: string[];
+  /** D-145: `[[project.folder]]`, the labels the user gave the management folders. */
+  folders?: ProjectFolder[];
 }
 
 export interface Settings {
@@ -51,6 +57,8 @@ export interface Settings {
   };
   /** As written in the file: `path` keeps its form. */
   projects: ProjectSettings[];
+  /** `[project_rules]` (I-14, D-174); absent, no template and no project with its own rules. */
+  projectRules?: ProjectRules;
   /** Agent → "<pack>/<character>" (D-060). */
   characters: Record<string, string>;
   /** `[personas.<agent>]` (D-107); absent or empty, every agent has the defaults. */
@@ -63,6 +71,10 @@ export interface Settings {
   leaveAfter?: number;
   /** `[notifications]` (I-1): written only when the file has it; absent, the defaults. */
   notifications?: NotificationsConfig;
+  /** `[secretary]` (I-12, D-144): written only when the file has it; absent, the defaults. */
+  secretary?: SecretaryConfig;
+  /** `[capture] fetch_sites` (D-154): written only when the file has it; absent, no site. */
+  fetchSites?: string[];
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -118,7 +130,14 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       // Absent means every alias on under its own name: kept absent, as written.
       ...(isDeepStrictEqual(config.cloud.models, defaultCloudModels()) ? {} : { models: structuredClone(config.cloud.models) }),
     },
-    projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
+    projects: config.projects.map(({ name, path, label, parts, folders }) => ({
+      name,
+      path,
+      label,
+      ...(parts === undefined ? {} : { parts: [...parts] }),
+      ...(folders === undefined ? {} : { folders: folders.map((folder) => ({ ...folder })) }),
+    })),
+    ...(config.projectRules.template === undefined && Object.keys(config.projectRules.projects).length === 0 ? {} : { projectRules: structuredClone(config.projectRules) }),
     characters: { ...config.characters },
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
     // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
@@ -128,6 +147,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(raw.participants === undefined ? {} : { leaveAfter: config.participants.leaveAfter }),
     // Kept absent when the file has no section: saving another card does not add it.
     ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
+    ...(raw.secretary === undefined ? {} : { secretary: structuredClone(config.secretary) }),
+    ...(raw.capture === undefined ? {} : { fetchSites: [...config.capture.fetchSites] }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -173,6 +194,27 @@ function cloudModelsSection(cloud: Settings['cloud']): string[] {
   ];
 }
 
+/**
+ * A text of the user over several lines, as a multi-line literal string when
+ * it can be one (readable when edited by hand), a basic string otherwise.
+ */
+function longText(value: string): string {
+  return value.includes('\n') && !value.includes("'''") && !value.endsWith("'") && !/[\p{Cc}--[\t\n]]/v.test(value) ? `'''\n${value}'''` : str(value);
+}
+
+/** `[project_rules]` (I-14, D-174): the template, then the projects with their own rules. */
+function projectRulesSection(rules: ProjectRules | undefined): string[] {
+  const projects = Object.entries(rules?.projects ?? {});
+  if (rules === undefined || (rules.template === undefined && projects.length === 0)) {
+    return ['#', '# [project_rules]', '# template = "Comments in English. Never add a Co-Authored-By line."', '#', '# [project_rules.projects]', '# site = "Use pnpm, never npm."'];
+  }
+  return [
+    '[project_rules]',
+    ...(rules.template === undefined ? [] : [`template = ${longText(rules.template)}`]),
+    ...(projects.length === 0 ? [] : ['', '[project_rules.projects]', ...projects.map(([name, text]) => `${name} = ${longText(text)}`)]),
+  ];
+}
+
 /** `[personas.<agent>]`: every field, the display name and the text only when set. */
 function personasSection(personas: Personas | undefined): string[] {
   if (personas === undefined || Object.keys(personas).length === 0) {
@@ -197,11 +239,16 @@ function personasSection(personas: Personas | undefined): string[] {
   ]);
 }
 
-/** `[agents.<id>]`: only the agents with a model. */
+/** `[agents.<id>]`: only the agents with a model or skills (D-161). */
 function agentsSection(agents: AgentsSettings | undefined): string[] {
-  const chosen = Object.entries(agents ?? {}).filter((entry): entry is [string, Required<AgentsSettings[string]>] => entry[1].model !== undefined);
-  if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"'];
-  return chosen.flatMap(([agent, { model }], index) => [...(index === 0 ? [] : ['']), `[agents.${agent}]`, `model = ${str(model)}`]);
+  const chosen = Object.entries(agents ?? {}).filter(([, settings]) => settings.model !== undefined || (settings.skills?.length ?? 0) > 0);
+  if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"', '# skills = ["anthropics/skills/pdf"]'];
+  return chosen.flatMap(([agent, { model, skills }], index) => [
+    ...(index === 0 ? [] : ['']),
+    `[agents.${agent}]`,
+    ...(model === undefined ? [] : [`model = ${str(model)}`]),
+    ...(skills === undefined || skills.length === 0 ? [] : [`skills = [${skills.map(str).join(', ')}]`]),
+  ]);
 }
 
 function notificationsSection(notifications: NotificationsConfig | undefined): string[] {
@@ -213,6 +260,23 @@ function notificationsSection(notifications: NotificationsConfig | undefined): s
     `failures = ${String(notifications.failures)}`,
     ...(notifications.quiet === undefined ? [] : [`quiet = ${str(quietText(notifications.quiet))}`]),
   ];
+}
+
+function secretarySection(secretary: SecretaryConfig | undefined): string[] {
+  const { enabled, morning, afternoon, evening, days } = secretary ?? DEFAULT_SECRETARY;
+  const lines = [
+    '[secretary]',
+    `enabled = ${String(enabled)}`,
+    `morning = ${str(morning)}`,
+    `afternoon = ${str(afternoon)}`,
+    `evening = ${str(evening)}`,
+    `days = ${list(days)}`,
+  ];
+  return secretary === undefined ? ['#', ...lines.map((line) => `# ${line}`)] : lines;
+}
+
+function captureSection(fetchSites: string[] | undefined): string[] {
+  return fetchSites === undefined ? ['#', '# [capture]', '# fetch_sites = ["x.com"]'] : ['[capture]', `fetch_sites = ${list(fetchSites)}`];
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -347,23 +411,43 @@ export function renderSettings(settings: Settings): string {
     '# on. Applies without a restart.',
     ...cloudModelsSection(cloud),
     '',
-    '# Projects (D-058): the folders a cloud executor may work on, as the user',
-    '# does with the CLI. `path` is ~/<folder> under your home (never the home',
-    '# itself, hidden folders, Library or Arianna) or repos/<name> for a folder',
-    '# inside Arianna; it must be the top of a git repository. `label` is L0 or',
-    '# L1 (default L1): every file of the project goes to the cloud with it. The',
-    '# wizard links repos/<name> to each folder under your home, as a shortcut:',
-    '# the executor always uses `path`. A privacy setting: only the user edits',
-    '# it, never an agent; it applies without a restart.',
+    '# Projects (D-058, D-145): the folders a cloud executor may work on, as the',
+    '# user does with the CLI. `path` is ~/<folder> under your home (never the',
+    '# home itself, hidden folders, Library or Arianna) or repos/<name> for a',
+    '# folder inside Arianna. A project is a container: when `path` is the top',
+    '# of a git repository it is one part, as before; otherwise its parts are',
+    '# the direct subfolders that are the top of a git repository (or only those',
+    '# listed in `parts = ["site-admin", "site-client"]`), and the Coder works',
+    '# in one part at a time, never in the container. `label` is L0 or L1',
+    '# (default L1): every file of a part goes to the cloud with it. The other',
+    '# subfolders are management folders, the knowledge of the project, read',
+    '# only on this computer: Workplan and IM are L1, every other one L2, unless',
+    '# a [[project.folder]] gives its label (path = the folder name, label L0-L3;',
+    '# the page Progetti writes them). The wizard links repos/<name> to each',
+    '# folder under your home, as a shortcut: the executor always uses `path`.',
+    '# A privacy setting: only the user edits it, never an agent; it applies',
+    '# without a restart.',
     ...(settings.projects.length === 0
-      ? ['#', '# [[project]]', '# name = "site"', '# path = "~/Projects/site"', '# label = "L1"']
+      ? ['#', '# [[project]]', '# name = "site"', '# path = "~/Projects/site"', '# label = "L1"', '#', '# [[project.folder]]', '# path = "Workplan"', '# label = "L1"']
       : settings.projects.flatMap((project, index) => [
           ...(index === 0 ? [] : ['']),
           '[[project]]',
           `name = ${str(project.name)}`,
           `path = ${str(project.path)}`,
           `label = ${str(project.label)}`,
+          ...(project.parts === undefined ? [] : [`parts = [${project.parts.map(str).join(', ')}]`]),
+          ...(project.folders ?? []).flatMap((folder) => ['', '[[project.folder]]', `path = ${str(folder.path)}`, `label = ${str(folder.label)}`]),
         ])),
+    '',
+    '# Rules of the projects (I-14, D-174): your text, L1 by your declaration,',
+    '# at the head of every delegation on a project, the same for Claude and for',
+    '# Codex, through the gateway: no personal data here. `template` is the',
+    '# common model; a line of [project_rules.projects] (project = "text") gives',
+    '# a project its own rules instead, an empty text none. At most 4000',
+    '# characters each. Whatever the text says, the agents never commit: the',
+    '# .git folder of the project is read only for them. Applies without a',
+    '# restart.',
+    ...projectRulesSection(settings.projectRules),
     '',
     '# Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder',
     '# of data/characters/ you copy there by hand (PNG sheets in the format of',
@@ -392,6 +476,10 @@ export function renderSettings(settings: Settings): string {
     '# and the card in agents/<id>.yaml allows the cloud: never for arianna,',
     '# whose model is the orchestrator of [roles], local only. Not a privacy',
     '# setting: it never turns an executor on. Applies without a restart.',
+    '# `skills` (D-161) are skills of the catalog in data/catalogs/skills, as',
+    '# owner/repo/slug: their text goes in each delivery to the agent as',
+    '# third-party data, never to arianna, never to an agent whose card closes',
+    '# untrusted_content.',
     ...agentsSection(settings.agents),
     '',
     '# Characters drawn by a model (D-123): `model` is the one that draws the',
@@ -449,6 +537,25 @@ export function renderSettings(settings: Settings): string {
     '# (across midnight too); without it, no quiet hours. Absent: every kind on.',
     '# Applies without a restart.',
     ...notificationsSection(settings.notifications),
+    '',
+    '# The secretary (I-12, D-144): the reminders of your commitments in three',
+    '# moments of the day, local time and in this order: `morning` (the',
+    '# commitments of the day), `afternoon` (those still open), `evening` (the',
+    '# report of those not done); `days` among mon, tue, wed, thu, fri, sat,',
+    '# sun. A reminder never carries the text of a commitment outside this',
+    '# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a',
+    '# restart.',
+    ...secretarySection(settings.secretary),
+    '',
+    '# Links fetched and summarized (D-154): the links of these sites saved in',
+    '# kb/inbox are downloaded by the core and summarized by the local model',
+    '# when the note is organized. A site covers its subdomains (x.com also',
+    '# mobile.x.com). Downloading sends the address of the link to its site',
+    '# (for x.com and twitter.com to publish.twitter.com, the official oEmbed of',
+    '# X); nothing else leaves. A link of any other site stays a link, with a',
+    '# "Scarica e riassumi" button in Pensieri. Absent: no site. Changed from the',
+    '# settings page with a confirmation. Applies without a restart.',
+    ...captureSection(settings.fetchSites),
     '',
     '# What the web chat says this installation is (D-089): development while the',
     '# database uses the development passwords or while mode = "development";',

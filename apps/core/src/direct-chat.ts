@@ -1,6 +1,7 @@
-import type { LoadedAgent } from '@arianna/agents';
+import { isFinanceCard, type LoadedAgent } from '@arianna/agents';
 import { isAtMost, type ConversationMode } from '@arianna/policy';
 
+import { GOD_AGENT, GOD_PROJECT } from './god/clone.ts';
 import { briefCeiling, CLOUD_DELEGATES, delegationRoute, isCloudRoute } from './orchestrator/delegate.ts';
 
 /**
@@ -22,16 +23,38 @@ export interface DirectPolicy {
   modes: ConversationMode[];
   /** The conversation needs one of the approved projects. */
   project: boolean;
+  /**
+   * Only on a part of this project (D-127): GOD works on the clones of
+   * Arianna's code alone. The chat opens it from its own entry, not from the
+   * list of agents of "+ Nuovo".
+   */
+  container?: string;
+  /**
+   * The agent of the Finances (D-183): its conversation is private and marked
+   * from birth, and it answers with its read-only tools on the local model.
+   */
+  finance?: true;
+}
+
+/** True when `project` (a part `<container>:<part>`, or a project of one part) belongs to the container the policy asks for, or the policy asks for none. */
+export function projectFits(policy: Pick<DirectPolicy, 'container'>, project: string | undefined): boolean {
+  if (policy.container === undefined) return true;
+  return project !== undefined && (project === policy.container || project.startsWith(`${policy.container}:`));
 }
 
 /** The policy of one agent, or undefined when it cannot answer a direct chat now (its executor is off). */
 export function directPolicyOf(name: string, agent: LoadedAgent, available: { claude: boolean; codex: boolean }): DirectPolicy | undefined {
   if (name === 'arianna') return undefined;
+  // The agent of the Finances (D-183): only in a private conversation, marked from birth, nothing of it goes out.
+  // It answers with its tools on the local model (as Arianna does), not with one call like the other local agents.
+  if (isFinanceCard(agent.card) && agent.card.executors.every((executor) => executor === 'local')) {
+    return { agent: name, description: agent.card.description, cloud: false, executors: [], modes: ['private'], project: false, finance: true };
+  }
   const route = delegationRoute(agent.card);
   if (isCloudRoute(route)) {
     const executors = agent.card.executors.filter((executor): executor is 'claude' | 'codex' => (CLOUD_DELEGATES as readonly string[]).includes(executor) && available[executor as 'claude' | 'codex']);
     if (executors.length === 0) return undefined;
-    return { agent: name, description: agent.card.description, cloud: true, executors, modes: ['work'], project: true };
+    return { agent: name, description: agent.card.description, cloud: true, executors, modes: ['work'], project: true, ...(name === GOD_AGENT ? { container: GOD_PROJECT } : {}) };
   }
   if (route === 'local') {
     // A brief of a private conversation is L2: only an agent that may read it answers there without a declassification.

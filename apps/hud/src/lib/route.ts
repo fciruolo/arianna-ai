@@ -58,6 +58,13 @@ export function isOfficePath(pathname: string): boolean {
   return pathname === OFFICE_PATH || pathname === `${OFFICE_PATH}/`;
 }
 
+/** The page of GOD (D-127): Arianna developed from inside Arianna. */
+export const GOD_PATH = '/god';
+
+export function isGodPath(pathname: string): boolean {
+  return pathname === GOD_PATH || pathname === `${GOD_PATH}/`;
+}
+
 /** The page of the thoughts (D-090). */
 export const THOUGHTS_PATH = '/pensieri';
 
@@ -65,9 +72,24 @@ export function isThoughtsPath(pathname: string): boolean {
   return pathname === THOUGHTS_PATH || pathname === `${THOUGHTS_PATH}/`;
 }
 
-/** The knowledge page with a node selected (D-090): `/conoscenza?nota=inbox/x.md`. */
-export function knowledgePathFor(nodeId: string): string {
-  return `${KNOWLEDGE_PATH}?${new URLSearchParams({ nota: nodeId }).toString()}`;
+/** What the knowledge page shows: the user's notes (kb/) or Arianna's own documents (D-155). */
+export type KnowledgeSource = 'kb' | 'arianna';
+
+/**
+ * The knowledge page with a node selected (D-090): `/conoscenza?nota=inbox/x.md`;
+ * with Arianna's documents (D-155) `fonte=arianna` comes first.
+ */
+export function knowledgePathFor(nodeId?: string, source: KnowledgeSource = 'kb'): string {
+  const params = new URLSearchParams();
+  if (source === 'arianna') params.set('fonte', 'arianna');
+  if (nodeId !== undefined) params.set('nota', nodeId);
+  const query = params.toString();
+  return query === '' ? KNOWLEDGE_PATH : `${KNOWLEDGE_PATH}?${query}`;
+}
+
+/** The source the address of the knowledge page asks for: anything but `fonte=arianna` is the notes. */
+export function knowledgeSource(search: string): KnowledgeSource {
+  return new URLSearchParams(search).get('fonte')?.trim().toLowerCase() === 'arianna' ? 'arianna' : 'kb';
 }
 
 /** The node the address of the knowledge page selects, or undefined. */
@@ -76,9 +98,17 @@ export function knowledgeFocus(search: string): string | undefined {
   return id === undefined || id === '' ? undefined : id;
 }
 
-/** The path of a conversation, or the root when none is open. */
-export function pathFor(conversationId: string | null): string {
-  return conversationId === null ? '/' : `/c/${conversationId}`;
+/** The secretary's one conversation (D-156): its own address instead of `/c/<id>`. */
+export const SECRETARY_PATH = '/segretaria';
+
+export function isSecretaryPath(pathname: string): boolean {
+  return pathname === SECRETARY_PATH || pathname === `${SECRETARY_PATH}/`;
+}
+
+/** The path of a conversation (`/segretaria` for the secretary's, D-156), or the root when none is open. */
+export function pathFor(conversationId: string | null, secretary = false): string {
+  if (conversationId === null) return '/';
+  return secretary ? SECRETARY_PATH : `/c/${conversationId}`;
 }
 
 /** The tab title: the conversation's title, then the app's name. */

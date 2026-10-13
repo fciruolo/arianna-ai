@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { captureNote, deleteNote, fetchNoteLink, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
   errorText,
@@ -14,7 +15,9 @@ import {
 } from '../lib/italian.ts';
 import {
   byteLength,
+  canFetch,
   displayTitle,
+  fetchSettled,
   filterThoughts,
   graphId,
   groupThoughts,
@@ -32,9 +35,11 @@ import {
   type NoteSummary,
   type StatusFilter,
 } from '../lib/thoughts.ts';
+import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
+import PageHeader from './PageHeader.vue';
 
 /**
  * "Pensieri" (D-090): a large field to write a thought, saved at once in
@@ -68,6 +73,14 @@ const noteLoading = ref(false);
 const noteError = ref<string | null>(null);
 const requeueing = ref(false);
 const panelNotice = ref<string | null>(null);
+/** The note whose link is being downloaded and summarized (D-154). */
+const fetching = ref<string | null>(null);
+/** The thought waiting for the user to confirm its deletion for good (D-157), and the one being deleted. */
+const deleting = ref<string | null>(null);
+/** The same from the panel of the open thought. */
+const deletingOpen = ref(false);
+const removing = ref(false);
+const deleteError = ref<string | null>(null);
 
 const counter = computed(() => sizeCounter(draft.value));
 const tooLarge = computed(() => byteLength(draft.value) > MAX_NOTE_BYTES);
@@ -196,6 +209,7 @@ async function read(name: string): Promise<void> {
 
 function open(name: string): void {
   panelNotice.value = null;
+  deletingOpen.value = false;
   if (selectedName.value === name) return;
   selectedName.value = name;
   note.value = null;
@@ -207,6 +221,7 @@ function closePanel(): void {
   note.value = null;
   noteError.value = null;
   panelNotice.value = null;
+  deletingOpen.value = false;
   readRequest += 1;
 }
 
@@ -244,6 +259,75 @@ async function organizeAgain(): Promise<void> {
   }
 }
 
+const FETCH_POLL_MS = 3_000;
+/** The model may wait for a call or a task to end: the panel stops looking after this long. */
+const FETCH_WAIT_MS = 5 * 60_000;
+let fetchTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** "Scarica e riassumi" (D-154): the core downloads the link and the local model organizes the note again. */
+async function fetchAndSummarize(): Promise<void> {
+  const current = note.value;
+  if (current === null || fetching.value !== null || !canFetch(current)) return;
+  const name = current.name;
+  fetching.value = name;
+  panelNotice.value = null;
+  try {
+    await fetchNoteLink(name);
+  } catch (cause) {
+    fetching.value = null;
+    panelNotice.value = errorText(cause);
+    return;
+  }
+  const started = Date.now();
+  const look = (): void => {
+    fetchTimer = setTimeout(() => {
+      void (async () => {
+        if (!alive || fetching.value !== name) return;
+        try {
+          const loaded = await loadNote(name);
+          if (fetchSettled(current, loaded)) {
+            fetching.value = null;
+            if (selectedName.value === name) {
+              note.value = loaded;
+              panelNotice.value = loaded.fetchFailed ? 'Non sono riuscita a scaricare il link: il motivo è nella sezione «Contenuto».' : null;
+            }
+            void refresh();
+            return;
+          }
+        } catch {
+          // Read again at the next look.
+        }
+        if (Date.now() - started > FETCH_WAIT_MS) {
+          fetching.value = null;
+          if (selectedName.value === name) panelNotice.value = 'Il riassunto del link non è ancora pronto: il modello locale potrebbe essere occupato. Riapri il pensiero più tardi.';
+          return;
+        }
+        look();
+      })();
+    }, FETCH_POLL_MS);
+  };
+  look();
+}
+
+/** "Elimina" confirmed: the file of the thought goes for good; the list and the panel let it go. */
+async function removeThought(name: string): Promise<void> {
+  if (removing.value) return;
+  removing.value = true;
+  deleteError.value = null;
+  try {
+    await deleteNote(name);
+    deleting.value = null;
+    deletingOpen.value = false;
+    if (selectedName.value === name) closePanel();
+    notes.value = notes.value.filter((item) => item.name !== name);
+    await refresh();
+  } catch (cause) {
+    deleteError.value = `Non ho eliminato il pensiero. ${errorText(cause)}`;
+  } finally {
+    removing.value = false;
+  }
+}
+
 function onWindowKey(event: KeyboardEvent): void {
   if (event.key === 'Escape' && selectedName.value !== null) closePanel();
 }
@@ -259,6 +343,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false;
   clearTimeout(timer);
+  clearTimeout(fetchTimer);
   window.removeEventListener('keydown', onWindowKey);
 });
 </script>
@@ -266,14 +351,17 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative flex min-h-0 flex-1 overflow-hidden">
     <div class="min-w-0 flex-1 overflow-y-auto">
-      <div class="mx-auto flex max-w-[820px] flex-col gap-5 px-4 pt-5 pb-10 md:px-6">
+      <div class="mx-auto flex max-w-[1120px] flex-col gap-4 px-4 pt-5 pb-10 md:px-6">
+        <PageHeader title="Pensieri" title-id="thoughts-title">
+          Scrivi un pensiero e basta: il modello locale gli dà titolo, riassunto, collegamenti e tag. Restano in <span class="font-mono text-[13px]">kb/inbox</span>, Privati, su questo computer.
+          <template #actions>
+            <span class="pill">{{ counts.all === 1 ? '1 pensiero' : `${String(counts.all)} pensieri` }}</span>
+            <button type="button" class="btn px-2.5 py-1 text-[13.5px]" aria-label="Aggiorna l’elenco" @click="refresh"><Icon name="retry" :size="14" />Aggiorna</button>
+          </template>
+        </PageHeader>
+
         <!-- The field -->
-        <section class="hud-card p-4" aria-labelledby="thoughts-title">
-          <div class="mb-2.5 flex items-center gap-2">
-            <Icon name="thoughts" :size="16" />
-            <h1 id="thoughts-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Pensieri</h1>
-            <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">kb/inbox · Privato · resta qui</span>
-          </div>
+        <section class="rounded-xl border border-line bg-surface-2 p-4" aria-label="Nuovo pensiero">
           <form @submit.prevent="save">
             <label for="thought" class="sr-only">Pensiero</label>
             <textarea
@@ -282,14 +370,14 @@ onBeforeUnmount(() => {
               v-model="draft"
               rows="3"
               :placeholder="THOUGHT_PLACEHOLDER"
-              class="block max-h-[360px] min-h-[88px] w-full resize-none rounded-lg border border-line bg-surface-2 px-3.5 py-3 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted focus:border-accent"
+              class="block max-h-[360px] min-h-[88px] w-full resize-none rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted"
               :aria-invalid="tooLarge"
               aria-describedby="thought-help"
               @keydown="onKey"
               @input="resize"
             />
             <div class="mt-2.5 flex flex-wrap items-center gap-2">
-              <p id="thought-help" class="min-w-0 flex-1 font-mono text-[10.5px] text-muted">
+              <p id="thought-help" class="min-w-0 flex-1 text-[13px] text-muted">
                 ⌘/Ctrl+Invio per salvare · il modello locale scrive titolo, riassunto, collegamenti e tag, il tuo testo resta in fondo
                 <span v-if="counter !== undefined" :class="tooLarge ? 'text-danger' : ''"> · {{ counter }}</span>
               </p>
@@ -309,7 +397,7 @@ onBeforeUnmount(() => {
             </div>
           </form>
           <p v-if="saveError !== null" role="alert" class="mt-2.5 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ saveError }}</p>
-          <p v-else-if="saved !== null" role="status" class="mt-2.5 flex items-center gap-2 font-mono text-xs text-muted">
+          <p v-else-if="saved !== null" role="status" class="mt-2.5 flex items-center gap-2 text-[13px] text-muted">
             <Icon name="saved" :size="13" />{{ saved }}
           </p>
         </section>
@@ -317,7 +405,7 @@ onBeforeUnmount(() => {
         <!-- Filters -->
         <section aria-label="Elenco dei pensieri" class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-2">
-            <label class="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 focus-within:border-accent">
+            <label class="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5">
               <Icon name="search" :size="14" />
               <input
                 v-model="query"
@@ -334,42 +422,52 @@ onBeforeUnmount(() => {
                 type="button"
                 role="radio"
                 :aria-checked="status === item.value"
-                class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
-                :class="status === item.value ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink'"
+                class="rounded-md px-2.5 py-1 text-[13.5px]"
+                :class="status === item.value ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:text-ink'"
                 @click="status = item.value"
               >
                 {{ item.text }} <span class="text-muted">{{ counts[item.value] }}</span>
               </button>
             </div>
-            <button type="button" class="rounded-md p-1.5 text-muted hover:text-ink" title="Aggiorna" aria-label="Aggiorna l’elenco" @click="refresh">
-              <Icon name="retry" :size="15" />
-            </button>
           </div>
 
           <p v-if="listError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ listError }}</p>
-          <p v-if="loading && notes.length === 0" class="py-6 text-center font-mono text-xs tracking-[0.12em] text-muted">CARICO I PENSIERI…</p>
+          <p v-if="loading && notes.length === 0" class="py-6 text-center text-[14px] text-muted">Carico i pensieri…</p>
           <p v-else-if="!loading && notes.length === 0 && listError === null" class="py-6 text-center text-sm text-muted">
             Ancora nessun pensiero: scrivine uno qui sopra, o usa «/nota» nella chat.
           </p>
           <p v-else-if="shown.length === 0 && notes.length > 0" class="py-4 text-center text-sm text-muted">Nessun pensiero corrisponde al filtro.</p>
 
           <div v-for="group in groups" :key="group.title">
-            <h2 class="hud-title mx-1 mb-1.5">{{ group.title }}</h2>
+            <h2 class="mx-1 mb-1.5 text-[13px] font-semibold text-muted">{{ group.title }}</h2>
             <ul class="flex flex-col gap-1.5">
-              <li v-for="item in group.items" :key="item.name">
+              <li v-for="item in group.items" :key="item.name" class="group relative">
+                <DeleteConfirm
+                  v-if="deleting === item.name"
+                  :subject="displayTitle(item)"
+                  :text="DELETE_NOTE_TEXT"
+                  :extra="deleteError"
+                  :busy="removing"
+                  @confirm="removeThought(item.name)"
+                  @cancel="
+                    deleting = null;
+                    deleteError = null;
+                  "
+                />
                 <button
+                  v-else
                   type="button"
-                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors"
+                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 pr-10 text-left transition-colors"
                   :class="selectedName === item.name ? 'border-accent bg-surface-2' : 'border-line bg-surface hover:border-line-strong'"
                   :aria-current="selectedName === item.name ? 'true' : undefined"
                   @click="open(item.name)"
                 >
                   <span class="flex items-start gap-2">
                     <span class="min-w-0 flex-1 text-[14px] leading-snug font-medium break-words">{{ displayTitle(item) }}</span>
-                    <span class="shrink-0 font-mono text-[10.5px] text-muted">{{ timeOf(item) }}</span>
+                    <span class="shrink-0 text-[13px] text-muted tabular-nums">{{ timeOf(item) }}</span>
                   </span>
-                  <span class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10.5px] text-muted">
-                    <span class="tracking-[0.06em] uppercase">{{ kindText(item) }}</span>
+                  <span class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
+                    <span>{{ kindText(item) }}</span>
                     <span
                       class="inline-flex items-center gap-1.5"
                       :class="{ 'text-accent': stateOf(item) === 'organizing', 'text-ok': stateOf(item) === 'organized', 'text-warn': stateOf(item) === 'stuck' }"
@@ -385,14 +483,27 @@ onBeforeUnmount(() => {
                       />
                       {{ THOUGHT_STATE_TEXT[stateOf(item)] }}
                     </span>
-                    <span v-for="tag in item.tags" :key="tag" class="text-ink/70">#{{ tag }}</span>
+                    <span v-for="tag in item.tags" :key="tag" class="font-mono text-[12.5px] text-ink/70">#{{ tag }}</span>
                   </span>
                   <span v-if="stateOf(item) === 'organizing'" class="hud-scan w-full" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="deleting !== item.name"
+                  type="button"
+                  class="absolute right-2 bottom-2 rounded-md p-1 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                  :aria-label="`Elimina per sempre ${displayTitle(item)}`"
+                  title="Elimina per sempre"
+                  @click="
+                    deleteError = null;
+                    deleting = item.name;
+                  "
+                >
+                  <Icon name="delete" :size="15" />
                 </button>
               </li>
             </ul>
           </div>
-          <p v-if="hidden > 0" class="font-mono text-[10.5px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
+          <p v-if="hidden > 0" class="text-[13px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
         </section>
       </div>
     </div>
@@ -405,12 +516,12 @@ onBeforeUnmount(() => {
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
         <div class="min-w-0 flex-1">
-          <p class="flex flex-wrap items-center gap-x-2 font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">
+          <p class="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
             <span>{{ selected === undefined ? 'Pensiero' : kindText(selected) }}</span>
             <span v-if="selectedState !== undefined">· {{ THOUGHT_STATE_TEXT[selectedState] }}</span>
             <span v-if="selected !== undefined && timeOf(selected) !== ''">· {{ timeOf(selected) }}</span>
           </p>
-          <h2 class="mt-1 font-hud text-[17px] leading-snug font-semibold break-words">
+          <h2 class="mt-1 text-[17px] leading-snug font-semibold break-words">
             {{ note?.title ?? (selected === undefined ? selectedName : displayTitle(selected)) }}
           </h2>
         </div>
@@ -423,13 +534,51 @@ onBeforeUnmount(() => {
         <button v-if="selectedState === 'stuck'" type="button" class="btn px-2.5 py-1 text-xs" :disabled="requeueing" @click="organizeAgain">
           <Icon name="retry" :size="14" />Riordina di nuovo
         </button>
+        <button
+          v-if="note !== null && note.name === selectedName && canFetch(note) && selectedState !== 'organizing'"
+          type="button"
+          class="btn px-2.5 py-1 text-xs"
+          :disabled="fetching !== null"
+          title="Il nucleo scarica il link e il modello locale lo riassume nel pensiero; il sito riceve solo l’indirizzo"
+          @click="fetchAndSummarize"
+        >
+          <Icon name="link" :size="14" />{{ fetching === note.name ? 'Scarico e riassumo…' : 'Scarica e riassumi' }}
+        </button>
         <button v-if="selected !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('openGraph', graphId(selected.path))">
           <Icon name="knowledge" :size="14" />Apri nel grafo
         </button>
+        <button
+          v-if="selected !== undefined"
+          type="button"
+          class="btn px-2.5 py-1 text-xs hover:text-danger"
+          @click="
+            deleteError = null;
+            deletingOpen = true;
+          "
+        >
+          <Icon name="delete" :size="14" />Elimina
+        </button>
+      </div>
+      <div v-if="selected !== undefined && deletingOpen" class="border-b border-line px-4 py-2.5">
+        <DeleteConfirm
+          :subject="displayTitle(selected)"
+          :text="DELETE_NOTE_TEXT"
+          :extra="deleteError"
+          :busy="removing"
+          @confirm="removeThought(selected.name)"
+          @cancel="
+            deletingOpen = false;
+            deleteError = null;
+          "
+        />
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div v-if="fetching !== null && fetching === selectedName" class="mb-3">
+          <p class="mb-1.5 font-mono text-[12.5px] text-accent">Scarico il link e lo riassumo col modello locale…</p>
+          <span class="hud-scan block w-full" aria-hidden="true" />
+        </div>
         <div v-if="selectedState === 'organizing'" class="mb-3">
-          <p class="mb-1.5 font-mono text-[11px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
+          <p class="mb-1.5 font-mono text-[12.5px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
           <span class="hud-scan block w-full" aria-hidden="true" />
         </div>
         <div v-if="selected !== undefined && selected.tags.length > 0" class="mb-3 flex flex-wrap gap-1.5">
@@ -437,7 +586,7 @@ onBeforeUnmount(() => {
             v-for="tag in selected.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[11px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
             :title="`Filtra #${tag}`"
             @click="query = `#${tag}`"
           >

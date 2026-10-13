@@ -3,7 +3,7 @@
 // here it runs under a permission profile that opens the repository, keeps
 // .git and the rules that confine the agents read only (commits are approved
 // by the user, outside the sandbox), denies everything git ignores (data/,
-// kb/inbox, config/arianna.toml, repos/…: unlabelled, so L2) except the build
+// kb/inbox, kb/progetti, config/arianna.toml, repos/…: unlabelled, so L2) except the build
 // output and data/test-tmp for the tests, and reads only the toolchain besides. Codex
 // asks before any command outside the sandbox (approval on request). The
 // rules of the project come from AGENTS.md. Extra arguments go to `codex`,
@@ -21,6 +21,14 @@ const PROFILE = 'arianna-dev';
 
 /** What confines the agents: Codex reads it, never rewrites it. */
 export const READ_ONLY = ['.git', '.githooks', '.claude', 'CLAUDE.md', 'AGENTS.md'] as const;
+/**
+ * Denied whether they exist or not: they can appear while Codex runs (a note
+ * captured in kb/inbox, a project's notes in kb/progetti, a model added from
+ * Hugging Face), after `git status --ignored` has been read. The worktrees of
+ * Claude Code's agents are other checkouts with their own data/, and git lists
+ * them as untracked, not ignored.
+ */
+export const ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.user-catalog.yaml', 'kb/inbox', 'kb/progetti', 'repos', '.claude/worktrees'] as const;
 /** Ignored by git but only build output: node_modules and the compiled chat stay open. */
 const BUILD_OUTPUT = /(^|\/)(node_modules|dist)\/?$/;
 
@@ -35,7 +43,7 @@ export function ignoredPaths(porcelain: string): string[] {
 
 /** The filesystem table of the profile as an inline TOML table: the narrower rule wins. */
 export function devFilesystem(home: string, readable: readonly string[], ignored: readonly string[]): string {
-  const denied = new Set(['data', 'config/arianna.toml', ...ignored]);
+  const denied = new Set<string>([...ALWAYS_DENIED, ...ignored]);
   const entries: [string, string][] = [
     [':minimal', 'read'],
     ...readable.map((folder): [string, string] => [folder, 'read']),

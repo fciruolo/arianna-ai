@@ -3,7 +3,7 @@
 // environment and what the binary must report in its `init` message. Checked
 // on `claude --help` of 2.1.288 (`--no-session-persistence` on 2.1.292) and with real runs; the live contract and
 // canary evals check them again.
-import { isAbsolute, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 
 /**
  * Built-in tools a run may be given. Bash runs inside the sandbox of
@@ -55,6 +55,12 @@ export interface ProfileOptions {
    */
   persistSession?: boolean;
   sandbox: SandboxPaths;
+  /**
+   * Folders the file tools may read besides the working directory
+   * (`--add-dir`, which `--restricted` keeps them confined to): the read-only
+   * copy of a project's notes (D-166). Each must be readable in `sandbox` too.
+   */
+  addDirs?: readonly string[];
 }
 
 function checkFolders(name: string, folders: unknown): readonly string[] {
@@ -65,6 +71,11 @@ function checkFolders(name: string, folders: unknown): readonly string[] {
     }
   }
   return folders as readonly string[];
+}
+
+/** A path as a literal in a gitignore-style pattern of a permission rule. */
+function globEscape(path: string): string {
+  return path.replace(/[\\*?[\]{}!#]/g, (char) => `\\${char}`);
 }
 
 /**
@@ -81,7 +92,9 @@ function checkFolders(name: string, folders: unknown): readonly string[] {
  *   wherever they are; the workspace and `readable` are opened again (the
  *   narrower rule wins). What stays readable: the system folders (`/usr`,
  *   `/etc`, `/opt`, `/Library`…) and the toolchain;
- * - writes: only the workspace and the binary's temp folder;
+ * - writes: only the workspace and the binary's temp folder, never the
+ *   workspace's `.git` (I-14, D-174: the agents never commit, the user does),
+ *   closed for Bash in the sandbox and for the file tools by a deny rule;
  * - no network: an empty allowlist that refuses instead of asking, no local
  *   binding (on macOS the loopback services, database and local model
  *   included, stay out of reach), no Unix sockets.
@@ -91,15 +104,21 @@ export function claudeSettings(paths: SandboxPaths): string {
   const readable = checkFolders('readable', paths.readable);
   const denied = checkFolders('denied', paths.denied);
   if (denied.length === 0) throw new TypeError('claude: the sandbox needs the folders to deny (ARIANNA_HOME at least)');
+  const git = join(paths.workspace, '.git');
   return JSON.stringify({
-    permissions: { blockReadsOutsideWorkingDirectories: true, disableBypassPermissionsMode: 'disable' },
+    permissions: {
+      blockReadsOutsideWorkingDirectories: true,
+      disableBypassPermissionsMode: 'disable',
+      // `//` starts an absolute path; the rule covers every file tool that writes.
+      deny: [`Edit(/${globEscape(git)}/**)`, `Edit(/${globEscape(git)})`],
+    },
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: true,
       excludedCommands: [],
-      filesystem: { denyRead: [...denied], allowRead: [...workspace, ...readable] },
+      filesystem: { denyRead: [...denied], allowRead: [...workspace, ...readable], denyWrite: [git] },
       network: { allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowUnixSockets: [], allowAllUnixSockets: false },
     },
   });
@@ -121,6 +140,9 @@ export function claudeSettings(paths: SandboxPaths): string {
  * - `--settings` carries the sandbox and the read block (`claudeSettings`).
  * - `--no-session-persistence` when the session must not be saved (D-136):
  *   never together with `--resume`.
+ * - `--add-dir` only for the read-only copy of a project's notes (D-166), a
+ *   folder the sandbox reads too. `--add-dir` may load a CLAUDE.md of its
+ *   folder even under `--safe-mode`: the copy never holds one (`checkCoderNote`).
  * - Never `--bare`: it needs an API key, and Arianna uses the subscription (D-002).
  */
 export function claudeArgs(options: ProfileOptions): string[] {
@@ -134,6 +156,10 @@ export function claudeArgs(options: ProfileOptions): string[] {
   // The router and its budget approval see the alias: the name stays in its family (D-071).
   if (options.modelName !== undefined && !new RegExp(`^(claude-)?${options.model}(?![A-Za-z0-9])`).test(options.modelName)) {
     throw new TypeError(`claude: the model name is not of the ${options.model} family`);
+  }
+  const addDirs = checkFolders('addDirs', options.addDirs ?? []);
+  for (const folder of addDirs) {
+    if (!options.sandbox.readable.includes(folder)) throw new TypeError('claude: a folder given to the file tools must be readable in the sandbox');
   }
   const args = [
     '-p',
@@ -161,6 +187,8 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--disable-slash-commands',
     '--no-chrome',
   );
+  // `--add-dir=<folder>`: one value per flag, never read as the start of a list.
+  for (const folder of addDirs) args.push(`--add-dir=${folder}`);
   const persist: unknown = options.persistSession === undefined ? true : options.persistSession;
   // Types do not hold at runtime: a value that is not a boolean must not read as "saved".
   if (typeof persist !== 'boolean') throw new TypeError('claude: persistSession must be a boolean');
