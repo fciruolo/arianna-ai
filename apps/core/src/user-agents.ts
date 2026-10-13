@@ -392,6 +392,11 @@ export function createUserAgents(options: {
   official: ReadonlySet<string>;
   /** The catalog of agents (D-079); without it no card is made from a role. */
   catalog?: CatalogRoles;
+  /**
+   * Drops what arianna.toml keeps for an agent being deleted (`[agents.<id>]`: model and skills,
+   * D-161), before its files move; when it throws, the deletion is refused and nothing moves.
+   */
+  forget?: (name: string) => void;
   now?: () => number;
   confirmMs?: number;
 }): UserAgents {
@@ -896,6 +901,16 @@ export function createUserAgents(options: {
       const folder = `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}`;
       const to = join(bin, folder);
       mkdirSync(to, { mode: 0o700 });
+      // The settings before the files (choice of the user, 2026-10-13): a new agent with the same name starts without the old model and skills.
+      try {
+        options.forget?.(name);
+      } catch (error) {
+        rmSync(to, { recursive: true, force: true });
+        // Written meanwhile by someone else: a conflict, to try again; unreadable or refused: invalid.
+        const changed = error instanceof Error && 'code' in error && error.code === 'changed';
+        throw new UserAgentError(changed ? 'conflict' : 'invalid', `${name} was not deleted: arianna.toml could not be updated (${error instanceof Error ? error.message : String(error)})`);
+      }
+      // A move that fails past this point leaves the agent among the disabled ones without its model and skills (rare; accepted).
       for (const file of [`${name}.md`, `${name}.yaml`]) {
         const from = join(dirOf('disabled'), file);
         if (!existsSync(from) && !isLink(from)) continue;

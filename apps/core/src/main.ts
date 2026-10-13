@@ -138,6 +138,10 @@ const userAgents = createUserAgents({
   agents,
   official: new Set(agents.keys()),
   catalog: { role: (id) => agentsCatalog.role(id), adoptedRole: (page, path) => agentsCatalog.adoptedRole(page, path) },
+  // Deleting an agent drops its [agents.<id>] (model and skills) from arianna.toml (D-161), through the settings page made further below.
+  forget: (name) => {
+    settingsPage.forgetAgent(name);
+  },
 });
 // Only the name: the reason may quote a line of a card edited by hand; the Agents page shows it.
 for (const { name } of userAgents.load()) console.error(`user agent ${name} not loaded (see Impostazioni → Agenti)`);

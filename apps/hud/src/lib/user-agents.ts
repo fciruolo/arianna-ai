@@ -394,6 +394,12 @@ export function cloudLines(cloud: AgentProposal['cloud']): string[] {
 export function userAgentErrorText(error: unknown): string {
   if (!(error instanceof UserAgentApiError)) return 'Il core non risponde.';
   const message = error.message;
+  // Deleting also drops its model and skills from arianna.toml (D-161): when that file cannot be written, nothing is deleted.
+  if (/was not deleted: arianna\.toml/.test(message)) {
+    return error.status === 409
+      ? 'arianna.toml è cambiato nel frattempo: l’agente non è stato eliminato. Riprova.'
+      : 'arianna.toml non si legge o non si può aggiornare: l’agente non è stato eliminato. Correggi il file (Impostazioni lo segnala) e riprova.';
+  }
   if (error.status === 409) {
     if (/prepare the change again/.test(message)) return 'La scheda è cambiata o la conferma è scaduta: rivedi le modifiche e conferma di nuovo.';
     if (message.startsWith('agents/')) return 'In agents/ c’è già una scheda con questo nome.';

@@ -7,6 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - Impostazioni → Agenti: la scheda «Skill» di un agente spento permette di assegnare le skill prima di accenderlo (stessa regola: mai Arianna, mai una scheda con `untrusted_content` chiuso), i motivi di rifiuto sono tutti in italiano e la descrizione del Catalogo agenti non dice più «presto» per «+ Nuovo agente» (D-161).
+- Eliminare un agente toglie da `arianna.toml` anche il suo modello e le sue skill (`[agents.<id>]`): un agente nuovo con lo stesso nome parte senza modello né skill; se il file non si può aggiornare l'eliminazione è rifiutata e non sposta nulla (D-161).
 
 ## [0.89.0] - 2026-10-13
 
