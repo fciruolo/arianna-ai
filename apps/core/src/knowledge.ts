@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { isAtMost, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
+import { isAtMost, KB_ARCHIVE, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { ARIANNA_DOCS_LABEL, isAriannaPagePath, mentionPath, type AriannaDocs } from './arianna-docs.ts';
 import { headerFields, NoteError, noteLabel } from './notes.ts';
@@ -9,6 +9,8 @@ import { checkPagePath, KB_DIR, KB_PROJECT_NOTES, parsePage } from './orchestrat
 
 /** kb/progetti as an id relative to kb/ (D-145). */
 const PROJECT_NOTES_ID = KB_PROJECT_NOTES.slice(KB_DIR.length + 1);
+/** kb/archivio as an id relative to kb/ (D-198). */
+const ARCHIVE_ID = KB_ARCHIVE.slice(KB_DIR.length + 1);
 
 /**
  * The graph of the knowledge base for the "Conoscenza" page (D-087): every
@@ -127,9 +129,15 @@ function kbRoot(home: string): string | undefined {
   }
 }
 
-/** Page ids (relative to kb/) without following links or entering hidden folders; at most `limit` + 1. */
+/**
+ * Page ids (relative to kb/) without following links or entering hidden
+ * folders; at most `limit` + 1. kb/archivio is read last (D-198): the notes
+ * the Archivist filed never take the place of the other pages of kb/, and
+ * when the listing is cut, it is the archive that is cut.
+ */
 export function listPageIds(root: string, limit = MAX_GRAPH_PAGES): string[] {
   const found: string[] = [];
+  const archives: string[] = [];
   const walk = (dir: string, prefix: string): void => {
     let entries;
     try {
@@ -144,12 +152,14 @@ export function listPageIds(root: string, limit = MAX_GRAPH_PAGES): string[] {
       // readdir reports links as links: neither branch takes them.
       // kb/progetti is the knowledge of the projects (D-145), read with their own folder labels, never twice.
       if (entry.isDirectory()) {
-        if (id.toLowerCase() !== PROJECT_NOTES_ID) walk(join(dir, entry.name), id);
+        if (id.toLowerCase() === ARCHIVE_ID) archives.push(id);
+        else if (id.toLowerCase() !== PROJECT_NOTES_ID) walk(join(dir, entry.name), id);
       }
       else if (entry.isFile() && entry.name.endsWith('.md')) found.push(id);
     }
   };
   walk(root, '');
+  for (const id of archives) walk(join(root, id), id);
   return found;
 }
 
