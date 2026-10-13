@@ -231,6 +231,8 @@ export interface ApiServerOptions {
   styleExamples?: StyleExamples;
   /** The Italian descriptions of the skills written by Sonnet (I-20, D-185); without it the routes answer 404. */
   skillTranslations?: SkillTranslations;
+  /** The Italian descriptions of the roles of the catalog of agents (D-185); without it the routes answer 404 and the English stays. */
+  roleTranslations?: SkillTranslations;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
@@ -1283,7 +1285,7 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined, reports?: Safet
  * of the versions in use. A role's text is third-party data (L0), shown to
  * the user as it is, its hidden characters out; nothing here makes a card.
  */
-function agentsCatalogRoutes(catalog: AgentsCatalog | undefined, reports?: SafetyReports): Route[] {
+function agentsCatalogRoutes(catalog: AgentsCatalog | undefined, reports?: SafetyReports, translations?: SkillTranslations): Route[] {
   const need = (): AgentsCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
@@ -1324,6 +1326,16 @@ function agentsCatalogRoutes(catalog: AgentsCatalog | undefined, reports?: Safet
       if (reports === undefined) throw new HttpError(404, 'not found');
       const text = roleSafetyText(need().role(body.id));
       return { body: { safety: body.redo === true ? reports.redoText(text) : reports.ensureText(text) } };
+    }),
+    // The Italian descriptions of the roles (request of the user of 2026-10-13), as for the skills (D-185): asked when a list of roles is read.
+    route('GET', '/api/agents-catalog/translations', () => {
+      if (translations === undefined) throw new HttpError(404, 'not found');
+      return Promise.resolve({ body: translations.status() });
+    }),
+    route('POST', '/api/agents-catalog/translations', async (request) => {
+      onlyFields(await readJson(request), []);
+      if (translations === undefined) throw new HttpError(404, 'not found');
+      return { status: 202, body: translations.translateMissing() };
     }),
     // The role with the report of its version, when there is one; a GET never starts a reading.
     route('GET', '/api/agents-catalog/agent', (_request, url) => {
@@ -3194,7 +3206,7 @@ function changelogRoutes(changelog: { home: string } | undefined): Route[] {
  * it needs `{ confirm: true }`, sent only by the confirmation of the page;
  * so does taking it back, and a deletion needs the agent's name.
  */
-function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyReports): Route[] {
+function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyReports, translations?: SkillTranslations): Route[] {
   const need = (): UserAgents => {
     if (userAgents === undefined) throw new HttpError(404, 'not found');
     return userAgents;
@@ -3212,10 +3224,12 @@ function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyRep
    * D-196: an agent made from the catalog carries its safety report; the list starts the ones
    * whose texts changed (skills assigned or changed) or that may run again now (Claude back).
    */
-  const withSafety = (agent: UserAgentView): UserAgentView & { safety?: SafetyView } => {
-    if (reports === undefined || agent.catalog === undefined) return agent;
-    const safety = reports.ensure(agent.name);
-    return safety === undefined ? agent : { ...agent, safety };
+  const withSafety = (agent: UserAgentView): UserAgentView & { safety?: SafetyView; descriptionIt?: string } => {
+    if (agent.catalog === undefined) return agent;
+    // The description of a role, in Italian when it was translated (shown; the card keeps the original for Arianna).
+    const descriptionIt = translations?.lookup(agent.description);
+    const safety = reports?.ensure(agent.name);
+    return { ...agent, ...(safety === undefined ? {} : { safety }), ...(descriptionIt === undefined ? {} : { descriptionIt }) };
   };
   return [
     route('GET', '/api/agents', () =>
@@ -3688,7 +3702,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }),
   );
   table.push(...changelogRoutes(options.changelog));
-  table.push(...userAgentRoutes(options.userAgents, options.safetyReports));
+  table.push(...userAgentRoutes(options.userAgents, options.safetyReports, options.roleTranslations));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
   table.push(...imReportRoutes(options.imReports, options.projectContainers ?? (() => [])));
@@ -3704,7 +3718,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog, options.safetyReports));
-  table.push(...agentsCatalogRoutes(options.agentsCatalog, options.safetyReports));
+  table.push(...agentsCatalogRoutes(options.agentsCatalog, options.safetyReports, options.roleTranslations));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();

@@ -159,13 +159,13 @@ export function spaceText(bytes: number, maxBytes: number): string {
   return `${mib(bytes)} MiB su ${mib(maxBytes)} MiB`;
 }
 
-/** The roles whose name, description, division or source holds every word of the query. */
-export function filterRoles(roles: readonly AgentRoleSummary[], query: string, division = '', source = ''): AgentRoleSummary[] {
+/** The roles whose name, description (English or Italian), division or source holds every word of the query. */
+export function filterRoles(roles: readonly AgentRoleSummary[], query: string, division = '', source = '', translations?: Record<string, string>): AgentRoleSummary[] {
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== '');
   return roles.filter((role) => {
     if (division !== '' && role.division !== division) return false;
     if (source !== '' && role.source !== source) return false;
-    const text = `${role.name} ${role.slug} ${role.description} ${role.division}`.toLowerCase();
+    const text = `${role.name} ${role.slug} ${role.description} ${translations?.[role.id] ?? ''} ${role.division}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }

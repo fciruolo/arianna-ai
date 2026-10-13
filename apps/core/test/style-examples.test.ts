@@ -1,7 +1,7 @@
 // The examples of the styles and the Italian descriptions of the skills (I-20, D-185), with a fake Sonnet.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -9,7 +9,7 @@ import { resolveHome } from '@arianna/config';
 
 import { CloudTextError, createCloudText, type CloudTextRequest } from '../src/cloud-text.ts';
 import type { Sql } from '../src/db/client.ts';
-import { createSkillTranslations, parseTranslations, UNREADABLE_STOP } from '../src/skill-translations.ts';
+import { createSkillTranslations, parseTranslations, ROLE_TRANSLATIONS_FILE, ROLE_UNREADABLE_STOP, UNREADABLE_STOP } from '../src/skill-translations.ts';
 import { checkedPage, createStyleExamples, EXAMPLE_PROMPT, parseExamples, StyleExampleError } from '../src/style-examples.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `style-examples-${randomUUID()}`);
@@ -232,6 +232,47 @@ test('a readable answer leaves the run not stopped', async () => {
   await translations.idle();
   assert.equal(translations.status().stopped, null);
   assert.equal(translations.status().missing, 0);
+});
+
+test('the descriptions of the roles of the catalog of agents: their own file, prompt and events; one lookup for an agent', async () => {
+  const roles = [{ id: 'acme/agents/api', description: 'Expert API platform engineer for public and partner APIs — contract-first design (OpenAPI/gRPC).' }];
+  const asked: CloudTextRequest[] = [];
+  const events: string[] = [];
+  const dir = join(HOME, 'roles');
+  const translations = createSkillTranslations({
+    dir,
+    list: () => roles,
+    kind: 'roles',
+    onEvent: (kind) => events.push(kind),
+    ask: (request) => {
+      asked.push(request);
+      const items = JSON.parse(request.parts[1]?.text ?? '[]') as string[];
+      return Promise.resolve(JSON.stringify(items.map(() => 'Ingegnere esperto di piattaforme API pubbliche e per partner: progettazione contract-first (OpenAPI/gRPC).')));
+    },
+  });
+  translations.translateMissing();
+  await translations.idle();
+  const first = asked.at(0);
+  assert.ok(first);
+  assert.match(first.parts.at(0)?.text ?? '', /roles of AI agents/);
+  assert.equal(first.parts.at(1)?.source, 'agents-catalog:descriptions');
+  assert.match(first.purpose, /ruoli/);
+  assert.deepEqual(events, ['agents.translated']);
+  assert.match(translations.status().translations['acme/agents/api'] ?? '', /^Ingegnere esperto/);
+  // An agent made from the role keeps the English description in its card: the page asks for the Italian one by the text.
+  assert.match(translations.lookup(` ${roles[0]?.description ?? ''} `) ?? '', /^Ingegnere esperto/);
+  assert.equal(translations.lookup('Written by the user.'), undefined);
+  assert.ok(existsSync(join(dir, ROLE_TRANSLATIONS_FILE)));
+  // The skills keep their own file: nothing of the roles there.
+  assert.equal(existsSync(join(dir, 'skills.it.json')), false);
+});
+
+test('an unreadable answer for the roles says the roles, and the skills keep their own words', async () => {
+  const translations = createSkillTranslations({ dir: join(HOME, 'roles-u'), list: () => [{ id: 'a/b/r', description: 'Reviews code.' }], kind: 'roles', ask: () => Promise.resolve('non è JSON') });
+  translations.translateMissing();
+  await translations.idle();
+  assert.equal(translations.status().stopped, ROLE_UNREADABLE_STOP);
+  assert.notEqual(ROLE_UNREADABLE_STOP, UNREADABLE_STOP);
 });
 
 test('without Claude on this installation nothing starts', async () => {

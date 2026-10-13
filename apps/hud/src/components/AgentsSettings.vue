@@ -69,6 +69,7 @@ import PermissionConfirm from './PermissionConfirm.vue';
 import PermissionsPicker from './PermissionsPicker.vue';
 import PixelAgent from './PixelAgent.vue';
 import SafetyReportCard from './SafetyReportCard.vue';
+import TranslatedText from './TranslatedText.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
 import SheetPreview from './SheetPreview.vue';
 
@@ -720,7 +721,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             </label>
           </div>
           <h2 class="text-[22px] leading-tight font-semibold">{{ nameOf(current.id) }}</h2>
-          <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted">{{ current.description }}</p>
+          <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted"><TranslatedText :key="current.id" :original="current.description" :italian="current.view?.descriptionIt" /></p>
           <div class="flex flex-wrap items-center gap-2 text-[13.5px] text-muted">
             <span>Modello: <span :class="current.id === 'arianna' ? 'font-mono text-[12.5px]' : ''">{{ modelText(current) }}</span></span>
             <button v-if="canChat" type="button" class="btn px-2.5 py-1 text-[13px]" @click="emit('chat', current.id)">Apri una chat</button>

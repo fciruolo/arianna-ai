@@ -12,6 +12,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Quattro stati: nessun problema con i controlli superati; da guardare con riga, pezzo di testo evidenziato, gravità «Sospetto» o «Da capire» e spiegazione; in corso; non disponibile senza Claude o senza quota, con «Rifai il rapporto». Accendere con segnalazioni, a rapporto in corso o senza rapporto chiede una conferma in più, mai un blocco (D-196).
 - Dopo «Usa questa versione» di una raccolta, i ruoli cambiati da cui è nato un agente si rileggono da soli, solo nelle righe cambiate con il contesto intorno; le segnalazioni su righe rimaste uguali restano (D-196).
 
+- Descrizioni dei ruoli del Catalogo agenti in italiano, tradotte da Sonnet una volta per descrizione come quelle delle skill: nel Catalogo agenti, in «Nuovo agente → Dal catalogo» e nella testata dell'agente nato dal ruolo, con «Originale» per leggere il testo degli autori; il nome del ruolo resta in inglese, la ricerca trova anche le parole italiane (D-185).
+
 ### Sicurezza
 
 - La risposta di Opus si controlla sul testo: segnalazioni su righe inesistenti scartate, pezzo citato che non sta alla riga declassato a «Da capire», segnalazioni tutte scartate danno «da guardare», lunghezze limitate, risposta illeggibile = rapporto non disponibile (D-196).

@@ -1462,6 +1462,11 @@ export async function skillTranslations(start = false): Promise<TranslationsStat
   return start ? call<TranslationsStatus>('POST', '/api/skills-catalog/translations', {}) : call<TranslationsStatus>('GET', '/api/skills-catalog/translations');
 }
 
+/** The Italian descriptions of the roles of the catalog of agents (D-185), as the skills; with `start` the missing ones are asked. */
+export async function roleTranslations(start = false): Promise<TranslationsStatus> {
+  return start ? call<TranslationsStatus>('POST', '/api/agents-catalog/translations', {}) : call<TranslationsStatus>('GET', '/api/agents-catalog/translations');
+}
+
 /** The small page of each style of the adopted catalog (I-20, D-185), by slug. */
 export async function listStyleSamples(): Promise<StyleSamples> {
   return call<StyleSamples>('GET', '/api/design-catalog/samples');

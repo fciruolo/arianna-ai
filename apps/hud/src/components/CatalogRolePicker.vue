@@ -12,6 +12,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { catalogPresetOf, divisionCounts, filterRoles, roleLicenseText, roleUnlicensed, type AgentRoleListing, type AgentRoleSummary, type AgentRoleText, agentsErrorText } from '../lib/agents-catalog.ts';
 import { listAgentRoles, loadAgentRole } from '../lib/api.ts';
 import { redoSafetyReport } from '../lib/safety-report.ts';
+import { useRoleTranslations } from '../lib/skill-translations.ts';
+import { translationsNoteText } from '../lib/skills-catalog.ts';
+import TranslatedText from './TranslatedText.vue';
 import { safetyPoll } from '../lib/safety-poll.ts';
 import { PRESET_TEXT } from '../lib/user-agents.ts';
 import SafetyReportCard from './SafetyReportCard.vue';
@@ -25,10 +28,13 @@ const query = ref('');
 const source = ref('');
 const division = ref('');
 
+// The descriptions in Italian (request of the user of 2026-10-13): asked when the list is read, the English one meanwhile.
+const { status: translations, italian, open: openTranslations } = useRoleTranslations();
 async function load(): Promise<void> {
   try {
     listing.value = await listAgentRoles();
     listError.value = '';
+    void openTranslations();
   } catch (cause) {
     listError.value = agentsErrorText(cause);
   }
@@ -38,7 +44,7 @@ onMounted(load);
 const roles = computed(() => listing.value?.roles ?? []);
 const sources = computed(() => [...new Set(roles.value.map((role) => role.source))].sort());
 const divisions = computed(() => divisionCounts(filterRoles(roles.value, '', '', source.value)));
-const shown = computed(() => filterRoles(roles.value, query.value, division.value, source.value));
+const shown = computed(() => filterRoles(roles.value, query.value, division.value, source.value, translations.value?.translations));
 /** The roles shown, by division, the larger first. */
 const groups = computed(() => {
   const order = divisionCounts(shown.value).map((item) => item.division);
@@ -155,6 +161,7 @@ const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(ch
             {{ item.division }} · {{ item.count }}
           </button>
         </div>
+        <p v-if="translationsNoteText(translations)" class="text-[12.5px] text-muted">{{ translationsNoteText(translations) }}</p>
       </div>
       <p v-if="shown.length === 0" class="p-6 text-center text-[14px] text-muted">Nessun ruolo con questa ricerca: cambia il testo o scegli «Tutte».</p>
       <div v-else class="max-h-[520px] min-h-0 flex-1 overflow-auto">
@@ -172,7 +179,7 @@ const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(ch
             @click="emit('update:modelValue', role.id)"
           >
             <span class="w-full truncate text-[14.5px] font-semibold">{{ role.name }}</span>
-            <span class="line-clamp-2 text-[13px] text-muted">{{ role.description }}</span>
+            <span class="line-clamp-2 text-[13px] text-muted" :title="italian(role.id) === undefined ? undefined : role.description">{{ italian(role.id) ?? role.description }}</span>
             <span v-if="sources.length > 1" class="text-[12px] text-muted">{{ role.source }}</span>
           </button>
         </template>
@@ -189,7 +196,7 @@ const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(ch
           <span class="pill border-info/50 text-info">Testo di terzi · L0</span>
         </div>
         <h3 class="text-[20px] font-semibold">{{ chosen.name }}</h3>
-        <p class="text-[14px] text-muted">{{ chosen.description }}</p>
+        <p class="text-[14px] text-muted"><TranslatedText :key="chosen.id" :original="chosen.description" :italian="italian(chosen.id)" /></p>
         <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3.5 gap-y-1 text-[13.5px]">
           <dt class="text-muted">Raccolta</dt>
           <dd class="m-0 [overflow-wrap:anywhere]">

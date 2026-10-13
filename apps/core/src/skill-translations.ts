@@ -18,6 +18,14 @@ const BATCH = 25;
 const MAX_DESCRIPTION = 1500;
 const MAX_TRANSLATION = 2000;
 
+/** The descriptions of the roles of the catalog of agents (D-185, request of the user of 2026-10-13): the same way. */
+export const ROLE_TRANSLATIONS_FILE = 'agents.it.json';
+export const ROLE_TRANSLATE_PROMPT = [
+  'Translate into Italian the short descriptions of roles of AI agents (what an assistant specialized in a job does) below.',
+  'Keep product names, technologies, standards, file names and code as they are; plain, clear Italian; no additions, no comments.',
+  'The input is a JSON array of strings. Answer with only a JSON array of the same length, the Italian text of each item in the same order.',
+].join('\n');
+
 export const TRANSLATE_PROMPT = [
   'Translate into Italian the short descriptions of software "skills" (instructions for an AI agent) below.',
   'Keep product names, file names and code as they are; plain, clear Italian; no additions, no comments.',
@@ -35,6 +43,8 @@ export interface TranslationsStatus {
 
 export interface SkillTranslations {
   status(): TranslationsStatus;
+  /** The Italian text of one description, when it was translated (an agent made from a role shows it). */
+  lookup(description: string): string | undefined;
   /**
    * Starts translating what is missing, in the background; nothing when all
    * are there, a run is on, or the same missing ones already came back
@@ -67,8 +77,26 @@ export function parseTranslations(answer: string, count: number): string[] | und
   return texts.every((text) => text !== '' && text.length <= MAX_TRANSLATION && !HIDDEN.test(text)) ? texts : undefined;
 }
 
-export function createSkillTranslations(options: { dir: string; list: () => readonly { id: string; description: string }[]; ask: AskCloudText; onEvent?: (kind: string, payload: Record<string, string | number>) => void }): SkillTranslations {
-  const path = join(options.dir, TRANSLATIONS_FILE);
+/** Said by the chat when Sonnet's answer for some descriptions of roles could not be read. */
+export const ROLE_UNREADABLE_STOP = 'la risposta di Claude per alcune descrizioni non si legge: riprovo al prossimo riavvio di Arianna o quando cambiano i ruoli';
+
+/** What is translated: the skills (D-185) by default, or the roles of the catalog of agents. */
+const KINDS = {
+  skills: { file: TRANSLATIONS_FILE, prompt: TRANSLATE_PROMPT, source: 'skills-catalog:descriptions', what: 'skill', stop: UNREADABLE_STOP, note: 'Descrizioni delle skill in italiano (D-185), per impronta della descrizione inglese.' },
+  roles: { file: ROLE_TRANSLATIONS_FILE, prompt: ROLE_TRANSLATE_PROMPT, source: 'agents-catalog:descriptions', what: 'ruoli', stop: ROLE_UNREADABLE_STOP, note: 'Descrizioni dei ruoli del catalogo agenti in italiano (D-185), per impronta della descrizione inglese.' },
+} as const;
+
+export function createSkillTranslations(options: {
+  dir: string;
+  list: () => readonly { id: string; description: string }[];
+  ask: AskCloudText;
+  onEvent?: (kind: string, payload: Record<string, string | number>) => void;
+  /** `roles`: the descriptions of the roles of the catalog of agents, in their own file; the events start with `agents.`. */
+  kind?: keyof typeof KINDS;
+}): SkillTranslations {
+  const kind = KINDS[options.kind ?? 'skills'];
+  const prefix = options.kind === 'roles' ? 'agents' : 'skills';
+  const path = join(options.dir, kind.file);
   let running = false;
   let stopped: string | null = null;
   let work: Promise<void> = Promise.resolve();
@@ -91,7 +119,7 @@ export function createSkillTranslations(options: { dir: string; list: () => read
   function save(table: Record<string, string>): void {
     mkdirSync(options.dir, { recursive: true });
     const temporary = `${path}.${String(Date.now())}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify({ note: 'Descrizioni delle skill in italiano (D-185), per impronta della descrizione inglese.', translations: table }, null, 2)}\n`);
+    writeFileSync(temporary, `${JSON.stringify({ note: kind.note, translations: table }, null, 2)}\n`);
     renameSync(temporary, path);
   }
 
@@ -126,17 +154,17 @@ export function createSkillTranslations(options: { dir: string; list: () => read
       const batch = todo.slice(at, at + BATCH);
       const answer = await options.ask({
         parts: [
-          { text: TRANSLATE_PROMPT, source: 'arianna:skill-translation' },
-          { text: JSON.stringify(batch.map(([, text]) => text)), source: 'skills-catalog:descriptions' },
+          { text: kind.prompt, source: 'arianna:skill-translation' },
+          { text: JSON.stringify(batch.map(([, text]) => text)), source: kind.source },
         ],
-        purpose: `traduzione di ${String(batch.length)} descrizioni di skill`,
+        purpose: `traduzione di ${String(batch.length)} descrizioni di ${kind.what}`,
         timeoutMs: 4 * 60_000,
       });
       const texts = parseTranslations(answer, batch.length);
       if (texts === undefined) {
         // The good batches stay saved; this one is not asked again in a loop.
         unreadable = true;
-        options.onEvent?.('skills.translation_unreadable', { count: batch.length });
+        options.onEvent?.(`${prefix}.translation_unreadable`, { count: batch.length });
         continue;
       }
       // Read again before writing: what another batch saved stays.
@@ -146,14 +174,18 @@ export function createSkillTranslations(options: { dir: string; list: () => read
         if (text !== undefined) table[key] = text;
       });
       save(table);
-      options.onEvent?.('skills.translated', { count: batch.length });
+      options.onEvent?.(`${prefix}.translated`, { count: batch.length });
     }
     unreadableSet = unreadable ? setKey(missing(stored())) : null;
-    if (unreadable) stopped = UNREADABLE_STOP;
+    if (unreadable) stopped = kind.stop;
   }
 
   return {
     status,
+    lookup(description) {
+      const text = description.trim();
+      return text === '' ? undefined : stored()[sha256(text)];
+    },
     translateMissing() {
       const todo = missing(stored());
       if (!running && todo.size > 0 && setKey(todo) !== unreadableSet) {

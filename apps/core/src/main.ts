@@ -682,6 +682,19 @@ const styleExamples = createStyleExamples({
   onEvent: catalogEvent,
 });
 const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
+// The descriptions of the roles of the catalog of agents in Italian (request of the user of 2026-10-13), as the skills:
+// Sonnet, public text (L0), a batch at a time, once per description; the name of a role stays as it is.
+const roleTranslations = createSkillTranslations({
+  dir: join(config.paths.data, 'catalogs'),
+  list: () => agentsCatalog.list().roles,
+  // As the safety reports: nothing leaves while Claude is off in the settings, even before a restart.
+  ask: (request) => {
+    if (!settings.current().cloud.executors.includes('claude')) return Promise.reject(new CloudTextError('unavailable', 'Claude non è abilitato in Impostazioni'));
+    return askCloudText(request);
+  },
+  onEvent: catalogEvent,
+  kind: 'roles',
+});
 // The safety reports of the catalog (D-196): Opus reads a role or a skill once per version (public text, L0,
 // never a datum of the user) through the gateway, in the background, one at a time; an agent's report is made
 // of the reports of its role and its skills (choice of the user, 2026-10-13).
@@ -932,6 +945,7 @@ const server = await startApiServer({
   settings: settingsPage,
   userAgents,
   safetyReports,
+  roleTranslations,
   sprites,
   imReports,
   local: {

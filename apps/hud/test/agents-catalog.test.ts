@@ -145,6 +145,13 @@ describe('roles', () => {
     assert.deepEqual(filterRoles(roles, '', 'engineering').map((role) => role.slug), ['code-reviewer', 'frontend']);
     assert.deepEqual(filterRoles(roles, '', '', 'studio/legal').map((role) => role.slug), ['contract-reviewer']);
     assert.deepEqual(filterRoles(roles, 'contratti', 'engineering'), []);
+    // The Italian descriptions are searched too (D-185): an Italian word finds the role, the English still does.
+    const code = roles.find((role) => role.slug === 'code-reviewer');
+    assert.ok(code);
+    const italian = { [code.id]: 'Rilegge il codice e segnala gli errori' };
+    assert.deepEqual(filterRoles(roles, 'rilegge errori', '', '', italian).map((role) => role.slug), ['code-reviewer']);
+    assert.deepEqual(filterRoles(roles, 'rilegge errori'), []);
+    assert.deepEqual(filterRoles(roles, 'code reviewer', '', '', italian).map((role) => role.slug), ['code-reviewer']);
     assert.equal(roleLicenseText({ license: 'MIT', licenseFile: 'LICENSE' }), 'licenza MIT');
     // A license file whose license is not recognised by name is still a license, never «senza licenza».
     assert.equal(roleLicenseText({ license: null, licenseFile: 'LICENSE.md' }), 'licenza in LICENSE.md della raccolta');

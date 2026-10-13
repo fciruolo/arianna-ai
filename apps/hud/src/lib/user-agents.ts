@@ -43,6 +43,8 @@ export interface UserAgentView {
   catalog?: CatalogLink;
   /** The safety report of Opus on the role and its skills (D-196); only for an agent of the catalog. */
   safety?: SafetyView;
+  /** The description of its role in Italian, when it was translated (D-185); the card keeps the original. */
+  descriptionIt?: string;
 }
 
 export interface CatalogLink {

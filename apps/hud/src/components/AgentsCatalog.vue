@@ -21,6 +21,9 @@ import {
 } from '../lib/api.ts';
 import { agentsErrorText, divisionCounts, filterRoles, limitsText, roleLicenseText, shouldPollAgents, type AgentRoleListing, type AgentRoleText, type AgentsStatus } from '../lib/agents-catalog.ts';
 import { redoSafetyReport } from '../lib/safety-report.ts';
+import { useRoleTranslations } from '../lib/skill-translations.ts';
+import { translationsNoteText } from '../lib/skills-catalog.ts';
+import TranslatedText from './TranslatedText.vue';
 import { safetyPoll } from '../lib/safety-poll.ts';
 import { agentSourceRow } from '../lib/source-list.ts';
 import SafetyReportCard from './SafetyReportCard.vue';
@@ -90,12 +93,15 @@ const query = ref('');
 const division = ref('');
 const browsing = ref(false);
 const divisions = computed(() => divisionCounts(listing.value?.roles ?? []));
-const shown = computed(() => filterRoles(listing.value?.roles ?? [], query.value, division.value));
+// The descriptions in Italian (request of the user of 2026-10-13): asked when the list is read, the English one meanwhile.
+const { status: translations, italian, open: openTranslations } = useRoleTranslations();
+const shown = computed(() => filterRoles(listing.value?.roles ?? [], query.value, division.value, '', translations.value?.translations));
 const total = computed(() => status.value?.sources.reduce((sum, source) => sum + (source.adopted?.roles ?? 0), 0) ?? 0);
 async function loadList(): Promise<void> {
   try {
     listing.value = await listAgentRoles();
     listError.value = '';
+    void openTranslations();
   } catch (cause) {
     listError.value = agentsErrorText(cause);
   }
@@ -219,9 +225,11 @@ async function redo(): Promise<void> {
           <li v-for="item in shown" :key="item.id" class="border-b border-line last:border-b-0">
             <button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-surface-2" :aria-expanded="selected === item.id" @click="choose(item.id)">
               <span class="truncate font-medium">{{ item.name }} <span class="text-[12.5px] font-normal text-muted">· {{ item.division }} · {{ item.source }}</span></span>
-              <span v-if="item.description" class="text-[13px] text-muted">{{ item.description }}</span>
+              <span v-if="item.description && selected !== item.id" class="text-[13px] text-muted" :title="italian(item.id) === undefined ? undefined : item.description">{{ italian(item.id) ?? item.description }}</span>
             </button>
             <div v-if="selected === item.id" class="flex flex-col gap-1.5 px-2 pb-2">
+              <!-- The description of the role open: in Italian, with «Originale» one click away -->
+              <p v-if="item.description" class="text-[13px] text-muted"><TranslatedText :original="item.description" :italian="italian(item.id)" /></p>
               <p class="rounded-[8px] border border-warn/50 bg-warn/10 px-2.5 py-1.5 text-[13px]">
                 Testo scritto da altri ({{ roleLicenseText(item) }}): qui si legge e basta. Quando potrai farne un agente, lo riceverà come dato: non deciderà permessi, etichette né
                 strumenti.
@@ -234,6 +242,7 @@ async function redo(): Promise<void> {
             </div>
           </li>
         </ul>
+        <p v-if="listing !== null && translationsNoteText(translations)" class="text-[12.5px] text-muted">{{ translationsNoteText(translations) }}</p>
       </div>
     </details>
   </SettingsCard>
