@@ -4,7 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Impostazioni, Aspetto e installazione: «Pronta per i dati veri» con «Controlla di nuovo», l'elenco di cosa manca in parole semplici e l'esito dell'ultimo `pnpm arianna:doctor` per i controlli del database che fa solo il terminale (D-192).
+- `pnpm arianna:doctor` scrive id ed esito dei controlli, senza dettagli, in `data/doctor/last.json` (D-192).
+
 ### Cambiato
+
+- I controlli dell'installazione senza database passano dall'installer al core, una sola copia per il doctor e per la pagina (D-192).
 
 - Chat: i messaggi d'errore e gli avvisi dicono «Arianna» invece di «nucleo» («Arianna non risponde: controlla che sia avviata.», «Errore di Arianna: riprova fra poco.»), anche nel titolo della chat di sistema dei task falliti («Perché è fallito: Arianna»); due test controllano che la parola non torni nella chat né nel core (D-192).
 

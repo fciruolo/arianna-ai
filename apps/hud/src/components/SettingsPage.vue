@@ -96,6 +96,7 @@ import ChangelogPage from './ChangelogPage.vue';
 import DesignCatalog from './DesignCatalog.vue';
 import DevProgressPage from './DevProgressPage.vue';
 import FormField from './FormField.vue';
+import InstallationReadiness from './InstallationReadiness.vue';
 import SkillsCatalog from './SkillsCatalog.vue';
 import Icon from './Icon.vue';
 import ModelsSettings from './ModelsSettings.vue';
@@ -892,9 +893,10 @@ const grid = 'grid gap-3 sm:grid-cols-6';
               </div>
             </dl>
             <p v-if="installation !== undefined" class="text-[13px] text-muted">
-              {{ MODE_HINT[installation.mode] }}.<template v-if="installation.mode === 'development'"> Diventa pronta per i dati veri quando le password vere sono nella cassaforte e il controllo dell’installazione la dà pronta.</template>
+              {{ MODE_HINT[installation.mode] }}.<template v-if="installation.mode === 'development'"> Diventa pronta per i dati veri quando le password vere sono nella cassaforte e il controllo qui sotto la dà pronta.</template>
             </p>
             <p v-else class="text-[14px] text-muted">Arianna non dice che installazione è: riprova fra poco, o riavviala.</p>
+            <InstallationReadiness />
           </SettingsCard>
           <p class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/8 px-3 py-2.5 text-[14px]">
             <Icon name="info" :size="16" class="mt-0.5 shrink-0 text-info" />

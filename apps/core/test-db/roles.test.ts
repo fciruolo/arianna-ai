@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import { loadConfig } from '@arianna/config';
 import { Secret, VaultError } from '@arianna/vault';
 
+import { resolveLogin } from '../src/db/logins.ts';
 import { runDoctor, type DoctorCheck } from '../src/doctor.ts';
+import { coreChecks, groupChecks } from '../src/readiness.ts';
 import { useTestDatabase, withClusterLock } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -57,6 +59,26 @@ test('doctor, with the development passwords: database sound, not ready for real
   assert.deepEqual(checks('database.migrations'), { ok: true, detail: `${String(migrations)} applied` });
   assert.equal(checks('database.app-role').ok, true, checks('database.app-role').detail);
   assert.equal(checks('events.chain').ok, true);
+});
+
+test('the checks of the core (D-192), with the development passwords: not ready, chain intact, no detail in the groups', async () => {
+  const app = await resolveLogin(config, 'app');
+  const checks = await coreChecks(config, db().sql, app, () => Promise.resolve('1.0'));
+  const ids = byId(checks);
+  assert.equal(ids('database.passwords').ok, false);
+  assert.equal(ids('database.default-passwords').ok, false);
+  assert.equal(ids('events.chain').ok, true);
+  const groups = groupChecks(checks);
+  assert.deepEqual(
+    groups.filter((group) => ['passwords', 'default-passwords', 'events'].includes(group.id)),
+    [
+      { id: 'passwords', ok: false },
+      { id: 'default-passwords', ok: false },
+      { id: 'events', ok: true },
+    ],
+  );
+  // The owner's checks are not among them: only the doctor in a terminal makes them.
+  assert.equal(checks.some((check) => ['database.owner', 'database.migrations', 'database.app-role'].includes(check.id)), false);
 });
 
 test('doctor does not trust the configuration: vault passwords equal to the defaults still fail', async () => {

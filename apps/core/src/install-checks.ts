@@ -1,12 +1,17 @@
 // Prerequisites and layout of ARIANNA_HOME (task 1.17): what `install` needs
 // before it starts and what `arianna:doctor` reports besides the database.
-// Binaries are only asked for their version: nothing here changes the system.
+// Binaries are only asked for their version: nothing here changes the system,
+// except ensureLayout, which only install calls. The core runs the same
+// checks for «Pronta per i dati veri» (D-192, readiness.ts): one copy, here.
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readlinkSync, realpathSync, statfsSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { arch, platform, totalmem } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import type { DoctorCheck } from '@arianna/core/doctor';
+import { loadCatalog, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type Project } from '@arianna/config';
+
+import type { DoctorCheck } from './doctor.ts';
+import { modelStatus, selectedModels } from './model-files.ts';
 
 /** Subfolders of data/ created by install (docs/INSTALLER-PORTABILITY.md); Docker creates its own volumes. */
 export const DATA_LAYOUT = ['models', 'archive', 'kb', 'vault', 'worktrees', 'backups'] as const;
@@ -220,4 +225,123 @@ export function layoutCheck(home: string, data: string): DoctorCheck[] {
 export function freeBytes(path: string): number {
   const stats = statfsSync(path);
   return stats.bavail * stats.bsize;
+}
+
+/**
+ * Every check of the installation that needs no database: programs, folders
+ * of data/, voice, oMLX logs, models, projects. The doctor adds the database
+ * (doctor.ts); the core adds what its own login can see (readiness.ts).
+ */
+export async function installationChecks(config: AriannaConfig, run?: Runner): Promise<DoctorCheck[]> {
+  return [
+    ...(await systemChecks({ voice: config.voice !== undefined, ...(run === undefined ? {} : { run }) })),
+    ...layoutCheck(config.home, config.paths.data),
+    ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
+    ...omlxLogChecks(config.local.endpoints),
+    ...(await modelsChecks(config)),
+    ...projectChecks(config.home, config.projects),
+  ];
+}
+
+/** The models assigned to a role on disk (size only: the hashes are `pnpm arianna:models verify`), and the RAM they need. */
+export async function modelsChecks(config: AriannaConfig): Promise<DoctorCheck[]> {
+  const models = selectedModels(config, loadCatalog(config.home));
+  if (models.length === 0) return [{ id: 'models', ok: true, detail: 'no model assigned to a role yet (pnpm arianna:init)' }];
+  const statuses = await modelStatus(models, config.paths.data);
+  const absent = statuses.filter((status) => status.state !== 'present');
+  const ram = models.reduce((sum, model) => sum + model.ramMinGib, 0);
+  const machine = Math.floor(totalmem() / 2 ** 30);
+  return [
+    {
+      id: 'models',
+      ok: absent.length === 0,
+      detail:
+        absent.length === 0
+          ? `${String(statuses.length)} file(s) present with the right size (pnpm arianna:models verify checks the hashes)`
+          : `${String(absent.length)} of ${String(statuses.length)} file(s) missing or wrong: pnpm arianna:models pull`,
+    },
+    {
+      id: 'models.ram',
+      ok: ram <= machine,
+      detail: `the assigned models need ${String(ram)} GiB together, this machine has ${String(machine)} GiB`,
+    },
+  ];
+}
+
+// The approved projects on disk (D-058): their folders, and the link
+// `repos/<name>` the wizard keeps for each folder under the user's home.
+
+/** True when `inner` is `outer` or inside it. */
+function within(inner: string, outer: string): boolean {
+  const fromOuter = relative(outer, inner);
+  return fromOuter === '' || (fromOuter !== '..' && !fromOuter.startsWith(`..${sep}`) && !isAbsolute(fromOuter));
+}
+
+/**
+ * What is wrong with the folder of a project, in Italian for the wizard, or
+ * `undefined` when it is ready: the same checks `openRepository` makes at
+ * each launch (the folder exactly itself on disk, no link on the way, not
+ * around ARIANNA_HOME, inside it only as `repos/<name>`), and the top of a
+ * git repository.
+ */
+export function folderProblem(absolute: string, home: string, name: string): string | undefined {
+  let real: string;
+  try {
+    real = realpathSync(absolute);
+  } catch {
+    return `la cartella ${absolute} non esiste`;
+  }
+  if (real !== absolute) return `${absolute} non è il percorso vero della cartella (un link simbolico, o maiuscole diverse): indica ${real}`;
+  if (!lstatSync(real).isDirectory()) return `${absolute} non è una cartella`;
+  const realHome = realpathSync(home);
+  if (within(realHome, real)) return `${absolute} contiene la cartella di Arianna`;
+  if (within(real, realHome) && real !== join(realHome, PROJECTS_DIR, name)) return `${absolute} è dentro Arianna: lì un progetto può stare solo in ${PROJECTS_DIR}/${name}`;
+  // D-145: a container that is not itself a repository is ready when at least one subfolder is (its parts).
+  if (!existsSync(join(real, '.git')) && projectParts({ name, path: name, absolute: real, label: 'L1' }).length === 0) {
+    return `${absolute} non è la cartella principale di un repository git (git init, poi un primo commit) né contiene sottocartelle con un proprio git`;
+  }
+  return undefined;
+}
+
+/** `repos/<name>` of a project: absent for a folder that is itself in repos/. */
+export function linkPath(home: string, project: Project): string | undefined {
+  return project.path.startsWith(`${PROJECTS_DIR}/`) ? undefined : join(home, PROJECTS_DIR, project.name);
+}
+
+export type LinkState = 'none' | 'ok' | 'missing' | 'elsewhere' | 'not-link';
+
+/** Whether `repos/<name>` is the link to the project's folder. */
+export function linkState(home: string, project: Project): LinkState {
+  const path = linkPath(home, project);
+  if (path === undefined) return 'none';
+  let stats;
+  try {
+    stats = lstatSync(path);
+  } catch {
+    return 'missing';
+  }
+  if (!stats.isSymbolicLink()) return 'not-link';
+  return readlinkSync(path) === project.absolute ? 'ok' : 'elsewhere';
+}
+
+/** The doctor's checks: each folder ready for the Coder, each link in place. Nothing is fixed here. */
+export function projectChecks(home: string, projects: readonly Project[]): DoctorCheck[] {
+  if (projects.length === 0) return [{ id: 'projects', ok: true, detail: 'no project approved yet (pnpm arianna:init --reconfigure)' }];
+  return projects.flatMap((project): DoctorCheck[] => {
+    const problem = folderProblem(project.absolute, home, project.name);
+    const checks: DoctorCheck[] = [
+      { id: `projects.${project.name}`, ok: problem === undefined, detail: problem ?? `${project.path} (${project.label}): a git repository or a container of git parts (D-145), ready for the Coder` },
+    ];
+    const link = linkState(home, project);
+    if (link !== 'none') {
+      const detail: Record<Exclude<LinkState, 'none'>, string> = {
+        ok: `${PROJECTS_DIR}/${project.name} links to the folder`,
+        missing: `${PROJECTS_DIR}/${project.name} is missing: pnpm arianna:init --reconfigure creates it`,
+        elsewhere: `${PROJECTS_DIR}/${project.name} links elsewhere (the Coder still uses ${project.path}): pnpm arianna:init --reconfigure fixes it`,
+        'not-link': `${PROJECTS_DIR}/${project.name} is a real file or folder, not the link: move it away`,
+      };
+      checks.push({ id: `projects.${project.name}.link`, ok: link === 'ok', detail: detail[link] });
+    }
+    return checks;
+  });
 }

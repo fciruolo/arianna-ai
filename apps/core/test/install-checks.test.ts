@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/system.ts';
+import { DATA_LAYOUT, ensureLayout, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 

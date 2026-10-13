@@ -6,7 +6,7 @@ import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveT
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
-import { parseInstallation, type InstallationInfo } from './installation.ts';
+import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
@@ -233,6 +233,22 @@ export async function search(query: string, limit: number, signal?: AbortSignal)
 /** What this installation is (D-089, D-098); undefined when the core does not say. */
 export async function loadInstallation(): Promise<InstallationInfo | undefined> {
   return parseInstallation(await call<unknown>('GET', '/api/installation'));
+}
+
+/** «Pronta per i dati veri» (D-192): the last outcome, null before the first check. */
+export async function loadReadiness(): Promise<ReadinessReport | null> {
+  return readinessOf(await call<unknown>('GET', '/api/installation/readiness'));
+}
+
+/** Checks again; the core runs one check at a time and at most every 10 s. */
+export async function checkReadiness(): Promise<ReadinessReport | null> {
+  return readinessOf(await call<unknown>('POST', '/api/installation/readiness', {}));
+}
+
+function readinessOf(value: unknown): ReadinessReport | null {
+  const report = parseReadiness(value);
+  if (report === undefined) throw new ApiError(502, 'invalid answer');
+  return report;
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
