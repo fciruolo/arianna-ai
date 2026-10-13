@@ -130,7 +130,14 @@ if (Number.isInteger(restartAfter) && restartAfter > 0) {
 const config = loadConfig();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
 // The user's agents (D-119): the active ones join the map, under the L1/A1 ceiling.
-const userAgents = createUserAgents({ home: config.home, dataDir: config.paths.data, agents, official: new Set(agents.keys()) });
+// A card from a role of the catalog of agents (D-079) reads the role from the catalog, made further below.
+const userAgents = createUserAgents({
+  home: config.home,
+  dataDir: config.paths.data,
+  agents,
+  official: new Set(agents.keys()),
+  catalog: { role: (id) => agentsCatalog.role(id) },
+});
 // Only the name: the reason may quote a line of a card edited by hand; the Agents page shows it.
 for (const { name } of userAgents.load()) console.error(`user agent ${name} not loaded (see Impostazioni → Agenti)`);
 const app = await resolveLogin(config, 'app');

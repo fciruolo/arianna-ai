@@ -9,12 +9,15 @@ import {
   agentSourceBlocked,
   agentSourceButtonText,
   agentSourceSummaryText,
+  catalogPresetOf,
   divisionCounts,
   limitsText,
   filterRoles,
   roleChangesText,
+  roleCardName,
   roleLicenseText,
   rolesText,
+  roleUnlicensed,
   shouldPollAgents,
   spaceText,
   type AgentRoleSummary,
@@ -150,6 +153,20 @@ describe('roles', () => {
       { division: 'engineering', count: 2 },
       { division: 'legale', count: 1 },
     ]);
+  });
+});
+
+describe('a new agent from a role', () => {
+  it('starts from the preset of the division, the slug as name within 40 characters, and asks only without a license', () => {
+    assert.equal(catalogPresetOf('engineering'), 'code');
+    assert.equal(catalogPresetOf('testing'), 'code');
+    for (const division of ['marketing', 'legale', 'general', '__proto__']) assert.equal(catalogPresetOf(division), 'answer', division);
+    assert.equal(roleCardName('code-reviewer'), 'code-reviewer');
+    assert.equal(roleCardName('engineering-autonomous-optimization-architect-of-everything'), 'engineering-autonomous-optimization-arch');
+    assert.equal(roleCardName(`${'a'.repeat(39)}-b`), 'a'.repeat(39));
+    assert.equal(roleUnlicensed({ license: null, licenseFile: null }), true);
+    assert.equal(roleUnlicensed({ license: null, licenseFile: 'LICENSE.md' }), false);
+    assert.equal(roleUnlicensed({ license: 'MIT', licenseFile: 'LICENSE' }), false);
   });
 });
 

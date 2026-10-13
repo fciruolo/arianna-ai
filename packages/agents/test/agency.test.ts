@@ -341,6 +341,21 @@ describe('proposeCard', () => {
     assert.match(odd.md, /has no license file at its root/);
   });
 
+  it('takes the name and the permissions the user chose within the list; never a name a card cannot have', () => {
+    const read = entry();
+    const local = agencyPreset('finance').permissions;
+    const proposal = proposeCard(read, agencyPreset(read.division), ORIGIN, { name: 'revisore', permissions: local });
+    const card = proposedCard(proposal);
+    assert.equal(card.name, 'revisore');
+    assert.equal(card.prompt, 'revisore.md');
+    assert.deepEqual(card.executors, ['local']);
+    assert.match(proposal.yaml, /Starting point: code, permissions chosen by the user\./);
+    for (const name of ['R', 'Revisore', 'a'.repeat(41), 'a b']) assert.throws(() => proposeCard(read, agencyPreset(read.division), ORIGIN, { name }), AgencyError, name);
+    const long = entry('design/x-agent.md', agentFile(`name: ${'N'.repeat(80)}\ndescription: B`));
+    const described = proposedCard(proposeCard(long, agencyPreset('design'), { ...ORIGIN, repository: `https://github.com/${'o'.repeat(39)}/${'r'.repeat(100)}` }));
+    assert.ok(described.description.length <= 200, String(described.description.length));
+  });
+
   it('rejects a starting point outside the list of user agents, and a bad commit', () => {
     const read = entry();
     const base = agencyPreset('engineering');

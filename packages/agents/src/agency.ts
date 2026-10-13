@@ -4,7 +4,7 @@ import { stringify as stringifyYaml } from 'yaml';
 
 import { AGENCY_CARD_MARK, AGENCY_REPOSITORY, LEGACY_AGENCY_CARD_MARK } from './agency-mark.ts';
 import { AgentCardError, ownTable, parseAgentCard } from './card.ts';
-import { checkUserPermissions, USER_TRIFECTA, userPresets, type UserPreset } from './user.ts';
+import { checkUserPermissions, USER_AGENT_NAME, USER_TRIFECTA, userPresets, type UserPermissions, type UserPreset } from './user.ts';
 import { parseYamlText } from './yaml.ts';
 
 export { AGENCY_CARD_MARK, AGENCY_REPOSITORY, LEGACY_AGENCY_CARD_MARK };
@@ -373,7 +373,7 @@ const LICENSE_FILE_NAME = /^(?:LICEN[CS]E|COPYING)(?:\.(?:txt|md))?$/i;
  */
 function licenseLines(origin: AgencyOrigin, card: string): string[] {
   const name = licenseName(origin);
-  if (hasLicenseText(origin)) {
+  if (sourceLicensed(origin)) {
     return [
       `License: ${name ?? 'not recognised'}, file ${origin.license.file ?? ''} at the root of ${origin.repository}.`,
       `Its full text and copyright notice are in the comments of ${card}.yaml, next to this prompt.`,
@@ -385,14 +385,15 @@ function licenseLines(origin: AgencyOrigin, card: string): string[] {
   ];
 }
 
-function hasLicenseText(origin: AgencyOrigin): boolean {
+/** Whether the source has a license the card can carry: a usual file name at the root and a text in it. The one rule of the core, the card and the page (D-079). */
+export function sourceLicensed(origin: AgencyOrigin): boolean {
   const { file, text } = origin.license;
   return file !== null && LICENSE_FILE_NAME.test(file) && text !== null && text.trim() !== '';
 }
 
 /** The license text of the source as comment lines of the card: never read by a model, kept with the copy (MIT and alike ask it). */
 function licenseComment(origin: AgencyOrigin): string[] {
-  if (!hasLicenseText(origin)) return [];
+  if (!sourceLicensed(origin)) return [];
   const lines = cleanText(origin.license.text ?? '')
     .trim()
     .split('\n')
@@ -408,23 +409,29 @@ function licenseComment(origin: AgencyOrigin): string[] {
  * is the computed one. From the entry only the slug (the card name), the name
  * in the description and the body as the prompt, framed as untrusted. Source,
  * commit, file, sha256 and license go in the comments of the card and at the
- * top of the prompt. The result passes parseAgentCard and
- * `checkUserPermissions(card, 'agency')`, so it loads from `data/agents` as it is.
+ * top of the prompt. With `choice` the user gives the card another name
+ * (two roles with one slug, or a slug too long) and permissions of their own
+ * within the list; `preset` stays the starting point written in the card.
+ * The result passes parseAgentCard and `checkUserPermissions(card, 'agency')`,
+ * so it loads from `data/agents` as it is.
  */
-export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: AgencyOrigin): CardProposal {
+export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: AgencyOrigin, choice: { name?: string; permissions?: UserPermissions } = {}): CardProposal {
   if (!COMMIT.test(origin.commit)) throw new AgencyError(`invalid commit ${JSON.stringify(origin.commit)}`);
   if (!PAGE.test(origin.repository)) throw new AgencyError(`invalid source ${JSON.stringify(origin.repository)}`);
   if (!SLUG.test(entry.slug) || entry.slug !== slugFromPath(entry.path, true)) throw new AgencyError(`${entry.path}: invalid slug`);
   if (!/^[0-9a-f]{64}$/.test(entry.sha256)) throw new AgencyError(`${entry.path}: invalid sha256`);
 
-  const name = entry.slug;
+  const name = choice.name ?? entry.slug;
+  if (!USER_AGENT_NAME.test(name)) throw new AgencyError(`the name ${JSON.stringify(name)} is not 2-40 lowercase letters, digits and -, starting with a letter`);
   const shownName = entry.name.length > 80 ? `${entry.name.slice(0, 79)}…` : entry.name;
   const license = licenseName(origin);
   const source = sourceName(origin.repository);
-  const { permissions } = preset;
+  const permissions = choice.permissions ?? preset.permissions;
+  const description = `${shownName}: third-party role from ${source} (${license ?? (origin.license.file === null ? 'no license' : 'see its license')})`;
   const card = {
     name,
-    description: `${shownName}: third-party role from ${source} (${license ?? (origin.license.file === null ? 'no license' : 'see its license')}), proposed and not active`,
+    // At most what the page lets a user's card have, so that the card can be edited later.
+    description: description.length > 200 ? `${description.slice(0, 199)}…` : description,
     // Third-party text, public: L0 also once the card is among the user's ones (D-119, tappa T3b).
     max_label: 'L0',
     executors: [permissions.executor],
@@ -441,8 +448,8 @@ export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: Agen
     `${AGENCY_CARD_MARK.slice(2)}: not active until the user approves it.`,
     `Source: ${origin.repository}, commit ${origin.commit}, file ${entry.path}`,
     `sha256 of the file: ${entry.sha256}`,
-    `Starting point: ${preset.id}. Permissions within the list of user agents, D-119 tappa T3b; never from the file.`,
-    hasLicenseText(origin)
+    `Starting point: ${preset.id}${choice.permissions === undefined ? '' : ', permissions chosen by the user'}. Permissions within the list of user agents, D-119 tappa T3b; never from the file.`,
+    sourceLicensed(origin)
       ? `The prompt (${name}.md) is third-party text under the ${license ?? 'own'} license of its source, below.`
       : `WARNING: no license at the root of the source; the rights of the prompt (${name}.md) stay with its authors, used by the user's choice after this warning.`,
     ...licenseComment(origin),

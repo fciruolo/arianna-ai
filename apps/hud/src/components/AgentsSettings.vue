@@ -311,7 +311,9 @@ async function saveAll(): Promise<void> {
     for (const name of changedTexts.value) {
       const draft = texts.value[name];
       if (!draft) continue;
-      const edit: UserAgentEdit = { description: draft.description.trim(), prompt: draft.prompt };
+      // The prompt of a role of the catalog is never sent back: it stays the third party's text as written.
+      const agency = listing.value?.user.find((agent) => agent.name === name)?.origin === 'agency';
+      const edit: UserAgentEdit = agency ? { description: draft.description.trim() } : { description: draft.description.trim(), prompt: draft.prompt };
       const proposal = await prepareUserAgentEdit(name, edit);
       // A text that changes what the card allows (its label): the window of the permissions saves it.
       if (proposal.confirmation !== null) {
@@ -335,7 +337,8 @@ async function saveAll(): Promise<void> {
 }
 function textsSaved(name: string, edit: UserAgentEdit): void {
   const draft = texts.value[name];
-  if (draft && edit.description !== undefined && edit.prompt !== undefined) texts.value[name] = { ...draft, savedDescription: edit.description, savedPrompt: edit.prompt };
+  // A role of the catalog sends no prompt: the one saved stays.
+  if (draft && edit.description !== undefined) texts.value[name] = { ...draft, savedDescription: edit.description, savedPrompt: edit.prompt ?? draft.savedPrompt };
   void load();
   emit('changed');
 }
@@ -824,7 +827,15 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             <FormField :id="`desc-${current.id}`" label="Descrizione" hint="Una riga: Arianna la legge per scegliere a chi passare un lavoro." :span="6">
               <input :id="`desc-${current.id}`" v-model="texts[current.id]!.description" :class="INPUT" maxlength="200" />
             </FormField>
-            <FormField :id="`prompt-${current.id}`" label="Prompt" :hint="`Le istruzioni dell’agente. ${lengthText(texts[current.id]!.prompt.length, MAX_USER_PROMPT)}.`" :span="6">
+            <!-- A role of the catalog (D-079): its text is a third party's, with provenance and license; it changes only by adopting the role again -->
+            <div v-if="current.view?.origin === 'agency'" class="flex flex-col gap-1.5 sm:col-span-6">
+              <p class="text-[14px] font-medium">Prompt</p>
+              <p class="rounded-[8px] border border-warn/50 bg-warn/10 px-2.5 py-1.5 text-[13px]">
+                Testo di terzi preso dal catalogo agenti, con la sua provenienza e la sua licenza: qui si legge e basta. Arianna lo dà all’agente fra due marcatori, come dato.
+              </p>
+              <pre class="max-h-[320px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ texts[current.id]!.prompt }}</pre>
+            </div>
+            <FormField v-else :id="`prompt-${current.id}`" label="Prompt" :hint="`Le istruzioni dell’agente. ${lengthText(texts[current.id]!.prompt.length, MAX_USER_PROMPT)}.`" :span="6">
               <textarea :id="`prompt-${current.id}`" v-model="texts[current.id]!.prompt" rows="8" :class="INPUT" :maxlength="MAX_USER_PROMPT" />
             </FormField>
             <p class="text-[13px] text-muted sm:col-span-6">

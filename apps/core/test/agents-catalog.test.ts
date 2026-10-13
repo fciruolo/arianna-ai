@@ -207,6 +207,14 @@ describe('download and index', () => {
     );
   });
 
+  it('an empty license file at the root counts as no license', async () => {
+    const { url } = upstream({ ...PLAIN, LICENSE: ' \n' }, 'empty', 'license');
+    const { catalog } = catalogFor();
+    catalog.add(url);
+    await downloaded(catalog, url);
+    assert.deepEqual(catalog.status().sources[0]?.license, { name: null, file: null, sha256: null });
+  });
+
   it('rejects every role of a slug shared by two files, also between the root and a folder', async () => {
     const { url } = upstream({ 'reviewer.md': role('A', 'At the root.'), 'legal/reviewer.md': role('B', 'In a folder.'), 'legal/other.md': role('C', 'Alone.') }, 'clash', 'roles');
     const { catalog } = catalogFor();

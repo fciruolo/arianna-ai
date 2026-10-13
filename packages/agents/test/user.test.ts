@@ -6,6 +6,7 @@ import { after, describe, it } from 'node:test';
 
 import {
   AGENCY_CARD_MARK,
+  MAX_THIRD_PARTY_PROMPT,
   LEGACY_AGENCY_CARD_MARK,
   AgentCardError,
   checkUserCeiling,
@@ -235,6 +236,14 @@ describe('userCard', () => {
     assert.throws(() => userCard({ ...input, prompt: '   ' }), /prompt is empty/);
     assert.throws(() => userCard({ ...input, description: 'a\nb' }), /one line/);
     assert.throws(() => userCard({ ...input, prompt: 'x'.repeat(4001) }), /longer/);
+  });
+
+  it('a card of a third party keeps a role longer than a prompt of the page, up to the size of a role file', () => {
+    const header = `${AGENCY_CARD_MARK}: not active until the user approves it.`;
+    const agency = { origin: 'agency' as const, header };
+    assert.equal(userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(4001) }, agency).name, 'terzi');
+    assert.equal(userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(MAX_THIRD_PARTY_PROMPT) }, agency).name, 'terzi');
+    assert.throws(() => userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(MAX_THIRD_PARTY_PROMPT + 1) }, agency), /longer/);
   });
 });
 

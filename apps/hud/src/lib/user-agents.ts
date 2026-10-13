@@ -60,6 +60,8 @@ export interface UserAgentSources {
     trifecta: CardSummary['trifecta'];
   };
   claudeTools: Record<string, string[]>;
+  /** Whether a card can be made from the catalog of agents (D-079); absent from an older core. */
+  catalog?: boolean;
 }
 
 export interface PermissionChange {
@@ -78,6 +80,31 @@ export interface AgentProposal {
   trifecta: CardSummary['trifecta'];
   cloud: { executor: 'claude'; briefMax: string; promptLabel: string; claudeTools: string[] } | null;
   expiresInMs: number;
+  /** A card from a role of the catalog of agents (D-079): where it comes from. */
+  catalog?: CatalogProposalInfo;
+}
+
+export interface CatalogProposalInfo {
+  id: string;
+  source: string;
+  page: string;
+  commit: string;
+  path: string;
+  name: string;
+  division: string;
+  license: string | null;
+  licenseFile: string | null;
+  /** No license at the root of the source: the page asks before creating. */
+  unlicensed: boolean;
+  preset: string;
+  suggestedName: string;
+}
+
+/** A new agent from a role (D-079): description and prompt come from the role, read again by the core. */
+export interface CatalogNewUserAgent {
+  from: { catalog: string };
+  name: string;
+  permissions: UserPermissions;
 }
 
 export interface UserAgentListing {
@@ -132,6 +159,11 @@ export const prepareUserAgent = async (input: NewUserAgent): Promise<AgentPropos
 /** Only from the confirmation of the page, with the id `prepareUserAgent` returned for this same input. */
 export const createUserAgent = async (input: NewUserAgent, confirmation: string | null): Promise<UserAgentView> =>
   (await call<{ agent: UserAgentView }>('POST', '/api/agents', { ...input, ...(confirmation === null ? {} : { confirmation }) })).agent;
+/** What the card of a role would be (D-079): nothing is written yet. */
+export const prepareCatalogAgent = async (input: CatalogNewUserAgent): Promise<AgentProposal> => (await call<{ proposal: AgentProposal }>('POST', '/api/agents/prepare', input)).proposal;
+/** Only from the confirmation of the page; `licenseAccepted` is the yes to a source without a license. */
+export const createCatalogAgent = async (input: CatalogNewUserAgent, confirmation: string | null, licenseAccepted: boolean): Promise<UserAgentView> =>
+  (await call<{ agent: UserAgentView }>('POST', '/api/agents', { ...input, ...(licenseAccepted ? { licenseAccepted: true } : {}), ...(confirmation === null ? {} : { confirmation }) })).agent;
 export const activateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'activate'))).agent;
 export const deactivateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'deactivate'))).agent;
 /** Only from the confirmation of the page: the L1/A1 ceiling is lifted. */

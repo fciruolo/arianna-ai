@@ -97,7 +97,7 @@ import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
-import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
+import { UserAgentError, type CatalogNewUserAgent, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
@@ -3118,15 +3118,25 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
     route('GET', '/api/agents', () => answer(() => ({ body: need().list() }))),
     route('GET', '/api/agents/sources', () => answer(() => ({ body: need().sources() }))),
     // Tappa T3b: a card is written only as `prepare` showed it, with the confirmation id it returned.
+    // A role of the catalog of agents (D-079): only the role, a name, permissions and the yes to a missing license;
+    // description and prompt come from the role, read again by the core.
     route('POST', '/api/agents/prepare', async (request) => {
       const service = need();
       const body = await readJson(request);
+      if (Object.hasOwn(body, 'from')) {
+        onlyFields(body, ['from', 'name', 'permissions']);
+        return answer(() => ({ body: { proposal: service.prepareFromCatalog(body as unknown as CatalogNewUserAgent) } }));
+      }
       onlyFields(body, ['name', 'description', 'prompt', 'permissions']);
       return answer(() => ({ body: { proposal: service.prepareCreate(body as unknown as NewUserAgent) } }));
     }),
     route('POST', '/api/agents', async (request) => {
       const service = need();
       const body = await readJson(request);
+      if (Object.hasOwn(body, 'from')) {
+        onlyFields(body, ['from', 'name', 'permissions', 'licenseAccepted', 'confirmation']);
+        return answer(() => ({ status: 201, body: { agent: service.createFromCatalog(body as unknown as CatalogNewUserAgent) } }));
+      }
       onlyFields(body, ['name', 'description', 'prompt', 'permissions', 'confirmation']);
       return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as ConfirmedNewUserAgent) } }));
     }),

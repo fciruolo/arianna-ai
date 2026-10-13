@@ -248,7 +248,8 @@ function readText(root: string, path: string, max: number): { text: string; byte
 function licenseOf(root: string, file: string | null): { name: string | null; text: string | null; sha256: string | null } {
   if (file === null || file.includes('/') || !LICENSE_FILE.test(file)) return { name: null, text: null, sha256: null };
   const read = readText(root, file, MAX_LICENSE_BYTES);
-  if (read === undefined || 'refused' in read || !inside(root, join(root, file))) return { name: null, text: null, sha256: null };
+  // An empty file is no license, as for the card (`sourceLicensed`).
+  if (read === undefined || 'refused' in read || read.text.trim() === '' || !inside(root, join(root, file))) return { name: null, text: null, sha256: null };
   return { name: detectLicense(read.text), text: read.text, sha256: sha256(read.text) };
 }
 

@@ -4,13 +4,18 @@ import { join } from 'node:path';
 
 import {
   ACTING_TOOLS,
+  AgencyError,
+  agencyPreset,
   AgentCardError,
   checkUserPermissions,
   loadAgent,
   loadUserAgents,
   parseAgentCard,
+  parseUserPermissions,
   parseYamlText,
   promptLabelOf,
+  proposeCard,
+  sourceLicensed,
   USER_AGENT_FOLDERS,
   USER_AGENT_NAME,
   USER_CARD_MARK,
@@ -35,6 +40,8 @@ import {
 import { scanText, type Label } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
+import type { AgentRole } from './agents-catalog.ts';
+import { CatalogError } from './git-catalog.ts';
 import { claudeToolsOf, delegationRoute, type DelegationRoute } from './orchestrator/delegate.ts';
 
 /**
@@ -91,6 +98,45 @@ export interface UserAgentEdit {
 /** A new agent with the id returned by `prepareCreate`. */
 export type ConfirmedNewUserAgent = NewUserAgent & { confirmation?: unknown };
 
+/**
+ * A new agent from a role of the catalog of agents (D-079, tappa 3): the role
+ * gives description and prompt, read again by the core from the adopted
+ * checkout; the page sends only the role, the name (missing: the one the
+ * core suggests) and the permissions (missing: the starting point of the
+ * role's division). A source without a license needs `licenseAccepted`.
+ */
+export interface CatalogNewUserAgent {
+  from: unknown;
+  name?: unknown;
+  permissions?: unknown;
+  licenseAccepted?: unknown;
+  confirmation?: unknown;
+}
+
+/** What `prepare` adds for a role of the catalog: where it comes from, and what the page must say. */
+export interface CatalogProposalInfo {
+  id: string;
+  source: string;
+  page: string;
+  commit: string;
+  path: string;
+  name: string;
+  division: string;
+  license: string | null;
+  licenseFile: string | null;
+  /** No license at the root of the source: the page asks before creating, the card keeps the warning. */
+  unlicensed: boolean;
+  /** The starting point of the role's division. */
+  preset: string;
+  /** A free name the core suggests: the role's slug, shortened or numbered when needed. */
+  suggestedName: string;
+}
+
+/** The roles of the catalog the cards are made from (agents-catalog.ts). */
+export interface CatalogRoles {
+  role(id: unknown): AgentRole;
+}
+
 export interface PermissionChange {
   field: 'executor' | 'tools' | 'autonomy' | 'maxSteps' | 'maxMinutes' | 'maxLabel' | 'promptLabel';
   before: string | number | string[] | null;
@@ -113,6 +159,8 @@ export interface AgentProposal {
   /** Null for an agent of the local model: nothing leaves the Mac. */
   cloud: { executor: 'claude'; briefMax: Label; promptLabel: Label; claudeTools: string[] } | null;
   expiresInMs: number;
+  /** A card from the catalog of agents: the role and its source. */
+  catalog?: CatalogProposalInfo;
 }
 
 export interface CardSummary {
@@ -144,6 +192,9 @@ export interface UserAgents {
   /** What a new card would be, with the confirmation id that `create` needs. */
   prepareCreate(input: NewUserAgent): AgentProposal;
   create(input: ConfirmedNewUserAgent): UserAgentView;
+  /** The same for a role of the catalog of agents (D-079): what the disabled card would be. */
+  prepareFromCatalog(input: CatalogNewUserAgent): AgentProposal;
+  createFromCatalog(input: CatalogNewUserAgent): UserAgentView;
   permissions(name: string): UserAgentView;
   activate(name: string): UserAgentView;
   deactivate(name: string): UserAgentView;
@@ -172,6 +223,8 @@ export interface UserAgentSources {
   };
   /** The tools of `claude -p` each repository tool stands for, shown on the page. */
   claudeTools: Record<string, string[]>;
+  /** Whether a card can be made from the catalog of agents (D-079). */
+  catalog: boolean;
 }
 
 /** How long a prepared change stays confirmable, as the privacy changes of the settings page. */
@@ -289,6 +342,8 @@ export function createUserAgents(options: {
   agents: Map<string, LoadedAgent>;
   /** The names of the cards of `agents/`, read at start: never a user card's name. */
   official: ReadonlySet<string>;
+  /** The catalog of agents (D-079); without it no card is made from a role. */
+  catalog?: CatalogRoles;
   now?: () => number;
   confirmMs?: number;
 }): UserAgents {
@@ -388,8 +443,12 @@ export function createUserAgents(options: {
     const { state, agent } = find(name);
     const text = cardText(dirOf(state), name);
     const origin = userCardOrigin(text);
+    // The prompt of a card of a third party is the role as adopted, at L0: a text of the user there would pass for L0 (D-079).
+    if (origin === 'agency' && edit.prompt !== undefined && edit.prompt !== agent.prompt) {
+      throw new UserAgentError('invalid', 'the prompt of a role of the catalog is read only: it changes only by adopting the role again');
+    }
     checkText(edit.description, 'the description');
-    checkText(edit.prompt, 'the prompt');
+    if (origin !== 'agency') checkText(edit.prompt, 'the prompt');
     // Never fails: a card outside the list is refused when read.
     const current = checkUserPermissions(agent.card, origin);
     const files = cardFiles(
@@ -403,6 +462,81 @@ export function createUserAgents(options: {
       text,
     );
     return { state, files, before: summary(agent), basis: digest(text) };
+  }
+  /** A free name for a role's card: its slug, cut to the length of a name, numbered when taken; empty when none is free. */
+  /** A free name for a role's card: its slug, cut to the length of a name, numbered when taken. */
+  function suggestedName(slug: string): string {
+    const base = slug.slice(0, 40).replace(/-+$/, '');
+    if (USER_AGENT_NAME.test(base) && !taken(base)) return base;
+    for (let n = 2; n < 100; n += 1) {
+      const suffix = `-${String(n)}`;
+      const candidate = `${base.slice(0, 40 - suffix.length).replace(/-+$/, '')}${suffix}`;
+      if (USER_AGENT_NAME.test(candidate) && !taken(candidate)) return candidate;
+    }
+    return '';
+  }
+
+  /**
+   * The card of a role: read again by the catalog from the adopted checkout
+   * (sha256 checked there), framed by `proposeCard` with the permissions of
+   * the starting point or the ones chosen within the list. Nothing of the
+   * role's file chooses a permission, a label or a tool.
+   */
+  function catalogFiles(input: CatalogNewUserAgent): { files: UserCardFiles; info: CatalogProposalInfo } {
+    if (options.catalog === undefined) throw new UserAgentError('not-found', 'the catalog of agents is not available');
+    const from = input.from;
+    if (typeof from !== 'object' || from === null || Array.isArray(from) || Object.keys(from).join() !== 'catalog') {
+      throw new UserAgentError('invalid', 'from must be { catalog: "<owner>/<repo>/<slug>" }');
+    }
+    let role: AgentRole;
+    try {
+      role = options.catalog.role((from as { catalog: unknown }).catalog);
+    } catch (error) {
+      if (error instanceof CatalogError) throw new UserAgentError(error.code === 'not-found' ? 'not-found' : error.code === 'invalid' ? 'invalid' : 'conflict', error.message);
+      throw error;
+    }
+    const preset = agencyPreset(role.entry.division);
+    const suggested = suggestedName(role.entry.slug);
+    const name = input.name === undefined || input.name === '' ? suggested : input.name;
+    if (name === '') throw new UserAgentError('conflict', 'no free name for this role: write one yourself');
+    if (typeof name !== 'string' || !USER_AGENT_NAME.test(name)) throw new UserAgentError('invalid', 'the name is 2-40 lowercase letters, digits and -, starting with a letter');
+    checkText(name.toUpperCase(), 'the name');
+    let permissions: UserPermissions | undefined;
+    let proposed: { yaml: string; md: string };
+    try {
+      if (input.permissions !== undefined) permissions = parseUserPermissions(input.permissions);
+      proposed = proposeCard(role.entry, preset, role.origin, { name, ...(permissions === undefined ? {} : { permissions }) });
+    } catch (error) {
+      if (error instanceof AgentCardError || error instanceof AgencyError) throw new UserAgentError('invalid', error.message);
+      throw error;
+    }
+    const { license } = role.origin;
+    return {
+      files: { name, yaml: proposed.yaml, md: proposed.md },
+      info: {
+        id: role.id,
+        source: role.source,
+        page: role.origin.repository,
+        commit: role.origin.commit,
+        path: role.entry.path,
+        name: role.entry.name,
+        division: role.entry.division,
+        license: license.name,
+        licenseFile: license.file,
+        unlicensed: !sourceLicensed(role.origin),
+        preset: preset.id,
+        suggestedName: suggested,
+      },
+    };
+  }
+
+  /** Writes a new disabled card; `wx`: a card written meanwhile is never overwritten. */
+  function writeNew(files: UserCardFiles): UserAgentView {
+    folders();
+    const dir = dirOf('disabled');
+    writeFileSync(join(dir, `${files.name}.md`), files.md, { mode: 0o600, flag: 'wx' });
+    writeFileSync(join(dir, `${files.name}.yaml`), files.yaml, { mode: 0o600, flag: 'wx' });
+    return userView({ ...loadAgent(dir, files.name), origin: 'user' }, 'disabled');
   }
 
   /** The summary of files about to be written, read as the core will read them. */
@@ -472,7 +606,7 @@ export function createUserAgents(options: {
     },
 
     sources() {
-      // The proposals of agency-agents join in tappa T4, after the review.
+      // The roles of the catalog of agents come from their own routes (D-079); here only whether they can be used.
       const claudeTools = Object.fromEntries(USER_TOOLS.claude.map((tool) => [tool, claudeToolsOf([tool])]));
       return {
         presets: userPresets(),
@@ -484,6 +618,7 @@ export function createUserAgents(options: {
           trifecta: { ...USER_TRIFECTA },
         },
         claudeTools,
+        catalog: options.catalog !== undefined,
       };
     },
 
@@ -498,12 +633,22 @@ export function createUserAgents(options: {
       if (taken(files.name)) throw new UserAgentError('conflict', `an agent named ${files.name} already exists`);
       // A new card always shows its permissions first: never written without the confirmation.
       redeem(input.confirmation, files, NEW);
-      folders();
-      const dir = dirOf('disabled');
-      // `wx`: a card written meanwhile is never overwritten.
-      writeFileSync(join(dir, `${files.name}.md`), files.md, { mode: 0o600, flag: 'wx' });
-      writeFileSync(join(dir, `${files.name}.yaml`), files.yaml, { mode: 0o600, flag: 'wx' });
-      return userView({ ...loadAgent(dir, files.name), origin: 'user' }, 'disabled');
+      return writeNew(files);
+    },
+
+    prepareFromCatalog(input) {
+      const { files, info } = catalogFiles(input);
+      if (taken(files.name)) throw new UserAgentError('conflict', `an agent named ${files.name} already exists: choose another name, for example ${info.suggestedName}`);
+      return { ...proposal(files, null, NEW), catalog: info };
+    },
+
+    createFromCatalog(input) {
+      const { files, info } = catalogFiles(input);
+      if (taken(files.name)) throw new UserAgentError('conflict', `an agent named ${files.name} already exists: choose another name, for example ${info.suggestedName}`);
+      // A source without a license: the user said yes to the warning (D-079); the card keeps it written.
+      if (info.unlicensed && input.licenseAccepted !== true) throw new UserAgentError('invalid', 'the source of this role has no license: the user must accept the warning');
+      redeem(input.confirmation, files, NEW);
+      return writeNew(files);
     },
 
     permissions(name) {

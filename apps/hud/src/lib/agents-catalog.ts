@@ -135,6 +135,21 @@ export function roleLicenseText(role: Pick<AgentRoleSummary, 'license' | 'licens
   return 'senza licenza alla radice della raccolta';
 }
 
+/** The starting point of a role, as the core gives it (`agencyPreset`): code for engineering and testing, answer otherwise. */
+export function catalogPresetOf(division: string): 'code' | 'answer' {
+  return division === 'engineering' || division === 'testing' ? 'code' : 'answer';
+}
+
+/** The name a card of a role starts with: its slug within the 40 characters of a name; the core numbers it when taken. */
+export function roleCardName(slug: string): string {
+  return slug.slice(0, 40).replace(/-+$/, '');
+}
+
+/** No license at the root of the role's source: the page asks before creating the card. */
+export function roleUnlicensed(role: Pick<AgentRoleSummary, 'license' | 'licenseFile'>): boolean {
+  return role.license === null && role.licenseFile === null;
+}
+
 /** "12,4 MiB su 512 MiB". */
 export function spaceText(bytes: number, maxBytes: number): string {
   const mib = (value: number): string => (value / 1024 / 1024).toLocaleString('it-IT', { maximumFractionDigits: 1 });
