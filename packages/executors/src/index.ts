@@ -56,6 +56,7 @@ export {
   devFilesystem,
   devIgnoredPaths,
   devStrayInstructionFiles,
+  devUserRuleFiles,
   devVersionOk,
   spawnCodexDev,
   userConfigRefusals,

@@ -11,7 +11,7 @@
 // The project's AGENTS.md is read (it carries the rules for Codex), so the
 // files that confine the agents are read only.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, posix, resolve, sep } from 'node:path';
 
 import { parse } from 'smol-toml';
@@ -81,9 +81,15 @@ const CODEX_FOLDERS = /(^|\/)\.(codex|agents)\//;
  * the permission profiles or the shell variables, or switch to a profile whose
  * values `-c` does not see. `developer_instructions` and `notify` are also
  * overridden with empty values, which `codex debug prompt-input` confirms for
- * the first.
+ * the first. The sandbox and approval keys are overridden by `-c` too, but
+ * which of `sandbox_mode` and `default_permissions` wins is not checked: they
+ * refuse the launch instead of being trusted to lose.
  */
 export const DEV_REFUSED_USER_KEYS = [
+  'sandbox_mode',
+  'sandbox_permissions',
+  'approval_policy',
+  'default_permissions',
   'mcp_servers',
   'notify',
   'model_provider',
@@ -119,22 +125,37 @@ export function devStrayInstructionFiles(filesZ: string): string[] {
   return filesZ.split('\0').filter((path) => path !== '' && path !== 'AGENTS.md' && (INSTRUCTION_FILES.has(posix.basename(path)) || CODEX_FOLDERS.test(path)));
 }
 
-/** The `.gitignore` files `git status --porcelain -z` shows changed or untracked: the denied paths come from them. */
+/**
+ * The `.gitignore` files `git status --porcelain -z` shows changed or
+ * untracked: the denied paths come from them. A rename or copy (`R`, `C`) is
+ * followed by its source path as an entry of its own; both count.
+ */
 export function devChangedGitignores(porcelainZ: string): string[] {
-  return porcelainZ
-    .split('\0')
-    .filter((entry) => entry.length > 3 && !entry.startsWith('!! '))
-    .map((entry) => entry.slice(3))
-    .filter((path) => posix.basename(path) === '.gitignore');
+  const entries = porcelainZ.split('\0');
+  const paths: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index] as string;
+    if (entry.length <= 3 || entry.startsWith('!! ')) continue;
+    paths.push(entry.slice(3));
+    if (/[RC]/.test(entry.slice(0, 2))) {
+      const source = entries[index + 1];
+      if (source !== undefined && source !== '') paths.push(source);
+      index += 1;
+    }
+  }
+  return paths.filter((path) => posix.basename(path) === '.gitignore');
 }
 
-/** The keys of the user's config.toml that refuse the launch (names only: the values are never returned). */
-export function userConfigRefusals(text: string): string[] {
+/**
+ * The keys of the user's config.toml that refuse the launch (names only: the
+ * values are never returned); undefined when the file is not TOML.
+ */
+export function userConfigRefusals(text: string): string[] | undefined {
   let config: Record<string, unknown>;
   try {
     config = parse(text);
   } catch {
-    return ['(config.toml non leggibile come TOML)'];
+    return undefined;
   }
   // The built-in provider of the subscription is the only one that passes.
   return DEV_REFUSED_USER_KEYS.filter((key) => key in config && !(key === 'model_provider' && config[key] === 'openai'));
@@ -204,8 +225,9 @@ export function devExtraArgs(extra: readonly string[]): { options: string[]; pro
 }
 
 /**
- * The configuration options (`--strict-config` and `-c`), shared by the
- * launch and by the check of the MCP servers:
+ * The configuration options (`-c`, `--disable`), shared by the launch and by
+ * the check of the MCP servers (`codex mcp` refuses `--strict-config`, which
+ * `devArgs` adds):
  * - the whole permission profile, filesystem (`devFilesystem`) and network
  *   (off: no network, loopback included), as one table; the user's config may
  *   not define `[permissions]` (`userConfigRefusals`), so nothing merges in;
@@ -213,16 +235,14 @@ export function devExtraArgs(extra: readonly string[]): { options: string[]; pro
  *   proposed to run outside it. Code written by Codex would run there without
  *   the sandbox, and its output would go back to the cloud. `untrusted` is
  *   refused by 0.160.0 ("no longer supported");
- * - `--strict-config`: an unknown key, from `-c` too, fails the launch;
  * - the features of the adapter turned off, no login shell, the core
  *   variables only in the shell, git without the user's configuration, no web
  *   search, no update check, no analytics or feedback, no skills in the
  *   prompt, no developer instructions nor notify program from the user's
- *   config.
+ *   config, no history of the prompts in the user's Codex folder.
  */
 export function devConfigArgs(home: string, readable: readonly string[], ignored: readonly string[], readOnly: readonly string[] = []): string[] {
   return [
-    '--strict-config',
     '-c',
     `default_permissions="${PROFILE}"`,
     '-c',
@@ -246,6 +266,8 @@ export function devConfigArgs(home: string, readable: readonly string[], ignored
     '-c',
     'notify=[]',
     '-c',
+    'history.persistence="none"',
+    '-c',
     'check_for_update_on_startup=false',
     '-c',
     'analytics.enabled=false',
@@ -255,10 +277,14 @@ export function devConfigArgs(home: string, readable: readonly string[], ignored
   ];
 }
 
-/** The arguments of the interactive `codex`: the configuration, the repository as working folder, the user's model and prompt. */
+/**
+ * The arguments of the interactive `codex`: `--strict-config` (an unknown key,
+ * from `-c` too, fails the launch), the configuration, the repository as
+ * working folder, the user's model and prompt.
+ */
 export function devArgs(home: string, readable: readonly string[], ignored: readonly string[], extra: readonly string[], readOnly: readonly string[] = []): string[] {
   const { options, prompt } = devExtraArgs(extra);
-  return [...devConfigArgs(home, readable, ignored, readOnly), '--cd', home, ...options, ...prompt];
+  return ['--strict-config', ...devConfigArgs(home, readable, ignored, readOnly), '--cd', home, ...options, ...prompt];
 }
 
 /** Terminal variables the interactive screen needs, besides those of `codexEnv`. */
@@ -290,7 +316,20 @@ export function devEnabledMcpServers(json: string): string[] {
     return ['(elenco dei server MCP illeggibile)'];
   }
   if (!Array.isArray(list)) return ['(elenco dei server MCP illeggibile)'];
-  return list.filter((server: { enabled?: unknown; name?: unknown }) => server.enabled !== false).map((server: { name?: unknown }) => String(server.name));
+  const servers: string[] = [];
+  for (const server of list as unknown[]) {
+    // Anything but an object with enabled: false counts as a server that would start.
+    if (typeof server !== 'object' || server === null || Array.isArray(server)) servers.push('(voce illeggibile)');
+    else if ((server as { enabled?: unknown }).enabled !== false) servers.push(String((server as { name?: unknown }).name));
+  }
+  return servers;
+}
+
+/** How many entries the user's `.codex/rules` folder holds (execpolicy rule files); 0 when it does not exist. Never read. */
+export function devUserRuleFiles(userHome: string): number {
+  const folder = join(userHome, '.codex', 'rules');
+  if (!existsSync(folder)) return 0;
+  return readdirSync(folder).length;
 }
 
 export interface CodexDevLaunch {
@@ -302,7 +341,8 @@ export interface CodexDevLaunch {
 /**
  * Checks the machine and builds the launch, writing nothing; throws, with an
  * Italian message, what refuses it: another version of the binary, the user's
- * global instructions, refused keys of the user's config.toml or an enabled
+ * global instructions or execution rules, refused keys of the user's
+ * config.toml (or one that is not TOML), an enabled
  * MCP server, instruction files in the repository besides the root AGENTS.md,
  * a `.gitignore` changed or untracked against HEAD, a readable folder that
  * would open the user's files.
@@ -310,7 +350,9 @@ export interface CodexDevLaunch {
 export function codexDevLaunch(repository: string, extra: readonly string[], from: NodeJS.ProcessEnv = process.env): CodexDevLaunch {
   const home = realpathSync(repository);
   const env = devEnv(from);
+  // Fail closed: without a home the binary's configuration, rules and instructions could not be checked.
   const userHome = from.HOME ?? '';
+  if (!isAbsolute(userHome)) throw new Error('codex-dev: manca HOME (o non è un percorso assoluto): non posso controllare la configurazione di Codex, lancio rifiutato');
   const codex = (args: string[]): string => execFileSync('codex', args, { encoding: 'utf8', env, cwd: home, stdio: ['ignore', 'pipe', 'pipe'] });
   let version: string;
   try {
@@ -321,16 +363,25 @@ export function codexDevLaunch(repository: string, extra: readonly string[], fro
   if (!devVersionOk(version)) {
     throw new Error(`codex-dev: codex ${version.trim()} non è la versione verificata ${CODEX_DEV_VERSION}: va riverificato il profilo (D-143) prima di usarlo`);
   }
-  if (userHome !== '' && userInstructionFiles(userHome).some((file) => existsSync(file))) {
+  if (userInstructionFiles(userHome).some((file) => existsSync(file))) {
     throw new Error('codex-dev: ci sono istruzioni globali di Codex nella cartella .codex della home (AGENTS.md o AGENTS.override.md): andrebbero nel prompt; spostale prima di lanciare');
   }
   // CODEX_HOME is not passed on (codexEnv): the binary reads the config of HOME.
   const userConfig = join(userHome, '.codex', 'config.toml');
-  if (userHome !== '' && existsSync(userConfig)) {
+  if (existsSync(userConfig)) {
     const refused = userConfigRefusals(readFileSync(userConfig, 'utf8'));
+    if (refused === undefined) {
+      throw new Error('codex-dev: il config.toml di Codex nella home non si legge come TOML: correggilo (o spostalo) prima di lanciare');
+    }
     if (refused.length > 0) {
       throw new Error(`codex-dev: il config.toml di Codex nella home ha chiavi che uscirebbero dal profilo o cambierebbero le regole: ${refused.join(', ')}. Toglile (o spostale) prima di lanciare`);
     }
+  }
+  // The user's execution rules: an `allow` rule runs a command outside the sandbox without asking, and the
+  // interactive binary has no --ignore-rules. Only counted, never read.
+  const rules = devUserRuleFiles(userHome);
+  if (rules > 0) {
+    throw new Error(`codex-dev: ci sono ${String(rules)} file di regole di esecuzione di Codex nella cartella .codex/rules della home: una regola "allow" farebbe girare comandi fuori dal sandbox. Spostali fuori da quella cartella prima di lanciare`);
   }
   const git = (args: string[]): string => execFileSync('git', ['-C', home, ...args], { encoding: 'utf8', env, maxBuffer: 64 * 1024 * 1024 });
   const stray = devStrayInstructionFiles(git(['ls-files', '-z', '--cached', '--others', '--exclude-standard']));
@@ -357,10 +408,9 @@ export function codexDevLaunch(repository: string, extra: readonly string[], fro
   // The adapter's check: no readable folder may open the user's files, the repository or a shared temp folder.
   const { readable } = codexSandboxFolders({ home, env, readable: [...new Set([...toolchain, ...extraReadable])] });
   // The MCP servers the binary would start, from every configuration layer it reads, with these options.
-  // `codex mcp` refuses --strict-config: the launch itself checks the keys.
   let listed: string;
   try {
-    listed = codex([...devConfigArgs(home, readable, ignored, nestedGitignores).slice(1), 'mcp', 'list', '--json']);
+    listed = codex([...devConfigArgs(home, readable, ignored, nestedGitignores), 'mcp', 'list', '--json']);
   } catch (cause) {
     throw new Error('codex-dev: `codex mcp list` non risponde: non posso verificare che non parta nessun server MCP', { cause });
   }

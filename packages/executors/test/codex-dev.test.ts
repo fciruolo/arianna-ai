@@ -21,6 +21,7 @@ import {
   devFilesystem,
   devIgnoredPaths,
   devStrayInstructionFiles,
+  devUserRuleFiles,
   devVersionOk,
   userConfigRefusals,
 } from '@arianna/executors';
@@ -156,11 +157,15 @@ test('the user config: refused keys by name only, the subscription provider pass
     ['mcp_servers', 'notify', 'model_provider', 'profiles', 'permissions'],
   );
   assert.deepEqual(userConfigRefusals('model_instructions_file = "/x"\notel = {}\nchatgpt_base_url = "https://x"\n'), ['model_instructions_file', 'otel', 'chatgpt_base_url']);
-  const refused = userConfigRefusals('[[[non toml');
-  assert.equal(refused.length, 1);
-  assert.match(refused[0] as string, /non leggibile/);
+  assert.deepEqual(userConfigRefusals('sandbox_mode = "danger-full-access"\napproval_policy = "on-request"\ndefault_permissions = "x"\nsandbox_permissions = []\n'), [
+    'sandbox_mode',
+    'sandbox_permissions',
+    'approval_policy',
+    'default_permissions',
+  ]);
+  assert.equal(userConfigRefusals('[[[non toml'), undefined);
   // Never the values.
-  assert.ok(!userConfigRefusals('notify = ["segreto-valore"]').join(' ').includes('segreto-valore'));
+  assert.ok(!(userConfigRefusals('notify = ["segreto-valore"]') ?? []).join(' ').includes('segreto-valore'));
 });
 
 test('the MCP servers the binary would start: enabled ones by name, disabled ones pass, garbage refuses', () => {
@@ -168,12 +173,27 @@ test('the MCP servers the binary would start: enabled ones by name, disabled one
   assert.deepEqual(devEnabledMcpServers('[{"name":"posta","enabled":true},{"name":"spento","enabled":false}]'), ['posta']);
   assert.equal(devEnabledMcpServers('non json').length, 1);
   assert.equal(devEnabledMcpServers('{}').length, 1);
+  // Elements that are not objects count as servers that would start.
+  assert.deepEqual(devEnabledMcpServers('[null, "x", [], {"name":"spento","enabled":false}]'), ['(voce illeggibile)', '(voce illeggibile)', '(voce illeggibile)']);
 });
 
 test('changed or untracked .gitignore files are found, other changes and ignored ones are not', () => {
   const porcelain = [' M .gitignore', '?? apps/x/.gitignore', ' M package.json', '!! data/.gitignore', 'M  docs/a.md', ''].join('\0');
   assert.deepEqual(devChangedGitignores(porcelain), ['.gitignore', 'apps/x/.gitignore']);
   assert.deepEqual(devChangedGitignores(''), []);
+  // A rename carries its source as the next entry: both sides count, and the source is not read as a status line.
+  assert.deepEqual(devChangedGitignores(['R  docs/.gitignore', 'apps/y/.gitignore', ' M a.ts', ''].join('\0')), ['docs/.gitignore', 'apps/y/.gitignore']);
+  assert.deepEqual(devChangedGitignores(['R  apps/z/new.txt', 'apps/z/.gitignore', ''].join('\0')), ['apps/z/.gitignore']);
+  assert.deepEqual(devChangedGitignores(['C  b.txt', 'M  .gitignore', ''].join('\0')), []);
+});
+
+test('the user execution rules are counted, never read', () => {
+  const home = join(SCRATCH, randomUUID());
+  assert.equal(devUserRuleFiles(home), 0);
+  mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
+  assert.equal(devUserRuleFiles(home), 0);
+  writeFileSync(join(home, '.codex', 'rules', 'default.rules'), 'prefix_rule(pattern = ["cat"], decision = "allow")\n');
+  assert.equal(devUserRuleFiles(home), 1);
 });
 
 test('the .codex and .agents folders are refused at any depth', () => {
@@ -190,7 +210,12 @@ test('the nested .gitignore files found at launch are read only too', () => {
 
 interface Machine {
   version?: string;
+  /** The fake binary fails `--version`. */
+  noVersion?: boolean;
   mcp?: string;
+  /** The fake binary fails `mcp list`. */
+  mcpFails?: boolean;
+  rules?: boolean;
   userConfig?: string;
   globalInstructions?: boolean;
   files?: Record<string, string>;
@@ -217,8 +242,8 @@ function machine(options: Machine = {}): { repo: string; env: NodeJS.ProcessEnv 
     codex,
     [
       '#!/bin/sh',
-      `if [ "$1" = "--version" ]; then echo "codex-cli ${options.version ?? CODEX_DEV_VERSION}"; exit 0; fi`,
-      `case " $* " in *" mcp list --json "*) echo '${options.mcp ?? '[]'}'; exit 0;; esac`,
+      options.noVersion === true ? 'if [ "$1" = "--version" ]; then exit 2; fi' : `if [ "$1" = "--version" ]; then echo "codex-cli ${options.version ?? CODEX_DEV_VERSION}"; exit 0; fi`,
+      options.mcpFails === true ? 'case " $* " in *" mcp list --json "*) exit 4;; esac' : `case " $* " in *" mcp list --json "*) echo '${options.mcp ?? '[]'}'; exit 0;; esac`,
       'exit 3',
       '',
     ].join('\n'),
@@ -226,6 +251,7 @@ function machine(options: Machine = {}): { repo: string; env: NodeJS.ProcessEnv 
   chmodSync(codex, 0o755);
   if (options.userConfig !== undefined) writeFileSync(join(home, '.codex', 'config.toml'), options.userConfig);
   if (options.globalInstructions === true) writeFileSync(join(home, '.codex', 'AGENTS.md'), 'finte istruzioni globali\n');
+  if (options.rules === true) writeFiles(join(home, '.codex'), { 'rules/default.rules': 'prefix_rule(pattern = ["cat"], decision = "allow")\n' });
   writeFiles(repo, { 'AGENTS.md': '# regole\n', '.gitignore': 'data/\n', 'src/a.ts': 'export {};\n', ...options.files });
   // Never the variables of the repository running the tests: under the pre-commit hook GIT_DIR and GIT_INDEX_FILE
   // point at Arianna's own repository, and `git init` there would rewrite its configuration.
@@ -286,4 +312,32 @@ test('codexDevLaunch refuses refused keys of the user config and enabled MCP ser
 test('codexDevLaunch refuses the dangerous extra arguments', () => {
   const { repo, env } = machine();
   assert.throws(() => codexDevLaunch(repo, ['--dangerously-bypass-approvals-and-sandbox'], env), /non ammesso/);
+});
+
+test('codexDevLaunch fails closed without a home', () => {
+  const { repo, env } = machine();
+  assert.throws(() => codexDevLaunch(repo, [], { ...env, HOME: '' }), /manca HOME/);
+  assert.throws(() => codexDevLaunch(repo, [], { PATH: env.PATH }), /manca HOME/);
+  assert.throws(() => codexDevLaunch(repo, [], { ...env, HOME: 'relativa' }), /manca HOME/);
+});
+
+test('codexDevLaunch refuses the user execution rules, counted and named only by their folder', () => {
+  const { repo, env } = machine({ rules: true });
+  assert.throws(() => codexDevLaunch(repo, [], env), (error: Error) => /1 file di regole/.test(error.message) && !error.message.includes('prefix_rule'));
+});
+
+test('codexDevLaunch refuses when the binary does not answer --version or mcp list', () => {
+  const version = machine({ noVersion: true });
+  assert.throws(() => codexDevLaunch(version.repo, [], version.env), /non si avvia/);
+  const mcp = machine({ mcpFails: true });
+  assert.throws(() => codexDevLaunch(mcp.repo, [], mcp.env), /mcp list` non risponde/);
+});
+
+test('codexDevLaunch: a config.toml that is not TOML has its own message, the subscription provider passes', () => {
+  const broken = machine({ userConfig: '[[[non toml\n' });
+  assert.throws(() => codexDevLaunch(broken.repo, [], broken.env), /non si legge come TOML/);
+  const openai = machine({ userConfig: 'model_provider = "openai"\n' });
+  assert.ok(codexDevLaunch(openai.repo, [], openai.env).args.includes('history.persistence="none"'));
+  const sandbox = machine({ userConfig: 'sandbox_mode = "danger-full-access"\n' });
+  assert.throws(() => codexDevLaunch(sandbox.repo, [], sandbox.env), /sandbox_mode/);
 });
