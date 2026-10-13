@@ -347,7 +347,7 @@ L'agente Mentor segue le fonti che scegli, ti porta ogni giorno ciò che conta d
 - **Persone:** gli sviluppatori e i divulgatori americani che vuoi seguire (i nomi li scegli tu, e il sistema ti suggerisce candidati che poi accetti o scarti).
 - **Sintesi:** newsletter e podcast tecnici, trascritti in locale quando c'è solo l'audio.
 
-**Cosa salva.** Link, titolo, data, un riassunto scritto da un modello e al massimo brevi citazioni; non conserva copie integrali di articoli o trascrizioni altrui, e rispetta le condizioni d'uso di ogni piattaforma, quindi dove un servizio non permette la raccolta automatica ti manda una segnalazione manuale.
+**Cosa salva.** Link, titolo, data, un riassunto scritto da un modello e al massimo brevi citazioni; non conserva copie integrali di articoli o trascrizioni altrui, e rispetta le condizioni d'uso di ogni piattaforma, quindi dove un servizio non permette la raccolta automatica ti manda una segnalazione manuale. Eccezione per ciò che l'utente passa lui stesso (D-080, scelta dell'utente del 2026-10-13): un video di una piattaforma si può scaricare come solo audio, con la sua approvazione per quel singolo link, per trascriverlo in locale; l'audio si cancella subito e nella nota privata restano titolo, canale, data, riassunto e trascrizione. Il Mentor, che raccoglie da solo, resta alle regole di sopra.
 
 **Come trasforma le novità in studio**
 
