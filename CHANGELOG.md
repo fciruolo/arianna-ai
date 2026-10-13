@@ -2,6 +2,21 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill (D-079).
+
+### Cambiato
+
+- Il catalogo delle skill e quello degli agenti usano lo stesso motore delle sorgenti GitHub (D-079, D-161).
+- Una scheda nata da un ruolo di terzi riporta sorgente, commit, sha256 e la licenza della sua raccolta; senza licenza lo dice con un avviso (D-079).
+
+### Rimosso
+
+- `pnpm agency:import`, il clone a mano e `config/agency.lock`: le schede già proposte restano riconosciute come schede di terzi (D-079).
+
 ## [0.87.0] - 2026-10-13
 
 ### Aggiunto
@@ -36,19 +51,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Conoscenza: chi non aveva mai scelto una vista ora apre il grafo in 3D; chi aveva premuto «2D» lo ritrova in 2D (D-104).
 - Conoscenza in 3D: la rotazione lenta a riposo ridisegna al massimo 30 volte al secondo, anche sugli schermi a 120 Hz; il layout 2D si prepara solo quando si passa al 2D (D-104).
-
-### Aggiunto
-
-- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill (D-079).
-
-### Cambiato
-
-- Il catalogo delle skill e quello degli agenti usano lo stesso motore delle sorgenti GitHub (D-079, D-161).
-- Una scheda nata da un ruolo di terzi riporta sorgente, commit, sha256 e la licenza della sua raccolta; senza licenza lo dice con un avviso (D-079).
-
-### Rimosso
-
-- `pnpm agency:import`, il clone a mano e `config/agency.lock`: le schede già proposte restano riconosciute come schede di terzi (D-079).
 
 ## [0.85.3] - 2026-10-13
 
