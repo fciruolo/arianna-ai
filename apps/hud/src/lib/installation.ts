@@ -59,7 +59,7 @@ export interface ReadinessReport {
   checkedAt: string;
   checks: ReadinessCheck[];
   /** The last `pnpm arianna:doctor` in a terminal: the checks that need the owner of the database. */
-  terminal: { at: string; ok: boolean } | null;
+  terminal: { at: string; ok: boolean; stale: boolean } | null;
 }
 
 const KNOWN = new Set<string>(READINESS_IDS);
@@ -87,13 +87,13 @@ export function parseReadiness(value: unknown): ReadinessReport | null | undefin
   let last: ReadinessReport['terminal'] = null;
   if (terminal !== null) {
     if (typeof terminal !== 'object') return undefined;
-    const { at, ok } = terminal as Record<string, unknown>;
-    if (typeof at !== 'string' || Number.isNaN(Date.parse(at)) || typeof ok !== 'boolean') return undefined;
-    last = { at, ok };
+    const { at, ok, stale } = terminal as Record<string, unknown>;
+    if (typeof at !== 'string' || Number.isNaN(Date.parse(at)) || typeof ok !== 'boolean' || typeof stale !== 'boolean') return undefined;
+    last = { at, ok, stale };
   }
   const list = READINESS_IDS.filter((id) => groups.has(id)).map((id) => ({ id, ok: groups.get(id) === true }));
   // Ready only as the core says and as the list shows: one failing group is enough to say no.
-  return { ready: ready && list.every((check) => check.ok) && last?.ok === true, checkedAt, checks: list, terminal: last };
+  return { ready: ready && list.every((check) => check.ok) && last?.ok === true && !last.stale, checkedAt, checks: list, terminal: last };
 }
 
 /** Each check in plain words: its name, a line when it passes, what to do when it does not. */
@@ -136,7 +136,7 @@ export const READINESS_TEXT: Record<ReadinessId, { title: string; ok: string; fi
   programs: {
     title: 'Programmi necessari',
     ok: 'Node.js, pnpm, Docker acceso, sops e age.',
-    fix: 'Manca un programma, o Docker è spento. Esegui pnpm arianna:doctor nel Terminale per sapere quale.',
+    fix: 'Manca un programma, o Docker è spento. Esegui pnpm arianna:doctor nel Terminale per sapere quale; se lì c’è tutto, riavvia Arianna dal Terminale.',
   },
   voice: {
     title: 'Ambiente della voce',
@@ -175,6 +175,7 @@ export function whenText(iso: string, now: Date = new Date()): string {
 export function terminalText(terminal: ReadinessReport['terminal'], now: Date = new Date()): string {
   if (terminal === null) return 'Lo controlla solo il Terminale, che non l’ha ancora fatto: apri il Terminale nella cartella di Arianna e scrivi pnpm arianna:doctor.';
   const when = whenText(terminal.at, now);
+  if (terminal.stale) return `Da rifare: l’ultimo controllo del Terminale, ${when}, è di prima dell’ultimo aggiornamento del database. Esegui di nuovo pnpm arianna:doctor nel Terminale.`;
   return terminal.ok
     ? `Lo controlla solo il Terminale: ultimo esito a posto, ${when}.`
     : `Lo controlla solo il Terminale: l’ultimo esito, ${when}, non era a posto. Esegui pnpm arianna:doctor e correggi quello che segnala.`;
@@ -195,7 +196,7 @@ export function readinessRows(report: ReadinessReport, now: Date = new Date()): 
     text: check.ok ? READINESS_TEXT[check.id].ok : READINESS_TEXT[check.id].fix,
     tone: check.ok ? 'ok' : 'missing',
   });
-  const terminal: ReadinessRow = { key: 'terminal', title: TERMINAL_TITLE, text: terminalText(report.terminal, now), tone: report.terminal?.ok === true ? 'ok' : 'terminal' };
+  const terminal: ReadinessRow = { key: 'terminal', title: TERMINAL_TITLE, text: terminalText(report.terminal, now), tone: report.terminal?.ok === true && !report.terminal.stale ? 'ok' : 'terminal' };
   const missing = report.checks.filter((check) => !check.ok).map(row);
   const passed = report.checks.filter((check) => check.ok).map(row);
   if (terminal.tone === 'ok') passed.push(terminal);

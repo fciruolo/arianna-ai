@@ -15,11 +15,14 @@ test('the answer of the core: null before the first check, undefined when unexpe
 });
 
 test('ready only when every check and the terminal passed, whatever the core says', () => {
-  const terminal = { at: at(12, 18, 40), ok: true };
+  const terminal = { at: at(12, 18, 40), ok: true, stale: false };
   const report = (ready: boolean, checks: { id: string; ok: boolean }[], last: typeof terminal | null) => parseReadiness({ readiness: { ready, checkedAt: at(13, 10, 12), checks, terminal: last } });
   assert.equal(report(true, [{ id: 'models', ok: true }], terminal)?.ready, true);
   assert.equal(report(true, [{ id: 'models', ok: false }], terminal)?.ready, false);
   assert.equal(report(true, [{ id: 'models', ok: true }], null)?.ready, false);
+  // A doctor older than the last migration: to be run again, not ready.
+  assert.equal(report(true, [{ id: 'models', ok: true }], { ...terminal, stale: true })?.ready, false);
+  assert.equal(report(true, [], { at: at(12, 18, 40), ok: true } as typeof terminal), undefined);
   assert.equal(report(true, [{ id: 'models', ok: true }], { ...terminal, ok: false })?.ready, false);
   // An id the page does not know is never hidden: it counts under «Altri controlli».
   const unknown = report(true, [{ id: 'brand-new', ok: false }], terminal);
@@ -44,8 +47,9 @@ test('when, in the words of the page', () => {
 
 test('the terminal: never run, passed, not passed', () => {
   assert.match(terminalText(null, NOW), /non l’ha ancora fatto.*pnpm arianna:doctor/);
-  assert.equal(terminalText({ at: at(12, 18, 40), ok: true }, NOW), 'Lo controlla solo il Terminale: ultimo esito a posto, ieri alle 18:40.');
-  assert.match(terminalText({ at: at(12, 18, 40), ok: false }, NOW), /non era a posto/);
+  assert.equal(terminalText({ at: at(12, 18, 40), ok: true, stale: false }, NOW), 'Lo controlla solo il Terminale: ultimo esito a posto, ieri alle 18:40.');
+  assert.match(terminalText({ at: at(12, 18, 40), ok: false, stale: false }, NOW), /non era a posto/);
+  assert.match(terminalText({ at: at(12, 18, 40), ok: true, stale: true }, NOW), /^Da rifare: .*di prima dell’ultimo aggiornamento del database/);
 });
 
 test('rows: what is missing first, the terminal last among them; what passed apart', () => {
@@ -73,12 +77,18 @@ test('rows: what is missing first, the terminal last among them; what passed apa
     passed.map((row) => [row.key, row.text]),
     [['folders', READINESS_TEXT.folders.ok]],
   );
-  const done = readinessRows({ ...report, checks: [{ id: 'folders', ok: true }], terminal: { at: at(12, 18, 40), ok: true } }, NOW);
+  const done = readinessRows({ ...report, checks: [{ id: 'folders', ok: true }], terminal: { at: at(12, 18, 40), ok: true, stale: false } }, NOW);
   assert.deepEqual(done.missing, []);
   assert.deepEqual(
     done.passed.map((row) => row.key),
     ['folders', 'terminal'],
   );
+  const stale = readinessRows({ ...report, checks: [{ id: 'folders', ok: true }], terminal: { at: at(12, 18, 40), ok: true, stale: true } }, NOW);
+  assert.deepEqual(
+    stale.missing.map((row) => [row.key, row.tone]),
+    [['terminal', 'terminal']],
+  );
+  assert.match(stale.missing[0]?.text ?? '', /^Da rifare/);
   assert.equal(missingText(1), 'Manca 1 cosa');
   assert.equal(missingText(3), 'Mancano 3 cose');
 });

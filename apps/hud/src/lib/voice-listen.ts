@@ -41,9 +41,25 @@ export function listenBlocker(input: ListenInput): string | undefined {
   return undefined;
 }
 
-/** Whether the service may still change by itself: the page asks again until it settles. */
+/** Whether the service may still change by itself. */
 export function serviceSettling(service: string | undefined): boolean {
   return service === undefined || STARTING.has(service);
+}
+
+/** How many times the page asks again by itself, every 5 s: about a minute, then «Controlla di nuovo». */
+export const SERVICE_POLLS = 12;
+
+/**
+ * Whether to ask the state again by itself: while it is starting or off (a
+ * save with «Chiamate accese» starts it), for a limited number of times.
+ */
+export function shouldPoll(service: string | undefined, attempts: number): boolean {
+  return attempts < SERVICE_POLLS && (serviceSettling(service) || service === 'off');
+}
+
+/** Whether «Controlla di nuovo» is offered: the service is known and not up, and the page no longer asks by itself. */
+export function canRecheck(service: string | undefined, attempts: number): boolean {
+  return service !== undefined && service !== 'up' && !shouldPoll(service, attempts);
 }
 
 /** Why the sentence was not said. */

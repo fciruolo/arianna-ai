@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { LISTEN_PHRASE, listenBlocker, listenErrorText, serviceSettling, type ListenInput } from '../src/lib/voice-listen.ts';
+import { canRecheck, LISTEN_PHRASE, listenBlocker, listenErrorText, SERVICE_POLLS, serviceSettling, shouldPoll, type ListenInput } from '../src/lib/voice-listen.ts';
 
 const READY: ListenInput = { service: 'up', callBusy: false, model: { present: true, voices: ['serena', 'vivian'] }, voice: 'serena' };
 
@@ -34,11 +34,27 @@ test('model and voice: none chosen, not on disk, empty field, a voice of another
   assert.equal(listenBlocker({ ...READY, voice: 'nuova-voce' }), '«nuova-voce» non è fra le voci del modello scelto in Modelli: scegline una dall’elenco del campo, poi ascoltala.');
 });
 
-test('the page asks again only while the service may change by itself', () => {
+test('the page asks again by itself only while the service starts or is off, a limited number of times', () => {
   assert.equal(serviceSettling(undefined), true);
   assert.equal(serviceSettling('starting'), true);
   assert.equal(serviceSettling('up'), false);
   assert.equal(serviceSettling('failed'), false);
+  assert.equal(shouldPoll('starting', 0), true);
+  assert.equal(shouldPoll('off', SERVICE_POLLS - 1), true);
+  assert.equal(shouldPoll('off', SERVICE_POLLS), false);
+  assert.equal(shouldPoll('starting', SERVICE_POLLS), false);
+  assert.equal(shouldPoll('up', 0), false);
+  assert.equal(shouldPoll('down', 0), false);
+});
+
+test('«Controlla di nuovo» when the service is not up and the page no longer asks by itself', () => {
+  assert.equal(canRecheck('down', 0), true);
+  assert.equal(canRecheck('failed', 0), true);
+  assert.equal(canRecheck('not-installed', 0), true);
+  assert.equal(canRecheck('off', 0), false);
+  assert.equal(canRecheck('off', SERVICE_POLLS), true);
+  assert.equal(canRecheck('up', SERVICE_POLLS), false);
+  assert.equal(canRecheck(undefined, SERVICE_POLLS), false);
 });
 
 test('errors in plain words, never the English of the core', () => {

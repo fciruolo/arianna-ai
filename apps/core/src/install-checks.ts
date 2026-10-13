@@ -6,7 +6,7 @@
 import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { arch, platform, totalmem } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { loadCatalog, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type Project } from '@arianna/config';
 
@@ -21,9 +21,21 @@ export const MIN_NODE = [22, 18] as const;
 /** Runs `binary args` and returns stdout; rejects when the binary is missing or fails. */
 export type Runner = (binary: string, args: string[]) => Promise<string>;
 
+// Where Homebrew and Docker Desktop put their programs: a core started outside
+// a terminal (a launcher, the login) may have a PATH without them, and would
+// report as missing what the terminal finds (D-192). Searched after PATH.
+const PACKAGE_BINS = ['/opt/homebrew/bin', '/usr/local/bin'];
+
+/** PATH with the folders of the package managers added at the end when missing. */
+export function withPackageBins(path: string | undefined): string {
+  const parts = (path ?? '').split(delimiter).filter((part) => part !== '');
+  return [...parts, ...PACKAGE_BINS.filter((bin) => !parts.includes(bin))].join(delimiter);
+}
+
 export const runCommand: Runner = (binary, args) =>
   new Promise((resolvePromise, reject) => {
-    execFile(binary, args, { timeout: 15_000, encoding: 'utf8', maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    const env = { ...process.env, PATH: withPackageBins(process.env.PATH) };
+    execFile(binary, args, { timeout: 15_000, encoding: 'utf8', maxBuffer: 1024 * 1024, env }, (error, stdout) => {
       if (error === null) resolvePromise(stdout.trim());
       else reject(new Error(`${binary} is missing or failed`));
     });

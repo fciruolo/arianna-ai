@@ -346,8 +346,14 @@ test('«Pronta per i dati veri» (D-192): none before a check, then groups and o
   assert.equal(checked.status, 200);
   const readiness = checked.body.readiness as { ready: boolean; checks: unknown[]; terminal: unknown };
   assert.equal(readiness.ready, false);
+  // The required groups that did not run (the stub returns two checks) are failures.
   assert.deepEqual(readiness.checks, [
     { id: 'passwords', ok: false },
+    { id: 'default-passwords', ok: false },
+    { id: 'events', ok: false },
+    { id: 'folders', ok: false },
+    { id: 'models', ok: false },
+    { id: 'programs', ok: false },
     { id: 'projects', ok: true },
   ]);
   assert.equal(readiness.terminal, null);

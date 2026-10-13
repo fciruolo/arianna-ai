@@ -4,14 +4,17 @@
 // owner of the database can make. The owner's password never enters the core
 // (D-046), so those come from data/doctor/last.json, written by the doctor
 // with ids and outcomes only. Nothing here leaves the details of a check:
-// they hold paths, project names and program versions.
-import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+// they hold paths, project names and program versions. The checks read the
+// disk synchronously (folders of data/, sizes of the models): they run only
+// on «Controlla», never when the page opens.
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { AriannaConfig } from '@arianna/config';
 
 import type { Sql } from './db/client.ts';
 import type { DbLogin } from './db/logins.ts';
+import { MIGRATIONS_DIR } from './db/migrate.ts';
 import { appPasswordCheck, defaultPasswordsCheck, type DoctorCheck } from './doctor.ts';
 import { verifyEventChain } from './events.ts';
 import { installationChecks, type Runner } from './install-checks.ts';
@@ -20,27 +23,32 @@ import { installationChecks, type Runner } from './install-checks.ts';
 export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'programs', 'voice', 'projects', 'other'] as const;
 export type ReadinessId = (typeof READINESS_IDS)[number];
 
+/** Groups that must be there: one missing (a check that did not run) is a failure, never a silent pass. */
+export const REQUIRED_GROUPS: readonly ReadinessId[] = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'programs', 'projects'];
+
 export interface ReadinessCheck {
   id: ReadinessId;
   ok: boolean;
 }
 
-/** The last doctor run in a terminal: when, and whether the checks of the owner passed. */
+/** The last doctor run in a terminal: when, whether its database checks passed, and whether it predates the migrations of this code. */
 export interface TerminalOutcome {
   at: string;
   ok: boolean;
+  /** Run before the last migration this installation has: to be run again. */
+  stale: boolean;
 }
 
 export interface ReadinessReport {
-  /** Every group passed and the last doctor in a terminal passed the owner's checks. */
+  /** Every group passed and the last doctor in a terminal passed its database checks, after the last migration. */
   ready: boolean;
   checkedAt: string;
   checks: ReadinessCheck[];
   terminal: TerminalOutcome | null;
 }
 
-/** What only the doctor in a terminal can check: it needs the owner's password. */
-export const TERMINAL_IDS = ['database.owner', 'database.migrations', 'database.app-role'] as const;
+/** What the record of the doctor must hold: the checks of the owner, and the full check of the passwords. */
+export const TERMINAL_IDS = ['database.owner', 'database.migrations', 'database.app-role', 'database.passwords'] as const;
 
 function groupOf(id: string): ReadinessId {
   if (id === 'database.passwords') return 'passwords';
@@ -56,19 +64,37 @@ function groupOf(id: string): ReadinessId {
   return 'other';
 }
 
-/** The checks under their groups: a group passes when every check in it does. Groups without checks are left out. */
-export function groupChecks(checks: readonly Pick<DoctorCheck, 'id' | 'ok'>[]): ReadinessCheck[] {
+/**
+ * The checks under their groups: a group passes when every check in it does.
+ * A required group without checks is added as failed; the others are left out.
+ */
+export function groupChecks(checks: readonly Pick<DoctorCheck, 'id' | 'ok'>[], required: readonly ReadinessId[] = []): ReadinessCheck[] {
   const groups = new Map<ReadinessId, boolean>();
   for (const check of checks) {
     const id = groupOf(check.id);
     groups.set(id, (groups.get(id) ?? true) && check.ok);
   }
+  for (const id of required) if (!groups.has(id)) groups.set(id, false);
   return READINESS_IDS.filter((id) => groups.has(id)).map((id) => ({ id, ok: groups.get(id) === true }));
 }
 
-/** The record of the doctor: the checks it ran, by id, with their outcome only. */
+/** The groups this configuration must show: the voice only with [voice]. */
+export function requiredGroups(config: Pick<AriannaConfig, 'voice'>): ReadinessId[] {
+  return config.voice === undefined ? [...REQUIRED_GROUPS] : [...REQUIRED_GROUPS, 'voice'];
+}
+
+/** The last migration of this code, by file name (`0042_name`); null without any. */
+export function latestMigration(dir: string = MIGRATIONS_DIR): string | null {
+  const files = readdirSync(dir)
+    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+    .sort();
+  return files.at(-1)?.replace(/\.sql$/, '') ?? null;
+}
+
+/** The record of the doctor: the checks it ran, by id, with their outcome only, and the last migration it knew. */
 export interface DoctorRecord {
   at: string;
+  migration: string | null;
   checks: { id: string; ok: boolean }[];
 }
 
@@ -78,11 +104,12 @@ const MAX_RECORD = 64 * 1024;
 const MAX_CHECKS = 1000;
 
 /**
- * Writes data/doctor/last.json: the time and the id and outcome of each
- * check, never a detail. The folder is private (700) and the file 600; the
- * file is replaced whole (rename), and a link in place of the folder is refused.
+ * Writes data/doctor/last.json: the time, the last migration, the id and
+ * outcome of each check, never a detail. The folder is private (700) and the
+ * file 600; the file is replaced whole (rename), and a link in place of the
+ * folder is refused.
  */
-export function writeDoctorRecord(data: string, checks: readonly DoctorCheck[], now: Date = new Date()): void {
+export function writeDoctorRecord(data: string, checks: readonly DoctorCheck[], options: { now?: Date; migration?: string | null } = {}): void {
   const dir = join(data, DOCTOR_DIR);
   let stats;
   try {
@@ -93,18 +120,32 @@ export function writeDoctorRecord(data: string, checks: readonly DoctorCheck[], 
   }
   if (!stats.isDirectory()) throw new Error('data/doctor is not a folder: the record of the doctor was not written');
   if ((stats.mode & 0o077) !== 0) chmodSync(dir, 0o700);
-  const record: DoctorRecord = { at: now.toISOString(), checks: checks.map((check) => ({ id: check.id, ok: check.ok })) };
+  const record: DoctorRecord = {
+    at: (options.now ?? new Date()).toISOString(),
+    migration: options.migration === undefined ? latestMigration() : options.migration,
+    checks: checks.map((check) => ({ id: check.id, ok: check.ok })),
+  };
   const temporary = join(dir, `${RECORD_FILE}.${String(process.pid)}.tmp`);
   rmSync(temporary, { force: true });
   writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   renameSync(temporary, join(dir, RECORD_FILE));
 }
 
-/** The record checked: anything unexpected (missing, a link, too big, another shape) is no record. */
+/**
+ * The record checked: anything unexpected is no record. The folder must be a
+ * real folder (not a link), the file a plain file opened without following a
+ * link nor waiting on a pipe, small, of the expected shape.
+ */
 export function readDoctorRecord(data: string): DoctorRecord | null {
+  const dir = join(data, DOCTOR_DIR);
+  try {
+    if (!lstatSync(dir).isDirectory()) return null;
+  } catch {
+    return null;
+  }
   let fd: number;
   try {
-    fd = openSync(join(data, DOCTOR_DIR, RECORD_FILE), constants.O_RDONLY | constants.O_NOFOLLOW);
+    fd = openSync(join(dir, RECORD_FILE), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
     return null;
   }
@@ -119,8 +160,10 @@ export function readDoctorRecord(data: string): DoctorRecord | null {
     closeSync(fd);
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
-  const { at, checks } = parsed as Record<string, unknown>;
+  const { at, migration, checks } = parsed as Record<string, unknown>;
   if (typeof at !== 'string' || Number.isNaN(Date.parse(at)) || !Array.isArray(checks) || checks.length > MAX_CHECKS) return null;
+  // A record written before the field existed knows no migration: it is stale.
+  if (migration !== undefined && migration !== null && (typeof migration !== 'string' || migration.length > 200)) return null;
   const valid: DoctorRecord['checks'] = [];
   for (const check of checks as unknown[]) {
     if (typeof check !== 'object' || check === null) return null;
@@ -128,18 +171,24 @@ export function readDoctorRecord(data: string): DoctorRecord | null {
     if (typeof id !== 'string' || id.length > 200 || typeof ok !== 'boolean') return null;
     valid.push({ id, ok });
   }
-  return { at: new Date(at).toISOString(), checks: valid };
+  return { at: new Date(at).toISOString(), migration: typeof migration === 'string' ? migration : null, checks: valid };
 }
 
-/** What the record says about the owner's checks: all present and passed, or not. */
-export function terminalOutcome(record: DoctorRecord | null): TerminalOutcome | null {
+/**
+ * What the record says: passed only when every database check in it passed
+ * and the required ones are all there (a short or repeated owner password
+ * fails `database.passwords` there, which the core cannot see); stale when it
+ * was written before the last migration of this code.
+ */
+export function terminalOutcome(record: DoctorRecord | null, migration: string | null): TerminalOutcome | null {
   if (record === null) return null;
-  const ok = TERMINAL_IDS.every((id) => record.checks.some((check) => check.id === id && check.ok));
-  return { at: record.at, ok };
+  const database = record.checks.filter((check) => check.id.startsWith('database.'));
+  const ok = TERMINAL_IDS.every((id) => database.some((check) => check.id === id)) && database.every((check) => check.ok);
+  return { at: record.at, ok, stale: record.migration === null || record.migration !== migration };
 }
 
 export function readinessReport(checks: ReadinessCheck[], checkedAt: string, terminal: TerminalOutcome | null): ReadinessReport {
-  return { ready: checks.every((check) => check.ok) && terminal?.ok === true, checkedAt, checks, terminal };
+  return { ready: checks.every((check) => check.ok) && terminal?.ok === true && !terminal.stale, checkedAt, checks, terminal };
 }
 
 export interface ReadinessOptions {
@@ -151,6 +200,8 @@ export interface ReadinessOptions {
   app: DbLogin;
   /** Runs the checks; the default is the real ones. Tests pass their own. */
   collect?: () => Promise<DoctorCheck[]>;
+  /** The last migration of this code; read once from apps/core/migrations by default. */
+  migration?: string | null;
   run?: Runner;
   now?: () => number;
   /** A new check at most this often; meanwhile the last one is answered. */
@@ -189,11 +240,12 @@ export async function coreChecks(config: AriannaConfig, sql: Sql, app: DbLogin, 
 export function createReadiness(options: ReadinessOptions): Readiness {
   const now = options.now ?? Date.now;
   const minInterval = options.minIntervalMs ?? 10_000;
+  const migration = options.migration === undefined ? latestMigration() : options.migration;
   const collect = options.collect ?? (() => coreChecks(options.config(), options.sql, options.app, options.run));
   let last: { checks: ReadinessCheck[]; at: number } | null = null;
   let running: Promise<ReadinessReport> | undefined;
   const reportOf = (done: { checks: ReadinessCheck[]; at: number }): ReadinessReport =>
-    readinessReport(done.checks, new Date(done.at).toISOString(), terminalOutcome(readDoctorRecord(options.config().paths.data)));
+    readinessReport(done.checks, new Date(done.at).toISOString(), terminalOutcome(readDoctorRecord(options.config().paths.data), migration));
   return {
     last: () => (last === null ? null : reportOf(last)),
     check() {
@@ -201,7 +253,7 @@ export function createReadiness(options: ReadinessOptions): Readiness {
       if (last !== null && now() - last.at < minInterval) return Promise.resolve(reportOf(last));
       running = (async () => {
         try {
-          const done = { checks: groupChecks(await collect()), at: now() };
+          const done = { checks: groupChecks(await collect(), requiredGroups(options.config())), at: now() };
           last = done;
           return reportOf(done);
         } finally {
