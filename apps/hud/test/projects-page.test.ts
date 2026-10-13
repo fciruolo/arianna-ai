@@ -335,6 +335,19 @@ test('the header of an open note as a row of data, the other keys as they are (D
   assert.deepEqual(noteMeta([]), { im: null, date: null, status: null, other: [] });
 });
 
+test('the open note reads its header as the list does: first line of a key, single quotes, a date that is one (D-193)', () => {
+  const meta = noteMeta(['stato:', 'stato: chiuso', "data: '2026-10-08 10:00'", `im: 7`]);
+  assert.equal(meta.status, null);
+  assert.equal(meta.date, '8 ott 2026, 10:00');
+  assert.deepEqual(meta.other, [{ key: 'stato', value: 'chiuso' }]);
+  assert.equal(noteMeta([`stato: ${'x'.repeat(90)}`]).status, 'x'.repeat(40));
+  const impossible = noteMeta(['data: 2026-13-40', 'date: 2026-02-10']);
+  assert.equal(impossible.date, '10 feb 2026');
+  assert.deepEqual(impossible.other, [{ key: 'data', value: '2026-13-40' }]);
+  assert.equal(noteDayText('2026-13-01', 2026), '');
+  assert.equal(noteDateText('2026-10-08 25:00'), '8 ott 2026');
+});
+
 test('the notes by folder, with a search on title and path', () => {
   const folders = [folder('Workplan'), folder('IM'), folder('documenti', 'L2')];
   const notes = [note('Workplan', 'Piano di lavoro'), note('IM', 'Riunione di avvio Rossi'), note('IM', 'IM-34'), note('Verbali', 'Verbale')];

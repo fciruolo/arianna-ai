@@ -305,7 +305,9 @@ const EXCERPT_TASKS = 4;
 const DATE_KEYS = ['data', 'date', 'captured_at'] as const;
 const DATE_VALUE = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}):(\d{2}))?/;
 const TASK_ITEM = /^\s*[-*+][ \t]+\[[ xX/>-]\][ \t]+(.*)$/;
-const NOT_TEXT = /^(?:-{3,}|\*{3,}|_{3,}|`{3,}.*|~{3,}.*)$/;
+/** The longest state of a note in the list. */
+const MAX_STATUS = 40;
+const NOT_TEXT =/^(?:-{3,}|\*{3,}|_{3,}|`{3,}.*|~{3,}.*)$/;
 
 export interface NoteSummary {
   date: string | null;
@@ -324,18 +326,29 @@ export function noteDate(value: string): string | null {
   const match = DATE_VALUE.exec(headerValue(value));
   if (match === null) return null;
   const day = match[1] ?? '';
-  return match[2] === undefined ? day : `${day}T${match[2]}:${match[3] ?? '00'}`;
+  const [month, date] = [Number(day.slice(5, 7)), Number(day.slice(8, 10))];
+  if (month < 1 || month > 12 || date < 1 || date > 31) return null;
+  if (match[2] === undefined || Number(match[2]) > 23 || Number(match[3]) > 59) return day;
+  return `${day}T${match[2]}:${match[3] ?? '00'}`;
 }
 
 /** A line of text as the excerpt shows it: no list or quote marker, no `#card-…`, no emphasis marks. */
 function plainLine(line: string): string {
-  return line
-    .replace(/^\s*(?:>\s*)+/, '')
-    .replace(/^\s*(?:[-*+]|\d{1,9}[.)])[ \t]+/, '')
-    .replace(/(^|\s)#card-[0-9A-Za-z]+/g, '$1')
-    .replace(/\*\*|__|`/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    line
+      // Control, format and bidi characters and U+FFFD (a binary file) never reach the page.
+      .replace(/[\p{Cc}\p{Cf}�]/gu, ' ')
+      .replace(/<!--.*?(?:-->|$)/g, ' ')
+      .replace(/^\s*(?:>\s*)+/, '')
+      .replace(/^\s*(?:[-*+]|\d{1,9}[.)])[ \t]+/, '')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target: string, alias: string | undefined) => alias ?? target)
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/(^|\s)#card-[0-9A-Za-z]+/g, '$1')
+      .replace(/\*\*|__|`/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 function clip(text: string): string {
@@ -385,8 +398,11 @@ export function noteSummary(text: string): NoteSummary {
     date = value === undefined ? null : noteDate(value);
     if (date !== null) break;
   }
-  const status = values.get('stato') ?? '';
-  return { date, status: status === '' ? null : status, excerpt: noteExcerpt(parsePage(text).body) };
+  const status = (values.get('stato') ?? '').slice(0, MAX_STATUS).trim();
+  // A header opened and never closed (or past the bytes read): its lines are not text to show.
+  const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const unclosed = /^---[ \t]*\n/.test(normalized) && normalized.indexOf('\n---', normalized.indexOf('\n')) < 0;
+  return { date, status: status === '' ? null : status, excerpt: unclosed ? null : noteExcerpt(parsePage(text).body) };
 }
 
 /** When a file was last changed, as `YYYY-MM-DDTHH:MM` local time; null when it cannot be read. */

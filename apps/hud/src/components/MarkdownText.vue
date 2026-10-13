@@ -104,7 +104,7 @@ function block(node: Block, tail: VNode[], wikilink: Wikilink): VNode {
       const tasks = node.tasks;
       return h(
         node.ordered ? 'ol' : 'ul',
-        { ...(node.ordered && node.start !== 1 ? { start: node.start } : {}), ...(tasks === undefined ? {} : { class: 'md-tasks' }) },
+        node.ordered && node.start !== 1 ? { start: node.start } : {},
         node.items.map((item, index) => {
           const content = blocks(item, index === node.items.length - 1 ? tail : [], wikilink);
           const task = tasks?.[index] ?? null;

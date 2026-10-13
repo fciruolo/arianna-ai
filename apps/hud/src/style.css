@@ -569,16 +569,20 @@ body {
   .md li::marker {
     color: var(--muted);
   }
-  /* A list of works (D-193, the IM of D-167): boxes only to read, no bullet. */
-  .md ul.md-tasks,
-  .md ol.md-tasks {
-    list-style: none;
-    padding-left: 0;
-  }
+  /*
+   * A list of works (D-193, the IM of D-167): boxes only to read. Only the
+   * item with a box loses its bullet or number, and its box sits where the
+   * marker would: the plain items of a mixed list keep theirs.
+   */
   .md li.md-task {
     display: flex;
     gap: 0.6em;
     align-items: baseline;
+    list-style: none;
+    margin-left: -1.35em;
+  }
+  .md ol > li.md-task {
+    margin-left: -1.6em;
   }
   .md-task-text {
     min-width: 0;

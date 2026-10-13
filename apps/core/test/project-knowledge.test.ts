@@ -472,16 +472,44 @@ describe('date, state and first line of a note in the list (D-193)', () => {
 
   it('the list gives each note date, state and excerpt; without a date in the header, the time the file changed', () => {
     write(BOX, { 'IM/IM-32.md': IM_32 });
-    const notes = readProjectKnowledge(PROJECTS, 'progetto-test', ENV).notes;
-    const im = notes.find((note) => note.path === 'IM/IM-32.md');
-    assert.ok(im);
-    assert.equal(im.date, '2026-10-08T10:00');
-    assert.equal(im.status, 'chiuso');
-    const plain = notes.find((note) => note.path === 'IM/riunione.md');
-    assert.ok(plain);
-    assert.match(plain.date ?? '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-    assert.equal(plain.status, null);
-    assert.equal(plain.excerpt, 'Il portale clienti va in prova.');
-    rmSync(join(BOX, 'IM', 'IM-32.md'));
+    try {
+      const notes = readProjectKnowledge(PROJECTS, 'progetto-test', ENV).notes;
+      const im = notes.find((note) => note.path === 'IM/IM-32.md');
+      assert.ok(im);
+      assert.equal(im.date, '2026-10-08T10:00');
+      assert.equal(im.status, 'chiuso');
+      assert.match(im.excerpt ?? '', /^Pagamento con carta — Parte 1; /);
+      const plain = notes.find((note) => note.path === 'IM/riunione.md');
+      assert.ok(plain);
+      assert.match(plain.date ?? '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+      assert.equal(plain.status, null);
+      assert.equal(plain.excerpt, 'Il portale clienti va in prova.');
+    } finally {
+      rmSync(join(BOX, 'IM', 'IM-32.md'), { force: true });
+    }
+  });
+
+  it('a header never closed (or past the bytes read) gives no excerpt: its lines are not text', () => {
+    assert.equal(noteSummary('---\ntitle: x\nlabel: L2\nIl testo segreto\n').excerpt, null);
+    assert.equal(noteSummary(`---\n${'chiave: valore\n'.repeat(10)}`).excerpt, null);
+    assert.equal(noteSummary('---\ntitle: x\n---\nChiusa.').excerpt, 'Chiusa.');
+  });
+
+  it('control, format and bidi characters and U+FFFD never reach the excerpt; a binary file gives none', () => {
+    assert.equal(noteExcerpt('\u0000\u0001��\u0007‎‮'), null);
+    assert.equal(noteExcerpt('Testo‮girato\u0000 qui�'), 'Testo girato qui');
+  });
+
+  it('links, images, wikilinks and HTML comments become plain words', () => {
+    assert.equal(noteExcerpt('Vedi [il sito](https://example.org) e [[Piano di maggio]] o [[piano|il piano]] ![logo](x.png)<!-- nascosto -->fine'), 'Vedi il sito e Piano di maggio o il piano fine');
+  });
+
+  it('the state is cut at 40 characters; impossible dates are refused, an impossible hour keeps the day', () => {
+    assert.equal(noteSummary(`---\nstato: ${'x'.repeat(100)}\n---\n`).status, 'x'.repeat(40));
+    assert.equal(noteDate('2026-13-01'), null);
+    assert.equal(noteDate('2026-10-32'), null);
+    assert.equal(noteDate('2026-00-10'), null);
+    assert.equal(noteDate('2026-10-08 25:00'), '2026-10-08');
+    assert.equal(noteSummary('---\ndata: 2026-02-40\ndate: 2026-02-10\n---\n').date, '2026-02-10');
   });
 });

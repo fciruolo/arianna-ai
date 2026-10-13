@@ -17,7 +17,8 @@ import NoteRelease from './NoteRelease.vue';
  * goes down says so and asks a second click), the other lines of the header
  * and the text. The core writes only over the file the user opened.
  */
-const props = defineProps<{ project: string; path: string }>();
+/** `deleting`: the page's confirmation of "Elimina" is open; never "Modifica" or "Fai uscire una volta" with it. */
+const props = withDefaults(defineProps<{ project: string; path: string; deleting?: boolean }>(), { deleting: false });
 /** `delete`: the bin of the bar; the page asks the confirmation (DeleteConfirm, in the default slot). */
 const emit = defineEmits<{ close: []; saved: []; open: [conversationId: string]; delete: [] }>();
 
@@ -114,13 +115,13 @@ watch(
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-1 flex-col" aria-labelledby="note-title">
+  <section class="flex min-h-0 min-w-0 flex-1 flex-col" :aria-label="shown?.title ?? 'Nota'">
     <header class="flex min-h-14 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
       <span class="mr-auto flex min-w-0 items-center gap-1.5 text-[13px] text-muted" :title="path">
         <span class="truncate">{{ folderOf }}</span><span aria-hidden="true">›</span><span class="truncate font-mono text-[12.5px]">{{ fileOf }}</span>
       </span>
       <button
-        v-if="note && note.label === 'L2' && !editing && !releasing"
+        v-if="note && note.label === 'L2' && !editing && !releasing && !deleting"
         type="button"
         class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13px]"
         title="Una versione anonima di questa nota esce una volta in una conversazione di lavoro, con la master password"
@@ -128,9 +129,9 @@ watch(
       >
         <Icon name="gateway" :size="13" />Fai uscire una volta
       </button>
-      <button v-if="note && !editing && !releasing" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13px] font-semibold" @click="startEditing"><Icon name="rename" :size="13" />Modifica</button>
+      <button v-if="note && !editing && !releasing && !deleting" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13px] font-semibold" @click="startEditing"><Icon name="rename" :size="13" />Modifica</button>
       <button
-        v-if="note && !editing && !releasing"
+        v-if="note && !editing && !releasing && !deleting"
         type="button"
         class="grid size-8 place-items-center rounded-md text-muted transition hover:text-danger"
         :aria-label="`Elimina per sempre ${note.title}`"
@@ -149,7 +150,7 @@ watch(
       <p v-else-if="note === null" class="p-4 text-sm text-muted">Apro la nota…</p>
       <NoteRelease v-else-if="releasing" :project="project" :path="note.path" :original="note.body" :version="note.version" @close="releasing = false" @open="(id) => emit('open', id)" />
       <article v-else-if="editing === null && shown" class="max-w-[760px] px-4 pt-5 pb-10 sm:px-8">
-        <h2 id="note-title" class="mb-1.5 text-[22px] leading-tight font-semibold break-words">{{ shown.title }}</h2>
+        <h2 class="mb-1.5 text-[22px] leading-tight font-semibold break-words">{{ shown.title }}</h2>
         <!-- The header as a row of data (D-193), not the raw "key: value" lines -->
         <div class="mb-5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13.5px] text-muted">
           <LabelBadge :label="note.label" class="text-[13px]" />

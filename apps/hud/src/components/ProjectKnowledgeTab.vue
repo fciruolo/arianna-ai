@@ -56,7 +56,8 @@ const chosenFolder = ref<string>(ALL);
 const query = ref('');
 const groups = computed(() => noteGroups(knowledge.value?.folders ?? [], knowledge.value?.notes ?? [], query.value, chosenFolder.value === ALL ? null : chosenFolder.value));
 const counts = computed(() => folderCounts(knowledge.value?.notes ?? []));
-const year = new Date().getFullYear();
+/** The year of today, read when the list is drawn: a page left open past New Year shows the dates right. */
+const thisYear = (): number => new Date().getFullYear();
 /** An existing folder by name, ignoring case as the core does: `workplan` is the existing `Workplan`. */
 const existingFolder = (path: string): KnowledgeFolder | undefined => knowledge.value?.folders.find((folder) => folder.path.toLowerCase() === path.trim().toLowerCase());
 const folderLabel = (path: string): Label | undefined => existingFolder(path)?.label;
@@ -128,8 +129,9 @@ function settingsError(cause: unknown): string {
   return errorText(cause);
 }
 
-async function chooseLabel(folder: KnowledgeFolder, event: Event): Promise<void> {
-  const select = event.target as HTMLSelectElement;
+async function chooseLabel(folder: KnowledgeFolder | undefined, event: Event): Promise<void> {
+  const select = event.target;
+  if (folder === undefined || !(select instanceof HTMLSelectElement)) return;
   const to = select.value as Label;
   // The selector shows the label in force until the confirmation writes the new one.
   select.value = folder.label;
@@ -273,6 +275,7 @@ watch(
             class="flex w-full items-center gap-2 border-l-3 px-3.5 py-2 text-left text-[14.5px] hover:bg-accent/5 max-[700px]:w-auto max-[700px]:shrink-0 max-[700px]:border-b-3 max-[700px]:border-l-0 max-[700px]:whitespace-nowrap"
             :class="chosenFolder === folder.path ? 'border-accent bg-accent/10 font-semibold' : 'border-transparent'"
             :aria-pressed="chosenFolder === folder.path"
+            :title="folder.path"
             @click="chosenFolder = folder.path"
           >
             <LabelBadge :label="folder.label" dot /><span class="min-w-0 truncate">{{ folder.path }}</span>
@@ -320,7 +323,7 @@ watch(
                 :aria-label="`Etichetta della cartella ${group.folder}`"
                 title="Etichetta della cartella: cambiarla chiede conferma"
                 :disabled="relabel !== null"
-                @change="chooseLabel(existingFolder(group.folder) as KnowledgeFolder, $event)"
+                @change="chooseLabel(existingFolder(group.folder), $event)"
               >
                 <option v-for="label in LABELS" :key="label" :value="label">{{ LABEL_TEXT[label] }}</option>
               </select>
@@ -338,7 +341,7 @@ watch(
             >
               <span class="flex items-baseline gap-2">
                 <b class="min-w-0 flex-1 truncate font-semibold">{{ note.title }}</b>
-                <span class="text-[12.5px] whitespace-nowrap text-muted tabular-nums">{{ noteDayText(note.date, year) }}</span>
+                <span class="text-[12.5px] whitespace-nowrap text-muted tabular-nums">{{ noteDayText(note.date, thisYear()) }}</span>
               </span>
               <span v-if="note.excerpt" class="mt-0.5 line-clamp-2 text-[13.5px] text-muted">{{ note.excerpt }}</span>
               <span v-if="note.status || raisedLabel(note, group.label)" class="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -401,6 +404,7 @@ watch(
           v-else-if="opened"
           :project="container.name"
           :path="opened"
+          :deleting="deleting"
           @close="closeNote"
           @saved="load"
           @open="(id) => emit('conversation', id)"

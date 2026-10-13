@@ -359,23 +359,38 @@ export function noteGroups(folders: readonly KnowledgeFolder[], notes: readonly 
 }
 
 const MONTH_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'] as const;
-const NOTE_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?$/;
+const NOTE_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
+
+/**
+ * A date as the core reads it (noteDate): `YYYY-MM-DD`, with an hour when
+ * it holds; an impossible month or day is no date, an impossible hour
+ * keeps the day.
+ */
+function parseNoteDate(value: string): { year: number; month: number; day: number; time: string | null } | null {
+  const match = NOTE_DATE.exec(value.trim());
+  if (match === null) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const hour = match[4];
+  const minute = match[5];
+  const time = hour !== undefined && minute !== undefined && Number(hour) <= 23 && Number(minute) <= 59 ? `${hour}:${minute}` : null;
+  return { year, month, day, time };
+}
 
 /** "8 ott" in the list; "8 ott 2025" when the year is not `year` (D-193); '' without a date. */
 export function noteDayText(date: string | null, year: number): string {
-  const match = date === null ? null : NOTE_DATE.exec(date);
-  if (match === null) return '';
-  const month = MONTH_SHORT[Number(match[2]) - 1] ?? '';
-  const day = `${String(Number(match[3]))} ${month}`;
-  return Number(match[1]) === year ? day : `${day} ${match[1] ?? ''}`;
+  const parsed = date === null ? null : parseNoteDate(date);
+  if (parsed === null) return '';
+  const day = `${String(parsed.day)} ${MONTH_SHORT[parsed.month - 1] ?? ''}`;
+  return parsed.year === year ? day : `${day} ${String(parsed.year)}`;
 }
 
 /** "8 ott 2026, 10:00" or "8 ott 2026", for the open note; the value as written when it is not a date. */
 export function noteDateText(value: string): string {
-  const match = NOTE_DATE.exec(value.trim().replace(' ', 'T').slice(0, 16));
-  if (match === null) return value.trim();
-  const day = `${String(Number(match[3]))} ${MONTH_SHORT[Number(match[2]) - 1] ?? ''} ${match[1] ?? ''}`;
-  return match[4] === undefined ? day : `${day}, ${match[4]}`;
+  const parsed = parseNoteDate(value);
+  if (parsed === null) return value.trim();
+  const day = `${String(parsed.day)} ${MONTH_SHORT[parsed.month - 1] ?? ''} ${String(parsed.year)}`;
+  return parsed.time === null ? day : `${day}, ${parsed.time}`;
 }
 
 /** The colour of a state pill: chiuso is done, previsto and in corso still to come, anything else plain. */
@@ -416,8 +431,23 @@ export interface NoteMeta {
 
 const META_LINE = /^\s*([A-Za-z_][A-Za-z_-]*)\s*:(.*)$/;
 
+/** A header value without its quotes, double or single, as the core reads it. */
+const unquoted = (value: string): string => {
+  const trimmed = value.trim();
+  return /^(".*"|'.*')$/.test(trimmed) ? trimmed.slice(1, -1).trim() : trimmed;
+};
+
+/** The longest state shown, as in the list of the core. */
+const MAX_STATUS = 40;
+
+/**
+ * As the core's list reads it (noteSummary): the first line of each key
+ * counts, an empty first `stato` is no state, the date is the first of
+ * data, date, captured_at that is a date.
+ */
 export function noteMeta(header: readonly string[]): NoteMeta {
   const meta: NoteMeta = { im: null, date: null, status: null, other: [] };
+  const seen = new Set<string>();
   const dates = new Map<string, string>();
   for (const line of header) {
     const match = META_LINE.exec(line);
@@ -426,16 +456,18 @@ export function noteMeta(header: readonly string[]): NoteMeta {
       continue;
     }
     const key = (match[1] ?? '').toLowerCase();
-    const value = (match[2] ?? '').trim().replace(/^"(.*)"$/, '$1');
-    if (key === 'im' && meta.im === null && value !== '') meta.im = value;
-    else if (key === 'stato' && meta.status === null && value !== '') meta.status = value;
-    else if ((key === 'data' || key === 'date' || key === 'captured_at') && !dates.has(key) && value !== '') dates.set(key, value);
+    const value = unquoted(match[2] ?? '');
+    const first = !seen.has(key);
+    seen.add(key);
+    if (key === 'im' && first) meta.im = value === '' ? null : value;
+    else if (key === 'stato' && first) meta.status = value.slice(0, MAX_STATUS).trim() || null;
+    else if ((key === 'data' || key === 'date' || key === 'captured_at') && first) dates.set(key, value);
     else meta.other.push({ key: match[1] ?? '', value });
   }
-  const date = dates.get('data') ?? dates.get('date') ?? dates.get('captured_at');
-  meta.date = date === undefined ? null : noteDateText(date);
+  const shown = ['data', 'date', 'captured_at'].find((key) => parseNoteDate(dates.get(key) ?? '') !== null);
+  meta.date = shown === undefined ? null : noteDateText(dates.get(shown) ?? '');
   // The dates not shown in the row stay among the other keys.
-  for (const [key, value] of dates) if (value !== date) meta.other.push({ key, value });
+  for (const [key, value] of dates) if (key !== shown) meta.other.push({ key, value });
   return meta;
 }
 
