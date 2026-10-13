@@ -226,13 +226,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Voglio una versione diversa — scrivi cosa permettere o vietare; Claude prepara il testo da incollare.
 - Esempio: Con la proposta, Claude modifica apps/hud/src/style.css senza chiedere, ma per "pnpm add lodash" compare comunque la tua conferma.
 
-### ho-conferma-di-d-052
-
-- Contesto: D-052 ha chiuso il test 1.4 scegliendo il modello locale da 27B come orchestratore (il "cervello" di Arianna), con due accorgimenti: una regola sulle virgolette nei pensieri del modello e un secondo tentativo quando la risposta non è nel formato richiesto (JSON). Durante lo sviluppo oggi gira il 9B, più leggero, per non mandare il Mac in affanno; il 27B resta la scelta per l'uso vero.
-- Opzione consigliata: Confermo — il 27B resta l'orchestratore per l'uso vero, con questi accorgimenti.
-- Opzione: Voglio riprovare altri modelli — Claude usa la prova dei modelli (Impostazioni → Modelli) e propone un cambio se uno va meglio.
-- Esempio: Se il modello risponde con testo libero invece del formato richiesto, Arianna gli richiede la stessa cosa una volta, senza la parte di ragionamento.
-
 ### ho-togliere-a-mano-data-scratch-review-d065
 
 - Contesto: La cartella data/scratch/review-d065/ contiene file di prova lasciati dal revisore automatico il 2026-10-04; è fuori da git, non serve più e c'è ancora. Claude non la cancella da solo perché le cancellazioni passano da te.
