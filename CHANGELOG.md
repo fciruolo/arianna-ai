@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.85.2] - 2026-10-13
+
 ### Cambiato
 
 - GOD e Pensieri: testata comune come Novità e Sviluppo (titolo normale, frase sotto, azioni a destra) e larghezza 1120 px (D-194).
