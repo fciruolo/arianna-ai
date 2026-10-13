@@ -128,7 +128,7 @@ function emptyText(id: MiniColumnId): string {
       <button type="button" class="flex flex-1 items-center gap-2 text-left" :aria-expanded="!folded" :aria-label="folded ? 'Mostra gli impegni' : 'Nascondi gli impegni'" @click="folded = !folded">
         <span class="inline-grid text-muted transition-transform" :class="{ 'rotate-90': !folded }"><Icon name="expand" :size="14" /></span>
         <Icon name="calendar" :size="15" />
-        <h2 class="hud-title">Impegni ({{ mini.open }})</h2>
+        <h2 class="text-[14.5px] font-semibold">Impegni <span class="font-normal text-muted">{{ mini.open }}</span></h2>
         <span v-if="late > 0" class="chip text-warn">{{ late === 1 ? '1 in ritardo' : `${String(late)} in ritardo` }}</span>
       </button>
       <a :href="CARDWALL_PATH" class="flex shrink-0 items-center gap-1 text-[13px] text-muted hover:text-ink" @click="openCardwall">Apri il cardwall →</a>
@@ -154,8 +154,8 @@ function emptyText(id: MiniColumnId): string {
           :aria-label="column.title"
         >
           <header class="flex items-center gap-2 px-2.5 pt-1.5 pb-1">
-            <h3 class="flex-1 text-[12.5px] font-semibold tracking-[0.04em] uppercase" :class="column.id === 'late' && column.items.length > 0 ? 'text-warn' : 'text-muted'">{{ column.title }}</h3>
-            <span class="font-mono text-[12px] text-muted">{{ column.items.length }}</span>
+            <h3 class="flex-1 text-[14px] font-semibold" :class="column.id === 'late' && column.items.length > 0 ? 'text-warn' : ''">{{ column.title }}</h3>
+            <span class="text-[13px] text-muted tabular-nums">{{ column.items.length }}</span>
           </header>
           <ul class="flex min-h-0 flex-col gap-1 px-1.5 pb-1.5 md:flex-1 md:overflow-y-auto">
             <li v-if="column.items.length === 0" class="px-1 py-1 text-[12.5px] text-muted">{{ emptyText(column.id) }}</li>

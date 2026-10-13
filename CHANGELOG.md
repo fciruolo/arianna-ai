@@ -4,6 +4,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Progetti, Conoscenza: tre colonne come una mail (cartelle, note in righe con data, prima riga e stato, nota aperta a destra); la nota si legge impaginata, con l'intestazione come riga di dati e le caselle dei lavori (D-193).
+- Chat e Novità: le caselle dei lavori `[x]`, `[ ]`, `[/]`, `[>]`, `[-]` si vedono come caselle (D-193).
+
+## [0.85.2] - 2026-10-13
+
+### Cambiato
+
+- GOD e Pensieri: testata comune come Novità e Sviluppo (titolo normale, frase sotto, azioni a destra) e larghezza 1120 px (D-194).
+- Studio: senza un progetto scelto, una card per progetto con le miniature dei mockup più recenti (D-194).
+- Conoscenza, Segretaria, Cardwall e Ufficio: titoli e testi nel carattere normale invece del maiuscolo HUD, filtri del Cardwall che vanno a capo, istruzioni del grafo e comandi dell'ufficio dietro un «?» (D-194).
+
 ## [0.85.1] - 2026-10-13
 
 ### Cambiato
