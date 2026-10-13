@@ -13,8 +13,9 @@ import { labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/po
  * `arianna/SPEC/privacy.md`.
  *
  * Every page is L2 at least, fixed here: a header in a document cannot lower
- * it, and a rule of labels.toml on docs/ can only raise it. HANDOFF.md (hand
- * offs between sessions, not stable knowledge) and docs/mockups/ are out.
+ * it, and a rule of labels.toml on docs/ can only raise it. HANDOFF.md and
+ * HANDOFF-STORIA.md (hand offs between sessions, not stable knowledge) and
+ * docs/mockups/ are out.
  * The text of the documents is data, never instructions.
  */
 export const ARIANNA_PAGES = 'arianna';
@@ -22,7 +23,7 @@ export const ARIANNA_DOCS_LABEL: Label = 'L2';
 export const DOCS_DIR = 'docs';
 export const CHANGELOG_FILE = 'CHANGELOG.md';
 /** Documents of docs/ that are not knowledge. */
-export const EXCLUDED_DOCS: readonly string[] = ['HANDOFF.md'];
+export const EXCLUDED_DOCS: readonly string[] = ['HANDOFF.md', 'HANDOFF-STORIA.md'];
 const DECISIONS_FILE = 'DECISIONS.md';
 const PROPOSALS_FILE = 'PROPOSTE.md';
 const MAX_DOC_BYTES = 2 * 1024 * 1024;

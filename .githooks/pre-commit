@@ -1,6 +1,14 @@
 #!/bin/sh
 # Rejects the commit unless type-check, tests, lint and deterministic evals pass (docs/DECISIONS.md, D-018).
 # First, no staged file may still hold the markers of a merge conflict (scripts/conflict-markers.ts).
+# A commit that only touches the .md and .html of docs/ and CHANGELOG.md skips `pnpm check` (D-200):
+# no test, build, lint or eval reads those files (the tests use their own invented copies). Renames are
+# listed as a deletion and an addition, so moving code into docs/ still runs the check.
 # Enabled by `pnpm install` through the "prepare" script (core.hooksPath).
 node scripts/conflict-markers.ts || exit 1
+others=$(git diff --cached --no-renames --name-only | grep -v -E -e '^docs/.*\.(md|html)$' -e '^CHANGELOG\.md$')
+if [ -z "$others" ] && [ -n "$(git diff --cached --name-only)" ]; then
+  echo "pre-commit: solo documenti (.md e .html di docs/, CHANGELOG.md), pnpm check saltato (D-200)"
+  exit 0
+fi
 exec pnpm --silent check

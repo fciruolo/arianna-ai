@@ -20,7 +20,7 @@ export const MAX_FILES = 40;
 const MAX_PATH = 200;
 
 /** Shared by every work: never owned by a subtask. */
-export const SHARED_FILES: readonly string[] = ['CHANGELOG.md', 'docs/HANDOFF.md', 'docs/DECISIONS.md', 'docs/OPEN-QUESTIONS.md', 'package.json', 'pnpm-lock.yaml'];
+export const SHARED_FILES: readonly string[] = ['CHANGELOG.md', 'docs/HANDOFF.md', 'docs/HANDOFF-STORIA.md', 'docs/DECISIONS.md', 'docs/OPEN-QUESTIONS.md', 'package.json', 'pnpm-lock.yaml'];
 
 export interface PlannedSubtask {
   title: string;

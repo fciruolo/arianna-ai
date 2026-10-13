@@ -78,6 +78,7 @@ function home(extra: (dir: string) => void = () => undefined): string {
   file('docs/PROPOSTE.md', PROPOSALS);
   file('docs/SPEC.md', '# Specifica\n\n## Irrigazione\n\nLe aiuole si bagnano alle sei.\n\n## Recinto\n\nIl recinto è di legno.\n');
   file('docs/HANDOFF.md', '# Consegna\n\n## Coda\n\nirrigazione segreta della consegna\n');
+  file('docs/HANDOFF-STORIA.md', '# Storia della consegna\n\n## Vecchia coda\n\nirrigazione della consegna di ieri\n');
   file('docs/mockups/pagina.md', '# Mockup\n\n## Bozza\n\nirrigazione del mockup\n');
   file('CHANGELOG.md', '# Registro delle versioni\n\n## [Non rilasciato]\n\n### Aggiunto\n\n- Irrigazione a goccia.\n\n## [0.1.0] - 2026-01-01\n\n- Primo seme.\n');
   extra(dir);
@@ -154,7 +155,7 @@ describe('cutting the documents into pages (D-155)', () => {
 });
 
 describe('the source of Arianna on disk (D-155)', () => {
-  it('reads docs/*.md and CHANGELOG.md, not HANDOFF.md, not docs/mockups/, not links', () => {
+  it('reads docs/*.md and CHANGELOG.md, not HANDOFF.md nor its history, not docs/mockups/, not links', () => {
     const dir = home((d) => {
       writeFileSync(join(scratch, 'fuori.md'), '## Fuori\n\nirrigazione da fuori\n');
       symlinkSync(join(scratch, 'fuori.md'), join(d, 'docs', 'LINK.md'));
