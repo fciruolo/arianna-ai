@@ -6,7 +6,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Descrizioni delle skill in italiano anche nella scheda «Skill» degli agenti e in Impostazioni → Skill e stili, con la stessa traduzione dello Studio e ricerca anche sulle parole italiane (D-185).
+- Descrizioni delle skill in italiano anche nella scheda «Skill» degli agenti e in Impostazioni → Skill e stili, con la stessa traduzione dello Studio e ricerca anche sulle parole italiane; la scheda «Skill» mostra la descrizione anche delle skill già assegnate (D-185).
+
+### Corretto
+
+- Una risposta illeggibile di Claude alla traduzione delle descrizioni delle skill ferma la traduzione invece di farla ripartire a ogni apertura: le traduzioni valide restano, le stesse mancanti si riprovano solo dopo un riavvio o quando cambiano le skill (D-185).
 
 ## [0.89.1] - 2026-10-13
 

@@ -31,7 +31,7 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP: 400 `invalid` (richiesta sb
 
 ## Esempi degli stili e descrizioni delle skill in italiano (I-20, D-185)
 
-Scritti da Claude senza strumenti (gli esempi da Opus, le traduzioni da Sonnet), in una cartella vuota e senza sessione salvata (`apps/core/src/cloud-text.ts`): il testo è pubblico (L0) e passa dal gateway verso `claude`; non parte nulla se Claude è senza quota (`budgetOf`) o spento. Eventi `cloud.text` (scopo, caratteri, modello), `design.example`, `skills.translated`, mai il testo.
+Scritti da Claude senza strumenti (gli esempi da Opus, le traduzioni da Sonnet), in una cartella vuota e senza sessione salvata (`apps/core/src/cloud-text.ts`): il testo è pubblico (L0) e passa dal gateway verso `claude`; non parte nulla se Claude è senza quota (`budgetOf`) o spento. Eventi `cloud.text` (scopo, caratteri, modello), `design.example`, `skills.translated`, `skills.translation_unreadable` (un lotto con risposta illeggibile: la traduzione si ferma e non riparte da sola per le stesse descrizioni fino al riavvio), mai il testo.
 
 - `GET /api/design-catalog/examples` → `{ examples: { <slug>: { sha256, at, current } }, queue, running, failed, stopped }`; `current` è falso quando il `DESIGN.md` è cambiato dopo l'esempio o quando l'esempio non è di Opus (`meta.json` porta anche `model`).
 - `POST /api/design-catalog/examples` `{ style? }` → `202` con lo stesso stato: con `style` mette in coda quello stile, senza mette in coda tutti quelli senza un esempio attuale; uno alla volta, in background; senza quota la coda si ferma (`stopped`).

@@ -259,6 +259,11 @@ const skillsOf = (agent: string): string[] => props.form.skills?.[agent] ?? [];
 /** Why the agent takes no skills; undefined when it may (an older core says nothing: no tab content). */
 const skillRefusal = (agent: string): string | undefined => (props.view.agentSkills === undefined ? 'Arianna non gestisce ancora le skill: riavviala dopo l’aggiornamento.' : skillRefusalText(props.view.agentSkills[agent]));
 const skillOf = (id: string): SkillSummary | undefined => skillCatalog.value?.find((item) => item.id === id);
+/** The description of an assigned skill, Italian when it is there; empty when the skill is not in the catalog. */
+const assignedText = (id: string): string => {
+  const found = skillOf(id);
+  return found === undefined ? '' : skillText(found);
+};
 const skillChoices = computed(() => {
   const agent = current.value?.id;
   if (agent === undefined) return [];
@@ -842,7 +847,10 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span class="truncate font-medium">{{ skillOf(id)?.name ?? id }}</span>
                   <span v-if="skillCatalog !== null && skillOf(id) === undefined" class="text-[13px] text-warn">Non è più fra le skill scaricate: non arriva all’agente finché non torna.</span>
-                  <span v-else-if="skillOf(id)" class="text-[13px] text-muted">{{ skillLicenseText(skillOf(id)?.license ?? null) }}</span>
+                  <template v-else-if="skillOf(id)">
+                    <span v-if="assignedText(id)" class="text-[13px] text-muted">{{ assignedText(id) }}</span>
+                    <span class="text-[12.5px] text-muted">{{ skillLicenseText(skillOf(id)?.license ?? null) }}</span>
+                  </template>
                 </span>
                 <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Togli ${skillOf(id)?.name ?? id}`" @click="unassignSkill(current.id, id)">Togli</button>
               </li>

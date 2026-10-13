@@ -9,7 +9,7 @@ import { resolveHome } from '@arianna/config';
 
 import { CloudTextError, createCloudText, type CloudTextRequest } from '../src/cloud-text.ts';
 import type { Sql } from '../src/db/client.ts';
-import { createSkillTranslations, parseTranslations } from '../src/skill-translations.ts';
+import { createSkillTranslations, parseTranslations, UNREADABLE_STOP } from '../src/skill-translations.ts';
 import { checkedPage, createStyleExamples, EXAMPLE_PROMPT, parseExamples, StyleExampleError } from '../src/style-examples.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `style-examples-${randomUUID()}`);
@@ -147,6 +147,91 @@ test('descriptions are translated once: an unchanged one never goes again, a cha
   translations.translateMissing();
   await translations.idle();
   assert.deepEqual(sent[1], ['Builds slide decks.']);
+});
+
+test('an unreadable answer stops the run: the good batch stays, the same missing ones are not asked again', async () => {
+  // 30 descriptions: a batch of 25 answered well, one of 5 unreadable.
+  const skills = Array.from({ length: 30 }, (_, index) => ({ id: `a/b/s${String(index)}`, description: `Skill number ${String(index)}.` }));
+  let calls = 0;
+  const translations = createSkillTranslations({
+    dir: join(HOME, 'u'),
+    list: () => skills,
+    ask: (request) => {
+      calls += 1;
+      const items = JSON.parse(request.parts[1]?.text ?? '[]') as string[];
+      return Promise.resolve(items.length === 25 ? JSON.stringify(items.map((item) => `IT: ${item}`)) : '["rotto"');
+    },
+  });
+  translations.translateMissing();
+  await translations.idle();
+  const after = translations.status();
+  assert.equal(calls, 2);
+  assert.equal(Object.keys(after.translations).length, 25, 'the readable batch is saved');
+  assert.equal(after.missing, 5);
+  assert.equal(after.stopped, UNREADABLE_STOP);
+  assert.equal(translations.translateMissing().running, false, 'the same missing ones do not start again');
+  await translations.idle();
+  assert.equal(calls, 2);
+  // The missing ones change (a new skill): one more try.
+  skills.push({ id: 'a/b/new', description: 'A new skill.' });
+  assert.equal(translations.translateMissing().running, true);
+  await translations.idle();
+  assert.equal(calls, 3);
+  // A new run of the core (a restart): one more try for the same set.
+  const restarted = createSkillTranslations({ dir: join(HOME, 'u'), list: () => skills, ask: () => Promise.resolve('[]') });
+  assert.equal(restarted.translateMissing().running, true);
+  await restarted.idle();
+  assert.equal(restarted.status().stopped, UNREADABLE_STOP);
+  // The unreadable skills taken away: nothing left, no stop said.
+  skills.splice(25);
+  assert.equal(restarted.status().missing, 0);
+  assert.equal(restarted.status().stopped, null);
+});
+
+test('an unreadable batch first, a good one after: the good one is saved and the run ends stopped', async () => {
+  const skills = Array.from({ length: 30 }, (_, index) => ({ id: `a/b/s${String(index)}`, description: `Other skill ${String(index)}.` }));
+  const translations = createSkillTranslations({
+    dir: join(HOME, 'v'),
+    list: () => skills,
+    ask: (request) => {
+      const items = JSON.parse(request.parts[1]?.text ?? '[]') as string[];
+      return Promise.resolve(items.length === 25 ? 'non è JSON' : JSON.stringify(items.map((item) => `IT: ${item}`)));
+    },
+  });
+  translations.translateMissing();
+  await translations.idle();
+  assert.equal(Object.keys(translations.status().translations).length, 5);
+  assert.equal(translations.status().stopped, UNREADABLE_STOP);
+});
+
+test('a quota stop after an unreadable batch says the quota and is tried again at the next opening', async () => {
+  const skills = Array.from({ length: 30 }, (_, index) => ({ id: `a/b/s${String(index)}`, description: `Third skill ${String(index)}.` }));
+  let calls = 0;
+  const translations = createSkillTranslations({
+    dir: join(HOME, 'w'),
+    list: () => skills,
+    ask: () => {
+      calls += 1;
+      return calls === 2 ? Promise.reject(new CloudTextError('quota', 'Claude è senza quota: riprova dopo il reset')) : Promise.resolve('[');
+    },
+  });
+  translations.translateMissing();
+  await translations.idle();
+  assert.equal(translations.status().stopped, 'Claude è senza quota: riprova dopo il reset');
+  assert.equal(translations.translateMissing().running, true);
+  await translations.idle();
+});
+
+test('a readable answer leaves the run not stopped', async () => {
+  const translations = createSkillTranslations({
+    dir: join(HOME, 'r'),
+    list: () => [{ id: 'a/b/x', description: 'Does x.' }],
+    ask: () => Promise.resolve('["Fa x."]'),
+  });
+  translations.translateMissing();
+  await translations.idle();
+  assert.equal(translations.status().stopped, null);
+  assert.equal(translations.status().missing, 0);
 });
 
 test('without Claude on this installation nothing starts', async () => {

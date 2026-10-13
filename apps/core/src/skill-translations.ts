@@ -35,13 +35,21 @@ export interface TranslationsStatus {
 
 export interface SkillTranslations {
   status(): TranslationsStatus;
-  /** Starts translating what is missing, in the background; nothing when all are there or a run is on. */
+  /**
+   * Starts translating what is missing, in the background; nothing when all
+   * are there, a run is on, or the same missing ones already came back
+   * unreadable in this run of the core (tried again after a restart or when
+   * the missing descriptions change).
+   */
   translateMissing(): TranslationsStatus;
   idle(): Promise<void>;
 }
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 const HIDDEN = /[\p{Cc}\p{Cf}]/u;
+
+/** Said by the chat when Sonnet's answer for some descriptions could not be read. */
+export const UNREADABLE_STOP = 'la risposta di Claude per alcune descrizioni non si legge: riprovo al prossimo riavvio di Arianna o quando cambiano le skill';
 
 /** The answer for a batch: exactly one Italian string per item, plain text, or undefined. */
 export function parseTranslations(answer: string, count: number): string[] | undefined {
@@ -64,6 +72,10 @@ export function createSkillTranslations(options: { dir: string; list: () => read
   let running = false;
   let stopped: string | null = null;
   let work: Promise<void> = Promise.resolve();
+  /** The missing set left by a run with unreadable answers: not asked again automatically while it stays the same. */
+  let unreadableSet: string | null = null;
+
+  const setKey = (todo: Map<string, string>): string => sha256([...todo.keys()].sort().join('\n'));
 
   function stored(): Record<string, string> {
     try {
@@ -102,11 +114,14 @@ export function createSkillTranslations(options: { dir: string; list: () => read
       const found = table[sha256(skill.description.trim())];
       if (found !== undefined) translations[skill.id] = found;
     }
-    return { translations, missing: missing(table).size, running, stopped };
+    const left = missing(table).size;
+    // Nothing left to translate: a past stop says nothing any more.
+    return { translations, missing: left, running, stopped: left > 0 ? stopped : null };
   }
 
   async function run(): Promise<void> {
     const todo = [...missing(stored()).entries()];
+    let unreadable = false;
     for (let at = 0; at < todo.length; at += BATCH) {
       const batch = todo.slice(at, at + BATCH);
       const answer = await options.ask({
@@ -118,7 +133,12 @@ export function createSkillTranslations(options: { dir: string; list: () => read
         timeoutMs: 4 * 60_000,
       });
       const texts = parseTranslations(answer, batch.length);
-      if (texts === undefined) continue;
+      if (texts === undefined) {
+        // The good batches stay saved; this one is not asked again in a loop.
+        unreadable = true;
+        options.onEvent?.('skills.translation_unreadable', { count: batch.length });
+        continue;
+      }
       // Read again before writing: what another batch saved stays.
       const table = stored();
       batch.forEach(([key], index) => {
@@ -128,12 +148,15 @@ export function createSkillTranslations(options: { dir: string; list: () => read
       save(table);
       options.onEvent?.('skills.translated', { count: batch.length });
     }
+    unreadableSet = unreadable ? setKey(missing(stored())) : null;
+    if (unreadable) stopped = UNREADABLE_STOP;
   }
 
   return {
     status,
     translateMissing() {
-      if (!running && missing(stored()).size > 0) {
+      const todo = missing(stored());
+      if (!running && todo.size > 0 && setKey(todo) !== unreadableSet) {
         running = true;
         stopped = null;
         work = run()
