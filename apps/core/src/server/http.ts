@@ -97,13 +97,14 @@ import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
-import { UserAgentError, type CatalogNewUserAgent, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
+import { UserAgentError, type CatalogNewUserAgent, type ConfirmedNewUserAgent, type UserAgents, type UserAgentView } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
 import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
 import type { SkillTranslations } from '../skill-translations.ts';
+import type { SafetyReports, SafetyView } from '../safety-reports.ts';
 import { openMockup, startDesignerSession } from '../designer-session.ts';
 import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
@@ -273,6 +274,8 @@ export interface ApiServerOptions {
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
   userAgents?: UserAgents;
+  /** The safety reports of the agents made from the catalog (D-196); without it no report is shown or made. */
+  safetyReports?: SafetyReports;
   /**
    * What the participant bar shows of an active agent (D-125): where it runs and the
    * label of its name in the lines of the chat; undefined for an agent no
@@ -3165,7 +3168,7 @@ function changelogRoutes(changelog: { home: string } | undefined): Route[] {
  * it needs `{ confirm: true }`, sent only by the confirmation of the page;
  * so does taking it back, and a deletion needs the agent's name.
  */
-function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
+function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyReports): Route[] {
   const need = (): UserAgents => {
     if (userAgents === undefined) throw new HttpError(404, 'not found');
     return userAgents;
@@ -3179,8 +3182,31 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
     }
   };
   const name = (params: Params): string => params.id ?? '';
+  /**
+   * D-196: an agent made from the catalog carries its safety report; the list starts the ones
+   * whose texts changed (skills assigned or changed) or that may run again now (Claude back).
+   */
+  const withSafety = (agent: UserAgentView): UserAgentView & { safety?: SafetyView } => {
+    if (reports === undefined || agent.catalog === undefined) return agent;
+    const safety = reports.ensure(agent.name);
+    return safety === undefined ? agent : { ...agent, safety };
+  };
   return [
-    route('GET', '/api/agents', () => answer(() => ({ body: need().list() }))),
+    route('GET', '/api/agents', () =>
+      answer(() => {
+        const listing = need().list();
+        return { body: { ...listing, user: listing.user.map(withSafety) } };
+      }),
+    ),
+    // «Rifai il rapporto» (D-196): never a second report while one runs for the same agent.
+    route('POST', '/api/agents/:id/safety', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return answer(() => {
+        const safety = reports?.start(name(params));
+        if (safety === undefined) throw new HttpError(404, 'no safety report for this agent');
+        return { body: { safety } };
+      });
+    }),
     route('GET', '/api/agents/sources', () => answer(() => ({ body: need().sources() }))),
     // Tappa T3b: a card is written only as `prepare` showed it, with the confirmation id it returned.
     // A role of the catalog of agents (D-079): only the role, a name, permissions and the yes to a missing license;
@@ -3200,7 +3226,12 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
       const body = await readJson(request);
       if (Object.hasOwn(body, 'from')) {
         onlyFields(body, ['from', 'name', 'permissions', 'licenseAccepted', 'confirmation']);
-        return answer(() => ({ status: 201, body: { agent: service.createFromCatalog(body as unknown as CatalogNewUserAgent) } }));
+        return answer(() => {
+          const agent = service.createFromCatalog(body as unknown as CatalogNewUserAgent);
+          // D-196: Opus reads the whole role in the background; the answer does not wait for it.
+          reports?.start(agent.name);
+          return { status: 201, body: { agent: withSafety(agent) } };
+        });
       }
       onlyFields(body, ['name', 'description', 'prompt', 'permissions', 'confirmation']);
       return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as ConfirmedNewUserAgent) } }));
@@ -3216,7 +3247,13 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
       const service = need();
       const body = await readJson(request);
       onlyFields(body, ['confirmation', 'licenseAccepted']);
-      return answer(() => ({ body: { agent: service.reapply(name(params), body) } }));
+      return answer(() => {
+        const previous = service.catalogRole(name(params));
+        const agent = service.reapply(name(params), body);
+        // D-196: after a re-adoption Opus reads only the changed lines, with the role before as reference.
+        reports?.start(agent.name, previous === undefined ? {} : { previous: { text: previous.text, sha256: previous.sha256 } });
+        return { body: { agent: withSafety(agent) } };
+      });
     }),
     route('POST', '/api/agents/:id/activate', async (request, _url, params) => {
       const service = need();
@@ -3623,7 +3660,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }),
   );
   table.push(...changelogRoutes(options.changelog));
-  table.push(...userAgentRoutes(options.userAgents));
+  table.push(...userAgentRoutes(options.userAgents, options.safetyReports));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
   table.push(...imReportRoutes(options.imReports, options.projectContainers ?? (() => [])));

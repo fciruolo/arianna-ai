@@ -244,6 +244,11 @@ export interface UserAgents {
   /** Writes the role in use into the card, keeps the old files in eliminati and turns the agent off. */
   reapply(name: string, input: { confirmation?: unknown; licenseAccepted?: unknown }): UserAgentView;
   permissions(name: string): UserAgentView;
+  /**
+   * The role in the card of an agent made from the catalog (D-196): the text between its markers,
+   * with the provenance; undefined for any other agent. Third-party text, L0.
+   */
+  catalogRole(name: string): { text: string; sha256: string; path: string; commit: string } | undefined;
   activate(name: string): UserAgentView;
   deactivate(name: string): UserAgentView;
   promote(name: string, confirm: unknown): UserAgentView;
@@ -818,6 +823,32 @@ export function createUserAgents(options: {
     permissions(name) {
       const { state, agent } = find(name);
       return userView(agent, state);
+    },
+
+    catalogRole(name) {
+      if (!USER_AGENT_NAME.test(name)) return undefined;
+      let found: { state: UserAgentState; agent: LoadedAgent };
+      try {
+        found = find(name);
+      } catch {
+        return undefined;
+      }
+      const text = cardText(dirOf(found.state), name);
+      if (userCardOrigin(text) !== 'agency') return undefined;
+      const provenance = cardProvenance(text);
+      if (provenance === null || !/^[0-9a-f]{64}$/.test(provenance.sha256)) return undefined;
+      // Between the markers with the exact sha256 of the role's file, which the file cannot contain:
+      // a fake closing marker inside the role does not hide the lines after it. The last closing one counts.
+      // Without them (a card changed by hand) nothing is read: the rest of the prompt is ours, with the agent's name.
+      const prompt = found.agent.prompt;
+      const open = `<<<third-party-role sha256=${provenance.sha256}>>>\n`;
+      const close = `\n<<<end third-party-role sha256=${provenance.sha256}>>>`;
+      const from = prompt.indexOf(open);
+      const to = prompt.lastIndexOf(close);
+      if (from === -1 || to < from + open.length) return undefined;
+      const role = prompt.slice(from + open.length, to);
+      // The fingerprint of the text read, not of the file: a change by hand between the markers makes the report again.
+      return { text: role, sha256: createHash('sha256').update(role).digest('hex'), path: provenance.path, commit: provenance.commit };
     },
 
     activate(name) {

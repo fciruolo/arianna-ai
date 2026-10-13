@@ -54,9 +54,10 @@ import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
 import { createLocalSummarizer } from './design-news.ts';
 import { createGithubClient } from './github-api.ts';
-import { createCloudText } from './cloud-text.ts';
+import { CloudTextError, createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
+import { createSafetyReports } from './safety-reports.ts';
 import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
@@ -517,6 +518,8 @@ await voice.begin(settings.current().voice);
 // The settings page (D-071): it writes arianna.toml, which the watcher above
 // applies as any other change. Each write goes in the event log with the
 // names of the sections only, never their values.
+// D-196: the safety reports are made further below; until then a change of the skills has nothing to make again.
+let safetyRefresh = (): void => undefined;
 const settingsPage = createSettingsPage({
   home: config.home,
   userHome: userHomeOf(),
@@ -531,6 +534,8 @@ const settingsPage = createSettingsPage({
     // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.
     settings.refresh();
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
+    // D-196: skills assigned or changed on an agent of the catalog: its safety report is made again.
+    if (change.sections.includes('skills')) safetyRefresh();
   },
 });
 // Trials of a catalog model with the orchestrator evals (D-081): in the
@@ -677,6 +682,38 @@ const styleExamples = createStyleExamples({
   onEvent: catalogEvent,
 });
 const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
+// The safety report of the agents made from the catalog (D-196): Opus reads the role and the skills
+// assigned (public text, L0, never a datum of the user) through the gateway, in the background, one at a time.
+const safetyReports = createSafetyReports({
+  dir: join(config.paths.data, 'agents'),
+  ask: (request) => {
+    if (!settings.current().cloud.executors.includes('claude')) return Promise.reject(new CloudTextError('unavailable', 'Claude non è abilitato in Impostazioni'));
+    return askCloudText(request);
+  },
+  subject: (name) => {
+    const role = userAgents.catalogRole(name);
+    if (role === undefined) return undefined;
+    const all = settings.current().agents;
+    const ids = Object.hasOwn(all, name) ? (all[name]?.skills ?? []) : [];
+    const skills = ids.flatMap((id) => {
+      try {
+        const found = skillsCatalog.text(id);
+        const head = `${found.notice}\n\n---\n\n`;
+        return [{ id, name: found.name, text: found.text.startsWith(head) ? found.text.slice(head.length) : found.text }];
+      } catch {
+        // A skill no longer in the catalog reaches nobody: nothing to read.
+        return [];
+      }
+    });
+    return { role, skills };
+  },
+  names: () => userAgents.list().user.filter((agent) => agent.catalog !== undefined).map((agent) => agent.name),
+  onEvent: catalogEvent,
+  onError: report,
+});
+safetyRefresh = () => {
+  safetyReports.refresh();
+};
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
@@ -866,6 +903,7 @@ const server = await startApiServer({
   notices,
   settings: settingsPage,
   userAgents,
+  safetyReports,
   sprites,
   imReports,
   local: {
