@@ -111,6 +111,8 @@ import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
 import { GodError } from '../god/work.ts';
 import type { SkillsCatalog } from '../skills-catalog.ts';
+import type { AgentsCatalog } from '../agents-catalog.ts';
+import { cleanBody } from '../git-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
@@ -217,6 +219,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** The catalog of agents (D-079): sources, download, adopt, discard, read a role; without it the routes answer 404. */
+  agentsCatalog?: AgentsCatalog;
   /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
   studioPptx?: PptxCodec;
   /** The examples of the styles written by Sonnet (I-20, D-185); without it the routes answer 404. */
@@ -1190,6 +1194,69 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
     }),
     route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
     route('GET', '/api/skills-catalog/skill', (_request, url) => Promise.resolve({ body: { skill: need().text(url.searchParams.get('id') ?? '') } })),
+  ];
+}
+
+/**
+ * The catalog of agents (D-079): the same steps as the skills, and the roles
+ * of the versions in use. A role's text is third-party data (L0), shown to
+ * the user as it is, its hidden characters out; nothing here makes a card.
+ */
+function agentsCatalogRoutes(catalog: AgentsCatalog | undefined): Route[] {
+  const need = (): AgentsCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  return [
+    route('GET', '/api/agents-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/agents-catalog/sources', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['url']);
+      return { status: 201, body: need().add(body.url) };
+    }),
+    route('POST', '/api/agents-catalog/remove', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().remove(body.source) };
+    }),
+    route('POST', '/api/agents-catalog/update', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { status: 202, body: need().update(body.source) };
+    }),
+    route('POST', '/api/agents-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source', 'commit']);
+      return { body: need().adopt(body.source, body.commit) };
+    }),
+    route('POST', '/api/agents-catalog/discard', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().discard(body.source) };
+    }),
+    route('GET', '/api/agents-catalog/agents', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/agents-catalog/agent', (_request, url) => {
+      const { id, source, entry, origin } = need().role(url.searchParams.get('id') ?? '');
+      return Promise.resolve({
+        body: {
+          agent: {
+            id,
+            source,
+            page: origin.repository,
+            commit: origin.commit,
+            path: entry.path,
+            sha256: entry.sha256,
+            division: entry.division,
+            name: entry.name,
+            description: entry.description,
+            emoji: entry.emoji ?? null,
+            license: origin.license.name,
+            licenseFile: origin.license.file,
+            text: cleanBody(entry.body),
+          },
+        },
+      });
+    }),
   ];
 }
 
@@ -3484,6 +3551,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
+  table.push(...agentsCatalogRoutes(options.agentsCatalog));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();

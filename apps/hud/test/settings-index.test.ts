@@ -19,7 +19,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
   assert.deepEqual(
     SETTINGS_INDEX.map((group) => group.items.map((entry) => entry.title)),
     [
-      ['Modelli', 'Agenti', 'Skill e stili'],
+      ['Modelli', 'Agenti', 'Skill e stili', 'Catalogo agenti'],
       ['Voce e chiamate', 'Notifiche', 'Segretaria'],
       ['Progetti', 'Regole dei progetti'],
       ['Claude e Codex', 'Link da riassumere'],

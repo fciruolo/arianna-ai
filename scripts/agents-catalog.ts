@@ -46,7 +46,11 @@ function divisionsOf(source: string): string {
 function print(status: AgentsStatus): void {
   if (status.sources.length === 0) console.log('Nessuna sorgente di agenti seguita.');
   for (const source of status.sources) {
-    const license = source.license?.name ?? (source.license === null || source.license.file === null ? 'ATTENZIONE: nessuna licenza alla radice' : `vedi ${source.license.file}`);
+    // Before the first download nothing is known of the license: no warning yet.
+    const license =
+      source.license === null
+        ? 'licenza: si saprà al primo download'
+        : (source.license.name ?? (source.license.file === null ? 'ATTENZIONE: nessuna licenza alla radice' : `vedi ${source.license.file}`));
     console.log(`${source.page} — ${safe(license)}`);
     if (source.adopted === null) console.log('  In uso: nessuna versione (non ancora scaricata)');
     else {

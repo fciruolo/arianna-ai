@@ -6,7 +6,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill (D-079).
+- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill; prima del primo download la licenza «si saprà» (D-079).
+- Impostazioni → «Catalogo agenti», subito dopo «Skill e stili»: raccolte di ruoli da GitHub con coda dei download, spazio usato, licenza di ogni raccolta e ruoli da sfogliare per divisione (D-079).
 
 ### Cambiato
 

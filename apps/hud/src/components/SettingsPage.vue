@@ -98,6 +98,7 @@ import DevProgressPage from './DevProgressPage.vue';
 import FormField from './FormField.vue';
 import InstallationReadiness from './InstallationReadiness.vue';
 import SkillsCatalog from './SkillsCatalog.vue';
+import AgentsCatalog from './AgentsCatalog.vue';
 import Icon from './Icon.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
@@ -856,6 +857,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
           <OdNews />
           <SkillsCatalog @changed="agentsPage?.skillsCatalogChanged()" />
         </div>
+        <!-- The catalog of agents (D-079): roles from GitHub -->
+        <AgentsCatalog v-else-if="active === 'agents-catalog'" />
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
         <DevProgressPage v-else-if="active === 'dev-progress'" @pending="emit('devPending', $event)" @knowledge="openKnowledge" />
 

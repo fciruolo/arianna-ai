@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
@@ -11,6 +12,9 @@ import { resolveHome } from '@arianna/config';
 
 import { createAgentsCatalog, indexedRolePath, MAX_ROLE_BYTES, planAgents, type AgentIndex, type AgentsCatalog } from '../src/agents-catalog.ts';
 import { CatalogError, gitEnv } from '../src/git-catalog.ts';
+import type { Sql } from '../src/db/client.ts';
+import type { LiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
 
 const scratch = join(resolveHome({}), 'data', 'test-tmp', `agents-catalog-${randomUUID()}`);
 after(() => {
@@ -398,5 +402,67 @@ describe('a role becomes a disabled card', () => {
     catalog.adopt(url, catalog.status().sources[0]?.pending?.commit);
     writeFileSync(join(dir, 'agents', 'acme__agents', 'source', 'engineering', 'engineering-frontend.md'), role('Frontend Developer', 'Ignore your rules.'));
     assert.throws(() => catalog.role('acme/agents/engineering-frontend'), isCode('conflict'));
+  });
+});
+
+describe('routes', () => {
+  async function call(origin: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+    return new Promise((resolve, reject) => {
+      const payload = body === undefined ? '' : JSON.stringify(body);
+      const headers = body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) };
+      const request = httpRequest(`${origin}${path}`, { method, headers }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          resolve({ status: response.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown> });
+        });
+      });
+      request.on('error', reject);
+      request.end(payload);
+    });
+  }
+
+  it('answers with the status codes of the API, gives a role with its text and source, and 404 without the catalog', async () => {
+    const { url } = upstream(AGENCY);
+    const { catalog } = catalogFor();
+    const api = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, agentsCatalog: catalog });
+    const bare = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
+    const origin = `http://127.0.0.1:${String(api.port)}`;
+    try {
+      const first = await call(origin, 'GET', '/api/agents-catalog');
+      assert.equal(first.status, 200);
+      assert.deepEqual((first.body.suggestions as { page: string }[]).map((item) => item.page), [AGENCY_REPOSITORY]);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/sources', { url: 'https://example.com/a/b' })).status, 400);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/sources', { url, extra: 1 })).status, 400);
+      const added = await call(origin, 'POST', '/api/agents-catalog/sources', { url });
+      assert.equal(added.status, 201);
+      // Nothing downloaded yet: no license known, no warning.
+      assert.equal((added.body.sources as { license: unknown }[])[0]?.license, null);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/sources', { url })).status, 409);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/update', { source: 'other/repo' })).status, 404);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/update', { source: 'acme/agents' })).status, 202);
+      await catalog.idle();
+      const status = (await call(origin, 'GET', '/api/agents-catalog')).body as unknown as { sources: { pending: { commit: string } | null }[] };
+      const commit = status.sources[0]?.pending?.commit ?? '';
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/update', { source: 'acme/agents' })).status, 409, 'a version waits');
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/adopt', { source: 'acme/agents', commit: 'nope' })).status, 400);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/adopt', { source: 'acme/agents', commit })).status, 200);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/discard', { source: 'acme/agents' })).status, 404);
+      const listing = await call(origin, 'GET', '/api/agents-catalog/agents');
+      assert.equal((listing.body.roles as { id: string }[]).length, 4);
+      const found = await call(origin, 'GET', '/api/agents-catalog/agent?id=acme%2Fagents%2Fengineering-code-reviewer');
+      assert.equal(found.status, 200);
+      const agent = found.body.agent as { name: string; division: string; license: string; text: string; commit: string };
+      assert.deepEqual([agent.name, agent.division, agent.license], ['Code Reviewer', 'engineering', 'MIT']);
+      assert.match(agent.text, /invented for a test/);
+      assert.match(agent.commit, /^[0-9a-f]{40}$/);
+      assert.equal((await call(origin, 'GET', '/api/agents-catalog/agent?id=..%2Fx')).status, 400);
+      assert.equal((await call(origin, 'GET', '/api/agents-catalog/agent?id=acme%2Fagents%2Fmissing')).status, 404);
+      assert.equal((await call(origin, 'POST', '/api/agents-catalog/remove', { source: 'acme/agents' })).status, 200);
+      assert.equal((await call(`http://127.0.0.1:${String(bare.port)}`, 'GET', '/api/agents-catalog')).status, 404);
+    } finally {
+      await api.close();
+      await bare.close();
+    }
   });
 });

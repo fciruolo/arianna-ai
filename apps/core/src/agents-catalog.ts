@@ -149,6 +149,8 @@ export interface AgentRoleItem {
   description: string;
   emoji: string | null;
   license: string | null;
+  /** The license file at the root of its source, when its license is not one recognised by name. */
+  licenseFile: string | null;
 }
 
 export interface AgentRole {
@@ -445,6 +447,7 @@ export function createAgentsCatalog(options: AgentsCatalogOptions): AgentsCatalo
           description: entry.description,
           emoji: entry.emoji,
           license: current?.index.license.name ?? null,
+          licenseFile: current?.index.license.file ?? null,
         });
       }
     }
