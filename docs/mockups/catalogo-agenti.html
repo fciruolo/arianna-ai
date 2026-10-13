@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogo agenti</title>
+<!--
+  Anteprima del «Catalogo agenti» (seguito di D-079, motore di D-161, scelta
+  dell'utente del 2026-10-13: niente clone a mano, sorgenti GitHub come per le
+  skill). Tre viste: Impostazioni → Catalogo agenti; «+ Nuovo agente» con la
+  scelta dal catalogo (tappa T4 di D-119); cosa succede a una scheda adottata
+  quando la sua sorgente si aggiorna.
+  Stessi token della chat (apps/hud/src/style.css). File autonomo, niente rete;
+  font letti da node_modules di apps/hud con percorsi relativi (se mancano,
+  quelli di sistema). Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+    --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c133;
+    --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  p { margin: 0; }
+  a { color: inherit; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .muted { color: var(--muted); } .small { font-size: 13px; } .ok { color: var(--ok); } .warn { color: var(--warn); } .danger { color: var(--danger); }
+  .link { color: var(--accent); text-decoration: none; cursor: pointer; } .link:hover { text-decoration: underline; }
+
+  /* Barra dell'anteprima (non fa parte della chat) */
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .explain { max-width: 1280px; margin: 0 auto; padding: 12px 16px 0; font-size: 14px; }
+  .explain ul { margin: 4px 0 0; padding-left: 20px; }
+
+  /* Controlli come la chat */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; white-space: nowrap; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.s { padding: 3px 10px; font-size: 13px; }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; outline: none; font-size: 14px; }
+  select.field { width: auto; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border-radius: 999px; font-size: 12.5px; line-height: 22px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; background: none; }
+  button.pill { cursor: pointer; } button.pill:hover { border-color: var(--accent); color: var(--ink); }
+  .pill.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--ink); }
+  .pill.okp { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+  .pill.infop { color: var(--info); border-color: color-mix(in srgb, var(--info) 50%, transparent); }
+  .pill.warnp { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .alert { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 10px; border: 1px solid; font-size: 14px; }
+  .alert.danger { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--ink); }
+  .alert.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .alert.accent { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); flex-direction: column; align-items: stretch; gap: 6px; }
+  .alert .grow { flex: 1; min-width: 220px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .end { justify-content: flex-end; }
+  details summary { cursor: pointer; color: var(--muted); user-select: none; }
+
+  .view { display: none; } .view.on { display: block; }
+
+  /* Impostazioni: indice a sinistra, sezione a destra */
+  .settings { max-width: 1280px; margin: 16px auto; display: grid; grid-template-columns: 240px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 14px; background: var(--bg); min-height: 720px; }
+  nav.index { padding: 16px 10px; border-right: 1px solid var(--line); }
+  nav.index .g { margin: 16px 10px 4px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  nav.index .g:first-child { margin-top: 0; }
+  nav.index a { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14.5px; }
+  nav.index a.on { background: var(--surface-2); color: var(--ink); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+  nav.index a .new { margin-left: auto; font-size: 11.5px; color: var(--accent); }
+  .main { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .main header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .main header p { max-width: 78ch; color: var(--muted); margin-top: 4px; }
+  .card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .card h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .card h2 .r { margin-left: auto; font-size: 14px; font-weight: 400; color: var(--muted); }
+  .card > .desc { max-width: 80ch; font-size: 14px; color: var(--muted); margin-top: -8px; }
+
+  .sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .sources > li { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .sources > li:first-child { border-top: 0; padding-top: 0; }
+  .src-name { font-weight: 600; text-decoration: none; } .src-name:hover { color: var(--accent); text-decoration: underline; }
+  .addform { display: grid; grid-template-columns: minmax(0, 4fr) auto; gap: 12px; align-items: end; border-top: 1px solid var(--line); padding-top: 12px; }
+  .addform label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .addform label b { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .empty-box { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--muted); }
+  .bar-progress { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .bar-progress i { display: block; height: 100%; width: 45%; background: var(--accent); }
+
+  /* Nuovo agente */
+  .newagent { max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+  .steps { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 0; padding: 0; list-style: none; }
+  .steps button { display: flex; align-items: center; gap: 8px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; padding: 8px 12px; font-size: 14px; color: var(--muted); cursor: pointer; }
+  .steps button.on { border-color: var(--accent); font-weight: 600; color: var(--ink); }
+  .steps .n { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid currentColor; border-radius: 50%; font-size: 12px; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opt { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface); cursor: pointer; font-size: 14px; text-align: left; }
+  .opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .opt b { font-weight: 600; }
+  .picker { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); min-height: 560px; }
+  .picker .left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+  .filters { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .results { overflow: auto; max-height: 520px; flex: 1; }
+  .gh { position: sticky; top: 0; padding: 7px 12px 5px; background: var(--surface-2); font-size: 12.5px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+  .gh span { margin-left: auto; font-weight: 400; }
+  .res { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 9px 12px; cursor: pointer; }
+  .res:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .res.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+  .res .ic { grid-row: span 2; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: #fff; }
+  .res b { font-weight: 600; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .res .d { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .res .has { font-size: 12px; color: var(--ok); }
+  .detail { padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .detail h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 13.5px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  pre.body { margin: 0; max-height: 260px; overflow: auto; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.5 "JetBrains Mono", monospace; white-space: pre-wrap; }
+  .perm { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; }
+  .center { display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 14px; padding: 40px 20px; height: 100%; }
+
+  /* Agenti: elenco e dettaglio */
+  .agents { max-width: 1280px; margin: 16px auto; padding: 0 16px; display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .agents aside { display: flex; flex-direction: column; gap: 10px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; align-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 8px 10px; text-align: left; cursor: pointer; }
+  .tile.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+  .tile.off { opacity: .6; }
+  .tile .av { grid-row: span 2; width: 30px; height: 34px; border-radius: 6px; display: grid; place-items: center; font-weight: 600; color: #fff; font-size: 13px; }
+  .tile b { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile small { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .dot { position: absolute; top: 7px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 16px; }
+  .hero .big { width: 104px; height: 120px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; font-size: 30px; font-weight: 600; color: var(--accent); }
+  .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--line-strong); position: relative; display: inline-block; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+  .switch.yes { background: var(--accent); } .switch.yes::after { left: 17px; }
+  .diff { margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font: 12.5px/1.55 "JetBrains Mono", monospace; overflow: auto; max-height: 260px; }
+  .diff div { padding: 0 10px; white-space: pre-wrap; }
+  .diff .add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .diff .del { background: color-mix(in srgb, var(--danger) 12%, transparent); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent); }
+  .diff .ctx { color: var(--muted); }
+  .modal-back { position: fixed; inset: 0; background: #0008; display: none; place-items: center; z-index: 9; padding: 16px; }
+  .modal-back.on { display: grid; }
+  .modal { width: min(560px, 100%); border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); padding: 18px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+  .modal h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .modal ul { margin: 0; padding-left: 18px; }
+
+  @media (max-width: 900px) {
+    .settings { grid-template-columns: 1fr; margin: 0; border: 0; border-radius: 0; }
+    nav.index { border-right: 0; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; gap: 4px; padding: 8px 16px; }
+    nav.index .g { display: none; } nav.index a { white-space: nowrap; }
+    .main { padding: 16px; }
+    .picker { grid-template-columns: 1fr; }
+    .picker .left { border-right: 0; border-bottom: 1px solid var(--line); }
+    .results { max-height: 340px; }
+    .agents { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .choice, .addform { grid-template-columns: 1fr; }
+    .hero { grid-template-columns: 1fr; }
+    .detail { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Anteprima · Catalogo agenti</b>
+  <span class="seg" role="group" aria-label="Vista" id="views">
+    <button aria-pressed="true" data-v="settings">a · Impostazioni</button>
+    <button aria-pressed="false" data-v="new">b · + Nuovo agente</button>
+    <button aria-pressed="false" data-v="adopted">c · Scheda adottata</button>
+  </span>
+  <span class="seg" role="group" aria-label="Stato" id="states"></span>
+  <span class="seg" role="group" aria-label="Tema"><button aria-pressed="true" data-t="light">Chiaro</button><button aria-pressed="false" data-t="dark">Scuro</button></span>
+</div>
+<div class="explain" id="explain"></div>
+
+<!-- (a) IMPOSTAZIONI -->
+<section class="view on" id="v-settings">
+  <div class="settings">
+    <nav class="index" aria-label="Indice delle impostazioni">
+      <div class="g">Intelligenza</div>
+      <a>Modelli</a><a>Agenti</a><a>Skill e stili</a><a class="on">Catalogo agenti <span class="new">nuova</span></a>
+      <div class="g">Comunicazione</div>
+      <a>Voce e chiamate</a><a>Notifiche</a><a>Segretaria</a>
+      <div class="g">Lavoro</div>
+      <a>Progetti</a><a>Regole dei progetti</a>
+      <div class="g">Privacy e uscite</div>
+      <a>Claude e Codex</a><a>Link da riassumere</a>
+      <div class="g">Sistema</div>
+      <a>Server dei modelli</a><a>Aspetto e installazione</a>
+    </nav>
+    <div class="main">
+      <header>
+        <div class="row"><h1>Catalogo agenti</h1><span class="pill">Cambia solo con «Usa questa versione»</span></div>
+        <p>Ruoli pronti, scritti da altri, da cui far nascere un agente tuo in «+ Nuovo agente». Si scarica solo il testo dei ruoli e la licenza, niente programmi. Un agente nato da qui parte spento, con i permessi che scegli tu: il testo del ruolo non ne decide nessuno.
+          <span style="display:block;margin-top:4px;font-size:14px"><b style="color:var(--ink)">Esempio:</b> segui «msitarzewski/agency-agents», premi «Scarica», poi in Agenti → «+ Nuovo agente» → «Dal catalogo» scegli «Revisore dei contratti».</span></p>
+      </header>
+      <div id="settings-body"></div>
+    </div>
+  </div>
+</section>
+
+<!-- (b) NUOVO AGENTE -->
+<section class="view" id="v-new">
+  <div class="newagent">
+    <header class="row">
+      <h1 style="margin:0;font-size:22px;font-weight:600">Nuovo agente</h1>
+      <span class="pill">Nasce spento</span>
+      <a class="link" style="margin-left:auto;font-size:14px">Torna agli agenti</a>
+    </header>
+    <p class="muted" style="max-width:78ch;margin-top:-8px">Un agente nuovo nasce spento, fra i tuoi. Finché resta tuo vede al massimo dati di lavoro e modifica file solo in una copia protetta, qualunque cosa dica la sua scheda. Lo accendi tu, qui alla fine o dalla pagina Agenti.</p>
+    <ol class="steps">
+      <li><button class="on"><span class="n">1</span>Cosa fa</button></li>
+      <li><button><span class="n">2</span>Chi è</button></li>
+      <li><button><span class="n">3</span>Aspetto</button></li>
+    </ol>
+    <div class="card">
+      <h2>Da dove parti</h2>
+      <div class="choice">
+        <button class="opt"><b>Da zero</b><span class="small muted">Scegli un punto di partenza (Risponde, Lavora sul codice) e scrivi tu nome, descrizione e prompt.</span></button>
+        <button class="opt on"><b>Dal catalogo <span class="pill" style="margin-left:4px">412 ruoli</span></b><span class="small muted">Prendi un ruolo pronto da una raccolta che segui. Il prompt è il suo testo, i permessi li scegli tu come sempre.</span></button>
+      </div>
+      <div id="picker-wrap"></div>
+    </div>
+  </div>
+</section>
+
+<!-- (c) SCHEDA ADOTTATA -->
+<section class="view" id="v-adopted">
+  <div class="agents">
+    <aside>
+      <div class="row"><input class="field" style="flex:1;width:auto" placeholder="Cerca un agente"><a class="btn p">+ Nuovo agente</a></div>
+      <div class="row" style="gap:6px"><button class="pill on">Tutti</button><button class="pill">Attivi</button><button class="pill">Spenti</button><button class="pill" id="filter-upd">Da aggiornare · 2</button></div>
+      <p style="font-weight:600;font-size:14px;margin-top:4px">Ufficiali</p>
+      <div class="tiles">
+        <button class="tile"><span class="av" style="background:#23887c">A</span><b>Arianna</b><small>sul Mac</small></button>
+        <button class="tile"><span class="av" style="background:#3f6fa8">C</span><b>Coder</b><small>con Claude</small></button>
+      </div>
+      <p style="font-weight:600;font-size:14px;margin-top:4px">Miei</p>
+      <div class="tiles" id="mine"></div>
+    </aside>
+    <div id="adopted-detail" style="display:flex;flex-direction:column;gap:14px;min-width:0"></div>
+  </div>
+</section>
+
+<div class="modal-back" id="modal"><div class="modal" id="modal-body"></div></div>
+
+<script>
+/* ---------- Dati inventati ---------- */
+const DIV = {
+  engineering: { t: 'Ingegneria', c: '#3f6fa8' }, design: { t: 'Design', c: '#8a52c4' }, marketing: { t: 'Marketing', c: '#c0447a' },
+  product: { t: 'Prodotto', c: '#b07612' }, testing: { t: 'Test', c: '#3f8a56' }, support: { t: 'Assistenza', c: '#1f8a7d' },
+  sales: { t: 'Vendite', c: '#c24a35' }, legale: { t: 'Legale', c: '#56635f' }, 'project-management': { t: 'Gestione progetti', c: '#2c5e57' },
+  generale: { t: 'Senza divisione', c: '#7a8784' },
+};
+const AGENTS = [
+  { id: 'msitarzewski/agency-agents/engineering/frontend-developer', src: 'msitarzewski/agency-agents', div: 'engineering', name: 'Frontend Developer', desc: 'Costruisce interfacce web accessibili e veloci; conosce Vue, React e i test dei componenti.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/engineering/code-reviewer', src: 'msitarzewski/agency-agents', div: 'engineering', name: 'Code Reviewer', desc: 'Rilegge le modifiche cercando errori, casi limite mancanti e test assenti; propone correzioni piccole.', lic: 'MIT', has: 'revisore-codice' },
+  { id: 'msitarzewski/agency-agents/engineering/database-optimizer', src: 'msitarzewski/agency-agents', div: 'engineering', name: 'Database Optimizer', desc: 'Legge piani di esecuzione e propone indici e query più semplici.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/testing/reality-checker', src: 'msitarzewski/agency-agents', div: 'testing', name: 'Reality Checker', desc: 'Prima di dire «fatto» controlla che il lavoro funzioni davvero, con prove e non con impressioni.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/design/ux-researcher', src: 'msitarzewski/agency-agents', div: 'design', name: 'UX Researcher', desc: 'Prepara interviste, raccoglie i problemi degli utenti e li ordina per frequenza e gravità.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/marketing/content-creator', src: 'msitarzewski/agency-agents', div: 'marketing', name: 'Content Creator', desc: 'Scrive articoli e post a partire da appunti, con il tono del marchio.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/product/sprint-prioritizer', src: 'msitarzewski/agency-agents', div: 'product', name: 'Sprint Prioritizer', desc: 'Ordina il lavoro della settimana per valore e fatica, e dice cosa lasciare fuori.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/support/support-responder', src: 'msitarzewski/agency-agents', div: 'support', name: 'Support Responder', desc: 'Prepara risposte cortesi e precise alle richieste dei clienti, senza promettere ciò che non sa.', lic: 'MIT' },
+  { id: 'msitarzewski/agency-agents/project-management/meeting-notes', src: 'msitarzewski/agency-agents', div: 'project-management', name: 'Meeting Notes Keeper', desc: 'Trasforma appunti sparsi di una riunione in decisioni, compiti e scadenze.', lic: 'MIT' },
+  { id: 'studio-finto/agenti-legali/legale/revisore-contratti', src: 'studio-finto/agenti-legali', div: 'legale', name: 'Revisore dei contratti', desc: 'Segnala clausole sbilanciate, scadenze e rinnovi automatici in un contratto di fornitura.', lic: 'Apache-2.0', has: 'revisore-contratti', upd: true },
+  { id: 'studio-finto/agenti-legali/legale/privacy-checker', src: 'studio-finto/agenti-legali', div: 'legale', name: 'Controllo privacy', desc: 'Confronta un modulo o un sito con le richieste del GDPR e scrive cosa manca.', lic: 'Apache-2.0' },
+  { id: 'studio-finto/agenti-legali/generale/glossario', src: 'studio-finto/agenti-legali', div: 'generale', name: 'Glossario legale', desc: 'Spiega in parole semplici i termini di un documento legale.', lic: 'Apache-2.0' },
+];
+const SOURCES = [
+  { id: 'msitarzewski/agency-agents', lic: 'MIT', commit: '8329468f1c2a', date: '4 ott 2026', agents: 231, divs: 18, rej: 2, state: 'ok', adopted: 3 },
+  { id: 'studio-finto/agenti-legali', lic: 'Apache-2.0', commit: '1a90c3e77b02', date: '20 set 2026', agents: 41, divs: 4, rej: 0, state: 'pending', adopted: 1,
+    pend: { commit: '5b7d02aa91fe', date: '11 ott 2026', agents: 52, add: 12, chg: 3, del: 1,
+      addList: 'contratto-agenzia, nda-reciproco, termini-ecommerce, cookie-banner, …', chgList: 'revisore-contratti (lo usi), privacy-checker, glossario', delList: 'vecchio-gdpr-2018' } },
+  { id: 'rossi-lab/agenti-marketing', lic: null, commit: '77e0d1b4c3aa', date: '2 set 2026', agents: 140, divs: 6, rej: 7, state: 'error', adopted: 0 },
+];
+const SUGGESTED = ['wshobson/agents', 'contains-studio/agents'];
+
+/* ---------- Utilità ---------- */
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const initials = (n) => n.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
+/* ---------- Stato dell'anteprima ---------- */
+const STATES = {
+  settings: [['mix', 'Tre sorgenti'], ['empty', 'Nessuna sorgente'], ['busy', 'Scarico in corso']],
+  new: [['pick', 'Ruolo scelto'], ['nothing', 'Nessun risultato'], ['nosrc', 'Catalogo vuoto'], ['confirm', 'Crea spento…']],
+  adopted: [['update', 'Aggiornamento disponibile'], ['reapply', 'Riadotta…'], ['orphan', 'Sorgente tolta']],
+};
+const EXPLAIN = {
+  settings: `<p><b>(a) Impostazioni → Catalogo agenti.</b> Una voce nuova nel gruppo Intelligenza, accanto a «Skill e stili», con lo stesso motore di «Skill da GitHub» (D-161): seguire, scaricare, confrontare, usare o scartare. Fino a 100 sorgenti.</p>
+    <ul><li>Ogni sorgente mostra il commit in uso, la data, quanti ruoli e la licenza; «Scarica» o «Aggiorna» la prende da GitHub senza eseguire nulla.</li>
+    <li>Una versione nuova resta in attesa finché non premi «Usa questa versione»: fino ad allora il catalogo e gli agenti già creati non cambiano.</li>
+    <li>Togliere una sorgente non tocca gli agenti già nati da lì: restano tuoi, con il testo che avevano.</li></ul>`,
+  new: `<p><b>(b) Agenti → «+ Nuovo agente» → «Dal catalogo».</b> Primo passo «Cosa fa»: invece di un punto di partenza vuoto scegli un ruolo. Filtri per divisione e per sorgente, ricerca per nome e descrizione.</p>
+    <ul><li>Il ruolo dà nome, descrizione e prompt (testo di terzi, L0, fra marcatori). I permessi partono da «Risponde» o da «Lavora sul codice» secondo la divisione, e li cambi tu dentro il tetto degli agenti tuoi.</li>
+    <li>«Crea spento» mostra cosa potrà fare e lo scrive solo dopo la conferma. Prima di accenderlo, Opus scrive un rapporto di sicurezza sul testo (T4 di D-119, da confermare).</li></ul>`,
+  adopted: `<p><b>(c) Una scheda adottata quando la sorgente si aggiorna.</b> Dopo «Usa questa versione», gli agenti nati da un ruolo cambiato mostrano il badge «aggiornamento disponibile»; continuano a lavorare con il testo di prima finché non premi «Riadotta».</p>
+    <ul><li>«Riadotta» mostra le righe cambiate del prompt e sostituisce solo il testo del ruolo: nome, personaggio, permessi e modello restano i tuoi.</li>
+    <li>Se l'agente è acceso, dopo la riadozione si spegne finché non leggi il nuovo rapporto di sicurezza e lo riaccendi.</li></ul>`,
+};
+let view = 'settings';
+let state = { settings: 'mix', new: 'pick', adopted: 'update' };
+let filterDiv = 'all', filterSrc = 'all', query = '', chosen = 'studio-finto/agenti-legali/legale/privacy-checker';
+
+/* ---------- (a) Impostazioni ---------- */
+function sourceRow(s, busy) {
+  const lic = s.lic ? `licenza ${s.lic}` : '<span class="warn">nessuna licenza alla radice: controlla prima di usarli</span>';
+  let html = `<li><div class="row"><div style="flex:1;min-width:0">
+      <a class="src-name" href="#">${s.id}</a>
+      <div class="small muted">In uso: commit <span class="mono">${s.commit}</span> del ${s.date} · ${s.agents} ruoli in ${s.divs} divisioni · ${lic}${s.adopted ? ` · <span class="ok">${s.adopted} agenti tuoi nati da qui</span>` : ''}</div>
+    </div>
+    <button class="btn s" ${busy || s.state === 'pending' ? 'disabled' : ''} ${s.state === 'pending' ? 'title="Prima usa o scarta la versione scaricata."' : ''}>Aggiorna</button>
+    <button class="btn s" ${busy ? 'disabled' : ''}>Togli…</button></div>`;
+  if (busy) html += `<p class="small muted" role="status">Scarico da GitHub solo i testi dei ruoli e la licenza…</p><div class="bar-progress"><i></i></div>`;
+  else if (s.state === 'ok') html += `<p class="small ok">Nessuna novità: la versione in uso è la più recente (controllato oggi alle 9:12).</p>`;
+  if (s.rej && !busy) html += `<p class="small muted">${s.rej} file scartati (senza intestazione name e description, troppo grandi, nomi insoliti o collegamenti).</p>`;
+  if (s.state === 'error' && !busy) html += `<div class="alert danger" role="alert"><span class="grow">Download non riuscito: GitHub non risponde (rete assente o indirizzo cambiato). La versione in uso resta questa.</span><button class="btn s">Riprova</button></div>`;
+  if (s.state === 'pending' && !busy) {
+    const p = s.pend;
+    html += `<div class="alert accent" aria-live="polite">
+      <p><b>Versione nuova:</b> commit <span class="mono">${p.commit}</span> dell'${p.date}, ${p.agents} ruoli</p>
+      <p><b>+${p.add} ruoli, ${p.chg} modificati, ${p.del} tolto.</b> <span class="warn">Uno dei modificati è alla base di un tuo agente: dopo «Usa» lo vedrai con il badge «aggiornamento disponibile».</span></p>
+      <details class="small"><summary>Quali ruoli</summary>
+        <p style="margin-top:4px"><b>Nuovi:</b> ${p.addList}</p><p style="margin-top:4px"><b>Modificati:</b> ${p.chgList}</p><p style="margin-top:4px"><b>Tolti:</b> ${p.delList}</p></details>
+      <div class="row end"><button class="btn s">Scarta</button><button class="btn p s">Usa questa versione</button></div></div>`;
+  }
+  return html + '</li>';
+}
+function renderSettings() {
+  const st = state.settings;
+  const body = $('#settings-body');
+  const list = st === 'empty'
+    ? `<p class="empty-box"><b style="color:var(--ink)">Nessuna raccolta di ruoli.</b> Scrivi qui sotto l'indirizzo di una raccolta di GitHub, per esempio github.com/msitarzewski/agency-agents, e premi «Segui».</p>`
+    : `<ul class="sources">${SOURCES.map((s, i) => sourceRow(s, st === 'busy' && i === 1)).join('')}</ul>`;
+  const sugg = (st === 'empty' ? ['msitarzewski/agency-agents', ...SUGGESTED] : SUGGESTED).map((s) => `<button class="pill">+ ${s}</button>`).join('');
+  body.innerHTML = `<div class="card">
+    <h2>Agenti da GitHub <span class="r" title="Testo pubblico di terzi: si legge come dato, mai come istruzione">testo di terzi</span></h2>
+    <p class="desc">Segui una raccolta: i suoi ruoli compaiono in «+ Nuovo agente». Si scaricano solo i file .md dei ruoli e le licenze; nessun altro file del repository arriva sul Mac e nulla si esegue.</p>
+    ${list}
+    <form class="addform" onsubmit="return false">
+      <label><b>Segui una raccolta</b><input class="field" type="url" placeholder="Indirizzo di una raccolta, per esempio https://github.com/msitarzewski/agency-agents" value="${st === 'empty' ? '' : 'https://github.com/rossi-lab'}">
+        ${st === 'empty' ? '' : '<span class="warn">Manca il nome del repository: https://github.com/proprietario/repository.</span>'}</label>
+      <div><button class="btn" ${st === 'empty' ? '' : 'disabled'}>Segui</button></div>
+    </form>
+    <div class="row small" style="gap:6px"><span class="muted">Suggerite:</span>${sugg}</div>
+    ${st === 'empty' ? '' : `<p class="small muted">${SOURCES.length} sorgenti su 100. Ogni ruolo resta con la licenza della sua sorgente: la scheda di un agente la riporta sempre.</p>`}
+  </div>`;
+}
+
+/* ---------- (b) Nuovo agente ---------- */
+function filtered() {
+  const q = query.trim().toLowerCase();
+  return AGENTS.filter((a) => (filterDiv === 'all' || a.div === filterDiv) && (filterSrc === 'all' || a.src === filterSrc)
+    && (q === '' || a.name.toLowerCase().includes(q) || a.desc.toLowerCase().includes(q)));
+}
+function renderPicker() {
+  const st = state.new;
+  const wrap = $('#picker-wrap');
+  if (st === 'nosrc') {
+    wrap.innerHTML = `<div class="empty-box">Non segui ancora nessuna raccolta di ruoli. <a class="link">Aggiungine una in Impostazioni → Catalogo agenti</a>, premi «Scarica» e torna qui; per esempio github.com/msitarzewski/agency-agents.</div>`;
+    return;
+  }
+  if (st === 'nothing') { query = 'notaio'; } else if (query === 'notaio') { query = ''; }
+  const items = filtered();
+  const divCounts = {};
+  AGENTS.filter((a) => filterSrc === 'all' || a.src === filterSrc).forEach((a) => { divCounts[a.div] = (divCounts[a.div] || 0) + 1; });
+  const chips = [`<button class="pill ${filterDiv === 'all' ? 'on' : ''}" data-div="all">Tutte</button>`]
+    .concat(Object.keys(divCounts).map((d) => `<button class="pill ${filterDiv === d ? 'on' : ''}" data-div="${d}">${DIV[d].t} · ${divCounts[d]}</button>`)).join('');
+  const groups = {};
+  items.forEach((a) => { (groups[a.div] = groups[a.div] || []).push(a); });
+  const resHtml = items.length === 0
+    ? `<div class="center">Nessun ruolo con «${esc(query)}».<br>Cambia il testo o scegli «Tutte» le divisioni.</div>`
+    : Object.keys(groups).map((d) => `<div class="gh">${DIV[d].t}<span>${groups[d].length}</span></div>` + groups[d].map((a) => `
+      <button class="res ${a.id === chosen ? 'on' : ''}" data-id="${a.id}">
+        <span class="ic" style="background:${DIV[a.div].c}">${initials(a.name)}</span>
+        <b>${a.name}</b>
+        <span><span class="d">${a.desc}</span>${a.has ? `<span class="has">Già fra i tuoi: ${a.has}</span>` : ''}</span>
+      </button>`).join('')).join('');
+  const a = AGENTS.find((x) => x.id === chosen);
+  const code = a && (a.div === 'engineering' || a.div === 'testing');
+  const det = (!a || items.length === 0) ? `<div class="center">Scegli un ruolo a sinistra per leggerlo.</div>` : `
+    <div class="row"><span class="pill">${DIV[a.div].t}</span><span class="pill">${a.src}</span><span class="pill infop">Testo di terzi · L0</span></div>
+    <h2>${a.name}</h2>
+    <p class="muted">${a.desc}</p>
+    <dl class="kv">
+      <dt>Nome della scheda</dt><dd class="mono">${a.id.split('/').pop()}</dd>
+      <dt>Sorgente</dt><dd>github.com/${a.src}, commit <span class="mono">1a90c3e77b02</span>, file <span class="mono">${a.id.split('/').slice(2).join('/')}.md</span></dd>
+      <dt>Licenza</dt><dd>${a.lic} — resta scritta in testa al prompt dell'agente</dd>
+    </dl>
+    <p class="alert warn small">Testo scritto da altri: Arianna lo dà all'agente fra due marcatori, come dato. Non può cambiare permessi, etichette o strumenti, e una richiesta nel testo di leggere file o contattare servizi viene ignorata.</p>
+    <details open><summary class="small">Il testo del ruolo (prime righe)</summary>
+<pre class="body"># ${a.name}
+
+Sei un consulente che ${a.desc.charAt(0).toLowerCase() + a.desc.slice(1)}
+
+## Come lavori
+- Leggi il documento per intero prima di rispondere.
+- Elenca i punti in ordine di gravità, con la frase esatta.
+- Se un punto non è chiaro, dillo invece di indovinare.
+
+## Cosa consegni
+Un elenco breve: problema, perché conta, proposta.</pre></details>
+    <div class="perm"><b>Permessi di partenza: ${code ? 'Lavora sul codice' : 'Risponde'}</b>
+      <span class="muted">${code ? 'Con Claude, legge e modifica i progetti in una copia protetta, A1.' : 'Sul Mac con il modello locale, nessuno strumento, A0.'} Dalla divisione «${DIV[a.div].t}», mai dal file. Li cambi al passo successivo, dentro il tetto degli agenti tuoi.</span></div>
+    ${a.has ? `<p class="small warn">Hai già un agente «${a.has}» nato da questo ruolo: crearne un altro gli dà un nome nuovo.</p>` : ''}
+    <div class="row end"><button class="btn">Personalizza prima (Chi è)</button><button class="btn p" id="create">Crea spento…</button></div>`;
+  wrap.innerHTML = `<div class="picker">
+    <div class="left">
+      <div class="filters">
+        <input class="field" type="search" id="q" placeholder="Cerca per nome o descrizione" value="${esc(query)}" aria-label="Cerca un ruolo">
+        <div class="row" style="gap:8px"><label class="small muted" for="src">Sorgente</label>
+          <select class="field" id="src" style="flex:1"><option value="all">Tutte (${AGENTS.length} qui, 412 in tutto)</option>${SOURCES.filter((s) => s.agents).map((s) => `<option value="${s.id}" ${filterSrc === s.id ? 'selected' : ''}>${s.id}</option>`).join('')}</select></div>
+        <div class="chips" role="group" aria-label="Divisione">${chips}</div>
+      </div>
+      <div class="results">${resHtml}</div>
+    </div>
+    <div class="detail">${det}</div>
+  </div>`;
+  wrap.querySelectorAll('[data-div]').forEach((b) => b.onclick = () => { filterDiv = b.dataset.div; renderPicker(); });
+  wrap.querySelectorAll('[data-id]').forEach((b) => b.onclick = () => { chosen = b.dataset.id; renderPicker(); });
+  const qi = $('#q'); qi.oninput = () => { query = qi.value; renderPicker(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  $('#src').onchange = (e) => { filterSrc = e.target.value; filterDiv = 'all'; renderPicker(); };
+  const c = $('#create'); if (c) c.onclick = () => openConfirm(a);
+  if (st === 'confirm' && a) openConfirm(a);
+}
+function openConfirm(a) {
+  const code = a.div === 'engineering' || a.div === 'testing';
+  $('#modal-body').innerHTML = `<h2>Creare «${a.id.split('/').pop()}» spento?</h2>
+    <p>Nasce fra i tuoi agenti, spento. Quando lo accendi:</p>
+    <ul><li>${code ? 'lavora con Claude (cloud) sui progetti, in una copia protetta' : 'lavora sul Mac con il modello locale, senza strumenti'}</li>
+      <li>vede al massimo dati di lavoro; il suo prompt è testo di terzi (L0)</li>
+      <li>autonomia ${code ? 'A1: propone e applica in copia, tu unisci' : 'A0: solo risposte'}; niente deleghe, canali o approvazioni</li></ul>
+    <p class="small muted">Provenienza scritta nella scheda: github.com/${a.src}, commit, file e sha256 del testo, licenza ${a.lic}. Prima di accenderlo, Opus legge il testo e scrive un rapporto di sicurezza che vedi nella pagina Agenti.</p>
+    <div class="row end"><button class="btn" id="m-no">Annulla</button><button class="btn p" id="m-yes">Crea spento</button></div>`;
+  $('#modal').classList.add('on');
+  $('#m-no').onclick = $('#m-yes').onclick = () => $('#modal').classList.remove('on');
+}
+
+/* ---------- (c) Scheda adottata ---------- */
+const MINE = [
+  { n: 'revisore-contratti', c: '#56635f', on: true, where: 'sul Mac', upd: true },
+  { n: 'revisore-codice', c: '#3f6fa8', on: true, where: 'con Claude' },
+  { n: 'note-riunioni', c: '#2c5e57', on: false, where: 'sul Mac', upd: true },
+  { n: 'traduttore', c: '#8a52c4', on: true, where: 'sul Mac' },
+];
+function renderAdopted() {
+  const st = state.adopted;
+  $('#mine').innerHTML = MINE.map((m, i) => `<button class="tile ${i === 0 ? 'on' : ''} ${m.on ? '' : 'off'}" ${m.upd && st !== 'orphan' ? 'title="Aggiornamento disponibile"' : ''}>
+    <span class="av" style="background:${m.c}">${initials(m.n.replace('-', ' '))}</span><b>${m.n}</b><small>${m.on ? '' : 'spento · '}${m.where}</small>${m.upd && st !== 'orphan' ? '<span class="dot"></span>' : ''}</button>`).join('')
+    + `<a class="tile" style="border-style:dashed;place-items:center;grid-template-columns:1fr;min-height:52px;color:var(--muted);font-weight:600;font-size:14px">+ Nuovo agente</a>`;
+  $('#filter-upd').style.display = st === 'orphan' ? 'none' : '';
+  const badge = st === 'orphan'
+    ? '<span class="pill">Sorgente non più seguita</span>'
+    : '<span class="pill warnp">● Aggiornamento disponibile</span>';
+  let box = '';
+  if (st === 'update' || st === 'reapply') {
+    box = `<div class="card" style="border-color:color-mix(in srgb,var(--warn) 55%,transparent)">
+      <h2>Il ruolo è cambiato nella sorgente <span class="r">studio-finto/agenti-legali</span></h2>
+      <p class="desc" style="margin-top:-6px">Hai adottato il commit <span class="mono">5b7d02aa91fe</span> della raccolta l'11 ottobre. Questo agente lavora ancora con il testo del 20 settembre (<span class="mono">1a90c3e77b02</span>) e continua così finché non lo riadotti.</p>
+      <p class="small"><b>+6 righe, −2 righe</b> nel testo del ruolo. Nome, personaggio, permessi e modello non cambiano.</p>
+      <div class="diff">
+        <div class="ctx">## Come lavori</div>
+        <div class="ctx">- Leggi il contratto per intero prima di rispondere.</div>
+        <div class="del">- Segnala le clausole di rinnovo automatico.</div>
+        <div class="add">- Segnala le clausole di rinnovo automatico e il termine per la disdetta.</div>
+        <div class="add">- Controlla che penali e limiti di responsabilità siano reciproci.</div>
+        <div class="add">- Se manca il foro competente, dillo.</div>
+        <div class="ctx"></div>
+        <div class="ctx">## Cosa consegni</div>
+        <div class="del">Un elenco dei problemi.</div>
+        <div class="add">Un elenco breve: clausola, perché conta, proposta di modifica.</div>
+        <div class="add">In fondo, le scadenze in ordine di data.</div>
+        <div class="add">Niente pareri su leggi di altri Paesi.</div>
+      </div>
+      <div class="row end"><button class="btn">Tieni la versione di adesso</button><button class="btn p" id="reapply">Riadotta…</button></div>
+    </div>`;
+  } else {
+    box = `<div class="card">
+      <h2>Sorgente tolta dal catalogo</h2>
+      <p class="small">Hai smesso di seguire <b>studio-finto/agenti-legali</b>. Questo agente resta com'è e continua a lavorare con il testo che ha: la provenienza (commit, file, sha256, licenza Apache-2.0) resta scritta nella sua scheda. Non riceverà più aggiornamenti; se segui di nuovo la raccolta, il confronto riprende.</p>
+    </div>`;
+  }
+  $('#adopted-detail').innerHTML = `
+    <section class="hero">
+      <div class="big">RC</div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+        <div class="row" style="gap:6px"><span class="pill">Mio · dal catalogo</span><span class="pill okp">Lavora sul Mac</span><span class="pill">Vede dati di lavoro</span>${badge}
+          <label class="small row" style="margin-left:auto;gap:8px">Attivo <span class="switch yes"></span></label></div>
+        <h2 style="margin:0;font-size:22px;font-weight:600">revisore-contratti</h2>
+        <p class="muted" style="max-width:60ch">Revisore dei contratti: ruolo di terzi da studio-finto/agenti-legali (Apache-2.0). Segnala clausole sbilanciate, scadenze e rinnovi automatici.</p>
+        <p class="small muted">Rapporto di sicurezza di Opus del 21 set 2026: nessuna istruzione sospetta nel testo.</p>
+      </div>
+    </section>${box}`;
+  const r = $('#reapply'); if (r) r.onclick = openReapply;
+  if (st === 'reapply') openReapply();
+}
+function openReapply() {
+  $('#modal-body').innerHTML = `<h2>Riadottare «revisore-contratti»?</h2>
+    <ul><li>Il testo del ruolo diventa quello del commit <span class="mono">5b7d02aa91fe</span> (+6 −2 righe).</li>
+      <li>Nome, descrizione, personaggio, permessi e modello restano i tuoi.</li>
+      <li>L'agente si spegne finché Opus non rilegge il testo nuovo: con il rapporto pronto lo riaccendi tu dalla sua scheda.</li></ul>
+    <p class="small muted">Il testo di prima va in <span class="mono">data/agents/eliminati</span>: se il nuovo non ti convince puoi tornare indietro.</p>
+    <div class="row end"><button class="btn" id="m-no">Annulla</button><button class="btn p" id="m-yes">Riadotta e spegni</button></div>`;
+  $('#modal').classList.add('on');
+  $('#m-no').onclick = $('#m-yes').onclick = () => $('#modal').classList.remove('on');
+}
+
+/* ---------- Barra ---------- */
+function renderStates() {
+  $('#states').innerHTML = STATES[view].map(([id, t]) => `<button aria-pressed="${state[view] === id}" data-s="${id}">${t}</button>`).join('');
+  $('#states').querySelectorAll('button').forEach((b) => b.onclick = () => { state[view] = b.dataset.s; render(); });
+}
+function render() {
+  $('#modal').classList.remove('on');
+  document.querySelectorAll('#views button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === view)));
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === `v-${view}`));
+  $('#explain').innerHTML = EXPLAIN[view];
+  renderStates();
+  if (view === 'settings') renderSettings();
+  if (view === 'new') renderPicker();
+  if (view === 'adopted') renderAdopted();
+}
+document.querySelectorAll('#views button').forEach((b) => b.onclick = () => { view = b.dataset.v; render(); });
+document.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => {
+  document.documentElement.dataset.theme = b.dataset.t;
+  document.querySelectorAll('[data-t]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+});
+$('#modal').onclick = (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };
+render();
+</script>
+</body>
+</html>
