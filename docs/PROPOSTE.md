@@ -712,6 +712,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni (le domande erano 
 6. **Conservazione:** l'utente trova un anno «iper esagerato» e sceglie **solo 7 giornalieri**: niente settimanali né mensili, né sul Mac né sul NAS. Una cancellazione notata dopo più di 7 giorni non si recupera.
 7. **Avvisi:** sezione Backup gialla dopo 1 giorno senza copia sul NAS, rossa dopo 3; col rosso una notifica del Mac (D-128) con un testo fisso L0 («Backup: copia sul NAS in ritardo»). Telegram resta spento (D-110).
 8. **Modelli fuori dal backup** (osservazione dell'utente, «secondo me è inutile copiarli»): confermato, `data/models/` resta escluso come già previsto e si riscarica con `pnpm arianna:models pull`. Entra invece `config/models.user-catalog.yaml` (fuori da git, pochi KB): tiene le voci aggiunte da Hugging Face (D-139) con commit e sha256, senza le quali dopo un guasto non si saprebbe cosa riscaricare.
+9. **Quando:** backup per ultimo (scelta dell'utente del 2026-10-14: «il backup lo voglio come ultima cosa tanto al momento non stiamo usando dati veri»), comunque prima dei dati veri.
 
 ### Cose non verificate (D-096)
 
@@ -2001,7 +2002,7 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 ## D-113 — Modelli piccoli accanto al 27B: un secondo scanner dei dati personali (Rizzo-PII) e decisioni tipate (Laya, Rizzo Flow)
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire dopo il backup (D-096). Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire dopo la pagina «Su di te» (D-114 A). Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
 - **Collegate:** D-016 e regola 10 (canali esterni), gateway e scanner di `packages/policy`, D-066 (Python solo in `apps/voice`, gabbia di rete), D-081 (prove dei modelli), D-086 (riordino delle note), D-107 (personalità L1, scanner al salvataggio), D-107e (memoria di oMLX), D-110 (routine), D-111 (chi risponde)
 
 ### Contesto
@@ -2053,7 +2054,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 3. **Dove gira:** scelta dell'utente diversa dalle tre proposte: **un ambiente Python isolato suo, come `apps/voice`**, nome scelto da Claude: `apps/guard` (proprio `pyproject.toml` e `uv.lock`, gabbia senza rete come la voce, test propri). La voce si può spegnere senza fermare il cloud. Quando si costruisce, la regola di CLAUDE.md «Python solo in `apps/voice`» diventa «Python solo in `apps/voice` e `apps/guard`», citando questa scelta; la libreria che carica il modello avrà la sua voce in DECISIONS.
 4. **Scelte semplici più veloci:** prima B1 (probabilità delle opzioni dal modello già caricato in oMLX), Laya solo se B1 non basta e con l'addestramento accettato dall'utente.
 5. **Prima prova della via veloce:** tipo e tag delle note nel riordino (D-086); poi chi risponde fra più agenti (D-111 B).
-6. **Quando:** dopo il backup (D-096); poi la tappa 1 di Rizzo-PII in `apps/guard`, l'integrazione nel gateway, la via veloce sulle note.
+6. **Quando:** dopo la pagina «Su di te» (tappa A di D-114): la tappa 1 di Rizzo-PII in `apps/guard`, l'integrazione nel gateway, la via veloce sulle note. Il backup (D-096) va per ultimo, prima dei dati veri (correzione dell'utente del 2026-10-14; prima diceva «dopo il backup»).
 
 ### Cose non verificate (D-113)
 
@@ -2068,7 +2069,7 @@ Fonti: [Jev vs Laya](https://www.orcarouter.ai/it/blog/jev-vs-laya), [Laya spieg
 ## D-114 — Su di te: profilo a due livelli e dati personali dati uno alla volta
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere (richiesta dell'utente del 2026-10-05: "ci sono informazioni personali che voglio che sappiano solo i modelli locali ed informazioni che invece possiamo condividere... quando un modello AI vorrebbe una info personale il modello locale (Arianna) mi chiede se può dargliela e se sì gli passa SOLO quella")
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); tappa A come prossimo lavoro. Era: Proposta, da discutere (richiesta dell'utente del 2026-10-05: "ci sono informazioni personali che voglio che sappiano solo i modelli locali ed informazioni che invece possiamo condividere... quando un modello AI vorrebbe una info personale il modello locale (Arianna) mi chiede se può dargliela e se sì gli passa SOLO quella")
 - **Collegate:** SPEC "Memoria e knowledge base" (memoria degli agenti, Fase 2), PRIVACY-POLICY-SPEC (regola 3, declassamento; "Da dove vengono le etichette"), D-055 (approvazione `declassify` del brief), D-107a2 e D-107f (testi dell'utente L1 per dichiarazione, scanner e vault al salvataggio), D-111 (Coder e Codex diretti), D-113 (secondo scanner), regola "Solo dati finti in sviluppo" di `CLAUDE.md`
 
 ### Contesto
@@ -2141,46 +2142,17 @@ Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non 
 - **Testo del fatto nei log.** Eventi con il solo argomento; il testo solo nella riga di approvazione, come `declassify`.
 - **Il motivo scritto dall'agente** può essere ingannevole: la scheda lo mostra come "dice il Coder", il giudizio resta tuo.
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **Il profilo "Su di te" è un elenco di fatti singoli, ognuno col suo livello di privacy?** Raccomandazione: sì, fatti singoli (argomento e testo breve) in una tabella del database; una pagina unica o file della KB non permettono di far uscire un fatto solo.
-   - Contesto: Oggi Arianna non sa nulla di te fra una chat e l'altra. La proposta (D-114) è un profilo fatto di fatti singoli, ognuno con un argomento e un testo breve e con il suo livello di privacy, salvati nel database di Arianna. Così si può dare a un agente un fatto solo, senza dargli tutto il resto.
-   - Opzione consigliata: Sì, fatti singoli — ogni fatto ha il suo livello e può uscire da solo, con la tua approvazione.
-   - Opzione: Una pagina unica di profilo — più semplice da scrivere, ma si condivide tutto o niente.
-   - Opzione: Note della knowledge base — l'etichetta vale per tutto il file: servirebbe un file per ogni fatto.
-   - Esempio: "città: Paperopoli" (solo in casa), "lavoro: sviluppatore web" (condivisibile), "orari: lavoro 9-18" (condivisibile).
-2. **Bastano due livelli, "Solo in casa" e "Condivisibile", con le cose più delicate fuori dal profilo?** Raccomandazione: sì, "Solo in casa" predefinito; le cose L3 (salute, documenti, credenziali) fuori dal profilo.
-   - Contesto: Ogni fatto avrebbe uno di due livelli. "Solo in casa" (L2, predefinito): lo leggono solo i modelli che girano sul Mac. "Condivisibile" (L1): può arrivare anche a Claude e Codex, passando dal controllo delle uscite. Le cose delicatissime (salute, documenti, credenziali, livello L3) restano fuori dal profilo, nella cassaforte o nell'archivio, dove nessun modello le legge.
-   - Opzione consigliata: Due livelli, il delicato fuori — una scelta semplice per ogni fatto; ciò che è delicatissimo non lo legge nessun modello.
-   - Opzione: Più livelli — più sfumature, ma più difficile scegliere ogni volta.
-   - Opzione: Anche il delicato nel profilo — comodo, ma un modello potrebbe leggerlo.
-   - Esempio: "lingua preferita: italiano" è Condivisibile; "indirizzo di casa" è Solo in casa; il numero della carta d'identità non entra nel profilo.
-3. **Ogni volta che un agente cloud chiede un fatto privato, ti chiede il permesso?** Raccomandazione: sì, ogni richiesta di un fatto "Solo in casa" chiede il tuo sì ogni volta, senza "ricorda la scelta", almeno all'inizio; se diventa pesante, un "sì per questa conversazione" più avanti.
-   - Contesto: Quando a un agente che gira nel cloud (Claude, Codex) servirebbe un fatto "Solo in casa", Arianna ti chiede il permesso mostrandoti il testo esatto che uscirebbe e a chi. Si decide se chiederlo ogni volta o permettere "ricorda la scelta" per un agente.
-   - Opzione consigliata: Sì, ogni volta — vedi sempre cosa esce e a chi; se diventa pesante, più avanti un "sì per questa conversazione".
-   - Opzione: "Ricorda la scelta" per agente — meno conferme, ma dopo la prima volta il dato esce senza che tu lo veda.
-   - Esempio: Il Coder chiede la tua città per il fuso orario; compare "Il Coder (Claude) chiede: città · Testo che esce: «Paperopoli» · [Dagli solo questo] [No]"; la volta dopo te lo richiede.
-4. **Arianna può proporti di ricordare cose che dici in chat?** Raccomandazione: sì, come tappa D, sempre da confermare e sempre "Solo in casa" all'inizio.
-   - Contesto: Mentre parli, Arianna potrebbe accorgersi di cose stabili su di te e proporti di ricordarle nel profilo. Non le scriverebbe mai da sola: serve sempre la tua conferma, e partono come "Solo in casa".
-   - Opzione consigliata: Sì, sempre da confermare — il profilo si riempie senza fatica, ma nulla entra senza il tuo sì.
-   - Opzione: No, i fatti li scrivo solo io — controllo totale, ma il profilo cresce solo se ti ricordi di aggiornarlo.
-   - Esempio: In chat scrivi "da lunedì lavoro da Topolinia"; Arianna chiede "Vuoi che ricordi: città → Topolinia? (solo in casa)" e tu rispondi sì o no.
-5. **I tuoi dati veri entrano nel profilo solo quando l'installazione è pronta per i dati veri?** Raccomandazione: sì, il profilo si riempie solo con l'installazione pronta (doctor verde, password vere dal vault), e in sviluppo con fatti finti; è la regola "solo dati finti in sviluppo", e il profilo è la prima tabella fatta apposta per i tuoi dati più personali.
-   - Contesto: Il profilo ha senso con dati veri, ma la regola del progetto è "solo dati finti in sviluppo": con le password di sviluppo il database non è protetto. Il controllo dell'installazione (pnpm arianna:doctor) dice quando è pronta: password vere prese dalla cassaforte (vault) e tutto verde. Si decide quando inserire i dati veri.
-   - Opzione consigliata: Solo con l'installazione pronta — in sviluppo fatti finti; i tuoi dati veri arrivano quando il controllo è verde e le password vere sono nella cassaforte.
-   - Opzione: Subito anche in sviluppo — lo usi prima, ma i dati più personali starebbero in un database poco protetto.
-   - Esempio: In sviluppo il profilo contiene "città: Paperopoli"; quando l'installazione vera è pronta scrivi la tua città vera.
-6. **Quando si costruisce il profilo rispetto agli altri lavori?** La memoria è della Fase 2: va annotata come eccezione in `ROADMAP.md`, e la SPEC ("Memoria e knowledge base", che affida i fatti stabili a Mem0) va aggiornata: i fatti dichiarati da te in Postgres, Mem0 per la memoria episodica. Raccomandazione: dopo la tappa A3 di D-107 (stesso punto del prompt) e la prova di D-058; la tappa A si può fare prima, perché non tocca il prompt.
-   - Contesto: La memoria su di te era prevista nella Fase 2; farla prima è un'eccezione da scrivere nel piano dei lavori. Il profilo entra nel prompt di Arianna nello stesso punto della personalità degli agenti (D-107), quindi conviene farlo dopo quella parte. La tabella e la pagina "Su di te" (tappa A) invece non toccano il prompt.
-   - Opzione consigliata: Pagina subito, uso nel prompt dopo — la tabella e la pagina "Su di te" si fanno anche ora; la parte che entra nel prompt dopo la personalità (D-107 A3) e la prova del Coder (D-058).
-   - Opzione: Tutto subito — il profilo arriva prima, ma si sovrappone ai lavori sul prompt ancora aperti.
-   - Opzione: Nella Fase 2, come previsto — nessuna eccezione al piano, ma più attesa.
-   - Esempio: Questa settimana nasce la pagina Impostazioni → "Su di te" dove scrivi i fatti; Arianna comincerà a usarli dopo che la personalità degli agenti è finita.
-7. **Una casella in questa pagina per dire a Claude Code qualcosa di te?** Raccomandazione: sì, una casella "Su di te, per Claude Code" nella pagina `/sviluppo`, passata dal gateway come L1 e salvata in `data/dev/UTENTE.md` (fuori da git, letto a inizio sessione), come le risposte di D-102; solo ciò che diresti in chat (chi sei, che lavoro fai, come preferisci lavorare). Un file scritto a mano e letto da Claude Code non passerebbe dal gateway, ed è vietato.
-   - Contesto: Anche Claude Code, che sviluppa Arianna, lavorerebbe meglio sapendo qualcosa di te: che lavoro fai, come preferisci lavorare. È un servizio cloud, quindi può ricevere solo ciò che diresti in chat, passando dal controllo delle uscite come le risposte che scrivi in questa pagina.
-   - Opzione consigliata: Sì, una casella in questa pagina — il testo passa dal controllo e va in data/dev/UTENTE.md, fuori da git, letto da Claude a inizio sessione.
-   - Opzione: No — Claude Code continua a sapere di te solo ciò che scrivi nelle conversazioni.
-   - Esempio: Scrivi "Sono uno sviluppatore web freelance, preferisco risposte brevi e una domanda alla volta"; alla sessione dopo Claude Code lo legge e si regola.
+Risposte dell'utente del 2026-10-14, con le domande a opzioni.
+
+1. **Forma del profilo:** fatti singoli (argomento e testo breve) in una tabella del database, ognuno col suo livello.
+2. **Livelli:** due, «Solo in casa» (L2, predefinito) e «Condivisibile» (L1); L3 (salute, documenti, credenziali) fuori dal profilo.
+3. **Permesso:** ogni richiesta di un fatto «Solo in casa» da un agente cloud apre la scheda ogni volta, senza «ricorda la scelta».
+4. **Proposte di Arianna:** sì (tappa D), sempre da confermare e sempre «Solo in casa» di partenza.
+5. **Dati veri:** solo con l'installazione pronta (doctor verde, password vere dal vault); in sviluppo fatti finti.
+6. **Quando:** la tappa A (tabella e pagina «Su di te») è il prossimo lavoro; l'uso nel prompt (tappe B-D) dopo la personalità (D-107 A3). Ordine dei lavori decisi il 2026-10-14: pagina «Su di te», Rizzo-PII (D-113), profilo nel prompt, backup per ultimo (scelta dell'utente del 2026-10-14: «il backup lo voglio come ultima cosa tanto al momento non stiamo usando dati veri»), comunque prima dei dati veri. Eccezione alla Fase 2 da annotare in `ROADMAP.md` e nella SPEC («Memoria e knowledge base»: fatti dichiarati in PostgreSQL, Mem0 per la memoria episodica) quando si costruisce la tappa A.
+7. **Casella per Claude Code:** sì, «Su di te, per Claude Code» nella pagina `/sviluppo`, passata dal gateway come L1 e salvata in `data/dev/UTENTE.md` (fuori da git); CLAUDE.md la aggiunge alle letture di inizio sessione quando esiste.
 
 ### Cose non verificate (D-114)
 
