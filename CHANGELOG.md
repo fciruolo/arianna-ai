@@ -2,6 +2,21 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [0.86.0] - 2026-10-13
+
+### Aggiunto
+
+- `pnpm dev:codex` lancia Codex CLI interattivo sullo sviluppo di Arianna da `packages/executors`, con un profilo di permessi che chiude ciò che git esclude (`data/`, `config/arianna.toml`, `kb/inbox/`, `kb/progetti/`, `repos/`…) e le cartelle di lavoro di Claude Code, e nessun comando fuori dal sandbox; le regole per Codex sono in `AGENTS.md` (D-143).
+
+### Cambiato
+
+- ESLint ignora anche `kb/inbox/` e `kb/progetti/`: nel sandbox di `pnpm dev:codex` sono negate e la scansione di `pnpm lint` fallirebbe su di esse (D-143).
+
+### Sicurezza
+
+- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti, i `.gitignore` e la configurazione degli strumenti (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…); rifiuta una `HOME` mancante, una versione di `codex` non verificata, le istruzioni globali e le regole di esecuzione dell'utente, una configurazione gestita di Codex, chiavi del suo `config.toml` di Codex che uscirebbero dal profilo e server MCP accesi, file di istruzioni in più, un `.gitignore` cambiato e argomenti che allenterebbero il profilo; parte con l'ambiente pulito dell'adattatore, senza rete né cronologia. L'utente legge il diff di Codex prima di `pnpm check` e del commit (D-143).
+- `docs/PRIVACY-POLICY-SPEC.md` scrive l'eccezione di `pnpm dev:codex` ai punti 2, 5, 7 e 8 del confinamento e cosa la compensa (D-143).
+
 ## [0.85.4] - 2026-10-13
 
 ### Cambiato

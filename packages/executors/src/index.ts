@@ -41,6 +41,28 @@ export {
   type CodexStart,
 } from './codex/run.ts';
 export { CODEX_ACCESS, CODEX_DISABLED_FEATURES, CODEX_MODELS, codexArgs, codexInFamily, codexEnv, codexFilesystem, codexPermissionArgs, userInstructionFiles, type CodexAccess, type CodexModel } from './codex/profile.ts';
+export {
+  CODEX_DEV_VERSION,
+  DEV_ALWAYS_DENIED,
+  DEV_READ_ONLY,
+  DEV_REFUSED_USER_KEYS,
+  codexDevLaunch,
+  devArgs,
+  devChangedGitignores,
+  devConfigArgs,
+  devEnabledMcpServers,
+  devEnv,
+  devExtraArgs,
+  devFilesystem,
+  devIgnoredPaths,
+  devManagedConfigFiles,
+  devStrayInstructionFiles,
+  devUserRuleFiles,
+  devVersionOk,
+  spawnCodexDev,
+  userConfigRefusals,
+  type CodexDevLaunch,
+} from './codex/dev.ts';
 export { CODEX_FILE_CHANGE_KINDS, CodexStream, type CodexEvent, type CodexFileChangeKind, type CodexUsage } from './codex/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
 export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';
