@@ -172,7 +172,7 @@ export function pageFolder(home: string, id: string): string | undefined {
  * every folder on the way a real folder, within MAX_GRAPH_PAGE_BYTES.
  * Undefined for anything else.
  */
-function readPageFile(home: string, id: string): { raw: string; mtimeMs: number; size: number } | undefined {
+export function readPageFile(home: string, id: string): { raw: string; mtimeMs: number; size: number } | undefined {
   const segments = id.split('/');
   const dir = pageFolder(home, id);
   if (dir === undefined) return undefined;

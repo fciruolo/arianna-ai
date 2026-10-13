@@ -25,6 +25,7 @@ import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, Transl
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
+import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -887,6 +888,26 @@ export async function organizeNote(name: string): Promise<void> {
 /** "Scarica e riassumi" (D-154): the link of the note downloaded and summarized, whatever its site. */
 export async function fetchNoteLink(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/fetch`, {});
+}
+
+/** "Da archiviare" (D-195): the proposals of the Archivist and the folders a thought may go to. */
+export async function loadArchive(): Promise<ArchiveListing> {
+  return call<ArchiveListing>('GET', '/api/archive');
+}
+
+/** Approves one or more proposals, with the corrections of the user; one result per note. */
+export async function approveArchive(items: ApproveItem[]): Promise<ApproveResult[]> {
+  return (await call<{ results: ApproveResult[] }>('POST', '/api/archive/approve', { items })).results;
+}
+
+/** "Scarta": the thought stays in the inbox. */
+export async function discardArchive(name: string, version: string): Promise<void> {
+  await call('POST', '/api/archive/discard', { name, version });
+}
+
+/** "Proponi di nuovo": the Archivist proposes again where the thought goes. */
+export async function proposeArchiveAgain(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/archive`, {});
 }
 
 /** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */

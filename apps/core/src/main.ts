@@ -27,6 +27,7 @@ import { createClaudeExecutor, createCodexExecutor, createLocalModel, type Claud
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
+import { enqueueArchive, notesToPropose, proposeArchive } from './archivist.ts';
 import { directPolicies, type DirectPolicy } from './direct-chat.ts';
 import { createGodApi } from './god/api.ts';
 import { godGit } from './god/clone.ts';
@@ -73,7 +74,7 @@ import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteReleaser } from './note-release.ts';
-import { createNoteOrganizer, organizeModelReady } from './organize.ts';
+import { createNoteOrganizer, MAX_RESUMED, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
 import { createReadiness } from './readiness.ts';
@@ -580,12 +581,15 @@ const huggingface = createHuggingFace({
 // Captured notes organized by the local model in the background (D-086), one
 // at a time, giving way to calls and task steps; the raw note is saved first.
 // No note starts while oMLX is on its way up: at start it loads for minutes (D-100).
+const archiveEnv = { sql, home: config.home, rules, kb, model: localModel };
 const organizer = createNoteOrganizer({
-  sql,
-  home: config.home,
-  rules,
-  kb,
-  model: localModel,
+  ...archiveEnv,
+  // The Archivist with autonomy A1 (D-195): after a note is organized, the local model proposes where it goes; the user approves.
+  archive: {
+    propose: (path, signal, force) => proposeArchive(archiveEnv, path, signal, force),
+    enqueue: (tx, path) => enqueueArchive(tx, path),
+    waiting: () => notesToPropose(config.home, rules, MAX_RESUMED),
+  },
   modelReady: () =>
     organizeModelReady(
       settings.current().local.endpoints,
@@ -845,7 +849,7 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), arianna: ariannaDocs },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), arianna: ariannaDocs },
   modelEvals,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>

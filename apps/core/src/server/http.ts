@@ -118,6 +118,7 @@ import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
 import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, type GraphCache } from '../knowledge.ts';
+import { approveMany, ARCHIVE_STATUS, archiveFolders, ArchiveError, discardArchive, listProposals, MAX_APPROVE_ITEMS, recordArchived, recordDiscarded, type ApproveInput } from '../archivist.ts';
 import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
 import { checkNoteName, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
@@ -203,6 +204,8 @@ export interface ApiServerOptions {
     organize?: (path: string) => Promise<boolean>;
     /** "Scarica e riassumi" (D-154): organizes the note again with its link downloaded. */
     fetch?: (path: string) => Promise<boolean>;
+    /** "Proponi di nuovo" (D-195): the Archivist proposes again where the note goes. */
+    archive?: (path: string) => Promise<boolean>;
     arianna?: AriannaDocs;
   };
   /** Trials of catalog models with the orchestrator evals (D-081). */
@@ -933,6 +936,59 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       const deleted = deleteKbPage(home, rules, `inbox/${checkNoteName(params.name ?? '')}`);
       await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
       return { body: { deleted: true } };
+    }),
+
+    // The Archivist (D-195): proposals of where the organized notes go; the user approves, corrects or discards them.
+    route('GET', '/api/archive', () => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: { proposals: listProposals(home, rules), folders: archiveFolders(home, rules) } });
+    }),
+    route('POST', '/api/archive/approve', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['items']);
+      const items = body.items;
+      if (!Array.isArray(items) || items.length === 0 || items.length > MAX_APPROVE_ITEMS) throw new HttpError(400, `items must hold 1 to ${String(MAX_APPROVE_ITEMS)} notes`);
+      const inputs = items.map((item: unknown): ApproveInput => {
+        if (typeof item !== 'object' || item === null || Array.isArray(item)) throw new HttpError(400, 'each item is an object');
+        const fields = item as Record<string, unknown>;
+        onlyFields(fields, ['name', 'version', 'folder', 'title', 'links']);
+        const { name, version, folder, title, links } = fields;
+        if (typeof name !== 'string' || typeof version !== 'string') throw new HttpError(400, 'name and version are required');
+        if (folder !== undefined && typeof folder !== 'string') throw new HttpError(400, 'folder must be a string');
+        if (title !== undefined && typeof title !== 'string') throw new HttpError(400, 'title must be a string');
+        if (links !== undefined && (!Array.isArray(links) || !links.every((link) => typeof link === 'string'))) throw new HttpError(400, 'links must be a list of paths');
+        return { name, version, ...(folder === undefined ? {} : { folder }), ...(title === undefined ? {} : { title }), ...(links === undefined ? {} : { links }) };
+      });
+      const results = [];
+      for (const result of approveMany(home, rules, inputs, onError)) {
+        if (!result.ok) {
+          results.push(result);
+          continue;
+        }
+        await recordArchived(sql, result.archived).catch(onError);
+        results.push({ name: result.name, ok: true, path: result.archived.path, relinked: result.archived.relinked });
+      }
+      return { body: { results } };
+    }),
+    route('POST', '/api/archive/discard', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['name', 'version']);
+      if (typeof body.name !== 'string' || typeof body.version !== 'string') throw new HttpError(400, 'name and version are required');
+      discardArchive(home, rules, body.name, body.version);
+      await recordDiscarded(sql).catch(onError);
+      return { body: { discarded: true } };
+    }),
+    // "Proponi di nuovo": an organized note goes back to the Archivist, whatever proposal it has.
+    route('POST', '/api/notes/:name/archive', async (request, _url, params) => {
+      const { home, rules, archive } = need();
+      onlyFields(await readJson(request), []);
+      const note = readNote(home, rules, params.name ?? '');
+      if (note.status !== 'organized') throw new HttpError(409, 'only an organized note can be archived');
+      if (archive === undefined) throw new HttpError(503, 'notes cannot be archived now');
+      await archive(note.path);
+      return { status: 202, body: { path: note.path, proposing: true } };
     }),
   ];
 }
@@ -3320,6 +3376,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ReleaseError) return { status: RELEASE_STATUS[error.code], message: `${error.code}: ${error.message}` };
+  if (error instanceof ArchiveError) return { status: ARCHIVE_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof KnowledgeError) {
     const status = { changed: 409, invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };

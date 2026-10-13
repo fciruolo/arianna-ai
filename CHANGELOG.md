@@ -2,6 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Pensieri, «Da archiviare»: dopo il riordino l'Archivista (il modello locale, mai il cloud) propone per ogni pensiero una cartella di `kb/` fra quelle che esistono, un titolo e qualche collegamento a note già archiviate; li approvi uno a uno o in blocco, correggi cartella, titolo e collegamenti, o scarti; una proposta di un pensiero cambiato dopo scade e si chiede di nuovo (D-195).
+- Lo spostamento approvato tiene il testo, scrive l'etichetta che il pensiero aveva (mai più bassa, anche in una cartella L0 o L1), non sovrascrive mai un file, non passa da link simbolici né esce da `kb/`, e riscrive i collegamenti delle altre note al percorso nuovo; nel registro eventi `note.archived` senza percorsi né titoli (D-195).
+
 ## [0.87.0] - 2026-10-13
 
 ### Aggiunto
