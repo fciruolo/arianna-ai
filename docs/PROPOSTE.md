@@ -147,14 +147,12 @@ Importatore a sola lettura, che non attiva nulla e non tocca prompt, router né 
 
 ### Domande per l'utente
 
-2. **Chi scarica la copia del catalogo agency-agents, e quando?** Raccomandazione: l'utente lo fa la prima volta (rete, cartella in `data/`, fuori dalla portata di Claude per l'hook), con `git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents && git -C data/catalogs/agency-agents checkout 8329468`; poi Claude completa `config/agency.lock` e prova l'importatore.
-   - Contesto: agency-agents è una raccolta pubblica e gratuita (licenza MIT) di oltre 230 descrizioni di agenti pronti (marketing, design, codice…). Arianna sa già leggerla: l'importatore propone schede spente, e D-119 ha deciso che compariranno fra le sorgenti di un agente nuovo (tappa T4, non ancora costruita). Manca però la copia del catalogo sul Mac, da scaricare con git in data/catalogs/. Claude non può scrivere in data/ né usare la rete per questo. Oggi config/agency.lock ha ancora la versione abbreviata del catalogo, che va completata dopo il primo download.
-   - Opzione consigliata: Lo scarichi tu, una volta — due comandi nel terminale (git clone e git checkout); poi Claude copia la versione completa nel file del catalogo e prova l'importatore.
-   - Opzione: Un comando pnpm agency:fetch — fa tutto da solo; più comodo, ma è codice in più che scarica dalla rete, da scrivere e controllare.
-   - Opzione: Più avanti, quando servirà — nessun passo ora; le schede di agency-agents restano non disponibili.
-   - Esempio: Nel terminale lanci git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents e poi il checkout; pnpm agency:import ti stampa la versione completa, che Claude scrive in config/agency.lock. Con la tappa T4 quei ruoli compariranno in Impostazioni → Agenti → "+ Nuovo agente".
+Nessuna domanda aperta.
+
 ### Domande chiuse
 
+- 2. Chiusa: decisa dall'utente il 2026-10-13. Niente clone a mano (gli aggiornamenti sarebbero scomodi e le sorgenti potranno essere molte): un «Catalogo agenti» con lo stesso motore delle skill di D-161, cioè un elenco di sorgenti `https://github.com/<owner>/<repo>` (agency-agents la prima suggerita), «Aggiorna» che scarica con git il commit più recente in una cartella d'attesa tenendo solo i file utili e senza eseguire nulla, confronto e «Usa»/«Scarta»; l'importatore legge tutte le sorgenti in uso; le schede restano spente finché l'utente non le attiva e quelle già adottate non cambiano finché non le riadotta. Sezione in Impostazioni, con anteprima prima del codice.
+- 6. Chiusa: decisa dall'utente il 2026-10-13: tutte le divisioni, con filtro per divisione e ricerca per nome nella scelta.
 - 1. Chiusa: è la stessa domanda della conferma conf-D-079 ("Confermi D-079"), che resta aperta; inoltre l'utente ha già scelto di usare le schede di agency-agents fra le sorgenti di un agente nuovo (D-119).
 - 3. Chiusa: decisa in D-119 (tappa T3b): le schede di agency-agents restano L0, con prompt L0.
 - 4. Chiusa: decisa in D-119 (tappa T3b) e nella revisione di D-079 per la tappa T4 (0.9.1): permessi di partenza `code` per engineering e testing, `answer` per gli altri gruppi; autonomia A0 o A1 scelta agente per agente nella pagina Agenti, dentro il tetto A1.
@@ -221,7 +219,7 @@ I PDF scansionati (senza testo) vanno all'OCR della Fase 2. Libri e paper altrui
 
 - **Classificazione e spostamento automatici al momento della cattura.** Richiede il modello acceso, sbaglia etichetta in silenzio e rende la cattura lenta; una cattura deve essere istantanea e mai persa.
 - **Etichetta della conversazione per la nota (L1 in una di lavoro).** Un pensiero detto di passaggio in una conversazione di lavoro può essere privato; default-deny dice L2.
-- **Tutto il testo delle pagine web e delle trascrizioni altrui nella KB.** Vietato dalla SPEC (copie integrali) e inutile per la ricerca.
+- **Tutto il testo delle pagine web e delle trascrizioni altrui nella KB.** Vietato dalla SPEC (copie integrali) e inutile per la ricerca. (Per i video passati dall'utente la trascrizione completa è ammessa dal 2026-10-13, domanda 7.)
 - **Una tabella del database per le catture.** La KB è Markdown per Obsidian (SPEC); la nota è la verità, il database potrà indicizzarla.
 - **Trascrizione dentro il server delle chiamate.** Mescola due carichi e rompe lo scarico dei modelli di D-074.
 
@@ -246,42 +244,16 @@ Seconda parte, dopo le risposte: strumento `kb.capture` per Arianna (tocca `pack
 
 ### Domande per l'utente
 
-1. **Tutto ciò che salvi nasce privato e si rende meno privato solo col tuo sì?** Raccomandazione: sì, ogni cosa catturata nasce L2 in `kb/inbox/`, anche da una conversazione di lavoro, e si abbassa solo con la tua approvazione; è il default-deny applicato all'ingresso, e costa solo un clic quando vuoi davvero declassare.
-   - Contesto: Arianna salva in kb/inbox/ ciò che le passi: pensieri, link, note. Ogni nota ha un'etichetta di riservatezza: L2 vuol dire privato, resta sul Mac e non arriva mai a Claude o Codex; L1 vuol dire di lavoro, può andare al cloud passando dal controllo. Oggi funziona già così (prima parte di D-080, da confermare): tutto nasce L2, anche se lo salvi da una conversazione di lavoro, e si abbassa solo con la tua approvazione.
-   - Opzione consigliata: Sì, tutto nasce privato (L2) — un pensiero privato detto di passaggio non esce mai per sbaglio; rendere una nota meno privata costa un clic.
-   - Opzione: Come la conversazione — L1 se la salvi da una chat di lavoro: meno approvazioni, ma una cosa privata detta in una chat di lavoro sarebbe meno protetta.
-   - Esempio: In una conversazione di lavoro scrivi "/nota ricordami il controllo dal dentista giovedì". La nota nasce privata anche se la chat è di lavoro, e non potrà mai arrivare a un agente cloud senza il tuo sì.
-2. **Chi riordina le note dell'inbox decide da solo o ti propone e decidi tu?** Raccomandazione: propone (A1) per qualche settimana; poi, se le proposte sono buone, A2 per lo spostamento con una decisione registrata, mai per abbassare l'etichetta.
-   - Contesto: L'Archivista è l'agente previsto per mettere in ordine le note nuove: sceglie cartella, titolo, collegamenti ad altre note ed etichetta. Oggi il modello locale riordina già titolo e riassunto (D-086), ma non sposta nulla. Si decide se l'Archivista si limita a proporre (A1, tu approvi) o sposta le note da solo (A2).
-   - Opzione consigliata: Propone, approvi tu — per qualche settimana; se le proposte sono buone passa a spostare da solo, ma mai per abbassare l'etichetta.
-   - Opzione: Sposta da solo da subito — meno clic, ma un errore di cartella o di collegamento lo scopri tardi.
-   - Opzione: Nessun Archivista, solo a mano — controllo totale, ma l'inbox cresce senza ordine.
-   - Esempio: Hai 12 note nuove. L'Archivista propone "sposta in progetti/sito-demo, titolo 'Idee per la home', collega alla nota Sito demo"; nella vista "Da archiviare" approvi 10 proposte in blocco e ne correggi 2.
-4. **Per riassumere un link Arianna può scaricare la pagina, chiedendoti il permesso ogni volta?** Raccomandazione: sì, una declassificazione a L0 per singolo URL, approvata da te e registrata in `label_changes`, prima di ogni download; senza approvazione restano link e titolo che dai tu. Una regola generale richiederebbe prima una decisione che modifichi `docs/PRIVACY-POLICY-SPEC.md` (regole 3 e 4): non la propongo ora.
-   - Contesto: Per riassumere un link Arianna dovrebbe scaricare la pagina da internet. Ma l'indirizzo stesso dice cosa leggi, quindi è un dato privato (L2) e non può uscire dal Mac. Per scaricarlo bisogna prima dichiarare pubblico (L0) quel solo indirizzo, con la tua approvazione, che resta registrata.
-   - Opzione consigliata: Sì, ti chiede ogni volta — nulla esce senza il tuo sì; senza approvazione nella nota restano solo link e titolo.
-   - Opzione: Mai scaricare, solo link e titolo — massima riservatezza, ma niente riassunti automatici delle pagine.
-   - Opzione: Una regola per tutti i link — nessun clic, ma prima va cambiata la specifica della privacy (regole 3 e 4): oggi non è proposta.
-   - Esempio: Salvi il link di un articolo su un nuovo framework. Arianna ti chiede "posso trattare questo indirizzo come pubblico per scaricarlo e riassumerlo?"; se dici sì, il riassunto compare nella nota.
-5. **Per leggere i PDF si aggiunge la libreria di Mozilla, chiusa in un processo a parte?** Raccomandazione: sì, `pdfjs-dist` (Apache-2.0, JavaScript puro) in un processo figlio confinato, quando arriviamo ai PDF, con una voce in DECISIONS e versione esatta; Poppler solo se pdf.js estrae male i tuoi documenti.
-   - Contesto: Per leggere il testo dei PDF serve una libreria esterna, cioè una dipendenza nuova. pdfjs-dist è quella di Mozilla usata dai browser: JavaScript puro, licenza libera Apache-2.0. Un PDF può essere costruito apposta per attaccare chi lo legge, quindi andrebbe letto in un processo separato, con limiti di tempo e memoria.
-   - Opzione consigliata: Sì, pdfjs-dist in un processo chiuso — nessun programma da installare; un PDF malevolo non tocca il resto di Arianna.
-   - Opzione: pdftotext di Poppler — spesso estrae meglio, ma è un programma di sistema da installare, con licenza GPL da valutare.
-   - Opzione: Niente PDF per ora — nessuna dipendenza, ma i PDF restano allegati senza testo.
-   - Esempio: Passi ad Arianna un paper di 20 pagine; un processo a parte estrae il testo in pochi secondi e la nota contiene titolo, autori, riassunto e qualche citazione breve.
-6. **Vocali e video si trascrivono con il programma della voce che c'è già?** Raccomandazione: entrypoint nuovo dentro `apps/voice` (stesso ambiente e modelli, processo separato dalle chiamate), non una app Python a sé che cambi la regola "Python solo in `apps/voice`"; `ffmpeg` come prerequisito di sistema nel doctor.
-   - Contesto: Per trascrivere vocali e video si riusa Parakeet, il modello di riconoscimento vocale già usato per le chiamate, che vive in apps/voice (la parte di Arianna scritta in Python). Una regola del progetto dice "Python solo in apps/voice". Si decide se aggiungere lì un comando separato o creare un programma nuovo, cambiando la regola. Serve anche ffmpeg, un programma di sistema che converte l'audio.
-   - Opzione consigliata: Un comando nuovo dentro apps/voice — stesso ambiente e stessi modelli, processo separato dalle chiamate, nessuna regola da cambiare.
-   - Opzione: Un programma Python a sé — separazione più netta, ma un secondo ambiente Python da installare e mantenere, e la regola va cambiata.
-   - Esempio: Mandi un vocale di 3 minuti; ffmpeg lo converte, Parakeet lo trascrive e la nota in inbox contiene il testo. Se in quel momento sei in chiamata, la trascrizione aspetta che finisca.
-7. **Dei video di YouTube e simili si salvano solo link, titolo e riassunto, senza scaricarli?** Raccomandazione: sì, come chiede la SPEC; se vuoi la trascrizione, scarichi tu il file (dove le condizioni lo permettono) e lo passi come video locale.
-   - Contesto: Scaricare video da YouTube e piattaforme simili viola le loro condizioni d'uso, e la specifica di Arianna dice di non salvare copie integrali di contenuti altrui. Si conferma che per questi video si salvano solo link, titolo e riassunto della descrizione.
-   - Opzione consigliata: Sì, solo link e riassunto — rispetta la specifica e le condizioni d'uso; se vuoi la trascrizione, scarichi tu il file dove è permesso e lo passi come video locale.
-   - Opzione: Scaricare comunque per trascrivere — più comodo, ma viola le condizioni d'uso e la specifica.
-   - Esempio: Salvi il link di una conferenza su YouTube; la nota contiene titolo, canale, data e tre righe di riassunto della descrizione, senza il video.
+Nessuna domanda aperta.
 
 ### Domande chiuse
 
+- 2. Chiusa: decisa dall'utente il 2026-10-13: l'Archivista propone e l'utente approva (A1) per qualche settimana; poi, se le proposte sono buone, sposta da solo (A2) con una decisione registrata, mai per abbassare l'etichetta.
+- 4. Chiusa: decisa dall'utente il 2026-10-13: prima di scaricare una pagina Arianna chiede ogni volta di dichiarare Pubblico (L0) quel solo indirizzo, approvazione registrata in `label_changes`; senza, restano link e titolo.
+- 5. Chiusa: decisa dall'utente il 2026-10-13: `pdfjs-dist` in un processo figlio confinato, con voce in DECISIONS e versione esatta quando si arriva ai PDF.
+- 6. Chiusa: decisa dall'utente il 2026-10-13: entrypoint nuovo dentro `apps/voice`, processo separato dalle chiamate; `ffmpeg` prerequisito nel doctor.
+- 7. Chiusa: decisa dall'utente il 2026-10-13, diversa dalla raccomandazione: i video delle piattaforme si scaricano per trascriverli, solo come audio, con l'approvazione per singolo link della domanda 4; trascrizione locale con Parakeet, audio cancellato subito, nella nota (L2) restano titolo, canale, data, riassunto e trascrizione completa. L'utente sa che le condizioni d'uso di YouTube vietano lo scaricamento. Serve `yt-dlp` come prerequisito di sistema (voce in DECISIONS prima del codice). SPEC aggiornata (sezione Mentor, «Cosa salva»).
+- 1. Chiusa: confermata dall'utente il 2026-10-13 (`conf-D-080`): tutto ciò che si cattura nasce L2 in `kb/inbox/`, anche da una conversazione di lavoro, e si abbassa solo con la sua approvazione.
 - 3. Chiusa: decisa dall'utente il 2026-10-05 (richiesta scritta in D-086: una sezione "Pensieri" dove salvare scrivendo) e costruita in D-090: la pagina Pensieri è l'ingresso principale, con "/nota" e "Salva in inbox" nella chat.
 
 ---
