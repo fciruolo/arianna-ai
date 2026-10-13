@@ -13,7 +13,7 @@ import { after, before, test } from 'node:test';
 import { parseLabelRules, resolveHome } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
-import { ARCHIVE_SCHEMA_NAME, enqueueArchive, notesToPropose, proposeArchive, readProposal } from '../src/archivist.ts';
+import { ARCHIVE_SCHEMA_NAME, enqueueArchive, notesToPropose, proposeArchive, readProposal, recordRelocated, relocateArchived } from '../src/archivist.ts';
 import { captureNote } from '../src/capture.ts';
 import { verifyEventChain } from '../src/events.ts';
 import type { LiveFeed } from '../src/live.ts';
@@ -218,13 +218,13 @@ test('the routes: list, approve with the version seen, discard, propose again; e
   assert.deepEqual(
     results.map((result) => [result.ok, result.path]),
     [
-      [true, `kb/private/casa/${first}`],
-      [true, `kb/public/ricette/${second}`],
+      [true, `kb/archivio/private/casa/${first}`],
+      [true, `kb/archivio/public/ricette/${second}`],
     ],
   );
   assert.equal(existsSync(join(serverHome, 'kb', 'inbox', first)), false);
   // In a folder labeled L0 the note is still L2.
-  assert.match(readFileSync(join(serverHome, 'kb', 'public', 'ricette', second), 'utf8'), /^---\nlabel: L2\n/);
+  assert.match(readFileSync(join(serverHome, 'kb', 'archivio', 'public', 'ricette', second), 'utf8'), /^---\nlabel: L2\n/);
   const events = await sql<{ label: string; payload: Record<string, unknown> }[]>`SELECT label, payload FROM events WHERE kind = 'note.archived' ORDER BY id`;
   assert.deepEqual(
     events.map((event) => [event.label, event.payload.corrected]),
@@ -255,4 +255,20 @@ test('a new note is not proposed through the route, and an organize job queued e
   await enqueueOrganize(db().sql, note.path);
   assert.equal((await send('POST', `/api/notes/${note.path.split('/').at(-1) ?? ''}/archive`, {})).status, 409);
   await db().sql`UPDATE jobs SET status = 'done' WHERE queue = ${ORGANIZE_QUEUE} AND status = 'queued'`;
+});
+
+test('at start a note approved before D-198 moves to kb/archivio, with an L0 event of counts only', async () => {
+  const home = setup();
+  const name = '2026-10-13-120000-ombrellone-vecchio.md';
+  write(home, { [`kb/private/finanze/${name}`]: '---\nlabel: L2\ncaptured_at: 2026-10-13T12:00:00+02:00\ntitle: "Ombrellone vecchio"\narchived_at: 2026-10-13T12:05:00+02:00\n---\n\nPensiero finto già archiviato.\n' });
+  const relocated = relocateArchived(home, RULES);
+  assert.deepEqual(relocated, { moved: 1, left: 0 });
+  await recordRelocated(db().sql, relocated);
+  assert.equal(existsSync(join(home, 'kb', 'archivio', 'private', 'finanze', name)), true);
+  assert.equal(existsSync(join(home, 'kb', 'private', 'casa', 'balcone.md')), true);
+  const events = await db().sql<{ label: string; payload: Record<string, unknown> }[]>`SELECT label, payload FROM events WHERE kind = 'note.archive_relocated'`;
+  assert.deepEqual(
+    events.map((event) => [event.label, event.payload]),
+    [['L0', { moved: 1, left: 0 }]],
+  );
 });

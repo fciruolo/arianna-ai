@@ -65,7 +65,7 @@ test('the rules that confine the agents and what pnpm check runs are read only, 
 test('the folders that can appear while Codex runs are denied even when git does not list them', () => {
   const map = rules(devFilesystem(HOME, [], []));
   for (const path of DEV_ALWAYS_DENIED) assert.equal(map.get(`${HOME}/${path}`), 'deny', path);
-  for (const path of ['kb/progetti', '.claude/worktrees', 'config/models.user-catalog.yaml']) assert.equal(map.get(`${HOME}/${path}`), 'deny', path);
+  for (const path of ['kb/progetti', 'kb/archivio', '.claude/worktrees', 'config/models.user-catalog.yaml']) assert.equal(map.get(`${HOME}/${path}`), 'deny', path);
   assert.equal(map.get(`${HOME}/kb`), undefined);
 });
 

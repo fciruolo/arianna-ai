@@ -39,6 +39,7 @@ export {
 export {
   createLabelRules,
   labelForKbPage,
+  KB_ARCHIVE,
   labelForPath,
   labelForSource,
   type FolderRule,

@@ -63,6 +63,39 @@ test('rule order in the file does not matter', () => {
   assert.equal(labelForPath(reversed, 'kb/private/invoice.md'), 'L2');
 });
 
+test('an archived note takes at least the label of the same folder outside the archive (D-198)', () => {
+  const rules = createLabelRules({
+    folders: [
+      { path: 'kb/public', label: 'L0' },
+      { path: 'kb/private', label: 'L2' },
+      { path: 'kb/private/segreti', label: 'L3' },
+    ],
+    sources: [],
+  });
+  assert.equal(labelForPath(rules, 'kb/archivio/private/segreti/nota.md'), 'L3');
+  assert.equal(labelForPath(rules, 'KB/Archivio/private/segreti/nota.md'), 'L3');
+  assert.equal(labelForPath(rules, 'kb/archivio/archivio/private/segreti/nota.md'), 'L3');
+  assert.equal(labelForPath(rules, 'kb/archivio/private/nota.md'), 'L2');
+  // The archive itself, without a rule, is L2 (default-deny), as is a note at its top.
+  assert.equal(labelForPath(rules, 'kb/archivio'), 'L2');
+  assert.equal(labelForPath(rules, 'kb/archivio/nota.md'), 'L2');
+});
+
+test('the archive never lowers a label: a lower folder outside it gives nothing (D-198)', () => {
+  const rules = createLabelRules({
+    folders: [
+      { path: 'kb/public', label: 'L0' },
+      { path: 'kb/archivio/private', label: 'L3' },
+    ],
+    sources: [],
+  });
+  assert.equal(labelForPath(rules, 'kb/archivio/public/nota.md'), 'L2');
+  assert.equal(labelForPath(rules, 'kb/archivio/private/nota.md'), 'L3');
+  // Only kb/archivio mirrors: another folder with that name does not.
+  assert.equal(labelForPath(rules, 'kb/public/archivio/nota.md'), 'L0');
+  assert.equal(labelForPath(rules, 'altro/archivio/public/nota.md'), 'L2');
+});
+
 test('equivalent spellings of a path get the same label', () => {
   assert.equal(labelForPath(RULES, './kb/public/a.md'), 'L0');
   assert.equal(labelForPath(RULES, 'kb//public/./a.md'), 'L0');

@@ -47,6 +47,8 @@ describe('texts', () => {
   it('says where a thought went and how many notes were relinked', () => {
     assert.equal(movedText({ name: ITEM.name, ok: true, path: `kb/private/casa/${ITEM.name}`, relinked: 0 }), 'Spostato in private/casa.');
     assert.equal(movedText({ name: ITEM.name, ok: true, path: `kb/private/casa/${ITEM.name}`, relinked: 2 }), 'Spostato in private/casa. Collegamenti aggiornati in 2 note.');
+    // Where the core writes since D-198: the folder of the archive, out of git.
+    assert.equal(movedText({ name: ITEM.name, ok: true, path: `kb/archivio/private/casa/${ITEM.name}`, relinked: 0 }), 'Spostato in archivio/private/casa.');
   });
 
   it('turns every refusal of the core into Italian, an unknown one too', () => {

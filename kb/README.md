@@ -7,5 +7,6 @@ Campione finto per test, eval e sviluppo: ogni nome, indirizzo, importo e data √
 
 - `public/` (L0), `work/` (L1), `private/` (L2): etichette da `config/labels.toml`; l'intestazione `label:` di una pagina pu√≤ solo alzarle.
 - `inbox/`: dove scrivono gli agenti in autonomia A1 (`kb.write`); fuori da git.
+- `archivio/`: le note approvate dall'Archivista, nella stessa cartella che avrebbero qui (`archivio/private/finanze/` per `private/finanze/`), con almeno la sua etichetta e mai meno di L2 (D-198); fuori da git.
 
 Collegamenti: [[public/arianna]].

@@ -27,7 +27,7 @@ import { createClaudeExecutor, createCodexExecutor, createLocalModel, type Claud
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
-import { enqueueArchive, notesToPropose, proposeArchive } from './archivist.ts';
+import { enqueueArchive, notesToPropose, proposeArchive, recordRelocated, relocateArchived } from './archivist.ts';
 import { directPolicies, type DirectPolicy } from './direct-chat.ts';
 import { createGodApi } from './god/api.ts';
 import { godGit } from './god/clone.ts';
@@ -915,6 +915,17 @@ const incognitoWatch = createIncognitoWatch({
 incognitoWatch.start();
 // Trials left running by the previous run are closed as `interrupted`, never resumed.
 await modelEvals.start();
+// Notes approved before D-198 in the folders of kb/ that git tracks: moved to kb/archivio, out of git.
+try {
+  const relocated = relocateArchived(config.home, rules);
+  // Only when a note moved: one that cannot move would otherwise add an event at every start.
+  if (relocated.moved > 0) {
+    await recordRelocated(sql, relocated);
+    console.log(`Notes: ${String(relocated.moved)} moved to kb/archivio`);
+  }
+} catch (error) {
+  report(error);
+}
 // New notes left by pnpm kb:capture or by a previous run: queued again, at most MAX_RESUMED.
 const { resumed } = await organizer.start();
 if (resumed > 0) console.log(`Notes: ${String(resumed)} queued to be organized`);
