@@ -542,6 +542,7 @@ const modelEvals = createModelEvals({
   modelsDir: voiceDirs.models,
   endpoints: () => settings.current().local.endpoints,
   assignedModels: () => Object.values(settings.current().roles),
+  roleModel: (role) => settings.current().roles[role],
   prompt: () => {
     const arianna = agents.get('arianna');
     if (arianna === undefined) throw new Error('agents/arianna.md is missing');

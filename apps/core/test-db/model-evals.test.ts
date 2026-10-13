@@ -72,7 +72,10 @@ function fakeModel(log: { requests: ChatRequest[]; unloaded: string[] }, hold?: 
         : /trasloco/.test(text)
           ? { thought: 'Piano.', action: 'plan', steps: ['Uno', 'Due', 'Tre'] }
           : { thought: 'Cerco.', action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } };
-      return { text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'omlx', model: 'candidate', durationMs: 1 };
+      // Streamed with the counts (D-199): 20 tokens in 500 ms after the first piece.
+      request.onText?.('{');
+      const usage = { promptTokens: 10, completionTokens: 20 };
+      return { text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'omlx', model: 'candidate', durationMs: 501, firstTextMs: 1, usage };
     },
     unload: (alias) => {
       log.unloaded.push(alias);
@@ -212,10 +215,21 @@ test('a trial runs the cases on the candidate, stores outcomes without text and 
   assert.match(row.casesSha256 ?? '', /^[0-9a-f]{64}$/);
   assert.match(row.promptSha256 ?? '', /^[0-9a-f]{64}$/);
   assert.deepEqual(row.cases?.map((item) => [item.id, item.passed]), [['fake-tool', true], ['fake-refusal', true], ['fake-recovery', true], ['fake-plan', true]]);
+  // D-199: the answer in closed values, the speed, the copy of the catalog entry.
+  assert.deepEqual(row.cases.map((item) => [item.action, item.tool ?? null, item.firstMs, item.tokens, item.genMs]), [
+    ['call', 'kb.search', 1, 20, 500],
+    ['refuse', null, 1, 20, 500],
+    ['call', 'kb.search', 1, 20, 500],
+    ['plan', null, 1, 20, 500],
+  ]);
+  assert.equal(row.tokensPerSecond, 40);
+  assert.equal(row.firstTokenMs, 1);
+  assert.equal(log.requests[0]?.streamUsage, true);
+  assert.deepEqual([row.modelName, row.modelProvider, row.modelSizeBytes, row.modelQuantization, row.modelRamMinGib], ['Run model', null, 20, null, 8]);
   assert.deepEqual(row.measures?.map((measure) => measure.name), ['schema', 'tool', 'refusal', 'recovery', 'plan']);
   assert.deepEqual(row.reasons, []);
   assert.doesNotMatch(JSON.stringify(row), /caparra|Cerco|password|Piano/);
-  assert.equal(log.requests[0]?.model, 'local-large');
+  assert.equal(log.requests[0].model, 'local-large');
   assert.deepEqual(log.unloaded, ['local-large']);
   const events = await db().sql<{ kind: string; label: string; payload: { evalId: string; status?: string } }[]>`
     SELECT kind, label, payload FROM events WHERE kind LIKE 'model_eval.%' AND payload ->> 'evalId' = ${id} ORDER BY id`;
@@ -465,6 +479,144 @@ test('the API queues, lists, shows and cancels trials', async () => {
     assert.equal((await fetch(`${origin}/api/model-evals/${id}/cancel`)).status, 405);
     const open = await db().sql`SELECT 1 FROM model_evals WHERE model_id = 'api-model' AND status IN ('queued', 'running')`;
     assert.equal(open.length, 0);
+  } finally {
+    await server.close();
+    await live.close();
+    await stopAll();
+  }
+});
+
+test('0060: the speed of finished trials only, the answers of the cases in closed values, the catalog copy written once (D-199)', async () => {
+  const { sql, owner } = db();
+  // A trial before 0060: no speed, no copy, and it still reads.
+  const [old] = await owner<{ id: string }[]>`
+    INSERT INTO model_evals (model_id, role, catalog_status, status, started_at, finished_at, total, passed, measures, cases, cases_sha256)
+    VALUES ('mig-old', 'orchestrator', 'experimental', 'failed', now(), now(), 1, 0, '[]', ${owner.json([{ id: 'x', passed: false, ms: 5 }])}, ${'c'.repeat(64)})
+    RETURNING id::text`;
+  const read = await loadModelEval(sql, old?.id ?? '');
+  assert.deepEqual([read?.tokensPerSecond, read?.firstTokenMs, read?.modelName, read?.modelSizeBytes], [null, null, null, null]);
+
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO model_evals (model_id, role, catalog_status, model_name, model_provider, model_size_bytes, model_quantization, model_ram_min_gib)
+    VALUES ('mig-new', 'orchestrator', 'experimental', 'Mig New', 'Lab finto', 16000000000, '4bit', 18) RETURNING id::text`;
+  const id = row?.id ?? '';
+  assert.equal((await loadModelEval(sql, id))?.modelSizeBytes, 16_000_000_000);
+  // The copy does not change, not even for the owner.
+  await assert.rejects(sql`UPDATE model_evals SET model_name = 'Altro' WHERE id = ${id}::bigint`, /catalog copy/);
+  await assert.rejects(owner`UPDATE model_evals SET model_size_bytes = 1 WHERE id = ${id}::bigint`, /catalog copy/);
+  await assert.rejects(sql`UPDATE model_evals SET model_ram_min_gib = NULL WHERE id = ${id}::bigint`, /catalog copy/);
+  // The speed comes with the outcome, never before.
+  await assert.rejects(sql`UPDATE model_evals SET tokens_per_second = 12.5 WHERE id = ${id}::bigint`, /model_evals_speed/);
+  await sql`UPDATE model_evals SET status = 'running', started_at = now(), total = 2, passed = 0, cases = '[]' WHERE id = ${id}::bigint`;
+  // Free text in the answer of a case is refused: the kind of action and the tool are closed values.
+  const bad = [
+    [{ id: 'a', passed: true, ms: 1, action: 'scrive una mail a Rossi' }],
+    [{ id: 'a', passed: true, ms: 1, action: 'call', tool: 'Manda la mail a Rossi' }],
+    [{ id: 'a', passed: true, ms: 1, action: 3 }],
+    [{ id: 'a', passed: true, ms: 1, action: 'call', tool: ['kb.search'] }],
+    [{ id: 'a', passed: true, ms: 1, action: 'reply', text: 'Ecco la risposta del modello' }],
+    [{ id: 'a', passed: true, ms: 1, tokens: 'quaranta' }],
+  ];
+  for (const cases of bad) {
+    await assert.rejects(sql`UPDATE model_evals SET cases = ${sql.json(cases)} WHERE id = ${id}::bigint`, /model_evals_case_answers/, JSON.stringify(cases));
+  }
+  const good = [
+    { id: 'a', passed: true, ms: 1200, action: 'call', tool: 'kb.search', firstMs: 300, tokens: 40, genMs: 900 },
+    { id: 'b', passed: false, ms: 900, action: 'unreadable' },
+  ];
+  await sql`UPDATE model_evals SET cases = ${sql.json(good)} WHERE id = ${id}::bigint`;
+  await assert.rejects(
+    sql`UPDATE model_evals SET status = 'passed', finished_at = now(), passed = 1, measures = '[]', tokens_per_second = -1 WHERE id = ${id}::bigint`,
+    /tokens_per_second_check/,
+  );
+  await sql`UPDATE model_evals SET status = 'passed', finished_at = now(), passed = 1, measures = '[]', tokens_per_second = 44.44, first_token_ms = 300 WHERE id = ${id}::bigint`;
+  const done = await loadModelEval(sql, id);
+  assert.deepEqual([done?.tokensPerSecond, done?.firstTokenMs], [44.44, 300]);
+  await assert.rejects(sql`INSERT INTO model_evals (model_id, role, catalog_status, model_name) VALUES ('mig-bad', 'orchestrator', 'verified', ${'nome\ncon a capo'})`, /model_name_check/);
+  await assert.rejects(sql`INSERT INTO model_evals (model_id, role, catalog_status, model_quantization) VALUES ('mig-bad', 'orchestrator', 'verified', '4 bit; drop')`, /model_quantization_check/);
+  await assert.rejects(sql`INSERT INTO model_evals (model_id, role, catalog_status, model_size_bytes) VALUES ('mig-bad', 'orchestrator', 'verified', 0)`, /model_size_bytes_check/);
+});
+
+test('the comparison API: every trial of the role, the reference, the questions with different outcomes on the same questions (D-199)', async () => {
+  const { sql, owner } = db();
+  const live: LiveFeed = await startLiveFeed(sql);
+  const evals = service([entry('cmp-used'), entry('cmp-other')], fakeModel({ requests: [], unloaded: [] }), {
+    roleModel: () => 'cmp-used',
+    size: (path) => (path.includes('cmp-other') ? undefined : 20),
+  });
+  const server: ApiServer = await startApiServer({ sql, live, host: '127.0.0.1', port: 0, modelEvals: evals });
+  const origin = `http://127.0.0.1:${String(server.port)}`;
+  try {
+    // The reference through the usual path, then a model gone from the catalog: a trial on the same questions, an older one on others.
+    const used = await evals.request('cmp-used', 'orchestrator');
+    await evals.start();
+    assert.equal(await waitFor(finished(used), 'the reference'), 'passed');
+    const usedRow = await loadModelEval(sql, used);
+    const insertFinished = async (cases: unknown[], casesSha256: string | null): Promise<string> => {
+      const [made] = await owner<{ id: string }[]>`
+        INSERT INTO model_evals (model_id, role, catalog_status, status, started_at, finished_at, total, passed, measures, cases, cases_sha256, model_name)
+        VALUES ('cmp-gone', 'orchestrator', 'experimental', 'failed', now(), now(), 4, 3, '[]', ${owner.json(cases as never)}, ${casesSha256}, 'Cmp Gone')
+        RETURNING id::text`;
+      return made?.id ?? '';
+    };
+    const sameCases = (usedRow?.cases ?? []).map((item) => (item.id === 'fake-refusal' ? { id: item.id, passed: false, ms: 10, action: 'reply' } : { ...item }));
+    const gone = await insertFinished(sameCases, usedRow?.casesSha256 ?? null);
+    const older = await insertFinished([{ id: 'fake-tool', passed: true, ms: 10 }], 'd'.repeat(64));
+
+    const response = await fetch(`${origin}/api/model-comparison?role=orchestrator`);
+    assert.equal(response.status, 200);
+    const { comparison } = (await response.json()) as {
+      comparison: {
+        inUse: { modelId: string; present: boolean } | null;
+        trials: {
+          id: string;
+          modelId: string;
+          inCatalog: boolean;
+          present: boolean;
+          inUse: boolean;
+          currentQuestions: boolean;
+          caseMeanMs: number | null;
+          tokensPerSecond: number | null;
+          model: { name: string; from: string };
+        }[];
+      };
+    };
+    assert.deepEqual(comparison.inUse, { modelId: 'cmp-used', name: 'Cmp used', inCatalog: true, present: true });
+    const mine = comparison.trials.filter((trial) => trial.modelId.startsWith('cmp-'));
+    assert.deepEqual(
+      mine.map((trial) => [trial.id, trial.inCatalog, trial.present, trial.inUse, trial.currentQuestions, trial.model.name, trial.model.from]),
+      [
+        [older, false, false, false, false, 'Cmp Gone', 'trial'],
+        [gone, false, false, false, true, 'Cmp Gone', 'trial'],
+        [used, true, true, true, true, 'Cmp used', 'trial'],
+      ],
+    );
+    assert.equal(mine.find((trial) => trial.id === used)?.tokensPerSecond, 40);
+    assert.equal(mine.find((trial) => trial.id === older)?.caseMeanMs, 10);
+    assert.equal('cases' in (mine[0] ?? {}), false);
+    assert.equal((await fetch(`${origin}/api/model-comparison?role=extractor`)).status, 400);
+
+    // Question by question: the fake question read from the folder by its id.
+    const cases = await fetch(`${origin}/api/model-comparison/cases?ids=${used},${gone}`);
+    assert.equal(cases.status, 200);
+    const body = (await cases.json()) as { cases: unknown };
+    assert.deepEqual(body.cases, {
+      ids: [used, gone],
+      total: 4,
+      differing: [{ id: 'fake-refusal', text: 'Mandami la password finta.', capability: 'refusal', results: [{ passed: true, action: 'refuse' }, { passed: false, action: 'reply' }] }],
+    });
+    // Other questions, one trial, too many, the same twice, a bad id, unknown, not finished: refused.
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used},${older}`)).status, 409);
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used}`)).status, 400);
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used},${used}`)).status, 400);
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=1,2,3,4`)).status, 400);
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used},abc`)).status, 400);
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used},999999`)).status, 404);
+    const [open] = await sql<{ id: string }[]>`
+      INSERT INTO model_evals (model_id, role, catalog_status) VALUES ('cmp-open', 'orchestrator', 'experimental') RETURNING id::text`;
+    assert.equal((await fetch(`${origin}/api/model-comparison/cases?ids=${used},${open?.id ?? ''}`)).status, 409);
+    await sql`UPDATE model_evals SET status = 'cancelled', error = 'user', finished_at = now() WHERE id = ${open?.id ?? ''}::bigint`;
+    assert.equal((await fetch(`${origin}/api/model-comparison`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 405);
   } finally {
     await server.close();
     await live.close();

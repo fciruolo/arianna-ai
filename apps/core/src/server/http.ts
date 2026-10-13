@@ -211,7 +211,7 @@ export interface ApiServerOptions {
     arianna?: AriannaDocs;
   };
   /** Trials of catalog models with the orchestrator evals (D-081). */
-  modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
+  modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel' | 'compare' | 'compareCases'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
   modelsOverview?: () => Promise<ModelsOverview>;
   /** Download, verify, remove and unload a local model, and the bin (I-3, stage M4); without it the routes answer 404. */
@@ -1032,6 +1032,15 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
     route('POST', '/api/model-evals/:id/cancel', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return { body: { eval: await need().cancel(evalId(params)) } };
+    }),
+    // «Confronto dei modelli» (D-199): every trial of a role, models gone from the catalog or the disk included.
+    route('GET', '/api/model-comparison', async (_request, url) => {
+      return { body: { comparison: await need().compare(url.searchParams.get('role') ?? 'orchestrator') } };
+    }),
+    // The fake questions with different outcomes among 2-3 trials on the same questions: ids, outcomes, closed codes.
+    route('GET', '/api/model-comparison/cases', async (_request, url) => {
+      const ids = (url.searchParams.get('ids') ?? '').split(',').filter((id) => id !== '');
+      return { body: { cases: await need().compareCases(ids) } };
     }),
   ];
 }

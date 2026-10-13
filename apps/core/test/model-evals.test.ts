@@ -86,9 +86,12 @@ test('the stored outcome has ids, outcomes, times and codes, never what the mode
     latencyMaxMs: 2001,
     reasons: ['measure "tool" below threshold'],
     cases: [
-      { id: 'tool-1', passed: true, ms: 1234 },
+      // No `schemaOk`: an answer that did not follow the schema.
+      { id: 'tool-1', passed: true, ms: 1234, action: 'unreadable' },
       { id: 'tool-2', passed: false, ms: 2001, error: 'LocalModelError:timeout' },
     ],
+    tokensPerSecond: null,
+    firstTokenMs: null,
   });
   assert.doesNotMatch(JSON.stringify(row), /SEGRETO|tags/);
   assert.throws(() => rowFromReport({ name: 'x', status: 'pending', until: 'later', cases: 0 }));

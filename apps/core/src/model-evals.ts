@@ -1,8 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
+import { isToolId, type ToolId } from '@arianna/agents';
 import type { CatalogEntry, LocalEndpointConfig, ModelCatalog } from '@arianna/config';
-import { casesFingerprint, createOrchestratorGroup, loadCases, runGroup, TRIAL_ALIAS, trialEndpoints, type GroupReport } from '@arianna/evals/library';
+import {
+  casesFingerprint,
+  createOrchestratorGroup,
+  loadCases,
+  runGroup,
+  TRIAL_ALIAS,
+  trialEndpoints,
+  type CaseResult,
+  type EvalCase,
+  type GroupReport,
+  type OrchestratorActual,
+} from '@arianna/evals/library';
 import type { LocalModel } from '@arianna/executors';
 
 import type { Queryable, Sql } from './db/client.ts';
@@ -59,12 +71,24 @@ export function checkCandidate(catalog: ModelCatalog, modelId: string, role: Eva
   return { ok: true, entry };
 }
 
+/** What the model chose in a case, in closed values (D-199): `unreadable` when the answer did not follow the schema. */
+export const CASE_ACTIONS = ['call', 'reply', 'plan', 'refuse', 'unreadable'] as const;
+export type CaseAction = (typeof CASE_ACTIONS)[number];
+
 export interface EvalCaseRow {
   id: string;
   passed: boolean;
   ms: number;
   /** A code, like `last_error` of jobs: never the message. */
   error?: string;
+  /** The kind of action chosen (D-199); absent for an error and for the trials before. */
+  action?: CaseAction;
+  /** The tool of a `call`, only when the registry knows it: never a name the model made up. */
+  tool?: ToolId;
+  /** ms to the first piece of text, tokens written and ms spent writing them (D-199): only what the server measured. */
+  firstMs?: number;
+  tokens?: number;
+  genMs?: number;
 }
 
 export interface EvalMeasure {
@@ -84,15 +108,59 @@ export interface EvalOutcome {
   latencyMaxMs: number;
   reasons: string[];
   cases: EvalCaseRow[];
+  /** D-199: null when no case was measured (a server without token counts). */
+  tokensPerSecond: number | null;
+  firstTokenMs: number | null;
 }
 
-function caseRow(result: { id: string; passed: boolean; durationMs: number; errorCode?: string }): EvalCaseRow {
-  return { id: result.id, passed: result.passed, ms: Math.round(result.durationMs), ...(result.errorCode === undefined ? {} : { error: result.errorCode }) };
+const count = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined);
+
+/** A case as the row keeps it: id, outcome, time, error code, and the closed values of the answer (D-199). */
+export function caseRow(result: Pick<CaseResult, 'id' | 'passed' | 'durationMs' | 'errorCode' | 'actual' | 'error'>): EvalCaseRow {
+  const row: EvalCaseRow = { id: result.id, passed: result.passed, ms: Math.round(result.durationMs) };
+  if (result.errorCode !== undefined) row.error = result.errorCode;
+  const actual = result.actual as Partial<OrchestratorActual> | undefined;
+  if (result.error !== undefined || typeof actual !== 'object') return row;
+  // Only the closed values of the answer: the arguments and any text stay out.
+  const action: CaseAction = actual.schemaOk !== true || actual.action === undefined || actual.action === 'invalid' ? 'unreadable' : actual.action;
+  row.action = action;
+  if (action === 'call' && isToolId(actual.tool)) row.tool = actual.tool;
+  const firstMs = count(actual.speed?.firstTextMs);
+  const tokens = count(actual.speed?.tokens);
+  const genMs = count(actual.speed?.generationMs);
+  if (firstMs !== undefined) row.firstMs = firstMs;
+  if (tokens !== undefined) row.tokens = tokens;
+  if (genMs !== undefined) row.genMs = genMs;
+  return row;
+}
+
+/**
+ * The speed of a trial from its cases (D-199): tokens per second while
+ * writing (all the tokens over all the writing time of the cases that have
+ * both), and the mean wait for the first piece of text. Null when nothing was
+ * measured: an old trial, or a server without token counts.
+ */
+export function speedSummary(cases: readonly EvalCaseRow[]): { tokensPerSecond: number | null; firstTokenMs: number | null } {
+  const timed = cases.filter((item) => item.error === undefined);
+  const firsts = timed.flatMap((item) => (item.firstMs === undefined ? [] : [item.firstMs]));
+  let tokens = 0;
+  let ms = 0;
+  for (const item of timed) {
+    if (item.tokens === undefined || item.genMs === undefined || item.tokens === 0 || item.genMs === 0) continue;
+    tokens += item.tokens;
+    ms += item.genMs;
+  }
+  const rate = ms === 0 ? null : Math.round((tokens / (ms / 1000)) * 100) / 100;
+  return {
+    tokensPerSecond: rate !== null && rate > 0 && rate < 100_000 ? rate : null,
+    firstTokenMs: firsts.length === 0 ? null : Math.round(firsts.reduce((sum, value) => sum + value, 0) / firsts.length),
+  };
 }
 
 /** What a report leaves in the database: never `actual` nor an error message, which may quote the model. */
 export function rowFromReport(report: GroupReport): EvalOutcome {
   if (report.status === 'pending') throw new Error('a pending group has no outcome');
+  const cases = report.results.map(caseRow);
   return {
     status: report.status,
     total: report.total,
@@ -101,7 +169,76 @@ export function rowFromReport(report: GroupReport): EvalOutcome {
     latencyMedianMs: Math.round(report.latency.medianMs),
     latencyMaxMs: Math.round(report.latency.maxMs),
     reasons: [...report.reasons],
-    cases: report.results.map(caseRow),
+    cases,
+    ...speedSummary(cases),
+  };
+}
+
+/** What a row keeps of the catalog entry when the trial is asked (D-199): readable after the model is gone. */
+export interface CatalogCopy {
+  name: string;
+  provider: string | null;
+  sizeBytes: number;
+  quantization: string | null;
+  ramMinGib: number;
+}
+
+/** Words of a model name that say how it is stored, not what it is. */
+const STORAGE_WORD = /^(\d+-?bits?|mlx|gguf|q\d(_[a-z0-9]+)*|b?f16|fp16|fp8|int[48]|awq|gptq)$/i;
+
+/**
+ * A readable name: the last part of the page of the model when there is one
+ * (Qwen3.8-27B-Uncensored-MLX), else the id; without the storage words, with
+ * the sizes in capitals and spaces between the words: "Qwen3.8 27B Uncensored".
+ */
+export function readableName(entry: Pick<CatalogEntry, 'id' | 'source'>): string {
+  let base = entry.id;
+  if (entry.source !== undefined) {
+    try {
+      const last = new URL(entry.source).pathname.split('/').filter((part) => part !== '').at(-1);
+      if (last !== undefined && /^[\w.-]{2,120}$/.test(last)) base = last;
+    } catch {
+      // Not a URL: the id.
+    }
+  }
+  const words = base.split(/[-_ ]+/).filter((word) => word !== '' && !STORAGE_WORD.test(word));
+  const parts: string[] = [];
+  for (const [index, word] of words.entries()) {
+    const shown = /^a?\d+(\.\d+)?[bm]$/i.test(word) ? word.toUpperCase() : index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word;
+    // 35B-A3B: the active parameters stay with the total.
+    const previous = parts.at(-1);
+    if (/^A\d+(\.\d+)?B$/.test(shown) && previous !== undefined) parts[parts.length - 1] = `${previous}-${shown}`;
+    else parts.push(shown);
+  }
+  const name = parts.join(' ').slice(0, 200);
+  return name === '' ? entry.id : name;
+}
+
+/** "4bit", "Q4_K_M", "bf16" from the id or the page of the model; null when neither says it. */
+export function quantizationOf(entry: Pick<CatalogEntry, 'id' | 'source'>): string | null {
+  for (const text of [entry.id, entry.source ?? '']) {
+    const bits = /(?:^|[-_/])(\d{1,2})-?bits?(?:$|[-_/])/i.exec(text);
+    if (bits?.[1] !== undefined) return `${bits[1]}bit`;
+    const gguf = /(?:^|[-_/.])(q\d(?:_[a-z0-9]+)*)(?:$|[-_/.])/i.exec(text);
+    if (gguf?.[1] !== undefined) return gguf[1].toUpperCase().slice(0, 24);
+    const float = /(?:^|[-_/])(bf16|fp16|fp8|int4|int8)(?:$|[-_/])/i.exec(text);
+    if (float?.[1] !== undefined) return float[1].toLowerCase();
+  }
+  return null;
+}
+
+/** No control characters in a text the database keeps (the CHECK of 0060 refuses them). */
+const plain = (text: string): string => text.replace(/\p{Cc}/gu, ' ').trim().slice(0, 200);
+
+export function catalogCopy(entry: CatalogEntry): CatalogCopy {
+  const provider = entry.provider === undefined ? '' : plain(entry.provider);
+  const name = plain(readableName(entry));
+  return {
+    name: name === '' ? entry.id : name,
+    provider: provider === '' ? null : provider,
+    sizeBytes: entry.files.reduce((sum, file) => sum + file.sizeBytes, 0),
+    quantization: quantizationOf(entry),
+    ramMinGib: entry.ramMinGib,
   };
 }
 
@@ -136,13 +273,25 @@ export interface ModelEvalRow {
   reasons: string[] | null;
   preemptions: number;
   error: string | null;
+  /** D-199: null for the trials before, and when nothing was measured. */
+  tokensPerSecond: number | null;
+  firstTokenMs: number | null;
+  /** D-199: the catalog entry when the trial was asked; null for the trials before. */
+  modelName: string | null;
+  modelProvider: string | null;
+  modelSizeBytes: number | null;
+  modelQuantization: string | null;
+  modelRamMinGib: number | null;
   cases?: EvalCaseRow[] | null;
 }
 
 const COLUMNS = `id::text, model_id AS "modelId", role, weights_sha256 AS "weightsSha256", catalog_status AS "catalogStatus",
   cases_sha256 AS "casesSha256", prompt_sha256 AS "promptSha256", status, requested_at AS "requestedAt",
   started_at AS "startedAt", finished_at AS "finishedAt", total, passed, coalesce(jsonb_array_length(cases), 0) AS done,
-  measures, latency_median_ms AS "latencyMedianMs", latency_max_ms AS "latencyMaxMs", reasons, preemptions, error`;
+  measures, latency_median_ms AS "latencyMedianMs", latency_max_ms AS "latencyMaxMs", reasons, preemptions, error,
+  tokens_per_second AS "tokensPerSecond", first_token_ms AS "firstTokenMs", model_name AS "modelName",
+  model_provider AS "modelProvider", model_size_bytes::float8 AS "modelSizeBytes", model_quantization AS "modelQuantization",
+  model_ram_min_gib AS "modelRamMinGib"`;
 
 export class ModelEvalError extends Error {
   override name = 'ModelEvalError';
@@ -160,6 +309,152 @@ export async function listModelEvals(sql: Queryable, options: { modelId?: string
     [options.modelId ?? null, options.limit],
   );
   return [...rows];
+}
+
+/** A trial in the comparison of a role (D-199): the row, how the model is named now, and where it is. */
+export interface ComparisonTrial extends Omit<ModelEvalRow, 'cases'> {
+  /** Mean time of a case that did not end in an error; null before any. */
+  caseMeanMs: number | null;
+  /**
+   * The model as the trial copied it from the catalog (`trial`); for a trial
+   * before D-199, from the catalog of today when it is still there
+   * (`catalog`), else only its id (`id`).
+   */
+  model: { name: string; provider: string | null; sizeBytes: number | null; quantization: string | null; ramMinGib: number | null; from: 'trial' | 'catalog' | 'id' };
+  inCatalog: boolean;
+  /** Its files are in data/models with the size of the catalog. */
+  present: boolean;
+  /** The model the role uses now: the reference. */
+  inUse: boolean;
+  /** Measured on the questions of today (`cases_sha256` of evals/orchestrator now). */
+  currentQuestions: boolean;
+}
+
+export interface Comparison {
+  role: EvalRole;
+  /** The model of the role now, for «Prova di riferimento»; null when the role has none. */
+  inUse: { modelId: string; name: string; inCatalog: boolean; present: boolean } | null;
+  /** The fingerprint of the questions of today, and how many they are. */
+  casesSha256: string;
+  questions: number;
+  /** Every trial of the role, newest first, of models in the catalog or not (never deleted, D-046). */
+  trials: ComparisonTrial[];
+}
+
+export interface ComparisonContext {
+  role: EvalRole;
+  catalog: ModelCatalog;
+  inUse: string | undefined;
+  present: (entry: CatalogEntry) => boolean;
+  casesSha256: string;
+  questions: number;
+}
+
+/** The comparison of a role from its rows (pure: the database and the disk are read by the caller). */
+export function comparisonOf(rows: readonly (Omit<ModelEvalRow, 'cases'> & { caseMeanMs: number | null })[], context: ComparisonContext): Comparison {
+  const entries = new Map(context.catalog.models.map((entry) => [entry.id, entry]));
+  const presence = new Map<string, boolean>();
+  const isPresent = (entry: CatalogEntry | undefined): boolean => {
+    if (entry === undefined) return false;
+    let known = presence.get(entry.id);
+    if (known === undefined) {
+      known = context.present(entry);
+      presence.set(entry.id, known);
+    }
+    return known;
+  };
+  const trials = rows.map((row): ComparisonTrial => {
+    const entry = entries.get(row.modelId);
+    const now = entry === undefined ? undefined : catalogCopy(entry);
+    const model: ComparisonTrial['model'] =
+      row.modelName !== null
+        ? { name: row.modelName, provider: row.modelProvider, sizeBytes: row.modelSizeBytes, quantization: row.modelQuantization, ramMinGib: row.modelRamMinGib, from: 'trial' }
+        : now !== undefined
+          ? { ...now, from: 'catalog' }
+          : { name: row.modelId, provider: null, sizeBytes: null, quantization: null, ramMinGib: null, from: 'id' };
+    return {
+      ...row,
+      model,
+      inCatalog: entry !== undefined,
+      present: isPresent(entry),
+      inUse: context.inUse === row.modelId,
+      currentQuestions: row.casesSha256 === context.casesSha256,
+    };
+  });
+  const used = context.inUse === undefined ? undefined : entries.get(context.inUse);
+  return {
+    role: context.role,
+    inUse:
+      context.inUse === undefined
+        ? null
+        : { modelId: context.inUse, name: used === undefined ? context.inUse : readableName(used), inCatalog: used !== undefined, present: isPresent(used) },
+    casesSha256: context.casesSha256,
+    questions: context.questions,
+    trials,
+  };
+}
+
+/** A fake question of evals/orchestrator by its id: its first request of the user and its capability (D-199). */
+export interface CaseQuestion {
+  text: string | null;
+  capability: string | null;
+}
+
+const CAPABILITIES = ['tool', 'refusal', 'recovery', 'plan'] as const;
+
+/** The questions of a group folder by id: the first message of the user (invented, L0), cut at 300 characters. */
+export function questionsOf(cases: readonly EvalCase[]): Map<string, CaseQuestion> {
+  const questions = new Map<string, CaseQuestion>();
+  for (const item of cases) {
+    const messages = (item.input as { messages?: unknown } | null)?.messages;
+    const first = Array.isArray(messages) ? (messages as { role?: unknown; content?: unknown }[]).find((message) => message.role === 'user') : undefined;
+    const text = typeof first?.content === 'string' ? first.content.slice(0, 300) : null;
+    questions.set(item.id, { text, capability: CAPABILITIES.find((tag) => item.tags.includes(tag)) ?? null });
+  }
+  return questions;
+}
+
+/** Trials compared question by question only when they ran on the same questions. */
+export function sameQuestions(rows: readonly Pick<ModelEvalRow, 'casesSha256'>[]): boolean {
+  const first = rows[0]?.casesSha256;
+  return first !== undefined && first !== null && rows.every((row) => row.casesSha256 === first);
+}
+
+export interface ComparedCase {
+  id: string;
+  text: string | null;
+  capability: string | null;
+  /** One per trial, in the order asked; null when that trial has no such case. */
+  results: (Pick<EvalCaseRow, 'passed' | 'action' | 'tool' | 'error'> | null)[];
+}
+
+export interface CaseComparison {
+  ids: string[];
+  /** The questions of the trials. */
+  total: number;
+  /** The questions where the trials did not all get the same outcome. */
+  differing: ComparedCase[];
+}
+
+/** The questions with different outcomes among 2-3 trials on the same questions (pure). */
+export function caseComparison(rows: readonly { id: string; cases: readonly EvalCaseRow[] }[], questions: ReadonlyMap<string, CaseQuestion>): CaseComparison {
+  const order: string[] = [];
+  for (const row of rows) for (const item of row.cases) if (!order.includes(item.id)) order.push(item.id);
+  const byTrial = rows.map((row) => new Map(row.cases.map((item) => [item.id, item])));
+  const differing: ComparedCase[] = [];
+  for (const id of order) {
+    const results = byTrial.map((cases) => {
+      const found = cases.get(id);
+      if (found === undefined) return null;
+      const { passed, action, tool, error } = found;
+      return { passed, ...(action === undefined ? {} : { action }), ...(tool === undefined ? {} : { tool }), ...(error === undefined ? {} : { error }) };
+    });
+    const outcomes = new Set(results.map((result) => (result === null ? 'none' : String(result.passed))));
+    if (outcomes.size < 2) continue;
+    const question = questions.get(id);
+    differing.push({ id, text: question?.text ?? null, capability: question?.capability ?? null, results });
+  }
+  return { ids: rows.map((row) => row.id), total: order.length, differing };
 }
 
 export async function loadModelEval(sql: Queryable, id: string): Promise<ModelEvalRow | undefined> {
@@ -197,6 +492,8 @@ export interface ModelEvalsOptions {
    * tts...): a candidate among them is never unloaded, someone uses it.
    */
   assignedModels: () => readonly string[];
+  /** The model `[roles]` gives a role now: the reference of the comparison (D-199). */
+  roleModel?: (role: EvalRole) => string | undefined;
   /** The orchestrator's prompt (agents/arianna.md). */
   prompt: () => string;
   /** evals/orchestrator. */
@@ -228,6 +525,10 @@ export interface ModelEvals {
   list(options: { modelId?: string; limit: number }): Promise<ModelEvalRow[]>;
   get(id: string): Promise<ModelEvalRow | undefined>;
   cancel(id: string): Promise<ModelEvalRow>;
+  /** Every trial of a role with the model in use as reference (D-199). */
+  compare(role: string): Promise<Comparison>;
+  /** The questions with different outcomes among 2-3 finished trials on the same questions (D-199). */
+  compareCases(ids: readonly string[]): Promise<CaseComparison>;
   /** Closes the trials a previous run left running, then consumes the queue. */
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -253,6 +554,19 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 function isRole(value: unknown): value is EvalRole {
   return EVAL_ROLES.some((role) => role === value);
+}
+
+/** The questions of the folder today; none when it cannot be read (the comparison still shows, without texts). */
+function readCases(dir: string): EvalCase[] {
+  try {
+    return loadCases(dir);
+  } catch {
+    return [];
+  }
+}
+
+function countCases(dir: string): number {
+  return readCases(dir).length;
 }
 
 export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
@@ -347,7 +661,8 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
         return;
       }
       model = options.createModel(endpoints);
-      const group = createOrchestratorGroup({ model, prompt });
+      // Timed (D-199): each answer is streamed, for the first word and the tokens per second.
+      const group = createOrchestratorGroup({ model, prompt, timed: true });
       const kept: EvalCaseRow[] = [];
       let preemptions = 0;
       let casePreemptions = 0;
@@ -399,7 +714,8 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
           UPDATE model_evals SET status = ${outcome.status}, finished_at = now(), total = ${outcome.total}, passed = ${outcome.passed},
             measures = ${tx.json(outcome.measures.map((measure) => ({ ...measure })))}, latency_median_ms = ${outcome.latencyMedianMs},
             latency_max_ms = ${outcome.latencyMaxMs}, reasons = ${tx.json(outcome.reasons)},
-            cases = ${tx.json(outcome.cases.map((item) => ({ ...item })))}, preemptions = ${preemptions}
+            cases = ${tx.json(outcome.cases.map((item) => ({ ...item })))}, preemptions = ${preemptions},
+            tokens_per_second = ${outcome.tokensPerSecond}, first_token_ms = ${outcome.firstTokenMs}
           WHERE id = ${id}::bigint AND status = 'running' RETURNING id`;
         if (rows.length === 1) {
           await appendEvent(tx, {
@@ -459,9 +775,13 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
       if (trialEndpoints(options.endpoints(), modelId).length === 0) throw new ModelEvalError('conflict', 'no local endpoint in arianna.toml');
       try {
         return await sql.begin(async (tx) => {
+          // The catalog entry as it is now (D-199): the row stays readable once the model is gone.
+          const copy = catalogCopy(check.entry);
           const [created] = await tx<{ id: string }[]>`
-            INSERT INTO model_evals (model_id, role, weights_sha256, catalog_status)
-            VALUES (${modelId}, ${role}, ${weightsDigest(check.entry)}, ${check.entry.status})
+            INSERT INTO model_evals (model_id, role, weights_sha256, catalog_status,
+              model_name, model_provider, model_size_bytes, model_quantization, model_ram_min_gib)
+            VALUES (${modelId}, ${role}, ${weightsDigest(check.entry)}, ${check.entry.status},
+              ${copy.name}, ${copy.provider}, ${copy.sizeBytes}, ${copy.quantization}, ${copy.ramMinGib})
             RETURNING id::text`;
           if (created === undefined) throw new Error('INSERT INTO model_evals returned no row');
           const jobId = await enqueueJob(tx, EVAL_QUEUE, { evalId: created.id }, { key: `model-eval:${modelId}`, maxAttempts: 1 });
@@ -479,6 +799,44 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
     list: (query) => listModelEvals(sql, query),
 
     get: (id) => loadModelEval(sql, id),
+
+    async compare(role) {
+      if (!isRole(role)) throw new ModelEvalError('invalid', `role must be one of ${EVAL_ROLES.join(', ')}`);
+      const rows = await sql.unsafe<(Omit<ModelEvalRow, 'cases'> & { caseMeanMs: number | null })[]>(
+        `SELECT ${COLUMNS},
+           (SELECT round(avg((c ->> 'ms')::numeric)) FROM jsonb_array_elements(coalesce(cases, '[]'::jsonb)) c
+            WHERE c ->> 'error' IS NULL)::int AS "caseMeanMs"
+         FROM model_evals WHERE role = $1 ORDER BY requested_at DESC, id DESC LIMIT 1000`,
+        [role],
+      );
+      return comparisonOf(rows, {
+        role,
+        catalog: options.catalog(),
+        inUse: options.roleModel?.(role),
+        present: (entry) => entry.files.every((file) => size(join(options.modelsDir, entry.id, file.path)) === file.sizeBytes),
+        casesSha256: casesFingerprint(options.casesDir),
+        questions: countCases(options.casesDir),
+      });
+    },
+
+    async compareCases(ids) {
+      if (ids.length < 2 || ids.length > 3 || new Set(ids).size !== ids.length || !ids.every((id) => /^[1-9]\d{0,17}$/.test(id))) {
+        throw new ModelEvalError('invalid', 'ids must be 2 or 3 different trials');
+      }
+      const rows: ModelEvalRow[] = [];
+      for (const id of ids) {
+        const row = await loadModelEval(sql, id);
+        if (row === undefined) throw new ModelEvalError('not-found', 'no such trial');
+        rows.push(row);
+      }
+      if (!rows.every((row) => row.status === 'passed' || row.status === 'failed')) throw new ModelEvalError('conflict', 'only finished trials are compared question by question');
+      if (!sameQuestions(rows)) throw new ModelEvalError('conflict', 'the trials were not run on the same questions');
+      // The questions are read by id from the folder of today: a question gone since has no text.
+      return caseComparison(
+        rows.map((row) => ({ id: row.id, cases: row.cases ?? [] })),
+        questionsOf(readCases(options.casesDir)),
+      );
+    },
 
     async cancel(id) {
       const row = await loadModelEval(sql, id);
