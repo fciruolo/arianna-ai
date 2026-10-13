@@ -306,6 +306,19 @@ test('pulses: an explicit max is kept, and a frame with nothing over allocates n
   assert.equal(updatePulses(none, 1, seededRandom(6), 0), none);
 });
 
+test('the frame budget: the 3D drift rests at 30 fps at most, direct interaction stays fluid (D-104)', () => {
+  const base = { hidden: false, focused: true, reduced: false, busy: false, interacting: false, drifting: true };
+  const interval = frameInterval(base);
+  assert.equal(interval, 1000 / 30);
+  // On a 120 Hz screen (a frame every 8.33 ms) the drift draws one frame in four.
+  assert.ok(!frameDue(1025, 1000, 1000 / 30));
+  assert.ok(frameDue(1033.3, 1000, 1000 / 30));
+  assert.equal(frameInterval({ ...base, interacting: true }), 0);
+  assert.equal(frameInterval({ ...base, busy: true }), 0);
+  assert.equal(frameInterval({ ...base, focused: false }), 100);
+  assert.equal(frameInterval({ ...base, hidden: true }), undefined);
+});
+
 test('the frame budget: busy wins over reduced motion, still nothing by itself', () => {
   const base = { hidden: false, focused: true, reduced: true, busy: true, interacting: false };
   assert.equal(frameInterval(base), 0);

@@ -208,11 +208,30 @@ test('drift: nothing while the user is active, then it grows to full speed', () 
   assert.equal(driftYaw(0, 10_000, 1), driftYaw(0, 100, 1));
 });
 
-test('view mode: only "3d" chooses 3D', () => {
-  assert.equal(readViewMode('3d'), '3d');
+test('view mode: 3D unless "2d" was chosen (D-104)', () => {
+  // Nothing stored: 3D is the starting view.
+  assert.equal(readViewMode(null), '3d');
+  assert.equal(readViewMode(undefined), '3d');
+  // The user's choice still holds.
   assert.equal(readViewMode('2d'), '2d');
-  assert.equal(readViewMode(null), '2d');
-  assert.equal(readViewMode('3D'), '2d');
+  assert.equal(readViewMode('3d'), '3d');
+  // An invalid stored value falls back to the default.
+  assert.equal(readViewMode('3D'), '3d');
+  assert.equal(readViewMode('2D'), '3d');
+  assert.equal(readViewMode(''), '3d');
+});
+
+test('3D simulation with no notes: no crash, finite bounds', () => {
+  const sim = createSimulation3([], []);
+  assert.equal(sim.nodes.length, 0);
+  let steps = 0;
+  while (!isSettled3(sim) && steps < 1000) {
+    step3(sim);
+    steps += 1;
+  }
+  assert.equal(isSettled3(sim), true);
+  const sphere = boundingSphere(sim.nodes);
+  assert.ok(Number.isFinite(sphere.radius));
 });
 
 function ring(count: number): { nodes: { id: string; degree: number }[]; edges: { source: string; target: string }[] } {
