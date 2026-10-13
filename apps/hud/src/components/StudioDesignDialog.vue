@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { generateStyleExamples, loadDesignStyle, loadSkill, loadStyleExamples, readStyleExample, skillTranslations } from '../lib/api.ts';
+import { generateStyleExamples, loadDesignStyle, loadSkill, loadStyleExamples, readStyleExample } from '../lib/api.ts';
 import type { StyleSummary } from '../lib/design-catalog.ts';
-import type { SkillSummary } from '../lib/skills-catalog.ts';
-import { examplesCost, exampleState, STUDIO_SKILLS_MAX, studioErrorText, type ExamplesStatus, type StudioDesign, type StyleSample, type TranslationsStatus } from '../lib/studio.ts';
+import { useSkillTranslations } from '../lib/skill-translations.ts';
+import { translationsNoteText, type SkillSummary } from '../lib/skills-catalog.ts';
+import { examplesCost, exampleState, STUDIO_SKILLS_MAX, studioErrorText, type ExamplesStatus, type StudioDesign, type StyleSample } from '../lib/studio.ts';
 import Icon from './Icon.vue';
 import StudioFrame from './StudioFrame.vue';
 import StyleMiniPage from './StyleMiniPage.vue';
@@ -24,11 +25,16 @@ const style = ref<string | null>(props.design.style);
 const chosenSkills = ref<string[]>([...props.design.skills]);
 const dialog = ref<HTMLElement | null>(null);
 
+// The Italian descriptions (D-185): the missing ones are asked when the window opens; the English one meanwhile.
+const { status: translations, text: skillText, open: openTranslations } = useSkillTranslations();
+
 const needle = computed(() => query.value.trim().toLowerCase());
 const shownStyles = computed(() =>
   props.styles.filter((entry) => needle.value === '' || `${entry.name} ${entry.category ?? ''} ${entry.description}`.toLowerCase().includes(needle.value)),
 );
-const shownSkills = computed(() => props.skills.filter((entry) => needle.value === '' || `${entry.name} ${entry.source} ${entry.description}`.toLowerCase().includes(needle.value)));
+const shownSkills = computed(() =>
+  props.skills.filter((entry) => needle.value === '' || `${entry.name} ${entry.source} ${entry.description} ${skillText(entry)}`.toLowerCase().includes(needle.value)),
+);
 const styleName = computed(() => (style.value === null ? 'Nessuno' : (props.styles.find((entry) => entry.slug === style.value)?.name ?? style.value)));
 
 function toggleSkill(id: string): void {
@@ -64,15 +70,13 @@ async function generate(slug?: string): Promise<void> {
   }
 }
 
-// The Italian descriptions (D-185): the missing ones are asked when the window opens; the English one meanwhile.
-const translations = ref<TranslationsStatus | null>(null);
-const skillText = (entry: SkillSummary): string => translations.value?.translations[entry.id] ?? entry.description;
-
 let poll: number | undefined;
 async function refresh(): Promise<void> {
-  const [found, words] = await Promise.allSettled([loadStyleExamples(), skillTranslations()]);
-  if (found.status === 'fulfilled') examples.value = found.value;
-  if (words.status === 'fulfilled') translations.value = words.value;
+  try {
+    examples.value = await loadStyleExamples();
+  } catch {
+    // The examples are read again at the next tick.
+  }
 }
 
 // «Vedi esempio»: the landing or the presentation in an isolated frame, over the list.
@@ -99,14 +103,9 @@ onMounted(async () => {
   window.addEventListener('keydown', onKey);
   dialog.value?.focus();
   poll = window.setInterval(() => {
-    if (examplesBusy.value || translations.value?.running === true) void refresh();
+    if (examplesBusy.value) void refresh();
   }, 4000);
-  try {
-    translations.value = await skillTranslations(true);
-  } catch {
-    // Without Claude the descriptions stay in English.
-  }
-  await refresh();
+  await Promise.all([openTranslations(), refresh()]);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
@@ -218,8 +217,7 @@ onBeforeUnmount(() => {
         <template v-else>
           <p class="mb-3 text-xs text-muted">
             Una skill è un insieme di istruzioni su un tipo di lavoro (per esempio come impaginare una presentazione) che il Designer legge prima di cominciare. Al più {{ STUDIO_SKILLS_MAX }}.
-            <template v-if="translations?.running"> Traduco le descrizioni in italiano ({{ translations.missing }} da fare): intanto alcune sono in inglese.</template>
-            <template v-else-if="translations?.stopped"> Traduzione ferma: {{ translations.stopped }}.</template>
+            <template v-if="translationsNoteText(translations)"> {{ translationsNoteText(translations) }}</template>
           </p>
           <ul class="flex flex-col gap-1.5">
             <li v-for="entry in shownSkills" :key="entry.id" class="flex items-start gap-2.5 rounded-lg border px-3 py-2" :class="chosenSkills.includes(entry.id) ? 'border-accent bg-accent/10' : 'border-line'">

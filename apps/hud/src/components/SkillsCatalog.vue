@@ -11,7 +11,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { addSkillSource, adoptSkillSource, discardSkillSource, listSkills, loadSkill, loadSkillsCatalog, removeSkillSource, updateSkillSource } from '../lib/api.ts';
-import { filterSkills, otherFilesText, shouldPollSkills, skillLicenseText, skillsErrorText, type SkillListing, type SkillsStatus, type SkillText } from '../lib/skills-catalog.ts';
+import { useSkillTranslations } from '../lib/skill-translations.ts';
+import { filterSkills, otherFilesText, shouldPollSkills, skillLicenseText, skillsErrorText, translationsNoteText, type SkillListing, type SkillsStatus, type SkillText } from '../lib/skills-catalog.ts';
 import { skillSourceRow } from '../lib/source-list.ts';
 import SettingsCard from './SettingsCard.vue';
 import SourceList from './SourceList.vue';
@@ -86,12 +87,15 @@ const listing = ref<SkillListing | null>(null);
 const listError = ref('');
 const query = ref('');
 const browsing = ref(false);
-const shown = computed(() => filterSkills(listing.value?.skills ?? [], query.value));
+// The Italian descriptions (D-185), as in the Studio: asked when the list is read, the English one meanwhile.
+const { status: translations, text: skillText, open: openTranslations } = useSkillTranslations();
+const shown = computed(() => filterSkills(listing.value?.skills ?? [], query.value, translations.value?.translations));
 const total = computed(() => status.value?.sources.reduce((sum, source) => sum + (source.adopted?.skills ?? 0), 0) ?? 0);
 async function loadList(): Promise<void> {
   try {
     listing.value = await listSkills();
     listError.value = '';
+    void openTranslations();
   } catch (cause) {
     listError.value = skillsErrorText(cause);
   }
@@ -157,6 +161,7 @@ async function choose(id: string): Promise<void> {
       <summary class="cursor-pointer px-3 py-2 font-medium select-none">Cerca nelle skill ({{ total }})</summary>
       <div class="flex flex-col gap-2 border-t border-line px-3 py-2.5">
         <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[14px]" placeholder="Cerca per nome, raccolta, descrizione o licenza" aria-label="Cerca una skill" />
+        <p v-if="listing !== null && translationsNoteText(translations)" class="text-[12.5px] text-muted">{{ translationsNoteText(translations) }}</p>
         <div v-if="listError" class="flex flex-wrap items-center gap-2 text-[13px] text-danger" role="alert">
           <span class="flex-1">{{ listError }}</span>
           <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="loadList">Riprova</button>
@@ -167,7 +172,7 @@ async function choose(id: string): Promise<void> {
           <li v-for="item in shown" :key="item.id" class="border-b border-line last:border-b-0">
             <button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-surface-2" :aria-expanded="selected === item.id" @click="choose(item.id)">
               <span class="truncate font-medium">{{ item.name }}</span>
-              <span v-if="item.description" class="text-[13px] text-muted">{{ item.description }}</span>
+              <span v-if="skillText(item)" class="text-[13px] text-muted">{{ skillText(item) }}</span>
             </button>
             <div v-if="selected === item.id" class="flex flex-col gap-1.5 px-2 pb-2">
               <p class="rounded-[8px] border border-warn/50 bg-warn/10 px-2.5 py-1.5 text-[13px]">

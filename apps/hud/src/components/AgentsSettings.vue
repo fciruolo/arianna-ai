@@ -31,7 +31,8 @@ import {
   TONES,
 } from '../lib/persona.ts';
 import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
-import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
+import { useSkillTranslations } from '../lib/skill-translations.ts';
+import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, translationsNoteText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -237,10 +238,13 @@ watch([current, tab], () => {
 const skillCatalog = ref<SkillSummary[] | null>(null);
 const skillCatalogError = ref('');
 const skillQuery = ref('');
+// The Italian descriptions (D-185), as in the Studio: asked when the list is read, the English one meanwhile.
+const { status: skillTranslations, text: skillText, open: openSkillTranslations } = useSkillTranslations();
 async function loadSkillCatalog(): Promise<void> {
   try {
     skillCatalog.value = (await listSkills()).skills;
     skillCatalogError.value = '';
+    void openSkillTranslations();
   } catch (cause) {
     skillCatalogError.value = skillsErrorText(cause);
   }
@@ -259,7 +263,7 @@ const skillChoices = computed(() => {
   const agent = current.value?.id;
   if (agent === undefined) return [];
   const taken = skillsOf(agent);
-  return filterSkills(skillCatalog.value ?? [], skillQuery.value).filter((item) => !taken.includes(item.id)).slice(0, 40);
+  return filterSkills(skillCatalog.value ?? [], skillQuery.value, skillTranslations.value?.translations).filter((item) => !taken.includes(item.id)).slice(0, 40);
 });
 function assignSkill(agent: string, id: string): void {
   if (props.form.skills === undefined) return;
@@ -859,12 +863,13 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
                 <li v-for="item in skillChoices" :key="item.id" class="flex items-start gap-2 border-b border-line px-2.5 py-1.5 last:border-b-0">
                   <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span class="truncate text-[14px] font-medium">{{ item.name }}</span>
-                    <span v-if="item.description" class="text-[13px] text-muted">{{ item.description }}</span>
+                    <span v-if="skillText(item)" class="text-[13px] text-muted">{{ skillText(item) }}</span>
                     <span class="text-[12.5px] text-muted">{{ skillLicenseText(item.license) }}</span>
                   </span>
                   <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Assegna ${item.name}`" @click="assignSkill(current.id, item.id)">Assegna</button>
                 </li>
               </ul>
+              <p v-if="skillCatalog !== null && skillCatalog.length > 0 && translationsNoteText(skillTranslations)" class="text-[12.5px] text-muted">{{ translationsNoteText(skillTranslations) }}</p>
             </div>
           </template>
         </section>

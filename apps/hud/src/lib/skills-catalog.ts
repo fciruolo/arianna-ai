@@ -7,6 +7,7 @@
 import { ApiError } from './api.ts';
 import { dayText, jobErrorText as designJobErrorText, type CatalogJob, type KindChanges } from './design-catalog.ts';
 import { errorText } from './italian.ts';
+import type { TranslationsStatus } from './studio.ts';
 
 export interface SkillVersion {
   commit: string;
@@ -127,12 +128,33 @@ export function otherFilesText(count: number | null): string | undefined {
   return `${plural(count, 'altro file', 'altri file')} nel repository (script o risorse): mai scaricati né eseguiti`;
 }
 
-/** The skills whose name, id, description or license holds every word of the query. */
-export function filterSkills(skills: readonly SkillSummary[], query: string): SkillSummary[] {
+/** Italian descriptions by skill id (I-20, D-185), as `GET /api/skills-catalog/translations` gives them. */
+export type SkillTranslationTable = Readonly<Record<string, string>>;
+
+/** The description a page shows: the Italian one when it is there, the English one of the catalog meanwhile. */
+export function skillDescription(skill: SkillSummary, translations?: SkillTranslationTable): string {
+  return translations?.[skill.id] ?? skill.description;
+}
+
+/** The missing translations are asked only when some are missing and no run is on (the core refuses Claude off or a stopped quota by itself). */
+export function shouldStartTranslations(status: TranslationsStatus): boolean {
+  return status.missing > 0 && !status.running;
+}
+
+/** The small line under a list of skills while the descriptions are translated or the run stopped; undefined: nothing to say. */
+export function translationsNoteText(status: TranslationsStatus | null): string | undefined {
+  if (status === null) return undefined;
+  if (status.running) return `Traduco le descrizioni in italiano (${String(status.missing)} da fare): intanto alcune sono in inglese.`;
+  if (status.stopped !== null) return `Traduzione ferma: ${status.stopped}.`;
+  return undefined;
+}
+
+/** The skills whose name, id, description (English or Italian) or license holds every word of the query. */
+export function filterSkills(skills: readonly SkillSummary[], query: string, translations?: SkillTranslationTable): SkillSummary[] {
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== '');
   if (words.length === 0) return [...skills];
   return skills.filter((skill) => {
-    const text = `${skill.name} ${skill.id} ${skill.description} ${skill.license ?? ''}`.toLowerCase();
+    const text = `${skill.name} ${skill.id} ${skill.description} ${translations?.[skill.id] ?? ''} ${skill.license ?? ''}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }

@@ -7,6 +7,8 @@ import {
   filterSkills,
   otherFilesText,
   shouldPollSkills,
+  shouldStartTranslations,
+  skillDescription,
   skillChangesText,
   skillLicenseText,
   skillRefusalText,
@@ -16,6 +18,7 @@ import {
   sourceLicenseText,
   sourceSummaryText,
   sourceUrlProblem,
+  translationsNoteText,
   withoutSkill,
   withSkill,
   type SkillSource,
@@ -70,6 +73,38 @@ describe('skills', () => {
     assert.deepEqual(filterSkills(skills, 'mit').map((item) => item.slug), ['tdd']);
     assert.deepEqual(filterSkills(skills, 'anthropics pdf').map((item) => item.slug), ['pdf']);
     assert.equal(filterSkills(skills, '  ').length, 2);
+  });
+
+  it('shows the Italian description when it is there, the English one otherwise (D-185)', () => {
+    const [pdf, tdd] = skills as [SkillSummary, SkillSummary];
+    const italian = { 'anthropics/skills/pdf': 'Compila e legge moduli PDF' };
+    assert.equal(skillDescription(pdf, italian), 'Compila e legge moduli PDF');
+    assert.equal(skillDescription(tdd, italian), 'Test-driven development');
+    assert.equal(skillDescription(pdf), 'Fill and read PDF forms');
+  });
+
+  it('finds the Italian words of a translated description, and the English ones still', () => {
+    const italian = { 'mattpocock/skills/tdd': 'Sviluppo guidato dai test' };
+    assert.deepEqual(filterSkills(skills, 'guidato', italian).map((item) => item.slug), ['tdd']);
+    assert.deepEqual(filterSkills(skills, 'driven', italian).map((item) => item.slug), ['tdd']);
+    assert.deepEqual(filterSkills(skills, 'guidato').map((item) => item.slug), []);
+    assert.deepEqual(filterSkills(skills, 'moduli', italian).map((item) => item.slug), []);
+  });
+
+  it('asks the missing translations only when some are missing and no run is on', () => {
+    const base = { translations: {}, missing: 3, running: false, stopped: null };
+    assert.equal(shouldStartTranslations(base), true);
+    assert.equal(shouldStartTranslations({ ...base, stopped: 'quota ferma' }), true);
+    assert.equal(shouldStartTranslations({ ...base, running: true }), false);
+    assert.equal(shouldStartTranslations({ ...base, missing: 0 }), false);
+  });
+
+  it('says a translation running or stopped in one quiet line, nothing otherwise', () => {
+    const base = { translations: {}, missing: 2, running: false, stopped: null };
+    assert.match(translationsNoteText({ ...base, running: true }) ?? '', /^Traduco le descrizioni in italiano \(2 da fare\)/);
+    assert.equal(translationsNoteText({ ...base, stopped: 'Claude non è abilitato' }), 'Traduzione ferma: Claude non è abilitato.');
+    assert.equal(translationsNoteText(base), undefined);
+    assert.equal(translationsNoteText(null), undefined);
   });
 
   it('adds a skill once, at the end, and removes it', () => {
