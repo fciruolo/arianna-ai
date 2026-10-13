@@ -1,14 +1,14 @@
 // A new agent from a role of the catalog of agents (D-079, tappa 3): invented roles, no network, no git.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
 
 import { parseAgencyFile, userCardOrigin, type AgencyOrigin, type LoadedAgent, type UserPermissions } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import type { AgentRole } from '../src/agents-catalog.ts';
+import type { AdoptedRole, AgentRole } from '../src/agents-catalog.ts';
 import type { Sql } from '../src/db/client.ts';
 import { CatalogError } from '../src/git-catalog.ts';
 import type { LiveFeed } from '../src/live.ts';
@@ -23,6 +23,7 @@ after(() => {
 const COMMIT = 'c'.repeat(40);
 const MIT = 'MIT License\n\nCopyright (c) 2026 Invented Contributors\n\nPermission is hereby granted, free of charge, to any person\n';
 const LICENSED: AgencyOrigin = { repository: 'https://github.com/acme/agents', commit: COMMIT, license: { name: 'MIT', file: 'LICENSE', text: MIT } };
+const UNLICENSED_SAME_PAGE: AgencyOrigin = { repository: 'https://github.com/acme/agents', commit: 'd'.repeat(40), license: { name: null, file: null, text: null } };
 const UNLICENSED: AgencyOrigin = { repository: 'https://github.com/studio/roles', commit: COMMIT, license: { name: null, file: null, text: null } };
 const answer: UserPermissions = { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 };
 
@@ -58,6 +59,16 @@ const catalog = {
     const role = ROLES[id];
     if (role === undefined) throw new CatalogError('not-found', 'no such role in the catalog');
     return role;
+  },
+  /** The version in use is what ROLES holds now: a role replaced there is a new version of its source; one deleted, a source no longer followed. */
+  adoptedRole(page: string, path: string): AdoptedRole {
+    const slug = (path.split('/').at(-1) ?? '').replace(/\.md$/, '');
+    const id = `${page.replace('https://github.com/', '')}/${slug}`;
+    const ofSource = Object.values(ROLES).filter((role) => role.origin.repository === page);
+    if (ofSource.length === 0) return { state: 'unfollowed', id };
+    const found = ofSource.find((role) => role.entry.path === path);
+    if (found === undefined) return { state: 'missing', id };
+    return { state: 'present', id, sha256: found.entry.sha256, commit: found.origin.commit, committedAt: '2026-10-07T09:00:00Z' };
   },
 };
 
@@ -217,6 +228,112 @@ describe('a new agent from the catalog', () => {
   });
 });
 
+describe('a role adopted again (tappa 4)', () => {
+  const ID = 'acme/agents/engineering-code-reviewer';
+  const original = ROLES[ID];
+  /** A new version of the source: the same role with another text. */
+  function newVersion(body: string, origin: AgencyOrigin = LICENSED): void {
+    if (original === undefined) throw new Error('missing role');
+    ROLES[ID] = { ...original, entry: parseAgencyFile(file('Code Reviewer', body), original.entry.path), origin };
+  }
+  beforeEach(() => {
+    if (original !== undefined) ROLES[ID] = original;
+  });
+
+  it('says whether the card has the role in use, a newer one waits, or the source is gone', () => {
+    make({ from: { catalog: ID } });
+    const name = 'engineering-code-reviewer';
+    assert.equal(service.permissions(name).catalog?.state, 'current');
+    newVersion('# Code Reviewer\n\nYou review invented code, more strictly.\n');
+    const view = service.permissions(name);
+    assert.equal(view.catalog?.state, 'update');
+    assert.equal(view.catalog.latest?.sha256, ROLES[ID]?.entry.sha256);
+    assert.equal(service.list().user.find((agent) => agent.name === name)?.catalog?.state, 'update');
+    Reflect.deleteProperty(ROLES, ID);
+    // The role left its source: the agent stays as it is.
+    assert.equal(service.permissions(name).catalog?.state, 'missing');
+    // Source no longer followed: the agent stays as it is, without updates.
+    const others = Object.entries(ROLES).filter(([, role]) => role.origin.repository === LICENSED.repository);
+    for (const [key] of others) Reflect.deleteProperty(ROLES, key);
+    try {
+      assert.equal(service.permissions(name).catalog?.state, 'unfollowed');
+      assert.equal(code(() => service.prepareReapply(name)), 'conflict');
+    } finally {
+      for (const [key, role] of others) ROLES[key] = role;
+    }
+    // A card of the page has no link to the catalog.
+    const page = service.create({ name: 'mio', description: 'Mio', prompt: 'You help.', permissions: answer, confirmation: service.prepareCreate({ name: 'mio', description: 'Mio', prompt: 'You help.', permissions: answer }).confirmation });
+    assert.equal(page.catalog, undefined);
+    assert.equal(code(() => service.prepareReapply('mio')), 'invalid');
+  });
+
+  it('shows the lines that change, then rewrites only the role, keeps the old files and turns the agent off', () => {
+    make({ from: { catalog: ID } });
+    const name = 'engineering-code-reviewer';
+    const edited = service.update(name, { description: 'Il mio revisore' });
+    const { confirmation } = service.prepareEdit(name, { permissions: answer });
+    service.update(name, { permissions: answer, confirmation });
+    service.activate(name);
+    assert.ok(agents.has(name));
+    assert.equal(code(() => service.prepareReapply(name)), 'conflict');
+    newVersion('# Code Reviewer\n\nYou review invented code, more strictly.\nAlso the tests.\n');
+    const shown = service.prepareReapply(name);
+    assert.equal(shown.active, true);
+    assert.equal(shown.from.sha256, edited.catalog?.sha256);
+    assert.equal(shown.to.sha256, ROLES[ID]?.entry.sha256);
+    assert.ok(shown.diff.added >= 2 && shown.diff.removed >= 1, JSON.stringify([shown.diff.added, shown.diff.removed]));
+    assert.ok(shown.diff.hunks.some((hunk) => hunk.lines.some((line) => line.kind === 'added' && line.text === 'Also the tests.')));
+    // Only with the confirmation of those files.
+    assert.equal(code(() => service.reapply(name, {})), 'invalid');
+    const after = service.reapply(name, { confirmation: shown.confirmation });
+    assert.equal(after.state, 'disabled');
+    assert.equal(agents.has(name), false);
+    assert.equal(after.description, 'Il mio revisore');
+    assert.deepEqual(after.card.executors, ['local']);
+    assert.equal(after.card.promptLabel, 'L0');
+    assert.equal(after.catalog?.state, 'current');
+    assert.match(service.prompt(name), /Also the tests\./);
+    const yaml = readFileSync(join(home, 'data', 'agents', 'disattivati', `${name}.yaml`), 'utf8');
+    assert.match(yaml, new RegExp(`# sha256 of the file: ${ROLES[ID]?.entry.sha256 ?? 'x'}`));
+    // The old role is kept in eliminati.
+    const bin = join(home, 'data', 'agents', 'eliminati');
+    const kept = readdirSync(bin).find((folder) => folder.endsWith(`-${name}-riadozione`));
+    assert.ok(kept !== undefined);
+    assert.doesNotMatch(readFileSync(join(bin, kept, `${name}.md`), 'utf8'), /Also the tests\./);
+    // A confirmation is spent once.
+    assert.equal(code(() => service.reapply(name, { confirmation: shown.confirmation })), 'conflict');
+  });
+
+  it('a role gone from its source, or a provenance edited by hand to another file: never adopted from elsewhere', () => {
+    make({ from: { catalog: ID } });
+    const name = 'engineering-code-reviewer';
+    const dir = join(home, 'data', 'agents', 'disattivati');
+    const yamlPath = join(dir, `${name}.yaml`);
+    const yaml = readFileSync(yamlPath, 'utf8');
+    // The same slug in another file of the same source: not this card's role.
+    writeFileSync(yamlPath, yaml.replace('file engineering/engineering-code-reviewer.md', 'file other/engineering-code-reviewer.md'));
+    assert.equal(service.permissions(name).catalog?.state, 'missing');
+    assert.equal(code(() => service.prepareReapply(name)), 'conflict');
+    // Another source followed with a role of the same name: still not this card's.
+    writeFileSync(yamlPath, yaml.replace('https://github.com/acme/agents', 'https://github.com/studio/roles'));
+    assert.equal(service.permissions(name).catalog?.state, 'missing');
+    assert.equal(code(() => service.prepareReapply(name)), 'conflict');
+    writeFileSync(yamlPath, yaml);
+    assert.equal(service.permissions(name).catalog?.state, 'current');
+  });
+
+  it('a source that has no license any more asks the yes again', () => {
+    make({ from: { catalog: ID } });
+    newVersion('You review invented code.\n', UNLICENSED_SAME_PAGE);
+    const name = 'engineering-code-reviewer';
+    const shown = service.prepareReapply(name);
+    assert.equal(shown.unlicensed, true);
+    assert.equal(code(() => service.reapply(name, { confirmation: shown.confirmation })), 'invalid');
+    const again = service.prepareReapply(name);
+    assert.equal(service.reapply(name, { confirmation: again.confirmation, licenseAccepted: true }).state, 'disabled');
+  });
+});
+
 describe('/api/agents from the catalog', () => {
   it('prepares and creates with the role only; description and prompt never come from the page', async () => {
     const server = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, userAgents: service });
@@ -235,6 +352,12 @@ describe('/api/agents from the catalog', () => {
       const again = (await (await post('/api/agents/prepare', { from, name: 'contratti' })).json()) as { proposal: { confirmation: string } };
       assert.equal((await post('/api/agents', { from, name: 'contratti', licenseAccepted: true, confirmation: again.proposal.confirmation })).status, 201);
       assert.equal((await post('/api/agents/prepare', { from, name: 'contratti' })).status, 409);
+      // Adopting again: nothing new yet (409), unknown agent (404), only the two fields.
+      assert.equal((await post('/api/agents/contratti/reapply/prepare', {})).status, 409);
+      assert.equal((await post('/api/agents/nessuno/reapply/prepare', {})).status, 404);
+      assert.equal((await post('/api/agents/contratti/reapply', { confirmation: 'x', prompt: 'mine' })).status, 400);
+      const listed = (await (await fetch(`${origin}/api/agents`)).json()) as { user: { name: string; catalog?: { state: string } }[] };
+      assert.equal(listed.user.find((agent) => agent.name === 'contratti')?.catalog?.state, 'current');
     } finally {
       await server.close();
     }

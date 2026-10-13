@@ -8,6 +8,7 @@ import {
   MAX_AGENCY_FILE_BYTES,
   parseAgencyFile,
   parseDivisions,
+  slugFromPath,
   type AgencyEntry,
   type AgencyOrigin,
 } from '@arianna/agents';
@@ -153,6 +154,11 @@ export interface AgentRoleItem {
   licenseFile: string | null;
 }
 
+/** A role of a card in the version in use of its source: present (with its sha256), or why not. */
+export type AdoptedRole =
+  | { state: 'present'; id: string; sha256: string; commit: string; committedAt: string | null }
+  | { state: 'unfollowed' | 'not-downloaded' | 'missing'; id: string };
+
 export interface AgentRole {
   id: string;
   source: string;
@@ -195,6 +201,8 @@ export interface AgentsCatalog {
   list(): { roles: AgentRoleItem[] };
   /** One role with its text and origin. */
   role(id: unknown): AgentRole;
+  /** The role of a card in the version in use of its source (D-079, tappa 4): what a card is compared with. */
+  adoptedRole(page: string, path: string): AdoptedRole;
 }
 
 /**
@@ -495,6 +503,30 @@ export function createAgentsCatalog(options: AgentsCatalogOptions): AgentsCatalo
     };
   }
 
+  /**
+   * The role at `path` in the version in use of the source at `page`, as a
+   * card's provenance names them: the same page and the same file, never a
+   * role of another source or another file with the same slug.
+   */
+  function adoptedRole(page: string, path: string): AdoptedRole {
+    let id: string;
+    let slug: string;
+    try {
+      id = parseSourceUrl(page, options.allowLocal === true).id;
+      slug = slugFromPath(path, true);
+    } catch {
+      return { state: 'unfollowed', id: '' };
+    }
+    const roleId = `${id}/${slug}`;
+    const item = engine.followed().find((source) => source.id === id);
+    if (item === undefined) return { state: 'unfollowed', id: roleId };
+    const current = engine.sourceFor(item).adopted();
+    if (current === undefined) return { state: 'not-downloaded', id: roleId };
+    const entry = current.index.entries.find((candidate) => candidate.slug === slug);
+    if (entry === undefined || entry.path !== path) return { state: 'missing', id: roleId };
+    return { state: 'present', id: roleId, sha256: entry.sha256, commit: current.index.commit, committedAt: current.index.committedAt };
+  }
+
   return {
     status,
     add: (url) => {
@@ -520,6 +552,7 @@ export function createAgentsCatalog(options: AgentsCatalogOptions): AgentsCatalo
     idle: () => engine.idle(),
     list,
     role,
+    adoptedRole,
   };
 }
 

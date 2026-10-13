@@ -402,6 +402,26 @@ describe('a role becomes a disabled card', () => {
     assert.throws(() => catalog.role('acme/agents/engineering-frontend'), isCode('conflict'));
   });
 
+  it('finds the role of a card by source and file: present, waiting, missing or not followed', async () => {
+    const { url } = upstream(AGENCY);
+    const { catalog } = catalogFor();
+    assert.equal(catalog.adoptedRole(url, 'engineering/engineering-code-reviewer.md').state, 'unfollowed');
+    catalog.add(url);
+    assert.equal(catalog.adoptedRole(url, 'engineering/engineering-code-reviewer.md').state, 'not-downloaded');
+    await downloaded(catalog, url);
+    catalog.adopt(url, catalog.status().sources[0]?.pending?.commit);
+    const found = catalog.adoptedRole(url, 'engineering/engineering-code-reviewer.md');
+    assert.equal(found.state, 'present');
+    assert.equal(found.id, 'acme/agents/engineering-code-reviewer');
+    assert.equal(found.sha256, catalog.role('acme/agents/engineering-code-reviewer').entry.sha256);
+    // The same slug in another file, or a role that is not there: missing.
+    assert.equal(catalog.adoptedRole(url, 'testing/engineering-code-reviewer.md').state, 'missing');
+    assert.equal(catalog.adoptedRole(url, 'engineering/nobody.md').state, 'missing');
+    // Paths and pages a card could name by hand.
+    for (const path of ['../x.md', 'engineering/Bad Name.md', '']) assert.equal(catalog.adoptedRole(url, path).state, 'unfollowed', path);
+    assert.equal(catalog.adoptedRole('https://example.com/a/b', 'engineering/engineering-code-reviewer.md').state, 'unfollowed');
+  });
+
   it('refuses a role changed on the disk after it was indexed', async () => {
     const { url } = upstream(AGENCY);
     const { catalog, dir } = catalogFor();

@@ -38,6 +38,33 @@ export interface UserAgentView {
   permissions: UserPermissions | null;
   /** `agency`: a card of agency-agents, which stays at L0. */
   origin: 'page' | 'agency';
+  /** A card made from a role of the catalog (D-079, tappa 4): its role against the version in use of its source. */
+  catalog?: CatalogLink;
+}
+
+export interface CatalogLink {
+  id: string;
+  /** `update`: the source changed the role since; `unfollowed`: the source is no longer followed; `missing`: the role left it. */
+  state: 'current' | 'update' | 'unfollowed' | 'waiting' | 'missing';
+  sha256: string;
+  latest?: { sha256: string; commit: string; committedAt: string | null };
+}
+
+export interface ReapplyDiffLine {
+  kind: 'context' | 'added' | 'removed';
+  text: string;
+}
+
+/** What adopting the role again would change (D-079, tappa 4). */
+export interface ReapplyProposal {
+  name: string;
+  confirmation: string;
+  active: boolean;
+  from: { commit: string; sha256: string };
+  to: { commit: string; sha256: string; committedAt: string | null };
+  diff: { added: number; removed: number; hunks: { oldStart: number; newStart: number; lines: ReapplyDiffLine[] }[] };
+  unlicensed: boolean;
+  expiresInMs: number;
 }
 
 /** What the user chooses within the ceiling (tappa T3b). */
@@ -164,6 +191,11 @@ export const prepareCatalogAgent = async (input: CatalogNewUserAgent): Promise<A
 /** Only from the confirmation of the page; `licenseAccepted` is the yes to a source without a license. */
 export const createCatalogAgent = async (input: CatalogNewUserAgent, confirmation: string | null, licenseAccepted: boolean): Promise<UserAgentView> =>
   (await call<{ agent: UserAgentView }>('POST', '/api/agents', { ...input, ...(licenseAccepted ? { licenseAccepted: true } : {}), ...(confirmation === null ? {} : { confirmation }) })).agent;
+/** What adopting the role of a card again would change: nothing is written yet. */
+export const prepareReapply = async (name: string): Promise<ReapplyProposal> => (await call<{ reapply: ReapplyProposal }>('POST', path(name, 'reapply/prepare'))).reapply;
+/** Only from the confirmation of the page: the role of the version in use goes into the card, and the agent turns off. */
+export const reapplyAgent = async (name: string, confirmation: string, licenseAccepted: boolean): Promise<UserAgentView> =>
+  (await call<{ agent: UserAgentView }>('POST', path(name, 'reapply'), { confirmation, ...(licenseAccepted ? { licenseAccepted: true } : {}) })).agent;
 export const activateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'activate'))).agent;
 export const deactivateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'deactivate'))).agent;
 /** Only from the confirmation of the page: the L1/A1 ceiling is lifted. */

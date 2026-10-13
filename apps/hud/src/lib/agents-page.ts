@@ -19,7 +19,7 @@ export interface AgentEntry {
   view: UserAgentView | undefined;
 }
 
-export type AgentFilter = 'all' | 'on' | 'off';
+export type AgentFilter = 'all' | 'on' | 'off' | 'update';
 
 export type AgentTab = 'persona' | 'look' | 'model' | 'skills' | 'permissions' | 'card';
 
@@ -49,12 +49,43 @@ export function agentEntries(listing: UserAgentListing | null, known: readonly s
   return [...entries.values()].sort((a, b) => (a.id === 'arianna' ? -1 : b.id === 'arianna' ? 1 : a.id.localeCompare(b.id)));
 }
 
+/** Whether the user chose to keep the version of now for this agent and this newer role (D-079, tappa 4). */
+export type KeptVersion = (agent: string, sha256: string) => boolean;
+
+/** A card of a role whose source has a newer text, not set aside with «Tieni la versione di adesso». */
+export function needsUpdate(entry: AgentEntry, kept: KeptVersion = () => false): boolean {
+  const link = entry.view?.catalog;
+  return link?.state === 'update' && !kept(entry.id, link.latest?.sha256 ?? '');
+}
+
 /** The cards the search and the filter leave; the search looks at the shown name, the id and the description. */
-export function filterEntries(entries: readonly AgentEntry[], query: string, filter: AgentFilter, nameOf: (id: string) => string): AgentEntry[] {
+export function filterEntries(entries: readonly AgentEntry[], query: string, filter: AgentFilter, nameOf: (id: string) => string, kept?: KeptVersion): AgentEntry[] {
   const words = query.trim().toLowerCase();
-  return entries.filter(
-    (entry) => (filter === 'all' || (filter === 'on') === entry.on) && (words === '' || `${nameOf(entry.id)} ${entry.id} ${entry.description}`.toLowerCase().includes(words)),
-  );
+  const passes = (entry: AgentEntry): boolean => (filter === 'all' ? true : filter === 'update' ? needsUpdate(entry, kept) : (filter === 'on') === entry.on);
+  return entries.filter((entry) => passes(entry) && (words === '' || `${nameOf(entry.id)} ${entry.id} ${entry.description}`.toLowerCase().includes(words)));
+}
+
+/** What the page says of a card of the catalog whose role is not in a version in use: a short badge and one paragraph; undefined when there is nothing to say. */
+export function catalogStateText(state: string | undefined): { badge: string; title: string; text: string } | undefined {
+  const stays = 'L’agente resta com’è e continua a lavorare con il testo che ha; provenienza e licenza restano scritte nella sua scheda.';
+  if (state === 'unfollowed') {
+    return { badge: 'Raccolta non più seguita', title: 'Raccolta non più seguita', text: `${stays} Non riceverà aggiornamenti: se segui di nuovo la raccolta in Impostazioni → Catalogo agenti, il confronto riprende.` };
+  }
+  if (state === 'missing') return { badge: 'Ruolo tolto dalla raccolta', title: 'Il ruolo non c’è più nella sua raccolta', text: `${stays} Non riceverà aggiornamenti.` };
+  if (state === 'waiting') {
+    return { badge: 'Raccolta da scaricare', title: 'Nessuna versione in uso della raccolta', text: `${stays} Il confronto riprende quando la raccolta ha una versione in uso (Impostazioni → Catalogo agenti, «Scarica» e «Usa questa versione»).` };
+  }
+  return undefined;
+}
+
+/** The hunks of a diff of a role as one list of rows, with a gap row between two hunks. */
+export function diffRows(hunks: readonly { lines: readonly { kind: 'context' | 'added' | 'removed'; text: string }[] }[]): { kind: 'context' | 'added' | 'removed' | 'gap'; text: string }[] {
+  const rows: { kind: 'context' | 'added' | 'removed' | 'gap'; text: string }[] = [];
+  hunks.forEach((hunk, index) => {
+    if (index > 0) rows.push({ kind: 'gap', text: '…' });
+    rows.push(...hunk.lines);
+  });
+  return rows;
 }
 
 /** The parts of the settings the page edits per agent. */

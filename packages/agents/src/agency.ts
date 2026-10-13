@@ -482,3 +482,41 @@ export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: Agen
   ].join('\n');
   return { name, yaml, md };
 }
+
+/** Where the role of a card comes from, as its comments say it (D-079): what a new version of the source is compared with. */
+export interface CardProvenance {
+  /** The page of the source. */
+  page: string;
+  commit: string;
+  /** The role file in the source, with `/`. */
+  path: string;
+  /** sha256 of the role file adopted into the card. */
+  sha256: string;
+}
+
+const SOURCE_COMMENT = /^# Source: (\S+), commit ([0-9a-f]{7,40}), file (\S+)$/;
+const SHA_COMMENT = /^# sha256 of the file: ([0-9a-f]{64})$/;
+
+/**
+ * The provenance in the comments at the top of a card: the first `Source:`
+ * and `sha256 of the file:` lines before the first line that is not a
+ * comment; null when either is missing (a card written by the page).
+ */
+export function cardProvenance(yamlText: string): CardProvenance | null {
+  let source: RegExpExecArray | null = null;
+  let sha: RegExpExecArray | null = null;
+  for (const line of yamlText.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    if (!line.startsWith('#')) break;
+    source ??= SOURCE_COMMENT.exec(line);
+    sha ??= SHA_COMMENT.exec(line);
+  }
+  if (source === null || sha === null) return null;
+  const [, page = '', commit = '', path = ''] = source;
+  return { page, commit, path, sha256: sha[1] ?? '' };
+}
+
+/** The role inside the prompt of a card, between its two markers; the whole prompt when they are missing. */
+export function framedRole(prompt: string): string {
+  const match = /<<<third-party-role sha256=[0-9a-f]{64}>>>\n([\s\S]*?)\n<<<end third-party-role sha256=[0-9a-f]{64}>>>/.exec(prompt);
+  return match?.[1] ?? prompt;
+}

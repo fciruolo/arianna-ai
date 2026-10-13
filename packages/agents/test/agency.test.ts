@@ -9,9 +9,11 @@ import {
   agencyPreset,
   AgentCardError,
   buildIndex,
+  cardProvenance,
   checkUserPermissions,
   CARD_TEMPLATES,
   divisionOf,
+  framedRole,
   MAX_AGENCY_FILE_BYTES,
   parseAgencyFile,
   parseAgentCard,
@@ -339,6 +341,17 @@ describe('proposeCard', () => {
     // A license file name that is not one of the usual names counts as none.
     const odd = proposeCard(read, agencyPreset(read.division), { ...ORIGIN, license: { name: 'MIT', file: 'docs/x.md', text: 'MIT' } });
     assert.match(odd.md, /has no license file at its root/);
+  });
+
+  it('reads back the provenance and the framed role of a proposal; none for a card of the page', () => {
+    const read = entry();
+    const proposal = proposeCard(read, agencyPreset(read.division), ORIGIN);
+    assert.deepEqual(cardProvenance(proposal.yaml), { page: AGENCY_REPOSITORY, commit: COMMIT, path: read.path, sha256: read.sha256 });
+    assert.equal(framedRole(proposal.md), read.body);
+    assert.equal(cardProvenance('# Created from the Agents page (D-119).\nname: x\n'), null);
+    // Only the comments at the top count: a line further down never stands for the provenance.
+    assert.equal(cardProvenance(`name: x\n# Source: https://github.com/a/b, commit ${COMMIT}, file a.md\n# sha256 of the file: ${read.sha256}\n`), null);
+    assert.equal(framedRole('A prompt without markers.'), 'A prompt without markers.');
   });
 
   it('takes the name and the permissions the user chose within the list; never a name a card cannot have', () => {

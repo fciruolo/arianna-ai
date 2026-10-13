@@ -3141,6 +3141,18 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
       return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as ConfirmedNewUserAgent) } }));
     }),
     route('GET', '/api/agents/:id/permissions', (_request, _url, params) => answer(() => ({ body: { agent: need().permissions(name(params)) } }))),
+    // A role of the catalog adopted again (D-079, tappa 4): what changes first, then only with that confirmation; the agent turns off.
+    route('POST', '/api/agents/:id/reapply/prepare', async (request, _url, params) => {
+      const service = need();
+      onlyFields(await readJson(request), []);
+      return answer(() => ({ body: { reapply: service.prepareReapply(name(params)) } }));
+    }),
+    route('POST', '/api/agents/:id/reapply', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['confirmation', 'licenseAccepted']);
+      return answer(() => ({ body: { agent: service.reapply(name(params), body) } }));
+    }),
     route('POST', '/api/agents/:id/activate', async (request, _url, params) => {
       const service = need();
       onlyFields(await readJson(request), []);

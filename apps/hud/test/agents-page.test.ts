@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { agentEntries, changedAgents, filterEntries, lengthText, permissionWords, tabLabel, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
+import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
 import { DEFAULT_PERSONA_FORM } from '../src/lib/persona.ts';
 import type { CardSummary, UserAgentListing, UserAgentView } from '../src/lib/user-agents.ts';
 
@@ -165,5 +165,43 @@ describe('tabLabel and lengthText (D-192)', () => {
   it('says the characters used of the maximum', () => {
     assert.equal(lengthText(68, 400), '68 di 400 caratteri');
     assert.equal(lengthText(0, 4000), '0 di 4.000 caratteri');
+  });
+});
+
+describe('roles of the catalog adopted again (D-079, tappa 4)', () => {
+  const sha = (char: string): string => char.repeat(64);
+  const withLink = (agent: string, state: 'current' | 'update' | 'unfollowed' | 'missing'): UserAgentView => ({
+    ...view(agent, 'active', ['local']),
+    origin: 'agency',
+    catalog: { id: `acme/agents/${agent}`, state, sha256: sha('a'), ...(state === 'update' ? { latest: { sha256: sha('b'), commit: 'c'.repeat(40), committedAt: '2026-10-07T09:00:00Z' } } : {}) },
+  });
+  const catalogListing: UserAgentListing = { official: [], user: [withLink('nuovo', 'update'), withLink('fermo', 'current'), withLink('orfano', 'unfollowed'), view('mio', 'active', ['local'])], refused: [] };
+  const entries = agentEntries(catalogListing, []);
+
+  it('«Da aggiornare» keeps the cards whose role changed, unless the user kept the version of now', () => {
+    assert.deepEqual(filterEntries(entries, '', 'update', name).map((entry) => entry.id), ['nuovo']);
+    const kept = (agent: string, latest: string): boolean => agent === 'nuovo' && latest === sha('b');
+    assert.deepEqual(filterEntries(entries, '', 'update', name, kept), []);
+    // Kept for another version: a newer one shows again.
+    assert.deepEqual(filterEntries(entries, '', 'update', name, (agent, latest) => agent === 'nuovo' && latest === sha('z')).map((entry) => entry.id), ['nuovo']);
+    assert.equal(entries.filter((entry) => needsUpdate(entry)).length, 1);
+    assert.equal(filterEntries(entries, '', 'all', name).length, 4);
+  });
+
+  it('says why a card of the catalog has no update: source not followed, role gone, no version in use', () => {
+    assert.equal(catalogStateText('unfollowed')?.badge, 'Raccolta non più seguita');
+    assert.equal(catalogStateText('missing')?.badge, 'Ruolo tolto dalla raccolta');
+    assert.doesNotMatch(catalogStateText('missing')?.text ?? '', /segui di nuovo/);
+    assert.equal(catalogStateText('waiting')?.badge, 'Raccolta da scaricare');
+    for (const state of ['current', 'update', undefined]) assert.equal(catalogStateText(state), undefined, String(state));
+  });
+
+  it('shows the hunks of a diff with a gap between them', () => {
+    const rows = diffRows([
+      { lines: [{ kind: 'context', text: 'a' }, { kind: 'removed', text: 'b' }, { kind: 'added', text: 'B' }] },
+      { lines: [{ kind: 'added', text: 'z' }] },
+    ]);
+    assert.deepEqual(rows.map((row) => row.kind), ['context', 'removed', 'added', 'gap', 'added']);
+    assert.deepEqual(diffRows([]), []);
   });
 });
