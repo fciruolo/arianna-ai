@@ -9,15 +9,18 @@
  * goes into [characters] of arianna.toml right after the card: if that
  * fails, the agent exists anyway and the page says where to add it again.
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
+import { catalogPresetOf, roleCardName, roleUnlicensed, type AgentRoleSummary, type AgentRoleText } from '../lib/agents-catalog.ts';
 import { lengthText } from '../lib/agents-page.ts';
 import { loadCharacters, loadSettings, saveSettings, type UploadedCharacter } from '../lib/api.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
 import {
   activateUserAgent,
+  createCatalogAgent,
   createUserAgent,
   loadSources,
+  prepareCatalogAgent,
   MAX_USER_PROMPT,
   prepareUserAgent,
   PRESET_ORDER,
@@ -33,6 +36,7 @@ import {
   type UserAgentView,
   type UserPermissions,
 } from '../lib/user-agents.ts';
+import CatalogRolePicker from './CatalogRolePicker.vue';
 import CharacterGenerate from './CharacterGenerate.vue';
 import CharacterUpload from './CharacterUpload.vue';
 import FormField from './FormField.vue';
@@ -59,6 +63,51 @@ const busy = ref(false);
 const error = ref('');
 const created = ref<UserAgentView | null>(null);
 const characterNote = ref('');
+
+// «Dal catalogo» (D-079, tappa 3): a role of the catalog gives description and prompt; the user chooses name and permissions.
+const origin = ref<'scratch' | 'catalog'>('scratch');
+const roleId = ref<string | null>(null);
+const role = ref<AgentRoleSummary | null>(null);
+const roleText = ref<AgentRoleText | null>(null);
+/** The yes to the warning of a source without a license (choice of the user, 2026-10-13). */
+const licenseAccepted = ref(false);
+const fromCatalog = computed(() => origin.value === 'catalog');
+/** The core found no license the card can carry, though the list of roles did not say so: the page asks as well. */
+const licenseNeeded = ref(false);
+const unlicensed = computed(() => fromCatalog.value && (licenseNeeded.value || (role.value !== null && roleUnlicensed(role.value))));
+function chooseOrigin(value: 'scratch' | 'catalog'): void {
+  if (origin.value === value) return;
+  origin.value = value;
+  error.value = '';
+  if (value === 'scratch') {
+    form.value = empty();
+    roleId.value = null;
+    role.value = null;
+    roleText.value = null;
+    licenseAccepted.value = false;
+    licenseNeeded.value = false;
+  }
+}
+/** A role chosen: its name and the starting point of its division; the user changes them after. */
+function onRole(chosen: AgentRoleSummary | null, text: AgentRoleText | null): void {
+  const changed = chosen?.id !== role.value?.id;
+  role.value = chosen;
+  roleText.value = text;
+  if (!changed || chosen === null) return;
+  licenseAccepted.value = false;
+  licenseNeeded.value = false;
+  const preset = catalogPresetOf(chosen.division);
+  form.value = { ...form.value, preset, permissions: presetPermissions(preset), name: roleCardName(chosen.slug), description: chosen.description, prompt: '' };
+}
+watch(roleText, (text) => {
+  // The prompt shown in «Aspetto» and given to the generator of the character: the role's text, read only.
+  if (fromCatalog.value && text !== null) form.value.prompt = text.text;
+});
+/** The catalog is followed in the settings: the page of the settings opens there. */
+function openCatalogSettings(): void {
+  window.location.assign('/impostazioni/catalogo-agenti');
+}
+const catalogInput = () => ({ from: { catalog: roleId.value ?? '' }, name: form.value.name, permissions: form.value.permissions });
 /** Bumped by an upload: the sheets are asked again, a replaced one included. */
 const sheetVersion = ref(0);
 
@@ -102,8 +151,13 @@ const promptProblem = computed(() => {
 });
 /** What keeps the user on a step; empty when the step is complete. */
 function problemOf(index: number): string {
-  if (index === 0) return sources.value === null ? 'Leggo i permessi ammessi…' : '';
-  if (index === 1) return nameProblem.value || descriptionProblem.value || promptProblem.value;
+  if (index === 0) {
+    if (sources.value === null) return 'Leggo i permessi ammessi…';
+    return fromCatalog.value && role.value === null ? 'Scegli un ruolo del catalogo.' : '';
+  }
+  // A role of the catalog brings description and prompt: only the name is the user's.
+  if (index === 1) return fromCatalog.value ? nameProblem.value : nameProblem.value || descriptionProblem.value || promptProblem.value;
+  if (index === 2 && unlicensed.value && !licenseAccepted.value) return 'Leggi l’avviso sulla licenza e conferma prima di creare l’agente.';
   return '';
 }
 /** A step is reachable when every step before it is complete. */
@@ -145,6 +199,22 @@ function go(index: number): void {
 }
 
 const input = (): NewUserAgent => ({ name: form.value.name, description: form.value.description.trim(), prompt: form.value.prompt, permissions: form.value.permissions });
+/** What the card would be: from the page's texts, or from the role (the core reads it again). */
+const prepareAny = (): Promise<AgentProposal> => (fromCatalog.value ? prepareCatalogAgent(catalogInput()) : prepareUserAgent(input()));
+/**
+ * The proposal shown for confirmation. The core decides whether the source
+ * has a license the card can carry: when it says none and the user has not
+ * said yes yet, the page shows the warning first, never the confirmation.
+ */
+async function prepareShown(): Promise<void> {
+  const prepared = await prepareAny();
+  if (fromCatalog.value && prepared.catalog?.unlicensed === true && !licenseAccepted.value) {
+    licenseNeeded.value = true;
+    error.value = 'La raccolta di questo ruolo non ha una licenza alla radice: leggi l’avviso qui sopra e conferma, poi premi di nuovo «Crea spento».';
+    return;
+  }
+  proposal.value = prepared;
+}
 
 /** Back where a refused field can be changed: the permissions on the first step, the texts on the second. */
 function stepOf(cause: unknown): number {
@@ -158,7 +228,7 @@ async function prepare(): Promise<void> {
   busy.value = true;
   error.value = '';
   try {
-    proposal.value = await prepareUserAgent(input());
+    await prepareShown();
   } catch (cause) {
     error.value = userAgentErrorText(cause);
     if (cause instanceof UserAgentApiError && (cause.status === 409 || cause.status === 400)) step.value = stepOf(cause);
@@ -175,13 +245,13 @@ async function create(): Promise<void> {
   characterNote.value = '';
   let agent: UserAgentView;
   try {
-    agent = await createUserAgent(input(), shown.confirmation);
+    agent = await (fromCatalog.value ? createCatalogAgent(catalogInput(), shown.confirmation, licenseAccepted.value) : createUserAgent(input(), shown.confirmation));
   } catch (cause) {
     error.value = userAgentErrorText(cause);
     // Expired or changed: the core shows the card again, with a new confirmation; still busy meanwhile, the old id is spent.
     if (cause instanceof UserAgentApiError && cause.status === 409 && /prepare the change again/.test(cause.message)) {
       try {
-        proposal.value = await prepareUserAgent(input());
+        proposal.value = await prepareAny();
       } catch (again) {
         proposal.value = null;
         error.value = userAgentErrorText(again);
@@ -230,6 +300,11 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink';
 
 function another(): void {
   form.value = empty();
+  roleId.value = null;
+  role.value = null;
+  roleText.value = null;
+  licenseAccepted.value = false;
+  licenseNeeded.value = false;
   proposal.value = null;
   created.value = null;
   characterNote.value = '';
@@ -294,7 +369,45 @@ function another(): void {
         </nav>
 
         <!-- 1. What it does: a starting point, then the permissions within the list (tappa T3b) -->
-        <section v-if="step === 0" class="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="step-permissions">
+        <section v-if="step === 0" class="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4" :aria-labelledby="fromCatalog && role === null ? 'step-origin' : 'step-permissions'">
+          <!-- Where it starts from (D-079, tappa 3): from scratch, or from a role of the catalog of agents -->
+          <template v-if="sources?.catalog">
+            <h2 id="step-origin" class="text-[16px] font-semibold">Da dove parti</h2>
+            <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2" role="group" aria-label="Da dove parti">
+              <button
+                type="button"
+                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px]"
+                :class="!fromCatalog ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-line-strong'"
+                :aria-pressed="!fromCatalog"
+                @click="chooseOrigin('scratch')"
+              >
+                <span class="font-semibold">Da zero</span>
+                <span class="text-[13px] text-muted">Scegli un punto di partenza e scrivi tu nome, descrizione e prompt.</span>
+              </button>
+              <button
+                type="button"
+                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px]"
+                :class="fromCatalog ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-line-strong'"
+                :aria-pressed="fromCatalog"
+                @click="chooseOrigin('catalog')"
+              >
+                <span class="font-semibold">Dal catalogo</span>
+                <span class="text-[13px] text-muted">Prendi un ruolo pronto da una raccolta che segui. Il prompt è il suo testo, i permessi li scegli tu come sempre.</span>
+              </button>
+            </div>
+          </template>
+          <template v-if="fromCatalog">
+            <CatalogRolePicker v-model="roleId" @role="onRole" @settings="openCatalogSettings" />
+            <template v-if="role !== null && sources">
+              <h2 id="step-permissions" class="text-[16px] font-semibold">Cosa fa</h2>
+              <p class="text-[14px] text-muted">
+                I permessi partono da quelli della divisione del ruolo; cambiali dentro quello che è ammesso per gli agenti nuovi. Il prompt resta il testo del ruolo, a L0: l’agente vede al massimo
+                dati di lavoro.
+              </p>
+              <PermissionsPicker v-model="form.permissions" :sources="sources" id-prefix="new-agent" />
+            </template>
+          </template>
+          <template v-else>
           <h2 id="step-permissions" class="text-[16px] font-semibold">Cosa fa</h2>
           <p class="text-[14px] text-muted">
             Parti da un modello e cambia ciò che vuoi, dentro quello che è ammesso per gli agenti nuovi. Prima di crearlo la pagina ti mostra cosa potrà fare, e l’agente nasce solo con la tua
@@ -315,6 +428,7 @@ function another(): void {
           </fieldset>
           <PermissionsPicker v-if="sources" v-model="form.permissions" :sources="sources" id-prefix="new-agent" />
           <p class="text-[13px] text-muted">Vede al massimo dati di lavoro, come il prompt che gli scrivi. Mai lavori passati ad altri agenti, messaggi fuori dal Mac o azioni che chiedono approvazione.</p>
+          </template>
         </section>
 
         <!-- 2. Who it is: name, description, prompt -->
@@ -322,16 +436,30 @@ function another(): void {
           <div class="flex flex-wrap items-center gap-2">
             <h2 id="step-who" class="text-[16px] font-semibold">Chi è</h2>
             <span class="pill">{{ form.permissions.executor === 'claude' ? 'Lavora con Claude' : 'Lavora sul Mac' }}</span>
-            <button v-if="text && exampleUseful" type="button" class="btn ml-auto px-2.5 py-1 text-[13px]" @click="useExample">Completa con l’esempio</button>
+            <button v-if="text && exampleUseful && !fromCatalog" type="button" class="btn ml-auto px-2.5 py-1 text-[13px]" @click="useExample">Completa con l’esempio</button>
           </div>
           <div class="grid gap-3 sm:grid-cols-6">
-            <FormField id="new-agent-name" label="Nome" hint="Minuscole, cifre e trattini: si usa anche per i suoi file." :span="2">
+            <FormField
+              id="new-agent-name"
+              label="Nome"
+              :hint="fromCatalog ? 'Parte dal nome del file del ruolo; se c’è già un agente con questo nome scegline un altro.' : 'Minuscole, cifre e trattini: si usa anche per i suoi file.'"
+              :span="2"
+            >
               <input id="new-agent-name" v-model.trim="form.name" :class="INPUT" maxlength="40" :placeholder="text?.example.name" autocomplete="off" />
             </FormField>
-            <FormField id="new-agent-description" label="Descrizione" hint="Una riga: Arianna la legge per scegliere a chi passare un lavoro." :span="4">
+            <!-- A role of the catalog: description and prompt are the role's, read only -->
+            <div v-if="fromCatalog && role" class="flex flex-col gap-1.5 text-[14px] sm:col-span-4">
+              <p class="font-medium">{{ role.name }} <span class="text-[13px] font-normal text-muted">· {{ role.source }}</span></p>
+              <p class="text-[13px] text-muted">{{ role.description }}</p>
+              <p class="text-[13px] text-muted">
+                La descrizione della scheda dirà da quale raccolta viene il ruolo e con quale licenza; il prompt è il testo del ruolo, fra due marcatori, come dato.
+              </p>
+            </div>
+            <FormField v-if="!fromCatalog" id="new-agent-description" label="Descrizione" hint="Una riga: Arianna la legge per scegliere a chi passare un lavoro." :span="4">
               <input id="new-agent-description" v-model="form.description" :class="INPUT" maxlength="200" :placeholder="text?.example.description" />
             </FormField>
             <FormField
+              v-if="!fromCatalog"
               id="new-agent-prompt"
               label="Prompt: cosa fa e come"
               :problem="form.prompt.length > MAX_USER_PROMPT ? `Troppo lungo: ${lengthText(form.prompt.length, MAX_USER_PROMPT)}.` : undefined"
@@ -374,6 +502,18 @@ function another(): void {
             <p><b class="font-semibold">{{ form.name }}</b> · {{ form.description.trim() }}</p>
             <p class="text-[13px] text-muted">«Crea spento» ti mostra prima i permessi e cosa può uscire verso Claude.</p>
             <p class="line-clamp-3 text-[13px] whitespace-pre-line text-muted">{{ form.prompt.trim() }}</p>
+            <p v-if="fromCatalog && role" class="text-[13px] text-muted">Ruolo di terzi da {{ role.source }}: la scheda ne riporta provenienza e licenza, e nasce spenta.</p>
+          </div>
+          <!-- A source without a license (choice of the user, 2026-10-13): a warning and the user's yes, never a block -->
+          <div v-if="unlicensed" class="flex flex-col gap-2 rounded-[10px] border border-warn/60 bg-warn/10 p-3 text-[14px]" role="alert">
+            <p class="font-semibold">La raccolta {{ role?.source }} non ha una licenza alla radice</p>
+            <p class="text-[13px]">
+              Senza licenza i diritti sul testo restano ai suoi autori: usarlo come prompt di un tuo agente è una scelta tua. L’avviso resterà scritto nella scheda dell’agente.
+            </p>
+            <label class="flex items-start gap-2 text-[13px]">
+              <input v-model="licenseAccepted" type="checkbox" class="mt-0.5" />
+              Ho letto l’avviso e voglio usare comunque questo ruolo
+            </label>
           </div>
         </section>
 

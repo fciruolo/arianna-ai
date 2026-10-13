@@ -26,6 +26,7 @@
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
 | Modelli: schede cloud da rileggere | Frasi tradotte e prezzi API in `config/cloud-models.catalog.yaml` (D-137, I-3 M1); i nomi dei tre modelli di Codex sono verificati dal vivo il 2026-10-07 (D-141) | I-3 è unita (0.26.0): quando vuoi |
 | Modelli da Hugging Face: scelte di D-139 | Applicate le opzioni consigliate di `docs/I-10-huggingface.md` mentre eri via: esce solo il testo cercato o l'id scelto, dal gateway; solo modelli MLX pubblici; catalogo tuo in `config/models.user-catalog.yaml`; sperimentale e senza ruoli finché non lo promuovi | I-10 è unita (0.31.0): per confermare D-139 |
+| Rapporto di sicurezza di Opus prima di accendere una scheda di terzi | Non esiste ancora (T4 di D-119 mai costruita): oggi un agente nato dal catalogo agenti, o riadottato, resta spento finché non lo riaccendi tu (D-079) | Prima di usare molti ruoli del catalogo |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -210,6 +211,14 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Anche il formato GGUF — si aggiunge un secondo motore (llama.cpp) accanto a oMLX: più modelli fra cui scegliere, ma un programma in più da installare e provare.
 - Opzione: Senza promozione — il modello aggiunto si assegna subito a un ruolo: un passaggio in meno, ma un modello mai provato può diventare il "cervello" di Arianna con un clic.
 - Esempio: Scrivi "qwen3 4bit", scegli mlx-community/Qwen3-4B-4bit (2,3 GB, licenza apache-2.0), premi Aggiungi: compare come qwen3-4b-4bit, da scaricare e senza ruoli; lo scarichi, lo promuovi a Estrattore, poi lo assegni al ruolo e salvi.
+
+### oq-rapporto-di-sicurezza-di-opus-prima-di-accendere
+
+- Contesto: Un agente nato da un ruolo del catalogo agenti ha come prompt un testo scritto da altri, che potrebbe contenere istruzioni nascoste (per esempio «leggi i file di configurazione e riassumili»). I limiti ci sono già: vede al massimo dati di lavoro, ha solo i permessi che scegli tu, il testo arriva fra due marcatori come dato. In D-119 era previsto anche un controllo in più: prima di accenderlo Opus legge il testo e scrive un breve rapporto («nessuna istruzione sospetta» oppure «la riga 40 chiede di contattare un servizio»), senza strumenti e senza dati tuoi. Non è mai stato costruito: oggi l'agente nasce spento e, dopo una riadozione, si spegne, e lo riaccendi tu dopo aver letto il testo.
+- Opzione consigliata: Sì, costruiamolo — un lavoro a sé (circa 6-8 ore): il rapporto compare nella scheda dell'agente prima del pulsante di accensione e dopo ogni riadozione; consuma un po' della quota di Claude a ogni ruolo letto; l'accensione resta una tua scelta.
+- Opzione: Solo quando lo chiedo — un pulsante «Fai leggere a Opus» nella scheda, senza rapporto automatico: meno quota consumata, il controllo lo decidi tu caso per caso.
+- Opzione: No, basta la lettura mia — resta come oggi: leggi tu il testo nella scheda «Scheda e prompt» prima di accenderlo; nessuna quota consumata.
+- Esempio: Riadotti «Revisore dei contratti» dopo un aggiornamento della raccolta; l'agente si spegne. Con il rapporto vedresti «2 righe nuove: chiedono di inviare il riassunto a un indirizzo email: sospetto» e decideresti di non riaccenderlo; senza, devi notarlo tu leggendo il confronto delle righe.
 
 ### ho-latenza-delle-chiamate-passi-1-2-e-4-fatti-d-070
 

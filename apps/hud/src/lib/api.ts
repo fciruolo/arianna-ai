@@ -10,6 +10,7 @@ import { parseInstallation, parseReadiness, type InstallationInfo, type Readines
 import type { NewsPair } from './design-news.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
+import type { AgentRoleListing, AgentRoleText, AgentsStatus } from './agents-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ClientDashboard } from './client-dashboard.ts';
 import type { ClientDocument, DocumentForm } from './client-documents.ts';
@@ -626,6 +627,46 @@ export async function listSkills(): Promise<SkillListing> {
 /** The text of one skill (`owner/repo/slug`), with source, commit and license at the head. */
 export async function loadSkill(id: string): Promise<SkillText> {
   return (await call<{ skill: SkillText }>('GET', `/api/skills-catalog/skill?id=${encodeURIComponent(id)}`)).skill;
+}
+
+/** The catalog of agents (D-079): the sources followed with their versions, the queue, the space and the suggestions. */
+export async function loadAgentsCatalog(): Promise<AgentsStatus> {
+  return call<AgentsStatus>('GET', '/api/agents-catalog');
+}
+
+/** Follows https://github.com/<owner>/<repo>: nothing is downloaded yet. */
+export async function addAgentSource(url: string): Promise<AgentsStatus> {
+  return call<AgentsStatus>('POST', '/api/agents-catalog/sources', { url });
+}
+
+/** Stops following a source (`owner/repo`) and deletes its files; the agents already made from it stay. */
+export async function removeAgentSource(source: string): Promise<AgentsStatus> {
+  return call<AgentsStatus>('POST', '/api/agents-catalog/remove', { source });
+}
+
+/** "Scarica/Aggiorna": the download of a source in the background, or in the queue behind another. */
+export async function updateAgentSource(source: string): Promise<AgentsStatus> {
+  return call<AgentsStatus>('POST', '/api/agents-catalog/update', { source });
+}
+
+/** "Usa questa versione": the commit the user saw in the summary of that source. */
+export async function adoptAgentSource(source: string, commit: string): Promise<AgentsStatus> {
+  return call<AgentsStatus>('POST', '/api/agents-catalog/adopt', { source, commit });
+}
+
+/** "Scarta": the version waiting of that source is deleted. */
+export async function discardAgentSource(source: string): Promise<AgentsStatus> {
+  return call<AgentsStatus>('POST', '/api/agents-catalog/discard', { source });
+}
+
+/** Every role of the adopted versions: id, name, description, division, license. */
+export async function listAgentRoles(): Promise<AgentRoleListing> {
+  return call<AgentRoleListing>('GET', '/api/agents-catalog/agents');
+}
+
+/** One role (`owner/repo/slug`) with its source, commit, license and text. */
+export async function loadAgentRole(id: string): Promise<AgentRoleText> {
+  return (await call<{ agent: AgentRoleText }>('GET', `/api/agents-catalog/agent?id=${encodeURIComponent(id)}`)).agent;
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

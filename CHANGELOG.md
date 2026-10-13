@@ -2,6 +2,24 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [0.89.0] - 2026-10-13
+
+### Aggiunto
+
+- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill; prima del primo download la licenza «si saprà» (D-079).
+- «+ Nuovo agente» → «Dal catalogo»: si sceglie un ruolo (ricerca, raccolta, divisione), si scelgono nome e permessi dentro quelli ammessi, e l'agente nasce spento con provenienza e licenza nella scheda; una raccolta senza licenza chiede conferma (D-079).
+- Agenti nati dal catalogo: pallino e badge «Aggiornamento disponibile», filtro «Da aggiornare», confronto delle righe del ruolo e «Riadotta…», che riscrive solo il testo del ruolo, tiene quello vecchio fra gli eliminati e spegne l'agente; «Tieni la versione di adesso» per lasciarlo com'è (D-079).
+- Impostazioni → «Catalogo agenti», subito dopo «Skill e stili»: raccolte di ruoli da GitHub con coda dei download, spazio usato, licenza di ogni raccolta e ruoli da sfogliare per divisione (D-079).
+
+### Cambiato
+
+- Il catalogo delle skill e quello degli agenti usano lo stesso motore delle sorgenti GitHub (D-079, D-161).
+- Una scheda nata da un ruolo di terzi riporta sorgente, commit, sha256 e la licenza della sua raccolta; senza licenza lo dice con un avviso (D-079).
+
+### Rimosso
+
+- `pnpm agency:import`, il clone a mano e `config/agency.lock`: le schede già proposte restano riconosciute come schede di terzi (D-079).
+
 ## [0.88.0] - 2026-10-13
 
 ### Aggiunto

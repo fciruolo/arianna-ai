@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isAtMost } from '@arianna/policy';
 import { stringify as stringifyYaml } from 'yaml';
 
-import { AGENCY_CARD_MARK, AGENCY_REPOSITORY } from './agency-mark.ts';
+import { isThirdPartyLine, THIRD_PARTY_CARD_MARKS } from './agency-mark.ts';
 import { AgentCardError, parseAgentCard, type AgentCard } from './card.ts';
 import { loadAgent, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 import { CARD_TEMPLATES } from './templates.ts';
@@ -29,6 +29,8 @@ const NAME = /^[a-z][a-z0-9-]{1,39}$/;
 export const USER_AGENT_NAME = NAME;
 const MAX_DESCRIPTION = 200;
 export const MAX_USER_PROMPT = 4000;
+/** The prompt of a card from the catalog of agents (D-079): the role of a third party with its frame, up to the size of a role file. */
+export const MAX_THIRD_PARTY_PROMPT = 160 * 1024;
 const CEILING_TOOLS: readonly ToolId[] = ['task.delegate', 'channel.send'];
 
 /** Throws unless the card stays under the ceiling of the user's cards. */
@@ -85,17 +87,18 @@ export interface UserPermissions {
   maxMinutes: number;
 }
 
-/** A card written by the page, or proposed from agency-agents (its prompt is a third party's: L0). */
+/** A card written by the page, or proposed from the catalog of agents (its prompt is a third party's: L0). */
 export type UserCardOrigin = 'page' | 'agency';
 
 /**
  * The origin of a card from the comments at the top of its file: the mark of
- * the importer, or any of its provenance lines (a card whose first line was
- * removed by hand still holds a third party's prompt).
+ * the catalog (or of the importer before it), or any of its provenance lines
+ * (a card whose first line was removed by hand still holds a third party's
+ * prompt).
  */
 export function userCardOrigin(yamlText: string): UserCardOrigin {
   const header = leadingComments(yamlText.replace(/^\uFEFF/, ''));
-  return header.split('\n').some((line) => line.startsWith(AGENCY_CARD_MARK) || line.includes('pnpm agency:import') || line.includes(AGENCY_REPOSITORY)) ? 'agency' : 'page';
+  return header.split('\n').some(isThirdPartyLine) ? 'agency' : 'page';
 }
 
 /** The rules on the permissions alone; the message names the rule, in English like the other card errors. */
@@ -245,10 +248,10 @@ function oneLine(value: unknown, what: string, max: number): string {
   return text;
 }
 
-function promptText(value: unknown): string {
+function promptText(value: unknown, max: number = MAX_USER_PROMPT): string {
   if (typeof value !== 'string' || value.trim() === '') throw new AgentCardError('the prompt is empty');
   const prompt = value.trim().replace(/\r\n?/g, '\n');
-  if (prompt.length > MAX_USER_PROMPT) throw new AgentCardError(`the prompt is longer than ${String(MAX_USER_PROMPT)} characters`);
+  if (prompt.length > max) throw new AgentCardError(`the prompt is longer than ${String(max)} characters`);
   if (/[\p{Cc}--[\n\t]]/v.test(prompt)) throw new AgentCardError('the prompt holds control characters (only newlines and tabs)');
   return prompt;
 }
@@ -276,7 +279,7 @@ export function userCard(input: NewUserAgent, options: { origin?: UserCardOrigin
   if (!NAME.test(name)) throw new AgentCardError('the name is 2-40 lowercase letters, digits and -, starting with a letter');
   const description = oneLine(input.description, 'the description', MAX_DESCRIPTION);
   const permissions = parseUserPermissions(input.permissions);
-  const prompt = promptText(input.prompt);
+  const prompt = promptText(input.prompt, origin === 'agency' ? MAX_THIRD_PARTY_PROMPT : MAX_USER_PROMPT);
   const label = origin === 'agency' ? 'L0' : 'L1';
 
   const card = {
@@ -301,7 +304,7 @@ export function userCard(input: NewUserAgent, options: { origin?: UserCardOrigin
           '# While the card is in data/agents it stays at L1 and A1, with the tools',
           '# allowed to user cards, whatever is written here.',
         ].join('\n');
-  if (origin === 'agency' && !header.startsWith(AGENCY_CARD_MARK)) throw new AgentCardError('a card of agency-agents keeps its provenance');
+  if (origin === 'agency' && !THIRD_PARTY_CARD_MARKS.some((mark) => header.startsWith(mark))) throw new AgentCardError('a card from the catalog of agents keeps its provenance');
   const yaml = `${header}\n${stringifyYaml(card)}`;
   checkUserPermissions(parseAgentCard(parseYamlText(yaml, `${name}.yaml`), name), origin);
   return { name, yaml, md: `${prompt}\n` };

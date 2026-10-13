@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.88.0",
+  "version": "0.89.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -34,9 +34,9 @@
     "kb:capture": "node scripts/kb-capture.ts",
     "dev:codex": "node scripts/codex-dev.ts",
     "demo:container": "node scripts/demo-container.ts",
-    "agency:import": "node scripts/agency-import.ts",
     "design:catalog": "node scripts/design-catalog.ts",
     "skills:catalog": "node scripts/skills-catalog.ts",
+    "agents:catalog": "node scripts/agents-catalog.ts",
     "god:clone": "node scripts/god-clone.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",

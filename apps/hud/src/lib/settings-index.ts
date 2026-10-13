@@ -72,6 +72,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Testi pronti, scritti da altri, che gli agenti possono consultare: gli stili per il Designer e le skill, istruzioni per un lavoro preciso. Si scarica solo il testo, niente programmi.',
         example: 'segui la raccolta «anthropics/skills», poi nella scheda Skill del Coder assegna quella per la revisione del codice.',
       },
+      // The catalog of agents (D-079): roles from GitHub, right after the skills (choice of the user, 2026-10-13).
+      {
+        id: 'agents-catalog',
+        slug: 'catalogo-agenti',
+        title: 'Catalogo agenti',
+        behaviour: 'action',
+        lead: 'Ruoli pronti, scritti da altri, da sfogliare qui e presto da usare come punto di partenza in «+ Nuovo agente». Si scarica solo il testo dei ruoli e la licenza, niente programmi.',
+        example: 'segui «msitarzewski/agency-agents», premi «Scarica» e poi «Usa questa versione»: i suoi ruoli si possono sfogliare qui sotto.',
+      },
     ],
   },
   {

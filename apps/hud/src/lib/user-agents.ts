@@ -38,6 +38,33 @@ export interface UserAgentView {
   permissions: UserPermissions | null;
   /** `agency`: a card of agency-agents, which stays at L0. */
   origin: 'page' | 'agency';
+  /** A card made from a role of the catalog (D-079, tappa 4): its role against the version in use of its source. */
+  catalog?: CatalogLink;
+}
+
+export interface CatalogLink {
+  id: string;
+  /** `update`: the source changed the role since; `unfollowed`: the source is no longer followed; `missing`: the role left it. */
+  state: 'current' | 'update' | 'unfollowed' | 'waiting' | 'missing';
+  sha256: string;
+  latest?: { sha256: string; commit: string; committedAt: string | null };
+}
+
+export interface ReapplyDiffLine {
+  kind: 'context' | 'added' | 'removed';
+  text: string;
+}
+
+/** What adopting the role again would change (D-079, tappa 4). */
+export interface ReapplyProposal {
+  name: string;
+  confirmation: string;
+  active: boolean;
+  from: { commit: string; sha256: string };
+  to: { commit: string; sha256: string; committedAt: string | null };
+  diff: { added: number; removed: number; hunks: { oldStart: number; newStart: number; lines: ReapplyDiffLine[] }[] };
+  unlicensed: boolean;
+  expiresInMs: number;
 }
 
 /** What the user chooses within the ceiling (tappa T3b). */
@@ -60,6 +87,8 @@ export interface UserAgentSources {
     trifecta: CardSummary['trifecta'];
   };
   claudeTools: Record<string, string[]>;
+  /** Whether a card can be made from the catalog of agents (D-079); absent from an older core. */
+  catalog?: boolean;
 }
 
 export interface PermissionChange {
@@ -78,6 +107,31 @@ export interface AgentProposal {
   trifecta: CardSummary['trifecta'];
   cloud: { executor: 'claude'; briefMax: string; promptLabel: string; claudeTools: string[] } | null;
   expiresInMs: number;
+  /** A card from a role of the catalog of agents (D-079): where it comes from. */
+  catalog?: CatalogProposalInfo;
+}
+
+export interface CatalogProposalInfo {
+  id: string;
+  source: string;
+  page: string;
+  commit: string;
+  path: string;
+  name: string;
+  division: string;
+  license: string | null;
+  licenseFile: string | null;
+  /** No license at the root of the source: the page asks before creating. */
+  unlicensed: boolean;
+  preset: string;
+  suggestedName: string;
+}
+
+/** A new agent from a role (D-079): description and prompt come from the role, read again by the core. */
+export interface CatalogNewUserAgent {
+  from: { catalog: string };
+  name: string;
+  permissions: UserPermissions;
 }
 
 export interface UserAgentListing {
@@ -132,6 +186,16 @@ export const prepareUserAgent = async (input: NewUserAgent): Promise<AgentPropos
 /** Only from the confirmation of the page, with the id `prepareUserAgent` returned for this same input. */
 export const createUserAgent = async (input: NewUserAgent, confirmation: string | null): Promise<UserAgentView> =>
   (await call<{ agent: UserAgentView }>('POST', '/api/agents', { ...input, ...(confirmation === null ? {} : { confirmation }) })).agent;
+/** What the card of a role would be (D-079): nothing is written yet. */
+export const prepareCatalogAgent = async (input: CatalogNewUserAgent): Promise<AgentProposal> => (await call<{ proposal: AgentProposal }>('POST', '/api/agents/prepare', input)).proposal;
+/** Only from the confirmation of the page; `licenseAccepted` is the yes to a source without a license. */
+export const createCatalogAgent = async (input: CatalogNewUserAgent, confirmation: string | null, licenseAccepted: boolean): Promise<UserAgentView> =>
+  (await call<{ agent: UserAgentView }>('POST', '/api/agents', { ...input, ...(licenseAccepted ? { licenseAccepted: true } : {}), ...(confirmation === null ? {} : { confirmation }) })).agent;
+/** What adopting the role of a card again would change: nothing is written yet. */
+export const prepareReapply = async (name: string): Promise<ReapplyProposal> => (await call<{ reapply: ReapplyProposal }>('POST', path(name, 'reapply/prepare'))).reapply;
+/** Only from the confirmation of the page: the role of the version in use goes into the card, and the agent turns off. */
+export const reapplyAgent = async (name: string, confirmation: string, licenseAccepted: boolean): Promise<UserAgentView> =>
+  (await call<{ agent: UserAgentView }>('POST', path(name, 'reapply'), { confirmation, ...(licenseAccepted ? { licenseAccepted: true } : {}) })).agent;
 export const activateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'activate'))).agent;
 export const deactivateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'deactivate'))).agent;
 /** Only from the confirmation of the page: the L1/A1 ceiling is lifted. */

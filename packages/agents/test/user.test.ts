@@ -6,6 +6,8 @@ import { after, describe, it } from 'node:test';
 
 import {
   AGENCY_CARD_MARK,
+  MAX_THIRD_PARTY_PROMPT,
+  LEGACY_AGENCY_CARD_MARK,
   AgentCardError,
   checkUserCeiling,
   checkUserPermissions,
@@ -182,6 +184,10 @@ describe('userPresets and userCardOrigin', () => {
     assert.equal(userCardOrigin(`\uFEFF${AGENCY_CARD_MARK}: proposed.\nname: x\n`), 'agency');
     assert.equal(userCardOrigin('# Source: https://github.com/msitarzewski/agency-agents, commit abc\nname: x\n'), 'agency');
     assert.equal(userCardOrigin('# Created from the Agents page (D-119).\nname: x\n'), 'page');
+    // Cards proposed before the catalog of agents keep being a third party's (D-079, 2026-10-13).
+    assert.equal(userCardOrigin(`${LEGACY_AGENCY_CARD_MARK}: not active until the user approves it.\nname: x\n`), 'agency');
+    assert.equal(userCardOrigin(`# Source: https://github.com/someone/roles, commit ${'a'.repeat(40)}, file a/b.md\nname: x\n`), 'agency');
+    assert.equal(userCardOrigin('# Source: my notes\nname: x\n'), 'page');
     // Below the comments, the text is the card's, not its provenance.
     assert.equal(userCardOrigin('name: x\ndescription: pnpm agency:import\n'), 'page');
   });
@@ -230,6 +236,14 @@ describe('userCard', () => {
     assert.throws(() => userCard({ ...input, prompt: '   ' }), /prompt is empty/);
     assert.throws(() => userCard({ ...input, description: 'a\nb' }), /one line/);
     assert.throws(() => userCard({ ...input, prompt: 'x'.repeat(4001) }), /longer/);
+  });
+
+  it('a card of a third party keeps a role longer than a prompt of the page, up to the size of a role file', () => {
+    const header = `${AGENCY_CARD_MARK}: not active until the user approves it.`;
+    const agency = { origin: 'agency' as const, header };
+    assert.equal(userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(4001) }, agency).name, 'terzi');
+    assert.equal(userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(MAX_THIRD_PARTY_PROMPT) }, agency).name, 'terzi');
+    assert.throws(() => userCard({ ...input, name: 'terzi', prompt: 'x'.repeat(MAX_THIRD_PARTY_PROMPT + 1) }, agency), /longer/);
   });
 });
 

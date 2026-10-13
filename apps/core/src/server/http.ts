@@ -97,7 +97,7 @@ import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
-import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
+import { UserAgentError, type CatalogNewUserAgent, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
@@ -111,6 +111,8 @@ import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
 import { GodError } from '../god/work.ts';
 import type { SkillsCatalog } from '../skills-catalog.ts';
+import type { AgentsCatalog } from '../agents-catalog.ts';
+import { cleanBody } from '../git-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
@@ -220,6 +222,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** The catalog of agents (D-079): sources, download, adopt, discard, read a role; without it the routes answer 404. */
+  agentsCatalog?: AgentsCatalog;
   /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
   studioPptx?: PptxCodec;
   /** The examples of the styles written by Sonnet (I-20, D-185); without it the routes answer 404. */
@@ -1246,6 +1250,69 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
     }),
     route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
     route('GET', '/api/skills-catalog/skill', (_request, url) => Promise.resolve({ body: { skill: need().text(url.searchParams.get('id') ?? '') } })),
+  ];
+}
+
+/**
+ * The catalog of agents (D-079): the same steps as the skills, and the roles
+ * of the versions in use. A role's text is third-party data (L0), shown to
+ * the user as it is, its hidden characters out; nothing here makes a card.
+ */
+function agentsCatalogRoutes(catalog: AgentsCatalog | undefined): Route[] {
+  const need = (): AgentsCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  return [
+    route('GET', '/api/agents-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/agents-catalog/sources', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['url']);
+      return { status: 201, body: need().add(body.url) };
+    }),
+    route('POST', '/api/agents-catalog/remove', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().remove(body.source) };
+    }),
+    route('POST', '/api/agents-catalog/update', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { status: 202, body: need().update(body.source) };
+    }),
+    route('POST', '/api/agents-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source', 'commit']);
+      return { body: need().adopt(body.source, body.commit) };
+    }),
+    route('POST', '/api/agents-catalog/discard', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().discard(body.source) };
+    }),
+    route('GET', '/api/agents-catalog/agents', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/agents-catalog/agent', (_request, url) => {
+      const { id, source, entry, origin } = need().role(url.searchParams.get('id') ?? '');
+      return Promise.resolve({
+        body: {
+          agent: {
+            id,
+            source,
+            page: origin.repository,
+            commit: origin.commit,
+            path: entry.path,
+            sha256: entry.sha256,
+            division: entry.division,
+            name: entry.name,
+            description: entry.description,
+            emoji: entry.emoji ?? null,
+            license: origin.license.name,
+            licenseFile: origin.license.file,
+            text: cleanBody(entry.body),
+          },
+        },
+      });
+    }),
   ];
 }
 
@@ -3107,19 +3174,41 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
     route('GET', '/api/agents', () => answer(() => ({ body: need().list() }))),
     route('GET', '/api/agents/sources', () => answer(() => ({ body: need().sources() }))),
     // Tappa T3b: a card is written only as `prepare` showed it, with the confirmation id it returned.
+    // A role of the catalog of agents (D-079): only the role, a name, permissions and the yes to a missing license;
+    // description and prompt come from the role, read again by the core.
     route('POST', '/api/agents/prepare', async (request) => {
       const service = need();
       const body = await readJson(request);
+      if (Object.hasOwn(body, 'from')) {
+        onlyFields(body, ['from', 'name', 'permissions']);
+        return answer(() => ({ body: { proposal: service.prepareFromCatalog(body as unknown as CatalogNewUserAgent) } }));
+      }
       onlyFields(body, ['name', 'description', 'prompt', 'permissions']);
       return answer(() => ({ body: { proposal: service.prepareCreate(body as unknown as NewUserAgent) } }));
     }),
     route('POST', '/api/agents', async (request) => {
       const service = need();
       const body = await readJson(request);
+      if (Object.hasOwn(body, 'from')) {
+        onlyFields(body, ['from', 'name', 'permissions', 'licenseAccepted', 'confirmation']);
+        return answer(() => ({ status: 201, body: { agent: service.createFromCatalog(body as unknown as CatalogNewUserAgent) } }));
+      }
       onlyFields(body, ['name', 'description', 'prompt', 'permissions', 'confirmation']);
       return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as ConfirmedNewUserAgent) } }));
     }),
     route('GET', '/api/agents/:id/permissions', (_request, _url, params) => answer(() => ({ body: { agent: need().permissions(name(params)) } }))),
+    // A role of the catalog adopted again (D-079, tappa 4): what changes first, then only with that confirmation; the agent turns off.
+    route('POST', '/api/agents/:id/reapply/prepare', async (request, _url, params) => {
+      const service = need();
+      onlyFields(await readJson(request), []);
+      return answer(() => ({ body: { reapply: service.prepareReapply(name(params)) } }));
+    }),
+    route('POST', '/api/agents/:id/reapply', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['confirmation', 'licenseAccepted']);
+      return answer(() => ({ body: { agent: service.reapply(name(params), body) } }));
+    }),
     route('POST', '/api/agents/:id/activate', async (request, _url, params) => {
       const service = need();
       onlyFields(await readJson(request), []);
@@ -3541,6 +3630,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
+  table.push(...agentsCatalogRoutes(options.agentsCatalog));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();

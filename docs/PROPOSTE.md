@@ -71,10 +71,12 @@ Chiuse il 2026-10-11 da D-127 (GOD): clone dal repository locale dentro `repos/a
 ## D-079 — Catalogo "Agenzia" da agency-agents
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Accettata; dal 2026-10-13 «Catalogo agenti» con sorgenti GitHub
 - **Collegate:** D-034 (schede e trifecta), D-015 (taint e clearance), D-059 (codice pubblico in sola lettura), punto 12 di HANDOFF (caricamento differito e livelli di fiducia)
 
 > **Fatto il 2026-10-05 (prima parte, da confermare):** l'importatore a sola lettura di "Cosa si può costruire subito a basso rischio": `packages/agents/src/agency.ts`, `templates.ts`, `agency-catalog.ts`, `scripts/agency-import.ts` (`pnpm agency:import`), `config/agency.lock` (sha corto `8329468`, da completare al clone) e `packages/agents/test/agency.test.ts`. Nessuna scheda attivata, schema delle schede invariato (`prompt_trust` è la parte c), nessuna regola nuova in `labels.toml`. Il clone resta da fare all'utente (domanda 2); finché `config/agency.lock` ha lo sha corto l'importazione rifiuta e mostra lo sha completo della HEAD del clone da copiare nel lock. Le proposte non prendono il nome di una scheda attiva di `agents/` e non sovrascrivono una proposta esistente senza `--force`; ciò che viene dal catalogo è ripulito dai caratteri di controllo, invisibili e bidirezionali prima di essere stampato. Dettagli nella riga D-079 di `docs/DECISIONS.md`.
+
+> **Cambiato il 2026-10-13 (scelta dell'utente):** niente clone a mano né `config/agency.lock`. I punti (a), (b) ed (e) diventano il «Catalogo agenti»: sorgenti GitHub seguite come le skill di D-161 (fino a 100, agency-agents la prima suggerita), «Aggiorna» scarica solo i `.md` dei ruoli e la licenza in una cartella d'attesa, «Usa»/«Scarta» dopo il confronto, download in coda uno alla volta, tetti di ruoli e di disco. Una scheda adottata non cambia finché l'utente non la riadotta; la riadozione la spegne fino al nuovo rapporto di sicurezza. Una sorgente senza licenza chiede conferma e l'avviso resta nella scheda. Anteprima in `docs/mockups/catalogo-agenti.html`, disegno nella riga D-079 di `docs/DECISIONS.md`.
 
 ### Contesto
 

@@ -58,6 +58,7 @@ import { createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
 import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
+import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
@@ -130,7 +131,14 @@ if (Number.isInteger(restartAfter) && restartAfter > 0) {
 const config = loadConfig();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
 // The user's agents (D-119): the active ones join the map, under the L1/A1 ceiling.
-const userAgents = createUserAgents({ home: config.home, dataDir: config.paths.data, agents, official: new Set(agents.keys()) });
+// A card from a role of the catalog of agents (D-079) reads the role from the catalog, made further below.
+const userAgents = createUserAgents({
+  home: config.home,
+  dataDir: config.paths.data,
+  agents,
+  official: new Set(agents.keys()),
+  catalog: { role: (id) => agentsCatalog.role(id), adoptedRole: (page, path) => agentsCatalog.adoptedRole(page, path) },
+});
 // Only the name: the reason may quote a line of a card edited by hand; the Agents page shows it.
 for (const { name } of userAgents.load()) console.error(`user agent ${name} not loaded (see Impostazioni → Agenti)`);
 const app = await resolveLogin(config, 'app');
@@ -407,6 +415,16 @@ const skillsCatalog = createSkillsCatalog({
     return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
   },
   refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
+});
+// The catalog of agents (D-079): role files of the GitHub repositories the user follows, as text
+// in data/catalogs/agents, downloaded one at a time only when the user presses the button. A role
+// becomes an agent only through a disabled card the user confirms; its text stays L0 third-party data.
+const agentsCatalog = createAgentsCatalog({
+  dir: join(config.paths.data, 'catalogs'),
+  gateway: catalogGateway('settings:agents-catalog', 'github.com: catalogo di agenti'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
 });
 const orchestrator = createOrchestrator({
   sql,
@@ -801,6 +819,7 @@ const server = await startApiServer({
   services,
   designCatalog,
   skillsCatalog,
+  agentsCatalog,
   styleExamples,
   skillTranslations,
   // Without the adapter no delegation runs: the selector offers nothing.

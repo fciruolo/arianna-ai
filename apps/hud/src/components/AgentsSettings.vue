@@ -11,7 +11,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
-import { agentEntries, changedAgents, filterEntries, lengthText, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
+import { dayText } from '../lib/design-catalog.ts';
+import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName } from '../lib/italian.ts';
 import { MODEL_TEXT } from '../lib/labels.ts';
 import {
@@ -43,12 +44,15 @@ import {
   loadUserAgentPrompt,
   MAX_USER_PROMPT,
   permissionLines,
+  prepareReapply,
   prepareUserAgentEdit,
   promoteUserAgent,
+  reapplyAgent,
   UserAgentApiError,
   userAgentErrorText,
   workText,
   type AgentProposal,
+  type ReapplyProposal,
   type UserAgentEdit,
   type UserAgentListing,
   type UserAgentSources,
@@ -137,12 +141,71 @@ function nameOf(id: string): string {
 
 const query = ref('');
 const filter = ref<AgentFilter>('all');
-const FILTERS: { id: AgentFilter; text: string }[] = [
+// «Tieni la versione di adesso» (D-079, tappa 4): remembered in this browser only, per agent and newer role.
+const KEPT_KEY = 'arianna.agents.kept-versions';
+function readKept(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(KEPT_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+const keptVersions = ref<Record<string, string>>(readKept());
+const isKept = (agent: string, sha256: string): boolean => keptVersions.value[agent] === sha256;
+function keepVersion(agent: string, sha256: string): void {
+  keptVersions.value = { ...keptVersions.value, [agent]: sha256 };
+  try {
+    window.localStorage.setItem(KEPT_KEY, JSON.stringify(keptVersions.value));
+  } catch {
+    // Not remembered: the badge comes back at the next visit.
+  }
+}
+const updates = computed(() => entries.value.filter((entry) => needsUpdate(entry, isKept)).length);
+const FILTERS = computed((): { id: AgentFilter; text: string }[] => [
   { id: 'all', text: 'Tutti' },
   { id: 'on', text: 'Attivi' },
   { id: 'off', text: 'Spenti' },
-];
-const visible = computed(() => filterEntries(entries.value, query.value, filter.value, nameOf));
+  ...(updates.value > 0 || filter.value === 'update' ? [{ id: 'update' as const, text: `Da aggiornare · ${String(updates.value)}` }] : []),
+]);
+const visible = computed(() => filterEntries(entries.value, query.value, filter.value, nameOf, isKept));
+
+// Adopting a role again (D-079, tappa 4): the lines that change, then the confirmation; the agent turns off.
+const reapplying = ref<{ name: string; proposal: ReapplyProposal; licenseAccepted: boolean } | null>(null);
+const reapplyError = ref('');
+const reapplyBusy = ref(false);
+async function openReapply(name: string): Promise<void> {
+  if (reapplyBusy.value) return;
+  reapplyBusy.value = true;
+  reapplyError.value = '';
+  try {
+    reapplying.value = { name, proposal: await prepareReapply(name), licenseAccepted: false };
+  } catch (cause) {
+    reapplyError.value = userAgentErrorText(cause);
+  } finally {
+    reapplyBusy.value = false;
+  }
+}
+async function confirmReapply(): Promise<void> {
+  const shown = reapplying.value;
+  if (shown === null || reapplyBusy.value) return;
+  reapplyBusy.value = true;
+  reapplyError.value = '';
+  try {
+    await reapplyAgent(shown.name, shown.proposal.confirmation, shown.licenseAccepted);
+    reapplying.value = null;
+    notice.value = `${nameOf(shown.name)} ha il ruolo nuovo ed è spento: riaccendilo quando hai riletto il testo.`;
+    delete texts.value[shown.name];
+    await load();
+    void loadTexts(shown.name);
+    emit('changed');
+  } catch (cause) {
+    reapplyError.value = userAgentErrorText(cause);
+  } finally {
+    reapplyBusy.value = false;
+  }
+}
 const groups = computed(() => [
   { id: 'official', title: 'Ufficiali', items: visible.value.filter((entry) => entry.official) },
   { id: 'mine', title: 'I miei', items: visible.value.filter((entry) => !entry.official) },
@@ -311,7 +374,9 @@ async function saveAll(): Promise<void> {
     for (const name of changedTexts.value) {
       const draft = texts.value[name];
       if (!draft) continue;
-      const edit: UserAgentEdit = { description: draft.description.trim(), prompt: draft.prompt };
+      // The prompt of a role of the catalog is never sent back: it stays the third party's text as written.
+      const agency = listing.value?.user.find((agent) => agent.name === name)?.origin === 'agency';
+      const edit: UserAgentEdit = agency ? { description: draft.description.trim() } : { description: draft.description.trim(), prompt: draft.prompt };
       const proposal = await prepareUserAgentEdit(name, edit);
       // A text that changes what the card allows (its label): the window of the permissions saves it.
       if (proposal.confirmation !== null) {
@@ -335,7 +400,8 @@ async function saveAll(): Promise<void> {
 }
 function textsSaved(name: string, edit: UserAgentEdit): void {
   const draft = texts.value[name];
-  if (draft && edit.description !== undefined && edit.prompt !== undefined) texts.value[name] = { ...draft, savedDescription: edit.description, savedPrompt: edit.prompt };
+  // A role of the catalog sends no prompt: the one saved stays.
+  if (draft && edit.description !== undefined) texts.value[name] = { ...draft, savedDescription: edit.description, savedPrompt: edit.prompt ?? draft.savedPrompt };
   void load();
   emit('changed');
 }
@@ -524,7 +590,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             >
               <span class="row-span-2"><PixelAgent :choice="previewOf(entry.id)" pose="idle" :scale="1" :version="sheetVersion" /></span>
               <span class="truncate text-[14.5px] font-semibold">
-                {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span>
+                {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span><span v-if="needsUpdate(entry, isKept)" class="text-warn" title="Aggiornamento disponibile del ruolo" aria-label="aggiornamento disponibile"> ●</span>
               </span>
               <span class="truncate text-[13px] text-muted">{{ entry.on ? '' : 'spento · ' }}{{ entry.where === 'cloud' ? 'con Claude' : 'sul Mac' }}</span>
             </button>
@@ -574,6 +640,9 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             <template v-if="current.view">
               <span class="pill">{{ permissionWords(current.view.card).sees }}</span>
               <span class="pill">{{ permissionWords(current.view.card).can }}</span>
+              <span v-if="current.view.catalog" class="pill">Dal catalogo</span>
+              <span v-if="needsUpdate(current, isKept)" class="pill border-warn/60 bg-warn/10 text-warn">● Aggiornamento disponibile</span>
+              <span v-else-if="catalogStateText(current.view.catalog?.state)" class="pill">{{ catalogStateText(current.view.catalog?.state)?.badge }}</span>
             </template>
             <label class="ml-auto flex items-center gap-2 text-[14px]" :title="current.official ? (current.id === 'arianna' ? 'Arianna è sempre attiva' : 'Gli agenti ufficiali sono sempre attivi') : undefined">
               {{ current.on ? 'Attivo' : 'Spento' }}
@@ -592,6 +661,25 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
         </div>
       </section>
 
+      <!-- The role of this agent changed in its source (D-079, tappa 4): kept as it is until the user adopts it again -->
+      <section v-if="current.view?.catalog && needsUpdate(current, isKept)" class="flex flex-col gap-2.5 rounded-xl border border-warn/60 bg-surface-2 p-4">
+        <h3 class="text-[16px] font-semibold">Il ruolo è cambiato nella sua raccolta</h3>
+        <p class="text-[14px] text-muted">
+          La raccolta {{ current.view.catalog.id.split('/').slice(0, 2).join('/') }} ha una versione nuova di questo ruolo<template v-if="current.view.catalog.latest?.committedAt">
+            (versione del {{ dayText(current.view.catalog.latest.committedAt) }})</template
+          >. L’agente lavora ancora con il testo di prima e continua così finché non lo riadotti; nome, personaggio, permessi e modello non cambiano.
+        </p>
+        <p v-if="reapplyError && !reapplying" class="text-[13px] text-danger" role="alert">{{ reapplyError }}</p>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="keepVersion(current.id, current.view.catalog.latest?.sha256 ?? '')">Tieni la versione di adesso</button>
+          <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="reapplyBusy" @click="openReapply(current.id)">Riadotta…</button>
+        </div>
+        <p class="text-[12.5px] text-muted">«Tieni la versione di adesso» nasconde l’avviso in questo browser fino alla prossima versione del ruolo.</p>
+      </section>
+      <section v-else-if="current.view?.catalog && catalogStateText(current.view.catalog.state)" class="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 p-4 text-[14px]">
+        <h3 class="text-[16px] font-semibold">{{ catalogStateText(current.view.catalog.state)?.title }}</h3>
+        <p class="text-muted">{{ catalogStateText(current.view.catalog.state)?.text }}</p>
+      </section>
       <p v-if="error && !promoting && !demoting && !deleting && !confirming" class="text-[13px] text-danger" role="alert">{{ error }}</p>
       <p v-if="notice" class="text-[13px] text-ok" role="status">{{ notice }}</p>
 
@@ -824,7 +912,15 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             <FormField :id="`desc-${current.id}`" label="Descrizione" hint="Una riga: Arianna la legge per scegliere a chi passare un lavoro." :span="6">
               <input :id="`desc-${current.id}`" v-model="texts[current.id]!.description" :class="INPUT" maxlength="200" />
             </FormField>
-            <FormField :id="`prompt-${current.id}`" label="Prompt" :hint="`Le istruzioni dell’agente. ${lengthText(texts[current.id]!.prompt.length, MAX_USER_PROMPT)}.`" :span="6">
+            <!-- A role of the catalog (D-079): its text is a third party's, with provenance and license; it changes only by adopting the role again -->
+            <div v-if="current.view?.origin === 'agency'" class="flex flex-col gap-1.5 sm:col-span-6">
+              <p class="text-[14px] font-medium">Prompt</p>
+              <p class="rounded-[8px] border border-warn/50 bg-warn/10 px-2.5 py-1.5 text-[13px]">
+                Testo di terzi preso dal catalogo agenti, con la sua provenienza e la sua licenza: qui si legge e basta. Arianna lo dà all’agente fra due marcatori, come dato.
+              </p>
+              <pre class="max-h-[320px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ texts[current.id]!.prompt }}</pre>
+            </div>
+            <FormField v-else :id="`prompt-${current.id}`" label="Prompt" :hint="`Le istruzioni dell’agente. ${lengthText(texts[current.id]!.prompt.length, MAX_USER_PROMPT)}.`" :span="6">
               <textarea :id="`prompt-${current.id}`" v-model="texts[current.id]!.prompt" rows="8" :class="INPUT" :maxlength="MAX_USER_PROMPT" />
             </FormField>
             <p class="text-[13px] text-muted sm:col-span-6">
@@ -865,6 +961,52 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
         @cancel="undo"
         @save="saveAll"
       />
+    </div>
+
+    <!-- Adopting a role again (D-079, tappa 4): the lines that change, then the user's click; the agent turns off -->
+    <div v-if="reapplying" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="reapply-title">
+      <div class="flex max-h-[90vh] w-full max-w-2xl flex-col gap-3 overflow-auto rounded-xl border border-line-strong bg-surface-2 p-4">
+        <h2 id="reapply-title" class="text-[16px] font-semibold">Riadottare il ruolo di {{ nameOf(reapplying.name) }}?</h2>
+        <p class="text-[14px]">
+          Il testo del ruolo diventa quello della versione in uso della raccolta<template v-if="reapplying.proposal.to.committedAt"> (del {{ dayText(reapplying.proposal.to.committedAt) }})</template>:
+          <span class="text-ok">+{{ reapplying.proposal.diff.added }}</span> <span class="text-danger">−{{ reapplying.proposal.diff.removed }}</span> righe.
+        </p>
+        <div class="max-h-[300px] overflow-auto rounded-[8px] border border-line bg-surface font-mono text-[12.5px] leading-[1.55]" aria-label="Righe che cambiano">
+          <div
+            v-for="(row, index) in diffRows(reapplying.proposal.diff.hunks)"
+            :key="index"
+            class="px-2.5 whitespace-pre-wrap"
+            :class="row.kind === 'added' ? 'bg-ok/12' : row.kind === 'removed' ? 'bg-danger/10 line-through decoration-danger/50' : 'text-muted'"
+          >
+            <span v-if="row.kind === 'added'" class="sr-only">aggiunta: </span><span v-else-if="row.kind === 'removed'" class="sr-only">tolta: </span>{{ row.kind === 'added' ? '+ ' : row.kind === 'removed' ? '− ' : '  ' }}{{ row.text }}
+          </div>
+        </div>
+        <ul class="list-disc pl-5 text-[14px]">
+          <li>Nome, descrizione, personaggio, permessi e modello restano i tuoi.</li>
+          <li>Il testo di prima va in <span class="font-mono text-[12.5px]">data/agents/eliminati</span>: lo puoi rileggere.</li>
+          <li>
+            L’agente {{ reapplying.proposal.active ? 'si spegne' : 'resta spento' }} e resta spento finché non lo riaccendi tu: rileggi il testo nuovo nella scheda «Scheda e prompt» prima di farlo. Un controllo
+            automatico del testo prima dell’accensione non c’è ancora.
+          </li>
+        </ul>
+        <div v-if="reapplying.proposal.unlicensed" class="flex flex-col gap-1.5 rounded-[10px] border border-warn/60 bg-warn/10 p-3 text-[13px]" role="alert">
+          <p class="font-semibold">La raccolta ora non ha una licenza alla radice</p>
+          <p>Senza licenza i diritti sul testo restano ai suoi autori: usarlo è una scelta tua, e l’avviso resta scritto nella scheda.</p>
+          <label class="flex items-start gap-2"><input v-model="reapplying.licenseAccepted" type="checkbox" class="mt-0.5" />Ho letto l’avviso e voglio usare comunque questo testo</label>
+        </div>
+        <p v-if="reapplyError" class="text-[13px] text-danger" role="alert">{{ reapplyError }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="reapplyBusy" @click="reapplying = null; reapplyError = ''">Annulla</button>
+          <button
+            type="button"
+            class="btn btn-primary px-2.5 py-1 text-[13px]"
+            :disabled="reapplyBusy || (reapplying.proposal.unlicensed && !reapplying.licenseAccepted)"
+            @click="confirmReapply"
+          >
+            {{ reapplying.proposal.active ? 'Riadotta e spegni' : 'Riadotta' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Promotion: what changes, then the user's click -->
