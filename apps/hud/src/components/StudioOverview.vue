@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { listMockups } from '../lib/api.ts';
+import { ApiError, listMockups } from '../lib/api.ts';
 import { allotThumbs, overviewOf, overviewText, THUMBS_MAX, type ProjectOverview } from '../lib/studio-overview.ts';
 import type { ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -33,8 +33,10 @@ watch(
         (list) => {
           if (mine === token) overviews.value = { ...overviews.value, [name]: overviewOf(list.files) };
         },
-        () => {
-          if (mine === token) overviews.value = { ...overviews.value, [name]: 'Non riesco a leggere i mockup' };
+        (cause: unknown) => {
+          // 404: the project is registered but its folder is not there.
+          const reason = cause instanceof ApiError && cause.status === 404 ? 'Cartella del progetto non trovata' : 'Non riesco a leggere i mockup';
+          if (mine === token) overviews.value = { ...overviews.value, [name]: reason };
         },
       );
     }
