@@ -86,9 +86,9 @@ const CATALOG: Record<string, (details: Details) => FailureText> = {
     steps: ['Per continuare premi «Riprendi» nella pagina GOD, oppure scrivi un messaggio in questa chat.'],
   }),
   'engine.lock-expired': () => ({
-    title: 'Il nucleo si è fermato mentre lavorava',
-    explanation: 'Il processo che eseguiva il task si è interrotto più volte (riavvio, arresto o crollo del nucleo).',
-    steps: ['Controlla che il nucleo sia avviato (pnpm start) e che non si riavvii da solo.', RETRY],
+    title: 'Arianna si è fermata mentre lavorava',
+    explanation: 'Il processo che eseguiva il task si è interrotto più volte (riavvio, arresto o crollo di Arianna).',
+    steps: ['Controlla che Arianna sia avviata (pnpm start) e che non si riavvii da sola.', RETRY],
   }),
   'engine.step-failed': (details) => ({
     title: 'Il passo non è riuscito',

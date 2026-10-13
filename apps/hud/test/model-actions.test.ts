@@ -173,7 +173,7 @@ describe('actionErrorText', () => {
   });
 
   it('anything else as the other errors of the chat', () => {
-    assert.equal(actionErrorText(new TypeError('fetch failed')), 'Il nucleo non risponde: controlla che sia avviato.');
+    assert.equal(actionErrorText(new TypeError('fetch failed')), 'Arianna non risponde: controlla che sia avviata.');
     assert.equal(actionErrorText(new ApiError(400, 'something new')), 'Richiesta non valida.');
   });
 });

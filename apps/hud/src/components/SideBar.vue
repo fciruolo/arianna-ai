@@ -137,7 +137,7 @@ function itemClass(on: boolean): string {
       <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-surface-2" title="Torna alla chat" @click="emit('home')">
         <span class="font-hud text-[17px] leading-none font-semibold tracking-[0.08em] uppercase">Arianna</span>
       </button>
-      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[12px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
+      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[12px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata ad Arianna' : 'Riconnessione in corso'">
         <span class="size-[7px] rounded-full" :class="live === 'open' ? 'bg-ok shadow-[0_0_8px_var(--ok)]' : 'animate-hud-blink bg-warn'" />
         {{ live === 'open' ? 'IN LINEA' : 'RICONN.' }}
       </span>

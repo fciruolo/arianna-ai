@@ -188,7 +188,7 @@ async function load(): Promise<void> {
   try {
     view.value = await loadSettings();
     if (view.value.values === null) problem.value = { text: `Non leggo le regole: ${view.value.error ?? 'il file arianna.toml non si legge'}.`, retry: 'load' };
-    else if (view.value.values.projectRules === undefined) problem.value = { text: 'Il nucleo in esecuzione non conosce ancora le regole dei progetti: riavvialo.', retry: 'load' };
+    else if (view.value.values.projectRules === undefined) problem.value = { text: 'La versione di Arianna in esecuzione non conosce ancora le regole dei progetti: riavviala.', retry: 'load' };
     fill();
   } catch (error) {
     problem.value = { text: `Non leggo le regole: ${error instanceof Error ? error.message : 'errore'}.`, retry: 'load' };

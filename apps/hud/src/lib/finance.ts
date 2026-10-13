@@ -424,7 +424,7 @@ export function rejectText(code: string): string {
  */
 export function financeErrorText(cause: unknown): string {
   if (!(cause instanceof ApiError)) {
-    return cause instanceof TypeError ? 'Il nucleo non risponde: controlla che sia avviato.' : 'Errore imprevisto.';
+    return cause instanceof TypeError ? 'Arianna non risponde: controlla che sia avviata.' : 'Errore imprevisto.';
   }
   const known = IMPORT_ERROR_TEXT[cause.message];
   if (known !== undefined) {
@@ -432,10 +432,10 @@ export function financeErrorText(cause: unknown): string {
     return typeof line === 'number' ? `${known.replace(/\.$/, '')} (riga ${String(line)}).` : known;
   }
   if (cause.status === 413) return IMPORT_ERROR_TEXT['too-large'] ?? '';
-  if (cause.status === 404) return 'Non trovato: forse il nucleo non ha ancora le Finanze, o l’elemento è stato tolto. Aggiorna e riavvia il nucleo.';
+  if (cause.status === 404) return 'Non trovato: forse questa versione di Arianna non ha ancora le Finanze, o l’elemento è stato tolto. Aggiorna e riavvia Arianna.';
   if (cause.status === 409) return 'C’è già un elemento con questi dati.';
-  if (cause.status === 403) return 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
-  if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
+  if (cause.status === 403) return 'Arianna ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
+  if (cause.status >= 500) return 'Errore di Arianna: riprova fra poco.';
   return 'Richiesta non valida.';
 }
 

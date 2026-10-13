@@ -97,13 +97,13 @@ export function isMockupPath(path: string): boolean {
 
 /** The error of a call of the Studio, in Italian. */
 export function studioErrorText(cause: unknown): string {
-  if (!(cause instanceof ApiError)) return cause instanceof TypeError ? 'Il nucleo non risponde: controlla che sia avviato.' : 'Errore imprevisto.';
-  if (cause.status === 404) return 'Non trovato: il progetto non è fra quelli approvati, il file non c’è più, o il nucleo non ha ancora lo Studio.';
-  if (cause.status === 403) return 'Il nucleo ha rifiutato: il file è fuori dalla cartella dei mockup, è nascosto o contiene un valore protetto.';
+  if (!(cause instanceof ApiError)) return cause instanceof TypeError ? 'Arianna non risponde: controlla che sia avviata.' : 'Errore imprevisto.';
+  if (cause.status === 404) return 'Non trovato: il progetto non è fra quelli approvati, il file non c’è più, o questa versione di Arianna non ha ancora lo Studio.';
+  if (cause.status === 403) return 'Arianna ha rifiutato: il file è fuori dalla cartella dei mockup, è nascosto o contiene un valore protetto.';
   if (cause.status === 409) return 'Il file è cambiato nel frattempo (forse l’ha riscritto il Designer): lo ricarico, rifai la modifica.';
   if (cause.status === 413) return 'Il file è troppo grande per lo Studio (al massimo 2 MiB).';
   if (cause.status === 400) return 'Richiesta non valida.';
-  if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
+  if (cause.status >= 500) return 'Errore di Arianna: riprova fra poco.';
   return 'Richiesta non riuscita.';
 }
 

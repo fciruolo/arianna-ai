@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Chat: i messaggi d'errore e gli avvisi dicono «Arianna» invece di «nucleo» («Arianna non risponde: controlla che sia avviata.», «Errore di Arianna: riprova fra poco.»); un test controlla che la parola non torni (D-192).
+
 ## [0.85.3] - 2026-10-13
 
 ### Cambiato

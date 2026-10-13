@@ -110,8 +110,8 @@ test('errors of the API in Italian, with the line when the core gives it', () =>
   assert.equal(financeErrorText(new ApiError(400, 'xls')), IMPORT_ERROR_TEXT.xls);
   assert.equal(financeErrorText(new ApiError(400, 'unterminated-quote', { error: 'unterminated-quote', line: 12 })), 'Nel CSV c’è una cella fra virgolette che non viene mai chiusa (riga 12).');
   assert.equal(financeErrorText(new ApiError(413, 'HTTP 413')), IMPORT_ERROR_TEXT['too-large']);
-  assert.match(financeErrorText(new ApiError(404, 'not found')), /nucleo non ha ancora le Finanze/);
-  assert.equal(financeErrorText(new TypeError('fetch failed')), 'Il nucleo non risponde: controlla che sia avviato.');
+  assert.match(financeErrorText(new ApiError(404, 'not found')), /Arianna non ha ancora le Finanze/);
+  assert.equal(financeErrorText(new TypeError('fetch failed')), 'Arianna non risponde: controlla che sia avviata.');
   assert.equal(financeErrorText(new ApiError(400, 'something else')), 'Richiesta non valida.');
 });
 

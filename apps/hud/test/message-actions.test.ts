@@ -71,7 +71,7 @@ test('other answers are failures with an Italian reason', () => {
     kind: 'failed',
     text: 'La cartella kb/inbox è sopra Privato: la nota non è stata salvata.',
   });
-  assert.deepEqual(captureOutcome(500, {}), { kind: 'failed', text: 'Errore del nucleo: riprova fra poco.' });
+  assert.deepEqual(captureOutcome(500, {}), { kind: 'failed', text: 'Errore di Arianna: riprova fra poco.' });
 });
 
 test('saveMessage posts JSON to /api/capture and reads the answer', async () => {
@@ -99,7 +99,7 @@ test('saveMessage does not call the core for an L3 message', async () => {
 
 test('saveMessage reports a core that does not answer', async () => {
   const down: Fetcher = () => Promise.reject(new TypeError('fetch failed'));
-  assert.deepEqual(await saveMessage(message, down), { kind: 'failed', text: 'Il nucleo non risponde: controlla che sia avviato.' });
+  assert.deepEqual(await saveMessage(message, down), { kind: 'failed', text: 'Arianna non risponde: controlla che sia avviata.' });
 });
 
 test('loadSaved reads the saved messages of a conversation, with the names the core gives, and its whole note', async () => {

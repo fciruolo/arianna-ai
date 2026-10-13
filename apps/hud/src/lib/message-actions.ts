@@ -22,7 +22,7 @@ export const COPY_HINT = 'Copia il testo del messaggio così come è stato scrit
  * message that no longer exists and when it has no capture configured; the
  * page does not tell them apart by the English text, so the sentence covers both.
  */
-export const MESSAGE_GONE_TEXT = 'Il messaggio non c’è più, o il nucleo non salva note: non l’ho salvato.';
+export const MESSAGE_GONE_TEXT = 'Il messaggio non c’è più, o questa versione di Arianna non salva note: non l’ho salvato.';
 
 /** What the page sends to POST /api/capture: the text is read by the core from the message itself. */
 export interface MessageCapture {
