@@ -712,7 +712,7 @@ export function driftYaw(yaw: number, dt: number, weight: number): number {
   return wrapAngle(yaw + (Math.max(0, Math.min(dt, 100)) / 1000) * DRIFT_SPEED * Math.min(1, weight));
 }
 
-/** The view the page shows: remembered in this browser, 2D unless 3D was chosen. */
+/** The view the page shows: remembered in this browser, 3D unless 2D was chosen (D-104). */
 export function readViewMode(stored: string | null | undefined): '2d' | '3d' {
-  return stored === '3d' ? '3d' : '2d';
+  return stored === '2d' ? '2d' : '3d';
 }

@@ -141,7 +141,7 @@ const themeDark = ref(true);
 const darkChoice = ref(false);
 const mode = computed(() => sceneMode(themeDark.value, darkChoice.value));
 const DARK_KEY = 'arianna.knowledge.dark';
-/** "2d" or "3d" (D-104): a convenience of this browser (localStorage). */
+/** "2d" or "3d" (D-104, 3D when nothing is stored): a convenience of this browser (localStorage). */
 const VIEW_KEY = 'arianna.knowledge.view';
 const view3d = ref(false);
 /** The instructions of the 3D behind «?» (D-194): closed when the page opens. */
@@ -330,7 +330,8 @@ function loadViewChoice(): boolean {
   try {
     return readViewMode(window.localStorage.getItem(VIEW_KEY)) === '3d';
   } catch {
-    return false;
+    // Private window or blocked storage: the default view.
+    return readViewMode(null) === '3d';
   }
 }
 

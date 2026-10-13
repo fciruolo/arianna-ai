@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Conoscenza: il grafo si apre in 3D; chi ha scelto il 2D lo ritrova com'era (D-104).
+
 ## [0.85.3] - 2026-10-13
 
 ### Cambiato
