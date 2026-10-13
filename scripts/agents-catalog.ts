@@ -32,6 +32,7 @@ const catalog = createAgentsCatalog({
 });
 
 const MIB = 1024 * 1024;
+const count = (value: number, one: string, many: string): string => `${String(value)} ${value === 1 ? one : many}`;
 
 /** The divisions of the roles in use, with how many each. */
 function divisionsOf(source: string): string {
@@ -54,14 +55,14 @@ function print(status: AgentsStatus): void {
     console.log(`${source.page} — ${safe(license)}`);
     if (source.adopted === null) console.log('  In uso: nessuna versione (non ancora scaricata)');
     else {
-      console.log(`  In uso: commit ${source.adopted.commit.slice(0, 12)} del ${source.adopted.committedAt ?? '?'}, ${String(source.adopted.roles)} ruoli in ${String(source.adopted.divisions)} divisioni`);
+      console.log(`  In uso: commit ${source.adopted.commit.slice(0, 12)} del ${source.adopted.committedAt ?? '?'}, ${count(source.adopted.roles, 'ruolo', 'ruoli')} in ${count(source.adopted.divisions, 'divisione', 'divisioni')}`);
       const divisions = divisionsOf(source.id);
       if (divisions !== '') console.log(`    ${divisions}`);
       if (source.adopted.rejected > 0) console.log(`    ${String(source.adopted.rejected)} file scartati`);
     }
     if (source.pending !== null) {
       const { diff } = source.pending;
-      console.log(`  In attesa: commit ${source.pending.commit.slice(0, 12)}, ${String(source.pending.roles)} ruoli (${String(source.pending.rejected)} file scartati)`);
+      console.log(`  In attesa: commit ${source.pending.commit.slice(0, 12)}, ${count(source.pending.roles, 'ruolo', 'ruoli')} (${String(source.pending.rejected)} file scartati)`);
       console.log(`    ${String(diff.added)} nuovi, ${String(diff.changed)} modificati, ${String(diff.removed)} tolti`);
       console.log(`    pnpm agents:catalog adopt ${source.page} per usarla, discard per scartarla`);
     }

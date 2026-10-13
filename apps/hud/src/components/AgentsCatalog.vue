@@ -19,7 +19,7 @@ import {
   removeAgentSource,
   updateAgentSource,
 } from '../lib/api.ts';
-import { agentsErrorText, divisionCounts, filterRoles, roleLicenseText, shouldPollAgents, spaceText, type AgentRoleListing, type AgentRoleText, type AgentsStatus } from '../lib/agents-catalog.ts';
+import { agentsErrorText, divisionCounts, filterRoles, limitsText, roleLicenseText, shouldPollAgents, type AgentRoleListing, type AgentRoleText, type AgentsStatus } from '../lib/agents-catalog.ts';
 import { agentSourceRow } from '../lib/source-list.ts';
 import SettingsCard from './SettingsCard.vue';
 import SourceList from './SourceList.vue';
@@ -156,7 +156,7 @@ async function choose(id: string): Promise<void> {
       @discard="(id) => act(id, () => discardAgentSource(id))"
     />
     <p v-if="status && status.sources.length > 0" class="text-[13px] text-muted">
-      {{ status.limits.sources }} raccolte su {{ status.limits.maxSources }} · spazio {{ spaceText(status.limits.bytes, status.limits.maxBytes) }}. Ogni ruolo resta con la licenza della sua
+      {{ limitsText(status.limits) }}. Ogni ruolo resta con la licenza della sua
       raccolta: la scheda di un agente la riporta sempre.
     </p>
 

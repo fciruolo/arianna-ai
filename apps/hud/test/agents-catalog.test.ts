@@ -10,9 +10,11 @@ import {
   agentSourceButtonText,
   agentSourceSummaryText,
   divisionCounts,
+  limitsText,
   filterRoles,
   roleChangesText,
   roleLicenseText,
+  rolesText,
   shouldPollAgents,
   spaceText,
   type AgentRoleSummary,
@@ -74,6 +76,16 @@ describe('a source', () => {
     assert.equal(roleChangesText({ ...none, added: 12, changed: 3, removed: 1 }), '+12 ruoli, 3 modificati, 1 tolto');
     assert.equal(roleChangesText({ ...none, added: 1 }), '+1 ruolo, 0 modificati, 0 tolti');
     assert.equal(spaceText(13_002_000, 512 * 1024 * 1024), '12,4 MiB su 512 MiB');
+    // One is singular, every count (D-079, prova della tappa 2).
+    assert.equal(limitsText({ sources: 1, maxSources: 100, bytes: 0, maxBytes: 512 * 1024 * 1024 }), '1 raccolta su 100 · spazio 0 MiB su 512 MiB');
+    assert.equal(limitsText({ sources: 3, maxSources: 100, bytes: 0, maxBytes: 512 * 1024 * 1024 }), '3 raccolte su 100 · spazio 0 MiB su 512 MiB');
+    assert.equal(rolesText(1, 1), '1 ruolo in 1 divisione');
+    assert.equal(rolesText(259, 16), '259 ruoli in 16 divisioni');
+    assert.match(agentSourceSummaryText(source({ adopted: { ...version, roles: 1, divisions: 1, adoptedAt: null } })), /^1 ruolo in 1 divisione · /);
+    assert.match(agentSourceRow(source({ pending: { ...version, roles: 1, divisions: 1, diff: none } })).pending?.title ?? '', /, 1 ruolo in 1 divisione$/);
+    // The day of a version is the day of its commit, never of the download or of the adoption.
+    const dated = agentSourceSummaryText(source({ adopted: { ...version, committedAt: '2026-10-07T09:00:00Z', fetchedAt: '2026-10-13T12:00:00Z', adoptedAt: '2026-10-13T12:05:00Z' } }));
+    assert.match(dated, /versione del 7 ottobre 2026$/);
   });
 });
 

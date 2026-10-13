@@ -10,6 +10,7 @@ import {
   agentSourceButtonText,
   agentSourceSummaryText,
   roleChangesText,
+  rolesText,
   type AgentSource,
 } from './agents-catalog.ts';
 import { versionText } from './design-catalog.ts';
@@ -109,7 +110,7 @@ export function agentSourceRow(source: AgentSource): SourceRow {
     const { diff } = source.pending;
     row.pending = {
       commit: source.pending.commit,
-      title: `${source.adopted === null ? 'Scaricata' : 'Versione nuova'}: ${versionText(source.pending.committedAt)}, ${String(source.pending.roles)} ruoli in ${String(source.pending.divisions)} divisioni`,
+      title: `${source.adopted === null ? 'Scaricata' : 'Versione nuova'}: ${versionText(source.pending.committedAt)}, ${rolesText(source.pending.roles, source.pending.divisions)}`,
       changes: roleChangesText(diff),
       ...(source.adopted !== null && diff.changed > 0 ? { warn: 'Gli agenti nati da un ruolo modificato non cambiano: dopo «Usa» potrai riadottarli uno per uno.' } : {}),
       ...(source.pending.rejected > 0 ? { rejected: `${String(source.pending.rejected)} file scartati (documenti senza intestazione, nomi insoliti, troppo grandi o fuori dalle divisioni)` } : {}),

@@ -115,7 +115,17 @@ export function agentLicenseText(source: AgentSource): { text: string; warn: boo
 export function agentSourceSummaryText(source: AgentSource): string {
   if (source.adopted === null) return 'non ancora scaricata';
   const day = dayText(source.adopted.committedAt);
-  return `${plural(source.adopted.roles, 'ruolo', 'ruoli')} in ${plural(source.adopted.divisions, 'divisione', 'divisioni')}${day === null ? '' : ` · versione del ${day}`}`;
+  return `${rolesText(source.adopted.roles, source.adopted.divisions)}${day === null ? '' : ` · versione del ${day}`}`;
+}
+
+/** "1 raccolta su 100 · spazio 12,4 MiB su 512 MiB". */
+export function limitsText(limits: AgentsStatus['limits']): string {
+  return `${plural(limits.sources, 'raccolta', 'raccolte')} su ${String(limits.maxSources)} · spazio ${spaceText(limits.bytes, limits.maxBytes)}`;
+}
+
+/** "1 ruolo in 1 divisione", "259 ruoli in 16 divisioni". */
+export function rolesText(roles: number, divisions: number): string {
+  return `${plural(roles, 'ruolo', 'ruoli')} in ${plural(divisions, 'divisione', 'divisioni')}`;
 }
 
 /** The license of one role: its source's by name, else its file, else none at the root. */
