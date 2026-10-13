@@ -6,7 +6,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- `pnpm dev:codex` lancia Codex CLI sullo sviluppo di Arianna con un profilo di permessi che chiude `data/` e `config/arianna.toml`; le regole per Codex sono in `AGENTS.md` (D-143).
+- `pnpm dev:codex` lancia Codex CLI interattivo sullo sviluppo di Arianna da `packages/executors`, con un profilo di permessi che chiude ciò che git esclude (`data/`, `config/arianna.toml`, `kb/inbox/`, `kb/progetti/`, `repos/`…) e le cartelle di lavoro di Claude Code, e nessun comando fuori dal sandbox; le regole per Codex sono in `AGENTS.md` (D-143).
+
+### Sicurezza
+
+- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti e ciò che `pnpm check` esegue (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…), rifiuta una versione di `codex` non verificata, le istruzioni globali dell'utente, file di istruzioni in più e argomenti che allenterebbero il profilo, e parte con l'ambiente pulito dell'adattatore (D-143).
 
 ## [0.85.3] - 2026-10-13
 
