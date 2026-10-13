@@ -66,7 +66,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorCheck[]> 
     }
     add('database.owner', true, `${logins.owner.user} logs in`);
 
-    await checkDefaultsRejected(config, logins, checks, at);
+    checks.push(await defaultPasswordsCheck(config, logins.owner.user, at));
     // A database never migrated (or the wrong schema) fails the check, not the doctor.
     for (const [id, check] of [
       ['database.migrations', checkMigrations],
@@ -108,17 +108,29 @@ function passwordsVerdict(logins: DbLogins): [boolean, string] {
     : [false, `${problems.join('; ')} (at least ${String(MIN_PASSWORD)} random characters, two different secrets)`];
 }
 
-/** The development passwords must not open the database, whatever the configuration says. */
-async function checkDefaultsRejected(
-  config: AriannaConfig,
-  logins: DbLogins,
-  checks: DoctorCheck[],
-  at: { schema?: string },
-): Promise<void> {
+/**
+ * The passwords as the core can see them (D-192): it holds only the login of
+ * the application role, so the owner's password is the terminal's doctor's
+ * to check. Same id as the full check: development defaults or a short
+ * password fail.
+ */
+export function appPasswordCheck(app: DbLogin): DoctorCheck {
+  if (app.development) return { id: 'database.passwords', ok: false, detail: 'development defaults' };
+  const ok = passwordOf(app).length >= MIN_PASSWORD;
+  return { id: 'database.passwords', ok, detail: ok ? 'from the vault' : 'the app password is short' };
+}
+
+/**
+ * The development passwords must not open the database, whatever the
+ * configuration says. It logs in twice with the known development passwords
+ * (no secret): with real passwords PostgreSQL refuses both and its log
+ * records two failed logins. The core runs it too, only on «Controlla» (D-192).
+ */
+export async function defaultPasswordsCheck(config: AriannaConfig, ownerUser: string, at: { schema?: string } = {}): Promise<DoctorCheck> {
   const accepted: string[] = [];
   const unknown: string[] = [];
   const tries: DbLogin[] = [
-    { user: logins.owner.user, password: DEV_PASSWORDS.owner, development: true },
+    { user: ownerUser, password: DEV_PASSWORDS.owner, development: true },
     { user: APP_ROLE, password: DEV_PASSWORDS.app, development: true },
   ];
   for (const login of tries) {
@@ -133,7 +145,7 @@ async function checkDefaultsRejected(
     }
   }
   const ok = accepted.length === 0 && unknown.length === 0;
-  checks.push({
+  return {
     id: 'database.default-passwords',
     ok,
     detail: ok
@@ -144,7 +156,7 @@ async function checkDefaultsRejected(
         ]
           .filter((part) => part !== '')
           .join('; '),
-  });
+  };
 }
 
 async function checkMigrations(owner: Sql, checks: DoctorCheck[]): Promise<void> {

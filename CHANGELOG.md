@@ -2,7 +2,40 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
-## [Non rilasciato]
+## [0.87.0] - 2026-10-13
+
+### Aggiunto
+
+- Impostazioni, Aspetto e installazione: «Pronta per i dati veri» con «Controlla di nuovo», l'elenco di cosa manca in parole semplici e l'esito dell'ultimo `pnpm arianna:doctor` per i controlli del database che fa solo il terminale (D-192).
+- Impostazioni, Voce e chiamate: «Ascolta» accanto alla voce scelta dice una frase di prova con il modello di «Parla con la sua voce», anche prima di salvare, con «Ferma»; disattivato con la spiegazione quando il servizio della voce non è acceso o c'è una chiamata in corso (D-192).
+- `pnpm arianna:doctor` scrive id ed esito dei controlli, senza dettagli, in `data/doctor/last.json` (D-192).
+
+### Cambiato
+
+- I controlli dell'installazione senza database passano dall'installer al core, una sola copia per il doctor e per la pagina (D-192).
+- Chat: i messaggi d'errore e gli avvisi dicono «Arianna» invece di «nucleo» («Arianna non risponde: controlla che sia avviata.», «Errore di Arianna: riprova fra poco.»), anche nel titolo della chat di sistema dei task falliti («Perché è fallito: Arianna»); due test controllano che la parola non torni nella chat né nel core (D-192).
+
+## [0.86.0] - 2026-10-13
+
+### Aggiunto
+
+- `pnpm dev:codex` lancia Codex CLI interattivo sullo sviluppo di Arianna da `packages/executors`, con un profilo di permessi che chiude ciò che git esclude (`data/`, `config/arianna.toml`, `kb/inbox/`, `kb/progetti/`, `repos/`…) e le cartelle di lavoro di Claude Code, e nessun comando fuori dal sandbox; le regole per Codex sono in `AGENTS.md` (D-143).
+
+### Cambiato
+
+- ESLint ignora anche `kb/inbox/` e `kb/progetti/`: nel sandbox di `pnpm dev:codex` sono negate e la scansione di `pnpm lint` fallirebbe su di esse (D-143).
+
+### Sicurezza
+
+- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti, i `.gitignore` e la configurazione degli strumenti (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…); rifiuta una `HOME` mancante, una versione di `codex` non verificata, le istruzioni globali e le regole di esecuzione dell'utente, una configurazione gestita di Codex, chiavi del suo `config.toml` di Codex che uscirebbero dal profilo e server MCP accesi, file di istruzioni in più, un `.gitignore` cambiato e argomenti che allenterebbero il profilo; parte con l'ambiente pulito dell'adattatore, senza rete né cronologia. L'utente legge il diff di Codex prima di `pnpm check` e del commit (D-143).
+- `docs/PRIVACY-POLICY-SPEC.md` scrive l'eccezione di `pnpm dev:codex` ai punti 2, 5, 7 e 8 del confinamento e cosa la compensa (D-143).
+
+## [0.85.4] - 2026-10-13
+
+### Cambiato
+
+- Conoscenza: chi non aveva mai scelto una vista ora apre il grafo in 3D; chi aveva premuto «2D» lo ritrova in 2D (D-104).
+- Conoscenza in 3D: la rotazione lenta a riposo ridisegna al massimo 30 volte al secondo, anche sugli schermi a 120 Hz; il layout 2D si prepara solo quando si passa al 2D (D-104).
 
 ### Aggiunto
 

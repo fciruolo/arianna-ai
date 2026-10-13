@@ -68,13 +68,13 @@ export function sampleProblem(seconds: number, loudest: number): string | undefi
 export function blocker(state: string): { title: string; steps: string[] } | undefined {
   if (state === 'up') return undefined;
   if (state === 'off') {
-    return { title: 'Le chiamate sono spente', steps: ['Aggiungi la sezione [voice] a config/arianna.toml (l’esempio è in config/arianna.example.toml).', 'Riavvia il nucleo (pnpm start).'] };
+    return { title: 'Le chiamate sono spente', steps: ['Aggiungi la sezione [voice] a config/arianna.toml (l’esempio è in config/arianna.example.toml).', 'Riavvia Arianna (pnpm start).'] };
   }
   if (state === 'not-installed') {
-    return { title: 'Manca l’ambiente Python della voce', steps: ['Installa uv: brew install uv.', 'Crea l’ambiente: pnpm voice:sync (circa 1 GB in data/voice).', 'Riavvia il nucleo (pnpm start).'] };
+    return { title: 'Manca l’ambiente Python della voce', steps: ['Installa uv: brew install uv.', 'Crea l’ambiente: pnpm voice:sync (circa 1 GB in data/voice).', 'Riavvia Arianna (pnpm start).'] };
   }
   if (state === 'failed') {
-    return { title: 'Il servizio voce non parte', steps: ['Guarda data/voice/tmp/voice.log.', 'Ricrea l’ambiente con pnpm voice:sync, poi riavvia il nucleo.'] };
+    return { title: 'Il servizio voce non parte', steps: ['Guarda data/voice/tmp/voice.log.', 'Ricrea l’ambiente con pnpm voice:sync, poi riavvia Arianna.'] };
   }
   return { title: 'Il servizio voce si sta avviando', steps: ['Attendi qualche secondo: la pagina si aggiorna da sola.'] };
 }

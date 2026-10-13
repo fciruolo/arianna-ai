@@ -66,10 +66,10 @@ test('API errors become Italian, and unknown ones a generic message', () => {
     api(409, 'a task of the conversation is still at work: wait for it to finish'),
     'Un task di questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala.',
   );
-  assert.equal(api(403, 'cross-origin request'), 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.');
-  assert.equal(api(500, 'internal error'), 'Errore del nucleo: riprova fra poco.');
+  assert.equal(api(403, 'cross-origin request'), 'Arianna ha rifiutato la richiesta: apri la chat dal suo indirizzo.');
+  assert.equal(api(500, 'internal error'), 'Errore di Arianna: riprova fra poco.');
   assert.equal(api(400, 'unknown field(s): x'), 'Richiesta non valida.');
-  assert.equal(errorText(new TypeError('Failed to fetch')), 'Il nucleo non risponde: controlla che sia avviato.');
+  assert.equal(errorText(new TypeError('Failed to fetch')), 'Arianna non risponde: controlla che sia avviata.');
   assert.equal(errorText('boom'), 'Errore imprevisto.');
 });
 

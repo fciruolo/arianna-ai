@@ -19,17 +19,17 @@ import {
   parseProjects,
   resolveHome,
   userHomeOf,
-  voicePaths,
   type AriannaConfig,
   type CatalogEntry,
 } from '@arianna/config';
 import { runDoctor, type DoctorCheck } from '@arianna/core/doctor';
+import { ensureLayout, folderProblem, freeBytes, installationChecks, systemChecks } from '@arianna/core/install-checks';
 import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from '@arianna/core/model-files';
 import { createFetcher } from '@arianna/core/model-http';
+import { writeDoctorRecord } from '@arianna/core/readiness';
 
 import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
-import { folderProblem, projectChecks, syncProjectLinks } from './projects.ts';
-import { ensureLayout, freeBytes, layoutCheck, omlxLogChecks, systemChecks, voiceCheck } from './system.ts';
+import { syncProjectLinks } from './projects.ts';
 import { runWizard, type Prompter } from './wizard.ts';
 
 // Room left on the disk after the downloads, for the database and the archive.
@@ -49,41 +49,15 @@ function selected(config: AriannaConfig, trial = false): CatalogEntry[] {
   return selectedModels(config, loadCatalog(config.home), { trial });
 }
 
-async function modelsChecks(config: AriannaConfig): Promise<DoctorCheck[]> {
-  const models = selected(config);
-  if (models.length === 0) return [{ id: 'models', ok: true, detail: 'no model assigned to a role yet (pnpm arianna:init)' }];
-  const statuses = await modelStatus(models, config.paths.data);
-  const absent = statuses.filter((status) => status.state !== 'present');
-  const ram = models.reduce((sum, model) => sum + model.ramMinGib, 0);
-  const machine = Math.floor(totalmem() / 2 ** 30);
-  return [
-    {
-      id: 'models',
-      ok: absent.length === 0,
-      detail:
-        absent.length === 0
-          ? `${String(statuses.length)} file(s) present with the right size (pnpm arianna:models verify checks the hashes)`
-          : `${String(absent.length)} of ${String(statuses.length)} file(s) missing or wrong: pnpm arianna:models pull`,
-    },
-    {
-      id: 'models.ram',
-      ok: ram <= machine,
-      detail: `the assigned models need ${String(ram)} GiB together, this machine has ${String(machine)} GiB`,
-    },
-  ];
-}
-
 async function doctor(config: AriannaConfig): Promise<number> {
-  const checks = [
-    ...(await systemChecks({ voice: config.voice !== undefined })),
-    ...layoutCheck(config.home, config.paths.data),
-    ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
-    ...omlxLogChecks(config.local.endpoints),
-    ...(await modelsChecks(config)),
-    ...projectChecks(config.home, config.projects),
-    ...(await runDoctor({ config })),
-  ];
+  const checks = [...(await installationChecks(config)), ...(await runDoctor({ config }))];
   const failed = print(checks);
+  // «Pronta per i dati veri» in the settings reads it (D-192): ids and outcomes, no detail.
+  try {
+    writeDoctorRecord(config.paths.data, checks);
+  } catch (error) {
+    console.error(`The outcome was not saved in data/doctor/last.json: ${error instanceof Error ? error.message : 'unexpected error'}`);
+  }
   console.log(failed === 0 ? '\nReady for real data.' : `\n${String(failed)} check(s) failed: not ready for real data.`);
   return failed === 0 ? 0 : 1;
 }

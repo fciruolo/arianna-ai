@@ -215,7 +215,7 @@ async function saveNote(): Promise<void> {
     opened.value = written.path;
   } catch (cause) {
     note.busy = false;
-    note.error = cause instanceof ApiError && cause.status === 400 ? `Il nucleo ha rifiutato la nota: ${cause.message}` : browseErrorText(cause);
+    note.error = cause instanceof ApiError && cause.status === 400 ? `Arianna ha rifiutato la nota: ${cause.message}` : browseErrorText(cause);
   }
 }
 

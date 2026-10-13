@@ -163,7 +163,7 @@ const ERRORS: Record<string, string> = {
 export function errorText(cause: unknown): string {
   if (!(cause instanceof ApiError)) {
     // fetch fails with a TypeError when the core does not answer.
-    return cause instanceof TypeError ? 'Il nucleo non risponde: controlla che sia avviato.' : 'Errore imprevisto.';
+    return cause instanceof TypeError ? 'Arianna non risponde: controlla che sia avviata.' : 'Errore imprevisto.';
   }
   const known = ERRORS[cause.message];
   if (known !== undefined) return known;
@@ -184,8 +184,8 @@ export function errorText(cause: unknown): string {
   const note = /^text is longer than (\d+) KiB$/.exec(cause.message);
   if (note?.[1] !== undefined) return `La nota supera ${note[1]} KiB.`;
   if (/^kb\/inbox is labeled L\d: captures stop at L2$/.test(cause.message)) return 'La cartella kb/inbox è sopra Privato: la nota non è stata salvata.';
-  if (cause.status === 403) return 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
-  if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
+  if (cause.status === 403) return 'Arianna ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
+  if (cause.status >= 500) return 'Errore di Arianna: riprova fra poco.';
   return 'Richiesta non valida.';
 }
 
@@ -348,8 +348,8 @@ export const MODEL_EVAL_STATUS_TEXT: Record<ModelEvalStatus, string> = {
 const MODEL_EVAL_ERRORS: Record<string, string> = {
   user: 'annullata da te',
   preempted: 'annullata: chiamate e task hanno avuto la precedenza troppe volte sullo stesso caso',
-  interrupted: 'interrotta dal riavvio del nucleo',
-  'lock-lost': 'interrotta: il nucleo ha perso la coda',
+  interrupted: 'interrotta dal riavvio di Arianna',
+  'lock-lost': 'interrotta: Arianna ha perso il controllo della coda',
   'not-in-catalog': 'il modello non è più nel catalogo',
   role: 'il catalogo non indica più il modello per l’orchestratore',
   'files-missing': 'i file del modello non sono in data/models',
@@ -362,7 +362,7 @@ export function modelEvalErrorText(code: string | null): string | undefined {
   const known = MODEL_EVAL_ERRORS[code];
   if (known !== undefined) return known;
   if (code.startsWith('LocalModelError')) return 'il modello locale non ha risposto';
-  return 'errore del nucleo';
+  return 'errore di Arianna';
 }
 
 /** How a file changed in the run of a delegation (D-082). */

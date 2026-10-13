@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.85.3",
+  "version": "0.87.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -32,6 +32,7 @@
     "voice:vapid": "node scripts/voice.ts vapid",
     "notifier:build": "node apps/notifier/src/cli.ts",
     "kb:capture": "node scripts/kb-capture.ts",
+    "dev:codex": "node scripts/codex-dev.ts",
     "demo:container": "node scripts/demo-container.ts",
     "design:catalog": "node scripts/design-catalog.ts",
     "skills:catalog": "node scripts/skills-catalog.ts",

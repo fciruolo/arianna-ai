@@ -539,7 +539,7 @@ onBeforeUnmount(() => {
           type="button"
           class="btn px-2.5 py-1 text-xs"
           :disabled="fetching !== null"
-          title="Il nucleo scarica il link e il modello locale lo riassume nel pensiero; il sito riceve solo l’indirizzo"
+          title="Arianna scarica il link e il modello locale lo riassume nel pensiero; il sito riceve solo l’indirizzo"
           @click="fetchAndSummarize"
         >
           <Icon name="link" :size="14" />{{ fetching === note.name ? 'Scarico e riassumo…' : 'Scarica e riassumi' }}

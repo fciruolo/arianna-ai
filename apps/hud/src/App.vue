@@ -976,7 +976,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :call-busy="callSession !== null || callStarting || incoming !== null || strayCall !== null" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
