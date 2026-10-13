@@ -141,7 +141,7 @@ const themeDark = ref(true);
 const darkChoice = ref(false);
 const mode = computed(() => sceneMode(themeDark.value, darkChoice.value));
 const DARK_KEY = 'arianna.knowledge.dark';
-/** "2d" or "3d" (D-104): a convenience of this browser (localStorage). */
+/** "2d" or "3d" (D-104, 3D when nothing is stored): a convenience of this browser (localStorage). */
 const VIEW_KEY = 'arianna.knowledge.view';
 const view3d = ref(false);
 /** The instructions of the 3D behind «?» (D-194): closed when the page opens. */
@@ -150,6 +150,8 @@ const helpOpen = ref(false);
 const drifting = ref(true);
 
 let sim: Simulation | null = null;
+/** The 2D layout still needs its head start (see `warm2d`). */
+let warm2dPending = false;
 let adjacency: Set<number>[] = [];
 let view: View = { x: 0, y: 0, k: 1 };
 let glide: { from: View; to: View; start: number } | null = null;
@@ -330,7 +332,8 @@ function loadViewChoice(): boolean {
   try {
     return readViewMode(window.localStorage.getItem(VIEW_KEY)) === '3d';
   } catch {
-    return false;
+    // Private window or blocked storage: the default view.
+    return readViewMode(null) === '3d';
   }
 }
 
@@ -343,6 +346,7 @@ function setView3d(on: boolean): void {
     // Private window or blocked storage: the choice lasts until the page closes.
   }
   if (on) ensureSim3();
+  else warm2d();
   hovered.value = -1;
   drag = null;
   pointers.clear();
@@ -350,6 +354,20 @@ function setView3d(on: boolean): void {
   flight = null;
   if (canvas.value !== null) canvas.value.style.cursor = 'grab';
   wake();
+}
+
+/**
+ * The head start of the 2D layout, done the first time the flat view is shown
+ * (the page opens in 3D, D-104): the 2D simulation is made with the graph,
+ * since its links are the edges of both views, but not run until it is needed.
+ */
+function warm2d(): void {
+  if (!warm2dPending || sim === null) return;
+  warm2dPending = false;
+  const warm = Math.min(120, Math.floor(60_000 / Math.max(1, sim.nodes.length)));
+  for (let i = 0; i < warm; i += 1) step(sim);
+  autoFit = true;
+  if (width > 0) view = fitView(turnedNodes(), width, height);
 }
 
 /** The 3D simulation of the loaded graph, made the first time it is needed; positions kept from `previous`. */
@@ -415,14 +433,15 @@ function tick(now: number): void {
   if (window.devicePixelRatio !== dpr) resize();
   const three = is3d();
   const settled = three && sim3 !== null ? isSettled3(sim3) : isSettled(sim);
-  // The 3D drift runs at full rate while the window has the focus: at 30 fps a slow turn shudders.
-  const driftOn = three && drifting.value && !reduced && windowFocused && driftWeight(now - lastInteraction) > 0;
+  // The 3D drift keeps drawing, but at the resting budget of D-087b (at most 30 fps).
+  const driftOn = three && drifting.value && !reduced && driftWeight(now - lastInteraction) > 0;
   const interval = frameInterval({
     hidden: document.hidden,
     focused: windowFocused,
     reduced,
-    busy: !settled || glide !== null || flight !== null || drag !== null || driftOn || (three && shift3 !== panelShift()),
+    busy: !settled || glide !== null || flight !== null || drag !== null || (three && shift3 !== panelShift()),
     interacting: now - lastInteraction < INTERACT_MS,
+    drifting: driftOn,
   });
   // Resting (reduced motion, nothing to do): wait for the next request.
   if (interval === undefined && !dirty) return;
@@ -1449,13 +1468,9 @@ async function load(): Promise<void> {
     maxDegree = data.nodes.reduce((most, node) => Math.max(most, node.degree), 0);
     pulses = [];
     settledAt = 0;
-    // A head start, so the first frame is not a tangle.
-    if (previous.size === 0) {
-      const warm = Math.min(120, Math.floor(60_000 / Math.max(1, data.nodes.length)));
-      for (let i = 0; i < warm; i += 1) step(sim);
-      autoFit = true;
-      if (width > 0) view = fitView(turnedNodes(), width, height);
-    }
+    // A head start, so the first frame is not a tangle; in 3D it waits for the switch to 2D.
+    warm2dPending = previous.size === 0;
+    if (!view3d.value) warm2d();
     selected.value = selectedId === undefined ? -1 : data.nodes.findIndex((node) => node.id === selectedId);
     hovered.value = -1;
     if (selected.value < 0) page.value = null;
