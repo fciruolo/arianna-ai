@@ -6,7 +6,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Conoscenza: il grafo si apre in 3D; chi ha scelto il 2D lo ritrova com'era (D-104).
+- Conoscenza: chi non aveva mai scelto una vista ora apre il grafo in 3D; chi aveva premuto «2D» lo ritrova in 2D (D-104).
+- Conoscenza in 3D: la rotazione lenta a riposo ridisegna al massimo 30 volte al secondo, anche sugli schermi a 120 Hz; il layout 2D si prepara solo quando si passa al 2D (D-104).
 
 ## [0.85.3] - 2026-10-13
 
