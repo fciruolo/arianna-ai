@@ -7,6 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Impostazioni, Aspetto e installazione: «Pronta per i dati veri» con «Controlla di nuovo», l'elenco di cosa manca in parole semplici e l'esito dell'ultimo `pnpm arianna:doctor` per i controlli del database che fa solo il terminale (D-192).
+- Impostazioni, Voce e chiamate: «Ascolta» accanto alla voce scelta dice una frase di prova con il modello di «Parla con la sua voce», anche prima di salvare, con «Ferma»; disattivato con la spiegazione quando il servizio della voce non è acceso o c'è una chiamata in corso (D-192).
 - `pnpm arianna:doctor` scrive id ed esito dei controlli, senza dettagli, in `data/doctor/last.json` (D-192).
 
 ### Cambiato

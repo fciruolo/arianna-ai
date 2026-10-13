@@ -105,6 +105,7 @@ import OdNews from './OdNews.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
+import VoiceListen from './VoiceListen.vue';
 
 /**
  * The settings page of the web chat (D-071, revised in D-192), over
@@ -122,8 +123,9 @@ import SettingsSaveBar from './SettingsSaveBar.vue';
  * `devPending`: open questions of "Sviluppo di Arianna" without an answer, a badge on its entry (D-120).
  * `directAgents`: the agents one can talk with directly (D-111d), for "Apri una chat" in Agenti (D-133).
  * `theme`: the theme of this browser (D-158), the same choice as the button of the top bar.
+ * `callBusy`: a call is starting, ringing or on (D-192): «Ascolta» waits for it to end.
  */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[]; theme?: Theme }>();
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[]; theme?: Theme; callBusy?: boolean }>();
 const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /**
@@ -979,8 +981,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                           <option v-for="choice in voiceChoices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
                         </datalist>
                       </FormField>
-                      <div class="flex items-start pt-6 sm:col-span-4">
-                        <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="leave"><Icon name="mic" :size="15" />Provino della voce ›</button>
+                      <div class="pt-6 max-sm:pt-0 sm:col-span-4">
+                        <VoiceListen :model="forms.roles.tts" :voice="forms.voice.values.voice" :call-busy="callBusy === true" @trial="leave" />
                       </div>
                     </div>
                   </SettingsCard>
