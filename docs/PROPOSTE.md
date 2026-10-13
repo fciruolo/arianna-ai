@@ -531,7 +531,7 @@ La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non 
 ## D-096 — Backup cifrato notturno, 3-2-1, con prova di ripristino
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire
 - **Collegate:** D-028 (PostgreSQL in Docker), D-030 (due cartelle, Synology), D-042 (vault), D-046 (ruoli, doctor), D-047 (installer), D-058 (percorsi dei progetti), D-088 (Aggiorna), task 2.8 di `INSTALLER-PORTABILITY.md` (`export`/`import`, Fase 2), criterio di uscita della Fase 2 in `ROADMAP.md` ("ripristino da `export` provato su cartella nuova")
 
 ### Contesto
@@ -700,47 +700,18 @@ Totale: circa 20-29 ore.
 
 **Subito, con soli dati finti:** le tappe 1 e 2 come comandi a mano. Test in `apps/installer/test` (senza servizi): validazione di `[backup]` (relativo, `/Volumes/` accettato, altro percorso assoluto rifiutato, chiave pubblica malformata); conservazione 7/4/12 su date finte (un archivio con prova fallita non fa scadere i precedenti); controllo del volume con una radice dei volumi finta iniettata dal test (cartella sul disco interno rifiutata, segnaposto con un altro id rifiutato, tipo di file system non ammesso rifiutato); un processo della pipeline che fallisce non lascia un archivio rinominato; il rinvio del job non consuma tentativi e non conta la coda `backup` come "in corso"; in `data/backups/` non finisce mai un file in chiaro; l'archivio non contiene `models/`, `postgres/` né `omlx-cache/`; manifest e `SHA256SUMS` coerenti; la chiave del vault usata come chiave dei backup fa fallire il controllo. Test in `apps/installer/test-db` (`pnpm test:db`): giro completo su un database finto con una chiave age generata nel test; prova di ripristino che passa, che fallisce se dal dump manca l'ultimo evento (la catena da sola non lo vedrebbe, il manifest sì) e che fallisce se dopo il ripristino `arianna_app` ha ancora `TEMPORARY`. D-096 assorbe e allarga il task 2.8 della Fase 2: serve l'assenso dell'utente (regola "una fase alla volta"), e applicandola vanno allineati `ROADMAP.md` e `INSTALLER-PORTABILITY.md`.
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **Dove va la copia dei backup fuori dal Mac?** Scelte possibili: (a) Synology di casa, come cartella condivisa montata o cartella di Synology Drive (secondo dispositivo, ma stessa casa); (b) Synology più Hyper Backup verso un secondo sito o un cloud, con file già cifrati; (c) un secondo disco esterno tenuto fuori casa a rotazione. Raccomandazione: (a) subito e (b) appena possibile: la regola 3-2-1 chiede una copia fuori casa, e un incendio o un furto prende Mac, disco e NAS insieme.
-   - Contesto: Il backup notturno di Arianna (D-096) segue la regola 3-2-1: tre copie dei dati, su due supporti diversi, una fuori casa. Il Mac e il disco esterno stanno in casa; si decide dove va la terza copia. Un incendio o un furto potrebbe portare via insieme Mac, disco e NAS (il Synology). I file del backup sono già cifrati prima di uscire dal Mac.
-   - Opzione consigliata: Synology subito, poi fuori casa — copia sul Synology da subito e, appena possibile, Hyper Backup dal Synology verso un secondo luogo o un cloud, con i file già cifrati.
-   - Opzione: Solo il Synology di casa — semplice e pronto subito, ma la copia resta nella stessa casa: un incendio prende tutto.
-   - Opzione: Un secondo disco fuori casa — nessun cloud, ma devi ricordarti di scambiare i dischi, per esempio ogni settimana in ufficio.
-   - Esempio: Ogni notte l'archivio cifrato va sul Mac, sul disco esterno e sulla cartella del Synology; poi il Synology lo copia in un cloud. Se un giorno sparisce il Mac, recuperi il backup dal cloud con la tua chiave su carta.
-2. **La chiave che apre i backup è diversa da quella delle password e sta solo fuori dal Mac?** Raccomandazione: sì, chiave age dei backup separata da quella del vault, con la privata solo fuori dal Mac (carta o gestore di password, più una chiavetta); due destinatari se c'è un secondo posto sicuro.
-   - Contesto: I backup si cifrano con una chiave "age", un piccolo programma di cifratura. La chiave ha due parti: la pubblica serve a chiudere, la privata ad aprire. Si decide se usare una chiave diversa da quella del vault (la cassaforte delle password di Arianna) e tenere la parte privata solo fuori dal Mac.
-   - Opzione consigliata: Chiave separata, privata fuori dal Mac — un ladro o un virus sul Mac non apre i backup; in cambio Arianna non può aprirli da sola e la chiave va conservata in due posti.
-   - Opzione: La stessa chiave del vault — una sola chiave da gestire, ma chi ruba il Mac apre anche i backup, e perderla porta via vault e backup insieme.
-   - Opzione: Chiave separata, privata sul Mac — prove di ripristino tutte automatiche, ma toglie proprio la protezione richiesta.
-   - Esempio: Generi la chiave su un altro computer, stampi il foglio e lo chiudi in un cassetto, ne metti una copia su una chiavetta. Sul Mac va solo la parte pubblica (comincia con age1), che chiude i backup ma non li apre.
-3. **Per la copia in casa si usa un disco dedicato o Time Machine?** Raccomandazione: disco esterno cifrato (APFS cifrato); Time Machine solo se il suo disco è cifrato e con le esclusioni di `tmutil`, perché altrimenti copia la KB in chiaro.
-   - Contesto: Per la copia su un disco in casa puoi usare un disco esterno dedicato agli archivi cifrati di Arianna, oppure Time Machine, il backup di macOS. Time Machine però copia anche note e file così come sono, leggibili, quindi va bene solo se il suo disco è cifrato. Si decide quale usare; se Time Machine, va detto se il suo disco è cifrato.
-   - Opzione consigliata: Disco dedicato e cifrato — contiene solo gli archivi già cifrati, e anche il disco è cifrato: chi lo trova non legge nulla.
-   - Opzione: Time Machine su disco cifrato — usi ciò che hai già; vanno lanciati i comandi tmutil per escludere il database in uso e i file temporanei.
-   - Opzione: Time Machine su disco non cifrato — sconsigliato: note e file personali finirebbero leggibili su un disco che chiunque può aprire.
-   - Esempio: Colleghi un disco "Backup-Arianna" formattato APFS cifrato; ogni notte riceve un file come arianna-2026-10-05T0310-82e7849.tar.gz.age e nient'altro.
-4. **Le conversazioni archiviate entrano nel backup?** Raccomandazione: sì, `data/archive/` nel backup; non era nella richiesta, ma è L2 e `INSTALLER-PORTABILITY.md` lo mette nell'export.
-   - Contesto: La cartella data/archive/ contiene le conversazioni archiviate, dati privati (L2). Non era nella tua richiesta di backup, ma la guida all'installazione la mette fra le cose da esportare. Si decide se includerla.
-   - Opzione consigliata: Sì, includerle — dopo un guasto ritrovi anche le conversazioni archiviate; l'archivio è un po' più grande.
-   - Opzione: No, lasciarle fuori — archivi più piccoli, ma dopo un guasto le conversazioni archiviate sarebbero perse.
-   - Esempio: Il disco del Mac si rompe e ripristini Arianna su un Mac nuovo; con data/archive/ nel backup ritrovi anche la conversazione archiviata a marzo sul preventivo finto "Rossi Srl".
-5. **Chi fa partire il backup ogni notte?** Raccomandazione: il core, con un processo figlio (è un lavoro in coda e sa quando nulla è in corso), non un servizio launchd separato; launchd servirà comunque per D-088 e il giro si può spostare lì.
-   - Contesto: Qualcuno deve far partire il backup ogni notte. Il core (il programma sempre acceso di Arianna) sa già quando non c'è nessun lavoro in corso. Un servizio separato di macOS (launchd) terrebbe invece il core lontano da Docker, che ha pieni poteri sul database. Si decide chi lo lancia.
-   - Opzione consigliata: Il core — usa la coda dei lavori che c'è già e aspetta che nulla sia in corso; più avanti si può spostare su launchd, che servirà comunque per il pulsante "Aggiorna" (D-088).
-   - Opzione: Un servizio launchd separato — il core non tocca mai Docker, ma il servizio deve chiedere al database se c'è qualcosa in corso e va installato a parte.
-   - Esempio: Alle 03:00 il core vede una chiamata ancora attiva e rimanda di 10 minuti; alle 03:20 è tutto fermo e lancia il backup. Se alle 05:00 fosse ancora occupato, partirebbe lo stesso segnando "con lavori in corso".
-6. **Sul Mac si tengono solo gli ultimi 7 backup, la serie lunga sui dischi esterni?** Raccomandazione: sì, sul Mac solo i 7 giornalieri (disco di sviluppo al 95%) e i 7/4/12 completi su disco esterno e fuori casa.
-   - Contesto: La conservazione prevista è 7 backup giornalieri, 4 settimanali e 12 mensili (circa un anno di storia). Il disco del Mac di sviluppo è quasi pieno, quindi si decide se sul Mac tenere solo i 7 giornalieri e la serie completa solo sul disco esterno e fuori casa.
-   - Opzione consigliata: Mac 7 giorni, serie completa fuori — il Mac non si riempie; la storia di un anno resta sul disco esterno e fuori casa.
-   - Opzione: Serie completa anche sul Mac — ripristini vecchi più rapidi, ma fino a 23 archivi su un disco quasi pieno.
-   - Esempio: A dicembre ti accorgi che una nota è stata cancellata a giugno. Sul Mac ci sono solo gli ultimi 7 giorni, ma sul disco esterno trovi il backup mensile di giugno.
-7. **Dopo quanti giorni senza copie Arianna ti avvisa, e dove?** Raccomandazione: soglie così (copia esterna: giallo dopo 2 giorni, rosso dopo 7; fuori casa: dopo 30), con un testo fisso L0 anche su Telegram solo per il rosso.
-   - Contesto: Se le copie fuori dal Mac smettono di arrivare, Arianna lo segnala con un colore, prima giallo poi rosso. Si decide dopo quanti giorni, e se mandare anche fuori dalla chat un testo fisso senza dati personali (L0). La proposta parlava di Telegram, che oggi però è spento (D-110): finché resta spento, gli avvisi stanno nella chat.
-   - Opzione consigliata: Giallo 2 g, rosso 7 g, fuori casa 30 g — avvisi in tempo senza troppo rumore; fuori dalla chat arriva solo l'allarme rosso, con un testo fisso.
-   - Opzione: Soglie più strette — ti accorgi prima, ma più messaggi, anche quando hai solo lasciato il disco staccato un fine settimana.
-   - Opzione: Avvisi solo nella chat — niente fuori dalla chat; rischi di vederli tardi.
-   - Esempio: Parti per una settimana e il disco esterno resta staccato. Dopo 2 giorni la sezione Backup diventa gialla; al settimo diventa rossa e arriva il messaggio fisso "Backup: copia esterna in ritardo".
+Risposte dell'utente del 2026-10-14, con le domande a opzioni (le domande erano qui dal 2026-10-05).
+
+1. **Dove va la copia fuori dal Mac:** l'utente ha già Synology Drive attivo verso il suo Synology e chiede «un backup zip ogni notte». Scelta: **ogni notte un archivio cifrato con age** (`arianna-<data>.tar.gz.age`, un file unico come uno zip, mai uno zip in chiaro né con la password debole di macOS), con il database esportato da `pg_dump` (mai una copia di `data/postgres` mentre gira), scritto in una cartella che Synology Drive sincronizza, così arriva da solo sul NAS. La copia fuori casa (Hyper Backup dal Synology verso un secondo luogo o un cloud) si aggiunge più avanti. Detto all'utente: Synology Drive è una sincronizzazione, non un backup (una cancellazione o un virus si propagano al NAS); `data/postgres` vivo non va sincronizzato con Drive.
+2. **Chiave dei backup:** separata da quella del vault, con la privata solo fuori dal Mac (carta, gestore di password o chiavetta); sul Mac solo la pubblica `age1…`. La prova di ripristino settimanale non può aprire gli archivi veri da sola: chiede la chiave all'utente o prova un archivio fatto apposta.
+3. **Copia in casa:** basta il Synology, che fa da secondo supporto; niente disco esterno dedicato né Time Machine per Arianna.
+4. **Conversazioni archiviate:** sì, `data/archive/` entra nel backup (con `kb/`, compreso `kb/archivio/` di D-198).
+5. **Chi lancia il backup:** il core, come lavoro della coda che aspetta che nulla sia in corso (spostabile su launchd con D-088).
+6. **Conservazione:** l'utente trova un anno «iper esagerato» e sceglie **solo 7 giornalieri**: niente settimanali né mensili, né sul Mac né sul NAS. Una cancellazione notata dopo più di 7 giorni non si recupera.
+7. **Avvisi:** sezione Backup gialla dopo 1 giorno senza copia sul NAS, rossa dopo 3; col rosso una notifica del Mac (D-128) con un testo fisso L0 («Backup: copia sul NAS in ritardo»). Telegram resta spento (D-110).
+8. **Modelli fuori dal backup** (osservazione dell'utente, «secondo me è inutile copiarli»): confermato, `data/models/` resta escluso come già previsto e si riscarica con `pnpm arianna:models pull`. Entra invece `config/models.user-catalog.yaml` (fuori da git, pochi KB): tiene le voci aggiunte da Hugging Face (D-139) con commit e sha256, senza le quali dopo un guasto non si saprebbe cosa riscaricare.
 
 ### Cose non verificate (D-096)
 
