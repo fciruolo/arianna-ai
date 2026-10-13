@@ -2,6 +2,19 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [0.87.0] - 2026-10-13
+
+### Aggiunto
+
+- Impostazioni, Aspetto e installazione: «Pronta per i dati veri» con «Controlla di nuovo», l'elenco di cosa manca in parole semplici e l'esito dell'ultimo `pnpm arianna:doctor` per i controlli del database che fa solo il terminale (D-192).
+- Impostazioni, Voce e chiamate: «Ascolta» accanto alla voce scelta dice una frase di prova con il modello di «Parla con la sua voce», anche prima di salvare, con «Ferma»; disattivato con la spiegazione quando il servizio della voce non è acceso o c'è una chiamata in corso (D-192).
+- `pnpm arianna:doctor` scrive id ed esito dei controlli, senza dettagli, in `data/doctor/last.json` (D-192).
+
+### Cambiato
+
+- I controlli dell'installazione senza database passano dall'installer al core, una sola copia per il doctor e per la pagina (D-192).
+- Chat: i messaggi d'errore e gli avvisi dicono «Arianna» invece di «nucleo» («Arianna non risponde: controlla che sia avviata.», «Errore di Arianna: riprova fra poco.»), anche nel titolo della chat di sistema dei task falliti («Perché è fallito: Arianna»); due test controllano che la parola non torni nella chat né nel core (D-192).
+
 ## [0.86.0] - 2026-10-13
 
 ### Aggiunto

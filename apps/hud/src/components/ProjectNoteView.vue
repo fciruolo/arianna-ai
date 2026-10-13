@@ -95,7 +95,7 @@ async function save(): Promise<void> {
   } catch (cause) {
     open.busy = false;
     if (cause instanceof ApiError && cause.status === 409) open.error = 'La nota è cambiata dopo che l’hai aperta: chiudi e riaprila per vedere la versione nuova.';
-    else if (cause instanceof ApiError && cause.status === 400) open.error = `Il nucleo ha rifiutato la modifica: ${cause.message}`;
+    else if (cause instanceof ApiError && cause.status === 400) open.error = `Arianna ha rifiutato la modifica: ${cause.message}`;
     else open.error = browseErrorText(cause);
   }
 }

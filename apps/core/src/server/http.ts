@@ -122,6 +122,7 @@ import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
 import { checkNoteName, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
+import type { Readiness } from '../readiness.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import { projectFits, type DirectPolicy } from '../direct-chat.ts';
@@ -226,6 +227,8 @@ export interface ApiServerOptions {
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
+  /** «Pronta per i dati veri» (D-192): the last outcome and a new check; without it the routes answer 404. */
+  readiness?: Readiness;
   /**
    * The approved projects with their folders (D-058), read at each request:
    * where the preview of a file changed by the Coder is read (D-082).
@@ -466,6 +469,7 @@ interface RouteOptions {
   rulesExport?: ApiServerOptions['rulesExport'];
   noteRelease?: NoteReleaser | undefined;
   installation: ApiServerOptions['installation'];
+  readiness?: Readiness | undefined;
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
   services?: ServiceManager | undefined;
@@ -1875,7 +1879,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -1911,6 +1915,17 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('GET', '/api/installation', () => {
       if (installation === undefined) throw new HttpError(404, 'not found');
       return Promise.resolve({ body: { installation: installation() } });
+    }),
+    // «Pronta per i dati veri» (D-192): closed ids and outcomes only, never a detail or a path.
+    // GET answers the last outcome (null before the first check); POST checks again, one at a time, at most every 10 s.
+    route('GET', '/api/installation/readiness', () => {
+      if (readiness === undefined) throw new HttpError(404, 'not found');
+      return Promise.resolve({ body: { readiness: readiness.last() } });
+    }),
+    route('POST', '/api/installation/readiness', async (request) => {
+      if (readiness === undefined) throw new HttpError(404, 'not found');
+      onlyFields(await readJson(request), []);
+      return { body: { readiness: await readiness.check() } };
     }),
 
     // The character packs and who wears what. Refused folders are named with the reason, never their content.
@@ -3408,6 +3423,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     rulesExport: options.rulesExport,
     noteRelease: options.noteRelease,
     installation: options.installation,
+    readiness: options.readiness,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
     trialRefusal: options.trialRefusal,

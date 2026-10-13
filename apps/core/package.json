@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     "./doctor": "./src/doctor.ts",
+    "./install-checks": "./src/install-checks.ts",
+    "./readiness": "./src/readiness.ts",
     "./model-files": "./src/model-files.ts",
     "./model-http": "./src/model-http.ts"
   },

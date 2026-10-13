@@ -8,10 +8,11 @@ import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { parseLabelRules, resolveHome } from '@arianna/config';
+import { parseLabelRules, resolveHome, type AriannaConfig } from '@arianna/config';
 
 import { archiveConversation, createConversation, listConversations, pinConversation, postUserMessage, purgeConversation } from '../src/conversations.ts';
 import { recordFailure } from '../src/failures.ts';
+import { createReadiness } from '../src/readiness.ts';
 import { searchAll } from '../src/search.ts';
 import { openFailureChat } from '../src/system-chats.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
@@ -46,6 +47,16 @@ before(async () => {
     port: 0,
     capture: { home, rules: RULES },
     installation: () => ({ mode: 'development', home: 'arianna-ai', version: 'abc1234' }),
+    readiness: createReadiness({
+      config: () => ({ paths: { data: join(home, 'data') } }) as unknown as AriannaConfig,
+      sql: db().sql,
+      app: { user: 'arianna_app', password: 'x', development: true },
+      collect: () =>
+        Promise.resolve([
+          { id: 'projects.sito-segreto', ok: true, detail: 'repos/sito-segreto: ready' },
+          { id: 'database.passwords', ok: false, detail: 'development defaults' },
+        ]),
+    }),
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -327,6 +338,30 @@ test('the installation: mode, folder name and commit, same-origin only', async (
   const reply = await call('GET', '/api/installation');
   assert.deepEqual(reply.body, { installation: { mode: 'development', home: 'arianna-ai', version: 'abc1234' } });
   assert.equal((await call('GET', '/api/installation', { headers: { host: `evil.example:${String(server.port)}` } })).status, 403);
+});
+
+test('«Pronta per i dati veri» (D-192): none before a check, then groups and outcomes only; same-origin, no fields', async () => {
+  assert.deepEqual((await call('GET', '/api/installation/readiness')).body, { readiness: null });
+  const checked = await call('POST', '/api/installation/readiness', { body: {} });
+  assert.equal(checked.status, 200);
+  const readiness = checked.body.readiness as { ready: boolean; checks: unknown[]; terminal: unknown };
+  assert.equal(readiness.ready, false);
+  // The required groups that did not run (the stub returns two checks) are failures.
+  assert.deepEqual(readiness.checks, [
+    { id: 'passwords', ok: false },
+    { id: 'default-passwords', ok: false },
+    { id: 'events', ok: false },
+    { id: 'folders', ok: false },
+    { id: 'models', ok: false },
+    { id: 'programs', ok: false },
+    { id: 'projects', ok: true },
+  ]);
+  assert.equal(readiness.terminal, null);
+  // Neither the name of a project nor a detail reaches the chat.
+  assert.doesNotMatch(checked.text, /sito-segreto|repos|development defaults|detail/);
+  assert.deepEqual((await call('GET', '/api/installation/readiness')).body, checked.body);
+  assert.equal((await call('POST', '/api/installation/readiness', { body: { force: true } })).status, 400);
+  assert.equal((await call('POST', '/api/installation/readiness', { body: {}, headers: { host: `evil.example:${String(server.port)}` } })).status, 403);
 });
 
 test('I-7 (D-131): the whole conversation saved in kb/inbox, replaced by a second save; refused above L2 or with nothing to save', async () => {

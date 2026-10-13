@@ -75,9 +75,9 @@ test('a model can be tried with its files on disk and no trial open', () => {
 test('the codes and refusals of a trial become Italian, unknown ones generic', () => {
   assert.equal(modelEvalErrorText(null), undefined);
   assert.equal(modelEvalErrorText('preempted'), 'annullata: chiamate e task hanno avuto la precedenza troppe volte sullo stesso caso');
-  assert.equal(modelEvalErrorText('interrupted'), 'interrotta dal riavvio del nucleo');
+  assert.equal(modelEvalErrorText('interrupted'), 'interrotta dal riavvio di Arianna');
   assert.equal(modelEvalErrorText('LocalModelError:timeout'), 'il modello locale non ha risposto');
-  assert.equal(modelEvalErrorText('TypeError'), 'errore del nucleo');
+  assert.equal(modelEvalErrorText('TypeError'), 'errore di Arianna');
   assert.equal(errorText(new ApiError(409, 'a trial of this model is already queued or running')), 'Una prova di questo modello è già in coda o in corso.');
   assert.equal(errorText(new ApiError(409, 'the trial is already passed')), 'Questa prova è già finita.');
   assert.match(errorText(new ApiError(409, 'the files of the model are not in data/models')), /arianna:models pull/);

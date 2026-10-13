@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
 
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
           <h2 class="hud-title">3 · La scelta</h2>
-          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[13.5px]">config/arianna.toml</code>: i ruoli si applicano senza riavvio, la voce dopo il riavvio del nucleo. Gli altri candidati puoi cancellarli da data/models.</p>
+          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[13.5px]">config/arianna.toml</code>: i ruoli si applicano senza riavvio, la voce dopo il riavvio di Arianna. Gli altri candidati puoi cancellarli da data/models.</p>
           <pre class="overflow-x-auto rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[13.5px]">{{ snippet }}</pre>
         </section>
       </template>

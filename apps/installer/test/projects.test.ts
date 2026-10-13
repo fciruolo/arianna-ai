@@ -7,8 +7,9 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { resolveHome, type Project } from '@arianna/config';
+import { folderProblem, linkState, projectChecks } from '@arianna/core/install-checks';
 
-import { folderProblem, linkState, projectChecks, syncProjectLinks } from '../src/projects.ts';
+import { syncProjectLinks } from '../src/projects.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `projects-${randomUUID()}`);
 // A sibling of the scratch ARIANNA_HOME stands for the user's home.

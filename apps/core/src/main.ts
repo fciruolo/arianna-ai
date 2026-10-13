@@ -76,6 +76,7 @@ import { createNoteReleaser } from './note-release.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
+import { createReadiness } from './readiness.ts';
 import { draftProjectRules } from './rules-draft.ts';
 import { NO_RULES, planRulesExport, writeRulesExport } from './rules-export.ts';
 import { startApiServer } from './server/http.ts';
@@ -864,6 +865,8 @@ const server = await startApiServer({
   changelog: { home: config.home },
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
   installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
+  // «Pronta per i dati veri» (D-192): the checks the core can run, on «Controlla» only; the owner's from data/doctor/last.json.
+  readiness: createReadiness({ config: () => settings.current(), sql, app }),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   // "Elimina" (D-157): the steps of the worker stop first, as for an incognito.
   erase: (conversationId) => eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report }),
