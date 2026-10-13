@@ -24,7 +24,7 @@ const ORIGIN_TITLE: Record<StoredFailure['origin'], string> = {
   'local-model': 'Perché è fallito: modello locale',
   claude: 'Perché è fallito: Claude Code',
   tool: 'Perché è fallito: uno strumento',
-  engine: 'Perché è fallito: il nucleo',
+  engine: 'Perché è fallito: Arianna',
 };
 /** How an attached question starts, for the model and for the user. */
 export const QUESTION_HEADER = 'Domanda originale del task fallito:';

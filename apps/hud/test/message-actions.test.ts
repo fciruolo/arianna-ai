@@ -64,6 +64,7 @@ test('every 404 of a message save gets the same text, whatever the core says in 
   assert.deepEqual(captureOutcome(404, { error: 'not found' }), { kind: 'failed', text: MESSAGE_GONE_TEXT });
   assert.deepEqual(captureOutcome(404, {}), { kind: 'failed', text: MESSAGE_GONE_TEXT });
   assert.deepEqual(captureOutcome(404, { error: 'something else' }), { kind: 'failed', text: MESSAGE_GONE_TEXT });
+  assert.equal(MESSAGE_GONE_TEXT, 'Il messaggio non c’è più, o Arianna non è impostata per salvare note: non l’ho salvato.');
 });
 
 test('other answers are failures with an Italian reason', () => {

@@ -16,7 +16,10 @@ function sources(dir: string, out: string[] = []): string[] {
 }
 
 test('no text of the chat says «nucleo»', () => {
-  const offenders = sources(SRC).filter((path) => /nucleo/i.test(readFileSync(path, 'utf8')));
-  assert.ok(sources(SRC).length > 50, 'the scan reads the sources of the chat');
-  assert.deepEqual(offenders, []);
+  const files = sources(SRC);
+  assert.ok(files.length > 50, 'the scan reads the sources of the chat');
+  assert.deepEqual(
+    files.filter((path) => /nucleo/i.test(readFileSync(path, 'utf8'))),
+    [],
+  );
 });
