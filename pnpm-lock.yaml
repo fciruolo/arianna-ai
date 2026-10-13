@@ -332,6 +332,9 @@ importers:
       '@arianna/policy':
         specifier: workspace:*
         version: link:../policy
+      smol-toml:
+        specifier: 1.9.0
+        version: 1.9.0
 
   packages/finance: {}
 

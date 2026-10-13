@@ -10,7 +10,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
-- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti e ciò che `pnpm check` esegue (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…), rifiuta una versione di `codex` non verificata, le istruzioni globali dell'utente, file di istruzioni in più e argomenti che allenterebbero il profilo, e parte con l'ambiente pulito dell'adattatore (D-143).
+- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti e ciò che `pnpm check` esegue (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…), rifiuta una versione di `codex` non verificata, le istruzioni globali dell'utente, chiavi del suo `config.toml` di Codex che uscirebbero dal profilo e server MCP accesi, file di istruzioni in più, un `.gitignore` cambiato e argomenti che allenterebbero il profilo, e parte con l'ambiente pulito dell'adattatore e senza rete (D-143).
+- `docs/PRIVACY-POLICY-SPEC.md` scrive l'eccezione di `pnpm dev:codex` ai punti 2, 5 e 8 del confinamento e cosa la compensa (D-143).
 
 ## [0.85.3] - 2026-10-13
 
