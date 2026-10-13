@@ -2001,7 +2001,7 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 ## D-113 — Modelli piccoli accanto al 27B: un secondo scanner dei dati personali (Rizzo-PII) e decisioni tipate (Laya, Rizzo Flow)
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire dopo il backup (D-096). Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
 - **Collegate:** D-016 e regola 10 (canali esterni), gateway e scanner di `packages/policy`, D-066 (Python solo in `apps/voice`, gabbia di rete), D-081 (prove dei modelli), D-086 (riordino delle note), D-107 (personalità L1, scanner al salvataggio), D-107e (memoria di oMLX), D-110 (routine), D-111 (chi risponde)
 
 ### Contesto
@@ -2044,43 +2044,16 @@ Due parti indipendenti; la seconda non serve alla prima.
 - **Catena di fornitura:** progetti di pochi mesi e pochi contributori; revisione dei pesi fissata, sha256 nel catalogo, nessun codice del repository eseguito oltre alla libreria che carica il modello (da registrare come dipendenza in DECISIONS).
 - **Servizio spento:** se le uscite verso il cloud passassero senza il secondo controllo, la protezione cambierebbe a seconda che un processo sia acceso (domanda 2).
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **Si aggiunge un piccolo modello locale che riconosce nomi e indirizzi prima che un testo vada al cloud?** Raccomandazione: sì, Rizzo-PII come secondo scanner, solo in salita, dopo la prova della tappa 1; il primo uso è sulle uscite verso il cloud, poi al salvataggio delle personalità.
-   - Contesto: Il gateway è il filtro che controlla ogni testo che esce verso Claude, Codex o internet. Oggi riconosce solo forme fisse come IBAN, codici fiscali, chiavi e password; non riconosce nomi, indirizzi o dati catastali scritti in una frase. Rizzo-PII è un piccolo modello italiano che gira sul Mac e li riconosce. Si decide se aggiungerlo come secondo controllo che può solo bloccare ("solo in salita"), mai lasciar passare qualcosa che il primo blocca.
-   - Opzione consigliata: Sì, dopo una prova su testi finti — prima si misura quanto sbaglia (soprattutto blocchi inutili su testi di codice), poi entra nel gateway; primo uso sulle uscite verso il cloud.
-   - Opzione: No, basta il controllo di oggi — nessun processo in più, ma nomi e indirizzi scritti in prosa continuano a passare inosservati.
-   - Opzione: Rinviare la decisione — se ne riparla dopo altre priorità.
-   - Esempio: Un incarico per il Coder contiene "manda la bozza a Mario Rossi, via Garibaldi 12, Torino"; il controllo di oggi non vede nulla, Rizzo-PII trova nome e indirizzo e la delega si ferma in "Attende te".
-2. **Se il secondo controllo non risponde, i testi verso il cloud si fermano o passano lo stesso?** Raccomandazione: si fermano (default-deny), come una delega senza adattatore. L'unica eccezione possibile è l'installazione di sviluppo, riconosciuta con lo stesso criterio deterministico del doctor (password di sviluppo, nessun vault), mai con un'impostazione che si possa dimenticare accesa; ogni uscita passata senza il secondo controllo resta registrata in `gateway_log`.
-   - Contesto: Il secondo controllo (Rizzo-PII) è un programma a parte, che può essere spento o bloccato. Si decide cosa succede ai testi diretti al cloud quando non risponde: fermarsi per prudenza o passare col solo controllo di oggi.
-   - Opzione consigliata: Si fermano, per prudenza — senza il secondo controllo niente esce verso il cloud; unica eccezione l'installazione di sviluppo con dati finti, riconosciuta in automatico, con ogni uscita registrata.
-   - Opzione: Passano col solo controllo di oggi — Claude e Codex funzionano sempre, ma la protezione cambia senza che te ne accorga a seconda che il programma sia acceso.
-   - Esempio: Il programma del secondo controllo si è chiuso; chiedi al Coder una modifica e la richiesta resta in attesa con il motivo "secondo controllo non disponibile" finché non riparte.
-3. **Dove gira Rizzo-PII?** Scelte possibili: dentro `apps/voice` (stesso ambiente Python e stessa gabbia, nessuna eccezione nuova alla regola "Python solo in `apps/voice`"), in un processo Python suo, o in Node con un runtime ONNX. Raccomandazione: dentro `apps/voice` come endpoint separato, sapendo che allora `[voice]` e il suo processo diventano necessari per ogni delega cloud (con la domanda 2: senza voce accesa, niente cloud). Un processo Python suo richiede che sia l'utente a cambiare la regola in CLAUDE.md; ONNX in Node evita Python ma è anch'esso una dipendenza nuova con la sua voce in DECISIONS.
-   - Contesto: Rizzo-PII è un modello che gira in Python. Una regola del progetto ammette Python solo in apps/voice, la parte di Arianna che gestisce voce e chiamate. Si decide dove farlo girare.
-   - Opzione consigliata: Dentro apps/voice, a parte — un servizio separato nella parte vocale; nessuna regola da cambiare, ma la parte vocale deve essere accesa per ogni lavoro mandato al cloud.
-   - Opzione: In un programma Python suo — più indipendente, ma devi cambiare tu la regola "Python solo in apps/voice".
-   - Opzione: In Node, senza Python — si usa un motore ONNX dentro il core: niente Python, ma è comunque una libreria nuova da approvare.
-   - Esempio: Avvii Arianna con la voce accesa; prima che un testo esca verso Claude il core lo manda al servizio dentro apps/voice e riceve "nessun dato personale"; con la voce spenta quel testo non esce.
-4. **Per le scelte semplici si prova prima a rendere più veloce il modello che c'è già?** Raccomandazione: sì, prima la via senza modelli nuovi (B1, probabilità del 27B già caricato), Laya solo se non basta.
-   - Contesto: Il modello locale grande (il 27B) impiega circa 20 secondi anche per scelte semplici fra poche opzioni, come il tipo di una nota. Si può accelerare leggendo direttamente quale opzione il modello già caricato ritiene più probabile, senza fargli scrivere una risposta (via B1). L'alternativa (B2) è Laya, un modello nuovo fatto apposta, che però va prima addestrato sui nostri casi.
-   - Opzione consigliata: Prima il modello di oggi, Laya dopo — nessun modello nuovo né memoria in più; Laya entra solo se la prima via non basta e accetti di addestrarlo.
-   - Opzione: Subito Laya — più veloce in teoria, ma senza addestramento sbaglia più che tirare a indovinare.
-   - Opzione: Nessuna delle due per ora — si resta coi 20 secondi.
-   - Esempio: Per decidere se una nota è un "pensiero" o un "link", invece di far scrivere una risposta al 27B si legge in una sola passata quale delle due opzioni preferisce, in molto meno tempo.
-5. **Su quale scelta si prova per prima la via veloce?** Raccomandazione: `kind` e tag del riordino delle note (D-086), dove un errore si corregge a mano e non cambia etichette; poi chi risponde fra più agenti (D-111 B), solo fra quelli già ammessi.
-   - Contesto: Le scelte veloci vanno provate prima dove un errore costa poco e si corregge a mano. Mai per etichette di privacy, gateway o approvazioni: lì decide sempre il codice. Si decide da quale scelta partire.
-   - Opzione consigliata: Tipo e tag delle note — un errore si corregge a mano e non cambia nessuna etichetta; poi chi risponde fra più agenti.
-   - Opzione: Chi risponde fra più agenti — più visibile in chat, ma un errore si nota di più.
-   - Opzione: Se una routine chiama o scrive — utile per le routine (D-110), che però non esistono ancora.
-   - Esempio: Salvi "leggere l'articolo sui server MCP"; la scelta veloce le dà tipo "link" e tag "lettura"; se sbaglia, cambi il tag con un clic.
-6. **Quando si fa questo lavoro rispetto agli altri?** Raccomandazione: dopo la tappa A1 rivista di D-107 (fatta) e la prova di D-058. La tappa 1 non tocca il core ma chiede prima le risposte 1 e 3, la voce della dipendenza e la licenza dei pesi.
-   - Contesto: È un lavoro in più fra molti. La proposta era di farlo dopo due cose: la personalità degli agenti (D-107, tappa A1, nel frattempo fatta) e la prova dal vivo del Coder su un tuo progetto fuori da Arianna (D-058, ancora da fare). Si decide quando farlo.
-   - Opzione consigliata: Dopo la prova del Coder (D-058) — prima si chiudono i lavori già avviati; la prova di Rizzo-PII richiede comunque le risposte 1 e 3 e la verifica della licenza.
-   - Opzione: Subito — la protezione in più arriva prima, ma rallenta i lavori aperti.
-   - Opzione: Dopo la Fase 1A — si aspetta la fine della fase in corso.
-   - Esempio: Provato il Coder su un progetto vero (D-058), si scaricano i pesi di Rizzo-PII e si misura su testi finti quanti nomi trova e quanti blocchi inutili fa.
+Risposte dell'utente del 2026-10-14, con le domande a opzioni.
+
+1. **Secondo scanner dei dati personali:** sì, Rizzo-PII come secondo controllo solo in salita, dopo una prova su testi finti (falsi positivi sui brief di codice per primi); primo uso sulle uscite verso il cloud.
+2. **Secondo controllo che non risponde:** le uscite verso il cloud si fermano (default-deny), con il motivo «secondo controllo non disponibile»; unica eccezione l'installazione di sviluppo riconosciuta col criterio deterministico del doctor, con ogni uscita registrata in `gateway_log`.
+3. **Dove gira:** scelta dell'utente diversa dalle tre proposte: **un ambiente Python isolato suo, come `apps/voice`**, nome scelto da Claude: `apps/guard` (proprio `pyproject.toml` e `uv.lock`, gabbia senza rete come la voce, test propri). La voce si può spegnere senza fermare il cloud. Quando si costruisce, la regola di CLAUDE.md «Python solo in `apps/voice`» diventa «Python solo in `apps/voice` e `apps/guard`», citando questa scelta; la libreria che carica il modello avrà la sua voce in DECISIONS.
+4. **Scelte semplici più veloci:** prima B1 (probabilità delle opzioni dal modello già caricato in oMLX), Laya solo se B1 non basta e con l'addestramento accettato dall'utente.
+5. **Prima prova della via veloce:** tipo e tag delle note nel riordino (D-086); poi chi risponde fra più agenti (D-111 B).
+6. **Quando:** dopo il backup (D-096); poi la tappa 1 di Rizzo-PII in `apps/guard`, l'integrazione nel gateway, la via veloce sulle note.
 
 ### Cose non verificate (D-113)
 
