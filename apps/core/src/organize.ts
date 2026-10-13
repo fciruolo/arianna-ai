@@ -5,8 +5,9 @@ import { siteListed } from '@arianna/config';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForKbPage, maxLabel, spendAllowed, type Label, type LabelRules, type Target } from '@arianna/policy';
 
+import type { ArchiveOutcome } from './archivist.ts';
 import { isCaptureKind, linkInText, localTimestamp } from './capture.ts';
-import type { Sql } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { completeJob, createJobQueue, enqueueJob, failJob, type Job } from './jobs.ts';
@@ -617,6 +618,17 @@ export interface NoteOrganizerOptions extends OrganizeEnv {
   watchMs?: number;
   stopGraceMs?: number;
   onError?: (error: unknown) => void;
+  /**
+   * The Archivist (D-195), on this same queue (jobs with `archive: true`):
+   * proposes where an organized note goes. Without it nothing is proposed.
+   */
+  archive?: {
+    propose: (path: string, signal: AbortSignal, force: boolean) => Promise<ArchiveOutcome>;
+    /** Queues the proposal of a note just organized, in the transaction of its job. */
+    enqueue: (sql: Queryable, path: string) => Promise<boolean>;
+    /** Organized notes without a proposal, queued at start (at most MAX_RESUMED). */
+    waiting: () => string[];
+  };
 }
 
 export interface NoteOrganizer {
@@ -660,7 +672,12 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
   const downloads = new Map<string, LinkContent>();
   const MAX_KEPT = 50;
 
-  async function handle(job: Job): Promise<void> {
+  /**
+   * Runs the work of a job while it is held: a heartbeat keeps the lock, and
+   * a call or a task step that wants the machine aborts the work (D-086).
+   * `yielded`: stopped with the core or given way to the user, not lost.
+   */
+  async function watched<T>(job: Job, work: (signal: AbortSignal) => Promise<T>): Promise<{ outcome: T; yielded: boolean }> {
     const lost = new AbortController();
     let lastBeat = Date.now();
     const beat = setInterval(() => {
@@ -682,13 +699,26 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
         })
         .catch(onError);
     }, options.watchMs ?? 2_000);
-    let outcome: OrganizeOutcome;
     try {
+      const outcome = await work(AbortSignal.any([controller.signal, lost.signal, preempted.signal]));
+      return { outcome, yielded: (controller.signal.aborted || preempted.signal.aborted) && !lost.signal.aborted };
+    } finally {
+      clearInterval(beat);
+      clearInterval(watch);
+    }
+  }
+
+  async function handle(job: Job): Promise<void> {
+    if (job.payload.archive === true) {
+      await handleArchive(job);
+      return;
+    }
+    const { outcome, yielded } = await watched<OrganizeOutcome>(job, async (signal) => {
       const path = typeof job.payload.path === 'string' ? job.payload.path : '';
       try {
         checkNotePath(path);
         const kept = downloads.get(job.id);
-        outcome = await organizeNote(options, path, AbortSignal.any([controller.signal, lost.signal, preempted.signal]), {
+        return await organizeNote(options, path, signal, {
           fetch: job.payload.fetch === true,
           ...(kept === undefined ? {} : { content: kept }),
           onContent: (content) => {
@@ -699,14 +729,11 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
         });
       } catch (error) {
         if (!(error instanceof NoteError)) onError(error);
-        outcome = { ok: false, reason: error instanceof NoteError ? 'not-found' : 'error' };
+        return { ok: false, reason: error instanceof NoteError ? 'not-found' : 'error' };
       }
-    } finally {
-      clearInterval(beat);
-      clearInterval(watch);
-    }
+    });
     // Stopped with the core, or given way to the user: the job goes back to the queue without spending its attempt.
-    if (!outcome.ok && outcome.reason === 'interrupted' && (controller.signal.aborted || preempted.signal.aborted) && !lost.signal.aborted) {
+    if (!outcome.ok && outcome.reason === 'interrupted' && yielded) {
       await queue.release(job.id, worker);
       return;
     }
@@ -717,6 +744,8 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
         await completeJob(tx, job.id, worker);
         // `fetch`: a closed code (none, ok or why not), never the address nor the site.
         await appendEvent(tx, { kind: 'note.organized', label: 'L0', payload: { jobId: job.id, links: outcome.linked, fetch: outcome.fetch } });
+        // The Archivist proposes where the note goes (D-195); the user decides.
+        if (options.archive !== undefined && typeof job.payload.path === 'string') await options.archive.enqueue(tx, job.payload.path);
       } else if (outcome.reason === 'not-new') {
         await completeJob(tx, job.id, worker);
       } else {
@@ -727,6 +756,43 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
         // The path names the note, whose slug comes from its text: not in an L0 event.
         await appendEvent(tx, {
           kind: 'note.organize_failed',
+          label: 'L0',
+          payload: { jobId: job.id, reason: outcome.reason, ...(result === 'retry' ? { retry: true } : {}) },
+        });
+      }
+    });
+  }
+
+  /** A job of the Archivist (D-195): held, given way and retried as a note is. */
+  async function handleArchive(job: Job): Promise<void> {
+    const archive = options.archive;
+    const { outcome, yielded } = await watched<ArchiveOutcome>(job, async (signal) => {
+      if (archive === undefined) return { ok: false, reason: 'skip' };
+      const path = typeof job.payload.path === 'string' ? job.payload.path : '';
+      try {
+        checkNotePath(path);
+        return await archive.propose(path, signal, job.payload.force === true);
+      } catch (error) {
+        if (!(error instanceof NoteError)) onError(error);
+        return { ok: false, reason: error instanceof NoteError ? 'not-found' : 'error' };
+      }
+    });
+    if (!outcome.ok && outcome.reason === 'interrupted' && yielded) {
+      await queue.release(job.id, worker);
+      return;
+    }
+    await sql.begin(async (tx) => {
+      if (outcome.ok) {
+        await completeJob(tx, job.id, worker);
+        await appendEvent(tx, { kind: 'note.archive_proposed', label: 'L0', payload: { jobId: job.id, links: outcome.links } });
+      } else if (outcome.reason === 'skip') {
+        await completeJob(tx, job.id, worker);
+      } else {
+        const result = await failJob(tx, job.id, worker, outcome.reason, outcome.reason === 'unavailable' ? organizeRetryDelayMs(job.attempts) : null);
+        if (result === 'lost') return;
+        // Codes and the job only: the path names the note.
+        await appendEvent(tx, {
+          kind: 'note.archive_failed',
           label: 'L0',
           payload: { jobId: job.id, reason: outcome.reason, ...(result === 'retry' ? { retry: true } : {}) },
         });
@@ -772,6 +838,10 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
       let resumed = 0;
       for (const note of left) {
         if (await enqueueOrganize(sql, note.path)) resumed += 1;
+      }
+      // Organized notes still without a proposal of the Archivist (D-195).
+      if (options.archive !== undefined) {
+        for (const path of options.archive.waiting()) await options.archive.enqueue(sql, path);
       }
       loop = run();
       return { resumed };

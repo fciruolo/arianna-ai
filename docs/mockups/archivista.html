@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archivista, da archiviare</title>
+<!--
+  Anteprima della vista «Da archiviare» della pagina Pensieri (D-195,
+  Archivista A1). Il modello locale propone per ogni pensiero riordinato una
+  cartella di kb/, un titolo e qualche collegamento; l'utente approva, corregge
+  o scarta. Stessi token della chat (apps/hud/src/style.css). File autonomo,
+  niente rete; font letti da node_modules di apps/hud con percorsi relativi.
+  Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .bar button { background: #2f8f83; color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .explain { max-width: 1120px; margin: 0 auto; padding: 12px 16px 0; font-size: 14px; }
+  .explain p { margin: 0 0 6px; } .explain ul { margin: 0; padding-left: 20px; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+  .muted { color: var(--muted); }
+  .head { display: flex; align-items: flex-start; gap: 12px; }
+  .head h1 { margin: 0; font-size: 21px; font-weight: 600; }
+  .head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); max-width: 720px; }
+  .head .act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .pill { display: inline-flex; padding: 1px 9px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 13.5px; white-space: nowrap; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+  .btn.ghost:hover { color: var(--danger); }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .search { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 6px 10px; color: var(--muted); font-size: 14px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 2px; }
+  .seg button { border: 0; background: none; border-radius: 6px; padding: 4px 10px; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+  .seg button.on { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+  .seg .n { color: var(--muted); font-weight: 400; }
+  .seg .n.hot { color: var(--accent); font-weight: 600; }
+  .bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 14px; }
+  .bulk .grow { flex: 1; min-width: 200px; color: var(--muted); font-size: 13.5px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 12px 14px; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; }
+  .card.sel { border-color: var(--accent); }
+  .card.expired { opacity: .85; border-style: dashed; }
+  .card input[type="checkbox"] { margin-top: 4px; accent-color: var(--accent); }
+  .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+  .top .t { font-weight: 600; font-size: 14.5px; }
+  .top .when { margin-left: auto; font-size: 13px; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; border: 1px solid currentColor; font: 12px/1.6 "JetBrains Mono", monospace; white-space: nowrap; color: var(--warn); }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .move { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; }
+  @media (max-width: 720px) { .move { grid-template-columns: 1fr; } }
+  .move label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--muted); }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; outline: none; font-size: 14px; color: var(--ink); }
+  .changed { border-color: var(--info); }
+  .links { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+  .link { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 4px 0 9px; font-size: 13px; }
+  .link button { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 4px; }
+  .link button:hover { color: var(--danger); }
+  .why { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+  .why b { color: var(--ink); font-weight: 600; }
+  .actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .warn { color: var(--warn); }
+  .ok { color: var(--ok); }
+  .done { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 14px; background: var(--surface); display: flex; gap: 10px; align-items: center; }
+  .empty { text-align: center; color: var(--muted); padding: 24px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <strong>Anteprima D-195 · Archivista A1</strong>
+  <span>Dati inventati.</span>
+  <button type="button" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Tema chiaro/scuro</button>
+</div>
+<div class="explain">
+  <p><strong>Cosa cambia in Pensieri:</strong> un quarto filtro, «Da archiviare», con le proposte dell'Archivista. Il modello locale (mai il cloud) propone dove spostare ogni pensiero già riordinato; finché non approvi, il pensiero resta in <span class="mono">kb/inbox</span>.</p>
+  <ul>
+    <li>La cartella si cambia dalla select (solo cartelle di <span class="mono">kb/</span> che esistono, fino a Privato); il titolo si corregge nel campo; un collegamento si toglie con ×.</li>
+    <li>«Approva» sposta il file con lo stesso testo e la stessa etichetta (mai più bassa); «Scarta» lo lascia nell'inbox.</li>
+    <li>Se il pensiero cambia dopo la proposta, la proposta scade: «Proponi di nuovo».</li>
+  </ul>
+</div>
+
+<main class="page">
+  <div class="head">
+    <div>
+      <h1>Pensieri</h1>
+      <p>Scrivi un pensiero e basta: il modello locale gli dà titolo, riassunto, collegamenti e tag, poi propone dove archiviarlo. Restano Privati, su questo computer.</p>
+    </div>
+    <div class="act"><span class="pill">14 pensieri</span><button class="btn" type="button">↻ Aggiorna</button></div>
+  </div>
+
+  <div class="filters">
+    <div class="search">⌕ <span>Filtra per testo o #tag</span></div>
+    <div class="seg" role="radiogroup" aria-label="Stato">
+      <button type="button">Tutti <span class="n">14</span></button>
+      <button type="button">Da riordinare <span class="n">1</span></button>
+      <button type="button">Riordinati <span class="n">13</span></button>
+      <button type="button" class="on">Da archiviare <span class="n hot">3</span></button>
+    </div>
+  </div>
+
+  <div class="bulk">
+    <label><input type="checkbox" checked> Seleziona tutte</label>
+    <span class="grow">2 selezionate · si spostano con la cartella e il titolo che vedi</span>
+    <button class="btn p" type="button">Approva le selezionate (2)</button>
+  </div>
+
+  <article class="card sel">
+    <input type="checkbox" checked aria-label="Seleziona">
+    <div>
+      <div class="top">
+        <span class="t">Ombrellone per il balcone</span>
+        <span class="chip">Privato</span>
+        <span class="when">proposta oggi 08:14</span>
+      </div>
+      <div class="move">
+        <label>Sposta in
+          <select class="field">
+            <option>private/casa</option>
+            <option>private/auto</option>
+            <option>private/salute</option>
+            <option>work/clienti</option>
+            <option>public/ricette</option>
+          </select>
+        </label>
+        <label>Titolo
+          <input class="field" value="Ombrellone per il balcone">
+        </label>
+      </div>
+      <div class="links"><span class="muted">Collegamenti:</span>
+        <span class="link">Balcone, lavori di primavera <button type="button" aria-label="Togli il collegamento">×</button></span>
+      </div>
+      <p class="why"><b>Perché:</b> parla di un acquisto per la casa, come le altre note di private/casa.</p>
+      <div class="actions">
+        <button class="btn p" type="button">Approva</button>
+        <button class="btn" type="button">Apri il pensiero</button>
+        <button class="btn ghost" type="button">Scarta</button>
+      </div>
+    </div>
+  </article>
+
+  <article class="card sel">
+    <input type="checkbox" checked aria-label="Seleziona">
+    <div>
+      <div class="top">
+        <span class="t">Idea di torta di mele per domenica</span>
+        <span class="chip">Privato</span>
+        <span class="when">proposta oggi 08:16</span>
+      </div>
+      <div class="move">
+        <label>Sposta in
+          <select class="field changed">
+            <option>private/casa</option>
+            <option selected>public/ricette</option>
+          </select>
+        </label>
+        <label>Titolo
+          <input class="field" value="Torta di mele della domenica">
+        </label>
+      </div>
+      <div class="links"><span class="muted">Collegamenti:</span> <span class="muted">nessuno</span></div>
+      <p class="why"><b>Perché:</b> è una ricetta. <span class="note">· Hai cambiato la cartella: proposta era private/casa. Resta Privato anche in public/ricette.</span></p>
+      <div class="actions">
+        <button class="btn p" type="button">Approva</button>
+        <button class="btn" type="button">Apri il pensiero</button>
+        <button class="btn ghost" type="button">Scarta</button>
+      </div>
+    </div>
+  </article>
+
+  <article class="card expired">
+    <input type="checkbox" disabled aria-label="Seleziona">
+    <div>
+      <div class="top">
+        <span class="t">Tagliando della macchina a novembre</span>
+        <span class="chip">Privato</span>
+        <span class="when warn">proposta scaduta: il pensiero è cambiato dopo</span>
+      </div>
+      <p class="why">Era: <span class="mono">private/auto</span> · «Tagliando auto, novembre»</p>
+      <div class="actions">
+        <button class="btn" type="button">↻ Proponi di nuovo</button>
+        <button class="btn" type="button">Apri il pensiero</button>
+        <button class="btn ghost" type="button">Scarta</button>
+      </div>
+    </div>
+  </article>
+
+  <div class="done"><span class="ok">✓</span> Spostato in <span class="mono">private/salute</span>: «Promemoria analisi del sangue». <span class="muted">Collegamenti aggiornati in 1 nota.</span></div>
+
+  <p class="empty">Quando non resta nulla da archiviare: «Niente da archiviare: i pensieri riordinati sono già al loro posto, o li hai lasciati nell'inbox».</p>
+</main>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, deleteNote, fetchNoteLink, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { captureNote, deleteNote, fetchNoteLink, listNotes, loadArchive, loadNote, organizeNote } from '../lib/api.ts';
 import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
@@ -35,6 +35,7 @@ import {
   type NoteSummary,
   type StatusFilter,
 } from '../lib/thoughts.ts';
+import ArchiveProposals from './ArchiveProposals.vue';
 import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
@@ -63,7 +64,9 @@ const hidden = ref(0);
 const loading = ref(true);
 const listError = ref<string | null>(null);
 const query = ref('');
-const status = ref<StatusFilter>('all');
+/** The filters of the list, and "Da archiviare" (D-195), the proposals of the Archivist. */
+const status = ref<StatusFilter | 'archive'>('all');
+const archiveCount = ref(0);
 const now = ref(Date.now());
 const marks = ref<Record<string, LocalMark>>({});
 
@@ -84,7 +87,7 @@ const deleteError = ref<string | null>(null);
 
 const counter = computed(() => sizeCounter(draft.value));
 const tooLarge = computed(() => byteLength(draft.value) > MAX_NOTE_BYTES);
-const shown = computed(() => filterThoughts(notes.value, query.value, status.value));
+const shown = computed(() => filterThoughts(notes.value, query.value, status.value === 'archive' ? 'all' : status.value));
 const groups = computed(() => groupThoughts(shown.value, new Date(now.value)));
 const selected = computed(() => notes.value.find((item) => item.name === selectedName.value));
 const selectedState = computed(() => (selected.value === undefined ? undefined : stateOf(selected.value)));
@@ -92,12 +95,14 @@ const counts = computed(() => ({
   all: notes.value.length,
   new: notes.value.filter((item) => item.status !== 'organized').length,
   organized: notes.value.filter((item) => item.status === 'organized').length,
+  archive: archiveCount.value,
 }));
 
-const STATUS_FILTERS: { value: StatusFilter; text: string }[] = [
+const STATUS_FILTERS: { value: StatusFilter | 'archive'; text: string }[] = [
   { value: 'all', text: 'Tutti' },
   { value: 'new', text: 'Da riordinare' },
   { value: 'organized', text: 'Riordinati' },
+  { value: 'archive', text: 'Da archiviare' },
 ];
 
 
@@ -148,6 +153,12 @@ async function refresh(): Promise<void> {
     notes.value = listing.notes;
     hidden.value = listing.hidden;
     listError.value = null;
+    // The count of "Da archiviare": a failure leaves the last one.
+    loadArchive()
+      .then((archive) => {
+        archiveCount.value = archive.proposals.filter((item) => item.state === 'proposed').length;
+      })
+      .catch(() => undefined);
     // The note open in the panel was organized meanwhile: its text changed.
     const open = selected.value;
     if (open !== undefined && note.value !== null && note.value.name === open.name && note.value.status !== open.status) void read(open.name);
@@ -309,6 +320,12 @@ async function fetchAndSummarize(): Promise<void> {
   look();
 }
 
+/** A thought approved or discarded in "Da archiviare": the list again; a thought moved out of the inbox leaves the panel. */
+async function afterArchive(): Promise<void> {
+  await refresh();
+  if (selectedName.value !== null && !notes.value.some((item) => item.name === selectedName.value)) closePanel();
+}
+
 /** "Elimina" confirmed: the file of the thought goes for good; the list and the panel let it go. */
 async function removeThought(name: string): Promise<void> {
   if (removing.value) return;
@@ -353,7 +370,7 @@ onBeforeUnmount(() => {
     <div class="min-w-0 flex-1 overflow-y-auto">
       <div class="mx-auto flex max-w-[1120px] flex-col gap-4 px-4 pt-5 pb-10 md:px-6">
         <PageHeader title="Pensieri" title-id="thoughts-title">
-          Scrivi un pensiero e basta: il modello locale gli dà titolo, riassunto, collegamenti e tag. Restano in <span class="font-mono text-[13px]">kb/inbox</span>, Privati, su questo computer.
+          Scrivi un pensiero e basta: il modello locale gli dà titolo, riassunto, collegamenti e tag, poi propone dove archiviarlo. Restano in <span class="font-mono text-[13px]">kb/inbox</span>, Privati, su questo computer.
           <template #actions>
             <span class="pill">{{ counts.all === 1 ? '1 pensiero' : `${String(counts.all)} pensieri` }}</span>
             <button type="button" class="btn px-2.5 py-1 text-[13.5px]" aria-label="Aggiorna l’elenco" @click="refresh"><Icon name="retry" :size="14" />Aggiorna</button>
@@ -426,11 +443,13 @@ onBeforeUnmount(() => {
                 :class="status === item.value ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:text-ink'"
                 @click="status = item.value"
               >
-                {{ item.text }} <span class="text-muted">{{ counts[item.value] }}</span>
+                {{ item.text }} <span :class="item.value === 'archive' && counts.archive > 0 ? 'font-semibold text-accent' : 'text-muted'">{{ counts[item.value] }}</span>
               </button>
             </div>
           </div>
 
+          <ArchiveProposals v-if="status === 'archive'" @open="open" @changed="afterArchive" @count="archiveCount = $event" />
+          <template v-else>
           <p v-if="listError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ listError }}</p>
           <p v-if="loading && notes.length === 0" class="py-6 text-center text-[14px] text-muted">Carico i pensieri…</p>
           <p v-else-if="!loading && notes.length === 0 && listError === null" class="py-6 text-center text-sm text-muted">
@@ -504,6 +523,7 @@ onBeforeUnmount(() => {
             </ul>
           </div>
           <p v-if="hidden > 0" class="text-[13px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
+          </template>
         </section>
       </div>
     </div>
