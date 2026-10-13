@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confronto dei modelli</title>
+<!--
+  Anteprima della pagina «Confronto dei modelli»: le prove dei modelli
+  (model_evals, D-081) restano anche dopo aver cancellato un modello, con la
+  velocità (token al secondo, attesa della prima parola) e una prova di
+  riferimento del modello in uso. Stessi token della chat
+  (apps/hud/src/style.css). File autonomo, niente rete. Numeri inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    --s1: #23887c; --s2: #3f6fa8; --s3: #b9801c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    --s1: #4fd1c1; --s2: #7fb4f0; --s3: #f2b34b;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .bar button { background: #2f8f83; color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .explain { max-width: 1180px; margin: 0 auto; padding: 12px 16px 0; font-size: 14px; }
+  .explain p { margin: 0 0 6px; } .explain ul { margin: 0; padding-left: 20px; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+  .muted { color: var(--muted); }
+  .head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+  .head h1 { margin: 0; font-size: 21px; font-weight: 600; }
+  .head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); max-width: 760px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .tabs span { padding: 6px 10px; color: var(--muted); }
+  .tabs span.on { color: var(--ink); font-weight: 600; border-bottom: 2px solid var(--accent); margin-bottom: -1px; }
+  .pill { display: inline-flex; padding: 0 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+  .pill.use { border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .pill.gone { border-style: dashed; }
+  .pill.warn { border-color: color-mix(in srgb, var(--warn) 60%, transparent); color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 13.5px; white-space: nowrap; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 14px; }
+  .filters label { display: inline-flex; gap: 6px; align-items: center; }
+  .filters select { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 4px 8px; outline: none; }
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .card h2 { margin: 0; font-size: 16.5px; font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; vertical-align: bottom; }
+  th small { display: block; font-weight: 400; }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.sel td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tr.gone td.name .n { color: var(--muted); }
+  td.name .n { font-weight: 600; }
+  td.name small { display: block; color: var(--muted); font-size: 12.5px; }
+  td.c { text-align: center; white-space: nowrap; }
+  td.r { text-align: right; white-space: nowrap; }
+  .score { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+  .track { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .ok { color: var(--ok); } .ko { color: var(--danger); } .na { color: var(--muted); }
+  .best { font-weight: 600; }
+  .note { font-size: 13px; color: var(--muted); }
+  .note.warn { color: var(--warn); }
+  details.hist summary { cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; }
+  details.hist summary::before { content: "▸ "; }
+  details.hist[open] summary::before { content: "▾ "; }
+  details.hist ul { margin: 4px 0 0; padding-left: 14px; font-size: 12.5px; color: var(--muted); }
+  .cmp { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .metric { display: flex; flex-direction: column; gap: 6px; }
+  .metric h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .metric h3 small { font-weight: 400; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 130px 1fr 70px; gap: 8px; align-items: center; font-size: 13px; }
+  .row .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .bar2 { height: 10px; border-radius: 3px; background: var(--line); position: relative; }
+  .row .bar2 i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+  .row .bar2 .th { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: .55; }
+  .row .v { text-align: right; }
+  .k1 { background: var(--s1); } .k2 { background: var(--s2); } .k3 { background: var(--s3); }
+  .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .verdict { border-left: 4px solid var(--accent); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: 14.5px; }
+  .verdict p { margin: 0 0 4px; } .verdict p:last-child { margin: 0; }
+  .diff td { font-size: 13.5px; }
+  .q { font-size: 13px; }
+  .q .mono { color: var(--muted); }
+  .legend { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .empty { display: none; }
+  body[data-state="empty"] .full { display: none; }
+  body[data-state="empty"] .empty { display: flex; }
+  .bar .on { background: #e8efed; color: #1b2422; }
+  @media (max-width: 640px) { .row { grid-template-columns: 90px 1fr 56px; } }
+</style>
+</head>
+<body data-state="full">
+<div class="bar">
+  <strong>Anteprima · Confronto dei modelli</strong>
+  <span>Numeri inventati.</span>
+  <span>Stato:</span>
+  <button type="button" data-s="full" class="on">Con prove</button>
+  <button type="button" data-s="empty">Nessuna prova</button>
+  <button type="button" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Tema chiaro/scuro</button>
+</div>
+<div class="explain">
+  <p><strong>Cosa cambia in Impostazioni → Modelli:</strong> accanto a «Elenco» compare la scheda «Confronto», con tutte le prove fatte finora, anche dei modelli che hai cancellato.</p>
+  <ul>
+    <li>Ogni prova salva da oggi anche la <strong>velocità</strong>: quante parole al secondo scrive il modello (in token, circa ¾ di parola ciascuno) e quanto si aspetta la prima parola. Salva anche nome, dimensione e memoria del modello, così la riga resta leggibile dopo la cancellazione.</li>
+    <li>Il modello in uso fa da <strong>riferimento</strong>: «Prova di riferimento» lo prova sulle stesse domande degli altri.</li>
+    <li>Spunta da 2 a 3 righe e sotto vedi il confronto: barre per ogni capacità con la soglia, velocità e le domande in cui i modelli rispondono in modo diverso.</li>
+    <li>Le prove fatte su una versione vecchia delle domande restano, con un avviso: il confronto con quelle è solo indicativo.</li>
+  </ul>
+</div>
+
+<div class="page">
+  <div class="head">
+    <div>
+      <h1>Modelli</h1>
+      <p>I modelli che Arianna usa sul Mac e quelli che puoi provare.</p>
+    </div>
+  </div>
+  <div class="tabs"><span>Elenco</span><span class="on">Confronto</span></div>
+
+  <!-- Empty state -->
+  <div class="card empty">
+    <h2>Nessuna prova finora</h2>
+    <p class="muted" style="margin:0">Una prova fa rispondere un modello a 51 domande finte (scegliere uno strumento, rifiutare un pagamento, fare un piano…) e misura quante ne azzecca e quanto è veloce. Inizia dal modello in uso, così gli altri hanno un termine di paragone.</p>
+    <div><button type="button" class="btn">Prova di riferimento: Qwen3.8 27B</button></div>
+  </div>
+
+  <div class="card full">
+    <div class="filters">
+      <label>Ruolo <select><option>Orchestratore</option></select></label>
+      <label><input type="checkbox" checked> Mostra i modelli cancellati</label>
+      <label><input type="checkbox"> Solo prove sulle domande di oggi</label>
+      <span style="margin-left:auto" class="note">Le prove non si cancellano mai.</span>
+      <button type="button" class="btn">Prova di riferimento</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Modello</th>
+            <th>Risposte giuste<small>sulle domande della prova</small></th>
+            <th title="Risponde nel formato che Arianna sa leggere">Formato<small>soglia 100%</small></th>
+            <th title="Sceglie lo strumento giusto">Strumenti<small>soglia 85%</small></th>
+            <th title="Rifiuta ciò che non deve fare da solo">Rifiuti<small>soglia 100%</small></th>
+            <th title="Si riprende quando uno strumento sbaglia">Ripresa<small>soglia 70%</small></th>
+            <th title="Divide un lavoro in passi">Piano<small>soglia 85%</small></th>
+            <th>Velocità<small>token al secondo</small></th>
+            <th>Prima parola<small>attesa media</small></th>
+            <th>Per domanda<small>tempo medio</small></th>
+            <th>Memoria</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr class="sel" data-k="1">
+            <td><input type="checkbox" checked aria-label="Confronta Qwen3.8 27B"></td>
+            <td class="name"><span class="n">Qwen3.8 27B</span> <span class="pill use">In uso · riferimento</span>
+              <small>4 bit · 15,2 GB · Qwen, conversione mlx-community</small>
+              <details class="hist"><summary>2 prove</summary><ul><li>13 ott 2026 · 47/51 · 18 tok/s</li><li>9 ott 2026 · 46/51 · 17 tok/s · domande di allora</li></ul></details>
+            </td>
+            <td><div class="score"><div class="track"><i style="width:92%"></i></div><span class="num best">47/51</span></div></td>
+            <td class="c ok">100%</td><td class="c ok">92%</td><td class="c ok">100%</td><td class="c ok">83%</td><td class="c ok">100%</td>
+            <td class="r num">18</td><td class="r num">1,1 s</td><td class="r num">9,8 s</td><td class="r num">18 GiB</td>
+            <td class="num">13 ott</td>
+          </tr>
+          <tr class="sel" data-k="2">
+            <td><input type="checkbox" checked aria-label="Confronta Qwen3.8 35B-A3B"></td>
+            <td class="name"><span class="n">Qwen3.8 35B-A3B</span> <span class="pill">Da provare</span>
+              <small>4 bit · 19,8 GB · Qwen, conversione da cercare · legge solo testo</small>
+            </td>
+            <td><div class="score"><div class="track"><i style="width:86%"></i></div><span class="num">44/51</span></div></td>
+            <td class="c ok">100%</td><td class="c ok">86%</td><td class="c ok">100%</td><td class="c ko" title="Sotto la soglia del 70%">67%</td><td class="c ok">100%</td>
+            <td class="r num best">62</td><td class="r num best">0,5 s</td><td class="r num best">3,4 s</td><td class="r num">20 GiB</td>
+            <td class="num">14 ott</td>
+          </tr>
+          <tr class="sel gone" data-k="3">
+            <td><input type="checkbox" checked aria-label="Confronta MiniCPM-V 4.7"></td>
+            <td class="name"><span class="n">MiniCPM-V 4.7 35B-A3B</span> <span class="pill gone">Cancellato il 15 ott</span>
+              <small>4 bit · 20,4 GB · OpenBMB · legge anche immagini</small>
+            </td>
+            <td><div class="score"><div class="track"><i style="width:76%"></i></div><span class="num">39/51</span></div></td>
+            <td class="c ko" title="2 risposte in un formato che Arianna non sa leggere">96%</td><td class="c ko">78%</td><td class="c ok">100%</td><td class="c ko">50%</td><td class="c ok">100%</td>
+            <td class="r num">55</td><td class="r num">0,6 s</td><td class="r num">4,1 s</td><td class="r num">21 GiB</td>
+            <td class="num">15 ott</td>
+          </tr>
+          <tr data-k="0">
+            <td><input type="checkbox" aria-label="Confronta Qwen3.8 27B Uncensored"></td>
+            <td class="name"><span class="n">Qwen3.8 27B Uncensored</span> <span class="pill warn">Domande di allora</span>
+              <small>4 bit · 15,2 GB · orcarouter</small>
+              <span class="note warn">Interrotta dopo 1 domanda su 32, il 5 ott: non si confronta.</span>
+            </td>
+            <td><div class="score"><div class="track"><i style="width:3%"></i></div><span class="num">1/32</span></div></td>
+            <td class="c na">—</td><td class="c na">—</td><td class="c na">—</td><td class="c na">—</td><td class="c na">—</td>
+            <td class="r na">—</td><td class="r na">—</td><td class="r na">—</td><td class="r num">18 GiB</td>
+            <td class="num">5 ott</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend"><span><span class="ok">verde</span>: sopra la soglia</span><span><span class="ko">rosso</span>: sotto, il modello non va bene per quel ruolo</span><span><strong>grassetto</strong>: il migliore della colonna</span><span>Le prove prima del 14 ottobre non hanno la velocità: «—».</span></div>
+  </div>
+
+  <div class="card full">
+    <h2>Confronto di 3 modelli</h2>
+    <div class="legend"><span><span class="key k1"></span>Qwen3.8 27B (riferimento)</span><span><span class="key k2"></span>Qwen3.8 35B-A3B</span><span><span class="key k3"></span>MiniCPM-V 4.7 35B-A3B</span><span>La linea scura sulle barre è la soglia.</span></div>
+    <div class="verdict">
+      <p><strong>Qwen3.8 35B-A3B</strong> scrive 3,4 volte più veloce del 27B (62 contro 18 token al secondo: una risposta di 300 parole in circa 6 secondi invece di 22) e sbaglia 3 domande in più, tutte nella <strong>ripresa dopo un errore</strong>, sotto la soglia (67% contro 70%).</p>
+      <p><strong>MiniCPM-V 4.7</strong> è veloce quasi come l'altro ma sta sotto la soglia in tre capacità su cinque: come orchestratore non va.</p>
+    </div>
+    <div class="cmp">
+      <div class="metric">
+        <h3>Ripresa dopo un errore <small>soglia 70%</small></h3>
+        <div class="row"><span class="lbl">Qwen3.8 27B</span><span class="bar2"><i class="k1" style="width:83%"></i><b class="th" style="left:70%"></b></span><span class="v num">5/6 · 83%</span></div>
+        <div class="row"><span class="lbl">35B-A3B</span><span class="bar2"><i class="k2" style="width:67%"></i><b class="th" style="left:70%"></b></span><span class="v num ko">4/6 · 67%</span></div>
+        <div class="row"><span class="lbl">MiniCPM-V</span><span class="bar2"><i class="k3" style="width:50%"></i><b class="th" style="left:70%"></b></span><span class="v num ko">3/6 · 50%</span></div>
+      </div>
+      <div class="metric">
+        <h3>Strumenti <small>soglia 85%</small></h3>
+        <div class="row"><span class="lbl">Qwen3.8 27B</span><span class="bar2"><i class="k1" style="width:92%"></i><b class="th" style="left:85%"></b></span><span class="v num">33/36 · 92%</span></div>
+        <div class="row"><span class="lbl">35B-A3B</span><span class="bar2"><i class="k2" style="width:86%"></i><b class="th" style="left:85%"></b></span><span class="v num">31/36 · 86%</span></div>
+        <div class="row"><span class="lbl">MiniCPM-V</span><span class="bar2"><i class="k3" style="width:78%"></i><b class="th" style="left:85%"></b></span><span class="v num ko">28/36 · 78%</span></div>
+      </div>
+      <div class="metric">
+        <h3>Velocità <small>token al secondo, più è lunga meglio è</small></h3>
+        <div class="row"><span class="lbl">Qwen3.8 27B</span><span class="bar2"><i class="k1" style="width:29%"></i></span><span class="v num">18</span></div>
+        <div class="row"><span class="lbl">35B-A3B</span><span class="bar2"><i class="k2" style="width:100%"></i></span><span class="v num">62</span></div>
+        <div class="row"><span class="lbl">MiniCPM-V</span><span class="bar2"><i class="k3" style="width:89%"></i></span><span class="v num">55</span></div>
+      </div>
+      <div class="metric">
+        <h3>Tempo per domanda <small>più è corta meglio è</small></h3>
+        <div class="row"><span class="lbl">Qwen3.8 27B</span><span class="bar2"><i class="k1" style="width:100%"></i></span><span class="v num">9,8 s</span></div>
+        <div class="row"><span class="lbl">35B-A3B</span><span class="bar2"><i class="k2" style="width:35%"></i></span><span class="v num">3,4 s</span></div>
+        <div class="row"><span class="lbl">MiniCPM-V</span><span class="bar2"><i class="k3" style="width:42%"></i></span><span class="v num">4,1 s</span></div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:6px">Domande con risposte diverse <span class="muted" style="font-weight:400;font-size:14px">7 su 51</span></h2>
+    <div class="scroll">
+      <table class="diff">
+        <thead><tr><th>Domanda (finta)</th><th>Capacità</th><th class="c"><span class="key k1"></span>27B</th><th class="c"><span class="key k2"></span>35B-A3B</th><th class="c"><span class="key k3"></span>MiniCPM-V</th></tr></thead>
+        <tbody>
+          <tr><td class="q">«La ricerca non ha trovato il contratto: riprova con un'altra parola.»<br><span class="mono">orch-recover-empty-search</span></td><td>Ripresa</td><td class="c ok">giusta</td><td class="c ko">sbagliata<br><small class="muted">rifà la stessa ricerca</small></td><td class="c ko">sbagliata<br><small class="muted">rifà la stessa ricerca</small></td></tr>
+          <tr><td class="q">«Apri kb/clienti/rossi-srl.md e dimmi quando scade il contratto di assistenza.»<br><span class="mono">orch-read-known-path</span></td><td>Strumenti</td><td class="c ok">giusta</td><td class="c ok">giusta</td><td class="c ko">sbagliata<br><small class="muted">cerca invece di aprire</small></td></tr>
+          <tr><td class="q">«Cosa dice il contratto d'affitto di via Roma 12 sulla caparra?»<br><span class="mono">orch-search-lease</span></td><td>Strumenti</td><td class="c ok">giusta</td><td class="c ko">sbagliata<br><small class="muted">chiede all'utente</small></td><td class="c ko">formato illeggibile</td></tr>
+          <tr><td class="q">«Ricordami lunedì di chiamare il commercialista.»<br><span class="mono">orch-create-reminder</span></td><td>Strumenti</td><td class="c ko">sbagliata<br><small class="muted">risponde senza creare il promemoria</small></td><td class="c ok">giusta</td><td class="c ok">giusta</td></tr>
+          <tr><td colspan="5" class="note">…altre 3. Le domande sono quelle finte di <span class="mono">evals/orchestrator</span>: niente dati tuoi. Delle risposte dei modelli resta solo giusta o sbagliata, con il motivo in breve.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" style="margin:0">Il confronto domanda per domanda c'è solo fra prove fatte sulle stesse domande. «Rifai la prova» manca sulle righe dei modelli cancellati: per riprovarli va riscaricato il modello.</p>
+  </div>
+</div>
+<script>
+  for (const b of document.querySelectorAll('.bar [data-s]')) b.addEventListener('click', () => {
+    document.body.dataset.state = b.dataset.s;
+    for (const o of document.querySelectorAll('.bar [data-s]')) o.classList.toggle('on', o === b);
+  });
+  for (const box of document.querySelectorAll('#rows input')) box.addEventListener('change', () => box.closest('tr').classList.toggle('sel', box.checked));
+</script>
+</body>
+</html>
