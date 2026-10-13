@@ -2,7 +2,12 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
-## [Non rilasciato]
+## [0.85.4] - 2026-10-13
+
+### Cambiato
+
+- Conoscenza: chi non aveva mai scelto una vista ora apre il grafo in 3D; chi aveva premuto «2D» lo ritrova in 2D (D-104).
+- Conoscenza in 3D: la rotazione lenta a riposo ridisegna al massimo 30 volte al secondo, anche sugli schermi a 120 Hz; il layout 2D si prepara solo quando si passa al 2D (D-104).
 
 ### Aggiunto
 

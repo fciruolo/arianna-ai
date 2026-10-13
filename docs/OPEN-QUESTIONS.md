@@ -41,20 +41,20 @@ Testo, alternative e raccomandazioni in `docs/PROPOSTE.md`; qui solo l'elenco.
 | D-078 | 6. Quando cominciare? | Chiusa (D-127): adesso (2026-10-11) |
 | D-078 | 7. Chi lancia `pnpm check` completo dopo un run? | Chiusa (D-127): nella sandbox build, lint, eval e i test senza servizi; il `pnpm check` completo con l'hook di pre-commit quando l'utente unisce |
 | D-079 Catalogo "Agenzia" | 1. Catalogo come proposto (clone fissato, importatore, schede attive solo con approvazione)? | Chiusa: doppione della conferma `conf-D-079` |
-| D-079 | 2. Chi fa il clone e quando? | Aperta |
+| D-079 | 2. Chi fa il clone e quando? | Chiusa (2026-10-13): «Catalogo agenti» con il motore delle skill di D-161 (sorgenti GitHub, Aggiorna in attesa, Usa/Scarta), nessun clone a mano |
 | D-079 | 3. Tetto delle schede adottate: L1 o L0? | Chiusa: L0 (D-119, T3b) |
 | D-079 | 4. Autonomia delle schede adottate: A0 o A1? | Chiusa: D-119 (T3b) e revisione di D-079 per T4 |
 | D-079 | 5. Schede approvate in `agents/` o fuori da git? | Chiusa: `data/agents/` (D-119) |
-| D-079 | 6. Quali divisioni servono? | Aperta |
+| D-079 | 6. Quali divisioni servono? | Chiusa (2026-10-13): tutte, con filtro per divisione e ricerca |
 | D-079 | 7. Pagina "Agenzia" nelle Impostazioni o in chat? | Chiusa: modulo "+ Nuovo agente" della pagina Agenti (D-119, T4) |
-| D-080 Second brain | 1. Tutto nasce L2 in `kb/inbox/` e si abbassa solo con approvazione? | Applicata così, da confermare |
-| D-080 | 2. L'Archivista propone e l'utente approva, o sposta da solo? | Aperta |
+| D-080 Second brain | 1. Tutto nasce L2 in `kb/inbox/` e si abbassa solo con approvazione? | Chiusa: sì, confermata dall'utente il 2026-10-13 con `conf-D-080` |
+| D-080 | 2. L'Archivista propone e l'utente approva, o sposta da solo? | Chiusa (2026-10-13): propone, approva l'utente (A1) |
 | D-080 | 3. Primo ingresso da costruire? | Chiusa: pagina "Pensieri" come ingresso principale, con "/nota" (richiesta dell'utente in D-086, costruita in D-090) |
-| D-080 | 4. Declassificazione a L0 per singolo URL prima di scaricare un link? | Aperta |
-| D-080 | 5. `pdfjs-dist` in un processo figlio per i PDF? | Aperta |
-| D-080 | 6. Vocali e video: entrypoint in `apps/voice` o app Python a sé? | Aperta |
-| D-080 | 7. Video di piattaforme solo come link, titolo e riassunto? | Aperta |
-| D-088 Pulsante "Aggiorna" | Come si porta il codice nuovo dallo sviluppo all'installazione? | Proposta, da discutere |
+| D-080 | 4. Declassificazione a L0 per singolo URL prima di scaricare un link? | Chiusa (2026-10-13): sì, ogni volta |
+| D-080 | 5. `pdfjs-dist` in un processo figlio per i PDF? | Chiusa (2026-10-13): sì |
+| D-080 | 6. Vocali e video: entrypoint in `apps/voice` o app Python a sé? | Chiusa (2026-10-13): entrypoint in `apps/voice` |
+| D-080 | 7. Video di piattaforme solo come link, titolo e riassunto? | Chiusa (2026-10-13): no, solo audio scaricato con approvazione per link, trascritto e cancellato (SPEC aggiornata) |
+| D-088 Pulsante "Aggiorna" | Come si porta il codice nuovo dallo sviluppo all'installazione? | Chiusa: accettata il 2026-10-13 con le risposte consigliate (riga D-088 di `DECISIONS.md`) |
 
 ## Idee dalla ricerca — da decidere
 
@@ -178,14 +178,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Comprare un pacchetto a licenza chiara — personaggi diversi ma condivisibili; costa e va scelto lo stile.
 - Esempio: Se un giorno vuoi mostrare Arianna a un amico mandandogli la cartella, con i personaggi originali puoi farlo; con quelli di pixel-agents no, perché la loro licenza non lo permette.
 
-### oq-D-088-come-si-porta-il-codice
-
-- Contesto: Arianna avrà due installazioni: SVILUPPO, dove Claude lavora con dati finti, e PRODUZIONE, con i tuoi dati veri, che Claude non può leggere. Serve un modo sicuro per portare il codice nuovo dalla prima alla seconda. La proposta D-088 è un pulsante "Aggiorna" nelle Impostazioni della produzione, che mostra le modifiche e chiede la tua conferma.
-- Opzione consigliata: Pulsante "Aggiorna" da approvare — vedi commit nuovi, cambi al database e librerie nuove; confermi tu; la produzione finisce i lavori in corso, salva il database e si aggiorna da sola.
-- Opzione: Codice da GitHub dopo il push — come sopra, ma la versione arriva dal remoto: servono la rete e un push prima di ogni aggiornamento.
-- Opzione: Aggiornare a mano dal terminale — nessun lavoro di sviluppo, ma ogni volta devi ricordare i comandi giusti (git pull, migrazioni, riavvio).
-- Esempio: Claude finisce in sviluppo la pagina "Routine". Nella produzione premi "Aggiorna" e leggi: "3 commit nuovi, 1 cambio al database, nessuna libreria nuova". Confermi, il core finisce i lavori in corso, salva il database, si aggiorna e riparte in un minuto.
-
 ### oq-incognito-tetto-di-durata-con-la-pagina-aperta
 
 - Contesto: Una conversazione in incognito (D-136) si cancella da sola dopo 10 minuti senza nessuna pagina aperta su di lei. Se invece lasci la scheda del browser aperta, anche dietro altre schede, resta viva senza limite, con i testi nel database. La modalità è già unita (0.25.0); si decide se mettere un tetto massimo di durata.
@@ -218,211 +210,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Anche il formato GGUF — si aggiunge un secondo motore (llama.cpp) accanto a oMLX: più modelli fra cui scegliere, ma un programma in più da installare e provare.
 - Opzione: Senza promozione — il modello aggiunto si assegna subito a un ruolo: un passaggio in meno, ma un modello mai provato può diventare il "cervello" di Arianna con un clic.
 - Esempio: Scrivi "qwen3 4bit", scegli mlx-community/Qwen3-4B-4bit (2,3 GB, licenza apache-2.0), premi Aggiungi: compare come qwen3-4b-4bit, da scaricare e senza ruoli; lo scarichi, lo promuovi a Estrattore, poi lo assegni al ruolo e salvi.
-
-### conf-D-077
-
-- Contesto: Nelle conversazioni lunghe Arianna non rilegge più ogni volta gli ultimi 20 messaggi "a finestra mobile": parte da un punto fisso (l'ancora) e i messaggi più vecchi li riassume il modello locale in un riassunto che cresce solo in fondo. Così il modello riusa il lavoro già fatto (la cache) e risponde prima. È già applicata: resta da confermare che ti va bene così.
-- Opzione consigliata: Confermo — la decisione diventa "accettata"; le conversazioni lunghe restano veloci, con un riassunto dei messaggi vecchi.
-- Opzione: Confermo ma con soglie diverse — per esempio l'ancora che salta dopo 50 messaggi invece di 30: più testo originale letto, ma risposte un po' più lente.
-- Opzione: Rifiuto — si torna agli ultimi 20 messaggi: niente riassunti salvati, ma le conversazioni lunghe tornano più lente e Arianna dimentica del tutto i messaggi oltre i 20.
-- Esempio: In una conversazione di 60 messaggi sulla gita a Firenze, al messaggio 61 Arianna legge il riassunto "abbiamo scelto il treno delle 8 e un hotel vicino al Duomo" più gli ultimi messaggi, e risponde in pochi secondi invece di rielaborare tutto da capo.
-
-### conf-D-079
-
-- Contesto: Il catalogo "Agenzia" usa una raccolta pubblica di oltre 230 ruoli pronti (agency-agents, licenza MIT) come spunto per agenti nuovi, senza lasciare a quel testo esterno il potere di scegliere strumenti o livelli di privacy. Oggi c'è la prima parte: un importatore in sola lettura che legge una copia fissata del catalogo e propone schede spente; D-119 ha deciso che compariranno fra le sorgenti di un agente nuovo nella pagina Agenti (tappa T4). Resta da confermare l'impianto: copia fissata, importatore, agenti attivi solo con il tuo sì.
-- Opzione consigliata: Confermo — resta l'importatore che propone schede spente; nessun agente del catalogo si attiva senza il tuo sì.
-- Opzione: Confermo solo l'indice — si tiene l'elenco consultabile dei ruoli, ma niente schede proposte finché non si decide il resto.
-- Opzione: Rifiuto — si tolgono l'importatore e la copia del catalogo; gli agenti nuovi si scrivono solo a mano o dai modelli di scheda.
-- Esempio: Fra le sorgenti di un agente nuovo scegli il ruolo "Content Creator"; nasce una scheda spenta con privacy al massimo L0 e senza strumenti pericolosi. Finché non la attivi tu, Arianna non la usa.
-
-### conf-D-080
-
-- Contesto: Il "second brain" è un ingresso unico per tutto ciò che vuoi ricordare: pensieri, link e note finiscono come file nella cartella kb/inbox/, sempre col livello privato (L2) finché non lo abbassi tu. La prima parte è applicata: salvataggio istantaneo dalla chat ("/nota", "Salva in inbox"), dalla pagina Pensieri e dal terminale, senza modelli. Resta da confermare questa base.
-- Opzione consigliata: Confermo — la cattura resta istantanea e privata di base; PDF, vocali e link scaricati arrivano dopo, con le loro decisioni.
-- Opzione: Privacy più bassa per le note di lavoro — le note nate da conversazioni di lavoro sarebbero L1: più facili da passare ai modelli cloud, ma più rischio di far uscire dati.
-- Opzione: Rifiuto — si toglie l'ingresso in kb/inbox/; le note si scrivono a mano nella cartella della conoscenza.
-- Esempio: Scrivi in chat "/nota comprare il regalo per Luca entro venerdì"; in un attimo nasce kb/inbox/2026-10-05-103000-comprare-il-regalo.md come privata, che nessun esecutore cloud può leggere.
-
-### conf-D-081
-
-- Contesto: Puoi provare un modello locale nuovo sugli stessi test dell'orchestratore (il "cervello" di Arianna), in sottofondo, senza fermare il modello in uso; il risultato resta in uno storico confrontabile per modello. Oggi la prova parte dalla scheda del modello in Impostazioni → Modelli. È applicata: resta da confermare il modo scelto da Claude di notte.
-- Opzione consigliata: Confermo — la prova resta in sottofondo, un modello alla volta, con lo storico dei risultati.
-- Opzione: Solo dal terminale — si toglie il pulsante dalle Impostazioni e resta "pnpm eval:models --model": meno codice nel core, ma serve il terminale.
-- Opzione: Rifiuto — si toglie la prova dal core; i modelli nuovi si valutano solo a mano.
-- Esempio: Vuoi sapere se un nuovo modello da 32B è meglio di quello attuale; nella sua scheda premi "Prova", continui a chattare e dopo mezz'ora vedi "18 casi su 20 superati" accanto ai 17 del modello di oggi.
-
-### conf-D-082
-
-- Contesto: Sotto ogni risposta del Coder (l'agente che scrive codice) c'è una riga piccola con chi ha lavorato, su quale modello e quanto è durato, e un riquadro "File modificati" con l'elenco dei file toccati. È applicata (e il riquadro è stato poi arricchito con le differenze riga per riga, D-117): resta da confermare.
-- Opzione consigliata: Confermo — restano la riga "chi ha fatto cosa" e l'elenco dei file modificati sotto le risposte.
-- Opzione: Confermo ma senza il costo — la riga mostra esecutore, modello e durata, non i soldi.
-- Opzione: Rifiuto — si tolgono riga e riquadro; per sapere cosa è cambiato bisogna guardare il progetto a mano.
-- Esempio: Chiedi al Coder di correggere la pagina dei contatti; sotto la risposta leggi "Coder · Claude Code / Claude Sonnet · 2 min 5 s" e, aprendo "File modificati", vedi src/contatti.html modificato e src/stile.css aggiunto.
-
-### conf-D-083
-
-- Contesto: Le righe di attività ("cerco nella conoscenza", "leggo un file", "delego al Coder") prima sparivano a fine lavoro o ricaricando la pagina. Ora si salvano nel database e si rileggono dopo, con gli stessi filtri di privacy della riga in diretta. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — le righe di attività restano rileggibili anche a lavoro finito.
-- Opzione: Confermo ma con scadenza — le righe si cancellano dopo un periodo (per esempio 30 giorni): meno dati conservati, ma lo storico vecchio si perde.
-- Opzione: Rifiuto — le righe tornano solo in diretta e spariscono a fine lavoro.
-- Esempio: Ieri Arianna ha preparato un riepilogo delle spese finte di settembre; oggi riapri la conversazione e vedi ancora "Ho letto 3 note in kb/spese" e "Ho delegato al Coder", anche dopo aver ricaricato la pagina.
-
-### conf-D-084
-
-- Contesto: Una serie di piccole rifiniture della chat web scelte da Claude di notte: pulsante "Copia" sui blocchi di codice, "Salva in inbox" sotto i messaggi, intestazione delle chat di sistema e indice delle Impostazioni. È applicata: resta da confermare il pacchetto.
-- Opzione consigliata: Confermo — le rifiniture restano come sono.
-- Opzione: Confermo tranne alcune — scrivi quali togliere o cambiare (per esempio "Salva in inbox" solo sui tuoi messaggi).
-- Opzione: Rifiuto — si tolgono le rifiniture e la chat torna com'era prima di D-084.
-- Esempio: Il Coder ti risponde con un comando in un blocco di codice; premi "Copia" in alto a destra del blocco, compare "Copiato" per 2 secondi e lo incolli nel terminale senza selezionarlo a mano.
-
-### conf-D-085
-
-- Contesto: Quando il gateway (il filtro che decide cosa può uscire verso il cloud) blocca un testo perché contiene un segreto della cassaforte o perché non riesce a controllarlo, Arianna si ferma e ti chiede cosa fare, invece di continuare in silenzio con il modello locale. Il codice faceva già così: si è corretta la specifica scritta per allinearla. Resta da confermare questo comportamento.
-- Opzione consigliata: Confermo — dopo un blocco per segreto o testo non controllabile Arianna si ferma e ti avvisa.
-- Opzione: Continuare in locale — il lavoro prosegue col modello locale senza chiederti nulla: meno interruzioni, ma un segreto finito in un testo potrebbe passare inosservato.
-- Esempio: Incolli per errore una password di prova, che sta nella cassaforte, dentro una richiesta per il Coder; il gateway la riconosce, il lavoro si ferma e in chat vedi che serve una tua decisione perché il testo contiene un segreto.
-
-### conf-D-086
-
-- Contesto: Ogni nota salvata in kb/inbox/ viene poi riordinata dal modello locale (titolo, riassunto, collegamenti), con il tuo testo originale lasciato sotto il riassunto. La cattura resta istantanea: il riordino avviene dopo, in coda. È il "motore" della pagina Pensieri ed è applicata: resta da confermare.
-- Opzione consigliata: Confermo — le note si riordinano da sole col modello locale, con l'originale sempre sotto.
-- Opzione: Riordino solo su richiesta — la nota resta grezza finché non premi "Riordina": meno lavoro per il Mac, ma più passaggi per te.
-- Opzione: Rifiuto — niente riordino automatico; le note restano come le scrivi.
-- Esempio: Salvi "idea: app per prenotare il campo da padel con gli amici, chiedere a Marco"; poco dopo la nota ha titolo "App per prenotare il padel", un riassunto di due righe, un collegamento alla nota "Sport" e sotto il tuo testo originale.
-
-### conf-D-087
-
-- Contesto: La sezione "Conoscenza" della chat mostra le note della tua base di conoscenza (kb/) come un grafo: ogni nota è un punto, ogni collegamento una linea. Non mostra mai le pagine delicatissime (L3). È applicata: resta da confermare.
-- Opzione consigliata: Confermo — la sezione Conoscenza resta con il grafo delle note.
-- Opzione: Solo come elenco — al posto del grafo un elenco di note con i collegamenti: più sobrio, meno "visivo".
-- Opzione: Rifiuto — si toglie la sezione Conoscenza dalla chat.
-- Esempio: Apri Conoscenza e vedi la nota "Viaggio in Portogallo" al centro, collegata a "Lisbona", "Budget viaggi" e "Voli"; cliccando "Lisbona" la leggi a lato senza uscire dalla pagina.
-
-### conf-D-087b
-
-- Contesto: Seguito della sezione Conoscenza: con il tema scuro è una "sala di controllo" nera a schermo intero con il grafo sempre in leggero movimento; con il tema chiaro usa lo sfondo normale e un pulsante "Sfondo scuro" accende il nero, scelta ricordata nel browser. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — sfondo che segue il tema, nero a scelta col tema chiaro, grafo animato.
-- Opzione: Grafo fermo — niente animazione continua: meno movimento e meno lavoro per il computer, ma un effetto meno "vivo".
-- Opzione: Sempre nero — sala di controllo nera anche col tema chiaro, come la prima versione.
-- Esempio: Di sera col tema scuro apri Conoscenza e trovi il grafo su fondo nero che "respira" piano; di giorno col tema chiaro lo vedi su sfondo chiaro e, se vuoi l'effetto notturno, premi "Sfondo scuro".
-
-### conf-D-089
-
-- Contesto: La parte invisibile (nel core) della barra sinistra della chat: ricerca in conversazioni, messaggi e note, conversazioni fissate in alto, salvataggio in inbox una volta sola per messaggio e informazioni sull'installazione (sviluppo o produzione, versione del codice). È applicata: resta da confermare.
-- Opzione consigliata: Confermo — restano ricerca, conversazioni fissate, salvataggio unico e informazioni sull'installazione.
-- Opzione: Ricerca senza le note — si cerca solo nelle conversazioni: risultati più puliti, ma le note si cercano altrove.
-- Opzione: Rifiuto — si tolgono queste funzioni e la barra sinistra torna un semplice elenco.
-- Esempio: Scrivi "dentista" nella ricerca della barra sinistra e trovi la conversazione "Appuntamenti" e una nota in inbox del mese scorso; poi fissi "Appuntamenti" in alto per ritrovarla subito.
-
-### conf-D-090
-
-- Contesto: La pagina "Pensieri" è un posto per scrivere pensieri al volo e ritrovarli riordinati; c'è un microfono, non ancora collegato alla voce. Nella chat, scrivendo "/", si apre un menu di comandi come in Claude Code. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — restano la pagina Pensieri e il menu "/" della chat.
-- Opzione: Senza il microfono finché è spento — il microfono si mostra solo quando la voce funziona davvero: niente pulsanti inattivi.
-- Opzione: Rifiuto — si toglie la pagina Pensieri; resta solo "/nota" in chat.
-- Esempio: Apri Pensieri, scrivi "regalare a mamma un corso di ceramica" e premi ⌘+Invio; poco dopo il pensiero compare nell'elenco con un titolo e un riassunto. In chat, digitando "/", vedi "/nota", "/nuova" e gli altri comandi.
-
-### conf-D-091
-
-- Contesto: Nel pannello di stato una riga "Arianna aspetta una tua decisione" apre una finestra con tutte le approvazioni in sospeso di tutte le conversazioni, dalla più vecchia. Inoltre il motivo per cui il router (la parte che sceglie chi esegue un lavoro) ha fatto la sua scelta ora è scritto in italiano. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — restano la finestra unica delle decisioni in attesa e il motivo del router in italiano.
-- Opzione: Decidere dalla finestra — approvare o rifiutare senza aprire la conversazione: più veloce, ma decidi senza vedere il contesto della chat.
-- Opzione: Rifiuto — si toglie la finestra; le approvazioni si trovano solo dentro ogni conversazione.
-- Esempio: Hai tre conversazioni aperte e in una il Coder chiede il permesso di spendere 0,50 euro; nel pannello vedi "Arianna aspetta una tua decisione", la apri e trovi "Budget · Sito del circolo di tennis", con il collegamento alla conversazione.
-
-### conf-D-092
-
-- Contesto: Alcuni modelli locali (per esempio Gemma) non accettano due messaggi di fila dello stesso tipo, come due tuoi messaggi consecutivi. Prima di mandarli al modello locale, Arianna li unisce in uno solo, separati da una riga vuota; il controllo di privacy li vede comunque uno per uno. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — i messaggi consecutivi si uniscono prima del modello locale, senza cambiare cosa controlla il gateway.
-- Opzione: Unire solo dove serve — solo per i modelli che lo richiedono: più fedele per gli altri, ma una regola in più da mantenere.
-- Opzione: Rifiuto — i messaggi restano separati e i modelli come Gemma non si possono usare come orchestratore.
-- Esempio: Scrivi "prenota il ristorante" e subito dopo "per 4 persone, sabato"; il modello locale riceve un solo messaggio con le due righe e risponde senza errori.
-
-### conf-D-100
-
-- Contesto: Correzione di un errore: quando il Mac si avviava, il modello locale non era ancora pronto e tutte le note da riordinare fallivano per sempre in pochi millisecondi. Ora, se il modello non è pronto, il riordino riprova più tardi invece di arrendersi. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — il riordino delle note aspetta e riprova finché il modello locale non è pronto.
-- Opzione: Riprova solo a mano — dopo un fallimento compare "Riordina di nuovo" e decidi tu: niente tentativi automatici, ma note grezze finché non intervieni.
-- Esempio: Accendi il Mac alle 8 e il modello locale impiega 3 minuti a partire; le 5 note salvate ieri sera restano in coda e alle 8:04 risultano tutte riordinate, invece di restare "Non riordinato".
-
-### conf-D-101
-
-- Contesto: Arianna (l'orchestratore locale) può aggiornare le carte di lavoro della conversazione, cioè i promemoria dei lavori in corso: spostarle o segnarle in attesa, ma solo se all'inizio del lavoro c'è almeno una carta aperta. Da confermare soprattutto le regole di autonomia: con A0 (nessuna autonomia) nessuna mossa, con A1 niente spostamento in "Pronti" salvo le proprie attese.
-- Opzione consigliata: Confermo — Arianna aggiorna le carte con queste regole di autonomia.
-- Opzione: Solo proposte — Arianna suggerisce lo spostamento e lo fai tu: più controllo, ma più clic.
-- Opzione: Rifiuto — si toglie lo strumento; le carte le aggiorni solo tu.
-- Esempio: Nella conversazione "Trasloco" c'è la carta "Chiedere preventivi"; quando dici "ho mandato le richieste a tre ditte", Arianna sposta la carta in "In attesa" con la nota "aspetto i preventivi", senza segnarla come finita.
-
-### conf-D-104
-
-- Contesto: Nella sezione Conoscenza un interruttore 2D/3D permette di navigare il grafo delle note come una galassia in tre dimensioni, ruotandolo e avvicinandoti. La scelta resta ricordata nel browser. Da confermare in particolare che la vista predefinita resti 2D.
-- Opzione consigliata: Confermo, 2D come partenza — la pagina si apre in 2D e passi al 3D quando vuoi.
-- Opzione: 3D come partenza — la pagina si apre già come galassia: più spettacolare, ma più pesante per il computer e meno leggibile a colpo d'occhio.
-- Opzione: Rifiuto — si toglie il 3D e resta solo il grafo piatto.
-- Esempio: Apri Conoscenza, premi "3D" e trascinando il mouse fai ruotare le note intorno a "Progetti 2026"; la volta dopo la pagina si riapre in 3D perché il browser ricorda la scelta.
-
-### conf-D-098
-
-- Contesto: In alto, accanto all'orologio, c'è sempre l'etichetta SVILUPPO (gialla) o PRODUZIONE (verde), e in sviluppo il titolo della scheda del browser comincia con "[DEV]". Serve a non confondere due installazioni aperte una accanto all'altra. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — l'etichetta resta sempre visibile e i titoli in sviluppo iniziano con [DEV].
-- Opzione: Etichetta solo in sviluppo — in produzione niente etichetta: barra più pulita, ma meno chiaro dove sei.
-- Opzione: Rifiuto — l'etichetta si vede solo nelle Impostazioni.
-- Esempio: Hai aperte due schede, una con i dati finti di sviluppo e una con l'installazione vera; prima di cancellare una conversazione guardi in alto, vedi "SVILUPPO" in giallo e sai di essere su quella di prova.
-
-### conf-D-099
-
-- Contesto: Sotto ogni messaggio della chat c'è una piccola barra di azioni ("Copia" e "Salva in inbox") che compare solo passando col mouse sul messaggio; sul telefono è sempre visibile. "Salva in inbox" funziona una volta sola per messaggio, senza doppioni. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — azioni visibili al passaggio del mouse, salvataggio una volta sola.
-- Opzione: Azioni sempre visibili — più facili da trovare, ma ripetute sotto ogni messaggio.
-- Opzione: Rifiuto — si torna al solo "Salva in inbox" fisso sotto i messaggi.
-- Esempio: Passi il mouse sulla risposta di Arianna con la lista della spesa, premi "Copia" e la incolli nelle note del telefono; premi "Salva in inbox" e il pulsante diventa "Salvato", così non crei una seconda copia.
-
-### conf-D-105
-
-- Contesto: Le Impostazioni sono a due colonne: a sinistra l'indice delle sezioni, a destra solo la sezione scelta, con un indirizzo proprio (per esempio /impostazioni/voce), così ricaricare la pagina e tornare "indietro" funzionano. Ha sostituito la pagina lunga da scorrere. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — le Impostazioni restano a due colonne, una sezione alla volta.
-- Opzione: Con una ricerca nell'indice — un campo per trovare un'impostazione per nome: comodo quando le sezioni crescono, ma un pezzo in più.
-- Opzione: Rifiuto — si torna alla pagina unica da scorrere.
-- Esempio: Vuoi cambiare il modello locale; apri Impostazioni, clicchi "Modelli" a sinistra e a destra compare solo quella sezione; ricaricando la pagina resti lì.
-
-### conf-D-108
-
-- Contesto: Come in Claude Code, premere "Nuovo" apre solo una bozza vuota: la conversazione nasce davvero, e compare nella lista, solo quando invii il primo messaggio. Così non restano conversazioni vuote. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — una conversazione nasce solo con il primo messaggio.
-- Opzione: Rifiuto — "Nuovo" crea subito la conversazione nella lista, anche se poi non scrivi nulla.
-- Esempio: Premi "Nuovo", scegli "Lavoro" e il progetto "Sito del circolo", poi cambi idea e chiudi; nella lista non compare nessuna conversazione vuota. Se invece scrivi "aggiorna gli orari", la conversazione appare in cima.
-
-### conf-D-109
-
-- Contesto: Un'attesa vecchia (un lavoro fermo ad aspettare una tua risposta) si chiude da sola quando scrivi un messaggio nuovo nella stessa conversazione, e nella finestra "Decisioni in attesa" c'è un pulsante "Chiudi" per toglierla a mano. Le approvazioni vere (spese, azioni esterne) restano finché non decidi. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — le attese superate si chiudono col messaggio nuovo e con "Chiudi".
-- Opzione: Solo "Chiudi" a mano — niente chiusura automatica: nessuna attesa sparisce senza che tu lo veda, ma la finestra si riempie di cose vecchie.
-- Opzione: Rifiuto — le attese restano finché il lavoro non finisce da solo.
-- Esempio: Nella conversazione "Saluti di prova" un lavoro aspettava una tua risposta da due giorni; scrivi un messaggio nuovo, l'attesa vecchia si chiude e sparisce da "Decisioni in attesa", mentre la richiesta di budget di un'altra chat resta lì.
-
-### conf-D-106b
-
-- Contesto: La prima tappa dell'ufficio pixel è fatta: una pagina "Ufficio" dove gli agenti sono personaggi in pixel art su una mappa (stanza privata, isole dei progetti, area decisioni, pausa), disegnata con un motore nostro senza librerie esterne. Il posto di Arianna è stato poi cambiato con D-124 (va all'isola del progetto su cui lavora). Resta da confermare questa tappa prima delle successive.
-- Opzione consigliata: Confermo — l'ufficio resta così e si può pensare alla tappa 2.
-- Opzione: Confermo ma fermo qui — la pagina resta, ma le tappe successive aspettano la fine della Fase 1A.
-- Opzione: Rifiuto — si toglie la pagina Ufficio dalla chat.
-- Esempio: Apri Ufficio mentre il Coder lavora sul "Sito del circolo"; vedi il suo personaggio seduto all'isola di quel progetto, e Arianna alla sedia accanto.
-
-### conf-D-120
-
-- Contesto: Quando ci sono domande per te nella pagina "Sviluppo di Arianna", compare un pallino col numero (per esempio "12") su "Impostazioni" nella barra di sinistra e sulla voce "Sviluppo di Arianna" dell'indice, con il testo "Devi rispondere a 12 quesiti". Contano solo le domande ancora senza risposta: una risposta già data, che aspetta Claude, non conta. È applicata: resta da confermare.
-- Opzione consigliata: Confermo — il pallino resta e ti dice quante domande aspettano te.
-- Opzione: Solo nella pagina Sviluppo — niente pallino nella barra di sinistra: meno richiami, ma le domande nuove si notano solo entrando nella pagina.
-- Opzione: Rifiuto — si toglie il pallino; le domande si vedono solo aprendo la pagina.
-- Esempio: Claude scrive tre domande nuove su un lavoro; aprendo la chat vedi "3" su Impostazioni, entri in "Sviluppo di Arianna", rispondi a tutte e il pallino sparisce.
-
-### conf-D-122
-
-- Contesto: Le domande della pagina "Sviluppo di Arianna" hanno una spiegazione: cosa si decide e perché, le opzioni con le loro conseguenze (la consigliata per prima, cliccabile) e un esempio. Le spiegazioni stanno nei documenti, accanto alle domande, e Claude Code scrive così anche quelle nuove. Il 2026-10-10 sono state rilette tutte, su tua richiesta, e chiuse quelle già decise. Resta da confermare che il formato ti è utile.
-- Opzione consigliata: Confermo — la decisione diventa "accettata" e ogni domanda nuova arriva con contesto, opzioni ed esempio.
-- Opzione: Confermo, ma più corte — Claude accorcia contesti ed esempi a una frase ciascuno: si legge prima, si spiega meno.
-- Opzione: Rifiuto — le domande tornano a una riga sola e i blocchi di spiegazione si tolgono dai documenti.
-- Esempio: Apri la domanda "Chi fa il commit nella copia di sviluppo?": leggi perché conta, clicchi "Tu, a mano" e la risposta si riempie; aggiungi sotto "ma avvisami quando i test falliscono" e premi Invia.
 
 ### ho-latenza-delle-chiamate-passi-1-2-e-4-fatti-d-070
 

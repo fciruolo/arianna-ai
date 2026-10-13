@@ -665,6 +665,8 @@ export interface FrameState {
   busy: boolean;
   /** The user did something a moment ago. */
   interacting: boolean;
+  /** The 3D camera drifts by itself (D-104): it keeps drawing, never above the resting budget. */
+  drifting?: boolean;
 }
 
 /**
@@ -677,6 +679,7 @@ export function frameInterval(state: FrameState): number | undefined {
   if (state.reduced) return state.interacting ? 0 : undefined;
   if (state.interacting) return 0;
   if (!state.focused) return 100;
+  // Resting or drifting: 30 fps at most, also on 120 Hz screens.
   return 1000 / 30;
 }
 
