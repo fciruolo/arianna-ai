@@ -2,7 +2,9 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-14, 00:30 circa.
+Aggiornato: 2026-10-14, 01:55 circa.
+
+**2026-10-14, 01:55 circa:** nessuna risposta nuova in `RISPOSTE.md`; servizi accesi; quota settimanale proiettata al 99% circa (pieno sforzo, un subagente alla volta). In costruzione da un subagente nel suo worktree: **D-114 tappa A** sul ramo `task/su-di-te` (migrazione 0061 `user_facts`, pagina Impostazioni → «Su di te», casella «Su di te, per Claude Code» in `/sviluppo`); poi revisore, prova dell'utente, unione con versione minor. Senza anteprima: la pagina segue lo stile della Personalità.
 
 **2026-10-14, 00:30 circa:** spazio liberato per la prova dei modelli veloci, su scelta dell'utente («basta che mi rimane in lista»): l'uncensored è stato tolto dal disco con l'azione del core (cestino, poi svuotato dall'utente), la sua voce resta nel catalogo e si riscarica da Modelli; 31 GiB liberi. Il distillato è entrato nel catalogo locale da Hugging Face (D-139) come `qwen3.8-35b-a3b-distill-mlx-4bit` (commit `220dfec3e7`, 19,5 GB, `ramMinGib` 22) e si sta scaricando. Prova `orchestrator` del 27B (`qwen3.8-27b-4bit`, prova id 2) in corso come riferimento; il 35B si prova appena scaricato, poi i due si confrontano in Impostazioni → Modelli → Confronto. **Nota:** l'orchestratore in `[roles]` oggi è `qwen3.5-9b-mlx-4bit`, non il 27B. Strumenti di comodo fuori da git: `data/test-tmp/api.ts` (chiama le API del core) e `data/test-tmp/wait.ts`.
 
