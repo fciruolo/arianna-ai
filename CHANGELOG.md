@@ -14,7 +14,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
-- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti, i `.gitignore` e la configurazione degli strumenti (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…); rifiuta una `HOME` mancante, una versione di `codex` non verificata, le istruzioni globali e le regole di esecuzione dell'utente, chiavi del suo `config.toml` di Codex che uscirebbero dal profilo e server MCP accesi, file di istruzioni in più, un `.gitignore` cambiato e argomenti che allenterebbero il profilo; parte con l'ambiente pulito dell'adattatore, senza rete né cronologia. L'utente legge il diff di Codex prima di `pnpm check` e del commit (D-143).
+- `pnpm dev:codex` tiene in sola lettura le regole che confinano gli agenti, i `.gitignore` e la configurazione degli strumenti (`.git`, `.githooks/`, `.claude/`, `.codex/`, `CLAUDE.md`, `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, `package.json`, `eslint.config.js`…); rifiuta una `HOME` mancante, una versione di `codex` non verificata, le istruzioni globali e le regole di esecuzione dell'utente, una configurazione gestita di Codex, chiavi del suo `config.toml` di Codex che uscirebbero dal profilo e server MCP accesi, file di istruzioni in più, un `.gitignore` cambiato e argomenti che allenterebbero il profilo; parte con l'ambiente pulito dell'adattatore, senza rete né cronologia. L'utente legge il diff di Codex prima di `pnpm check` e del commit (D-143).
 - `docs/PRIVACY-POLICY-SPEC.md` scrive l'eccezione di `pnpm dev:codex` ai punti 2, 5, 7 e 8 del confinamento e cosa la compensa (D-143).
 
 ## [0.85.4] - 2026-10-13

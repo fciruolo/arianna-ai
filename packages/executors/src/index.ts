@@ -55,6 +55,7 @@ export {
   devExtraArgs,
   devFilesystem,
   devIgnoredPaths,
+  devManagedConfigFiles,
   devStrayInstructionFiles,
   devUserRuleFiles,
   devVersionOk,

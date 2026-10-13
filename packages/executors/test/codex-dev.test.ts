@@ -20,6 +20,7 @@ import {
   devExtraArgs,
   devFilesystem,
   devIgnoredPaths,
+  devManagedConfigFiles,
   devStrayInstructionFiles,
   devUserRuleFiles,
   devVersionOk,
@@ -340,4 +341,27 @@ test('codexDevLaunch: a config.toml that is not TOML has its own message, the su
   assert.ok(codexDevLaunch(openai.repo, [], openai.env).args.includes('history.persistence="none"'));
   const sandbox = machine({ userConfig: 'sandbox_mode = "danger-full-access"\n' });
   assert.throws(() => codexDevLaunch(sandbox.repo, [], sandbox.env), /sandbox_mode/);
+});
+
+test('the managed configuration files of Codex refuse the launch, in the home and in the system folder', () => {
+  const system = join(SCRATCH, randomUUID(), 'etc-codex');
+  mkdirSync(system, { recursive: true });
+  const clean = machine();
+  assert.ok(codexDevLaunch(clean.repo, [], clean.env, system).args.length > 0);
+  const home = machine();
+  writeFileSync(join(home.env.HOME as string, '.codex', 'managed_config.toml'), 'approval_policy = "on-request"\n');
+  assert.throws(() => codexDevLaunch(home.repo, [], home.env, system), /configurazione gestita/);
+  for (const name of ['managed_config.toml', 'requirements.toml', 'config.toml']) {
+    writeFileSync(join(system, name), '');
+    assert.deepEqual(devManagedConfigFiles(clean.env.HOME as string, system), [join(system, name)]);
+    assert.throws(() => codexDevLaunch(clean.repo, [], clean.env, system), new RegExp(name.replace('.', '\\.')));
+    rmSync(join(system, name));
+  }
+});
+
+test('a .codex/rules that is not a folder refuses the launch', () => {
+  const { repo, env } = machine();
+  writeFileSync(join(env.HOME as string, '.codex', 'rules'), 'non una cartella\n');
+  assert.throws(() => devUserRuleFiles(env.HOME as string), /non si legge/);
+  assert.throws(() => codexDevLaunch(repo, [], env), /\.codex\/rules della home non si legge/);
 });

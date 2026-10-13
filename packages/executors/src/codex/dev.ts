@@ -157,7 +157,8 @@ export function userConfigRefusals(text: string): string[] | undefined {
   } catch {
     return undefined;
   }
-  // The built-in provider of the subscription is the only one that passes.
+  // Top-level keys only: the same names inside a table (`[profiles.x] notify`) need that table, which is refused
+  // itself (`profiles`). The built-in provider of the subscription is the only one that passes.
   return DEV_REFUSED_USER_KEYS.filter((key) => key in config && !(key === 'model_provider' && config[key] === 'openai'));
 }
 
@@ -329,7 +330,26 @@ export function devEnabledMcpServers(json: string): string[] {
 export function devUserRuleFiles(userHome: string): number {
   const folder = join(userHome, '.codex', 'rules');
   if (!existsSync(folder)) return 0;
-  return readdirSync(folder).length;
+  try {
+    return readdirSync(folder).length;
+  } catch (cause) {
+    // Not a folder, or not readable: the rules could not be counted, so the launch is refused.
+    throw new Error('codex-dev: la cartella .codex/rules della home non si legge (non è una cartella o mancano i permessi): non posso controllare le regole di esecuzione di Codex, lancio rifiutato', { cause });
+  }
+}
+
+/**
+ * The managed configuration files of Codex that exist: `managed_config.toml`
+ * in the user's Codex folder, and `managed_config.toml`, `requirements.toml`
+ * and `config.toml` in the system folder. Checked with a fake home on 0.160.0,
+ * the home's `managed_config.toml` is not loaded; the system ones need root to
+ * be tried and an administrator could make them win over `-c`: every one that
+ * exists refuses the launch. Paths only, never read.
+ */
+export function devManagedConfigFiles(userHome: string, systemFolder = '/etc/codex'): string[] {
+  return [join(userHome, '.codex', 'managed_config.toml'), ...['managed_config.toml', 'requirements.toml', 'config.toml'].map((name) => join(systemFolder, name))].filter((file) =>
+    existsSync(file),
+  );
 }
 
 export interface CodexDevLaunch {
@@ -347,7 +367,7 @@ export interface CodexDevLaunch {
  * a `.gitignore` changed or untracked against HEAD, a readable folder that
  * would open the user's files.
  */
-export function codexDevLaunch(repository: string, extra: readonly string[], from: NodeJS.ProcessEnv = process.env): CodexDevLaunch {
+export function codexDevLaunch(repository: string, extra: readonly string[], from: NodeJS.ProcessEnv = process.env, systemFolder = '/etc/codex'): CodexDevLaunch {
   const home = realpathSync(repository);
   const env = devEnv(from);
   // Fail closed: without a home the binary's configuration, rules and instructions could not be checked.
@@ -379,6 +399,10 @@ export function codexDevLaunch(repository: string, extra: readonly string[], fro
   }
   // The user's execution rules: an `allow` rule runs a command outside the sandbox without asking, and the
   // interactive binary has no --ignore-rules. Only counted, never read.
+  const managed = devManagedConfigFiles(userHome, systemFolder);
+  if (managed.length > 0) {
+    throw new Error(`codex-dev: c'è una configurazione gestita di Codex (${managed.join(', ')}) che potrebbe prevalere sulle opzioni del profilo: spostala prima di lanciare`);
+  }
   const rules = devUserRuleFiles(userHome);
   if (rules > 0) {
     throw new Error(`codex-dev: ci sono ${String(rules)} file di regole di esecuzione di Codex nella cartella .codex/rules della home: una regola "allow" farebbe girare comandi fuori dal sandbox. Spostali fuori da quella cartella prima di lanciare`);

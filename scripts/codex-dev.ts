@@ -5,11 +5,11 @@
 // <name>`, `--no-alt-screen` and a starting prompt; `--print` only prints the
 // arguments.
 import { resolveHome } from '@arianna/config';
-import { codexDevLaunch, spawnCodexDev } from '@arianna/executors';
+import { codexDevLaunch, spawnCodexDev, type CodexDevLaunch } from '@arianna/executors';
 
 function main(): void {
   const extra = process.argv.slice(2).filter((arg) => arg !== '--print');
-  let launch;
+  let launch: CodexDevLaunch;
   try {
     launch = codexDevLaunch(resolveHome(process.env), extra);
   } catch (error) {
