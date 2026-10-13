@@ -68,6 +68,7 @@ import { MODEL_ROLES, ROLE_TEXT, roleOptions, type CatalogModel, type CloudModel
 import HubEntryPanel from './HubEntryPanel.vue';
 import HuggingFaceSearch from './HuggingFaceSearch.vue';
 import Icon from './Icon.vue';
+import ModelsCompare from './ModelsCompare.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
 
 interface ModelParts {
@@ -90,6 +91,13 @@ const props = defineProps<{
 }>();
 /** `cancel`: the parts back to what was read. `section`: another section of the settings. `catalog`: the catalog changed (I-10): read the settings again. */
 const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: []; chatTrial: [modelId: string] }>();
+
+// «Elenco» and «Confronto» (D-199): the trials of every model, those gone too, side by side.
+const PAGE_TABS = [
+  { id: 'list', text: 'Elenco' },
+  { id: 'compare', text: 'Confronto' },
+] as const;
+const tab = ref<(typeof PAGE_TABS)[number]['id']>('list');
 
 // The list
 const overview = ref<ModelsOverview | null>(null);
@@ -378,6 +386,27 @@ const factKey = 'text-[13px] text-muted';
 
 <template>
   <div class="flex flex-col gap-3.5">
+    <!-- «Elenco» and «Confronto» (D-199) -->
+    <div class="flex gap-1 border-b border-line" role="tablist" aria-label="Viste dei modelli">
+      <button
+        v-for="item in PAGE_TABS"
+        :key="item.id"
+        :id="`models-tab-${item.id}`"
+        type="button"
+        role="tab"
+        class="-mb-px border-b-2 px-3 py-1.5 text-[14px] whitespace-nowrap"
+        :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
+        :aria-selected="tab === item.id"
+        :aria-controls="`models-panel-${item.id}`"
+        @click="tab = item.id"
+      >
+        {{ item.text }}
+      </button>
+    </div>
+
+    <ModelsCompare v-if="tab === 'compare'" id="models-panel-compare" role="tabpanel" aria-labelledby="models-tab-compare" />
+
+    <div v-if="tab === 'list'" id="models-panel-list" role="tabpanel" aria-labelledby="models-tab-list" class="flex flex-col gap-3.5">
     <!-- Three numbers -->
     <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
       <div :class="card" class="flex flex-col gap-1">
@@ -757,6 +786,7 @@ const factKey = 'text-[13px] text-muted';
     </section>
 
     <HuggingFaceSearch @added="(id) => catalogChanged(id)" />
+    </div>
 
     <!-- The confirmation of an action: what happens, how much, where -->
     <div v-if="confirming" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">

@@ -18,6 +18,7 @@ import type { Account, BankProfile, Budget, Category, FinanceAlert, ImportRecord
 import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
+import type { CaseComparison, Comparison } from './model-compare.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
@@ -504,6 +505,16 @@ export async function generateSprite(subject: { name: string; description: strin
 export async function listModelEvals(limit = 20, modelId?: string): Promise<ModelEval[]> {
   const model = modelId === undefined ? '' : `&modelId=${encodeURIComponent(modelId)}`;
   return (await call<{ evals: ModelEval[] }>('GET', `/api/model-evals?limit=${String(limit)}${model}`)).evals;
+}
+
+/** «Confronto dei modelli» (D-199): every trial of a role, with the model in use as reference. */
+export async function loadModelComparison(role = 'orchestrator'): Promise<Comparison> {
+  return (await call<{ comparison: Comparison }>('GET', `/api/model-comparison?role=${encodeURIComponent(role)}`)).comparison;
+}
+
+/** The fake questions with different outcomes among 2-3 trials on the same questions (D-199). */
+export async function loadComparisonCases(ids: readonly string[]): Promise<CaseComparison> {
+  return (await call<{ cases: CaseComparison }>('GET', `/api/model-comparison/cases?ids=${ids.map(encodeURIComponent).join(',')}`)).cases;
 }
 
 /** Every model, local and cloud, for Impostazioni → Modelli (I-3); read only and L0. */

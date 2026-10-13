@@ -2,6 +2,15 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Impostazioni → Modelli: scheda «Confronto» accanto a «Elenco», con tutte le prove dell'orchestratore anche dei modelli tolti dal catalogo o cancellati dal disco: risposte giuste, le cinque misure con la soglia, velocità, attesa della prima parola, tempo per domanda, memoria e data, il migliore di ogni colonna in grassetto e le prove precedenti di un modello in una riga che si apre (D-199).
+- «Prova di riferimento» prova il modello in uso per l'orchestratore sulle stesse domande degli altri, con il percorso delle prove di D-081 (D-199).
+- Con 2-3 righe spuntate: frase di verdetto calcolata dal codice (rapporto di velocità, domande sbagliate in più o in meno e in quali capacità, capacità sotto soglia), barre affiancate con la soglia e le domande finte con esiti diversi, solo fra prove sulle stesse domande (D-199).
+- Ogni prova salva la velocità (token al secondo e attesa della prima parola, dallo streaming e dal conteggio dei token del server locale, mai stimate), una copia di nome, fornitore, dimensione, quantizzazione e memoria della voce del catalogo e, per ogni domanda, l'azione scelta in valori chiusi; migrazione `0060_model_evals_compare.sql` (D-199).
+
 ## [0.89.4] - 2026-10-13
 
 ### Cambiato
