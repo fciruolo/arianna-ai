@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.85.3] - 2026-10-13
+
 ### Cambiato
 
 - Progetti, Conoscenza: tre colonne come una mail (cartelle, note in righe con data, prima riga e stato, nota aperta a destra); la nota si legge impaginata, con l'intestazione come riga di dati e le caselle dei lavori (D-193).
