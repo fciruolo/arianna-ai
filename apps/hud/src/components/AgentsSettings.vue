@@ -32,6 +32,22 @@ import {
 } from '../lib/persona.ts';
 import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
 import { useSkillTranslations } from '../lib/skill-translations.ts';
+import {
+  activationAsk,
+  checkRows,
+  gateText,
+  highlight,
+  metaText,
+  readText,
+  reasonText,
+  redoSafetyReport,
+  retriesByItself,
+  safetyDot,
+  safetyPill,
+  severityText,
+  whereText,
+  type SafetyView,
+} from '../lib/safety-report.ts';
 import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, translationsNoteText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
@@ -379,7 +395,11 @@ async function saveAll(): Promise<void> {
   working.value = true;
   saveError.value = '';
   try {
-    if ((changedSettings.value.length > 0 || leaveChanged.value) && !(await props.save())) return;
+    if (changedSettings.value.length > 0 || leaveChanged.value) {
+      if (!(await props.save())) return;
+      // Skills changed on an agent of the catalog make its safety report again (D-196): shown at once as running.
+      void load();
+    }
     for (const name of changedTexts.value) {
       const draft = texts.value[name];
       if (!draft) continue;
@@ -448,11 +468,62 @@ async function run(name: string, action: () => Promise<unknown>): Promise<boolea
     busyName.value = '';
   }
 }
-/** Attivo/Spento at once; a refusal puts the switch back where the agent is. */
+/**
+ * Attivo/Spento at once; a refusal puts the switch back where the agent is.
+ * An agent of the catalog whose safety report is not «nessun problema» asks
+ * one more confirmation first (D-196): never a block.
+ */
 async function toggle(entry: AgentEntry, event: Event): Promise<void> {
   const box = event.target as HTMLInputElement;
+  if (!entry.on && activationAsk(safetyOf(entry)) !== undefined) {
+    box.checked = false;
+    askActivation(entry.id);
+    return;
+  }
   if (!(await run(entry.id, () => (entry.on ? deactivateUserAgent(entry.id) : activateUserAgent(entry.id))))) box.checked = entry.on;
 }
+
+// The safety report of Opus (D-196): above «Accendi», read again while one is running.
+const activating = ref<{ name: string; ask: NonNullable<ReturnType<typeof activationAsk>> } | null>(null);
+function askActivation(name: string): void {
+  const ask = activationAsk(safetyOf(entries.value.find((entry) => entry.id === name)));
+  error.value = '';
+  if (ask === undefined) void turnOn(name);
+  else activating.value = { name, ask };
+}
+async function turnOn(name: string): Promise<void> {
+  if (await run(name, () => activateUserAgent(name))) activating.value = null;
+}
+const redoing = ref('');
+async function redoReport(name: string): Promise<void> {
+  if (redoing.value !== '') return;
+  redoing.value = name;
+  error.value = '';
+  try {
+    await redoSafetyReport(name);
+    await load();
+  } catch {
+    error.value = 'Il rapporto non è ripartito: riprova fra poco.';
+  } finally {
+    redoing.value = '';
+  }
+}
+function safetyOf(entry: AgentEntry | undefined): SafetyView | undefined {
+  return entry?.official === false ? entry.view?.safety : undefined;
+}
+const reportRunning = computed(() => entries.value.some((entry) => safetyOf(entry)?.state === 'running'));
+let reportTimer: number | undefined;
+watch(
+  reportRunning,
+  (running) => {
+    window.clearInterval(reportTimer);
+    if (running) reportTimer = window.setInterval(() => void load(), 4000);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  window.clearInterval(reportTimer);
+});
 async function promote(): Promise<void> {
   const agent = promoting.value;
   if (agent === null || !(await run(agent.name, () => promoteUserAgent(agent.name)))) return;
@@ -548,6 +619,15 @@ function splitLine(line: string): [string, string] {
   const at = line.indexOf(': ');
   return at < 0 ? [line, ''] : [line.slice(0, at), line.slice(at + 2)];
 }
+/** The safety report of the agent shown (D-196). */
+const safety = computed(() => safetyOf(current.value));
+const PILL_TONE: Record<'ok' | 'warn' | 'plain', string> = { ok: 'border-ok/60 bg-ok/10 text-ok', warn: 'border-warn/60 bg-warn/10 text-warn', plain: '' };
+const REPORT_EDGE: Record<SafetyView['state'], string> = { ok: 'border-l-ok', warn: 'border-l-warn', running: 'border-l-info', unavailable: 'border-l-line-strong' };
+function runningText(shown: SafetyView): string {
+  if (shown.running?.scope === 'changes') return 'Solo le righe cambiate del ruolo';
+  const text = readText({ path: shown.running?.role ?? '' }, shown.running?.skills ?? 0);
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
 const canChat = computed(() => current.value !== undefined && current.value.on && props.directAgents.some((agent) => agent.agent === current.value?.id));
 /** The text of the save bar: who holds edits not saved. */
 const barLabel = computed(() => `Modifiche non salvate a ${unsaved.value}`);
@@ -599,7 +679,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             >
               <span class="row-span-2"><PixelAgent :choice="previewOf(entry.id)" pose="idle" :scale="1" :version="sheetVersion" /></span>
               <span class="truncate text-[14.5px] font-semibold">
-                {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span><span v-if="needsUpdate(entry, isKept)" class="text-warn" title="Aggiornamento disponibile del ruolo" aria-label="aggiornamento disponibile"> ●</span>
+                {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span><span v-if="needsUpdate(entry, isKept)" class="text-warn" title="Aggiornamento disponibile del ruolo" aria-label="aggiornamento disponibile"> ●</span><span v-if="safetyDot(safetyOf(entry))" class="text-warn" title="Rapporto di sicurezza: da guardare" aria-label="rapporto di sicurezza da guardare"> ●</span>
               </span>
               <span class="truncate text-[13px] text-muted">{{ entry.on ? '' : 'spento · ' }}{{ entry.where === 'cloud' ? 'con Claude' : 'sul Mac' }}</span>
             </button>
@@ -650,6 +730,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
               <span class="pill">{{ permissionWords(current.view.card).sees }}</span>
               <span class="pill">{{ permissionWords(current.view.card).can }}</span>
               <span v-if="current.view.catalog" class="pill">Dal catalogo</span>
+              <span v-if="safety" class="pill" :class="PILL_TONE[safetyPill(safety).tone]">{{ safetyPill(safety).text }}</span>
               <span v-if="needsUpdate(current, isKept)" class="pill border-warn/60 bg-warn/10 text-warn">● Aggiornamento disponibile</span>
               <span v-else-if="catalogStateText(current.view.catalog?.state)" class="pill">{{ catalogStateText(current.view.catalog?.state)?.badge }}</span>
             </template>
@@ -689,7 +770,75 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
         <h3 class="text-[16px] font-semibold">{{ catalogStateText(current.view.catalog.state)?.title }}</h3>
         <p class="text-muted">{{ catalogStateText(current.view.catalog.state)?.text }}</p>
       </section>
-      <p v-if="error && !promoting && !demoting && !deleting && !confirming" class="text-[13px] text-danger" role="alert">{{ error }}</p>
+      <!-- The safety report of Opus on the role and its skills (D-196), above «Accendi»: turning on stays the user's choice -->
+      <section v-if="safety" class="flex flex-col gap-2.5 rounded-xl border border-l-4 border-line bg-surface-2 p-4" :class="REPORT_EDGE[safety.state]" aria-label="Rapporto di sicurezza">
+        <!-- Nessun problema / da guardare -->
+        <template v-if="(safety.state === 'ok' || safety.state === 'warn') && safety.report">
+          <h3 v-if="safety.state === 'ok'" class="flex items-center gap-2 text-[15.5px] font-semibold"><span class="text-ok">✓</span> Nessuna istruzione sospetta</h3>
+          <h3 v-else class="flex items-center gap-2 text-[15.5px] font-semibold">
+            <span class="text-warn">●</span> {{ safety.report.findings.length === 1 ? '1 punto da guardare' : `${safety.report.findings.length} punti da guardare` }} prima di accenderlo
+          </h3>
+          <p class="text-[13px] text-muted">{{ metaText(safety.report) }}</p>
+          <p v-if="safety.report.summary" class="text-[14.5px]">{{ safety.report.summary }}</p>
+          <div v-for="(finding, index) in safety.report.findings" :key="index" class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface px-3 py-2.5">
+            <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[14px]">
+              <span class="rounded-full border px-[7px] text-[12px] font-semibold" :class="finding.severity === 'suspect' ? 'border-danger text-danger' : 'border-warn text-warn'">{{ severityText(finding.severity) }}</span>
+              <strong class="font-semibold">{{ finding.title }}</strong>
+              <span class="text-[12.5px] text-muted">{{ whereText(finding) }}</span>
+            </div>
+            <div class="rounded-[6px] bg-bg px-2 py-1.5 font-mono text-[12.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">
+              <div v-for="row in finding.lines" :key="row.n">
+                <span class="text-muted select-none">{{ String(row.n).padEnd(4) }}</span
+                ><template v-if="row.n === finding.line && highlight(row.text, finding.quote).mark !== ''"
+                  >{{ highlight(row.text, finding.quote).before }}<mark class="rounded-[3px] bg-warn/28 px-0.5 text-ink">{{ highlight(row.text, finding.quote).mark }}</mark>{{ highlight(row.text, finding.quote).after }}</template
+                ><template v-else>{{ row.text }}</template>
+              </div>
+            </div>
+            <p v-if="finding.explanation" class="text-[13.5px] text-muted">{{ finding.explanation }}</p>
+            <p v-if="!finding.exact" class="text-[12.5px] text-muted">Il pezzo citato da Opus non corrisponde esattamente al testo: guarda tu la riga.</p>
+          </div>
+          <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-4 gap-y-1 p-0 text-[13.5px]">
+            <li v-for="row in checkRows(safety.report)" :key="row.text"><span :class="row.ok ? 'text-ok' : 'font-semibold text-warn'">{{ row.ok ? '✓' : '!' }}</span> {{ row.text }}</li>
+          </ul>
+          <p v-if="safety.report.discarded > 0" class="text-[12.5px] text-muted">
+            {{ safety.report.discarded === 1 ? '1 segnalazione di Opus è stata scartata' : `${safety.report.discarded} segnalazioni di Opus sono state scartate` }}: non corrispondevano al testo.
+          </p>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2 text-[13.5px]">
+            <span class="min-w-[200px] flex-1 text-muted">{{
+              current.on ? 'L’agente è acceso.' : safety.state === 'warn' ? 'Puoi riadottare la versione di prima, togliere il ruolo o accenderlo lo stesso.' : gateText(current.view?.card.maxLabel ?? 'L0')
+            }}</span>
+            <button v-if="safety.state === 'warn'" type="button" class="btn px-2.5 py-1 text-[13.5px]" @click="tab = 'card'">Apri le righe</button>
+            <button v-if="!current.on" type="button" class="btn px-2.5 py-1 text-[13.5px]" :class="{ 'btn-primary': safety.state === 'ok' }" :disabled="busyName !== ''" @click="askActivation(current.id)">
+              {{ safety.state === 'ok' ? 'Accendi' : 'Accendi lo stesso…' }}
+            </button>
+          </div>
+        </template>
+        <!-- In corso -->
+        <template v-else-if="safety.state === 'running'">
+          <h3 class="flex items-center gap-2 text-[15.5px] font-semibold"><span class="report-spin" aria-hidden="true"></span> Opus sta leggendo il testo</h3>
+          <p class="text-[13px] text-muted">{{ runningText(safety) }} · di solito meno di un minuto</p>
+          <p class="text-[14.5px]">Puoi intanto leggere il testo nella scheda «Scheda e prompt». Il rapporto compare qui appena arriva; se non vuoi aspettare, c’è «Accendi senza aspettare».</p>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2 text-[13.5px]">
+            <span class="min-w-[200px] flex-1 text-muted">Costo: circa mezzo punto della sessione di 5 ore.</span>
+            <button v-if="!current.on" type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="busyName !== ''" @click="askActivation(current.id)">Accendi senza aspettare…</button>
+          </div>
+        </template>
+        <!-- Non disponibile -->
+        <template v-else>
+          <h3 class="text-[15.5px] font-semibold">Nessun rapporto</h3>
+          <p class="text-[13px] text-muted">{{ reasonText(safety.report?.reason?.code) }}</p>
+          <p class="text-[14.5px]">
+            Senza rapporto, leggi tu il testo del ruolo in «Scheda e prompt» prima di accenderlo.
+            {{ retriesByItself(safety.report?.reason?.code) ? 'Il rapporto si farà da solo quando Claude torna disponibile.' : 'Per riprovare premi «Rifai il rapporto».' }}
+          </p>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2 text-[13.5px]">
+            <span class="min-w-[200px] flex-1 text-muted">{{ current.on ? 'L’agente è acceso.' : gateText(current.view?.card.maxLabel ?? 'L0') }}</span>
+            <button type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="redoing !== ''" @click="redoReport(current.id)">Rifai il rapporto</button>
+            <button v-if="!current.on" type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="busyName !== ''" @click="askActivation(current.id)">Accendi senza rapporto…</button>
+          </div>
+        </template>
+      </section>
+      <p v-if="error && !promoting && !demoting && !deleting && !confirming && !activating" class="text-[13px] text-danger" role="alert">{{ error }}</p>
       <p v-if="notice" class="text-[13px] text-ok" role="status">{{ notice }}</p>
 
       <div class="flex gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Sezioni dell’agente">
@@ -998,8 +1147,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
           <li>Nome, descrizione, personaggio, permessi e modello restano i tuoi.</li>
           <li>Il testo di prima va in <span class="font-mono text-[12.5px]">data/agents/eliminati</span>: lo puoi rileggere.</li>
           <li>
-            L’agente {{ reapplying.proposal.active ? 'si spegne' : 'resta spento' }} e resta spento finché non lo riaccendi tu: rileggi il testo nuovo nella scheda «Scheda e prompt» prima di farlo. Un controllo
-            automatico del testo prima dell’accensione non c’è ancora.
+            L’agente {{ reapplying.proposal.active ? 'si spegne' : 'resta spento' }} e resta spento finché non lo riaccendi tu. Opus rilegge le righe cambiate e il rapporto compare sopra
+            l’accensione; il testo nuovo si legge anche nella scheda «Scheda e prompt».
           </li>
         </ul>
         <div v-if="reapplying.proposal.unlicensed" class="flex flex-col gap-1.5 rounded-[10px] border border-warn/60 bg-warn/10 p-3 text-[13px]" role="alert">
@@ -1018,6 +1167,19 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
           >
             {{ reapplying.proposal.active ? 'Riadotta e spegni' : 'Riadotta' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Turning on an agent of the catalog without «nessun problema» (D-196): one more confirmation, never a block -->
+    <div v-if="activating" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="activate-title">
+      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+        <h2 id="activate-title" class="text-[16px] font-semibold">{{ activating.ask.title }}</h2>
+        <p class="text-[14px]">{{ activating.ask.text }}</p>
+        <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="activating = null; error = ''">Annulla</button>
+          <button type="button" class="btn btn-warn px-2.5 py-1 text-[13px]" :disabled="busyName !== ''" @click="turnOn(activating.name)">{{ activating.ask.action }}</button>
         </div>
       </div>
     </div>
@@ -1089,3 +1251,25 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     </div>
   </div>
 </template>
+
+<style scoped>
+/* The wheel of a report being read (D-196), as in the preview; still for who asks for less motion. */
+.report-spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--info);
+  animation: report-turn 1s linear infinite;
+}
+@keyframes report-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .report-spin {
+    animation: none;
+  }
+}
+</style>

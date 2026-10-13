@@ -2,6 +2,19 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Rapporto di sicurezza di Opus per gli agenti nati dal catalogo: alla creazione, dopo una riadozione e a ogni cambio di skill Opus legge il testo del ruolo e delle skill assegnate (testo pubblico, senza strumenti né dati tuoi, dal gateway) e il rapporto compare in Impostazioni → Agenti sopra «Accendi» (D-196).
+- Quattro stati del rapporto: nessun problema con i controlli superati; da guardare con riga, pezzo di testo evidenziato, gravità «Sospetto» o «Da capire» e spiegazione; in corso; non disponibile senza Claude o senza quota, con «Rifai il rapporto» (D-196).
+- Pillola del rapporto nella testata dell'agente e pallino nell'elenco; accendere con segnalazioni, a rapporto in corso o senza rapporto chiede una conferma in più, mai un blocco (D-196).
+- Dopo una riadozione Opus rilegge solo le righe cambiate con il contesto intorno; le segnalazioni su righe rimaste uguali restano (D-196).
+
+### Sicurezza
+
+- La risposta di Opus si controlla sul testo: segnalazioni su righe inesistenti scartate, pezzo citato che non sta alla riga declassato a «Da capire», lunghezze limitate, risposta illeggibile = rapporto non disponibile (D-196).
+
 ## [0.90.0] - 2026-10-13
 
 ### Aggiunto

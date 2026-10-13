@@ -1,4 +1,5 @@
 import { labelWord } from './labels.ts';
+import type { SafetyView } from './safety-report.ts';
 /**
  * The agents the user creates from the Agents page (D-119): types and calls
  * of `/api/agents`, and the Italian text of what a card allows and of the
@@ -40,6 +41,8 @@ export interface UserAgentView {
   origin: 'page' | 'agency';
   /** A card made from a role of the catalog (D-079, tappa 4): its role against the version in use of its source. */
   catalog?: CatalogLink;
+  /** The safety report of Opus on the role and its skills (D-196); only for an agent of the catalog. */
+  safety?: SafetyView;
 }
 
 export interface CatalogLink {
