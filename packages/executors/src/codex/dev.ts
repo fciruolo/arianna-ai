@@ -56,12 +56,13 @@ export const DEV_READ_ONLY = [
 
 /**
  * Denied whether they exist or not: they can appear while Codex runs (a note
- * captured in kb/inbox, a project's notes in kb/progetti, a model added from
- * Hugging Face), after `git status --ignored` has been read. The worktrees of
- * Claude Code's agents are other checkouts with their own data/, and git lists
- * them as untracked, not ignored.
+ * captured in kb/inbox, a note approved into kb/archivio (D-198), a project's
+ * notes in kb/progetti, a model added from Hugging Face), after
+ * `git status --ignored` has been read. The worktrees of Claude Code's agents
+ * are other checkouts with their own data/, and git lists them as untracked,
+ * not ignored.
  */
-export const DEV_ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.user-catalog.yaml', 'kb/inbox', 'kb/progetti', 'repos', '.claude/worktrees'] as const;
+export const DEV_ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.user-catalog.yaml', 'kb/inbox', 'kb/progetti', 'kb/archivio', 'repos', '.claude/worktrees'] as const;
 
 /** Inside the denied data/: the tests write their temporary files here. */
 const TEST_TMP = 'data/test-tmp';

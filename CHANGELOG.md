@@ -2,6 +2,15 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Sicurezza
+
+- Le note approvate dall'Archivista vanno in `kb/archivio/<cartella>`, esclusa da git, e non più fra i documenti di sviluppo tracciati di `kb/`: un pensiero dell'utente non diventa mai un file pronto per un commit (D-198).
+- Nell'archivio una nota ha almeno l'etichetta della stessa cartella fuori dall'archivio e mai meno di L2; una cartella la cui posizione nell'archivio supera L2 non viene proposta (D-198).
+- All'avvio il core sposta in `kb/archivio/` le note già approvate finite in una cartella tracciata, senza sovrascrivere né abbassare l'etichetta, con un evento L0 di soli conteggi; anche Codex in sviluppo non vede `kb/archivio/` (D-198).
+- Il grafo di Conoscenza e la ricerca della kb leggono `kb/archivio/` per ultimo: oltre il tetto di pagine si taglia l'archivio, mai gli altri documenti di `kb/` (D-198).
+
 ## [0.89.2] - 2026-10-13
 
 ### Cambiato

@@ -137,6 +137,15 @@ describe('kb search', () => {
     assert.deepEqual(none, { hits: [], skippedAbove: true });
   });
 
+  it('reads kb/archivio last: over the cap the archive is cut, never the other pages (D-198)', () => {
+    const dir = home();
+    mkdirSync(join(dir, 'kb', 'archivio', 'private'), { recursive: true });
+    writeFileSync(join(dir, 'kb', 'archivio', 'private', 'nota.md'), '---\ntitle: Nota archiviata\n---\n\nUn contratto finto archiviato.');
+    const paths = (kb: ReturnType<typeof createKb>) => kb.search('contratto', personal, 10, 'kb').hits.map((hit) => hit.path).sort();
+    assert.deepEqual(paths(createKb({ home: dir, rules: RULES, maxPages: 4 })), ['kb/private/affitto.md', 'kb/work/clienti/rossi.md', 'kb/work/segreto.md']);
+    assert.deepEqual(paths(createKb({ home: dir, rules: RULES })), ['kb/archivio/private/nota.md', 'kb/private/affitto.md', 'kb/work/clienti/rossi.md', 'kb/work/segreto.md']);
+  });
+
   it('searches every page in a private conversation', () => {
     const found = kb.search('contratto', personal);
     assert.deepEqual(found.hits.map((hit) => hit.path).sort(), ['kb/private/affitto.md', 'kb/work/clienti/rossi.md', 'kb/work/segreto.md']);

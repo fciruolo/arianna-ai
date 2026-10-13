@@ -110,10 +110,32 @@ export function labelForPath(rules: LabelRules, path: string): Label {
     throw new PolicyError(`path: ${JSON.stringify(path)} has a ".." segment, label the real path instead`);
   }
   const normalized = normalizePath(path, 'path');
-  return maxLabel(
+  const label = maxLabel(
     mostSpecific(rules.folders, normalized, (p) => p),
     mostSpecific(rules.folders, normalized, fold),
   );
+  // An archived note (D-198) also takes the label of the same place outside the archive: only ever higher.
+  const mirror = archiveMirror(normalized);
+  return mirror === undefined ? label : maxLabel(label, labelForPath(rules, mirror));
+}
+
+/**
+ * The archive of the notes approved by the Archivist (D-198), kept out of the
+ * repository: `kb/archivio/<folder>` holds the notes filed under `kb/<folder>`.
+ */
+export const KB_ARCHIVE = 'kb/archivio';
+
+/**
+ * `kb/archivio/<rest>` → `kb/<rest>`, compared ignoring letter case as the
+ * disk may; undefined for any other path and for the archive folder itself.
+ * Segment by segment: folding may change the length of a name.
+ */
+function archiveMirror(normalized: string): string | undefined {
+  const segments = normalized.split('/');
+  const [kb = '', archive = ''] = KB_ARCHIVE.split('/');
+  const [first = '', second = ''] = segments;
+  if (segments.length < 3 || fold(first) !== kb || fold(second) !== archive) return undefined;
+  return [first, ...segments.slice(2)].join('/');
 }
 
 /**

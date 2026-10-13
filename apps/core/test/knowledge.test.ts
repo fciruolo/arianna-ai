@@ -13,6 +13,7 @@ import type { Sql } from '../src/db/client.ts';
 import {
   buildKnowledgeGraph,
   graphOf,
+  listPageIds,
   pageFolder,
   parseTags,
   readKnowledgePage,
@@ -61,6 +62,42 @@ function fixture(): string {
 }
 
 const ids = (graph: KnowledgeGraph) => graph.nodes.map((node) => node.id).sort();
+
+describe('listPageIds and the archive (D-198)', () => {
+  function withArchive(): string {
+    const home = join(scratch, randomUUID());
+    for (const path of ['kb/private/casa/a.md', 'kb/public/b.md', 'kb/work/c.md', 'kb/zeta/d.md', 'kb/archivio/private/casa/1.md', 'kb/archivio/private/casa/2.md', 'kb/archivio/public/3.md']) write(home, path, '# Pagina finta\n');
+    return home;
+  }
+
+  it('over the cap, reads every other folder of kb/ first and cuts the archive', () => {
+    const listed = listPageIds(join(withArchive(), 'kb'), 5);
+    // limit + 1 ids: one more than the cap says the listing was cut.
+    assert.equal(listed.length, 6);
+    assert.deepEqual(listed.slice(0, 4), ['private/casa/a.md', 'public/b.md', 'work/c.md', 'zeta/d.md']);
+    assert.ok(listed.slice(4).every((id) => id.startsWith('archivio/')));
+  });
+
+  it('never enters a kb/archivio that is a link', () => {
+    const home = join(scratch, randomUUID());
+    write(home, 'kb/public/b.md', '# Pagina finta\n');
+    write(home, 'altrove/private/x.md', '# Fuori, finta\n');
+    symlinkSync(join(home, 'altrove'), join(home, 'kb', 'archivio'));
+    assert.deepEqual(listPageIds(join(home, 'kb'), 100), ['public/b.md']);
+  });
+
+  it('under the cap, lists everything, the archive last', () => {
+    assert.deepEqual(listPageIds(join(withArchive(), 'kb'), 100), [
+      'private/casa/a.md',
+      'public/b.md',
+      'work/c.md',
+      'zeta/d.md',
+      'archivio/private/casa/1.md',
+      'archivio/private/casa/2.md',
+      'archivio/public/3.md',
+    ]);
+  });
+});
 
 describe('page header and links', () => {
   it('reads tags as JSON, flow lists and comma lists, lowercase and without #', () => {

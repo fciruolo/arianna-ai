@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { LocalModelError } from '@arianna/executors';
-import { createContext, isAtMost, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, KB_ARCHIVE, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { localTimestamp } from './capture.ts';
 import type { Queryable } from './db/client.ts';
@@ -12,7 +12,7 @@ import { passGateway } from './gateway.ts';
 import { enqueueJob } from './jobs.ts';
 import { listPageIds, readKnowledgePage, readPageFile, resolveWikilink } from './knowledge.ts';
 import { checkNoteName, checkNotePath, eachInboxNote, headerFields, NoteError, noteLabel, readNoteFile, replaceNote, sha256 } from './notes.ts';
-import { checkPagePath, KB_DIR, KB_INBOX, KB_PROJECT_NOTES, parsePage } from './orchestrator/kb.ts';
+import { checkPagePath, KB_DIR, KB_INBOX, KB_PROJECT_NOTES, KbError, parsePage } from './orchestrator/kb.ts';
 import { modelUnavailable, ORGANIZE_MAX_ATTEMPTS, ORGANIZE_MODEL, ORGANIZE_QUEUE, ORIGINAL_HEADING, type OrganizeEnv } from './organize.ts';
 import { unlinkPlainFile } from './plain-file.ts';
 
@@ -26,8 +26,9 @@ import { unlinkPlainFile } from './plain-file.ts';
  *
  * Moving keeps the text, writes one `label:` line with the label the note had
  * in the inbox (never below L2), so in the new folder it is the same or
- * higher, never lower; it stays inside kb/, through real folders only, never
- * over another file, and only if the note is still the one the user saw.
+ * higher, never lower; it goes to the same folder under kb/archivio, which
+ * the repository ignores (D-198), through real folders only, never over
+ * another file, and only if the note is still the one the user saw.
  */
 
 export const MAX_ARCHIVE_TITLE = 80;
@@ -102,14 +103,16 @@ function folderLabel(rules: LabelRules, folder: string): Label {
 /**
  * The folders of kb/ a note may go to: real folders only (a link is never
  * followed nor offered), not hidden, not kb/inbox nor kb/progetti (the
- * knowledge of the projects, D-145), at most MAX_FOLDER_DEPTH below kb/, with
- * a folder label up to L2. Sorted by path.
+ * knowledge of the projects, D-145) nor kb/archivio (where the approved notes
+ * go, D-198), at most MAX_FOLDER_DEPTH below kb/, with a folder label up to
+ * L2. Sorted by path. A note filed under one of them is written in the same
+ * folder under kb/archivio (archivePlace), out of git.
  */
 export function archiveFolders(home: string, rules: LabelRules): ArchiveFolder[] {
   const base = kbBase(home);
   if (base === undefined) return [];
   const found: ArchiveFolder[] = [];
-  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES].map((path) => path.toLowerCase()));
+  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE].map((path) => path.toLowerCase()));
   const walk = (dir: string, path: string, depth: number): void => {
     if (depth > MAX_FOLDER_DEPTH) return;
     let entries;
@@ -125,8 +128,8 @@ export function archiveFolders(home: string, rules: LabelRules): ArchiveFolder[]
       const child = `${path}/${entry.name}`;
       if (skip.has(child.toLowerCase())) continue;
       const label = folderLabel(rules, child);
-      // Above L2 the folder is neither offered nor entered.
-      if (!isAtMost(label, 'L2')) continue;
+      // Above L2 the folder is neither offered nor entered; nor when its place in kb/archivio is (D-198).
+      if (!isAtMost(label, 'L2') || !isAtMost(folderLabel(rules, archivePlace(child)), 'L2')) continue;
       found.push({ path: child, label });
       walk(join(dir, entry.name), child, depth + 1);
     }
@@ -154,6 +157,40 @@ function realFolder(home: string, folder: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Where a note filed under `folder` (kb/private/casa) is written: kb/archivio/private/casa (D-198). */
+export function archivePlace(folder: string): string {
+  if (folder.split('/')[0] !== KB_DIR) throw new ArchiveError('folder', 'a note cannot go in that folder');
+  return `${KB_ARCHIVE}/${folder.slice(KB_DIR.length + 1)}`;
+}
+
+/**
+ * The folder `folder` (kb/archivio/…) as a real folder, created one segment at
+ * a time where missing (private to the user), never through a link; undefined
+ * when a segment is a link, a file or cannot be made.
+ */
+function makeArchiveFolder(home: string, folder: string): string | undefined {
+  const base = kbBase(home);
+  const segments = folder.split('/');
+  if (base === undefined || `${segments[0] ?? ''}/${segments[1] ?? ''}` !== KB_ARCHIVE) return undefined;
+  let dir = base;
+  for (const segment of segments.slice(1)) {
+    if (!FOLDER_SEGMENT.test(segment) || segment.includes('..') || segment.endsWith(' ')) return undefined;
+    dir = join(dir, segment);
+    try {
+      mkdirSync(dir, { mode: 0o700 });
+    } catch (error) {
+      // Already there: looked at below, as any other folder on the way.
+      if ((error as { code?: unknown }).code !== 'EEXIST') return undefined;
+    }
+    try {
+      if (lstatSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true) return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return realFolder(home, folder);
 }
 
 // ---------------------------------------------------------------------------
@@ -520,15 +557,40 @@ function removeQuietly(file: string): void {
 }
 
 /**
- * Writes `content` as `to` (kb/<folder>/<name>.md) and removes the note
- * `from` of kb/inbox, only if it is still `expectedSha256`. The new file is
- * written beside its place and linked there, which fails if a file is there
- * already: nothing is ever overwritten. Every folder on the way is a real one.
+ * Writes `content` as `to` (kb/archivio/<folder>/<name>.md, D-198) and
+ * removes the note `from` of kb/inbox, only if it is still `expectedSha256`.
  */
 function moveNote(home: string, from: string, to: string, content: string, expectedSha256: string): void {
+  const base = placeNote(home, to, content);
   const name = to.split('/').at(-1) ?? '';
   const folder = to.split('/').slice(0, -1).join('/');
-  const dir = realFolder(home, folder);
+  // The note of the inbox goes only if it is still the one approved; otherwise the copy goes.
+  let same: boolean;
+  try {
+    same = sha256(readNoteFile(home, from)) === expectedSha256;
+  } catch {
+    same = false;
+  }
+  if (!same) {
+    unlinkPlainFile(base, [...folder.split('/').slice(1), name]);
+    throw new ArchiveError('changed', 'the note changed after it was shown');
+  }
+  if (!unlinkPlainFile(base, [...KB_INBOX.split('/').slice(1), from.split('/').at(-1) ?? ''])) {
+    unlinkPlainFile(base, [...folder.split('/').slice(1), name]);
+    throw new ArchiveError('unavailable', 'cannot remove the note from the inbox');
+  }
+}
+
+/**
+ * Writes `content` as the new file `to`, under kb/archivio (its folders made
+ * where missing). The file is written beside its place and linked there,
+ * which fails if a file is there already: nothing is ever overwritten. Every
+ * folder on the way is a real one. Gives back the real path of kb/.
+ */
+function placeNote(home: string, to: string, content: string): string {
+  const name = to.split('/').at(-1) ?? '';
+  const folder = to.split('/').slice(0, -1).join('/');
+  const dir = makeArchiveFolder(home, folder);
   const base = kbBase(home);
   if (dir === undefined || base === undefined) throw new ArchiveError('folder', 'the folder does not exist any more');
   const target = join(dir, name);
@@ -571,21 +633,7 @@ function moveNote(home: string, from: string, to: string, content: string, expec
     throw new ArchiveError('unavailable', 'cannot write in that folder');
   }
   removeQuietly(temp);
-  // The note of the inbox goes only if it is still the one approved; otherwise the copy goes.
-  let same: boolean;
-  try {
-    same = sha256(readNoteFile(home, from)) === expectedSha256;
-  } catch {
-    same = false;
-  }
-  if (!same) {
-    unlinkPlainFile(base, [...folder.split('/').slice(1), name]);
-    throw new ArchiveError('changed', 'the note changed after it was shown');
-  }
-  if (!unlinkPlainFile(base, [...KB_INBOX.split('/').slice(1), from.split('/').at(-1) ?? ''])) {
-    unlinkPlainFile(base, [...folder.split('/').slice(1), name]);
-    throw new ArchiveError('unavailable', 'cannot remove the note from the inbox');
-  }
+  return base;
 }
 
 /** Writes a page of kb/ again, only if it is still `expectedSha256`: a file beside it, then renamed over it. */
@@ -730,7 +778,8 @@ export function approveArchive(home: string, rules: LabelRules, input: ApproveIn
       return false;
     }
   });
-  const to = `${folder}/${name}`;
+  // The same folder under kb/archivio, out of git: a thought of the user is never a file ready for a commit (D-198).
+  const to = `${archivePlace(folder)}/${name}`;
   try {
     checkPagePath(to);
   } catch {
@@ -748,6 +797,83 @@ export function approveArchive(home: string, rules: LabelRules, input: ApproveIn
   // A correction of the user: a link dropped because its page is gone is not one.
   const corrected = folder !== proposal.folder || title !== proposal.title || (input.links !== undefined && [...new Set(input.links)].length !== proposal.links.length);
   return { path: to, label: newLabel, corrected, links: links.length, relinked: relinked.pages, relinkedInbox: relinked.inbox };
+}
+
+// ---------------------------------------------------------------------------
+// Notes approved before D-198, in the folders of kb/ that git tracks
+
+/**
+ * A note an approval of the Archivist wrote: a captured note (`captured_at`,
+ * written by the capture) with `archived_at` (written by composeArchived), in
+ * a header the code wrote. A development document of kb/ has neither.
+ */
+export function wasArchived(raw: string): boolean {
+  if (headerBounds(raw) === undefined) return false;
+  const fields = headerFields(raw);
+  return /^\d{4}-\d{2}-\d{2}T/.test(fields.get('archived_at') ?? '') && /^\d{4}-\d{2}-\d{2}T/.test(fields.get('captured_at') ?? '');
+}
+
+export interface Relocated {
+  /** Notes moved into kb/archivio. */
+  moved: number;
+  /** Notes left where they were: a note with the same name in the archive, a label that would be lower, a folder that cannot be made, a note changed meanwhile. */
+  left: number;
+}
+
+/**
+ * At start (D-198): the notes approved before D-198 went into the folders of
+ * kb/, which git tracks; each one moves to the same folder under kb/archivio
+ * (kb/private/finanze/x.md → kb/archivio/private/finanze/x.md) with its text
+ * unchanged, never over another file, never with a lower label, and only if
+ * it is still the same when the copy is in place. The inbox, the projects and
+ * the archive are not looked at. The links to it follow, as at approval.
+ */
+export function relocateArchived(home: string, rules: LabelRules): Relocated {
+  const result: Relocated = { moved: 0, left: 0 };
+  const base = kbBase(home);
+  if (base === undefined) return result;
+  const ids = listPageIds(base);
+  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE].map((path) => path.slice(KB_DIR.length + 1).toLowerCase()));
+  let current = [...ids];
+  for (const id of ids) {
+    const segments = id.split('/');
+    if (segments.length < 2 || skip.has((segments[0] ?? '').toLowerCase())) continue;
+    const file = readPageFile(home, id);
+    if (file === undefined || !wasArchived(file.raw)) continue;
+    const from = `${KB_DIR}/${id}`;
+    const to = `${archivePlace(`${KB_DIR}/${segments.slice(0, -1).join('/')}`)}/${segments.at(-1) ?? ''}`;
+    const label = noteLabel(rules, from, file.raw);
+    const newLabel = noteLabel(rules, to, file.raw);
+    if (!isAtMost(label, newLabel)) {
+      result.left += 1;
+      continue;
+    }
+    try {
+      checkPagePath(to);
+      placeNote(home, to, file.raw);
+    } catch (error) {
+      if (!(error instanceof ArchiveError) && !(error instanceof KbError)) throw error;
+      result.left += 1;
+      continue;
+    }
+    // The old file goes only if it is still the one copied; otherwise the copy goes.
+    const again = readPageFile(home, id);
+    if (again === undefined || again.raw !== file.raw || !unlinkPlainFile(base, segments)) {
+      unlinkPlainFile(base, to.split('/').slice(1));
+      result.left += 1;
+      continue;
+    }
+    result.moved += 1;
+    const toId = to.slice(KB_DIR.length + 1);
+    relinkPages(home, rules, id, toId, current, newLabel);
+    current = [...current.filter((other) => other !== id), toId];
+  }
+  return result;
+}
+
+/** The event of the start: counts only, never a path, a title or a folder. */
+export async function recordRelocated(sql: Queryable, relocated: Relocated): Promise<void> {
+  await appendEvent(sql, { kind: 'note.archive_relocated', label: 'L0', payload: { moved: relocated.moved, left: relocated.left } });
 }
 
 export type ApproveResult = { name: string; ok: true; archived: Archived } | { name: string; ok: false; code: ArchiveErrorCode; message: string };

@@ -23,10 +23,13 @@ import {
   proposalBasis,
   readArchiveAnswer,
   readProposal,
+  relocateArchived,
   stripProposal,
+  wasArchived,
   withDiscard,
   withProposal,
 } from '../src/archivist.ts';
+import { listPageIds } from '../src/knowledge.ts';
 import { noteLabel, sha256 } from '../src/notes.ts';
 
 const scratch = join(resolveHome({}), 'data', 'test-tmp', `archivist-${randomUUID()}`);
@@ -110,6 +113,14 @@ describe('archiveFolders', () => {
       'kb/work:L1',
       'kb/work/clienti:L1',
     ]);
+  });
+
+  it('never offers kb/archivio nor a folder inside it (D-198)', () => {
+    const { dir } = home();
+    write(dir, { 'kb/archivio/private/casa/vecchia.md': '# Archiviata finta\n' });
+    const paths = archiveFolders(dir, RULES).map((folder) => folder.path);
+    assert.equal(paths.some((path) => path.toLowerCase().startsWith('kb/archivio')), false);
+    assert.equal(paths.includes('kb/private/casa'), true);
   });
 
   it('never offers a folder that is a link, inside or outside kb/', () => {
@@ -201,7 +212,7 @@ describe('approveArchive', () => {
   it('moves the note with its text, a label never lower, the title and the links', () => {
     const { dir, version } = home();
     const archived = approveArchive(dir, RULES, { name: NAME, version }, new Date(2026, 9, 13, 9, 0));
-    assert.equal(archived.path, `kb/private/casa/${NAME}`);
+    assert.equal(archived.path, `kb/archivio/private/casa/${NAME}`);
     assert.equal(archived.corrected, false);
     assert.equal(existsSync(join(dir, 'kb', 'inbox', NAME)), false);
     const moved = readFileSync(join(dir, archived.path), 'utf8');
@@ -233,7 +244,7 @@ describe('approveArchive', () => {
     assert.equal(archived.relinked, 1);
     const spesa = readFileSync(join(dir, 'kb', 'inbox', '2026-10-13-090000-spesa.md'), 'utf8');
     const stem = NAME.replace(/\.md$/, '');
-    assert.match(spesa, new RegExp(`\\[\\[private/casa/${stem}\\]\\] e \\[\\[private/casa/${stem}\\|l'ombrellone\\]\\]`));
+    assert.match(spesa, new RegExp(`\\[\\[archivio/private/casa/${stem}\\]\\] e \\[\\[archivio/private/casa/${stem}\\|l'ombrellone\\]\\]`));
   });
 
   it('never writes the folder of the note in a page with a lower label, nor touches a page above L2 or an ambiguous link', () => {
@@ -277,7 +288,7 @@ describe('approveArchive', () => {
       results.map((result) => result.ok),
       [true, true],
     );
-    assert.match(readFileSync(join(dir, 'kb', 'private', 'casa', second), 'utf8'), new RegExp(`\\[\\[private/casa/${stem}\\]\\]`));
+    assert.match(readFileSync(join(dir, 'kb', 'archivio', 'private', 'casa', second), 'utf8'), new RegExp(`\\[\\[archivio/private/casa/${stem}\\]\\]`));
   });
 
   it('refuses a folder outside kb/, the inbox, the projects, an L3 folder or one that does not exist', () => {
@@ -325,9 +336,33 @@ describe('approveArchive', () => {
 
   it('never overwrites a note with the same name in the folder', () => {
     const { dir, version } = home();
-    writeFileSync(join(dir, 'kb', 'private', 'casa', NAME), '# Già qui, finta\n');
+    write(dir, { [`kb/archivio/private/casa/${NAME}`]: '# Già qui, finta\n' });
     assert.throws(() => approveArchive(dir, RULES, { name: NAME, version }), (error) => code(error) === 'exists');
-    assert.equal(readFileSync(join(dir, 'kb', 'private', 'casa', NAME), 'utf8'), '# Già qui, finta\n');
+    assert.equal(readFileSync(join(dir, 'kb', 'archivio', 'private', 'casa', NAME), 'utf8'), '# Già qui, finta\n');
+    assert.equal(existsSync(join(dir, 'kb', 'inbox', NAME)), true);
+  });
+
+  it('writes in kb/archivio, never in the folder of kb/ the repository tracks (D-198)', () => {
+    const { dir, version } = home();
+    approveArchive(dir, RULES, { name: NAME, version });
+    assert.equal(existsSync(join(dir, 'kb', 'private', 'casa', NAME)), false);
+    assert.equal(existsSync(join(dir, 'kb', 'archivio', 'private', 'casa', NAME)), true);
+  });
+
+  it('never writes through kb/archivio when it is a link (D-198)', () => {
+    const { dir, version } = home();
+    symlinkSync(join(dir, 'fuori'), join(dir, 'kb', 'archivio'));
+    assert.throws(() => approveArchive(dir, RULES, { name: NAME, version }), (error) => code(error) === 'folder');
+    assert.equal(existsSync(join(dir, 'fuori', 'private')), false);
+    assert.equal(existsSync(join(dir, 'kb', 'inbox', NAME)), true);
+  });
+
+  it('neither offers nor takes a folder whose place in the archive has a label above L2 (D-198)', () => {
+    const { dir, version } = home();
+    const rules = parseLabelRules(['[[folder]]\npath = "kb/private"\nlabel = "L2"', '[[folder]]\npath = "kb/archivio/private/casa"\nlabel = "L3"'].join('\n\n'));
+    assert.equal(archiveFolders(dir, rules).some((folder) => folder.path === 'kb/private/casa'), false);
+    assert.equal(archiveFolders(dir, rules).some((folder) => folder.path === 'kb/private/auto'), true);
+    assert.throws(() => approveArchive(dir, rules, { name: NAME, version }), (error) => code(error) === 'folder');
     assert.equal(existsSync(join(dir, 'kb', 'inbox', NAME)), true);
   });
 
@@ -375,5 +410,75 @@ describe('discard and the view', () => {
       },
       (error) => code(error) === 'changed',
     );
+  });
+});
+
+describe('relocateArchived (D-198)', () => {
+  const APPROVED = composeArchived(withProposal(NOTE, PROPOSAL, 'local-large', new Date()), { label: 'L2', title: 'Ombrellone per il balcone', links: [], now: new Date(2026, 9, 13, 9, 0) });
+
+  it('moves a note approved before D-198 to the same folder of kb/archivio, unchanged, and the links follow', () => {
+    const { dir } = home();
+    const stem = NAME.replace(/\.md$/, '');
+    write(dir, {
+      [`kb/private/finanze/${NAME}`]: APPROVED,
+      'kb/private/casa/link.md': `# Pagina finta\n\nVedi [[private/finanze/${stem}]].\n`,
+    });
+    assert.deepEqual(relocateArchived(dir, RULES), { moved: 1, left: 0 });
+    assert.equal(existsSync(join(dir, 'kb', 'private', 'finanze', NAME)), false);
+    assert.equal(readFileSync(join(dir, 'kb', 'archivio', 'private', 'finanze', NAME), 'utf8'), APPROVED);
+    assert.equal(readFileSync(join(dir, 'kb', 'private', 'casa', 'link.md'), 'utf8'), `# Pagina finta\n\nVedi [[archivio/private/finanze/${stem}]].\n`);
+    // Once in the archive it is not looked at again.
+    assert.deepEqual(relocateArchived(dir, RULES), { moved: 0, left: 0 });
+  });
+
+  it('never moves a development document, nor the notes of the inbox, the projects or the archive', () => {
+    const { dir } = home();
+    const document = '---\ntitle: Bolletta finta\ncaptured_at: 2026-10-01T08:00:00+02:00\n---\n\nUn documento di sviluppo.\n';
+    write(dir, {
+      'kb/private/finanze/bolletta.md': document,
+      'kb/inbox/2026-10-13-110000-gia.md': APPROVED,
+      [`kb/progetti/demo/${NAME}`]: APPROVED,
+    });
+    assert.deepEqual(relocateArchived(dir, RULES), { moved: 0, left: 0 });
+    assert.equal(readFileSync(join(dir, 'kb', 'private', 'finanze', 'bolletta.md'), 'utf8'), document);
+    assert.equal(existsSync(join(dir, 'kb', 'inbox', '2026-10-13-110000-gia.md')), true);
+    assert.equal(existsSync(join(dir, 'kb', 'progetti', 'demo', NAME)), true);
+    assert.equal(wasArchived(document), false);
+    assert.equal(wasArchived(APPROVED), true);
+  });
+
+  it('no development document of the repository kb/ looks like an approved note', () => {
+    const root = join(resolveHome({}), 'kb');
+    const ids = listPageIds(root).filter((id) => !/^(inbox|progetti|archivio)\//i.test(id));
+    assert.ok(ids.length > 0);
+    for (const id of ids) assert.equal(wasArchived(readFileSync(join(root, id), 'utf8')), false, id);
+  });
+
+  it('never overwrites a note in the archive, keeps a higher label, never goes through a link', () => {
+    const { dir } = home();
+    write(dir, {
+      [`kb/private/finanze/${NAME}`]: APPROVED,
+      [`kb/archivio/private/finanze/${NAME}`]: '# Già archiviata, finta\n',
+      [`kb/private/segreti/${NAME}`]: APPROVED,
+    });
+    // kb/private/segreti is L3, and so is its place in the archive: it moves, still L3.
+    assert.deepEqual(relocateArchived(dir, RULES), { moved: 1, left: 1 });
+    assert.equal(readFileSync(join(dir, 'kb', 'archivio', 'private', 'finanze', NAME), 'utf8'), '# Già archiviata, finta\n');
+    assert.equal(readFileSync(join(dir, 'kb', 'private', 'finanze', NAME), 'utf8'), APPROVED);
+    assert.equal(noteLabel(RULES, `kb/archivio/private/segreti/${NAME}`, APPROVED), 'L3');
+
+    const lower = home();
+    write(lower.dir, { [`kb/work/clienti/${NAME}`]: APPROVED });
+    const rules = parseLabelRules(['[[folder]]\npath = "kb/work"\nlabel = "L3"', '[[folder]]\npath = "kb/archivio/work"\nlabel = "L2"'].join('\n\n'));
+    // A lower rule over the archive cannot lower the note: the folder outside it still counts.
+    assert.deepEqual(relocateArchived(lower.dir, rules), { moved: 1, left: 0 });
+    assert.equal(noteLabel(rules, `kb/archivio/work/clienti/${NAME}`, APPROVED), 'L3');
+
+    const linked = home();
+    write(linked.dir, { [`kb/private/finanze/${NAME}`]: APPROVED });
+    symlinkSync(join(linked.dir, 'fuori'), join(linked.dir, 'kb', 'archivio'));
+    assert.deepEqual(relocateArchived(linked.dir, RULES), { moved: 0, left: 1 });
+    assert.equal(existsSync(join(linked.dir, 'fuori', 'private')), false);
+    assert.equal(readFileSync(join(linked.dir, 'kb', 'private', 'finanze', NAME), 'utf8'), APPROVED);
   });
 });

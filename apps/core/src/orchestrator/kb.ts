@@ -1,7 +1,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { canRead, isAtMost, labelForKbPage, labelForPath, maxLabel, type Context, type Label, type LabelRules } from '@arianna/policy';
+import { canRead, isAtMost, KB_ARCHIVE, labelForKbPage, labelForPath, maxLabel, type Context, type Label, type LabelRules } from '@arianna/policy';
 
 import { ARIANNA_DOCS_LABEL, ARIANNA_PAGES, AriannaDocsError, type AriannaDocs } from '../arianna-docs.ts';
 import { isProjectPagePath, KnowledgeError, type ProjectPages } from '../project-knowledge.ts';
@@ -160,8 +160,10 @@ function snippetOf(body: string, words: readonly string[]): string {
  * read with the same rules as kb/ (folder label first, then the header);
  * never written by the tools: `kb.write` stays in kb/inbox.
  */
-export function createKb(options: { home: string; rules: LabelRules; projects?: ProjectPages; arianna?: AriannaDocs }): Kb {
+export function createKb(options: { home: string; rules: LabelRules; projects?: ProjectPages; arianna?: AriannaDocs; maxPages?: number }): Kb {
   const root = join(options.home, KB_DIR);
+  // A lower cap only in tests.
+  const maxPages = options.maxPages ?? MAX_PAGES;
   const projects = options.projects;
   const arianna = options.arianna;
 
@@ -218,6 +220,8 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
   /** Every page path under kb/, without following links or entering hidden folders. */
   function list(): string[] {
     const found: string[] = [];
+    // kb/archivio is read last (D-198): over MAX_PAGES the archive is cut, never the other pages of kb/.
+    const archives: string[] = [];
     const walk = (dir: string, prefix: string): void => {
       let entries;
       try {
@@ -226,16 +230,18 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
         return;
       }
       for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (found.length >= MAX_PAGES || entry.name.startsWith('.')) continue;
+        if (found.length >= maxPages || entry.name.startsWith('.')) continue;
         const path = `${prefix}/${entry.name}`;
         // kb/progetti is searched as the knowledge of each project, with its own folder labels (D-145).
         if (entry.isDirectory()) {
-          if (path.toLowerCase() !== KB_PROJECT_NOTES) walk(join(dir, entry.name), path);
+          if (path.toLowerCase() === KB_ARCHIVE) archives.push(path);
+          else if (path.toLowerCase() !== KB_PROJECT_NOTES) walk(join(dir, entry.name), path);
         }
         else if (entry.isFile() && entry.name.endsWith('.md')) found.push(path);
       }
     };
     walk(root, KB_DIR);
+    for (const path of archives) walk(join(root, path.slice(KB_DIR.length + 1)), path);
     return found;
   }
 
