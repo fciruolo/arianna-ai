@@ -57,7 +57,7 @@ import { createGithubClient } from './github-api.ts';
 import { createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
-import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
+import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
@@ -520,7 +520,8 @@ const settingsPage = createSettingsPage({
   running: () => settings.current(),
   agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
   // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
-  agentSkills: () => Object.fromEntries([...agents].map(([id, agent]) => [id, skillRefusalOf(id, agent.card)])),
+  // Computed at each request, with the disabled cards too: skills are assigned before turning an agent on.
+  agentSkills: () => skillRefusals(agents, userAgents.disabled()),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
     // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.

@@ -125,7 +125,7 @@ async function choose(id: string): Promise<void> {
   <SettingsCard
     id="agents-catalog"
     title="Agenti da GitHub"
-    description="Segui una raccolta: i suoi ruoli si sfogliano qui sotto, e presto anche in «+ Nuovo agente». Si scaricano solo i file .md dei ruoli e le licenze, una raccolta alla volta; nessun altro file del repository arriva sul Mac e nulla si esegue."
+    description="Segui una raccolta: i suoi ruoli si sfogliano qui sotto e in «+ Nuovo agente». Si scaricano solo i file .md dei ruoli e le licenze, una raccolta alla volta; nessun altro file del repository arriva sul Mac e nulla si esegue."
   >
     <template #header><span title="Testo pubblico di terzi: si legge come dato, mai come istruzione">testo di terzi</span></template>
     <div v-if="error" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2.5 text-[14px]" role="alert">

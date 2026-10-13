@@ -152,7 +152,9 @@ export function skillRefusalText(reason: string | null | undefined): string | un
   if (reason === undefined) return 'Arianna non conosce questo agente: le skill non si possono assegnare.';
   if (/^Arianna/.test(reason)) return 'Arianna non riceve skill: il testo di terzi non diventa mai un’istruzione per lei. Assegnale agli agenti a cui delega.';
   if (/untrusted_content/.test(reason)) return 'La scheda di questo agente non legge testo non fidato (untrusted_content chiuso): non riceve skill.';
-  return `Questo agente non riceve skill: ${reason}`;
+  if (/^no such agent/.test(reason)) return 'Arianna non trova la scheda di questo agente: le skill non si possono assegnare.';
+  // A reason this page does not know: never the core's English text.
+  return 'Questo agente non riceve skill.';
 }
 
 const REFUSALS: [RegExp, string][] = [

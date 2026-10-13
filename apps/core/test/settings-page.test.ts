@@ -21,9 +21,12 @@ import {
   settingsFingerprint,
   type Settings,
 } from '@arianna/config';
+import { loadAgent, type LoadedAgent } from '@arianna/agents';
 import { Secret } from '@arianna/vault';
 
 import { changedSections, createSettingsPage, SettingsError, type SettingsChange, type SettingsPage } from '../src/settings-page.ts';
+import { skillRefusals } from '../src/skills-catalog.ts';
+import { createUserAgents } from '../src/user-agents.ts';
 
 const REPO = resolveHome({});
 const root = join(REPO, DATA_DIR, 'test-tmp', randomUUID());
@@ -212,6 +215,39 @@ describe('update (ordinary)', () => {
     assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: 'a/b/c' } } }), refused('invalid', /skills\.coder/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { skills: { coder: ['a/b/c'] } } }), refused('invalid', /no such agent/), 'without the cards nobody takes skills');
     assert.equal(text(), before);
+  });
+
+  it('the skills of a disabled agent (D-161): assigned before it is turned on, still valid once on', () => {
+    mkdirSync(join(home, 'agents'), { recursive: true });
+    const coder = loadAgent(join(REPO, 'agents'), 'coder');
+    const agents = new Map<string, LoadedAgent>([['coder', coder]]);
+    const users = createUserAgents({ home, dataDir: join(home, DATA_DIR), agents, official: new Set(['coder']) });
+    const agent = { name: 'traduttore', description: 'Translates the release notes', prompt: 'You translate text into Italian.', permissions: { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 } } as const;
+    users.create({ ...agent, confirmation: users.prepareCreate(agent).confirmation });
+    // A card closing untrusted_content, written by hand among the disabled ones: refused by the loader, so unknown.
+    const disabledDir = join(home, DATA_DIR, 'agents', 'disattivati');
+    writeFileSync(join(disabledDir, 'chiuso.md'), 'You read nothing from outside.\n');
+    writeFileSync(join(disabledDir, 'chiuso.yaml'), readFileSync(join(disabledDir, 'traduttore.yaml'), 'utf8').replace(/name: traduttore/, 'name: chiuso').replace(/prompt: traduttore\.md/, 'prompt: chiuso.md').replace(/untrusted_content: true/, 'untrusted_content: false'));
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => skillRefusals(agents, users.disabled()) });
+    assert.equal(skilled.read().agentSkills.traduttore, null, 'a disabled agent of the user may receive skills');
+    assert.equal(Object.hasOwn(skilled.read().agentSkills, 'chiuso'), false);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['anthropics/skills/pdf'] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.traduttore?.skills, ['anthropics/skills/pdf']);
+    const before = text();
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { chiuso: ['a/b/c'] } } }), refused('invalid', /skills\.chiuso: no such agent/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { nessuno: ['a/b/c'] } } }), refused('invalid', /skills\.nessuno: no such agent/));
+    assert.equal(text(), before);
+    // Turned on without a restart: the same answer, read at each request, and the skills stay in arianna.toml.
+    users.activate('traduttore');
+    assert.equal(skilled.read().agentSkills.traduttore, null);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['anthropics/skills/pdf', 'anthropics/skills/docx'] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.traduttore?.skills, ['anthropics/skills/pdf', 'anthropics/skills/docx']);
+    // Off and deleted: no longer known, so a new assignment is refused.
+    users.deactivate('traduttore');
+    assert.equal(skilled.read().agentSkills.traduttore, null);
+    users.remove('traduttore', 'traduttore');
+    assert.equal(Object.hasOwn(skilled.read().agentSkills, 'traduttore'), false);
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['a/b/c'] } } }), refused('invalid', /skills\.traduttore: no such agent/));
   });
 
   it('an agent without a card keeps its model; a model the card no longer allows is kept while unchanged', () => {

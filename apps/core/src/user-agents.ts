@@ -227,6 +227,11 @@ export interface UserAgents {
   /** Adds the active cards to the running agents; called once at start. */
   load(): RefusedUserAgent[];
   list(): UserAgentListing;
+  /**
+   * The valid disabled cards, read now from `data/agents/disattivati` (D-161: skills are assigned
+   * before an agent is turned on); a name that is also active or official is left out.
+   */
+  disabled(): Map<string, LoadedAgent>;
   sources(): UserAgentSources;
   /** What a new card would be, with the confirmation id that `create` needs. */
   prepareCreate(input: NewUserAgent): AgentProposal;
@@ -697,6 +702,13 @@ export function createUserAgents(options: {
         for (const item of refused) listing.refused.push({ ...item, state });
       }
       return listing;
+    },
+
+    disabled() {
+      const active = read('active').agents;
+      const found = read('disabled').agents;
+      for (const name of found.keys()) if (active.has(name) || official.has(name) || agents.has(name)) found.delete(name);
+      return found;
     },
 
     sources() {

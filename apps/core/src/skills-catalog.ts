@@ -644,6 +644,22 @@ export function skillRefusalOf(agent: string, card: { trifecta: { untrusted_cont
   return null;
 }
 
+/**
+ * Why each agent may receive no skills (D-161), for the settings page: the running agents and the
+ * user's disabled cards, so that skills are assigned before an agent is turned on. A running card
+ * counts over a disabled one with the same name; an id in neither is absent, so refused. A user's
+ * card closing untrusted_content never loads (USER_TRIFECTA), so it is absent too: the rule here is a second guard.
+ */
+export function skillRefusals(
+  running: ReadonlyMap<string, { card: { trifecta: { untrusted_content: boolean } } }>,
+  disabled: ReadonlyMap<string, { card: { trifecta: { untrusted_content: boolean } } }>,
+): Record<string, string | null> {
+  const refusals: Record<string, string | null> = {};
+  for (const [id, agent] of disabled) refusals[id] = skillRefusalOf(id, agent.card);
+  for (const [id, agent] of running) refusals[id] = skillRefusalOf(id, agent.card);
+  return refusals;
+}
+
 /** Whether a `[agents.<id>] skills` id is well formed. */
 export function isSkillId(value: unknown): value is string {
   return typeof value === 'string' && SKILL_ID.test(value);
