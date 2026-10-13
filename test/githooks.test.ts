@@ -28,7 +28,9 @@ test('the hook of a merge commit is executable and runs the checks of a commit',
 test('the pre-commit hook runs pnpm check unless only documents are staged', () => {
   const dir = mkdtempSync(join(tmpdir(), 'arianna-precommit-'));
   try {
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    // Inside a real commit git exports GIT_INDEX_FILE, GIT_DIR and friends: the temporary repository must not see them.
+    const clean: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: clean, stdio: 'ignore' });
     git('init', '-q');
     mkdirSync(join(dir, 'scripts'));
     writeFileSync(join(dir, 'scripts', 'conflict-markers.ts'), '');
@@ -37,7 +39,7 @@ test('the pre-commit hook runs pnpm check unless only documents are staged', () 
     writeFileSync(join(dir, 'bin', 'pnpm'), '#!/bin/sh\ntouch "$PWD/checked"\n', { mode: 0o755 });
     const hook = join(ROOT, '.githooks', 'pre-commit');
     assert.ok((statSync(hook).mode & 0o111) !== 0, 'executable');
-    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}` };
+    const env: NodeJS.ProcessEnv = { ...clean, PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}` };
     delete env.NODE_TEST_CONTEXT;
     const run = () => execFileSync('sh', [hook], { cwd: dir, env, stdio: 'ignore' });
     mkdirSync(join(dir, 'docs', 'mockups'), { recursive: true });
