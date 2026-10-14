@@ -85,7 +85,8 @@ export function saveKind(fact: UserFact | null, form: FactForm): 'save' | 'share
   return fact !== null && fact.label === 'L2' && form.shared ? 'share' : 'save';
 }
 
-const SCAN_KINDS: Record<string, string> = {
+/** The kinds of the core's scanner as the page names them. */
+export const SCAN_KINDS: Record<string, string> = {
   iban: 'un IBAN',
   'tax-code': 'un codice fiscale',
   'card-number': 'un numero di carta',

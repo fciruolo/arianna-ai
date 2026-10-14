@@ -5,6 +5,7 @@
  * card at a time; privacy ones are prepared, shown, then confirmed.
  */
 import { EXECUTOR_TEXT, labelWord } from './labels.ts';
+import { SCAN_KINDS } from './profile.ts';
 import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
 import type { Label } from './types.ts';
 
@@ -620,8 +621,36 @@ export function countdown(expiresAt: string, now: number): string {
   return `${String(Math.floor(left / 60))}:${String(left % 60).padStart(2, '0')}`;
 }
 
+const PERSONA_FIELD_TEXT: Record<string, string> = {
+  displayName: '«Nome in chat»',
+  traits: '«Come parla»',
+  specialization: '«Specializzazione»',
+};
+
+/**
+ * The core's refusal of a free text with personal data or a value of the
+ * vault (D-107g), in plain Italian: which field and which kind, never the
+ * text (the core never repeats it either). Undefined for any other message.
+ */
+export function personalDataText(message: string): string | undefined {
+  const persona = /^personas\.[a-z0-9_-]+\.(displayName|traits|specialization) /.exec(message);
+  const rules = /^projectRules\.(template|projects\.[a-z0-9-]+) /.exec(message);
+  let where: string;
+  if (persona !== null) where = `Il campo ${PERSONA_FIELD_TEXT[persona[1] ?? ''] ?? ''} della personalità`;
+  else if (rules?.[1] === 'template') where = 'Il modello delle regole dei progetti';
+  else if (rules !== null) where = `La regola del progetto ${(rules[1] ?? '').slice('projects.'.length)}`;
+  else return undefined;
+  if (/ holds a value of the vault/.test(message)) return `${where} contiene un valore del vault: toglilo prima di salvare.`;
+  if (!/ looks like personal data or a secret/.test(message)) return undefined;
+  const kinds = /\(([^)]*)\)/.exec(message)?.[1]?.split(', ').map((kind) => SCAN_KINDS[kind] ?? 'un dato personale') ?? [];
+  const what = kinds.length > 0 ? [...new Set(kinds)].join(', ') : 'un dato personale o un segreto';
+  return `${where} contiene ${what}: toglilo prima di salvare.`;
+}
+
 /** What the page says about a refused write: the status picks the case, the core's message the detail. */
 export function writeError(status: number, message: string): { text: string; reload: boolean } {
+  const personal = status === 400 ? personalDataText(message) : undefined;
+  if (personal !== undefined) return { text: personal, reload: false };
   if (status === 409) {
     if (/changed since the page read it/.test(message)) return { text: 'Il file arianna.toml è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.', reload: true };
     return { text: `Le impostazioni non si leggono: ${message}`, reload: true };

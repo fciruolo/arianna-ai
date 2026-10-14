@@ -43,6 +43,7 @@ import {
   voiceSent,
   voiceAfterSave,
   writeError,
+  personalDataText,
   type AgentsForm,
   type CatalogModel,
   type VoiceValues,
@@ -258,6 +259,29 @@ test('a 409 reloads the values; an expired confirmation does not', () => {
   assert.match(writeError(404, 'unknown').text, /scaduta/);
   assert.match(writeError(400, 'roles: bad').text, /roles: bad/);
   assert.equal(writeError(400, 'x').reload, false);
+});
+
+test('a persona or a project rule with personal data is refused in Italian, naming field and kind, never the text (D-107g)', () => {
+  const iban = writeError(400, 'personas.arianna.traits looks like personal data or a secret (iban): not saved');
+  assert.equal(iban.text, 'Il campo «Come parla» della personalità contiene un IBAN: toglilo prima di salvare.');
+  assert.equal(iban.reload, false);
+  assert.equal(
+    writeError(400, 'personas.coder.specialization looks like personal data or a secret (tax-code, token): not saved').text,
+    'Il campo «Specializzazione» della personalità contiene un codice fiscale, un token o una chiave: toglilo prima di salvare.',
+  );
+  assert.equal(writeError(400, 'personas.coder.displayName holds a value of the vault: not saved').text, 'Il campo «Nome in chat» della personalità contiene un valore del vault: toglilo prima di salvare.');
+  assert.equal(personalDataText('projectRules.template looks like personal data or a secret (card-number): not saved'), 'Il modello delle regole dei progetti contiene un numero di carta: toglilo prima di salvare.');
+  assert.equal(personalDataText('projectRules.projects.demo holds a value of the vault: not saved'), 'La regola del progetto demo contiene un valore del vault: toglilo prima di salvare.');
+  for (const text of [iban.text]) assert.doesNotMatch(text, /looks like|personas\.|not saved/);
+});
+
+test('other refusals keep the core message (D-107g, negative)', () => {
+  assert.equal(personalDataText('personas.arianna.traits: at most 600 characters'), undefined);
+  assert.equal(personalDataText('roles: bad'), undefined);
+  assert.equal(personalDataText('the prompt looks like personal data or a secret (iban): not saved'), undefined);
+  assert.match(writeError(400, 'personas.arianna.traits: at most 600 characters').text, /^Arianna ha rifiutato la modifica: personas\.arianna\.traits: at most 600/);
+  // A 409 is never read as a refusal of the text.
+  assert.equal(writeError(409, 'personas.arianna.traits looks like personal data or a secret (iban): not saved').reload, true);
 });
 
 test('a command shows where each argument ends', () => {
