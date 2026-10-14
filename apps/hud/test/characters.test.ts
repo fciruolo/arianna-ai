@@ -6,10 +6,10 @@ import { inflateSync } from 'node:zlib';
 
 import { checkArt, dress, renderSheet, type CharacterArt, type Costume, type Part } from '../characters/compose.ts';
 import { APP_ICONS, COSTUMED, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, SERIES, SERIES_DIR, SHEETS, sheetPng } from '../characters/originals.ts';
+import { encodePng } from '../characters/png.ts';
 
 /** Every sheet built from the maps: the pack of the originals and the people of the series (D-211). */
 const ALL: readonly CharacterArt[] = [...SHEETS, ...SERIES.map(({ art }) => art)];
-import { encodePng } from '../characters/png.ts';
 
 test('the sheets in git are the ones the pixel maps give, costumes of the themes included (run node apps/hud/characters/build.ts after a change)', () => {
   for (const art of SHEETS) {

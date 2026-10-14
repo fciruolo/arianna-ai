@@ -11,7 +11,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- I temi Corsia e Ufficio vestono Arianna, il Coder, GOD, il revisore e gli altri agenti con i personaggi delle serie invece dei costumi, che restano sceglibili a mano (D-211).
+- I temi Corsia e Ufficio vestono Arianna, il Coder, GOD e il revisore (in Corsia anche finanze) con i personaggi delle serie invece dei costumi; designer (e in Ufficio finanze) restano col costume del Coder, e i costumi restano sceglibili a mano (D-211).
 
 ## [0.105.0] - 2026-10-14
 

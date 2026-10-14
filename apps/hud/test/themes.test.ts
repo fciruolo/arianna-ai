@@ -67,7 +67,8 @@ test('the characters a theme names are costumes of the originals or people of th
       // From the originals only the costumes of the same theme, never a plain original.
       if (packId === 'originali') assert.ok(character.endsWith(`-${theme.id}`), `${theme.id}.${agent}: ${choice}`);
     }
-    // Arianna, the Coder and GOD wear someone of the series.
+    // In Corsia and Ufficio Arianna, the Coder and GOD wear someone of the series (D-211).
+    if (!['corsia', 'ufficio'].includes(theme.id)) continue;
     for (const agent of ['arianna', 'coder', 'god']) assert.equal(theme.characters[agent]?.split('/')[0], 'serie', `${theme.id}.${agent}`);
   }
 });

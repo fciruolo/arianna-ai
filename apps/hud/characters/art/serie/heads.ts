@@ -12,7 +12,7 @@ export function manFace(mouth = '...osssmmssso...', eyes = '..ohsessssesho..', f
 }
 
 /** The hair of a man seen from the side, rows 0–3, facing right. */
-export const SIDE_HAIR: readonly [string, string, string, string] = ['.....oooo.......', '...oohhhhoo.....', '..ohhhhhhhhoo...', '..ohhhhhhhhhho..'];
+const SIDE_HAIR: readonly [string, string, string, string] = ['.....oooo.......', '...oohhhhoo.....', '..ohhhhhhhhoo...', '..ohhhhhhhhhho..'];
 
 /** Side, a man with short hair facing right: rows 0–3 of hair, then the face with the eye on column 11. */
 export function manSide(hair: Rows = SIDE_HAIR, mouth = '....osssssmso...'): string[] {

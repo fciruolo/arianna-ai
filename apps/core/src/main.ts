@@ -930,6 +930,12 @@ await godLanding.recover().then(
     report(error);
   },
 );
+// The character packs (D-060, D-211): the two in the repository and the user's in data/.
+const characterDirs = {
+  original: join(config.home, 'apps', 'hud', 'characters', 'originali'),
+  series: join(config.home, 'apps', 'hud', 'characters', 'serie'),
+  data: join(config.paths.data, 'characters'),
+};
 const server = await startApiServer({
   sql,
   live,
@@ -1023,16 +1029,12 @@ const server = await startApiServer({
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
   },
   characters: {
-    dirs: {
-      original: join(config.home, 'apps', 'hud', 'characters', 'originali'),
-      series: join(config.home, 'apps', 'hud', 'characters', 'serie'),
-      data: join(config.paths.data, 'characters'),
-    },
+    dirs: characterDirs,
     choices: () => settings.current().characters,
     themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
     downloadPixelAgents: () =>
       downloadPixelAgents({
-        dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
+        dirs: characterDirs,
         get: createGithubClient(),
         gateway: catalogGateway('settings:pixel-agents', 'api.github.com: personaggi di pixel-agents'),
       }),

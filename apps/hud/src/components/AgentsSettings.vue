@@ -288,13 +288,16 @@ function unassignSkill(agent: string, id: string): void {
 const characterOptions = computed(() =>
   (props.characters?.packs ?? []).flatMap((pack) => pack.characters.map((character) => ({ value: `${pack.id}/${character.id}`, pack, character }))),
 );
-/** The character without a choice, as the core picks it: the original of the same name, otherwise the Coder's. */
+/** The character without a choice, as the core picks it apart from the theme: the original of the same name, otherwise the Coder's. */
 function defaultOption(agent: string) {
   const originals = characterOptions.value.filter((option) => option.pack.original);
   return originals.find((option) => option.character.id === agent) ?? originals.find((option) => option.character.id === 'coder');
 }
 function previewOf(agent: string): CharacterChoice | undefined {
   const value = props.form.characters[agent] ?? '';
+  // Without a choice the theme's character comes first (D-103, D-211), as the core assigns it.
+  const served = props.characters?.agents[agent];
+  if (value === '' && served?.from === 'theme') return served;
   const option = value === '' ? defaultOption(agent) : characterOptions.value.find((item) => item.value === value);
   if (option !== undefined) return { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
   return value === '' ? props.characters?.agents[agent] : undefined;
