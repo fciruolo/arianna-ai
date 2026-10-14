@@ -633,10 +633,10 @@ const PERSONA_FIELD_TEXT: Record<string, string> = {
  * text (the core never repeats it either). Undefined for any other message.
  */
 export function personalDataText(message: string): string | undefined {
-  const persona = /^personas\.[a-z0-9_-]+\.(displayName|traits|specialization) /.exec(message);
+  const persona = /^personas\.([a-z0-9_-]+)\.(displayName|traits|specialization) /.exec(message);
   const rules = /^projectRules\.(template|projects\.[a-z0-9-]+) /.exec(message);
   let where: string;
-  if (persona !== null) where = `Il campo ${PERSONA_FIELD_TEXT[persona[1] ?? ''] ?? ''} della personalità`;
+  if (persona !== null) where = `Il campo ${PERSONA_FIELD_TEXT[persona[2] ?? ''] ?? ''} della personalità di ${persona[1] ?? ''}`;
   else if (rules?.[1] === 'template') where = 'Il modello delle regole dei progetti';
   else if (rules !== null) where = `La regola del progetto ${(rules[1] ?? '').slice('projects.'.length)}`;
   else return undefined;

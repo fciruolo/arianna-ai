@@ -15,7 +15,6 @@ import {
   createLocalSummarizer,
   MAX_ITEM_TITLE,
   modelData,
-  modelInput,
   NEWS_KEY,
   NEXT_NEWS_FILE,
   NEWS_FILE,
@@ -209,7 +208,7 @@ describe('the answer of the model', () => {
 
   it('gives the model one JSON object of data within its size', () => {
     const many: NewsCommit[] = Array.from({ length: 300 }, (_, n) => ({ sha: sha(n), short: sha(n).slice(0, 7), message: `feat: ${'x'.repeat(190)}` }));
-    const text = modelInput(many, [{ tag: 'v1', name: 'v1', publishedAt: null, url: '', notes: 'n'.repeat(1500) }]);
+    const { text } = modelData(many, [{ tag: 'v1', name: 'v1', publishedAt: null, url: '', notes: 'n'.repeat(1500) }]);
     assert.ok(Buffer.byteLength(text, 'utf8') <= 24 * 1024);
     const data = JSON.parse(text) as { commits: { id: number }[] };
     assert.ok(data.commits.length > 10 && data.commits.length <= 120);

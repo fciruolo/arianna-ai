@@ -278,11 +278,6 @@ export function modelData(commits: readonly NewsCommit[], releases: readonly New
   return { text, given };
 }
 
-/** The text of modelData alone. */
-export function modelInput(commits: readonly NewsCommit[], releases: readonly NewsRelease[]): string {
-  return modelData(commits, releases).text;
-}
-
 /** The prompt of the news; `kind` names what the repository is (a design tool for Open Design), `order` what comes first. */
 export function newsPrompt(kind: string, order = 'new functions of the software first, then notable fixes, then new styles or skills'): string {
   return [
