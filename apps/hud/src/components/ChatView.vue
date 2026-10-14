@@ -869,6 +869,8 @@ onBeforeUnmount(() => clearInterval(clock));
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
+              <!-- The computer of the run sits in the header, where the live card had it: the body never moves it (D-095). -->
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
@@ -876,10 +878,8 @@ onBeforeUnmount(() => clearInterval(clock));
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
             <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
-            <!-- The computer of the run sits at the foot of the report, beside who did the work (D-095). -->
-            <div v-if="credits.get(message.id) !== undefined || showsComputer(message)" class="flex flex-wrap items-start gap-2 border-t border-line px-[15px] py-2">
-              <CreditLine v-if="credits.get(message.id) !== undefined" class="min-w-0 flex-1" :credit="credits.get(message.id)!" />
-              <ComputerButton v-if="showsComputer(message)" class="ml-auto" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
+            <div v-if="credits.get(message.id) !== undefined" class="flex flex-wrap items-start gap-2 border-t border-line px-[15px] py-2">
+              <CreditLine class="min-w-0 flex-1" :credit="credits.get(message.id)!" />
             </div>
           </article>
 
@@ -919,23 +919,31 @@ onBeforeUnmount(() => clearInterval(clock));
               <ComputerButton v-if="showsComputer(message)" :open="computerOpen" working @toggle="computerOpen = !computerOpen" />
               <span v-else class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
-            <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[14px]">
-              <li v-for="(line, index) in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2.5">
-                <span
-                  class="w-4 shrink-0 text-center font-mono text-[12.5px]"
-                  :class="
-                    index === activityOf(message).length - 1
-                      ? 'animate-hud-blink text-accent'
-                      : line.kind === 'error'
-                        ? 'text-warn'
-                        : 'text-ok'
-                  "
-                  aria-hidden="true"
-                >{{ index === activityOf(message).length - 1 ? '▸' : line.kind === 'error' ? '!' : '✓' }}</span>
-                <span class="break-words">{{ activityText(line) }}</span>
-              </li>
-            </ul>
-            <LiveEdits v-if="editsOf(message).length > 0" :edits="editsOf(message)" />
+            <!--
+              The Coder's card keeps one height while it works (D-095): steps and live changes scroll inside,
+              anchored at the latest, so the card and its «Computer» button stay put under the cursor.
+            -->
+            <div :class="showsComputer(message) ? 'flex h-[min(320px,45vh)] flex-col-reverse overflow-y-auto' : ''">
+              <div>
+                <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[14px]">
+                  <li v-for="(line, index) in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2.5">
+                    <span
+                      class="w-4 shrink-0 text-center font-mono text-[12.5px]"
+                      :class="
+                        index === activityOf(message).length - 1
+                          ? 'animate-hud-blink text-accent'
+                          : line.kind === 'error'
+                            ? 'text-warn'
+                            : 'text-ok'
+                      "
+                      aria-hidden="true"
+                    >{{ index === activityOf(message).length - 1 ? '▸' : line.kind === 'error' ? '!' : '✓' }}</span>
+                    <span class="break-words">{{ activityText(line) }}</span>
+                  </li>
+                </ul>
+                <LiveEdits v-if="editsOf(message).length > 0" :edits="editsOf(message)" />
+              </div>
+            </div>
           </article>
 
           <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
