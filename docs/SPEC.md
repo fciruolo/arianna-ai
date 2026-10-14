@@ -95,7 +95,7 @@ Le interfacce parlano con un solo nucleo; il nucleo usa i modelli locali diretta
 
 ## Router dei modelli
 
-Il router assegna ogni passo a un esecutore guardando prima la privacy, poi la difficoltà, poi il costo; i due percorsi cloud sono le CLI ufficiali, lanciate come processi con il tuo login e senza API. Le eccezioni sono due. In una chat di sistema di lavoro sei tu a scegliere chi risponde (Arianna in locale, Claude Sonnet o Opus); privacy e quota restano controllate (D-064). L'altra è la chat semplice con Claude che apri da «+ Nuovo» senza progetto (solo di lavoro, Sonnet o Opus, senza strumenti; D-111 tappa B, D-209); con il modello locale (solo in privata) nulla esce dal Mac.
+Il router assegna ogni passo a un esecutore guardando prima la privacy, poi la difficoltà, poi il costo; i due percorsi cloud sono le CLI ufficiali, lanciate come processi con il tuo login e senza API. Le eccezioni sono due. In una chat di sistema di lavoro sei tu a scegliere chi risponde (Arianna in locale, Claude Sonnet o Opus); privacy e quota restano controllate (D-064). L'altra è la chat semplice con Claude o con ChatGPT che apri da «+ Nuovo» senza progetto (solo di lavoro; Claude senza strumenti, Sonnet o Opus, D-111 tappa B, D-209; ChatGPT con i modelli di Codex, in una cartella vuota in sola lettura dove la shell di Codex, che non si toglie, si ferma dopo 2 comandi, D-212); con il modello locale (solo in privata) nulla esce dal Mac.
 
 **I tre esecutori**
 

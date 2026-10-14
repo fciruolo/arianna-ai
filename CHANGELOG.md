@@ -2,6 +2,19 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- **ChatGPT** senza progetto in «+ Nuovo», scheda Agente: chat semplice con i modelli di Codex (Sol predefinito, Luna o Astra dal selettore), solo di lavoro, nella CLI `codex` con il suo profilo di confinamento, attraverso il gateway; riprende la sessione dell'ultima risposta come Claude (D-111 tappa B, D-212).
+- Indicatore del contesto (barra CONTESTO) anche nelle chat semplici con Claude e con ChatGPT, dal run che ha scritto l'ultima risposta (D-212).
+- «Parla con…» dall'ufficio: per un agente con cui si può parlare direttamente apre la sua chat diretta più recente, sul progetto dell'isola, oppure «+ Nuovo» già su quell'agente e quel progetto (D-212).
+
+### Sicurezza
+
+- Migrazione `0064`: la chat semplice con ChatGPT accetta solo i modelli di Codex, anche nel database; `runs.context_tokens` tiene solo un numero (D-212).
+- ChatGPT senza progetto lavora in una cartella vuota della conversazione aperta in sola lettura, senza rete, e si ferma dopo 2 comandi; con Codex spento non risponde nessuno al suo posto (D-212).
+
 ## [0.106.0] - 2026-10-14
 
 ### Aggiunto
