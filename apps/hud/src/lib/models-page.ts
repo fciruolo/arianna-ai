@@ -7,7 +7,7 @@
  * asks the core and draws, the rules are here.
  */
 import { agentName } from './italian.ts';
-import type { ModelAction, TrashView } from './model-actions.ts';
+import type { ModelAction, ReloadView, TrashView } from './model-actions.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
 import { MODEL_ROLES, ROLE_TEXT, type CloudModelAlias, type CloudModelsForm, type ModelRole } from './settings.ts';
 
@@ -129,6 +129,8 @@ export interface ModelsOverview {
   memory: MemoryView | null;
   /** The bin of the removed models; null when the core has no actions. */
   trash: TrashView | null;
+  /** oMLX restarting to see a model just downloaded (D-201); null when the core does not reload it. */
+  reload: ReloadView | null;
   errors: { catalog: string | null; cloudCatalog: string | null; evals: string | null };
 }
 

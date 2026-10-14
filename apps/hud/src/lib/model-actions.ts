@@ -268,3 +268,35 @@ export function trashText(trash: TrashView): string {
   const count = trash.entries.length === 1 ? '1 cartella' : `${String(trash.entries.length)} cartelle`;
   return `${count}, ${sizeText(Math.max(trash.sizeBytes, 1))}`;
 }
+
+/** oMLX after a download (D-201), as GET /api/models/overview gives it (local-reload.ts in the core). */
+export interface ReloadView {
+  state: 'idle' | 'waiting' | 'restarting' | 'manual' | 'failed';
+  models: string[];
+}
+
+/** Whether the page reads the overview often: oMLX is waiting or restarting. */
+export function reloadInProgress(reload: ReloadView | null): boolean {
+  return reload !== null && (reload.state === 'waiting' || reload.state === 'restarting');
+}
+
+/** The line above the list while oMLX gets to see a model just downloaded; null when there is nothing to say. */
+export function reloadText(reload: ReloadView | null): string | null {
+  if (reload === null || reload.state === 'idle') return null;
+  const names = reload.models.length === 0 ? 'il modello scaricato' : reload.models.join(', ');
+  switch (reload.state) {
+    case 'waiting':
+      return `oMLX ripartirà per vedere ${names} appena i modelli locali sono liberi: una risposta, una chiamata o una prova in corso finisce prima.`;
+    case 'restarting':
+      return `oMLX si sta ricaricando per vedere ${names}…`;
+    case 'manual':
+      return `oMLX non l'ha avviato Arianna: riavvialo tu per vedere ${names}.`;
+    case 'failed':
+      return `oMLX non è ripartito dopo il download di ${names}: riavvialo dalle Impostazioni con «Riavvia oMLX».`;
+  }
+}
+
+/** The line asks something of the user, who closes it once done. */
+export function reloadDismissable(reload: ReloadView | null): boolean {
+  return reload !== null && (reload.state === 'manual' || reload.state === 'failed');
+}

@@ -117,6 +117,7 @@ const overview: ModelsOverview = {
   sources: [{ id: 'anthropic-models', url: 'https://example.org/models', read: '2026-10-07' }],
   memory: { memoryGib: 64, budgets: [{ endpoint: 'omlx', gib: 24 }], estimatedGib: 21, swap: null },
   trash: null,
+  reload: null,
   errors: { catalog: null, cloudCatalog: null, evals: null },
 };
 
