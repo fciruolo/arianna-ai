@@ -572,6 +572,24 @@ CREATE TABLE user_facts (
 -- L1 → L2 libero. Un fatto nuovo può nascere L1 (dichiarazione dell'utente, scanner e vault nel core).
 -- L'approvazione tiene il testo approvato (append-only, come ogni declassify) anche dopo modifica o cancellazione.
 -- Gli eventi user_fact.created | updated | deleted (L1) portano id, argomento ed etichette, mai il testo.
+-- Dalla migrazione 0064 il trigger accetta l'abbassamento solo con un'approvazione di azione `declassify`
+-- (la pagina), mai con quella di un fatto dato a un agente (`share_fact`).
+
+-- «Su di te», tappe C e D (D-213, migrazione 0064).
+-- profile.share: approvals.kind = 'declassify', action = 'share_fact', detail con testo, sha256, from, to
+-- più topic, agent e reason (approvals_share_fact_fields), decisa solo dal web (approvals_declassify_via_web).
+-- profile.propose: approvals.kind = 'fact', action = 'profile.propose', label >= L2, detail con topic e text
+-- (approvals_fact_fields), decisa solo dal web (approvals_fact_via_web); approvata, il core scrive il fatto L2.
+-- delegation_facts: quale approvazione va con quale delega, mai il testo. arianna_app: SELECT, INSERT;
+-- se ne va solo a cascata con la sua delega o la sua approvazione (purge ed erase di una conversazione). Il trigger delegation_facts_check vuole un'approvazione share_fact approvata dal web, dello
+-- stesso task e agente della delega, con la sua riga in label_changes scritta nella stessa transazione.
+CREATE TABLE delegation_facts (
+  delegation_id bigint NOT NULL REFERENCES task_delegations (id) ON DELETE CASCADE,
+  approval_id uuid NOT NULL REFERENCES approvals (id) ON DELETE CASCADE,  -- unica: un fatto esce una volta
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (delegation_id, approval_id)
+);
+-- Evento fact.shared (L1): topic, to (agente), approvalId, delegationId; mai il testo.
 
 CREATE TABLE documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

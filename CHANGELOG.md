@@ -2,6 +2,19 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Un dato di «Su di te» alla volta verso Claude e Codex (D-213, D-114 tappa C): quando a un lavoro serve un dato «Solo in casa», Arianna chiede con `profile.share` e nella chat compare la scheda «Coder chiede: città», con il motivo e il testo esatto che esce; «Dagli solo questo» lo aggiunge una volta al prossimo lavoro di quell'agente, «No» e Arianna va avanti senza. Il dato in Impostazioni resta com'è.
+- Chi lavora per Arianna nel cloud chiede un dato su di te con una riga «Mi serve: <argomento>» nel rapporto, e Arianna lo legge come richiesta da girarti (D-213).
+- Arianna propone di ricordare un dato stabile che le dici («mi sono trasferito a…») con `profile.propose`: la scheda «Vuoi che ricordi: città?» e, con «Sì, ricorda», il dato entra in «Su di te» come «Solo in casa» (D-213, D-114 tappa D).
+
+### Sicurezza
+
+- Migrazione `0065`: l'approvazione di un dato da dare a un agente (`share_fact`) e quella di un dato proposto (`fact`) si decidono solo dalla chat web; tabella `delegation_facts` (quale approvazione va con quale lavoro, mai il testo) che il database accetta solo con il declassamento scritto nella stessa transazione, una volta; un dato dato a un agente non diventa mai «Condivisibile» (D-213).
+- Un dato esce solo come l'hai visto: se lo cambi o lo cancelli dopo il sì, non esce; mai da una conversazione che ha letto le finanze, mai nelle incognite; eventi con l'argomento, mai il testo (D-213).
+
 ## [0.107.0] - 2026-10-14
 
 ### Aggiunto
