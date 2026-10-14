@@ -46,24 +46,31 @@ export const ASSISTANT_NAMES: readonly string[] = ['Arianna', 'Claude', 'Codex',
 const MAX_NAME = 60;
 
 const WORD_CHAR = /[0-9A-Za-z_-]/;
-const LOWER_HEX = /^[0-9a-f]{7,64}$/;
+const LOWER_HEX = /^[0-9a-f]{12,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Letters, digits, letters: an identity card, a licence, a passport or a plate written in lowercase (ca12345ab, ab123cd). */
+const DOCUMENT_SHAPE = /^[a-f]{0,3}[0-9]+[a-f]{0,3}$/;
+/** The shape of a codice fiscale, in lowercase: some are made only of the letters a-f. */
+const CF_SHAPE = /^[a-z]{6}[0-9]{2}[a-z][0-9]{2}[a-z][0-9]{3}[a-z]$/;
 
 /**
- * True when the entity lies inside an identifier of code: a lowercase
- * hexadecimal word of 7-64 characters with digits and letters (a commit, a
- * sha256, the version of a skill: `[739de001433318de]`) or a UUID (the id of a
- * run in the path of the notes was read once as an IBAN). Personal data never
- * look like that: a phone, a VAT or card number has digits only, an IBAN, a
- * codice fiscale or an identity card has uppercase letters (IT60X…, CA12345AB).
+ * True when the entity lies inside an identifier of code: a UUID (the id of a
+ * run in the path of the notes was read once as an IBAN) or a lowercase
+ * hexadecimal word of 12-64 characters with digits and letters mixed (a
+ * sha256, the version of a skill: `[739de001433318de]`, read once as a
+ * document). Personal data never take that form: shorter words, the shape of
+ * a document or a plate (letters, digits, letters), the shape of a codice
+ * fiscale, and a word next to `@` (the start of an email) always count.
  */
 function isCodeIdentifier(text: string, entity: PiiEntity): boolean {
   let start = entity.start;
   let end = entity.end;
   while (start > 0 && WORD_CHAR.test(text.charAt(start - 1))) start--;
   while (end < text.length && WORD_CHAR.test(text.charAt(end))) end++;
+  if (text.charAt(start - 1) === '@' || text.charAt(end) === '@') return false;
   const word = text.slice(start, end);
-  return (LOWER_HEX.test(word) && /[0-9]/.test(word) && /[a-f]/.test(word)) || UUID.test(word);
+  if (UUID.test(word)) return true;
+  return LOWER_HEX.test(word) && /[0-9]/.test(word) && /[a-f]/.test(word) && !DOCUMENT_SHAPE.test(word) && !CF_SHAPE.test(word);
 }
 const KIND = /^[A-Z][A-Z0-9_]{0,39}$/;
 

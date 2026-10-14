@@ -91,8 +91,8 @@ test('the name of the assistant and of the agents is not a person, a longer name
 });
 
 test('inside a hash of git, a sha256 or a UUID nothing counts; personal data never look like that', () => {
-  const brief = 'Skill webapp-testing [739de001433318de], commit 2b27894, notes in data/worktrees/fc19c988-b759-4e36-8439-83aa3065752b/.notes';
-  const codes = [entity(brief, '9de001433318de', 'ID_DOC'), entity(brief, '2b27894', 'DOCID'), entity(brief, 'b759-4e36-8439', 'IBAN'), entity(brief, '83aa3065752b', 'TELEPHONENUM')];
+  const brief = 'Skill webapp-testing [739de001433318de], sha 3f2a9c81d04e7b65, notes in data/worktrees/fc19c988-b759-4e36-8439-83aa3065752b/.notes';
+  const codes = [entity(brief, '9de001433318de', 'ID_DOC'), entity(brief, '3f2a9c81d04e7b65', 'DOCID'), entity(brief, 'b759-4e36-8439', 'IBAN'), entity(brief, '83aa3065752b', 'TELEPHONENUM')];
   assert.equal(check([fragment(brief)], CLAUDE, piiReport([brief], [codes])).decision, 'allow');
   const data = 'Carta CA12345AB, passaporto YA1234567, IBAN IT00X0000000000000000000000, cell 3331234567, P.IVA 01234567890, codice abcdefabcdef, mail a1b2c3d4@example.it';
   const found = [
@@ -108,6 +108,21 @@ test('inside a hash of git, a sha256 or a UUID nothing counts; personal data nev
     const decision = check([fragment(data)], CLAUDE, piiReport([data], [[one]]));
     assert.ok(decision.decision === 'block', data.slice(one.start, one.end));
     assert.equal(decision.rule, 'pii');
+  }
+  // Written in lowercase, as in a chat: a hexadecimal look must not hide them (reviewer of 2026-10-14).
+  const lower = 'carta ca12345ab, patente ab1234567c, passaporto aa1234567, targa ab123cd, cf bbddaa80a01f205c, commit 2b27894, mail dade1980ab12@gmail.com';
+  const lowerFound = [
+    entity(lower, 'ca12345ab', 'ID_DOC'),
+    entity(lower, 'ab1234567c', 'ID_DOC'),
+    entity(lower, 'aa1234567', 'ID_DOC'),
+    entity(lower, 'ab123cd', 'TARGA'),
+    entity(lower, 'bbddaa80a01f205c', 'CF'),
+    entity(lower, '2b27894', 'DOCID'),
+    entity(lower, 'dade1980ab12', 'EMAIL'),
+  ];
+  for (const one of lowerFound) {
+    const decision = check([fragment(lower)], CLAUDE, piiReport([lower], [[one]]));
+    assert.ok(decision.decision === 'block', lower.slice(one.start, one.end));
   }
 });
 
