@@ -39,6 +39,27 @@ const ADDRESS_PAIR: readonly string[] = ['BUILDINGNUM', 'ZIPCODE'];
 export const ASSISTANT_NAMES: readonly string[] = ['Arianna'];
 
 const MAX_NAME = 60;
+
+/** Kinds the model gives to document numbers: a hash of git or a UUID in a brief of code is not one. */
+const DOCUMENT_KINDS: readonly string[] = ['ID_DOC', 'DOCID'];
+const WORD_CHAR = /[0-9A-Za-z_-]/;
+const LOWER_HEX = /^[0-9a-f]{7,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * True when the entity lies inside a lowercase hexadecimal word of 7-64 digits
+ * (a commit, a sha256, the version of a skill: `[739de001433318de]`) or a UUID.
+ * An Italian identity card, passport or licence number has uppercase letters
+ * and letters beyond f (CA12345AB, YA1234567), so it never matches.
+ */
+function isCodeIdentifier(text: string, entity: PiiEntity): boolean {
+  let start = entity.start;
+  let end = entity.end;
+  while (start > 0 && WORD_CHAR.test(text.charAt(start - 1))) start--;
+  while (end < text.length && WORD_CHAR.test(text.charAt(end))) end++;
+  const word = text.slice(start, end);
+  return (LOWER_HEX.test(word) && /[0-9]/.test(word)) || UUID.test(word);
+}
 const KIND = /^[A-Z][A-Z0-9_]{0,39}$/;
 
 type CheckState =
@@ -103,6 +124,7 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
     const kinds = new Set<string>();
     for (const entity of found) {
       if (entity.kind === 'FULLNAME' && ignored.has(normalizeName(text.slice(entity.start, entity.end)))) continue;
+      if (DOCUMENT_KINDS.includes(entity.kind) && isCodeIdentifier(text, entity)) continue;
       kinds.add(entity.kind);
     }
     for (const kind of kinds) {
