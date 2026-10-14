@@ -703,7 +703,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni (le domande erano 
 ## D-103 — Temi: colori, sfondo e costumi dei personaggi, scelti in Impostazioni
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire, in coda in `HANDOFF.md`. Era: Proposta, da discutere
 - **Collegate:** D-060 (identità grafica, pacchetti di personaggi, diritti), D-061 (icone dietro un punto unico), D-062 (font serviti in locale), D-087b (sfondo della Conoscenza), pagina Impostazioni (3.5, `SettingsPage.vue`), `docs/OPENDOTS.md` (P1, P2), anteprima `docs/mockups/temi.html`
 
 ### Contesto
@@ -872,47 +872,17 @@ Totale: circa 26-37 ore. La parte lunga è disegnare i costumi in tutte le 28 po
 
 La tappa 1 senza la parte nella chat: lo schema, il validatore e il test del contrasto, con il tema Base estratto da `style.css` e i sette colori corretti. Dice subito se la chat di oggi rispetta AA, e di ciò che l'utente vede cambia solo quei sette colori.
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **I temi delle feste si accendono da soli nei loro giorni?** Raccomandazione: sì, con un interruttore acceso di base, ma solo quando il tema scelto è Base. Finestre come nella tabella: Natale dall'Immacolata all'Epifania, Halloween l'ultima settimana di ottobre, San Patrizio il solo 17 marzo.
-   - Contesto: I temi (D-103) cambiano colori, sfondo e costumi dei personaggi della chat. Quelli delle feste (Natale, Halloween, San Patrizio…) potrebbero accendersi da soli nei loro giorni, senza che tu vada nelle Impostazioni. Si decide se volerlo e con quale limite, perché un tema che cambia da solo può sorprendere.
-   - Opzione consigliata: Sì, ma solo sopra il tema Base — nei giorni della festa la chat si veste da sola; un tema scelto a mano non viene mai sostituito; l'interruttore "Feste automatiche" lo spegne quando vuoi.
-   - Opzione: No, solo a mano — nulla cambia da solo; per vedere il tema di Natale lo scegli tu e poi rimetti Base.
-   - Opzione: Sì, sopra qualunque tema — la festa vince su tutto, anche su un tema scelto apposta.
-   - Esempio: Usi il tema Base; il 25 ottobre apri la chat e trovi pipistrelli sullo sfondo e Arianna col cappello da strega; il 1° novembre torna tutto come prima. Se invece avevi scelto il tema "Ufficio", resta "Ufficio".
-2. **In che ordine si costruiscono i temi?** Raccomandazione: Base con i contrasti corretti, poi Halloween, poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
-   - Contesto: I temi richiedono parecchie ore (circa 26-37 in tutto), soprattutto per disegnare i costumi dei personaggi. Prima c'è da sistemare il tema di base, che oggi ha alcuni colori poco leggibili. Si decide l'ordine in cui costruirli.
-   - Opzione consigliata: Base, poi Halloween e Natale — prima i colori più leggibili; Halloween se si fa in tempo per fine ottobre, poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
-   - Opzione: Prima i temi ispirati alle serie — vedi subito Corsia, Ufficio e gli altri che avevi chiesto, ma Halloween rischia di arrivare tardi.
-   - Opzione: Solo il tema Base per ora — poco lavoro, nessun tema nuovo per un po'.
-   - Esempio: Questa settimana il tema Base diventa più leggibile nel modo chiaro, a fine ottobre c'è Halloween con zucca e pipistrelli, a dicembre Natale con la neve.
-3. **Quali altre feste vuoi fra i temi?** Scelte possibili: Carnevale, Estate, Pasqua, Capodanno, altro. Raccomandazione: Carnevale ed Estate; Pasqua solo se la vuoi.
-   - Contesto: Oltre a Natale, San Patrizio e Halloween si possono aggiungere altre feste, ognuna con un costume da disegnare e un periodo di date. È una questione di gusto: il documento suggerisce le due più facili da riconoscere.
-   - Opzione consigliata: Carnevale ed Estate — coriandoli a Carnevale (date calcolate dal codice) e cappello di paglia ad agosto; circa 3-4 ore.
-   - Opzione: Carnevale, Estate e Pasqua — in più Arianna col fiocco pastello e il Coder con l'uovo dipinto, dalla Domenica delle Palme a Pasquetta.
-   - Opzione: Nessun'altra festa — si resta alle tre principali e si risparmiano ore.
-   - Opzione: Altre feste (scrivi quali) — per esempio Capodanno: va disegnato un costume e scelto un periodo.
-   - Esempio: A febbraio, dal giovedì al martedì grasso, lo sfondo si riempie di coriandoli e Arianna porta una maschera dorata; ad agosto ha il cappello di paglia e gli occhiali da sole.
-4. **I temi ispirati alle serie TV restano generici nel codice, con i personaggi veri solo nella tua cartella privata?** Raccomandazione: sì; è il limite di D-060, e un tuo tema in `data/themes/` può chiamarsi come vuoi, con i personaggi veri dai tuoi pacchetti in `data/characters/`.
-   - Contesto: Hai chiesto temi come Scrubs, The Office, Simpsons, Griffin. Personaggi e nomi di quelle serie sono protetti da diritto d'autore e marchi, e ciò che sta nel repository di Arianna si può copiare e condividere. La regola già decisa (D-060) è: nel repository solo temi "ispirati" con nomi generici; i personaggi veri solo in una tua cartella privata, fuori da git.
-   - Opzione consigliata: Sì, generici nel codice — nessun rischio legale in ciò che si condivide; a casa tua puoi comunque avere i personaggi veri e chiamare il tuo tema come vuoi.
-   - Opzione: Personaggi veri nel repository — va contro la regola già decisa (D-060): Claude non li disegnerebbe né li scaricherebbe.
-   - Esempio: Nel repository c'è il tema "Corsia" (verde acqua, corrimano, Arianna in casacca da sala); se vuoi i protagonisti di Scrubs li metti tu in data/characters/scrubs/ e crei un tuo tema "Scrubs" in data/themes/.
-5. **Il tema scelto vale su tutti i dispositivi o solo nel browser in cui lo scegli?** Raccomandazione: per tutti i dispositivi (salvato in `arianna.toml`); la modalità chiaro/scuro resta per browser.
-   - Contesto: Il tema scelto si può salvare nella configurazione di Arianna, e allora vale su Mac, telefono e ogni browser, oppure solo nel browser che stai usando. La modalità chiaro o scuro resta comunque per browser, perché dipende dallo schermo.
-   - Opzione consigliata: Su tutti i dispositivi — scegli Natale sul Mac e lo ritrovi sul telefono; il chiaro o scuro resta separato per ogni schermo.
-   - Opzione: Solo nel browser — ogni dispositivo ha il suo tema; più flessibile, ma lo scegli su ognuno.
-   - Esempio: Imposti "Ufficio" dal Mac; la sera apri la chat dal telefono in modalità scura e trovi "Ufficio" con i colori scuri, senza fare nulla.
-6. **I costumi si disegnano su tutte le pose dei personaggi o solo su quelle frontali?** Raccomandazione: tutte e 28 (servono anche all'ufficio pixel), anche se costa qualche ora in più.
-   - Contesto: Ogni personaggio ha 28 pose: cammina, scrive, legge, visto di fronte, di lato, di spalle. Nella chat si vedono quasi solo quelle frontali; l'ufficio pixel (la pagina Ufficio, D-106) le usa tutte. Si decide se disegnare i costumi su tutte.
-   - Opzione consigliata: Tutte le 28 pose — qualche ora in più ora, ma il costume vale anche nell'ufficio senza ridisegnarlo.
-   - Opzione: Solo le pose frontali — meno lavoro subito; nell'ufficio i personaggi resterebbero senza costume o andrebbero ridisegnati dopo.
-   - Esempio: A Natale nell'ufficio il Coder cammina di spalle verso la sua isola e si vede ancora il cappello; con le sole pose frontali il cappello sparirebbe appena si gira.
-7. **Un tema cambia anche voce o suoni?** Proposta: no, la voce non si tocca. Se vuoi parlare di suoni (oggi non ce ne sono), meglio in un'altra decisione.
-   - Contesto: Un tema cambia colori, sfondo e costumi. Si decide se debba cambiare anche la voce di Arianna o aggiungere suoni. La voce è già stata scelta con prove apposite, e oggi la chat non ha suoni.
-   - Opzione consigliata: No, la voce non si tocca — i temi restano solo grafica; se un giorno vuoi dei suoni se ne parla in una decisione a parte.
-   - Opzione: Sì, anche suoni (decisione a parte) — si apre una proposta nuova sui suoni, oggi inesistenti.
-   - Esempio: Con il tema Halloween Arianna ha il cappello da strega, ma in chiamata parla con la stessa voce di sempre.
+Risposte dell'utente del 2026-10-14, con le domande a opzioni.
+
+1. **Feste automatiche:** sì, solo sopra il tema Base, con l'interruttore «Feste automatiche» acceso di base; un tema scelto a mano non viene mai sostituito.
+2. **Ordine (cambia la raccomandazione):** prima i temi delle serie, poi il tema Base con i contrasti corretti e le feste. Halloween 2026 può arrivare tardi: scelta consapevole dell'utente.
+3. **Altre feste:** Carnevale, Estate e Pasqua, oltre a Natale, San Patrizio e Halloween.
+4. **Personaggi veri delle serie (cambia D-060):** l'utente vuole i personaggi veri (Scrubs, The Office, Simpsons, Griffin…), disegnati da Claude in pixel art 16×32 come fan art per uso personale («il repo ed il progetto sono solo per me!»), e **nel repository** (seconda domanda: dove salvarli; spiegato che GitHub è la copia di sicurezza e che prima di condividere il repository andrebbero tolti anche dalla storia di git). I temi possono chiamarsi come le serie. Prima di rendere pubblico o condividere il repository vanno tolti.
+5. **Dove vale il tema:** su tutti i dispositivi (salvato in `arianna.toml`); chiaro o scuro resta per browser.
+6. **Pose:** tutte le 28, per costumi delle feste e personaggi delle serie (servono all'ufficio).
+7. **Voce e suoni:** no, solo grafica.
 
 ### Cose non verificate (D-103)
 
