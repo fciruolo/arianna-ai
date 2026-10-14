@@ -9,8 +9,8 @@ import { test } from 'node:test';
 import { COLOR_TOKENS, THEME_TOKENS, type Scene } from '../src/lib/office/draw.ts';
 import { boardPoint, decisionsPoint, archivePoint, tilesNear, DESK_WALK_REACH, WALK_REACH, type OfficeMap } from '../src/lib/office/map.ts';
 import { findPath } from '../src/lib/office/path.ts';
-import { OFFICE_SKINS, officeMapOf, SKIN_INK, skinColors, skinOfTheme, type OfficeSkin } from '../src/lib/office/skins.ts';
-import { colorsOf, rasterize } from './office-raster.ts';
+import { OFFICE_SKINS, officeMapOf, officeView, SKIN_INK, skinColors, skinOfTheme, type OfficeSkin } from '../src/lib/office/skins.ts';
+import { colorsOf, rasterize } from './support/office-raster.ts';
 
 const HUD = join(import.meta.dirname, '..');
 const css = readFileSync(join(HUD, 'src', 'style.css'), 'utf8');
@@ -48,7 +48,8 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
 });
 
 test('Base is drawn as before, pixel for pixel, with or without the skin named (D-216)', () => {
-  // The drawing of main before D-216, measured on the same canvas.
+  // The drawing of main before D-216, measured on the same canvas. Measure them again (and say why in the
+  // commit) only when the base office changes on purpose: the --office-* colours of style.css or base.json.
   const before = { dark: '4fc3614b0ad84a569bb8c01ef202a8633e4309b57a2184ef716e03125c007c19', light: '3173e6746a861727fc3d08c303625d5268261a567682d2558c061c7cd8f27d5f' };
   for (const mode of ['dark', 'light'] as const) {
     assert.equal(sha(rasterize(scene(undefined, mode)).rgba), before[mode], mode);
@@ -106,4 +107,19 @@ test('a place whose map does not pass falls back on the base map with its colour
   const walled = TEXTS.ufficio.replace('"#.DDD....DDD....DDD..#",\n    "#....................#",\n    "#....................#",\n    "#A', '"#.DDD....DDD....DDD..#",\n    "######################",\n    "#....................#",\n    "#A');
   assert.notEqual(walled, TEXTS.ufficio);
   assert.equal(officeMapOf('ufficio', { ...TEXTS, ufficio: walled }).fallback, true);
+});
+
+test('the page shows the office with a notice when the base map stands in, the error alone without any map', () => {
+  const own = officeView(officeMapOf('corsia', TEXTS));
+  assert.ok(own.kind === 'office');
+  assert.equal(own.map.id, 'corsia');
+  assert.equal(own.notice, null);
+  // The fallback: the office is there, with the notice above it (the bug of the first version showed the notice alone).
+  const fallback = officeView(officeMapOf('corsia', { ...TEXTS, corsia: '{}' }));
+  assert.ok(fallback.kind === 'office');
+  assert.equal(fallback.map.id, 'base');
+  assert.match(fallback.notice ?? '', /^La pianta del tema non è valida \(.+\): l'ufficio usa quella di base con i colori del tema\.$/);
+  const broken = officeView(officeMapOf('base', { ...TEXTS, base: 'nope' }));
+  assert.ok(broken.kind === 'error');
+  assert.match(broken.text, /^La mappa dell'ufficio non è valida: /);
 });

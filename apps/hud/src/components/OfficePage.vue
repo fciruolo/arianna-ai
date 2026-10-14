@@ -6,7 +6,7 @@ import corsiaMapText from '../office/maps/corsia.json?raw';
 import ufficioMapText from '../office/maps/ufficio.json?raw';
 import { listDelegations } from '../lib/api.ts';
 import { boardPoint } from '../lib/office/map.ts';
-import { officeMapOf, skinOfTheme } from '../lib/office/skins.ts';
+import { officeMapOf, officeView, skinOfTheme } from '../lib/office/skins.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
@@ -51,7 +51,8 @@ const MAP_TEXTS = { base: baseMapText, corsia: corsiaMapText, ufficio: ufficioMa
 const skin = computed(() => skinOfTheme(props.theme));
 const chosenMap = computed(() => officeMapOf(skin.value, MAP_TEXTS));
 const map = computed(() => chosenMap.value.map);
-const mapProblem = computed(() => chosenMap.value.problem);
+/** The error, or the office with its notice: a pure choice, tested (officeView). */
+const view = computed(() => officeView(chosenMap.value));
 /** The map hangs a cardwall on a wall (D-165). */
 const hasBoard = computed(() => map.value !== null && boardPoint(map.value) !== null);
 
@@ -207,25 +208,24 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
     <div class="mx-auto grid max-w-[1500px] grid-cols-1 gap-5 px-4 pt-5 pb-10 md:px-6 2xl:grid-cols-[minmax(0,1fr)_300px]">
       <section class="min-w-0" aria-labelledby="office-title">
         <h1 id="office-title" class="sr-only">Ufficio</h1>
-        <p v-if="map === null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
-          La mappa dell'ufficio non è valida: {{ mapProblem }}.
-        </p>
-        <p v-else-if="chosenMap.fallback" class="mb-2 text-[13px] text-muted">La pianta del tema non è valida ({{ mapProblem }}): l'ufficio usa quella di base con i colori del tema.</p>
-        <!-- A new place is a new canvas (D-216): the map, the anchors and the paths are read when it starts. -->
-        <OfficeCanvas
-          v-else
-          :key="`${skin}:${map.id}`"
-          ref="office"
-          :map="map"
-          :skin="skin"
-          :snapshot="snapshot"
-          :sheets="sheets"
-          @talk="talk"
-          @decisions="showPending = true"
-          @archive="void openArchive()"
-          @cardwall="showCardwall = true"
-          @escape="leaveCanvas"
-        />
+        <p v-if="view.kind === 'error'" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ view.text }}</p>
+        <template v-else>
+          <p v-if="view.notice !== null" class="mb-2 text-[13px] text-muted">{{ view.notice }}</p>
+          <!-- A new place is a new canvas (D-216): the map, the anchors and the paths are read when it starts. -->
+          <OfficeCanvas
+            :key="`${skin}:${view.map.id}`"
+            ref="office"
+            :map="view.map"
+            :skin="skin"
+            :snapshot="snapshot"
+            :sheets="sheets"
+            @talk="talk"
+            @decisions="showPending = true"
+            @archive="void openArchive()"
+            @cardwall="showCardwall = true"
+            @escape="leaveCanvas"
+          />
+        </template>
         <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-muted">
           <p id="office-help" class="min-w-0 flex-1">
             Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.

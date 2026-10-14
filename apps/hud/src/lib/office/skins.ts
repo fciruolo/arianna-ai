@@ -151,3 +151,12 @@ export function officeMapOf(skin: OfficeSkin, texts: Readonly<Record<OfficeSkin,
   const base = parseMapText(texts.base);
   return base.ok ? { map: base.map, problem: own.reason, fallback: true } : { map: null, problem: base.reason, fallback: true };
 }
+
+/** What the page shows (D-216): an error without any map, else the office, with a notice when the base map stands in for the place's. */
+export type OfficeView = { kind: 'error'; text: string } | { kind: 'office'; map: OfficeMap; notice: string | null };
+
+export function officeView(chosen: ReturnType<typeof officeMapOf>): OfficeView {
+  if (chosen.map === null) return { kind: 'error', text: `La mappa dell'ufficio non è valida: ${chosen.problem ?? 'motivo sconosciuto'}.` };
+  const notice = chosen.fallback ? `La pianta del tema non è valida (${chosen.problem ?? 'motivo sconosciuto'}): l'ufficio usa quella di base con i colori del tema.` : null;
+  return { kind: 'office', map: chosen.map, notice };
+}

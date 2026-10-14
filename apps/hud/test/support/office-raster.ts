@@ -2,8 +2,8 @@
 // uses (fillStyle and fillRect with #rrggbb(aa) blended, save, restore,
 // translate, scale, globalAlpha, drawImage ignored), so a drawing can be
 // compared and written as a PNG to look at it.
-import { drawOffice, type Colors, type Scene } from '../src/lib/office/draw.ts';
-import { TILE } from '../src/lib/office/map.ts';
+import { drawOffice, type Colors, type Scene } from '../../src/lib/office/draw.ts';
+import { TILE } from '../../src/lib/office/map.ts';
 
 export interface Raster {
   width: number;
