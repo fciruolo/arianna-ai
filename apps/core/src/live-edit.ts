@@ -13,8 +13,7 @@ import { chunk, MAX_NOTICE_BYTES } from './reply.ts';
  * Live changes of the Coder (D-117, second stage): every call to Edit,
  * MultiEdit or Write of a run is shown in the activity card of the chat as a
  * small diff, while the run works. Like reply fragments (D-039) they go to the
- * web chat only, through `pg_notify`, and are never stored (D-095 is still a
- * proposal: no choice of the user to save them exists yet); the diff of the
+ * web chat only, through `pg_notify`, and are never stored (the user chose live only, D-095); the diff of the
  * files at the end of the run is the stored truth (stage one).
  *
  * Only for projects at most L1, with the label of the project; a path outside
@@ -129,6 +128,15 @@ export function editNotices(base: Omit<EditNotice, 'seq' | 'total' | 'text'>, te
 }
 
 function editPieces(base: Omit<EditNotice, 'seq' | 'total' | 'text'>, text: string): string[] {
+  return noticePieces(base, text);
+}
+
+/**
+ * The pieces of a text that, each with `base` and its `seq` and `total`, fit a
+ * notice under the pg_notify limit; one empty piece for an empty text. Shared
+ * with the terminal of a run (D-095).
+ */
+export function noticePieces(base: object, text: string): string[] {
   const pieces: string[] = [];
   const fits = (piece: string): boolean => Buffer.byteLength(JSON.stringify({ ...base, seq: COUNT_PLACEHOLDER, total: COUNT_PLACEHOLDER, text: piece })) <= MAX_NOTICE_BYTES;
   const add = (points: string[]): void => {

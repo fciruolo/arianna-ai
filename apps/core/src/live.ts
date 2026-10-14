@@ -3,6 +3,7 @@ import { FILE_EDIT_TOOLS } from '@arianna/executors';
 import type { Sql } from './db/client.ts';
 import { readEvents, type StoredEvent } from './events.ts';
 import { editChannel, type EditNotice } from './live-edit.ts';
+import { parseTerminal, terminalChannel, type TerminalNotice } from './live-terminal.ts';
 import { ACTIVITY_KINDS, activityChannel, deltaChannel, type ActivityNotice, type DeltaNotice } from './reply.ts';
 
 /**
@@ -24,6 +25,8 @@ export type LiveMessage = (
   | ({ type: 'activity' } & ActivityNotice)
   /** A piece of a live change of the Coder (D-117): web chat only. */
   | ({ type: 'edit' } & EditNotice)
+  /** A piece of the terminal of a run of the Coder (D-095): web chat only, never stored. */
+  | ({ type: 'terminal' } & TerminalNotice)
 ) & { incognito?: true };
 
 export interface Subscriber {
@@ -266,6 +269,12 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
     sendFrame({ type: 'edit', ...notice });
   });
 
+  const terminal = await sql.listen(terminalChannel(schema), (payload) => {
+    const notice = parseTerminal(payload);
+    if (notice === undefined) return;
+    sendFrame({ type: 'terminal', ...notice });
+  });
+
   return {
     async subscribe(subscriber, afterId) {
       // An id from the future would silence the subscriber until the log caught up.
@@ -298,6 +307,7 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
       await deltas.unlisten();
       await activity.unlisten();
       await edits.unlisten();
+      await terminal.unlisten();
       await reading;
       await frames;
     },

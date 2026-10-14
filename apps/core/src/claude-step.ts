@@ -43,11 +43,11 @@ export interface ClaudeStepInput {
   /** For gateway_log: what leaves, in a few words, without content. */
   summary?: string;
   /**
-   * Text the model writes, the tools it calls and the changes to files they
-   * make (D-117), as they come (task 1.10): for the chat. Awaited in order; a
+   * Text the model writes, the tools it calls, the changes to files they
+   * make (D-117) and the commands of Bash with their output (D-095), as they come (task 1.10): for the chat. Awaited in order; a
    * rejection stops the run.
    */
-  onEvent?: (event: Extract<ClaudeEvent, { type: 'text' | 'tool' | 'edit' }>) => void | Promise<void>;
+  onEvent?: (event: Extract<ClaudeEvent, { type: 'text' | 'tool' | 'edit' | 'command' | 'command-output' }>) => void | Promise<void>;
   /**
    * The session to continue (D-111, the direct chat): a string resumes it,
    * null starts a new one even after a crash. The interrupted run's session,
@@ -164,7 +164,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
           payload: { executor: 'claude', alias: input.model, model: REPORTED_MODEL.test(event.model) ? event.model : null },
         });
       }
-      if (event.type === 'text' || event.type === 'tool' || event.type === 'edit') await input.onEvent?.(event);
+      if (event.type === 'text' || event.type === 'tool' || event.type === 'edit' || event.type === 'command' || event.type === 'command-output') await input.onEvent?.(event);
       if (event.type === 'rate-limit') {
         await appendEvent(sql, {
           ...ids,

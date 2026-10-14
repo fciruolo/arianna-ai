@@ -46,6 +46,7 @@ import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
+import { postTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
 import { coderNotes, KnowledgeError, privateKnowledge, type CoderNotes } from '../project-knowledge.ts';
@@ -1136,6 +1137,15 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
             await postLiveEdit(sql, { conversationId: task.conversationId, taskId: task.id, step }, edit).catch((error: unknown) => {
               // The run goes on; the log says only the kind of error, never the text of a file.
               console.error(liveEditFailure(error));
+            });
+          }
+        } else if (event.type === 'command' || event.type === 'command-output') {
+          // The terminal of the run (D-095): live only, never stored, only within the clearance of the task.
+          const terminal = terminalFor(task, step, editLabel, event);
+          if (terminal !== undefined) {
+            await postTerminal(sql, terminal.where, terminal.entry).catch((error: unknown) => {
+              // The run goes on; the log says only the kind of error, never the command or its output.
+              console.error(terminalFailure(error));
             });
           }
         } else {
