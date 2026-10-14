@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { LoadedAgent } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { CODEX_CHAT_OFF, directPolicies, directPolicyOf, offInterlocutors, projectFits } from '../src/direct-chat.ts';
+import { assigneeLimits, CODEX_CHAT_OFF, directPolicies, directPolicyOf, offInterlocutors, PLAIN_CHAT_LIMITS, projectFits } from '../src/direct-chat.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
 const loaded = committedAgents(resolveHome({}));
@@ -96,4 +96,13 @@ test('«Con chi parli» (D-111, tappa B): the local model only in private, Claud
   assert.deepEqual(offInterlocutors({ claude: true, codex: true }).map((off) => [off.agent, off.reason]), [['codex', CODEX_CHAT_OFF]]);
   // A card named after an executor never becomes a direct chat of its own.
   assert.equal(directPolicyOf('claude', coder, { claude: true, codex: true }), undefined);
+});
+
+test('the plain chats with Claude and ChatGPT have caps of their own, a card its own, anyone else none (D-209)', () => {
+  const agents = committedAgents(resolveHome());
+  assert.deepEqual(assigneeLimits(agents, 'claude'), PLAIN_CHAT_LIMITS);
+  assert.deepEqual(assigneeLimits(agents, 'codex'), PLAIN_CHAT_LIMITS);
+  assert.ok(PLAIN_CHAT_LIMITS.maxSteps !== undefined && PLAIN_CHAT_LIMITS.maxMinutes !== undefined, 'a task without caps never starts');
+  assert.deepEqual(assigneeLimits(agents, 'coder'), agents.get('coder')?.card.limits);
+  assert.deepEqual(assigneeLimits(agents, 'nobody'), {});
 });

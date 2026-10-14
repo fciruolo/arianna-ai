@@ -30,7 +30,7 @@ import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
 import { enqueueArchive, notesToPropose, proposeArchive, recordRelocated, relocateArchived } from './archivist.ts';
-import { directPolicies, offInterlocutors, type DirectPolicy } from './direct-chat.ts';
+import { assigneeLimits, directPolicies, offInterlocutors, type DirectPolicy } from './direct-chat.ts';
 import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT } from './conversations.ts';
 import { createGodApi } from './god/api.ts';
 import { godGit } from './god/clone.ts';
@@ -516,7 +516,7 @@ const worker = createWorker({
   executor: orchestrator,
   allowedActions: (task) => agents.get(task.assignee)?.card.approvals ?? [],
   // No card, no caps: the engine then runs no step and the task waits for the user.
-  agentLimits: (task) => agents.get(task.assignee)?.card.limits ?? {},
+  agentLimits: (task) => assigneeLimits(agents, task.assignee),
   endpointPort: (id) => endpointPort(settings.current().local.endpoints.find((endpoint) => endpoint.id === id)?.url),
   onError: report,
 });
