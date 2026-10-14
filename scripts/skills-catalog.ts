@@ -12,9 +12,8 @@ import { join } from 'node:path';
 
 import { sanitizeForTerminal as safe } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
-import { createContext, gatewayCheck } from '@arianna/policy';
-import { knownSecrets } from '@arianna/vault';
 
+import { cliWebGateway } from '../apps/core/src/cli-gateway.ts';
 import { CatalogError } from '../apps/core/src/git-catalog.ts';
 import { createSkillsCatalog, parseSourceUrl, type SkillsStatus } from '../apps/core/src/skills-catalog.ts';
 
@@ -23,10 +22,7 @@ const USAGE = 'Uso: pnpm skills:catalog [list|add <url>|remove <url>|update <url
 const catalog = createSkillsCatalog({
   dir: join(resolveHome(), 'data', 'catalogs'),
   recover: false,
-  gateway: (repository) => {
-    const decision = gatewayCheck([{ value: repository, label: 'L0', source: 'cli:skills-catalog' }], createContext('L0'), { kind: 'web' }, knownSecrets);
-    return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`${decision.rule}: ${decision.reason}`));
-  },
+  gateway: (repository) => cliWebGateway(repository, 'cli:skills-catalog'),
 });
 
 function print(status: SkillsStatus): void {

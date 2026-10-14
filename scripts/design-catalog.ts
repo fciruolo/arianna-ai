@@ -12,9 +12,8 @@ import { join } from 'node:path';
 
 import { sanitizeForTerminal as safe } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
-import { createContext, gatewayCheck } from '@arianna/policy';
-import { knownSecrets } from '@arianna/vault';
 
+import { cliWebGateway } from '../apps/core/src/cli-gateway.ts';
 import { createDesignCatalog, DesignCatalogError, type CatalogStatus, type KindChanges } from '../apps/core/src/design-catalog.ts';
 import type { DesignNews, NewsGroup } from '../apps/core/src/design-news.ts';
 import { createGithubClient } from '../apps/core/src/github-api.ts';
@@ -23,10 +22,7 @@ const USAGE = 'Uso: pnpm design:catalog [status|update|adopt|discard]';
 
 /** Only the policy check from the command, as for the repository: the address is all that leaves. */
 function webGateway(source: string): (address: string) => Promise<void> {
-  return (address) => {
-    const decision = gatewayCheck([{ value: address, label: 'L0', source }], createContext('L0'), { kind: 'web' }, knownSecrets);
-    return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`${decision.rule}: ${decision.reason}`));
-  };
+  return (address) => cliWebGateway(address, source);
 }
 
 const catalog = createDesignCatalog({

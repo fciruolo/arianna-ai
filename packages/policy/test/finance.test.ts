@@ -13,6 +13,7 @@ import {
   declassifyRequest,
   derive,
   deriveSource,
+  fakePiiCheck,
   gatewayCheck as check,
   isContext,
   isFinanceContext,
@@ -33,7 +34,7 @@ import {
 
 /** The next step of a block, undefined for an allow. */
 const nextOf = (decision: Decision): string | undefined => (decision.decision === 'block' ? decision.next : undefined);
-const gatewayCheck = (payload: readonly Labeled<unknown>[], context: Context, target: Target) => check(payload, context, target, secretMatcher([]));
+const gatewayCheck = (payload: readonly Labeled<unknown>[], context: Context, target: Target) => check(payload, context, target, secretMatcher([]), fakePiiCheck(payload));
 
 const CLAUDE: Target = { kind: 'executor', id: 'claude', locality: 'cloud' };
 const CODEX: Target = { kind: 'executor', id: 'codex', locality: 'cloud' };

@@ -7,7 +7,9 @@ import {
   markLogged,
   spendAllowed,
   derive,
+  fakePiiCheck,
   gatewayCheck as check,
+  piiUnavailable,
   isTarget,
   linkScanText,
   localityOf,
@@ -21,7 +23,7 @@ import {
 } from '../src/index.ts';
 
 // No secret revealed: these tests are about every other rule (secrets.test.ts has the `secret` rule).
-const gatewayCheck = (payload: readonly Labeled<unknown>[], context: Context, target: Target) => check(payload, context, target, secretMatcher([]));
+const gatewayCheck = (payload: readonly Labeled<unknown>[], context: Context, target: Target) => check(payload, context, target, secretMatcher([]), fakePiiCheck(payload));
 
 const CLAUDE: Target = { kind: 'executor', id: 'claude', locality: 'cloud' };
 const LOCAL_MODEL: Target = { kind: 'executor', id: 'omlx', locality: 'local' };
@@ -324,15 +326,15 @@ test('link: the scanner reads the whole address but the id of a post of X', () =
 
 test('link: a value of the vault in the address never leaves', () => {
   const secrets = secretMatcher([{ ref: 'vault://demo', value: 'fake-link-secret-0123456789abcdef' }]);
-  const decision = check([fragment('L2', 'https://example.org/?k=fake-link-secret-0123456789abcdef')], createContext('L2', 'L2'), LINK_CLICK, secrets);
+  const decision = check([fragment('L2', 'https://example.org/?k=fake-link-secret-0123456789abcdef')], createContext('L2', 'L2'), LINK_CLICK, secrets, piiUnavailable('off'));
   assert.equal(decision.rule, 'secret');
-  assert.equal(check([fragment('L2', 'https://example.org/?k=1')], createContext('L2', 'L2'), LINK_CLICK, secrets).decision, 'allow');
+  assert.equal(check([fragment('L2', 'https://example.org/?k=1')], createContext('L2', 'L2'), LINK_CLICK, secrets, piiUnavailable('off')).decision, 'allow');
 });
 
 test('link: values %-encoded in the address are read decoded; a broken escape is refused', () => {
   const secrets = secretMatcher([{ ref: 'vault://demo', value: 'fake-link-secret-0123456789abcdef' }]);
   const encoded = 'https://example.org/?k=fake%2Dlink%2Dsecret%2D0123456789abcdef';
-  assert.equal(check([fragment('L2', encoded)], createContext('L2', 'L2'), LINK_CLICK, secrets).rule, 'secret');
+  assert.equal(check([fragment('L2', encoded)], createContext('L2', 'L2'), LINK_CLICK, secrets, piiUnavailable('off')).rule, 'secret');
   assert.equal(brief([fragment('L2', 'https://example.org/paga?iban=%49%5460X0542811101000000123456')], createContext('L2', 'L2'), LINK_CLICK).rule, 'scanner');
   assert.deepEqual(brief([fragment('L2', 'https://example.org/a%E0%A4%A')], createContext('L2', 'L2'), LINK_CLICK), { decision: 'block', rule: 'link-invalid', next: 'stay-local' });
   assert.equal(brief([fragment('L2', 'https://example.org/caff%C3%A8')], createContext('L2', 'L2'), LINK_CLICK).decision, 'allow');

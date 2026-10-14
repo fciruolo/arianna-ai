@@ -6,6 +6,7 @@ import {
   localityOf,
   markLogged,
   payloadText,
+  piiUnavailable,
   PolicyError,
   scanText,
   sha256Hex,
@@ -20,6 +21,7 @@ import { knownSecrets } from '@arianna/vault';
 
 import { loadApproval } from './approvals.ts';
 import type { Queryable, Sql } from './db/client.ts';
+import { piiCheckOf } from './pii-guard.ts';
 
 export interface GatewayMeta {
   taskId?: string;
@@ -63,13 +65,20 @@ export async function passGateway(
   meta: GatewayMeta = {},
 ): Promise<Decision> {
   // Every value the vault revealed in this process is checked, local targets included.
-  const decision = gatewayCheck(payload, context, target, knownSecrets);
+  // First without the second scanner: when another rule decides, apps/guard is not
+  // even started. Only an exit that every other rule lets go asks it (D-113).
+  let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'));
+  if (decision.decision === 'block' && decision.rule === 'pii-unavailable') {
+    const texts = textsOf(payload);
+    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts));
+  }
   if (!isTarget(target)) return decision;
 
   // Allowed: the texts that will be sent. Blocked: what was offered, for the record.
   // A blocked secret leaves no hash: a guessable value could be found from it.
-  // Nor does invalid input, which is decided before the secret check.
-  const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'invalid-input');
+  // Nor does a personal datum the second scanner found (a short sentence with a
+  // name can be guessed the same way), nor invalid input, decided before the checks.
+  const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'pii' || decision.rule === 'invalid-input');
   const texts = decision.decision === 'allow' ? decision.texts : unmeasured ? undefined : textsOf(payload);
   const measured = texts === undefined ? undefined : measure(texts);
   // The summary is free text from the caller: kept only when it could have left itself.

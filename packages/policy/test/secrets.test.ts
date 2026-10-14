@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createContext, gatewayCheck, secretMatcher, type Labeled, type Target } from '../src/index.ts';
+import { createContext, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, secretMatcher, type Labeled, type Target } from '../src/index.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const FAKE_TOKEN = 'fake-demo-token-4f9a';
 const known = secretMatcher([{ ref: 'vault://demo-token', value: FAKE_TOKEN }]);

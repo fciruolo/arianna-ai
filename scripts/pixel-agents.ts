@@ -7,9 +7,8 @@
 import { join } from 'node:path';
 
 import { resolveHome } from '@arianna/config';
-import { createContext, gatewayCheck } from '@arianna/policy';
-import { knownSecrets } from '@arianna/vault';
 
+import { cliWebGateway } from '../apps/core/src/cli-gateway.ts';
 import { createGithubClient, GithubError } from '../apps/core/src/github-api.ts';
 import { downloadPixelAgents, PIXEL_AGENTS_PACK } from '../apps/core/src/pixel-agents-pack.ts';
 
@@ -23,10 +22,7 @@ try {
   const result = await downloadPixelAgents({
     dirs: { original: join(home, 'apps', 'hud', 'characters', 'originali'), data: join(home, 'data', 'characters') },
     get: createGithubClient(),
-    gateway: (address) => {
-      const decision = gatewayCheck([{ value: address, label: 'L0', source: 'cli:pixel-agents' }], createContext('L0'), { kind: 'web' }, knownSecrets);
-      return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`gateway ${decision.rule}: ${decision.reason}`));
-    },
+    gateway: (address) => cliWebGateway(address, 'cli:pixel-agents'),
   });
   console.log(`${result.replaced ? 'Aggiornati' : 'Scaricati'} ${String(result.characters)} personaggi in data/characters/${PIXEL_AGENTS_PACK}, con la licenza.`);
   console.log('Solo per uso personale: da togliere prima di condividere la cartella. Si assegnano in Impostazioni → Agenti → Aspetto.');

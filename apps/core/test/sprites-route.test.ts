@@ -10,7 +10,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 
 import { DATA_DIR, resolveHome, type SpriteModel } from '@arianna/config';
 import { createClaudeExecutor, WORKTREES_DIR, type ChatRequest, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
-import { gatewayCheck, markLogged, secretMatcher, type Decision } from '@arianna/policy';
+import { fakePiiCheck, gatewayCheck as gatewayCheckWithPii, markLogged, secretMatcher, type Decision } from '@arianna/policy';
 
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
@@ -19,6 +19,14 @@ import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { createSpriteGenerator, SPRITE_LOCAL_ALIAS, SpriteError } from '../src/sprites/generate.ts';
 import { EXAMPLES, REVIEW_PROMPT, SPRITE_PROMPT } from '../src/sprites/prompt.ts';
 import { spriteSheet, type SpriteSpec } from '../src/sprites/spec.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const REPO = resolveHome({});
 const root = join(REPO, DATA_DIR, 'test-tmp', randomUUID());

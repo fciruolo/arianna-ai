@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import { createContext } from '@arianna/policy';
+import { createContext, piiReport } from '@arianna/policy';
 import { Secret } from '@arianna/vault';
 
 import type { Sql } from '../src/db/client.ts';
+import { configurePiiGuard } from '../src/pii-guard.ts';
 import { createBotApi, TelegramApiError, type BotApi } from '../src/telegram/api.ts';
 import { isCleared, MAX_MESSAGE_UNITS, passToTelegram, splitCleared, type ClearedText } from '../src/telegram/outgoing.ts';
 import { approvalNotice, isWebOnly, scannerRefusal, TEXTS } from '../src/telegram/texts.ts';
@@ -15,6 +16,9 @@ const CHAT = 424242;
 const APPROVAL = '6f1c2a9e-0b7d-4c3e-9a51-2d8f4e6b7c10';
 // Not a real token: shaped so that only the client's own check accepts it.
 const FAKE_TOKEN = '1234567:fake-token-for-tests-only-0000';
+
+// The second scanner (D-113) finds nothing: these tests are about the channel.
+configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 // passGateway writes one row per decision: here the log is a no-op.
 const noLog = (() => Promise.resolve([])) as unknown as Sql;

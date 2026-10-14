@@ -8,8 +8,14 @@ import {
   declassify,
   derive,
   deriveSource,
-  gatewayCheck,
+  fakePiiCheck,
+  gatewayCheck as gatewayCheckWithPii,
+  payloadText,
+  piiUnavailable,
   secretMatcher,
+  type PiiCheck,
+  type PiiEntity,
+  type PiiUnavailableReason,
   type DeclassifyApproval,
   type Label,
   type Labeled,
@@ -22,6 +28,14 @@ import {
 } from '@arianna/policy';
 
 import { contextOf, type ContextInput } from './context-input.ts';
+
+// The second scanner (D-113) finds nothing here: these evals are about the other rules (the gateway group has its own pii cases).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 /**
  * A payload fragment. `derivedFrom` lists the labels of the inputs a model read
@@ -61,6 +75,27 @@ interface GatewayInput {
   target: Target;
   secrets?: { ref: string; value: string }[];
   declassify?: { to: Label; approval: { kind: string; state: string; from: string; to: string; sha256: string } };
+  /**
+   * What the fake second scanner (D-113) answers: `found`, per fragment, the
+   * values it takes for personal data (located in the fragment text), or
+   * `unavailable` with its reason. Absent: nothing found.
+   */
+  pii?: { found: { kind: string; value: string }[][] } | { unavailable: PiiUnavailableReason; development?: boolean };
+}
+
+/** The fake recognizer of a case: each value is found where it first appears in its fragment. */
+function piiOf(payload: readonly Labeled<unknown>[], spec: GatewayInput['pii']): PiiCheck {
+  if (spec === undefined) return fakePiiCheck(payload);
+  if ('unavailable' in spec) return piiUnavailable(spec.unavailable, spec.development === true);
+  const entities = payload.map((fragment, index): PiiEntity[] => {
+    const text = payloadText(fragment.value) ?? '';
+    return (spec.found[index] ?? []).map(({ kind, value }) => {
+      const start = text.indexOf(value);
+      if (start < 0) throw new Error('"pii": a found value is not in its fragment');
+      return { kind, start, end: start + value.length, score: 0.99 };
+    });
+  });
+  return fakePiiCheck(payload, entities);
 }
 
 /**
@@ -200,8 +235,9 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
 
   const denied = deniedReads === 0 ? {} : { deniedReads };
   const secrets = secretMatcher(input.secrets ?? []);
-  const decision = gatewayCheck(payload, context, input.target, secrets);
+  const decision = gatewayCheckWithPii(payload, context, input.target, secrets, piiOf(payload, input.pii));
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule, ...denied };
+  if (decision.pii !== undefined) return { decision: 'block', rule: decision.rule, next: decision.next, findings: [...new Set(decision.pii.map((finding) => finding.kind))], ...denied };
   const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };
   return decision.findings === undefined
     ? { ...outcome, ...denied }

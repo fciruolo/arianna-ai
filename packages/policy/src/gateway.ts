@@ -3,6 +3,7 @@
 import { canUseCloud, isContext, isFinanceSource, labelOf, type Context, type Labeled } from './context.ts';
 import { canSendTo, maxLabel, type Label, type Locality } from './labels.ts';
 import { payloadText, scanParts } from './payload.ts';
+import { piiVerdict, type PiiCheck, type PiiFinding } from './pii.ts';
 import { scanText, type Finding } from './scanner.ts';
 import type { KnownSecrets } from './secrets.ts';
 
@@ -40,6 +41,8 @@ export type GatewayRule =
   | 'cloud-label'
   | 'unscannable'
   | 'scanner'
+  | 'pii'
+  | 'pii-unavailable'
   | 'link-invalid'
   | 'local'
   | 'cloud'
@@ -70,6 +73,8 @@ export type Decision =
       next: NextStep;
       /** Scanner matches, without the matched text. */
       findings?: Finding[];
+      /** Kinds the second scanner found (D-113), without text or position. */
+      pii?: readonly PiiFinding[];
     };
 
 const CHANNELS: readonly string[] = ['web', 'telegram', 'phone', 'voice', 'push'];
@@ -246,9 +251,12 @@ function block(
   reason: string,
   next: NextStep,
   findings?: Finding[],
+  pii?: readonly PiiFinding[],
 ): Decision {
   const decision: Decision = { decision: 'block', rule, label, reason, next };
-  return findings === undefined ? decision : { ...decision, findings };
+  if (findings !== undefined) decision.findings = findings;
+  if (pii !== undefined) decision.pii = pii;
+  return decision;
 }
 
 /**
@@ -264,7 +272,12 @@ function block(
  *    (`secrets`), whatever its label and the target;
  * 6. local targets take up to L2;
  * 7. cloud targets (cloud executors, Telegram, phone, web search) need a context
- *    that has read at most L1, a payload of at most L1, and a clean scan.
+ *    that has read at most L1, a payload of at most L1, and a clean scan;
+ * 8. and then a clean second scan (`pii`, D-113): what Rizzo-PII found in these
+ *    exact texts. A kind that points at a person blocks; no answer blocks too,
+ *    except on a development installation (`piiUnavailable(…, true)`), where
+ *    the allow says the check was skipped. A link is one address chosen by the
+ *    user, checked by its own rules: the second scan does not read it.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -276,13 +289,15 @@ function block(
  *
  * `secrets` is required, so no caller can skip the check by forgetting it:
  * the core passes the vault's registry, evals and tests `secretMatcher([])` or
- * their fake values.
+ * their fake values. `pii` is required for the same reason: the core passes
+ * the answer of apps/guard, evals and tests `piiReport` of a fake recognizer.
  */
 export function gatewayCheck(
   payload: readonly Labeled<unknown>[],
   context: Context,
   target: Target,
   secrets: KnownSecrets,
+  pii: PiiCheck,
 ): Decision {
   // Types do not hold at runtime: payloads also come from model output and JSON.
   const fragments: readonly unknown[] = payload;
@@ -369,5 +384,16 @@ export function gatewayCheck(
     return block('scanner', label, `scanner matched: ${kinds}`, onBlock === 'notify-reference' ? onBlock : 'wait-user', findings);
   }
 
-  return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean`, texts }, target);
+  // The second scanner (D-113): only upwards, after every deterministic rule.
+  const second = piiVerdict(pii, texts);
+  const afterScan = onBlock === 'notify-reference' ? onBlock : 'wait-user';
+  if (second.verdict === 'found') {
+    const kinds = [...new Set(second.findings.map((finding) => finding.kind))].join(', ');
+    return block('pii', label, `second scanner found personal data: ${kinds}`, afterScan, undefined, second.findings);
+  }
+  if (second.verdict === 'unavailable') {
+    return block('pii-unavailable', label, `second check not available (${second.reason})`, afterScan);
+  }
+  const skipped = second.verdict === 'skipped' ? `, second check skipped on a development installation (${second.reason})` : '';
+  return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean${skipped}`, texts }, target);
 }

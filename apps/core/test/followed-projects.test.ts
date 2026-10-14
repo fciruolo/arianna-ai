@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
-import { createContext, gatewayCheck, secretMatcher } from '@arianna/policy';
+import { createContext, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, secretMatcher } from '@arianna/policy';
 
 import type { Sql } from '../src/db/client.ts';
 import { ANSWERS_FILE, eventKey, parseAnswers, type AnswerGate } from '../src/dev-progress.ts';
@@ -17,6 +17,14 @@ import { CatalogError } from '../src/git-catalog.ts';
 import { GithubError, type GithubGet } from '../src/github-api.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const scratch = join(resolveHome({}), 'data', 'test-tmp', `followed-projects-${randomUUID()}`);
 after(() => {

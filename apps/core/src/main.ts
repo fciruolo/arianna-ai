@@ -12,10 +12,12 @@ import {
   cloudModelName,
   DEFAULT_VOICE,
   enabledCloudModels,
+  guardPaths,
   loadCatalog,
   loadCloudCatalog,
   loadConfig,
   loadLabelRules,
+  modelPath,
   userHomeOf,
   VOICE_ALIAS,
   voicePaths,
@@ -36,6 +38,7 @@ import { prepareGodClone } from './god/prepare.ts';
 import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
+import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -166,6 +169,33 @@ if (app.development) {
   console.log('Database: development passwords, fake data only (pnpm arianna:doctor)');
 }
 const sql = connect(config, app);
+
+// The second scanner of personal data (D-113, stage 2): apps/guard with the model of
+// the `pii` role, started at the first exit towards the cloud. Without the role, its
+// weights or its environment every such exit stops, except with the development
+// passwords (the doctor's criterion), where gateway_log says the check was skipped.
+{
+  const assigned = config.roles.pii;
+  const entry = assigned === undefined ? undefined : loadCatalog(config.home).models.find((model) => model.id === assigned && model.roles.includes('pii'));
+  const start = guardStarter(guardPaths(config.home, config.paths.data), entry === undefined ? undefined : modelPath(config.paths.data, entry));
+  configurePiiGuard(
+    createPiiGuard({
+      start,
+      development: app.development,
+      names: () => [...agents.keys()],
+      onEvent: (event) => {
+        if (event !== 'ready' && event !== 'starting' && event !== 'idle-stop') console.error(`pii guard: ${event}`);
+      },
+    }),
+  );
+  if (start === undefined) {
+    console.error(
+      app.development
+        ? 'Second check of personal data off (pii role, pnpm arianna:models pull, pnpm guard:sync): exits to the cloud go on, development installation'
+        : 'Second check of personal data off (pii role, pnpm arianna:models pull, pnpm guard:sync): every exit to the cloud stops',
+    );
+  }
+}
 const status = await migrationStatus(sql, loadMigrations());
 if (status.pending.length + status.edited.length + status.missing.length > 0) {
   console.error('The database is not at the migrations of this version: run pnpm db:migrate, then pnpm arianna:doctor');
@@ -1168,6 +1198,7 @@ async function shutdown(): Promise<void> {
   ringer.stop();
   await calls.close();
   await voice.close();
+  await stopPiiGuard();
   await modelEvals.stop();
   await modelActions.stop();
   localReload.stop();

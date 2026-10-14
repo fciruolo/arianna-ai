@@ -1990,7 +1990,7 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 ## D-113 — Modelli piccoli accanto al 27B: un secondo scanner dei dati personali (Rizzo-PII) e decisioni tipate (Laya, Rizzo Flow)
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). Tappa 1 costruita il 2026-10-14 nel ramo `task/guard-rizzo` (D-203, numeri sotto in «Prova su testi finti»); l'integrazione nel gateway (tappa 2) la decide l'utente guardando i numeri. Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). Tappa 1 unita (D-203, numeri sotto in «Prova su testi finti»). Tappa 2 (regola del gateway) costruita il 2026-10-14 sul ramo `task/guard-gateway`, da provare: regole in `docs/PRIVACY-POLICY-SPEC.md`, sezione «Secondo scanner dei dati personali». Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
 - **Collegate:** D-016 e regola 10 (canali esterni), gateway e scanner di `packages/policy`, D-066 (Python solo in `apps/voice`, gabbia di rete), D-081 (prove dei modelli), D-086 (riordino delle note), D-107 (personalità L1, scanner al salvataggio), D-107e (memoria di oMLX), D-110 (routine), D-111 (chi risponde)
 
 ### Contesto

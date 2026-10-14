@@ -21,9 +21,17 @@ import {
   type CodexExecutor,
   type PreparedWorkspace,
 } from '@arianna/executors';
-import { createContext, createLabelRules, gatewayCheck, markLogged, secretMatcher, type Target } from '@arianna/policy';
+import { createContext, createLabelRules, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, markLogged, secretMatcher, type Target } from '@arianna/policy';
 
 import type { Evaluate } from './types.ts';
+
+// The second scanner (D-113) finds nothing here: these evals are about the other rules (the gateway group has its own pii cases).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 /** The cloud executors the live evals run. */
 export const LIVE_EXECUTORS = ['claude', 'codex'] as const;

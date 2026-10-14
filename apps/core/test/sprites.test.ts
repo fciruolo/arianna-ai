@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { CATALOG_FILE, CONFIG_FILE, DATA_DIR, DEFAULT_SETTINGS, loadCatalog, parseConfig, renderSettings, resolveHome, settingsFingerprint } from '@arianna/config';
-import { createContext, gatewayCheck, secretMatcher } from '@arianna/policy';
+import { createContext, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, secretMatcher } from '@arianna/policy';
 
 import { cleanSheet } from '../src/characters.ts';
 import { decodePng } from '../src/png.ts';
@@ -16,6 +16,14 @@ import { createSettingsPage } from '../src/settings-page.ts';
 import { spriteUnavailable, parseSpriteRequest, SpriteError } from '../src/sprites/generate.ts';
 import { EXAMPLES, SPRITE_PROMPT, spriteBrief } from '../src/sprites/prompt.ts';
 import { checkSprite, moveEyes, readSpriteReply, SPRITE_SCHEMA, SpriteSpecError, spriteSheet, type SpriteSpec } from '../src/sprites/spec.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const EXAMPLE_TEXT = JSON.stringify(EXAMPLES[0]?.spec);
 const example = (): SpriteSpec => JSON.parse(EXAMPLE_TEXT) as SpriteSpec;

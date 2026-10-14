@@ -6,13 +6,22 @@ import {
   createContext,
   declassify,
   declassifyRequest,
-  gatewayCheck,
+  fakePiiCheck,
+  gatewayCheck as gatewayCheckWithPii,
   PolicyError,
   secretMatcher,
   type DeclassifyApproval,
   type Label,
   type Labeled,
 } from '../src/index.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const CONTEXT = createContext('L2', 'L2');
 const BRIEF: Labeled<string> = { value: 'Add a retry to the fake invoice parser tests.', label: 'L2', source: 'model:orchestrator' };

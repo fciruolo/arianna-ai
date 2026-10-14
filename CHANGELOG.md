@@ -2,6 +2,12 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Sicurezza
+
+- Secondo controllo dei dati personali nel gateway (D-113, tappa 2): prima di ogni uscita verso Claude, Codex, Telegram o il web, Rizzo-PII cerca nomi, indirizzi, telefoni, email e documenti e ferma l'uscita se ne trova; se non risponde l'uscita si ferma, tranne sull'installazione di sviluppo.
+
 ## [0.100.1] - 2026-10-14
 
 ### Corretto

@@ -12,7 +12,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 
 import { resolveHome, type Project } from '@arianna/config';
 import { ClaudeError, type ChatRequest, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
-import { createContext, createLabelRules, gatewayCheck, markLogged, secretMatcher, type Decision, type Target } from '@arianna/policy';
+import { createContext, createLabelRules, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, markLogged, secretMatcher, type Decision, type Target } from '@arianna/policy';
 
 import type { Sql } from '../src/db/client.ts';
 import {
@@ -33,6 +33,14 @@ import {
 } from '../src/im-report.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
+
+// The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `im-report-${randomUUID()}`);
 const BOX = join(HOME, 'repos', 'progetto-test');

@@ -12,9 +12,8 @@ import { join } from 'node:path';
 
 import { sanitizeForTerminal as safe } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
-import { createContext, gatewayCheck } from '@arianna/policy';
-import { knownSecrets } from '@arianna/vault';
 
+import { cliWebGateway } from '../apps/core/src/cli-gateway.ts';
 import type { NewsGroup } from '../apps/core/src/design-news.ts';
 import { CatalogError } from '../apps/core/src/git-catalog.ts';
 import { createFollowedProjects, MAX_PROJECTS, type ProjectView } from '../apps/core/src/followed-projects.ts';
@@ -26,10 +25,7 @@ const GROUP_TEXT: Record<NewsGroup, string> = { feat: 'Funzioni', fix: 'Correzio
 const projects = createFollowedProjects({
   dir: join(resolveHome(), 'data', 'catalogs'),
   get: createGithubClient(),
-  gateway: (address) => {
-    const decision = gatewayCheck([{ value: address, label: 'L0', source: 'cli:followed-projects' }], createContext('L0'), { kind: 'web' }, knownSecrets);
-    return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`gateway ${decision.rule}: ${decision.reason}`));
-  },
+  gateway: (address) => cliWebGateway(address, 'cli:followed-projects'),
   noModel: 'dal terminale le novità non passano dal modello locale',
 });
 

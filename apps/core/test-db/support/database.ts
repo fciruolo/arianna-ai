@@ -2,9 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { after, before } from 'node:test';
 
 import { loadConfig } from '@arianna/config';
+import { piiReport } from '@arianna/policy';
 
 import { connect, type Sql } from '../../src/db/client.ts';
 import { prepareDatabase, resolveLogins } from '../../src/db/logins.ts';
+import { configurePiiGuard } from '../../src/pii-guard.ts';
+
+// The second scanner (D-113) finds nothing in these tests: they are about
+// everything else. pii-gateway.test.ts sets its own fake service.
+configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 export interface TestDatabase {
   /** As the application role, like the core (D-046). */

@@ -83,6 +83,19 @@ export {
   type NextStep,
   type Target,
 } from './gateway.ts';
+export {
+  ASSISTANT_NAMES,
+  fakePiiCheck,
+  PII_NON_BLOCKING,
+  piiReport,
+  piiUnavailable,
+  piiVerdict,
+  type PiiCheck,
+  type PiiEntity,
+  type PiiFinding,
+  type PiiUnavailableReason,
+  type PiiVerdict,
+} from './pii.ts';
 export { contentHash, payloadText, scanParts, sha256Hex } from './payload.ts';
 export { MIN_SECRET_LENGTH, secretMatcher, type KnownSecret, type KnownSecrets } from './secrets.ts';
 export { normalizeForScan, scanText, type Finding, type FindingKind } from './scanner.ts';

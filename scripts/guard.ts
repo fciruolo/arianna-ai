@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 import { CONFIG_FILE, DATA_DIR, guardPaths, loadCatalog, loadConfig, modelFolderText, modelPath, resolveHome, uvEnvironment, type CatalogEntry } from '@arianna/config';
 
-import { cleanChildEnv } from '../apps/core/src/child-env.ts';
+import { guardEnv } from '../apps/core/src/pii-guard.ts';
 
 const command = process.argv[2];
 const extra = process.argv.slice(3);
@@ -46,17 +46,7 @@ function run(file: string, args: string[], env: Record<string, string>): number 
  * offline, the caches inside data/guard. The weights come from the catalog.
  */
 function cage(): Record<string, string> {
-  mkdirSync(paths.tmp, { recursive: true, mode: 0o700 });
-  return {
-    ...cleanChildEnv(process.env, ['PATH', 'HOME', 'LANG']),
-    PYTHONPATH: paths.src,
-    PYTHONDONTWRITEBYTECODE: '1',
-    TRANSFORMERS_OFFLINE: '1',
-    HF_HOME: join(paths.tmp, 'hf'),
-    XDG_CACHE_HOME: join(paths.tmp, 'cache'),
-    TMPDIR: paths.tmp,
-    TOKENIZERS_PARALLELISM: 'false',
-  };
+  return guardEnv(process.env, paths);
 }
 
 function needVenv(): void {

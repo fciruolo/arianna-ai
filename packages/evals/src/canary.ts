@@ -30,10 +30,18 @@ import {
   type PreparedNotes,
   type PreparedWorkspace,
 } from '@arianna/executors';
-import { createContext, gatewayCheck, markLogged, secretMatcher } from '@arianna/policy';
+import { createContext, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, markLogged, secretMatcher } from '@arianna/policy';
 
 import { EVAL_CODEX_MODEL, evalCodexName, isRunError, liveConfig, liveTarget, requireEnabled, scratchWorkspace, type LiveExecutor, type ScratchWorkspace } from './contract.ts';
 import type { Evaluate } from './types.ts';
+
+// The second scanner (D-113) finds nothing here: these evals are about the other rules (the gateway group has its own pii cases).
+const gatewayCheck = (
+  payload: Parameters<typeof gatewayCheckWithPii>[0],
+  context: Parameters<typeof gatewayCheckWithPii>[1],
+  target: Parameters<typeof gatewayCheckWithPii>[2],
+  secrets: Parameters<typeof gatewayCheckWithPii>[3],
+) => gatewayCheckWithPii(payload, context, target, secrets, fakePiiCheck(payload));
 
 export interface CanaryInput {
   /**
