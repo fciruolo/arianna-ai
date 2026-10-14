@@ -25,6 +25,7 @@ export {
   type ClaudeTool,
 } from './claude/profile.ts';
 export { ClaudeStream, fileEditOf, FILE_EDIT_TOOLS, type ClaudeEvent, type FileEditPart, type FileEditTool, type ClaudeUsage, type StreamFailure, type StreamResult } from './claude/stream.ts';
+export { bashCommandOf, clipTerminal, HIDDEN_LINE, MAX_RAW_TERMINAL_BYTES, MAX_TERMINAL_BYTES, MAX_TERMINAL_LINES, rawTerminal, terminalShown, terminalText, toolResultText, type ClippedText, type ShownText } from './claude/terminal.ts';
 export {
   CODEX_EXECUTOR,
   CodexError,

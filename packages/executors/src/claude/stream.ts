@@ -3,6 +3,7 @@
 // 2.1.288 (test/fixtures/claude-stream.jsonl); unknown types are ignored, so a
 // newer binary that adds messages does not break a run.
 import { profileViolations, type ClaudeTool, type InitReport } from './profile.ts';
+import { bashCommandOf, rawTerminal, toolResultText } from './terminal.ts';
 
 export interface ClaudeUsage {
   /** Input tokens, cache reads and writes included. */
@@ -29,8 +30,11 @@ export type FileEditTool = (typeof FILE_EDIT_TOOLS)[number];
 
 /**
  * What a run reports while it works. Tool inputs are left out, names are
- * enough to follow it; the only exception is a change to a file (`edit`, after
- * its `tool`), which the core turns into a live diff for the chat (D-117).
+ * enough to follow it; the exceptions are a change to a file (`edit`, after
+ * its `tool`), which the core turns into a live diff for the chat (D-117), and
+ * a command run with Bash and what it printed (`command`, `command-output`),
+ * whole up to MAX_RAW_TERMINAL_BYTES, for the terminal of the run (D-095,
+ * tappa 1): the caller filters the vault, then cuts (terminalText). Live only.
  * `filePath` is as the binary wrote it: the caller checks it is in the project.
  */
 export type ClaudeEvent =
@@ -38,6 +42,10 @@ export type ClaudeEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'edit'; tool: FileEditTool; filePath: string; parts: FileEditPart[] }
+  /** A call to Bash: `callId` pairs it with its output. */
+  | { type: 'command'; callId: string; command: string; truncated: boolean }
+  /** What a call to Bash printed (`error`: the binary marked the result as an error). */
+  | { type: 'command-output'; callId: string; output: string; truncated: boolean; error: boolean }
   | { type: 'usage'; usage: ClaudeUsage }
   | {
       type: 'rate-limit';
@@ -73,6 +81,8 @@ export interface StreamResult {
   permissionDenials?: number;
 }
 
+/** Calls to Bash followed at once: one that never gets its output is not kept forever. */
+const MAX_OPEN_COMMANDS = 64;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** Strings from the binary go into L0 events: only short plain codes pass. */
 const code = (value: unknown): string | undefined => (typeof value === 'string' && /^[a-z_]{1,32}$/.test(value) ? value : undefined);
@@ -135,6 +145,8 @@ export class ClaudeStream {
   #final: ClaudeUsage | undefined;
   #context: number | undefined;
   #rejected = false;
+  /** Calls to Bash still waiting for their output, by tool use id. */
+  readonly #commands = new Set<string>();
 
   /** `sessionRef`: the session a resume asked for; the binary must continue that one, not start another. */
   constructor(expected: { cwd: string; tools: readonly ClaudeTool[]; sessionRef?: string }) {
@@ -171,6 +183,8 @@ export class ClaudeStream {
         return message.subtype === 'init' ? this.#init(message) : [];
       case 'assistant':
         return this.#assistant(message);
+      case 'user':
+        return this.#toolResults(message);
       case 'rate_limit_event':
         return this.#rateLimit(message);
       case 'result':
@@ -212,6 +226,12 @@ export class ClaudeStream {
         events.push({ type: 'tool', name: block.name });
         const edit = fileEditOf(block.name, block.input);
         if (edit !== undefined) events.push(edit);
+        const command = bashCommandOf(block.name, block.input);
+        if (command !== undefined && typeof block.id === 'string' && block.id !== '' && this.#commands.size < MAX_OPEN_COMMANDS) {
+          this.#commands.add(block.id);
+          const raw = rawTerminal(command);
+          events.push({ type: 'command', callId: block.id, command: raw.text, truncated: raw.truncated });
+        }
       }
     }
     if (isRecord(body.usage)) {
@@ -220,6 +240,21 @@ export class ClaudeStream {
       this.#responses.set(id, response);
       this.#context = response.in + response.out;
       events.push({ type: 'usage', usage: this.usage });
+    }
+    return events;
+  }
+
+  /** The outputs of the calls to Bash, from the tool results the binary echoes back; any other result is ignored. */
+  #toolResults(message: Record<string, unknown>): ClaudeEvent[] {
+    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) return [];
+    const body = message.message;
+    if (!isRecord(body) || !Array.isArray(body.content)) return [];
+    const events: ClaudeEvent[] = [];
+    for (const block of body.content as unknown[]) {
+      if (!isRecord(block) || block.type !== 'tool_result' || typeof block.tool_use_id !== 'string' || !this.#commands.has(block.tool_use_id)) continue;
+      this.#commands.delete(block.tool_use_id);
+      const raw = rawTerminal(toolResultText(block.content) ?? '');
+      events.push({ type: 'command-output', callId: block.tool_use_id, output: raw.text, truncated: raw.truncated, error: block.is_error === true });
     }
     return events;
   }
