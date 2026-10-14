@@ -26,6 +26,7 @@ import { startApiServer } from '../src/server/http.ts';
 
 const HOME = resolveHome({});
 const ORIGINAL = join(HOME, 'apps', 'hud', 'characters', 'originali');
+const SERIES = join(HOME, 'apps', 'hud', 'characters', 'serie');
 // Made-up packs, in data/ (never in git).
 const root = join(HOME, 'data', 'test-tmp', randomUUID());
 const DATA = join(root, 'characters');
@@ -74,6 +75,7 @@ test('without data/characters only the originals are listed', async () => {
 test('a valid pack is listed and its sheets are served; a bad one is refused with the reason', async () => {
   pack('robots', ONE, { 'robot.png': header(112, 96) });
   pack('originali', ONE, { 'robot.png': header(112, 96) });
+  pack('serie', ONE, { 'robot.png': header(112, 96) });
   pack('Bad Name', ONE, { 'robot.png': header(112, 96) });
   pack('wrong-size', ONE, { 'robot.png': header(112, 64) });
   pack('no-sheet', ONE);
@@ -95,6 +97,7 @@ test('a valid pack is listed and its sheets are served; a bad one is refused wit
     'no-sheet': 'pack.json or a sheet is missing',
     'not-json': 'pack.json is not valid JSON',
     originali: 'the name of the originals is taken',
+    serie: 'the name of the series is taken',
     'too-big': 'file too large',
     twice: 'pack.json: an id is listed twice',
     'wrong-size': 'a sheet is 112×96 or 112×128',
@@ -102,9 +105,26 @@ test('a valid pack is listed and its sheets are served; a bad one is refused wit
 
   assert.deepEqual(await readSheet(dirs, 'robots', 'robot'), header(112, 96));
   assert.deepEqual(await readSheet(dirs, 'originali', 'coder'), SHEET);
-  for (const [name, character] of [['linked', 'robot'], ['wrong-size', 'robot'], ['robots', 'nobody'], ['..', 'robot'], ['originali', '../coder']]) {
+  for (const [name, character] of [['linked', 'robot'], ['wrong-size', 'robot'], ['robots', 'nobody'], ['..', 'robot'], ['originali', '../coder'], ['serie', 'robot']]) {
     assert.equal(await readSheet(dirs, name ?? '', character ?? ''), undefined, `${String(name)}/${String(character)}`);
   }
+});
+
+test('the pack of the series in git is listed after the originals, not as one of them, and its sheets are served (D-211)', async () => {
+  const listing = await listPacks({ original: ORIGINAL, series: SERIES, data: join(root, 'missing') });
+  assert.deepEqual(
+    listing.packs.map((entry) => [entry.id, entry.original]),
+    [
+      ['originali', true],
+      ['serie', false],
+    ],
+  );
+  assert.deepEqual(listing.packs[1]?.characters.map(({ id, rows }) => [id, rows]), [['jd', 4], ['turk', 4], ['elliot', 4], ['carla', 4], ['cox', 4], ['michael', 4], ['dwight', 4], ['jim', 4], ['pam', 4]]);
+  assert.deepEqual(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'carla'), readFileSync(join(SERIES, 'carla.png')));
+  // A folder data/characters/serie is never served in its place, with the pack in git or without it.
+  assert.equal(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'robot'), undefined);
+  const broken = await listPacks({ original: ORIGINAL, series: join(root, 'no-series'), data: join(root, 'missing') });
+  assert.deepEqual(broken.refused, [{ pack: 'serie', reason: 'pack.json or a sheet is missing' }]);
 });
 
 test('unreadable originals are refused, and the packs of data/ are still listed', async () => {

@@ -3,13 +3,14 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { CHARACTER_ID, ORIGINAL_PACK, type CharacterChoices } from '@arianna/config';
+import { CHARACTER_ID, ORIGINAL_PACK, SERIES_PACK, type CharacterChoices } from '@arianna/config';
 
 import { decodePng, encodePng, PngError } from './png.ts';
 
 /**
  * The pixel characters of the web chat (D-060). A pack is a folder: the
- * originals in git (`apps/hud/characters/originali`) and the ones the user
+ * originals in git (`apps/hud/characters/originali`), the people of the
+ * series of the themes (`apps/hud/characters/serie`, D-211) and the ones the user
  * copies into `data/characters/<pack>/`, each a pack.json and PNG sheets in
  * the format of pixel-agents (112×96, or 112×128 with Arianna's fourth row).
  * The core only reads them, and checks every file before serving it: a
@@ -18,6 +19,8 @@ import { decodePng, encodePng, PngError } from './png.ts';
 export interface CharacterDirs {
   /** The pack of the originals, in git. */
   original: string;
+  /** The pack `serie` (D-211), in git; left out when not given. */
+  series?: string;
   /** `data/characters`: may be missing. */
   data: string;
 }
@@ -141,6 +144,11 @@ function parseManifest(raw: Buffer): Manifest {
  */
 async function packDir(dirs: CharacterDirs, id: string): Promise<string> {
   if (id === ORIGINAL_PACK) return realpath(dirs.original);
+  // The name of the series is never a folder of data/characters, even when the pack is not served.
+  if (id === SERIES_PACK) {
+    if (dirs.series === undefined) throw new PackError('the name of the series is taken');
+    return realpath(dirs.series);
+  }
   const dir = join(dirs.data, id);
   if (!(await lstat(dir)).isDirectory()) throw new PackError('not a folder');
   const real = await realpath(dir);
@@ -178,6 +186,13 @@ export async function listPacks(dirs: CharacterDirs): Promise<PackListing> {
   } catch (error) {
     refused.push({ pack: ORIGINAL_PACK, reason: reasonOf(error) });
   }
+  if (dirs.series !== undefined) {
+    try {
+      packs.push(await readPack(dirs, SERIES_PACK));
+    } catch (error) {
+      refused.push({ pack: SERIES_PACK, reason: reasonOf(error) });
+    }
+  }
 
   let names: string[] = [];
   try {
@@ -187,8 +202,9 @@ export async function listPacks(dirs: CharacterDirs): Promise<PackListing> {
     // No data/characters yet: the originals only.
   }
   for (const name of names.slice(0, MAX_PACKS)) {
-    if (!CHARACTER_ID.test(name) || name === ORIGINAL_PACK) {
-      refused.push({ pack: name, reason: name === ORIGINAL_PACK ? 'the name of the originals is taken' : 'folder name: lowercase letters, digits, - and _' });
+    if (!CHARACTER_ID.test(name) || name === ORIGINAL_PACK || name === SERIES_PACK) {
+      const reason = name === ORIGINAL_PACK ? 'the name of the originals is taken' : name === SERIES_PACK ? 'the name of the series is taken' : 'folder name: lowercase letters, digits, - and _';
+      refused.push({ pack: name, reason });
       continue;
     }
     try {

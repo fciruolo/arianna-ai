@@ -1,0 +1,15 @@
+{
+  "name": "Serie",
+  "source": "Fan art per uso personale disegnata da Claude (D-211): Scrubs e The Office per i temi Corsia e Ufficio. Da togliere, anche dalla storia di git, prima di condividere o pubblicare il repository; rigenerati con node apps/hud/characters/build.ts",
+  "characters": [
+    { "id": "jd", "name": "J.D.", "file": "jd.png" },
+    { "id": "turk", "name": "Turk", "file": "turk.png" },
+    { "id": "elliot", "name": "Elliot", "file": "elliot.png" },
+    { "id": "carla", "name": "Carla", "file": "carla.png" },
+    { "id": "cox", "name": "Dr. Cox", "file": "cox.png" },
+    { "id": "michael", "name": "Michael", "file": "michael.png" },
+    { "id": "dwight", "name": "Dwight", "file": "dwight.png" },
+    { "id": "jim", "name": "Jim", "file": "jim.png" },
+    { "id": "pam", "name": "Pam", "file": "pam.png" }
+  ]
+}

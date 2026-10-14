@@ -56,15 +56,19 @@ test('the contrast test fails a theme under the minimum, with the pair named', (
   assert.ok(low.some((item) => item.pair === 'accent su bg' || item.pair === 'muted su surface'));
 });
 
-test('the costumes a theme names are in the pack of the originals (D-103)', () => {
-  const pack = JSON.parse(readFileSync(join(HUD, 'characters', 'originali', 'pack.json'), 'utf8')) as { characters: { id: string }[] };
+test('the characters a theme names are costumes of the originals or people of the series (D-103, D-211)', () => {
+  const packs = Object.fromEntries(
+    ['originali', 'serie'].map((id) => [id, (JSON.parse(readFileSync(join(HUD, 'characters', id, 'pack.json'), 'utf8')) as { characters: { id: string }[] }).characters]),
+  );
   for (const theme of repoThemes) {
     for (const [agent, choice] of Object.entries(theme.characters)) {
-      const [packId, character] = choice.split('/');
-      assert.equal(packId, 'originali', `${theme.id}.${agent}`);
-      assert.ok(pack.characters.some((entry) => entry.id === character), `${theme.id}.${agent}: ${choice}`);
-      assert.equal(character, `${agent}-${theme.id}`);
+      const [packId = '', character = ''] = choice.split('/');
+      assert.ok(packs[packId]?.some((entry) => entry.id === character), `${theme.id}.${agent}: ${choice}`);
+      // From the originals only the costumes of the same theme, never a plain original.
+      if (packId === 'originali') assert.ok(character.endsWith(`-${theme.id}`), `${theme.id}.${agent}: ${choice}`);
     }
+    // Arianna, the Coder and GOD wear someone of the series.
+    for (const agent of ['arianna', 'coder', 'god']) assert.equal(theme.characters[agent]?.split('/')[0], 'serie', `${theme.id}.${agent}`);
   }
 });
 

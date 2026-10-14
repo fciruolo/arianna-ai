@@ -13,6 +13,8 @@ export type CharacterChoices = Record<string, string>;
 export const CHARACTER_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** The pack of the originals, in git: no folder of data/characters may take its name. */
 export const ORIGINAL_PACK = 'originali';
+/** The pack of the people of the series (D-211), fan art in git for personal use: its name is taken as well. */
+export const SERIES_PACK = 'serie';
 
 export function parseCharacters(value: unknown): CharacterChoices {
   if (value === undefined) return {};

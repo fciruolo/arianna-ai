@@ -5,12 +5,49 @@ import { test } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 import { checkArt, dress, renderSheet, type CharacterArt, type Costume, type Part } from '../characters/compose.ts';
-import { APP_ICONS, COSTUMED, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, SHEETS, sheetPng } from '../characters/originals.ts';
+import { APP_ICONS, COSTUMED, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, SERIES, SERIES_DIR, SHEETS, sheetPng } from '../characters/originals.ts';
+
+/** Every sheet built from the maps: the pack of the originals and the people of the series (D-211). */
+const ALL: readonly CharacterArt[] = [...SHEETS, ...SERIES.map(({ art }) => art)];
 import { encodePng } from '../characters/png.ts';
 
 test('the sheets in git are the ones the pixel maps give, costumes of the themes included (run node apps/hud/characters/build.ts after a change)', () => {
   for (const art of SHEETS) {
     assert.deepEqual(readFileSync(join(PACK_DIR, `${art.id}.png`)), sheetPng(art), art.id);
+  }
+});
+
+test('the sheets of the people of the series are the ones their maps give, and pack.json lists them with their name (D-211)', () => {
+  for (const { art } of SERIES) assert.deepEqual(readFileSync(join(SERIES_DIR, `${art.id}.png`)), sheetPng(art), art.id);
+  const pack = JSON.parse(readFileSync(join(SERIES_DIR, 'pack.json'), 'utf8')) as { source: string; characters: { id: string; name: string; file: string }[] };
+  assert.deepEqual(
+    pack.characters.map(({ id, name, file }) => [id, name, file]),
+    SERIES.map(({ art, name }) => [art.id, name, `${art.id}.png`]),
+  );
+  // The pack says what it is and that it goes away before the repository is shared.
+  assert.match(pack.source, /uso personale/);
+  assert.match(pack.source, /condividere/);
+  // No id taken twice across the two packs in git: a theme names "<pack>/<id>", the gallery shows both.
+  assert.equal(new Set(ALL.map(({ id }) => id)).size, ALL.length);
+});
+
+test('every person of the series has all the poses, and they differ where they must (D-211)', () => {
+  for (const { art } of SERIES) {
+    const { width, rgba } = renderSheet(art);
+    const frame = (row: number, column: number) => {
+      const pixels: number[] = [];
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 16; x++) pixels.push(...rgba.subarray(((row * 32 + y) * width + column * 16 + x) * 4, ((row * 32 + y) * width + column * 16 + x) * 4 + 4));
+      return pixels.join(',');
+    };
+    // Walking, typing and reading change the frame, in every direction; blinking, thinking and waiting too.
+    for (let row = 0; row < 3; row++) {
+      assert.notEqual(frame(row, 0), frame(row, 1), `${art.id} row ${String(row)} walk`);
+      assert.notEqual(frame(row, 3), frame(row, 1), `${art.id} row ${String(row)} type`);
+    }
+    for (const row of [0, 2]) assert.notEqual(frame(row, 5), frame(row, 1), `${art.id} row ${String(row)} read`);
+    assert.notEqual(frame(3, 6), frame(0, 1), `${art.id} blink`);
+    assert.notEqual(frame(3, 0), frame(0, 1), `${art.id} think`);
+    assert.notEqual(frame(3, 2), frame(0, 1), `${art.id} wait`);
   }
 });
 
@@ -48,7 +85,7 @@ test('pack.json lists every original sheet and every costume, with its name', ()
 });
 
 test('a sheet is 112×128 in the format of pixel-agents, with a fourth row', () => {
-  for (const art of SHEETS) {
+  for (const art of ALL) {
     const png = sheetPng(art);
     assert.equal(png.readUInt32BE(16), 112);
     assert.equal(png.readUInt32BE(20), 128);
@@ -57,7 +94,7 @@ test('a sheet is 112×128 in the format of pixel-agents, with a fourth row', () 
 });
 
 test('every frame has a figure standing on the bottom line', () => {
-  for (const art of SHEETS) {
+  for (const art of ALL) {
     const { width, rgba } = renderSheet(art);
     for (let row = 0; row < 4; row++) {
       for (let column = 0; column < 7; column++) {

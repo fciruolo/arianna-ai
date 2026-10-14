@@ -5,6 +5,8 @@ import { CODER } from './art/coder.ts';
 import { ARIANNA_CORSIA, CODER_CORSIA } from './art/costumes/corsia.ts';
 import { ARIANNA_UFFICIO, CODER_UFFICIO } from './art/costumes/ufficio.ts';
 import { GOD } from './art/god.ts';
+import { DWIGHT, JIM, MICHAEL, PAM } from './art/serie/office.ts';
+import { CARLA, COX, ELLIOT, JD, TURK } from './art/serie/scrubs.ts';
 import { dress, renderSheet, type CharacterArt } from './compose.ts';
 import { encodePng } from './png.ts';
 
@@ -26,6 +28,25 @@ export const COSTUMED: readonly { art: CharacterArt; name: string }[] = [
 
 /** Every sheet of the pack `originali`, as pack.json lists them. */
 export const SHEETS: readonly CharacterArt[] = [...ORIGINALS, ...COSTUMED.map(({ art }) => art)];
+
+/**
+ * The pack `serie` (D-211): the real people of the series of the themes,
+ * fan art drawn by Claude for the user's personal use. In the repository by
+ * the user's choice, in a folder of its own so it goes away whole (history
+ * included) before the repository is shared.
+ */
+export const SERIES_DIR = join(import.meta.dirname, 'serie');
+export const SERIES: readonly { art: CharacterArt; name: string }[] = [
+  { art: JD, name: 'J.D.' },
+  { art: TURK, name: 'Turk' },
+  { art: ELLIOT, name: 'Elliot' },
+  { art: CARLA, name: 'Carla' },
+  { art: COX, name: 'Dr. Cox' },
+  { art: MICHAEL, name: 'Michael' },
+  { art: DWIGHT, name: 'Dwight' },
+  { art: JIM, name: 'Jim' },
+  { art: PAM, name: 'Pam' },
+];
 
 export function sheetPng(art: CharacterArt): Buffer {
   const { width, height, rgba } = renderSheet(art);

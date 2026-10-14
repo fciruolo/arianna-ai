@@ -1023,7 +1023,11 @@ const server = await startApiServer({
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
   },
   characters: {
-    dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
+    dirs: {
+      original: join(config.home, 'apps', 'hud', 'characters', 'originali'),
+      series: join(config.home, 'apps', 'hud', 'characters', 'serie'),
+      data: join(config.paths.data, 'characters'),
+    },
     choices: () => settings.current().characters,
     themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
     downloadPixelAgents: () =>

@@ -51,10 +51,10 @@ const cards = computed<Card[]>(() => [cardOf(undefined), ...(props.listing?.them
 const missing = computed(() => (props.listing !== null && props.chosen !== BASE_THEME && props.listing.current === BASE_THEME ? props.chosen : null));
 
 /** Who wears what, and where it comes from (D-103, punto 6). */
-const SOURCE_TEXT = { theme: 'costume del tema', choice: 'scelto da te in Agenti', original: 'originale' } as const;
+const SOURCE_TEXT = { theme: 'dal tema', choice: 'scelto da te in Agenti', original: 'originale' } as const;
 const wearers = computed(() =>
   Object.entries(props.characters?.agents ?? {})
-    .filter(([agent]) => agent === 'arianna' || agent === 'coder')
+    .filter(([agent]) => agent === 'arianna' || agent === 'coder' || agent === 'god')
     .map(([agent, choice]) => ({ agent, name: agentName(agent), from: SOURCE_TEXT[choice.from ?? 'original'] })),
 );
 </script>

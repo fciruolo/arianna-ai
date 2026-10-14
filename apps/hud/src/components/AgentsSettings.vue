@@ -303,10 +303,13 @@ const animationsOpen = ref(false);
 
 // The gallery (D-206): every character served, by group; a click picks it, Salva keeps it.
 const PIXEL_AGENTS_PACK = 'pixel-agents';
+const SERIES_PACK = 'serie';
 const gallery = computed(() => {
   const groups = [
     { id: 'originali', title: 'Originali', items: characterOptions.value.filter((option) => option.pack.original) },
-    { id: 'tuoi', title: 'Tuoi', items: characterOptions.value.filter((option) => !option.pack.original && option.pack.id !== PIXEL_AGENTS_PACK) },
+    // D-211: the people of the series of the themes, fan art for personal use.
+    { id: SERIES_PACK, title: 'Serie (fan art)', items: characterOptions.value.filter((option) => option.pack.id === SERIES_PACK) },
+    { id: 'tuoi', title: 'Tuoi', items: characterOptions.value.filter((option) => !option.pack.original && option.pack.id !== PIXEL_AGENTS_PACK && option.pack.id !== SERIES_PACK) },
     { id: PIXEL_AGENTS_PACK, title: 'pixel-agents', items: characterOptions.value.filter((option) => option.pack.id === PIXEL_AGENTS_PACK) },
   ];
   return groups.filter((group) => group.items.length > 0 || group.id === PIXEL_AGENTS_PACK);

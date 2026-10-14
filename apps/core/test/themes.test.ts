@@ -15,6 +15,7 @@ import { THEME_TOKENS as PAGE_TOKENS } from '../../hud/src/lib/themes.ts';
 const HOME = resolveHome({});
 const REPO_THEMES = join(HOME, 'apps', 'hud', 'themes');
 const ORIGINAL = join(HOME, 'apps', 'hud', 'characters', 'originali');
+const SERIES = join(HOME, 'apps', 'hud', 'characters', 'serie');
 // Made-up themes, in data/ (never in git).
 const root = join(HOME, 'data', 'test-tmp', randomUUID());
 
@@ -145,7 +146,7 @@ test('the theme in use is the chosen one when it is served, Base otherwise', asy
   assert.equal(currentTheme('base', themes), 'base');
 });
 
-test('GET /api/themes serves the checked themes and the costumes of the chosen one go to /api/characters (D-103)', async () => {
+test('GET /api/themes serves the checked themes and the characters of the chosen one go to /api/characters (D-103, D-211)', async () => {
   let chosen = 'corsia';
   const server = await startApiServer({
     // Unused by these routes.
@@ -153,8 +154,8 @@ test('GET /api/themes serves the checked themes and the costumes of the chosen o
     live: undefined as unknown as LiveFeed,
     host: '127.0.0.1',
     port: 0,
-    agents: () => ['arianna', 'coder'],
-    characters: { dirs: { original: ORIGINAL, data: join(root, 'no-characters') }, choices: () => ({ coder: 'originali/coder' }), themes: { dir: REPO_THEMES, chosen: () => chosen } },
+    agents: () => ['arianna', 'coder', 'god', 'designer'],
+    characters: { dirs: { original: ORIGINAL, series: SERIES, data: join(root, 'no-characters') }, choices: () => ({ coder: 'originali/coder' }), themes: { dir: REPO_THEMES, chosen: () => chosen } },
   });
   try {
     const origin = `http://127.0.0.1:${String(server.port)}`;
@@ -162,8 +163,11 @@ test('GET /api/themes serves the checked themes and the costumes of the chosen o
     assert.deepEqual(themes.themes.map(({ id }) => id), ['corsia', 'ufficio']);
     assert.equal(themes.current, 'corsia');
     const characters = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { character: string; from: string }> };
-    assert.deepEqual(characters.agents.arianna, { pack: 'originali', character: 'arianna-corsia', rows: 4, from: 'theme' });
-    // The explicit choice of [characters] wins over the costume.
+    // The people of the series (D-211) and a costume of the originals, both from the theme.
+    assert.deepEqual(characters.agents.arianna, { pack: 'serie', character: 'carla', rows: 4, from: 'theme' });
+    assert.deepEqual(characters.agents.god, { pack: 'serie', character: 'cox', rows: 4, from: 'theme' });
+    assert.deepEqual(characters.agents.designer, { pack: 'originali', character: 'coder-corsia', rows: 4, from: 'theme' });
+    // The explicit choice of [characters] wins over the theme.
     assert.equal(characters.agents.coder?.from, 'choice');
     chosen = 'sparito';
     const fallback = (await (await fetch(`${origin}/api/themes`)).json()) as { chosen: string; current: string };

@@ -1,12 +1,13 @@
 // Usage: node apps/hud/characters/build.ts [--preview]
 // Writes the sheets of the original characters (D-060) into
-// apps/hud/characters/originali/, from the pixel maps in art/. With --preview
+// apps/hud/characters/originali/ and those of the people of the series
+// (D-211) into apps/hud/characters/serie/, from the pixel maps in art/. With --preview
 // it also writes 8× enlargements on a checkerboard into data/characters-preview/,
 // out of git, to look at the art.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { APP_ICONS, headIconPng, NOTIFICATION_ICON, notificationIconPng, PACK_DIR, publicPath, SHEETS, sheetPng } from './originals.ts';
+import { APP_ICONS, headIconPng, NOTIFICATION_ICON, notificationIconPng, PACK_DIR, publicPath, SERIES, SERIES_DIR, SHEETS, sheetPng } from './originals.ts';
 import { encodePng } from './png.ts';
 import { renderSheet, type CharacterArt } from './compose.ts';
 
@@ -39,6 +40,10 @@ for (const art of SHEETS) {
   writeFileSync(join(PACK_DIR, `${art.id}.png`), sheetPng(art));
   console.log(`Written ${art.id}.png`);
 }
+for (const { art } of SERIES) {
+  writeFileSync(join(SERIES_DIR, `${art.id}.png`), sheetPng(art));
+  console.log(`Written serie/${art.id}.png`);
+}
 writeFileSync(NOTIFICATION_ICON, notificationIconPng());
 console.log('Written public/notification-icon.png');
 for (const icon of APP_ICONS) {
@@ -48,6 +53,6 @@ for (const icon of APP_ICONS) {
 if (process.argv.includes('--preview')) {
   const dir = join(home, 'data', 'characters-preview');
   mkdirSync(dir, { recursive: true });
-  for (const art of SHEETS) writeFileSync(join(dir, `${art.id}.png`), preview(art));
+  for (const art of [...SHEETS, ...SERIES.map((entry) => entry.art)]) writeFileSync(join(dir, `${art.id}.png`), preview(art));
   console.log('Previews in data/characters-preview/');
 }
