@@ -7,25 +7,25 @@
 | ~~Linguaggio del nucleo~~ | **Deciso: TypeScript** (D-003) | |
 | ~~Conferma delle decisioni "Proposta, applicata" (D-004, D-013…D-030)~~ | **Chiusa:** confermate dall'utente il 2026-10-14 a gruppi per tema (privacy, codice e test, motore, metodo), insieme a D-032, D-033, D-035, D-036, D-038, D-039, D-047, D-048 e D-034 | |
 | ~~Dove gira il server~~ | **Deciso: Mac Studio** (chiarito dall'utente il 2026-10-02: è la macchina di lavoro dove andrà l'installazione con i dati veri; `HANDOFF.md`, "Dove siamo"), dietro interfaccia sostituibile | |
-| Conteggio di `claude -p` e `codex exec` negli abbonamenti | `claude -p` (task 1.5, D-049): con il login dell'abbonamento (`apiKeySource: none`) ogni run riporta un `rate_limit_event` con le finestre `five_hour` e `seven_day` dell'abbonamento; non è verificato se esista un credito separato. Da guardare nel tuo account dopo qualche run. `codex exec` (task 1.16, D-138): con il login ChatGPT i run contano nella quota di ChatGPT (2026-10-07: circa 60 run della sessione, fra prove ed eval, hanno portato Codex al 14% secondo la barra dell'utente); lo stream non porta finestre di quota né crediti, quindi la barra resta l'unica misura | Quando vuoi: Codex lavora già nelle deleghe dalla 0.29.0 (D-140) |
+| ~~Conteggio di `claude -p` e `codex exec` negli abbonamenti~~ | **Chiusa (utente, 2026-10-14):** la quota si considera condivisa con le chat dell'utente (ipotesi prudente); i limiti di Arianna si regolano così, si riapre se l'account mostra il contrario | |
 | ~~Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox)~~ | **Deciso:** fissati per `claude` 2.1.288, sandbox compresa (D-049, D-050, `packages/executors/src/claude/profile.ts`), e per `codex` 0.160.0 (D-138, `packages/executors/src/codex/profile.ts`), con i test di contratto e del canarino | |
 | ~~Sandbox: nativa di Claude Code oppure `sandbox-runtime`~~ | **Decisa la nativa** (D-050, confermata): il canarino non esce. microVM solo se un giorno esce | |
 | ~~oMLX può puntare a `data/models/`?~~ | **Deciso: sì** (D-048, D-071): il core avvia `omlx serve --model-dir data/models` dal 2026-10-04 | |
-| oMLX invia telemetria o contenuti fuori dalla macchina? | Il README non ne parla: verificare (codice o traffico di rete) prima di dargli dati L2 veri; non usare `--mcp-config` né `--hf-endpoint` con dati veri. Lasciare `--host 127.0.0.1` | Prima dell'uso con dati veri (fine Fase 1A) |
-| Codex con provider locale invia telemetria o contenuti altrove? | Finché non è verificato non conta come locale: oggi Codex lavora solo come esecutore cloud (D-138, D-140) | Prima di usare Codex con un modello locale |
-| Codice clienti con NDA | Locale (L2) finché non leggi i contratti | Quando serve |
-| Remote git (GitHub privato, NAS, nessuno) | NAS o nessuno all'inizio; la CI remota è facoltativa (D-018). Oggi il remoto `origin` è su GitHub | Quando serve |
-| `pgvector` al posto di Qdrant | Un servizio in meno; Qdrant resta la scelta se Mem0 lo richiede | Inizio Fase 2 |
-| Editor della knowledge base | Obsidian all'inizio (l'utente l'ha installato il 2026-10-03) | Fase 2 |
+| ~~oMLX invia telemetria o contenuti fuori dalla macchina?~~ | **Deciso (utente, 2026-10-14):** verifica prima dei dati veri: Claude legge il codice di oMLX installato e cerca ogni chiamata verso internet, poi eventuale prova con un sorvegliante di rete; entro la fine della Fase 1A. Fino ad allora solo dati finti e `--host 127.0.0.1` | |
+| ~~Codex con provider locale invia telemetria o contenuti altrove?~~ | **Deciso (utente, 2026-10-14):** Codex si tratta come cloud; la verifica si fa solo se servirà usarlo con un modello locale su progetti privati | |
+| ~~Codice clienti con NDA~~ | **Deciso (utente, 2026-10-14):** un progetto di un cliente nasce Privato (L2, mai al cloud) finché l'utente non legge il contratto e abbassa lui la label | |
+| ~~Remote git (GitHub privato, NAS, nessuno)~~ | **Deciso (utente, 2026-10-14):** GitHub privato, com'è oggi (`origin`); in git solo codice e documenti, mai `data/`, configurazione o vault | |
+| ~~`pgvector` al posto di Qdrant~~ | **Deciso (utente, 2026-10-14):** pgvector nel PostgreSQL di Arianna; Qdrant solo se Mem0 lo richiede davvero | |
+| ~~Editor della knowledge base~~ | **Deciso (utente, 2026-10-14):** Obsidian sulla cartella `kb/`, accanto alle pagine Pensieri e Conoscenza | |
 | Fonti e persone per il Mentor | Scegli 10-15 nomi e fonti primarie | Fase 5 |
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
 | Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
-| Licenza degli sprite di pixel-agents (JIK-A-4, Metro City) | Uso personale ok; sostituire con asset a licenza chiara prima di condividere la cartella | Fase 3 |
+| ~~Licenza degli sprite di pixel-agents (JIK-A-4, Metro City)~~ | **Chiusa (utente, 2026-10-14):** «li voglio tenere tanto arianna al momento è per uso personale»: gli sprite restano per uso personale, solo in `data/characters/`, mai in git; da togliere prima di condividere la cartella. Richiesta collegata: galleria dei personaggi con pulsante che scarica i PNG di pixel-agents (coda in `HANDOFF.md`) | |
 | ~~Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087)~~ | **Chiusa:** doppione delle conferme singole (`conf-D-077` … `conf-D-087b`), che restano aperte una per una | |
-| Incognito: tetto di durata con la pagina aperta | Oggi un'incognita resta aperta finché una pagina la tiene aperta, anche nascosta (D-136): proposta di Claude, nessun tetto | D-136 è unita (0.25.0): prima di usare le incognite con dati veri |
+| ~~Incognito: tetto di durata con la pagina aperta~~ | **Deciso (utente, 2026-10-14):** nessun tetto; l'incognita resta finché una pagina la tiene aperta | |
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
-| Modelli: schede cloud da rileggere | Frasi tradotte e prezzi API in `config/cloud-models.catalog.yaml` (D-137, I-3 M1); i nomi dei tre modelli di Codex sono verificati dal vivo il 2026-10-07 (D-141) | I-3 è unita (0.26.0): quando vuoi |
-| Modelli da Hugging Face: scelte di D-139 | Applicate le opzioni consigliate di `docs/I-10-huggingface.md` mentre eri via: esce solo il testo cercato o l'id scelto, dal gateway; solo modelli MLX pubblici; catalogo tuo in `config/models.user-catalog.yaml`; sperimentale e senza ruoli finché non lo promuovi | I-10 è unita (0.31.0): per confermare D-139 |
+| ~~Modelli: schede cloud da rileggere~~ | **Deciso (utente, 2026-10-14):** togliere i prezzi API dalle schede (l'utente usa gli abbonamenti); restano frasi e contesto. Lavoro piccolo in coda in `HANDOFF.md` | |
+| ~~Modelli da Hugging Face: scelte di D-139~~ | **Deciso (utente, 2026-10-14):** le regole di D-139 vanno bene così; D-139 accettata | |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -89,62 +89,6 @@ Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (rig
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
 
-### oq-conteggio-di-claude-p-e-codex-exec-negli-abbonam
-
-- Contesto: Quando Arianna fa lavorare Claude Code o Codex da soli (senza che tu scriva nel loro terminale), usa i tuoi abbonamenti. Va capito se questi lavori consumano la stessa quota delle tue chat normali o un credito a parte. Per Claude si è visto che ogni lavoro riporta le finestre di 5 ore e di 7 giorni dell'abbonamento; per Codex i lavori contano nella quota di ChatGPT (circa 60 lavori il 7 ottobre l'hanno portata al 14%). Manca solo un tuo controllo nella pagina dell'account, che Claude non può vedere, per sapere se esiste un credito separato.
-- Opzione consigliata: Controllo io nell'account — guardi la pagina dell'utilizzo prima e dopo un paio di lavori e scrivi qui cosa cambia; Claude regola di conseguenza i limiti di Arianna.
-- Opzione: Consideriamo la quota condivisa — si dà per scontato che consumino la stessa quota (ipotesi prudente) e la riga si chiude.
-- Opzione: Rimandiamo — resta aperta; i lavori continuano come oggi.
-- Esempio: Alle 10:00 l'account segna il 30% della finestra di 5 ore; Arianna fa fare a Claude due piccole modifiche; alle 10:20 segna il 34%. Allora i lavori di Arianna pesano sulla stessa quota e conviene non lanciarne troppi di giorno.
-
-### oq-omlx-invia-telemetria-o-contenuti-fuori-dalla-ma
-
-- Contesto: oMLX è il programma che fa girare sul Mac i modelli locali, quindi vedrà i tuoi dati privati (L2), quelli che non devono mai uscire dal Mac. Il suo manuale non dice se manda statistiche d'uso ("telemetria") o altro su internet. Prima di dargli dati veri va controllato, guardando il codice o il traffico di rete.
-- Opzione consigliata: Verificare prima dei dati veri — si controllano codice e traffico entro la fine della Fase 1A; fino ad allora oMLX vede solo dati finti e risponde solo al Mac stesso.
-- Opzione: Bloccarlo anche col firewall — in più alla verifica gli si impedisce di uscire su internet: più sicuro, ma va sbloccato per scaricare modelli nuovi.
-- Opzione: Fidarsi del manuale — nessun lavoro, ma un'uscita nascosta dei dati privati non verrebbe scoperta.
-- Esempio: Si avvia oMLX, gli si fa riassumere una nota finta e intanto un programma che sorveglia la rete (come Little Snitch) mostra se tenta di collegarsi a indirizzi esterni. Se non ci prova mai, la riga si chiude.
-
-### oq-codex-con-provider-locale-invia-telemetria-o-con
-
-- Contesto: Codex, l'assistente di programmazione di OpenAI, oggi in Arianna lavora solo come esecutore cloud (D-138, D-140): riceve solo dati che possono uscire (L0 e L1). Codex può anche usare un modello locale al posto di quello nel cloud; anche così però potrebbe mandare statistiche o pezzi di testo ai server di OpenAI. Si decide come trattarlo finché non lo si verifica.
-- Opzione consigliata: Trattarlo come cloud, per ora — nessun rischio: Codex riceve solo dati che possono uscire; la verifica si fa quando servirà usarlo con un modello locale.
-- Opzione: Verificarlo subito — si controlla ora il traffico di rete di Codex con un modello locale; se non esce nulla, potrebbe lavorare anche su progetti privati.
-- Opzione: Mai Codex con modelli locali — la questione si chiude: Codex resta solo un esecutore cloud.
-- Esempio: Chiedi a Codex di sistemare un file di un progetto privato. Finché la riga è aperta Arianna lo rifiuta e propone il modello locale; dopo una verifica positiva potrebbe permetterlo.
-
-### oq-codice-clienti-con-nda
-
-- Contesto: Se lavori su codice di clienti con un accordo di riservatezza (NDA), potrebbe essere vietato mandarlo a servizi cloud come Claude o Codex. Finché non hai letto i contratti, la proposta è trattare quel codice come privato (L2): lo vedono solo i modelli che girano sul Mac.
-- Opzione consigliata: Privato finché non leggo i contratti — il codice dei clienti non va mai al cloud; i modelli locali possono lavorarci, più lenti ma sicuri.
-- Opzione: Decido cliente per cliente — per ogni progetto scegli tu il livello dopo aver letto il contratto: più lavoro all'inizio, più libertà dove il contratto lo permette.
-- Opzione: Niente codice dei clienti in Arianna — nessun rischio, ma Arianna non ti aiuta su quei progetti.
-- Esempio: Aggiungi il progetto "gestionale-rossi" (cliente inventato). Se chiedi "fai correggere il bug a Claude", Arianna risponde che il progetto è privato e propone il modello locale; se il contratto lo permette, cambi il livello e Claude può lavorarci.
-
-### oq-remote-git-github-privato-nas-nessuno
-
-- Contesto: Il codice di Arianna è salvato con git, che tiene la storia delle modifiche. Un "remoto" è una copia di quella storia su un'altra macchina, utile come backup. Può stare su GitHub (nel cloud), sul NAS di casa o da nessuna parte. La proposta di partenza era NAS o nessuno; oggi però il remoto origin è su GitHub e i push li fai tu. Si decide quale tenere come regola.
-- Opzione consigliata: NAS o nessuno all'inizio — il NAS fa da copia in casa; cosa fare del remoto su GitHub di oggi è una scelta a parte.
-- Opzione: GitHub privato, com'è oggi — copia nel cloud raggiungibile da ovunque e controlli automatici gratuiti; il codice (non i tuoi dati, che stanno fuori da git) è su un servizio esterno.
-- Opzione: Nessun remoto — zero configurazione, ma se il disco del Mac si rompe la storia del codice si perde.
-- Esempio: A fine giornata un git push copia gli ultimi commit sul NAS. Se il Mac si guasta, sul Mac nuovo scarichi tutto dal NAS e riprendi dal punto esatto.
-
-### oq-pgvector-al-posto-di-qdrant
-
-- Contesto: Per cercare nei tuoi documenti "per significato", non solo per parole uguali, serve un archivio di vettori: numeri che rappresentano il senso dei testi. Si può usare pgvector, un'aggiunta al database PostgreSQL che Arianna ha già, oppure Qdrant, un programma separato. La proposta è pgvector, salvo che la memoria Mem0 (prevista in Fase 2) richieda Qdrant.
-- Opzione consigliata: pgvector nel database che c'è già — un programma in meno da avviare, aggiornare e salvare nel backup; tutto sta in PostgreSQL.
-- Opzione: Qdrant — più veloce su archivi molto grandi e richiesto da alcuni strumenti, ma è un programma in più da far girare.
-- Opzione: Decidere all'inizio della Fase 2 — nessun lavoro ora; si sceglie quando si costruisce la ricerca nei documenti.
-- Esempio: Cerchi "quella nota sul preventivo del tetto" e la nota si intitola "Lavori copertura, offerta ditta Bianchi". La ricerca per significato la trova lo stesso; con pgvector è una semplice interrogazione al database di Arianna.
-
-### oq-editor-della-knowledge-base
-
-- Contesto: La knowledge base è la raccolta delle tue note e documenti che Arianna legge e riordina (la cartella kb/). Serve un programma con cui aprirle e scriverle a mano. La proposta è Obsidian, che hai già installato: lavora su semplici file di testo nella cartella, senza mandarli nel cloud. Oggi Arianna ha anche le sue pagine Pensieri e Conoscenza.
-- Opzione consigliata: Obsidian all'inizio — apri la cartella delle note in Obsidian e le vedi con collegamenti e grafo; Arianna e Obsidian lavorano sugli stessi file.
-- Opzione: Solo le pagine di Arianna — niente programma in più: leggi e scrivi le note da Pensieri e Conoscenza nella chat.
-- Opzione: Un altro editor (es. VS Code) — funziona perché sono file di testo, ma senza le comodità pensate per le note.
-- Esempio: Arianna salva in kb/inbox la nota "Idea: corso di fotografia a novembre". Aprendo Obsidian la trovi già lì, aggiungi due righe e un collegamento a "Hobby", e Arianna alla lettura successiva vede la modifica.
-
 ### oq-fonti-e-persone-per-il-mentor
 
 - Contesto: Il Mentor è l'agente della Fase 5 che ti aiuta a studiare e crescere partendo da autori e fonti di cui ti fidi. Per costruirlo servono 10-15 nomi di persone o fonti "primarie" (libri, corsi, siti originali, non riassunti fatti da altri). Non è urgente: serve in Fase 5.
@@ -161,22 +105,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Scelgo subito un operatore — si può provare prima, ma si paga un numero che per ora non serve.
 - Esempio: Un operatore VoIP con un numero a 1 euro al mese e 2 centesimi al minuto; Arianna ti chiama ogni mattina alle 8 per un minuto di riepilogo: circa 60 centesimi al mese di chiamate.
 
-### oq-licenza-degli-sprite-di-pixel-agents-jik-a-4-met
-
-- Contesto: Gli sprite sono le immagini dei personaggi in pixel. Quelli del progetto pixel-agents (autori JIK-A-4 e Metro City) vanno bene per uso personale, ma non per condividere la cartella di Arianna con altri. Nel frattempo Arianna ha personaggi originali suoi (D-060), quindi il problema potrebbe essere già superato. La consigliata si scosta dalla riga della tabella ("uso personale ok, sostituirli prima di condividere"), scritta prima dei personaggi originali.
-- Opzione consigliata: Chiudila, uso i personaggi originali — Claude verifica che nel repository non sia rimasto nessuno sprite di pixel-agents e barra la riga.
-- Opzione: Tenere gli sprite per uso personale — vanno bene finché la cartella non si condivide; prima di condividerla vanno tolti.
-- Opzione: Comprare un pacchetto a licenza chiara — personaggi diversi ma condivisibili; costa e va scelto lo stile.
-- Esempio: Se un giorno vuoi mostrare Arianna a un amico mandandogli la cartella, con i personaggi originali puoi farlo; con quelli di pixel-agents no, perché la loro licenza non lo permette.
-
-### oq-incognito-tetto-di-durata-con-la-pagina-aperta
-
-- Contesto: Una conversazione in incognito (D-136) si cancella da sola dopo 10 minuti senza nessuna pagina aperta su di lei. Se invece lasci la scheda del browser aperta, anche dietro altre schede, resta viva senza limite, con i testi nel database. La modalità è già unita (0.25.0); si decide se mettere un tetto massimo di durata.
-- Opzione consigliata: Nessun tetto — finché la pagina è aperta l'incognita resta; la chiudi tu con "Termina" o chiudendo la scheda.
-- Opzione: Tetto di 12 ore — dopo 12 ore dall'apertura si chiude comunque, con un avviso un minuto prima; un lavoro lungo del Coder può venire interrotto.
-- Opzione: Tetto di 2 ore — più prudente per la privacy, ma una sessione di lavoro lunga va riaperta.
-- Esempio: Apri un'incognita alle 18:00 per parlare di un preventivo e dimentichi la scheda aperta; senza tetto alle 9:00 del giorno dopo i testi sono ancora nel database, con il tetto di 12 ore spariscono alle 6:00.
-
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 
 - Contesto: Nelle incognite di lavoro Claude Code parte con l'opzione che non salva la sessione sul disco. Non è ancora verificato se scrive comunque altro nella cartella del suo profilo, sotto la tua cartella utente (copie dei file toccati, cronologie, file di debug). Per saperlo serve un lavoro vero e guardare quella cartella prima e dopo; sta fuori dal repository, quindi Claude non può farlo da solo.
@@ -184,31 +112,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Lo controllo io a mano — guardi tu la cartella prima e dopo un'incognita di lavoro e scrivi qui cosa cambia.
 - Opzione: Rimandiamo — le incognite di lavoro si usano solo con dati finti finché non è verificato.
 - Esempio: Prima di un'incognita di lavoro la cartella del profilo ha 1.204 file; dopo ne ha 1.207 (tre file di debug). La scheda di chiusura allora dirà "Claude Code ha lasciato 3 file di debug nel suo profilo".
-
-### oq-modelli-schede-cloud-da-rileggere
-
-- Contesto: La pagina Modelli delle Impostazioni (D-137) mostra una scheda per Sonnet, Opus, Fable e Codex con punti di forza, contesto e prezzi presi dalle pagine dei fornitori il 7 ottobre. Le frasi sono traduzioni di Claude (per esempio "Il più lento" per "Slower") e i prezzi sono quelli delle API a consumo, non la quota dell'abbonamento che usi davvero. I nomi dei tre modelli di Codex (Luna, Sol, Astra) sono stati verificati dal vivo (D-141). Si decide se rileggerle, togliere i prezzi o tenerle così.
-- Opzione consigliata: Le rileggo e correggo — leggi le schede nella pagina Modelli (o il file config/cloud-models.catalog.yaml) e scrivi cosa cambiare.
-- Opzione: Togliere i prezzi API — restano frasi e contesto; niente cifre che possano confondersi con la quota.
-- Opzione: Vanno bene così — la riga si chiude.
-- Esempio: Nella scheda di Opus leggi "4 / 20 $ per milione di token (API)"; se pensi che faccia credere che ogni delega ti costi soldi, scegli di toglierli.
-
-### oq-modelli-da-hugging-face-scelte-di-d-139
-
-- Contesto: Nella pagina Modelli puoi cercare e aggiungere modelli da Hugging Face, il grande archivio pubblico di modelli (I-10, unita in 0.31.0). Claude ha scelto da solo, mentre eri via, le regole più prudenti (D-139): dal Mac esce solo il testo che scrivi nella ricerca o il nome del modello scelto, passando dal gateway e senza account; solo modelli MLX pubblici con pesi .safetensors; il modello va in un catalogo tuo fuori da git (config/models.user-catalog.yaml), sperimentale e senza ruoli finché non lo promuovi tu. Si decide se queste regole restano.
-- Opzione consigliata: Vanno bene così — D-139 diventa accettata con queste regole.
-- Opzione: Anche modelli con login — serve un token di Hugging Face nella cassaforte per i modelli ad accesso controllato (per esempio quelli di Meta): una credenziale in più e una nuova decisione.
-- Opzione: Anche il formato GGUF — si aggiunge un secondo motore (llama.cpp) accanto a oMLX: più modelli fra cui scegliere, ma un programma in più da installare e provare.
-- Opzione: Senza promozione — il modello aggiunto si assegna subito a un ruolo: un passaggio in meno, ma un modello mai provato può diventare il "cervello" di Arianna con un clic.
-- Esempio: Scrivi "qwen3 4bit", scegli mlx-community/Qwen3-4B-4bit (2,3 GB, licenza apache-2.0), premi Aggiungi: compare come qwen3-4b-4bit, da scaricare e senza ruoli; lo scarichi, lo promuovi a Estrattore, poi lo assegni al ruolo e salvi.
-
-### ho-latenza-delle-chiamate-passi-1-2-e-4-fatti-d-070
-
-- Contesto: In una chiamata con Arianna passano 2,3-2,8 secondi fra la fine della tua domanda e la sua risposta. Due accorciamenti decisi da Claude sono applicati ma aspettano la tua conferma: D-072 (meno storia mandata al modello) e D-073 (Arianna considera finito il tuo turno dopo 0,6 secondi di silenzio invece di 0,8). Il rischio di D-073 è che Arianna ti interrompa se fai una pausa per pensare.
-- Opzione consigliata: Provo una chiamata e confermo — dici se il tempo va bene e se ti taglia mentre pensi; Claude conferma D-072 e D-073 o allunga il silenzio.
-- Opzione: Confermo senza prova — D-072 e D-073 diventano accettate; eventuali problemi si vedranno più avanti.
-- Opzione: Continuare ad accorciare — Claude fa anche il passo 3 (primo pezzo di voce più corto) e il 5 (un "Mm, vediamo…" registrato mentre il modello pensa).
-- Esempio: Chiedi "Che tempo fa domani a Torino?", fai una pausa di mezzo secondo a metà frase e guardi se Arianna risponde prima che tu abbia finito.
 
 ### ho-git-push-di-main-avanti-di-origin-main-dai-commi
 
