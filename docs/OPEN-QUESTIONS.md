@@ -20,6 +20,7 @@
 | Fonti e persone per il Mentor | Scegli 10-15 nomi e fonti primarie | Fase 5 |
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
 | Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
+| Rizzo-PII: dove tenere il modello | oMLX legge tutta `data/models` e prende Rizzo per un modello di embedding: tenerlo in una cartella sua (D-113, D-203, ramo `task/guard-rizzo`) | Prima dell'unione di `task/guard-rizzo` |
 | ~~Licenza degli sprite di pixel-agents (JIK-A-4, Metro City)~~ | **Chiusa (utente, 2026-10-14):** «li voglio tenere tanto arianna al momento è per uso personale»: gli sprite restano per uso personale, solo in `data/characters/`, mai in git; da togliere prima di condividere la cartella. Richiesta collegata: galleria dei personaggi con pulsante che scarica i PNG di pixel-agents (coda in `HANDOFF.md`) | |
 | ~~Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087)~~ | **Chiusa:** doppione delle conferme singole (`conf-D-077` … `conf-D-087b`), che restano aperte una per una | |
 | ~~Incognito: tetto di durata con la pagina aperta~~ | **Deciso (utente, 2026-10-14):** nessun tetto; l'incognita resta finché una pagina la tiene aperta | |
@@ -104,6 +105,14 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Solo chiamate via internet — niente numero; Arianna ti chiama dentro la sua app, come oggi: gratis, ma servono connessione e app.
 - Opzione: Scelgo subito un operatore — si può provare prima, ma si paga un numero che per ora non serve.
 - Esempio: Un operatore VoIP con un numero a 1 euro al mese e 2 centesimi al minuto; Arianna ti chiama ogni mattina alle 8 per un minuto di riepilogo: circa 60 centesimi al mese di chiamate.
+
+### oq-rizzo-pii-dove-tenere-il-modello
+
+- Contesto: Rizzo-PII è il secondo controllo dei dati personali (D-113), provato da Claude la mattina del 2026-10-14 con gli stessi buoni numeri della notte. Il suo modello si scarica in `data/models`, come tutti, ma quella cartella la legge anche oMLX, il server dei modelli locali: oMLX ha trovato Rizzo, l'ha preso per un modello di embedding da 1,2 GB e l'ha messo nel suo elenco. Nessuno lo chiama, ma potrebbe comparire nelle scelte dei modelli o essere caricato per errore. Per questo il ramo non è stato unito; il modello scaricato è parcheggiato in `data/guard/rizzo-pii-0.3b.parked` e oMLX non lo vede più.
+- Opzione consigliata: Cartella sua in data/guard — il catalogo dice dove va ogni modello; Rizzo si scarica in `data/guard/models` e oMLX non lo vede mai; circa 1-2 ore, poi unione.
+- Opzione: Lascialo a oMLX, filtralo — resta in `data/models`, oMLX lo elenca e Arianna lo nasconde nelle sue pagine; meno lavoro, ma oMLX potrebbe caricarlo se qualcuno lo chiede.
+- Opzione: Rimanda Rizzo — il ramo resta da parte finché non si decide la tappa 2 (la regola del gateway).
+- Esempio: Apri Impostazioni → Modelli e nel menu dei modelli locali compare «rizzo-pii-0.3b» accanto al 35B: con la scelta consigliata non c'è mai, e il guard lo carica dalla sua cartella.
 
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 
