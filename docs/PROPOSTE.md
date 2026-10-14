@@ -944,7 +944,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 > **Superata in parte da D-107a2 (2026-10-05, risposte dell'utente):** nome, testo libero e specializzazione sono **L1 per dichiarazione dell'utente** (niente campo `label`, niente `personaLabel`; `PERSONA_LABEL` e `personaFits(clearance)` in `packages/policy`), testo libero e nuovo campo `specialization` fino a 500 caratteri, cinque toni (serio, asciutto, equilibrato, caloroso, scherzoso senza tabù), nome di Arianna non modificabile, file non valido che scarta i testi. Dove sotto si legge L2 per default, 250 caratteri o tre toni, vale D-107a2.
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Accettata dall'utente il 2026-10-14 (risposte del 2026-10-05; parte B dopo D-111 B); tappe A1-A3 fatte (D-107a2, D-107f, D-107g, unita come 0.94.0)
 - **Collegate:** D-034 (trifecta e deleghe), D-053/D-055 (orchestratore, delega con brief e declassamento), D-060 (personaggi pixel), D-066/D-070..D-074 (chiamate, latenza, modelli della voce in memoria), D-071 (pagina Impostazioni, sezioni ordinarie e di privacy), D-075 (prompt identico byte per byte e blocchi da 2048 token di oMLX), D-077 (storia ancorata), D-079 (catalogo agency-agents), D-090 (menu "/" della chat), D-094 (scheda `designer`), D-095 (computer dell'agente: il run di uno specialista vi si vede come quello del Coder, nulla da cambiare), D-101 (`task.update` e autonomia delle carte), D-103 (temi), D-106 (ufficio pixel giocabile, in scrittura in parallelo)
 - **Anteprima:** `docs/mockups/chat-multiagente.html` (file locale, dati inventati)
 
