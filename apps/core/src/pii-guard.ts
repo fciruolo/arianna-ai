@@ -49,7 +49,7 @@ export interface PiiGuardOptions {
   development: boolean;
   /** Names of the assistant and of the agents, never taken for a person. */
   names?: () => readonly string[];
-  /** Load of the model (6-11 s measured, D-203). */
+  /** Load of the model: 6-11 s measured (D-203), 30 s and more with the Mac under load. */
   startTimeoutMs?: number;
   /**
    * One request, plus `requestMsPer10k` for every 10 000 characters waiting in
@@ -98,7 +98,7 @@ function batches(texts: readonly string[]): string[][] | undefined {
 }
 
 export function createPiiGuard(options: PiiGuardOptions): PiiGuard {
-  const startTimeoutMs = options.startTimeoutMs ?? 30_000;
+  const startTimeoutMs = options.startTimeoutMs ?? 60_000;
   const requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
   const requestMsPer10k = options.requestMsPer10k ?? 1_000;
   const idleMs = options.idleMs ?? 15 * 60_000;
