@@ -184,6 +184,8 @@ export const ICONS = {
   download: Download,
   print: Printer,
   'view-desktop': Monitor,
+  /** The computer of the Coder's run (D-095). */
+  computer: Monitor,
   'view-tablet': Tablet,
   'view-mobile': Smartphone,
   more: Ellipsis,

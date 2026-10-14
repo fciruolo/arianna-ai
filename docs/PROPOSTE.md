@@ -469,7 +469,7 @@ Un "Claude Design" locale è **il Coder già esistente con un modo di lavorare e
 ## D-095 — Computer dell'agente (P10): spazio isolato per run, visibile dalla chat
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); tappa 1 in costruzione. Era: Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); tappa 1 applicata (2026-10-14, ramo `task/computer-agente`), da provare; tappe 2 e 3 da fare. Era: Proposta, da discutere
 - **Collegate:** P10 e P8 di `OPENDOTS.md`, D-050 (sandbox), D-056/D-058 (cartella vera), D-063, D-082/D-083 (file e attività), P7 (lettore di pagine pubbliche), riga 2 di "Idee dalla ricerca" in `SPEC.md` (sandbox a microVM)
 
 ### Contesto

@@ -2,6 +2,18 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Computer del Coder: icona dello schermo nell'intestazione della conversazione che apre un pannello a destra, in sola lettura, con le schede Terminale, File e Attività del lavoro (D-095, tappa 1).
+- Terminale del lavoro in diretta: comandi e uscite del Coder su Claude, tagliati a 200 righe o 16 KiB, con le righe che contengono un valore del vault nascoste; mai salvati, spariscono con una ricarica della pagina (D-095).
+- Scheda File: durante il lavoro i percorsi dei file che il Coder cambia, a lavoro finito i file della delega da aprire e leggere (D-095).
+
+### Sicurezza
+
+- Il terminale arriva solo alla chat web, per progetti fino a L1 e solo se la clearance del lavoro (che sta dentro quella della conversazione) raggiunge l'etichetta del progetto; i valori del vault si nascondono prima del taglio; mai a Telegram né nel database (D-095).
+
 ## [0.92.0] - 2026-10-14
 
 ### Aggiunto

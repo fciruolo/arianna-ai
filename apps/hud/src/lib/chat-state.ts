@@ -1,4 +1,4 @@
-import type { Activity, Delta, EditPiece, EditTool, LiveEditError, Message, SavedActivity } from './types.ts';
+import type { Activity, Delta, EditPiece, EditTool, LiveEditError, Message, SavedActivity, TerminalPiece } from './types.ts';
 
 /**
  * The open conversation: stored messages plus the answers being written.
@@ -22,10 +22,66 @@ export interface ChatState {
   activity: Record<string, Activity[]>;
   /** The Coder's live changes to files (D-117), by task id, oldest first: in memory only. */
   edits: Record<string, LiveEdit[]>;
+  /** The paths the Coder's run changed so far (D-095, the "File" tab), by task id: paths only, in memory only. */
+  touched: Record<string, string[]>;
+  /** The terminal of the Coder's run (D-095), by task id, oldest first: in memory only, never stored. */
+  terminal: Record<string, TerminalCall[]>;
 }
 
 export function emptyChat(conversationId: string): ChatState {
-  return { conversationId, messages: [], streaming: [], activity: {}, edits: {} };
+  return { conversationId, messages: [], streaming: [], activity: {}, edits: {}, touched: {}, terminal: {} };
+}
+
+/** A command or its output, as its pieces arrive. */
+export interface TerminalText {
+  total: number;
+  /** Pieces arrived so far, by sequence number; emptied once `text` is set. */
+  pieces: Record<number, string>;
+  /** Set once every piece arrived. */
+  text?: string;
+  truncated: boolean;
+  hidden: number;
+  refused: boolean;
+  error: boolean;
+}
+
+/** One call to Bash of a run (D-095): its command and, once it ended, its output. */
+export interface TerminalCall {
+  callId: string;
+  step: number;
+  command?: TerminalText;
+  output?: TerminalText;
+}
+
+/** Calls kept per task: older ones scroll away. */
+const MAX_TERMINAL_CALLS = 50;
+/** More pieces than the core ever sends for one part (MAX_TERMINAL_PIECES of apps/core/src/live-terminal.ts). */
+const MAX_TERMINAL_PIECES = 64;
+/** Paths kept per task in the "File" tab while the run works. */
+const MAX_TOUCHED = 200;
+
+/** Adds a piece of the terminal of a task in this conversation; a part appears once every piece is there. */
+export function applyTerminal(state: ChatState, piece: TerminalPiece): ChatState {
+  if (piece.conversationId !== state.conversationId || piece.total > MAX_TERMINAL_PIECES) return state;
+  const list = state.terminal[piece.taskId] ?? [];
+  const call = list.find((item) => item.callId === piece.callId) ?? { callId: piece.callId, step: piece.step };
+  const current: TerminalText = call[piece.part] ?? {
+    total: piece.total,
+    pieces: {},
+    truncated: piece.truncated,
+    hidden: piece.hidden,
+    refused: piece.refused === true,
+    error: piece.error === true,
+  };
+  if (current.text !== undefined || piece.total !== current.total || piece.seq in current.pieces) return state;
+  const pieces = { ...current.pieces, [piece.seq]: piece.text };
+  let next: TerminalText = { ...current, pieces };
+  if (Object.keys(pieces).length === current.total) {
+    next = { ...current, pieces: {}, text: Array.from({ length: current.total }, (_, seq) => pieces[seq] ?? '').join('') };
+  }
+  const updated: TerminalCall = { ...call, [piece.part]: next };
+  const calls = list.some((item) => item.callId === piece.callId) ? list.map((item) => (item.callId === piece.callId ? updated : item)) : [...list, updated];
+  return { ...state, terminal: { ...state.terminal, [piece.taskId]: calls.slice(-MAX_TERMINAL_CALLS) } };
 }
 
 /** A row of a live change: `gap` stands between two hunks or two parts of a change. */
@@ -91,7 +147,10 @@ export function applyEdit(state: ChatState, piece: EditPiece): ChatState {
     next = { ...current, pieces: {}, rows: current.error === undefined ? liveEditRows(text) : [] };
   }
   const edits = list.some((edit) => edit.editId === piece.editId) ? list.map((edit) => (edit.editId === piece.editId ? next : edit)) : [...list, next];
-  return { ...state, edits: { ...state.edits, [piece.taskId]: edits.slice(-MAX_EDITS) } };
+  // The path, for the "File" tab of the Computer panel (D-095): paths only, never the contents.
+  const paths = state.touched[piece.taskId] ?? [];
+  const touched = paths.includes(piece.path) || paths.length >= MAX_TOUCHED ? state.touched : { ...state.touched, [piece.taskId]: [...paths, piece.path] };
+  return { ...state, edits: { ...state.edits, [piece.taskId]: edits.slice(-MAX_EDITS) }, touched };
 }
 
 /** The complete live changes the card of a task shows: only while it is queued or running, as its lines. */

@@ -36,6 +36,8 @@ Il controllo sul solo prompt non basta: un esecutore cloud apre i file da sé e 
 | Canali esterni (telefono, Telegram se torna, più avanti mail) | Arianna scrive un importo o un nome su Telegram | Stesso `gatewayCheck`, destinazione `channel` |
 | Ricerche web da agenti locali | La query contiene dati L2 | Una sessione con `effective_label ≥ L2` non ha strumenti web |
 
+**Terminale del Coder nella chat (D-095, tappa 1):** comandi `Bash` e uscite di un run di `claude -p` vanno solo alla chat web (notifica `terminal` su `pg_notify`), **mai salvati** nel database né mandati a un canale esterno (Telegram prende solo gli eventi); tagliati a 200 righe o 16 KiB per comando, con le righe che contengono un valore del vault già rivelato sostituite (un valore spezzato fra righe nasconde tutto il testo); solo per progetti fino a L1, con l'etichetta del progetto (o del brief, se più alta), e solo se la clearance del task, che sta dentro quella della conversazione, la raggiunge. I segreti di un `.env` del progetto non sono noti al vault e restano visibili a schermo: rischio accettato dall'utente con D-095.
+
 ## Conversazioni: lavoro e privato
 
 Il nodo più delicato è l'orchestratore: è locale, legge L2 e scrive i brief per gli agenti cloud. Senza una regola, ogni brief sarebbe contaminato (regola 8) oppure porterebbe fuori dati privati.

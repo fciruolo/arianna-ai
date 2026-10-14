@@ -1,5 +1,5 @@
 import { parseIncognitoFrame, type IncognitoSignal } from './incognito.ts';
-import type { Activity, ActivityKind, Delta, EditPiece, EditTool, LiveEvent } from './types.ts';
+import type { Activity, ActivityKind, Delta, EditPiece, EditTool, LiveEvent, TerminalPiece } from './types.ts';
 
 /** What the core's WebSocket sends (apps/core/src/live.ts and server/http.ts). */
 export type ServerMessage =
@@ -7,6 +7,8 @@ export type ServerMessage =
   | ({ type: 'delta' } & Delta)
   | ({ type: 'activity'; incognito?: true } & Activity)
   | ({ type: 'edit' } & EditPiece)
+  /** A piece of the terminal of a run (D-095): live only. */
+  | ({ type: 'terminal' } & TerminalPiece)
   /** A notification (I-1): a kind and a conversation, never text; the page decides whether to show it. */
   | { type: 'notice'; kind: NoticeKind; conversationId: string | null; trial?: true; helper?: true }
   /** An incognito conversation closed, or closes in a minute (D-136): its id and the cause, never text. */
@@ -54,6 +56,46 @@ function parseEdit(value: Record<string, unknown>): ({ type: 'edit' } & EditPiec
   return { type: 'edit', editId, conversationId, taskId, step, path, tool: known, label, added, removed, ...(error === undefined ? {} : { error }), seq, total, text };
 }
 
+/** A piece of the terminal of a run (D-095): only L0 and L1, a known part, a piece within its total. */
+function parseTerminal(value: Record<string, unknown>): ({ type: 'terminal' } & TerminalPiece) | undefined {
+  const { callId, conversationId, taskId, step, part, label, truncated, hidden, refused, error, seq, total, text } = value;
+  if (
+    typeof callId !== 'string' ||
+    callId === '' ||
+    typeof conversationId !== 'string' ||
+    typeof taskId !== 'string' ||
+    !count(step) ||
+    (part !== 'command' && part !== 'output') ||
+    (label !== 'L0' && label !== 'L1') ||
+    typeof truncated !== 'boolean' ||
+    !count(hidden) ||
+    (refused !== undefined && refused !== true) ||
+    (error !== undefined && error !== true) ||
+    !count(seq) ||
+    !count(total) ||
+    seq >= total ||
+    typeof text !== 'string'
+  ) {
+    return undefined;
+  }
+  return {
+    type: 'terminal',
+    callId,
+    conversationId,
+    taskId,
+    step,
+    part,
+    label,
+    truncated,
+    hidden,
+    ...(refused === true ? { refused } : {}),
+    ...(error === true ? { error } : {}),
+    seq,
+    total,
+    text,
+  };
+}
+
 /** Parses one frame; anything malformed is dropped rather than trusted. */
 export function parseServerMessage(raw: string): ServerMessage | undefined {
   let value: unknown;
@@ -99,6 +141,8 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
     }
     case 'edit':
       return parseEdit(value);
+    case 'terminal':
+      return parseTerminal(value);
     case 'conversation.incognito-closed':
     case 'conversation.incognito-closing':
       return parseIncognitoFrame(value);

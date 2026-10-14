@@ -38,6 +38,7 @@ import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Dir
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import ComputerPanel from './ComputerPanel.vue';
 import CreditLine from './CreditLine.vue';
 import ImClosingCard from './ImClosingCard.vue';
 import Icon from './Icon.vue';
@@ -386,6 +387,13 @@ async function readClosings(): Promise<void> {
 }
 watch(() => [props.conversation.secretary === true, props.chat.conversationId, props.chat.messages.length], () => void readClosings(), { immediate: true });
 
+/** The computer of the Coder's run (D-095): a read-only panel at the right, closed when the conversation changes. */
+const computerOpen = ref(false);
+watch(
+  () => props.chat.conversationId,
+  () => (computerOpen.value = false),
+);
+
 /** The Coder's run while it works for this conversation: shown in the persona header. */
 const coderRun = computed(() => props.status?.agents.find((agent) => agent.id === 'coder')?.run ?? null);
 
@@ -711,6 +719,15 @@ onBeforeUnmount(() => clearInterval(clock));
               CODER <b class="font-medium text-accent">al lavoro · {{ EXECUTOR_TEXT[coderRun.executor] ?? coderRun.executor }}</b>
             </div>
           </div>
+          <button
+            type="button"
+            class="grid size-9 shrink-0 place-items-center self-start rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            :class="[computerOpen ? 'bg-surface-2 text-ink' : '', 'ml-auto sm:ml-0']"
+            :aria-pressed="computerOpen"
+            aria-label="Computer del Coder"
+            title="Computer del Coder: terminale, file e attività del lavoro, in sola lettura"
+            @click="computerOpen = !computerOpen"
+          ><Icon name="computer" :size="18" /></button>
         </section>
 
         <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
@@ -1047,6 +1064,7 @@ onBeforeUnmount(() => clearInterval(clock));
         </span>
       </p>
     </div>
+    <ComputerPanel v-if="computerOpen" :chat="chat" :tasks="tasks" :credits="credits" :activity-counts="activityCounts" @close="computerOpen = false" />
   </section>
 </template>
 

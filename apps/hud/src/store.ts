@@ -3,7 +3,7 @@ import { computed, ref, shallowRef, watch } from 'vue';
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
-import { applyActivity, applyDelta, applyEdit, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
@@ -985,6 +985,11 @@ export function createChatStore() {
     if (message.type === 'edit') {
       // A live change of the Coder (D-117): kept in memory for the activity card only.
       if (chat.value !== null) chat.value = applyEdit(chat.value, message);
+      return;
+    }
+    if (message.type === 'terminal') {
+      // The terminal of the Coder's run (D-095): in memory for the Computer panel only, gone with the page.
+      if (chat.value !== null) chat.value = applyTerminal(chat.value, message);
       return;
     }
     const { event } = message;

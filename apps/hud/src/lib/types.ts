@@ -230,6 +230,29 @@ export interface EditPiece {
   text: string;
 }
 
+/**
+ * A piece of the terminal of a run of the Coder (D-095, apps/core/src/live-terminal.ts):
+ * a command run with Bash, or what it printed, already cut and with the values
+ * of the vault hidden; the pieces of one part join by `seq`. Never stored.
+ */
+export interface TerminalPiece {
+  callId: string;
+  conversationId: string;
+  taskId: string;
+  step: number;
+  part: 'command' | 'output';
+  label: 'L0' | 'L1';
+  truncated: boolean;
+  /** Lines replaced because they held a value of the vault. */
+  hidden: number;
+  /** A value of the vault could not be cut out: nothing is shown. */
+  refused?: true;
+  error?: true;
+  seq: number;
+  total: number;
+  text: string;
+}
+
 /** A line a task saved (D-083), from GET /api/tasks/:id/activities; "thinking" is never saved. */
 export interface SavedActivity {
   id: string;
