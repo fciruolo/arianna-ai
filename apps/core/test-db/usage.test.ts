@@ -18,7 +18,7 @@ const MARK = 'segretofinto';
 test('the report counts the work of the period per model, agent and kind, and holds no text', async () => {
   const { sql, owner } = db();
   const conversation = await createConversation(sql, { mode: 'work' });
-  const chat = await createTask(sql, { title: `Domanda ${MARK}`, goal: `Obiettivo ${MARK}`, conversationId: conversation.id });
+  const chat = await createTask(sql, { title: `Domanda ${MARK}`, goal: `Obiettivo ${MARK}`, conversationId: conversation.id, label: 'L1', clearance: 'L1' });
   const card = await createTask(sql, { title: `Scheda ${MARK}` });
 
   const local = await startRun(sql, { taskId: chat.id, step: 1, agent: 'arianna', executor: 'local', model: 'local-large', locality: 'local', effectiveLabel: 'L0' });
