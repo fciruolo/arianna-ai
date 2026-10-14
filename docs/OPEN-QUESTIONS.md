@@ -20,7 +20,7 @@
 | Fonti e persone per il Mentor | Scegli 10-15 nomi e fonti primarie | Fase 5 |
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
 | Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
-| Rizzo-PII: dove tenere il modello | oMLX legge tutta `data/models` e prende Rizzo per un modello di embedding: tenerlo in una cartella sua (D-113, D-203, ramo `task/guard-rizzo`) | Prima dell'unione di `task/guard-rizzo` |
+| ~~Rizzo-PII: dove tenere il modello~~ | **Deciso (utente, 2026-10-14):** cartella sua `data/guard/models`, indicata dal catalogo; oMLX non la vede (D-203, ramo `task/guard-rizzo`) | |
 | ~~Licenza degli sprite di pixel-agents (JIK-A-4, Metro City)~~ | **Chiusa (utente, 2026-10-14):** «li voglio tenere tanto arianna al momento è per uso personale»: gli sprite restano per uso personale, solo in `data/characters/`, mai in git; da togliere prima di condividere la cartella. Richiesta collegata: galleria dei personaggi con pulsante che scarica i PNG di pixel-agents (coda in `HANDOFF.md`) | |
 | ~~Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087)~~ | **Chiusa:** doppione delle conferme singole (`conf-D-077` … `conf-D-087b`), che restano aperte una per una | |
 | ~~Incognito: tetto di durata con la pagina aperta~~ | **Deciso (utente, 2026-10-14):** nessun tetto; l'incognita resta finché una pagina la tiene aperta | |
@@ -57,32 +57,32 @@ Testo, alternative e raccomandazioni in `docs/PROPOSTE.md`; qui solo l'elenco.
 | D-080 | 7. Video di piattaforme solo come link, titolo e riassunto? | Chiusa (2026-10-13): no, solo audio scaricato con approvazione per link, trascritto e cancellato (SPEC aggiornata) |
 | D-088 Pulsante "Aggiorna" | Come si porta il codice nuovo dallo sviluppo all'installazione? | Chiusa: accettata il 2026-10-13 con le risposte consigliate (riga D-088 di `DECISIONS.md`) |
 
-## Idee dalla ricerca — da decidere
+## Idee dalla ricerca — decise
 
 Fasi e ore come in `SPEC.md`, sezione "Idee dalla ricerca". Le ore non sono incluse nelle stime, salvo dove indicato. La colonna "Raccomandazione" è mia: la scelta resta tua.
 
-| # | Idea | Fase | Ore | Raccomandazione |
+| # | Idea | Fase | Ore | Raccomandazione e scelta |
 | --- | --- | --- | --- | --- |
-| 1 | Pattern Dual LLM / CaMeL | 2 | 12-20 | **Sì**, prima che il Segretario legga posta vera |
-| 2 | Sandbox per gli agenti che eseguono codice | 1 | 6-10 | **Sì, già nel piano** (task 1.6, ore incluse): è parte del confinamento |
-| 3 | DBOS per esecuzione durevole | 0-1 | 6-10 | **No per ora**: coda propria (D-004); si rivaluta a fine Fase 1 |
-| 4 | Langfuse / Promptfoo / Inspect | 0-1 | 8-14 | **No per ora**: runner proprio e tabelle `runs` e `router_decisions` bastano; Langfuse si rivaluta con l'HUD |
-| 5 | Funzioni native di Claude Code | 1 | 6-12 | **Rinviare** alla Fase 3: cambiano spesso e legano a un solo esecutore |
-| 6 | Advisor tool nel router | 1 | 3-6 | **Rinviare**: è il piano B se il test 1.4 fallisce |
-| 7 | Schede e procedure nel formato Skills più MCP | 1 | 4-8 | **Valutare dentro 1.9** senza ore in più; adozione piena in Fase 2 |
-| 8 | Hermes Agent come harness | 1 | 10-20 | **No**: harness proprio sottile (task 1.10); la prova costerebbe più dell'harness |
-| 9 | Scheduler deterministico | 1 | 4-8 | **Sì, quasi gratis**: `jobs.run_at` c'è già (D-004); le ricorrenze arrivano in Fase 2 |
-| 10 | Fatture dall'XML FatturaPA | 2 | 8-14 | **Sì, per prima** (D-022): sostituisce l'OCR per le fatture |
-| 11 | OCR e parsing locali | 2 | 10-18 | **Sì, dopo la 10**, solo per carta e scansioni; un solo strumento scelto con gli eval |
-| 12 | Open banking PSD2 | 2+ | 15-30 | **No in v1**: i dati passano da un terzo |
-| 13 | Memoria temporale con Graphiti | 5 | 20-35 | **No** finché una misura non lo chiede |
-| 14 | Stack vocale locale pronto | 4 | 8-16 | Decidere all'inizio della Fase 4 (sostituisce lavoro) |
-| 15 | Home Assistant via MCP | 3+ | 6-12 | Facoltativa, dopo la Fase 3 |
-| 16 | Aggiornare e confrontare i modelli locali | 1 | 8-14 | **In parte già nel piano**: il test 1.4 è lo strumento; confronto completo solo se il Qwen attuale non passa |
-| 17 | Ripasso FSRS con libreria | 5 | 8-15 | **Sì** (sostituisce lavoro) |
-| 18 | Wiki compilato dal modello per il Mentor | 5 | 8-14 | Decidere in Fase 5 |
+| 1 | Pattern Dual LLM / CaMeL | 2 | 12-20 | Scelta (utente, 2026-10-14): **sì, tutto in locale**: uno script senza modello scarica le email via IMAP, un modello locale in quarantena compila solo una scheda fissa, l'orchestratore locale vede solo la scheda; le email non escono mai dal sistema per nessun motivo e vanno anche nella conoscenza (D-204) |
+| 2 | Sandbox per gli agenti che eseguono codice | 1 | 6-10 | Fatto: confinamento degli esecutori e sandbox del Coder (task 1.6, D-056, D-095) |
+| 3 | DBOS per esecuzione durevole | 0-1 | 6-10 | Scelta (utente, 2026-10-14): **no per ora**, si rivaluta a fine Fase 1 |
+| 4 | Langfuse / Promptfoo / Inspect | 0-1 | 8-14 | Scelta (utente, 2026-10-14): **no per ora** |
+| 5 | Funzioni native di Claude Code | 1 | 6-12 | Scelta (utente, 2026-10-14): **rinviata alla Fase 3** |
+| 6 | Advisor tool nel router | 1 | 3-6 | Scelta (utente, 2026-10-14): **sì, ora**: il router chiede a Claude un parere con una domanda astratta passata dal gateway quando non è sicuro (lavoro in coda, D-204) |
+| 7 | Schede e procedure nel formato Skills più MCP | 1 | 4-8 | Scelta (utente, 2026-10-14): **sì, piena in Fase 2**: le procedure nuove nascono come skill |
+| 8 | Hermes Agent come harness | 1 | 10-20 | Scelta (utente, 2026-10-14): **no** |
+| 9 | Scheduler deterministico | 1 | 4-8 | Scelta (utente, 2026-10-14): **sì**, ripetizioni in Fase 2 con il calendario delle routine (D-110) |
+| 10 | Fatture dall'XML FatturaPA | 2 | 8-14 | Scelta (utente, 2026-10-14): **sì, per prima** in Fase 2 |
+| 11 | OCR e parsing locali | 2 | 10-18 | Scelta (utente, 2026-10-14): **sì, dopo la 10**, tutto locale |
+| 12 | Open banking PSD2 | 2+ | 15-30 | Scelta (utente, 2026-10-14): **no in v1**: estratto conto CSV scaricato dall'utente |
+| 13 | Memoria temporale con Graphiti | 5 | 20-35 | Scelta (utente, 2026-10-14): **soluzione definitiva e d'avanguardia**: prima della memoria della Fase 2 un confronto misurato (Mem0 col grafo, Graphiti, altre memorie a grafo o temporali) sugli stessi eval, domande sulle date comprese; si adotta la migliore al posto di Mem0 scelto a priori (D-204) |
+| 14 | Stack vocale locale pronto | 4 | 8-16 | Fatto: voce locale con Parakeet e Qwen3-TTS (D-066, D-067) |
+| 15 | Home Assistant via MCP | 3+ | 6-12 | Scelta (utente, 2026-10-14): **dopo la Fase 3**; l'utente usa soprattutto Alexa: da guardare anche come comandare i dispositivi di Alexa |
+| 16 | Aggiornare e confrontare i modelli locali | 1 | 8-14 | Fatto: Confronto dei modelli (D-199) e orchestratore 35B (D-201) |
+| 17 | Ripasso FSRS con libreria | 5 | 8-15 | Scelta (utente, 2026-10-14): **sì**, in Fase 5 con il Mentor |
+| 18 | Wiki compilato dal modello per il Mentor | 5 | 8-14 | Scelta (utente, 2026-10-14): **decidere in Fase 5**, con le fonti del Mentor |
 
-Scelta dell'utente: **non ancora fatta**.
+Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzioni; le idee 2, 14 e 16 erano già fatte (D-204).
 
 ## Spiegazioni delle domande
 
@@ -106,14 +106,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Scelgo subito un operatore — si può provare prima, ma si paga un numero che per ora non serve.
 - Esempio: Un operatore VoIP con un numero a 1 euro al mese e 2 centesimi al minuto; Arianna ti chiama ogni mattina alle 8 per un minuto di riepilogo: circa 60 centesimi al mese di chiamate.
 
-### oq-rizzo-pii-dove-tenere-il-modello
-
-- Contesto: Rizzo-PII è il secondo controllo dei dati personali (D-113), provato da Claude la mattina del 2026-10-14 con gli stessi buoni numeri della notte. Il suo modello si scarica in `data/models`, come tutti, ma quella cartella la legge anche oMLX, il server dei modelli locali: oMLX ha trovato Rizzo, l'ha preso per un modello di embedding da 1,2 GB e l'ha messo nel suo elenco. Nessuno lo chiama, ma potrebbe comparire nelle scelte dei modelli o essere caricato per errore. Per questo il ramo non è stato unito; il modello scaricato è parcheggiato in `data/guard/rizzo-pii-0.3b.parked` e oMLX non lo vede più.
-- Opzione consigliata: Cartella sua in data/guard — il catalogo dice dove va ogni modello; Rizzo si scarica in `data/guard/models` e oMLX non lo vede mai; circa 1-2 ore, poi unione.
-- Opzione: Lascialo a oMLX, filtralo — resta in `data/models`, oMLX lo elenca e Arianna lo nasconde nelle sue pagine; meno lavoro, ma oMLX potrebbe caricarlo se qualcuno lo chiede.
-- Opzione: Rimanda Rizzo — il ramo resta da parte finché non si decide la tappa 2 (la regola del gateway).
-- Esempio: Apri Impostazioni → Modelli e nel menu dei modelli locali compare «rizzo-pii-0.3b» accanto al 35B: con la scelta consigliata non c'è mai, e il guard lo carica dalla sua cartella.
-
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 
 - Contesto: Nelle incognite di lavoro Claude Code parte con l'opzione che non salva la sessione sul disco. Non è ancora verificato se scrive comunque altro nella cartella del suo profilo, sotto la tua cartella utente (copie dei file toccati, cronologie, file di debug). Per saperlo serve un lavoro vero e guardare quella cartella prima e dopo; sta fuori dal repository, quindi Claude non può farlo da solo.
@@ -121,14 +113,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Lo controllo io a mano — guardi tu la cartella prima e dopo un'incognita di lavoro e scrivi qui cosa cambia.
 - Opzione: Rimandiamo — le incognite di lavoro si usano solo con dati finti finché non è verificato.
 - Esempio: Prima di un'incognita di lavoro la cartella del profilo ha 1.204 file; dopo ne ha 1.207 (tre file di debug). La scheda di chiusura allora dirà "Claude Code ha lasciato 3 file di debug nel suo profilo".
-
-### ho-permessi-in-claude-settings-json
-
-- Contesto: Volevi che Claude lavorasse senza chiederti conferme a ogni modifica. Claude non può cambiare da solo i propri permessi (sarebbe un'auto-concessione), quindi il file .claude/settings.json lo modifichi tu. Oggi il file non contiene ancora la modalità proposta.
-- Opzione consigliata: Incollo la proposta di Claude — modifiche ai file senza conferma; installare pacchetti e cambiare la configurazione globale di git chiedono sempre; il controllo dei percorsi blocca anche quando va in errore.
-- Opzione: Lascio com'è — Claude continua a chiedere conferma per molte azioni: più lento ma più controllato.
-- Opzione: Voglio una versione diversa — scrivi cosa permettere o vietare; Claude prepara il testo da incollare.
-- Esempio: Con la proposta, Claude modifica apps/hud/src/style.css senza chiedere, ma per "pnpm add lodash" compare comunque la tua conferma.
 
 ### ho-togliere-a-mano-data-scratch-review-d065
 
@@ -165,12 +149,4 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione consigliata: Più avanti, a fine Fase 1A — la riga resta come promemoria.
 - Opzione: Subito, come eccezione — un'eccezione alla regola delle fasi: la generi con i passi di SECURITY.md (sezione Vault) e la conservi anche fuori dal Mac.
 - Esempio: Generi la chiave, lanci pnpm vault:init con la parte pubblica che inizia con "age1", e la parte privata la stampi e la metti in un cassetto.
-
-### ho-scelta-delle-18-idee
-
-- Contesto: Dalla ricerca iniziale sono uscite 18 idee (per esempio leggere le fatture dal file XML, un'esecuzione più robusta dei lavori, una memoria che tiene conto del tempo). Nella tabella "Idee dalla ricerca" di OPEN-QUESTIONS c'è la raccomandazione di Claude per ciascuna; manca la tua scelta.
-- Opzione consigliata: Accetto le raccomandazioni di Claude — i "sì" entrano nel piano dei lavori, i "no" e i "rinviare" restano nella tabella come scelte fatte.
-- Opzione: Le scelgo una per una — Claude te le presenta in conversazione con una domanda ciascuna.
-- Opzione: Rinvio — restano tutte da decidere.
-- Esempio: Idea 10, "Fatture dall'XML FatturaPA": raccomandata sì, perché leggere il file XML della fattura elettronica è più affidabile che leggere una scansione.
 

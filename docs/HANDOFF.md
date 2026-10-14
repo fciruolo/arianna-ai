@@ -2,7 +2,11 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-14, 07:05 circa.
+Aggiornato: 2026-10-14, 09:45 circa.
+
+**2026-10-14, 09:45 circa — mattina, utente sveglio.** `main` 0.95.0 è su GitHub, **i tag no** (sul remoto nessun tag): l'utente lancia `! git push origin main --follow-tags`. Risposte dell'utente: Rizzo-PII in una cartella sua `data/guard/models` indicata dal catalogo (subagente sul ramo `task/guard-rizzo`, poi prova da terminale e unione); ritocchi tutti sì (subagente sul ramo `task/ritocchi-prove`: rifiuto della personalità in italiano, pulsante «Computer» fermo, raggruppamento delle novità con numeri al posto degli sha; la copia `arianna.toml.before-guard` è già tolta); Mentor alla Fase 5; operatore telefonico in Fase 4; permessi lasciati come sono (push all'utente); **18 idee decise una per una (D-204)**: lavori nuovi in coda **advisor nel router** (idea 6, subito) e **confronto misurato delle memorie** prima del task memoria della Fase 2 (idea 13: «soluzioni definitive e d'avanguardia»); posta del Segretario solo in locale con lo schema Dual LLM (idea 1). Quota della settimana al 53% alle 09:24, proiezione circa 100%: pieno sforzo, due subagenti.
+
+**Coda dei lavori, in ordine (2026-10-14 mattina):** 1 Rizzo-PII cartella sua e unione (D-203); 2 ritocchi delle prove (patch); 3 galleria dei personaggi nella pagina Agenti con download dei PNG di pixel-agents; 4 togliere i prezzi API dalle schede cloud (D-137); 5 verifica nel codice di oMLX delle chiamate verso internet; 6 advisor nel router (D-204); 7 D-113 tappa 2, regola del gateway con Rizzo (uscite ferme se il guard non risponde), poi via veloce B1; 8 temi D-103 (serie, poi Base e feste); 9 D-111 tappa B («+ Nuovo»); 10 D-107 parte B (chat con più agenti); 11 profilo nel prompt (D-114 B-D); 12 idee di OpenWork in coda (D-093: «Ferma» e coda dei messaggi, Cruscotto, vista affiancata, «Chiedi a lato», allegati locali, «Consumi», «Cosa è cambiato», campo di scrittura); 13 D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie va prima del task memoria della Fase 2.
 
 **2026-10-14, 02:40 circa — notte in autonomia (l'utente dorme: «non chiedermi niente… se hai qualche dubbio decidi tu e poi domani mi riproponi le scelte»).** Claude porta a termine i sette rami in corso (`task/su-di-te`, `task/omlx-ricarica`, `task/guard-rizzo`, `task/personalita-prompt`, `task/computer-agente`, `task/openwork-idee`, `task/progetti-seguiti`): revisore, correzioni, `pnpm check` (e `test:db` dove serve); **nessuna unione su `main` senza la prova dell'utente**. Le scelte prese da Claude durante la notte vanno nella sezione «Scelte della notte da riproporre» qui sotto, da chiedere all'utente una alla volta domattina. Lavori in coda avviati solo se la proiezione della quota settimanale resta sotto il 100% (alle 02:40 la settimana era al 50%, proiezione circa 100%). Domattina: le altre domande aperte (Mentor, operatore telefonico, 18 idee, permessi), poi le prove una alla volta.
 
@@ -79,13 +83,11 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 | Cosa | Note |
 | --- | --- |
-| Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
 | Togliere a mano `data/scratch/review-d065/` | Sonde del `reviewer`, fuori da git |
 | Prova dal vivo di D-058 fuori da Arianna | Comandi nei "Prossimi passi" (progetto finto creato dall'utente, wizard al passo 4, landing page chiesta al Coder in chat: consuma chiamate vere) |
 | Su un'altra macchina: `pnpm arianna:init --reconfigure` | Un `config/arianna.toml` con `[cloud] allowlist` non vuota ora è rifiutato (D-058): va riscritto con i `[[project]]`. Su questa macchina l'ha convertito Claude |
 | Password vere del database | Solo per l'uso vero, dopo il criterio della Fase 1A: passi in `SECURITY.md`, sezione Servizi locali e database (`\password` di psql, poi `pnpm db:migrate` e `pnpm arianna:doctor`) |
 | Chiave age vera | D-042 confermata e binari provati. Per l'uso vero (solo dopo il criterio della Fase 1A) la chiave age la genera l'utente, con i passi in `SECURITY.md`, sezione Vault |
-| Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 
 ## Modo di lavorare concordato
 

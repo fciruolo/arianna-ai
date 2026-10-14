@@ -38,7 +38,7 @@ Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 137-208 ore (8
 
 ## Epic per fase (ore)
 
-**Fase 2 (64-96), in ordine di valore:** fatture da XML FatturaPA e scadenziario in Postgres, poi OCR per la carta 14-20 · cardwall backend e UI 12-18 · archivio e ingestione 8-12 (in parte anticipati: cattura in `kb/inbox/` D-080, riordino col modello locale D-086; mancano archivio cifrato, link, PDF, vocali e video) · KB markdown con frontmatter 6-9 · ricerca ibrida Qdrant 10-15 · memoria agenti Mem0 6-9 · agenti Archivista/Segretario 4-7 · export/import cifrati 4-6.
+**Fase 2 (64-96), in ordine di valore:** fatture da XML FatturaPA e scadenziario in Postgres, poi OCR per la carta 14-20 · cardwall backend e UI 12-18 · archivio e ingestione 8-12 (in parte anticipati: cattura in `kb/inbox/` D-080, riordino col modello locale D-086; mancano archivio cifrato, link, PDF, vocali e video) · KB markdown con frontmatter 6-9 · ricerca ibrida Qdrant 10-15 · memoria agenti 6-9 (la migliore da un confronto misurato, Mem0 è un candidato, D-204) · agenti Archivista/Segretario 4-7 (posta solo in locale con lo schema Dual LLM, D-204) · export/import cifrati 4-6.
 
 **Fase 3 (43-69):** layout HUD e WebSocket 10-15 · flusso eventi → UI 5-8 (in parte anticipato: righe di attività salvate D-083, crediti e file modificati delle deleghe D-082) · pixel-agents con `HookProvider` proprio 12-18 · approvazioni in UI 8-14 · pagina Impostazioni 8-14 (anticipata: D-071; prove dei modelli in background D-081).
 

@@ -189,7 +189,7 @@ La conoscenza vive in file markdown che puoi aprire con qualsiasi editor, e un i
 
 - **Archivio:** i documenti originali (PDF, fatture, contratti, scansioni) restano immutati in una cartella cifrata, con checksum e metadati. Gli agenti non li modificano mai.
 - **Knowledge base:** pagine markdown con intestazione strutturata (tipo, etichetta di privacy, collegamenti, proprietà) in un repository git. È il "Notion evoluto": pagine, database con viste tabella, kanban e calendario, e collegamenti tra pagine.
-- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). Mem0 con Qdrant, che già usi, è un buon candidato per questo livello. **Eccezione (D-114):** i fatti che dichiari tu, uno alla volta e ognuno con il suo livello («Solo in casa» o «Condivisibile»), vivono già prima della Fase 2 in PostgreSQL (`user_facts`, Impostazioni → «Su di te»); Mem0 resta per la memoria episodica e per ciò che Arianna impara da sé.
+- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). Mem0 con Qdrant, che già usi, è un candidato per questo livello: la scelta si fa con un confronto misurato fra memorie a grafo e temporali (D-204). **Eccezione (D-114):** i fatti che dichiari tu, uno alla volta e ognuno con il suo livello («Solo in casa» o «Condivisibile»), vivono già prima della Fase 2 in PostgreSQL (`user_facts`, Impostazioni → «Su di te»); Mem0 resta per la memoria episodica e per ciò che Arianna impara da sé.
 
 **Ricerca.** Ogni interrogazione combina ricerca testuale, ricerca semantica con embedding e collegamenti tra pagine, poi un riordinamento fatto da un modello locale. Esistono indici separati per livello: gli embedding dei contenuti L2 sono calcolati solo da modelli locali e una sessione cloud non può interrogarli.
 
@@ -420,7 +420,7 @@ Si scrivono le parti che contengono le tue regole (privacy, router, task, regist
 | Voce | Adottare | Pipecat, Silero, Parakeet o Whisper, TTS da provare |
 | Ufficio pixel-art | Adottare | pixel-agents (MIT) in modalità standalone incorporata nell'HUD, con un tuo HookProvider; asset da sostituire se condividi la cartella |
 | Fatture e documenti | Adottare | Parser FatturaPA, Docling o PaddleOCR-VL |
-| Memoria e ricerca | Adottare | Qdrant e Mem0; Graphiti solo dopo la misura |
+| Memoria e ricerca | Adottare | La memoria migliore da un confronto misurato (Mem0, Graphiti e altre, D-204) |
 | Ripasso | Adottare | Una libreria FSRS, non un motore tuo |
 | Sandbox | Adottare | Docker Sandboxes o sandbox-runtime |
 | Test e tracce | Adottare | Promptfoo, Inspect AI, Langfuse |
