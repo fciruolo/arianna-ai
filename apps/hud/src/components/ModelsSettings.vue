@@ -17,7 +17,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { cancelModelAction, cancelModelEval, emptyModelTrash, listModelEvals, loadModelsOverview, removeModel, requestModelEval, startModelAction, unloadLocalModel } from '../lib/api.ts';
+import { cancelModelAction, cancelModelEval, dismissModelReload, emptyModelTrash, listModelEvals, loadModelsOverview, removeModel, requestModelEval, startModelAction, unloadLocalModel } from '../lib/api.ts';
 import { errorText, MODEL_EVAL_STATUS_TEXT, modelEvalErrorText } from '../lib/italian.ts';
 import {
   actionButtons,
@@ -28,6 +28,9 @@ import {
   emptyTrashConfirmation,
   outcomeText,
   progressOf,
+  reloadDismissable,
+  reloadInProgress,
+  reloadText,
   runningAction,
   trashText,
   type ButtonKind,
@@ -279,6 +282,16 @@ const TRIAL_CLASS: Record<ModelEval['status'], string> = {
 // Actions on a local model (stage M4): always after a confirmation that says what happens.
 const running = computed(() => runningAction(overview.value?.local ?? []));
 const trash = computed(() => overview.value?.trash ?? null);
+const reload = computed(() => reloadText(overview.value?.reload ?? null));
+const reloadClosable = computed(() => reloadDismissable(overview.value?.reload ?? null));
+async function closeReload(): Promise<void> {
+  try {
+    await dismissModelReload();
+    await load();
+  } catch (error) {
+    loadError.value = errorText(error);
+  }
+}
 const confirming = ref<Confirmation | null>(null);
 const typed = ref('');
 const actionBusy = ref(false);
@@ -353,7 +366,7 @@ async function saveAll(): Promise<void> {
   }
 }
 
-// Memory and trials change by themselves: read again every 10 s, every 1.5 s while a download or verification runs.
+// Memory and trials change by themselves: read again every 10 s, every 1.5 s while a download or verification runs or oMLX reloads (D-201).
 let timer: number | undefined;
 let unmounted = false;
 function schedule(): void {
@@ -367,7 +380,7 @@ function schedule(): void {
         schedule();
       })();
     },
-    running.value === undefined ? 10_000 : 1_500,
+    running.value === undefined && !reloadInProgress(overview.value?.reload ?? null) ? 10_000 : 1_500,
   );
 }
 onMounted(() => {
@@ -407,6 +420,11 @@ const factKey = 'text-[13px] text-muted';
     <ModelsCompare v-if="tab === 'compare'" id="models-panel-compare" role="tabpanel" aria-labelledby="models-tab-compare" />
 
     <div v-if="tab === 'list'" id="models-panel-list" role="tabpanel" aria-labelledby="models-tab-list" class="flex flex-col gap-3.5">
+    <!-- oMLX reloading after a download (D-201) -->
+    <div v-if="reload !== null" role="status" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-2 px-4 py-2.5 text-[14px] text-warn">
+      <span class="min-w-0 flex-1">{{ reload }}</span>
+      <button v-if="reloadClosable" type="button" class="btn px-2 py-0.5 text-[13px]" @click="closeReload">Fatto</button>
+    </div>
     <!-- Three numbers -->
     <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
       <div :class="card" class="flex flex-col gap-1">

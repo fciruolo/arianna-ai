@@ -8,7 +8,7 @@ import { resolveHome, type CatalogEntry, type LocalEndpointConfig } from '@arian
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
-import { createModelEvals, EVAL_QUEUE, loadModelEval, trialOpen, type ModelEvals, type ModelEvalsOptions } from '../src/model-evals.ts';
+import { createModelEvals, EVAL_QUEUE, loadModelEval, trialOpen, trialRunning, type ModelEvals, type ModelEvalsOptions } from '../src/model-evals.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -165,6 +165,21 @@ test('trialOpen: a queued or running trial keeps the files of its model; a finis
   assert.equal(await trialOpen(sql, 'open-model'), true);
   await sql`UPDATE model_evals SET status = 'cancelled', error = 'user', finished_at = now() WHERE id = ${id}::bigint`;
   assert.equal(await trialOpen(sql, 'open-model'), false);
+});
+
+test('trialRunning: only a trial at work holds back the restart of oMLX, a queued or closed one does not (D-201)', async () => {
+  const { sql } = db();
+  // Trials of the tests before, closed: the account starts from none at work.
+  await sql`UPDATE model_evals SET status = 'cancelled', error = 'user', finished_at = now() WHERE status = 'running'`;
+  assert.equal(await trialRunning(sql), false);
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO model_evals (model_id, role, catalog_status) VALUES ('reload-model', 'orchestrator', 'experimental') RETURNING id::text`;
+  const id = row?.id ?? '';
+  assert.equal(await trialRunning(sql), false);
+  await sql`UPDATE model_evals SET status = 'running', started_at = now() WHERE id = ${id}::bigint`;
+  assert.equal(await trialRunning(sql), true);
+  await sql`UPDATE model_evals SET status = 'cancelled', error = 'user', finished_at = now() WHERE id = ${id}::bigint`;
+  assert.equal(await trialRunning(sql), false);
 });
 
 test('a request is refused unless the model is in the catalog, suited, on disk and served; one open trial per model', async () => {

@@ -48,6 +48,7 @@ import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts'
 import { passGateway } from './gateway.ts';
 import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
+import { createLocalReload, servedByLocalServer } from './local-reload.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
@@ -61,7 +62,7 @@ import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-r
 import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
-import { createModelEvals, trialOpen } from './model-evals.ts';
+import { createModelEvals, machineBusy, trialOpen, trialRunning } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createImWatcher } from './im-watch.ts';
@@ -565,6 +566,21 @@ const modelEvals = createModelEvals({
     ),
   onError: report,
 });
+// D-201: oMLX reads data/models when it starts, so a model downloaded from
+// the "Modelli" page needs a restart of the servers the core started. It
+// waits until no request uses a local model and no call, task step or trial
+// is at work: a generation is never cut. Ids and outcomes only (L0).
+const localReload = createLocalReload({
+  servers: () => localServers.status(),
+  restart: (id) => localServers.restart(id),
+  // The queries first, the requests in flight last: the restart follows the last check at once.
+  busy: async () => (await machineBusy(sql)) || (await trialRunning(sql)) || callActive() || memory.snapshot().loaded.some(({ busy }) => busy),
+  onEvent: (payload) => {
+    console.log(`local reload: ${payload.outcome} (${payload.models})`);
+    appendEvent(sql, { kind: 'local.reload', label: 'L0', payload }).catch(report);
+  },
+  onError: report,
+});
 // The actions of the "Modelli" page on a local model (I-3, stage M4):
 // downloads from the catalog URLs only, verifications, removal into the bin
 // data/models/eliminati, unloading from oMLX. Events: model id and outcome (L0).
@@ -589,6 +605,9 @@ const modelActions = createModelActions({
   trialOpen: (modelId) => trialOpen(sql, modelId),
   onEvent: (kind, payload) => {
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  onDownloaded: (entry) => {
+    if (servedByLocalServer(entry)) localReload.request(entry.id);
   },
   onError: report,
 });
@@ -950,7 +969,11 @@ const server = await startApiServer({
   imReports,
   local: {
     status: () => localServers.status(),
-    restart: (id) => localServers.restart(id),
+    // "Riavvia oMLX" serves the downloads waiting for a restart (D-201): no second restart after it.
+    restart: (id) => {
+      localReload.restartedByUser();
+      return localServers.restart(id);
+    },
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
@@ -965,8 +988,10 @@ const server = await startApiServer({
       memory: () => memory.snapshot(),
       adapters: () => adapters,
       actions: modelActions,
+      reload: () => localReload.view(),
     }),
   modelActions,
+  modelReload: localReload,
   huggingface,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home, news: () => designCatalog.news() },
@@ -1104,6 +1129,7 @@ async function shutdown(): Promise<void> {
   await voice.close();
   await modelEvals.stop();
   await modelActions.stop();
+  localReload.stop();
   await organizer.stop();
   await worker.stop();
   memory.stop();

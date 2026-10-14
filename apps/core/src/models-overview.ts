@@ -22,6 +22,7 @@ import {
 import { needsBudgetApproval, usesOf, type ModelUse } from '@arianna/router';
 
 import type { Queryable } from './db/client.ts';
+import type { ReloadView } from './local-reload.ts';
 import type { DiskState, ModelAction, ModelActions, TrashView } from './model-actions.ts';
 import { weightsDigest, type EvalStatus } from './model-evals.ts';
 import type { MemorySnapshot } from './model-memory.ts';
@@ -133,6 +134,8 @@ export interface ModelsOverview {
   memory: Omit<MemorySnapshot, 'loaded'> | null;
   /** The bin of the removed models (I-3, M4); null when the core has no actions. */
   trash: TrashView | null;
+  /** oMLX restarting to see a model just downloaded (D-201); null when the core does not reload it. */
+  reload: ReloadView | null;
   /** Why a catalog or the trials could not be read: the file and the place, never what it holds. */
   errors: { catalog: string | null; cloudCatalog: string | null; evals: string | null };
 }
@@ -151,6 +154,7 @@ export interface OverviewInputs {
   disk?: (entry: CatalogEntry) => DiskState;
   actions?: readonly ModelAction[];
   trash?: TrashView | null;
+  reload?: ReloadView | null;
   errors?: Partial<ModelsOverview['errors']>;
 }
 
@@ -257,6 +261,7 @@ export function buildModelsOverview(inputs: OverviewInputs): ModelsOverview {
     sources: inputs.cloudCatalog.sources,
     memory,
     trash: inputs.trash ?? null,
+    reload: inputs.reload ?? null,
     errors: { catalog: inputs.errors?.catalog ?? null, cloudCatalog: inputs.errors?.cloudCatalog ?? null, evals: inputs.errors?.evals ?? null },
   };
 }
@@ -281,6 +286,8 @@ export interface ModelsOverviewOptions {
   adapters: () => Readonly<Record<CloudExecutor, boolean>>;
   /** The actions on the local models (I-3, M4): their progress, the bin, what is on the disk. */
   actions?: Pick<ModelActions, 'list' | 'trash' | 'disk'>;
+  /** oMLX reloading after a download (D-201, local-reload.ts). */
+  reload?: () => ReloadView;
 }
 
 /**
@@ -331,6 +338,7 @@ export async function loadModelsOverview(sql: Queryable, options: ModelsOverview
     lastEvals: trials,
     adapters: options.adapters(),
     ...(options.actions === undefined ? {} : { disk: options.actions.disk, actions: options.actions.list(), trash: trashOf(options.actions) }),
+    ...(options.reload === undefined ? {} : { reload: options.reload() }),
     errors,
   });
 }

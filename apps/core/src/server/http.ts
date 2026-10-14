@@ -99,6 +99,7 @@ import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
 import { UserAgentError, type CatalogNewUserAgent, type ConfirmedNewUserAgent, type UserAgents, type UserAgentView } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
+import type { LocalReload } from '../local-reload.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
@@ -217,6 +218,8 @@ export interface ApiServerOptions {
   modelsOverview?: () => Promise<ModelsOverview>;
   /** Download, verify, remove and unload a local model, and the bin (I-3, stage M4); without it the routes answer 404. */
   modelActions?: ModelActions;
+  /** oMLX after a download (D-201): the user closes the line that asks to restart it by hand. */
+  modelReload?: Pick<LocalReload, 'dismiss'>;
   /** Search and add models from Hugging Face, promote them, take them out (I-10, D-139); without it the routes answer 404. */
   huggingface?: HuggingFace;
   /** The catalog of Open Design (D-160): download, adopt, discard, read a style; without it the routes answer 404. */
@@ -3715,6 +3718,14 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   );
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
+  table.push(
+    route('POST', '/api/models/reload/dismiss', async (request) => {
+      onlyFields(await readJson(request), []);
+      if (options.modelReload === undefined) throw new HttpError(404, 'not found');
+      options.modelReload.dismiss();
+      return { body: { ok: true } };
+    }),
+  );
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog, options.safetyReports));

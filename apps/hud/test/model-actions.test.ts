@@ -11,6 +11,9 @@ import {
   emptyTrashConfirmation,
   outcomeText,
   progressOf,
+  reloadDismissable,
+  reloadInProgress,
+  reloadText,
   runningAction,
   trashText,
   type ModelAction,
@@ -175,5 +178,31 @@ describe('actionErrorText', () => {
   it('anything else as the other errors of the chat', () => {
     assert.equal(actionErrorText(new TypeError('fetch failed')), 'Arianna non risponde: controlla che sia avviata.');
     assert.equal(actionErrorText(new ApiError(400, 'something new')), 'Richiesta non valida.');
+  });
+});
+
+describe('reload of oMLX after a download (D-201)', () => {
+  it('says nothing when idle or when the core does not reload', () => {
+    assert.equal(reloadText(null), null);
+    assert.equal(reloadText({ state: 'idle', models: [] }), null);
+    assert.equal(reloadInProgress(null), false);
+    assert.equal(reloadInProgress({ state: 'idle', models: [] }), false);
+    assert.equal(reloadInProgress({ state: 'manual', models: ['fake-new'] }), false);
+  });
+
+  it('names the models while waiting, restarting or left to the user', () => {
+    assert.match(reloadText({ state: 'waiting', models: ['fake-new'] }) ?? '', /^oMLX ripartirà per vedere fake-new appena/);
+    assert.equal(reloadText({ state: 'restarting', models: ['fake-a', 'fake-b'] }), 'oMLX si sta ricaricando per vedere fake-a, fake-b…');
+    assert.equal(reloadText({ state: 'manual', models: ['fake-new'] }), "oMLX non l'ha avviato Arianna: riavvialo tu per vedere fake-new.");
+    assert.equal(reloadInProgress({ state: 'waiting', models: ['fake-new'] }), true);
+    assert.equal(reloadInProgress({ state: 'restarting', models: [] }), true);
+  });
+
+  it('a failed restart sends to «Riavvia oMLX»; only manual and failed can be closed', () => {
+    assert.equal(reloadText({ state: 'failed', models: ['fake-new'] }), 'oMLX non è ripartito dopo il download di fake-new: riavvialo dalle Impostazioni con «Riavvia oMLX».');
+    assert.equal(reloadDismissable({ state: 'failed', models: ['fake-new'] }), true);
+    assert.equal(reloadDismissable({ state: 'manual', models: ['fake-new'] }), true);
+    assert.equal(reloadDismissable({ state: 'waiting', models: ['fake-new'] }), false);
+    assert.equal(reloadDismissable(null), false);
   });
 });
