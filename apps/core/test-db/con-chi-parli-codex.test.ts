@@ -16,6 +16,7 @@ import { conversationWorkspacePath, createClaudeExecutor, createCodexExecutor, t
 import { ChatError, createConversation, loadConversation, postUserMessage, setConversationModel, type Conversation } from '../src/conversations.ts';
 import { processStepJob, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { listCredits } from '../src/delegation-view.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask } from '../src/tasks.ts';
@@ -146,6 +147,8 @@ test('ChatGPT without a project answers through the gateway in the folder of the
   assert.deepEqual([...gateway].map((row) => [row.target, row.decision, row.label, row.summary]), [['codex', 'allow', 'L1', 'plain chat answered by codex/sol']]);
   // The context indicator: how full the session is after the answer, a number only.
   assert.equal((await loadConversation(sql, chat.id))?.contextTokens, RECORDED_CONTEXT);
+  // The credits under the answer name the executor that ran, not Claude by default.
+  assert.deepEqual((await listCredits(sql, chat.id)).map((credit) => [credit.executor, credit.alias]), [['codex', 'sol']]);
 
   // The second message resumes the session: only the new message leaves.
   const second = await postUserMessage(sql, chat.id, 'E un indice parziale?');

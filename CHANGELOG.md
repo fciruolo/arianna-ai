@@ -15,6 +15,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Migrazione `0064`: la chat semplice con ChatGPT accetta solo i modelli di Codex, anche nel database; `runs.context_tokens` tiene solo un numero (D-212).
 - ChatGPT senza progetto lavora in una cartella vuota della conversazione aperta in sola lettura, senza rete, e si ferma dopo 2 comandi; con Codex spento non risponde nessuno al suo posto (D-212).
 
+### Corretto
+
+- I crediti sotto una risposta della chat semplice dicono chi l'ha scritta davvero (Codex), non Claude d'ufficio (D-212).
+
 ## [0.106.0] - 2026-10-14
 
 ### Aggiunto

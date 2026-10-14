@@ -74,7 +74,7 @@ export async function listCredits(sql: Queryable, conversationId: string): Promi
        ORDER BY m.id DESC LIMIT $2
      )
      SELECT w.id::text AS "messageId", d.id::text AS "delegationId", w.agent,
-       coalesce(d.executor, CASE WHEN w.model IS NOT NULL THEN 'claude' END) AS executor,
+       coalesce(d.executor, r.executor, CASE WHEN w.model IS NOT NULL THEN 'claude' END) AS executor,
        coalesce(d.model, r.model, w.model) AS alias,
        ${RUN_FIELDS},
        CASE WHEN ${AT_MOST_L1} THEN d.repo END AS repo,
