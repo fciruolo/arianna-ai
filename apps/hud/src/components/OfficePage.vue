@@ -16,6 +16,7 @@ import OfficeCanvas from './OfficeCanvas.vue';
 import OfficeCardwall from './OfficeCardwall.vue';
 import PendingDecisions from './PendingDecisions.vue';
 import PixelAgent from './PixelAgent.vue';
+import AgentName from './AgentName.vue';
 
 /**
  * "Ufficio" (D-106, stage 1): the agents in a pixel office, from the same
@@ -240,7 +241,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
             <li v-for="agent in snapshot.agents" :key="agent.id" class="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3">
               <PixelAgent :choice="characters?.agents[agent.id]" :pose="agent.pose" :scale="2" />
               <div class="min-w-0">
-                <b class="block font-semibold">{{ agent.name }}</b>
+                <b class="block font-semibold"><AgentName :agent="agent.id" :name="agent.name" /></b>
                 <div class="text-xs text-muted">
                   <span class="mr-1 inline-block size-[7px] rounded-full" :class="DOT[agent.pose]" aria-hidden="true" />{{ POSE_TEXT[agent.pose] }} · {{ placeText(agent) }}<template v-if="agent.locality !== null"> · {{ agent.locality === 'local' ? 'in locale' : 'nel cloud' }}</template>
                 </div>

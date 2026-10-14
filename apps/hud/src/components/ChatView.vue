@@ -16,7 +16,9 @@ import { listImClosings } from '../lib/api.ts';
 import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
-import { activityText, agentName, reasonText } from '../lib/italian.ts';
+import { activityText, reasonText } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
+import AgentName from './AgentName.vue';
 import {
   inboxNodeId,
   loadSaved,
@@ -200,7 +202,9 @@ const targets = computed(() => cloudTargets(directExecutors.value, props.convers
 const targetName = computed(() => shortTarget(targets.value));
 /** "Prova in chat" (D-142): the catalog model that alone answers here. */
 const trial = computed(() => props.conversation.trialModel ?? null);
-const directName = computed(() => trial.value ?? (direct.value === null ? 'Arianna' : agentName(direct.value)));
+// D-214: with a person of the series, its name first («Dr. Cox (GOD)» on one line, two lines in the header).
+const directAgent = computed(() => direct.value ?? 'arianna');
+const directName = computed(() => trial.value ?? agentLabelLine(directAgent.value));
 /** The model of the agent's latest answer here, from its credit line (D-141). */
 const lastAlias = computed(() => {
   const agent = direct.value;
@@ -659,7 +663,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <circle cx="37" cy="37" r="28" fill="none" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
             </svg>
             <PixelAgent v-if="direct !== null" :choice="characters?.[direct]" :pose="directPose" :scale="2" bubble :label="directName" />
-            <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble label="Arianna" />
+            <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble :label="agentLabelLine('arianna')" />
           </div>
           <!-- Who else is here (D-162, presenting D-125): small avatars overlapping the ring, each opens its menu -->
           <ParticipantStack
@@ -672,7 +676,8 @@ onBeforeUnmount(() => clearInterval(clock));
           />
           <div class="min-w-0">
             <h2 class="flex flex-wrap items-center gap-2 font-hud text-lg leading-tight font-semibold tracking-[0.05em]">
-              {{ directName }}
+              <template v-if="trial !== null">{{ trial }}</template>
+              <AgentName v-else :agent="directAgent" />
               <span
                 v-if="cloud"
                 class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-l1"
@@ -878,9 +883,9 @@ onBeforeUnmount(() => clearInterval(clock));
           </p>
 
           <!-- A report of the agent Arianna delegated to -->
-          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
+          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto di ${agentLabelLine(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase"><AgentName :agent="message.agent" /></span>
               <span class="flex-1 truncate text-xs text-muted">rapporto</span>
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />

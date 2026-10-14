@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { goesToArianna } from '../lib/commands.ts';
 import { cloudWarning, firstMessageProblem, localNote, longMessageStep, toAgent, type Draft } from '../lib/draft.ts';
 import { agentName } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, DirectAgent } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -89,8 +90,8 @@ onMounted(() => field.value?.focus());
     <div class="flex flex-1 items-center justify-center overflow-y-auto p-8 text-center">
       <div class="flex max-w-sm flex-col items-center gap-4">
         <template v-if="draft.agent !== undefined">
-          <PixelAgent :choice="characters?.[draft.agent]" pose="idle" :scale="3" bubble :label="agentName(draft.agent)" />
-          <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">Con {{ agentName(draft.agent) }}</h2>
+          <PixelAgent :choice="characters?.[draft.agent]" pose="idle" :scale="3" bubble :label="agentLabelLine(draft.agent)" />
+          <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">Con {{ agentLabelLine(draft.agent) }}</h2>
           <p class="inline-flex items-center gap-1.5 text-sm text-muted">
             <Icon :name="draft.mode" :size="14" />{{ MODE_TEXT[draft.mode] }}<template v-if="policy !== undefined"> · {{ policy.cloud ? 'Claude' : 'modello locale' }}</template><template v-if="draft.project"> · {{ draft.project }}</template>
           </p>

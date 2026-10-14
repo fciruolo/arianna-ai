@@ -3,7 +3,7 @@ import { computed, nextTick, ref } from 'vue';
 
 import { groupByDay } from '../lib/day-groups.ts';
 import { SESSION_COPY } from '../lib/draft.ts';
-import { agentName } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
 import { MODE_TEXT } from '../lib/labels.ts';
 import { canErase, ERASE_CONVERSATION_TEXT } from '../lib/erase.ts';
 import { splitPinned } from '../lib/sidebar.ts';
@@ -139,7 +139,7 @@ function confirmArchive(id: string): void {
               :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
             >
-              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${agentName(conversation.agent)}` : MODE_TEXT[conversation.mode]">
+              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${agentLabelLine(conversation.agent)}` : MODE_TEXT[conversation.mode]">
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>

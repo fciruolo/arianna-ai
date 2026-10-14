@@ -9,7 +9,8 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
-import { agentName } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
+import AgentName from './AgentName.vue';
 import { executorText, participantPose, removeText, stackOf } from '../lib/participants.ts';
 import type { AgentStatus, CharacterChoice, Participant } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -103,8 +104,8 @@ function remove(agent: string): void {
       class="relative grid size-8 place-items-center overflow-hidden rounded-full border-2 border-bg bg-surface-2 transition-transform hover:-translate-y-0.5"
       :class="[index > 0 ? '-ml-2.5' : '', open === participant.agent ? 'ring-1 ring-accent' : '']"
       :style="{ zIndex: open === participant.agent ? 20 : stack.shown.length - index }"
-      :title="agentName(participant.agent)"
-      :aria-label="`${agentName(participant.agent)}: dettagli`"
+      :title="agentLabelLine(participant.agent)"
+      :aria-label="`${agentLabelLine(participant.agent)}: dettagli`"
       aria-haspopup="menu"
       :aria-expanded="open === participant.agent"
       @click="toggle(participant.agent)"
@@ -117,7 +118,7 @@ function remove(agent: string): void {
       :data-key="MORE"
       class="relative -ml-2.5 grid size-8 place-items-center rounded-full border-2 border-bg bg-surface-2 font-mono text-[12.5px] font-medium text-muted hover:text-ink"
       :class="open === MORE ? 'ring-1 ring-accent' : ''"
-      :title="stack.hidden.map((participant) => agentName(participant.agent)).join(', ')"
+      :title="stack.hidden.map((participant) => agentLabelLine(participant.agent)).join(', ')"
       :aria-label="`Altri ${String(stack.hidden.length)} partecipanti`"
       aria-haspopup="menu"
       :aria-expanded="open === MORE"
@@ -128,13 +129,13 @@ function remove(agent: string): void {
       v-if="open !== null && inMenu.length > 0"
       ref="menu"
       role="menu"
-      :aria-label="open === MORE ? 'Altri partecipanti' : agentName(open)"
+      :aria-label="open === MORE ? 'Altri partecipanti' : agentLabelLine(open)"
       class="absolute top-full left-0 z-30 mt-1.5 w-max max-w-[min(260px,calc(100vw-2rem))] min-w-[200px] rounded-xl border border-line-strong bg-surface p-1 text-[14px] shadow-[0_14px_40px_#0005]"
     >
       <div v-for="participant in inMenu" :key="participant.agent" class="flex items-center gap-2 rounded-lg px-2 py-1.5">
         <PixelAgent :choice="characters?.[participant.agent]" :pose="participantPose(participant.agent, agents)" :scale="1" />
         <div class="min-w-0 flex-1 leading-tight">
-          <div class="truncate font-medium text-ink">{{ agentName(participant.agent) }}</div>
+          <div class="truncate font-medium text-ink"><AgentName :agent="participant.agent" /></div>
           <div class="truncate font-mono text-[12px] text-muted">{{ executorText(participant) }}</div>
         </div>
         <button

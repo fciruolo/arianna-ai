@@ -14,6 +14,8 @@ import { downloadPixelAgents, listSkills, sheetUrl, type UploadedCharacter } fro
 import { dayText } from '../lib/design-catalog.ts';
 import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName, officialDescriptionIt } from '../lib/italian.ts';
+import { agentLabel } from '../lib/character-names.ts';
+import AgentName from './AgentName.vue';
 import { MODEL_TEXT } from '../lib/labels.ts';
 import {
   ADDRESSES,
@@ -138,6 +140,12 @@ watch(
   },
   { immediate: true },
 );
+
+/** A person of the series shows its name first (D-214), unless the user wrote a name of their own. */
+function seriesShown(id: string): boolean {
+  const chosen = props.form.personas[id]?.displayName.trim() ?? '';
+  return (chosen === '' || FIXED_NAMES.includes(id)) && agentLabel(id).sub !== null;
+}
 
 /** The name on the card: the one chosen in Personalità, else the usual one. */
 function nameOf(id: string): string {
@@ -703,7 +711,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             >
               <span class="row-span-2"><PixelAgent :choice="previewOf(entry.id)" pose="idle" :scale="1" :version="sheetVersion" /></span>
               <span class="truncate text-[14.5px] font-semibold">
-                {{ nameOf(entry.id) }}<span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span><span v-if="needsUpdate(entry, isKept)" class="text-warn" title="Aggiornamento disponibile del ruolo" aria-label="aggiornamento disponibile"> ●</span><span v-if="safetyDot(safetyOf(entry))" class="text-warn" title="Rapporto di sicurezza: da guardare" aria-label="rapporto di sicurezza da guardare"> ●</span>
+                <AgentName v-if="seriesShown(entry.id)" :agent="entry.id" /><template v-else>{{ nameOf(entry.id) }}</template><span v-if="dirtyIds.has(entry.id)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span><span v-if="needsUpdate(entry, isKept)" class="text-warn" title="Aggiornamento disponibile del ruolo" aria-label="aggiornamento disponibile"> ●</span><span v-if="safetyDot(safetyOf(entry))" class="text-warn" title="Rapporto di sicurezza: da guardare" aria-label="rapporto di sicurezza da guardare"> ●</span>
               </span>
               <span class="truncate text-[13px] text-muted">{{ entry.on ? '' : 'spento · ' }}{{ entry.where === 'cloud' ? 'con Claude' : 'sul Mac' }}</span>
             </button>
@@ -763,7 +771,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
               <input type="checkbox" role="switch" class="switch" :checked="current.on" :disabled="current.official || busyName !== ''" :aria-label="`${nameOf(current.id)} attivo`" @change="toggle(current, $event)" />
             </label>
           </div>
-          <h2 class="text-[22px] leading-tight font-semibold">{{ nameOf(current.id) }}</h2>
+          <h2 class="text-[22px] leading-tight font-semibold"><AgentName v-if="seriesShown(current.id)" :agent="current.id" /><template v-else>{{ nameOf(current.id) }}</template></h2>
           <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted"><TranslatedText :key="current.id" :original="current.description" :italian="current.view?.descriptionIt ?? officialDescriptionIt(current.id, current.description)" /></p>
           <div class="flex flex-wrap items-center gap-2 text-[13.5px] text-muted">
             <span>Modello: <span :class="current.id === 'arianna' ? 'font-mono text-[12.5px]' : ''">{{ modelText(current) }}</span></span>

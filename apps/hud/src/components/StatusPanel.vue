@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { agentName } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
+import AgentName from './AgentName.vue';
 import { ACTION_TEXT, DECISION_TEXT, EXECUTOR_TEXT, MODEL_TEXT, REMOTE_CHANNEL_TEXT } from '../lib/labels.ts';
 import { pendingRows, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
@@ -86,7 +87,7 @@ function previewOf(packId: string): CharacterChoice | undefined {
 function wornBy(packId: string): string[] {
   return Object.entries(props.characters?.agents ?? {})
     .filter(([, choice]) => choice.pack === packId)
-    .map(([agent]) => agentName(agent));
+    .map(([agent]) => agentLabelLine(agent));
 }
 </script>
 
@@ -109,7 +110,7 @@ function wornBy(packId: string): string[] {
             <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="2" bubble />
           </div>
           <div class="min-w-0">
-            <b class="block font-semibold">{{ agentName(id) }}</b>
+            <b class="block font-semibold"><AgentName :agent="id" /></b>
             <button
               v-if="poseFor(id) === 'waiting'"
               type="button"
@@ -129,7 +130,7 @@ function wornBy(packId: string): string[] {
         <ul v-if="freeIds.length > 0" class="flex flex-col">
           <li v-for="id in freeIds" :key="id" class="flex items-center gap-2.5 rounded-lg px-2 py-0.5 hover:bg-surface-2" :title="ROLE_TEXT[id] ?? 'agente'">
             <span class="grid h-[34px] w-5 place-items-end justify-center overflow-hidden"><PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="1" /></span>
-            <span class="min-w-0 flex-1 truncate text-[14px] font-semibold">{{ agentName(id) }}</span>
+            <span class="min-w-0 flex-1 truncate text-[14px] font-semibold"><AgentName :agent="id" /></span>
             <span class="text-[12.5px] text-muted">libero</span>
           </li>
         </ul>

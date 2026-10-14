@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { renderSheet } from '../../characters/compose.ts';
 import { USER } from '../../characters/art/user.ts';
+import { characterNames } from '../lib/character-names.ts';
 import { sheetUrl } from '../lib/api.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import { drawOffice, readColors, type Colors, type Figure } from '../lib/office/draw.ts';
@@ -311,7 +312,8 @@ function render(): void {
     });
     const tag = nameTags.get(agent.id);
     if (tag !== undefined) {
-      const text = `${agent.name} · ${actor.walking ? POSE_SHORT.walking : POSE_SHORT[state.pose]}`;
+      // D-214: the name of the person of the series, when the agent wears one.
+      const text = `${characterNames.value[agent.id] ?? agent.name} · ${actor.walking ? POSE_SHORT.walking : POSE_SHORT[state.pose]}`;
       if (tag.textContent !== text) tag.textContent = text;
       place(tag, actor.x, nameTagTop(props.map, actor), 'below');
     }

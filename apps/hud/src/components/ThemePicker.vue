@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { agentName } from '../lib/italian.ts';
+import { agentLabelLine } from '../lib/character-names.ts';
 import { BASE_NAME, BASE_THEME, themeProperties, type ChatTheme, type ThemeListing } from '../lib/themes.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
 import PixelAgent from './PixelAgent.vue';
@@ -55,7 +55,7 @@ const SOURCE_TEXT = { theme: 'dal tema', choice: 'scelto da te in Agenti', origi
 const wearers = computed(() =>
   Object.entries(props.characters?.agents ?? {})
     .filter(([agent]) => agent === 'arianna' || agent === 'coder' || agent === 'god')
-    .map(([agent, choice]) => ({ agent, name: agentName(agent), from: SOURCE_TEXT[choice.from ?? 'original'] })),
+    .map(([agent, choice]) => ({ agent, name: agentLabelLine(agent), from: SOURCE_TEXT[choice.from ?? 'original'] })),
 );
 </script>
 

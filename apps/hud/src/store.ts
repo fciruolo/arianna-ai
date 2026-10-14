@@ -15,6 +15,7 @@ import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, 
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { rememberCharacterNames } from './lib/character-names.ts';
 import { reportThisMac } from './lib/push.ts';
 import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toast } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
@@ -936,6 +937,7 @@ export function createChatStore() {
   async function refreshCharacters(): Promise<void> {
     try {
       characters.value = await api.loadCharacters();
+      rememberCharacterNames(characters.value);
     } catch (cause) {
       fail(cause);
     }
