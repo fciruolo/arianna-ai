@@ -13,7 +13,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { downloadPixelAgents, listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
 import { dayText } from '../lib/design-catalog.ts';
 import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
-import { agentName } from '../lib/italian.ts';
+import { agentName, officialDescriptionIt } from '../lib/italian.ts';
 import { MODEL_TEXT } from '../lib/labels.ts';
 import {
   ADDRESSES,
@@ -758,7 +758,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             </label>
           </div>
           <h2 class="text-[22px] leading-tight font-semibold">{{ nameOf(current.id) }}</h2>
-          <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted"><TranslatedText :key="current.id" :original="current.description" :italian="current.view?.descriptionIt" /></p>
+          <p v-if="current.description" class="max-w-[60ch] text-[14.5px] text-muted"><TranslatedText :key="current.id" :original="current.description" :italian="current.view?.descriptionIt ?? officialDescriptionIt(current.id, current.description)" /></p>
           <div class="flex flex-wrap items-center gap-2 text-[13.5px] text-muted">
             <span>Modello: <span :class="current.id === 'arianna' ? 'font-mono text-[12.5px]' : ''">{{ modelText(current) }}</span></span>
             <button v-if="canChat" type="button" class="btn px-2.5 py-1 text-[13px]" @click="emit('chat', current.id)">Apri una chat</button>

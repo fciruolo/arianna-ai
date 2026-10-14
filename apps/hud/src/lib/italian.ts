@@ -317,16 +317,22 @@ export function agentTitle(agent: string): string {
  * changed is shown as it is.
  */
 const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
+  arianna: { en: "Plans, assigns and reports; the user's main contact", it: 'Pianifica, assegna e riferisce; è la tua interlocutrice principale' },
   coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
   reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
   designer: { en: 'Designs pages and screens as self-contained HTML mockups in the project', it: 'Disegna pagine e schermate come mockup HTML autonomi nel progetto' },
   god: { en: 'Develops Arianna from inside Arianna, in a clone of its code', it: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
 };
 
+/** The Italian text of an official card's description, while the card keeps its own; undefined otherwise. */
+export function officialDescriptionIt(agent: string, description: string): string | undefined {
+  const official = Object.hasOwn(OFFICIAL_DESCRIPTION, agent) ? OFFICIAL_DESCRIPTION[agent] : undefined;
+  return official !== undefined && official.en === description.trim() ? official.it : undefined;
+}
+
 /** The description of an agent's card as the chat shows it: the Italian text of an official card, the card's own otherwise. */
 export function agentDescription(agent: string, description: string): string {
-  const official = Object.hasOwn(OFFICIAL_DESCRIPTION, agent) ? OFFICIAL_DESCRIPTION[agent] : undefined;
-  return official !== undefined && official.en === description.trim() ? official.it : description;
+  return officialDescriptionIt(agent, description) ?? description;
 }
 
 /** The fixed name of a known agent; undefined for any other id (never the id itself). */

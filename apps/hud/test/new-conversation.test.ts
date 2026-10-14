@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { arrowChoice, cloudNotice, SESSION_COPY } from '../src/lib/draft.ts';
-import { agentDescription, agentTitle } from '../src/lib/italian.ts';
+import { agentDescription, agentTitle, officialDescriptionIt } from '../src/lib/italian.ts';
 
 /** The window "Nuovo" (D-158): the pure parts of its look and its keys. */
 
@@ -44,6 +44,8 @@ test('agent names start with a capital in the window, ids unchanged', () => {
 
 test('official cards described in Italian; a description the user changed stays as it is', () => {
   assert.equal(agentDescription('coder', 'Writes and changes code in a worktree, with tests'), 'Scrive e modifica il codice in un worktree, con i test');
+  assert.equal(agentDescription('arianna', "Plans, assigns and reports; the user's main contact"), 'Pianifica, assegna e riferisce; è la tua interlocutrice principale');
+  assert.equal(officialDescriptionIt('arianna', 'Una descrizione cambiata'), undefined);
   assert.equal(
     agentDescription('reviewer', 'Reviews changes and their tests in a project, without changing files'),
     'Rivede le modifiche e i loro test in un progetto, senza cambiare file',
