@@ -572,10 +572,10 @@ CREATE TABLE user_facts (
 -- L1 → L2 libero. Un fatto nuovo può nascere L1 (dichiarazione dell'utente, scanner e vault nel core).
 -- L'approvazione tiene il testo approvato (append-only, come ogni declassify) anche dopo modifica o cancellazione.
 -- Gli eventi user_fact.created | updated | deleted (L1) portano id, argomento ed etichette, mai il testo.
--- Dalla migrazione 0064 il trigger accetta l'abbassamento solo con un'approvazione di azione `declassify`
+-- Dalla migrazione 0065 il trigger accetta l'abbassamento solo con un'approvazione di azione `declassify`
 -- (la pagina), mai con quella di un fatto dato a un agente (`share_fact`).
 
--- «Su di te», tappe C e D (D-213, migrazione 0064).
+-- «Su di te», tappe C e D (D-213, migrazione 0065).
 -- profile.share: approvals.kind = 'declassify', action = 'share_fact', detail con testo, sha256, from, to
 -- più topic, agent e reason (approvals_share_fact_fields), decisa solo dal web (approvals_declassify_via_web).
 -- profile.propose: approvals.kind = 'fact', action = 'profile.propose', label >= L2, detail con topic e text
