@@ -2559,4 +2559,4 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 
 **Risposte dell'utente** (domande a opzioni del 2026-10-14): (1) **il testo della richiesta solo se Pubblico o Interno**; Privati e Segreti restano alle regole fisse; (2) **al più 50 pareri al giorno, spento con la quota settimanale oltre il 90%**. Accettata come D-207; da costruire su un ramo `task/advisor-router`.
 
-**Da chiarire nel costruirla.** Il core oggi conosce solo l'errore di quota di `claude` (blocco `quota` del router), non la percentuale della settimana, che sta nel file di stato dell'app della barra dei consumi dell'utente, fuori da `ARIANNA_HOME`.
+(3) **La percentuale della settimana dal file dell'app della barra dei consumi** (scelta dell'utente del 2026-10-14): il percorso lo indica l'utente in Impostazioni; il core legge solo percentuale e reset della settimana di Claude; con il file mancante, illeggibile o vecchio di oltre un'ora vale il solo tetto di 50 (più il blocco `quota`).
