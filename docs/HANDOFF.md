@@ -103,4 +103,4 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-14, 19:00» in HANDOFF: controlla gli esiti dell'ultimo controllo sulla punta della catena, poi unisci su main i cinque lavori già provati, in ordine, una versione ciascuno (0.101.0…0.105.0) come descritto; poi riporta la cartella principale su main e riavvia core e chat. Dopo, i personaggi originali di The Office e Scrubs per i temi (D-103). Verifica il push dei tag (git ls-remote --tags origin). In italiano con esempi pratici.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, 00:30» in HANDOFF: main è alla 0.112.0, nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
