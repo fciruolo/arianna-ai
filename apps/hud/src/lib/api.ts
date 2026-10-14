@@ -18,6 +18,7 @@ import type { Account, BankProfile, Budget, Category, FinanceAlert, ImportRecord
 import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
+import type { FactLabel, ShareProposal, UserFact } from './profile.ts';
 import type { CaseComparison, Comparison } from './model-compare.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
@@ -1000,6 +1001,45 @@ export async function loadOdNews(): Promise<NewsPair> {
 /** "Da rifare nello Studio": the entry, named by its key only, goes to data/dev/RISPOSTE.md; `already` when it was there. */
 export async function sendOdNewsRedo(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
   return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/od-news', { key });
+}
+
+/** «Su di te, per Claude Code» (D-114): the text in data/dev/UTENTE.md and the longest the core takes. */
+export async function loadDevUserNote(): Promise<{ note: { text: string; at: string | null }; max: number }> {
+  return call<{ note: { text: string; at: string | null }; max: number }>('GET', '/api/dev/user-note');
+}
+
+/** Replaces data/dev/UTENTE.md through the gateway towards Claude Code; empty text removes it. */
+export async function saveDevUserNote(text: string): Promise<{ text: string; at: string | null }> {
+  return (await call<{ note: { text: string; at: string | null } }>('POST', '/api/dev/user-note', { text })).note;
+}
+
+/** «Su di te» (D-114): the facts of the profile, written only from the Settings. */
+export async function loadUserFacts(): Promise<UserFact[]> {
+  return (await call<{ facts: UserFact[] }>('GET', '/api/profile/facts')).facts;
+}
+
+/** A new fact: «Solo in casa» (L2) unless `label` is L1. */
+export async function createUserFact(fields: { topic: string; text: string; label: FactLabel }): Promise<UserFact> {
+  return (await call<{ fact: UserFact }>('POST', '/api/profile/facts', fields)).fact;
+}
+
+/** Changes a fact; raising it to «Solo in casa» is immediate, the other way goes through prepareFactShare. */
+export async function updateUserFact(id: string, fields: { topic?: string; text?: string; label?: FactLabel }): Promise<UserFact> {
+  return (await call<{ fact: UserFact }>('POST', `/api/profile/facts/${encodeURIComponent(id)}`, fields)).fact;
+}
+
+export async function removeUserFact(id: string): Promise<void> {
+  await call('DELETE', `/api/profile/facts/${encodeURIComponent(id)}`, {});
+}
+
+/** «Condivisibile», first step: what will be written, with the id to confirm. */
+export async function prepareFactShare(id: string, fields: { topic: string; text: string }): Promise<ShareProposal> {
+  return call<ShareProposal>('POST', `/api/profile/facts/${encodeURIComponent(id)}/share/prepare`, fields);
+}
+
+/** «Condivisibile», second step: once, within a few minutes. */
+export async function confirmFactShare(id: string): Promise<UserFact> {
+  return (await call<{ fact: UserFact }>('POST', '/api/profile/facts/share/confirm', { id })).fact;
 }
 
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */

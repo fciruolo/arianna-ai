@@ -189,7 +189,7 @@ La conoscenza vive in file markdown che puoi aprire con qualsiasi editor, e un i
 
 - **Archivio:** i documenti originali (PDF, fatture, contratti, scansioni) restano immutati in una cartella cifrata, con checksum e metadati. Gli agenti non li modificano mai.
 - **Knowledge base:** pagine markdown con intestazione strutturata (tipo, etichetta di privacy, collegamenti, proprietà) in un repository git. È il "Notion evoluto": pagine, database con viste tabella, kanban e calendario, e collegamenti tra pagine.
-- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). Mem0 con Qdrant, che già usi, è un buon candidato per questo livello.
+- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). Mem0 con Qdrant, che già usi, è un buon candidato per questo livello. **Eccezione (D-114):** i fatti che dichiari tu, uno alla volta e ognuno con il suo livello («Solo in casa» o «Condivisibile»), vivono già prima della Fase 2 in PostgreSQL (`user_facts`, Impostazioni → «Su di te»); Mem0 resta per la memoria episodica e per ciò che Arianna impara da sé.
 
 **Ricerca.** Ogni interrogazione combina ricerca testuale, ricerca semantica con embedding e collegamenti tra pagine, poi un riordinamento fatto da un modello locale. Esistono indici separati per livello: gli embedding dei contenuti L2 sono calcolati solo da modelli locali e una sessione cloud non può interrogarli.
 

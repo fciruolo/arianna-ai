@@ -2,6 +2,20 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [0.92.0] - 2026-10-14
+
+### Aggiunto
+
+- Impostazioni → «Su di te»: cose stabili su di te, una alla volta, ognuna con argomento, testo e livello «Solo in casa» (predefinito) o «Condivisibile»; aggiungi, modifica, elimina, con l'avviso che l'argomento può uscire e che i dati veri vanno solo con l'installazione pronta (D-114, tappa A).
+- Rendere «Condivisibile» un fatto «Solo in casa» mostra prima il testo esatto e chiede conferma; resta registrato come declassamento approvato da te. Tornare a «Solo in casa» è immediato (D-114).
+- Tabella `user_facts` con la migrazione `0061_user_facts.sql`: argomento unico senza badare alle maiuscole, testo fino a 300 caratteri, L3 rifiutato, passaggio da «Solo in casa» a «Condivisibile» rifiutato dal database senza la sua approvazione decisa dalla chat web (D-114).
+- `profileFits` e `factFieldsToScan` in `packages/policy`: cosa del profilo entra in un passo secondo la sua clearance e cosa controllare al salvataggio, con test (D-114).
+- Pagina «Sviluppo di Arianna»: casella «Su di te, per Claude Code», passata dal gateway come L1 e salvata in `data/dev/UTENTE.md`, sostituita a ogni salvataggio (D-114).
+
+### Sicurezza
+
+- Argomento di ogni fatto e testo dei fatti condivisibili controllati da scanner e valori del vault al salvataggio; eventi dei fatti senza il testo (D-114).
+
 ## [0.91.1] - 2026-10-14
 
 ### Corretto

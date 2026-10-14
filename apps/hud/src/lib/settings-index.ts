@@ -63,6 +63,16 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Chi lavora con Arianna: come si chiama, come parla, che aspetto ha, con quale modello lavora e cosa può fare.',
         example: 'dai al Coder un tono «diretto»: da ora le sue risposte in chat sono più asciutte.',
       },
+      // The user's profile (D-114, tappa A): facts one at a time, «Solo in casa» or «Condivisibile».
+      {
+        id: 'about-you',
+        slug: 'su-di-te',
+        title: 'Su di te',
+        // Saved at once; only «Condivisibile» asks for confirmation, in the section itself: no lock.
+        behaviour: 'now',
+        lead: 'Cose stabili su di te che Arianna può ricordare, ognuna «Solo in casa» o «Condivisibile». Rendere condivisibile un fatto chiede conferma.',
+        example: '«lavoro: sviluppatore web», Condivisibile: Arianna lo sa anche nelle conversazioni di lavoro; «città», Solo in casa: lo sa solo nelle conversazioni private.',
+      },
       // The catalogs of Open Design (D-160) and of skills (D-161), out of Agenti (D-192).
       {
         id: 'skills',

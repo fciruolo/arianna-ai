@@ -37,6 +37,7 @@ import {
   type QuestionFilter,
 } from '../lib/dev-progress.ts';
 import { errorText } from '../lib/italian.ts';
+import DevUserNote from './DevUserNote.vue';
 import Icon from './Icon.vue';
 
 /**
@@ -367,6 +368,9 @@ onMounted(refresh);
         </ul>
       </div>
     </section>
+
+    <!-- «Su di te, per Claude Code» (D-114): data/dev/UTENTE.md, through the gateway -->
+    <DevUserNote />
   </div>
 </template>
 

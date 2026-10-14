@@ -100,6 +100,7 @@ import InstallationReadiness from './InstallationReadiness.vue';
 import SkillsCatalog from './SkillsCatalog.vue';
 import AgentsCatalog from './AgentsCatalog.vue';
 import Icon from './Icon.vue';
+import ProfileFacts from './ProfileFacts.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
 import OdNews from './OdNews.vue';
@@ -859,6 +860,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         </div>
         <!-- The catalog of agents (D-079): roles from GitHub -->
         <AgentsCatalog v-else-if="active === 'agents-catalog'" />
+        <!-- «Su di te» (D-114): the facts of the profile, in the database, not in arianna.toml -->
+        <ProfileFacts v-else-if="active === 'about-you'" />
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
         <DevProgressPage v-else-if="active === 'dev-progress'" @pending="emit('devPending', $event)" @knowledge="openKnowledge" />
 
