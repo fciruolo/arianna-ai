@@ -113,14 +113,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Rimandiamo — le incognite di lavoro si usano solo con dati finti finché non è verificato.
 - Esempio: Prima di un'incognita di lavoro la cartella del profilo ha 1.204 file; dopo ne ha 1.207 (tre file di debug). La scheda di chiusura allora dirà "Claude Code ha lasciato 3 file di debug nel suo profilo".
 
-### ho-git-push-di-main-avanti-di-origin-main-dai-commi
-
-- Contesto: Claude non può fare push, cioè mandare i commit al repository remoto (oggi su GitHub): lo fai tu. Il ramo main locale è avanti rispetto al remoto, e restano rami già uniti a main che si possono cancellare senza perdere nulla: in locale task/d-065-markdown, sul remoto task/d-058-projects, task/0.3-postgres, task/1.6-confinement, task/1.15-telegram, task/1.18-wizard e task/1.10-orchestrator. Anche i tag delle versioni (v0.x.0) restano solo in locale finché non li mandi tu.
-- Opzione consigliata: Faccio push e pulizia — il remoto si allinea e l'elenco dei rami si accorcia; nulla si perde perché i rami sono già in main.
-- Opzione: Solo il push — il codice è al sicuro sul remoto; i rami vecchi restano.
-- Opzione: Più avanti — il remoto resta indietro: se il Mac si rompe, gli ultimi commit esistono solo qui.
-- Esempio: git push origin main, poi git push origin --delete task/0.3-postgres (e così per gli altri rami remoti) e git branch -d task/d-065-markdown.
-
 ### ho-permessi-in-claude-settings-json
 
 - Contesto: Volevi che Claude lavorasse senza chiederti conferme a ogni modifica. Claude non può cambiare da solo i propri permessi (sarebbe un'auto-concessione), quindi il file .claude/settings.json lo modifichi tu. Oggi il file non contiene ancora la modalità proposta.

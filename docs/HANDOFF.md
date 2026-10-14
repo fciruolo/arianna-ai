@@ -53,7 +53,6 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Cosa | Note |
 | --- | --- |
 | Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
-| `git push` di `main` (avanti di `origin/main` dai commit di D-057 fino a D-065 e D-066, più questa consegna); cancellare il branch locale `task/d-065-markdown` (già in `main`); cancellare il branch remoto `task/d-058-projects` (già in `main`) | |
 | Togliere a mano `data/scratch/review-d065/` | Sonde del `reviewer`, fuori da git |
 | Prova dal vivo di D-058 fuori da Arianna | Comandi nei "Prossimi passi" (progetto finto creato dall'utente, wizard al passo 4, landing page chiesta al Coder in chat: consuma chiamate vere) |
 | Su un'altra macchina: `pnpm arianna:init --reconfigure` | Un `config/arianna.toml` con `[cloud] allowlist` non vuota ora è rifiutato (D-058): va riscritto con i `[[project]]`. Su questa macchina l'ha convertito Claude |
@@ -64,7 +63,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 ## Modo di lavorare concordato
 
 - **Parlare chiaro all'utente** (richiesta del 2026-10-11): niente gergo interno («etichetta», «abbassare l'etichetta» non si capiscono). Usare i termini inglesi dell'interfaccia quando aiutano (select, label, badge, pulsante) e dire cosa cambia in pratica, per esempio «label di privacy: Pubblico, Interno, Privato, Segreto; abbassarla vuol dire meno protezione». Vale per le domande di prova e per i testi della chat.
-- **Claude fa tutto dentro la cartella**: codice, test, commit, branch, merge fast-forward su `main`. L'utente fa solo il push e le azioni fuori dalla cartella.
+- **Claude fa tutto dentro la cartella**: codice, test, commit, branch, merge fast-forward su `main`. **Push (richiesta dell'utente del 2026-10-14):** Claude fa `git push origin main --follow-tags` dopo ogni unione su `main` (mai rami in prova, mai push forzati); oggi il permesso di Claude Code lo nega: finché l'utente non lo consente, il push lo lancia l'utente con `! git push origin main --follow-tags`. L'utente fa le azioni fuori dalla cartella.
 - Un branch per task (`task/<id>-<nome>`), merge fast-forward su `main`, branch cancellato.
 - L'utente ha chiesto di arrivare a fine Fase 0 senza fermarsi a ogni task. A fine fase ci si ferma comunque.
 - Subagent `reviewer` prima dei commit sostanziosi; per diff piccoli si può saltare, dicendolo.
