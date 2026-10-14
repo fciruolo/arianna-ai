@@ -814,6 +814,14 @@ function promptPart(agent: LoadedAgent, name: string): { text: string; label: La
 export const NO_COMMIT_TEXT =
   'Never commit, stash, switch branch or run any other command that writes the .git folder: it is read only for you. Leave your changes in the working tree: the user reviews and commits them.';
 
+/**
+ * The language of the report (D-205, the user's choice of 2026-10-14): our fixed
+ * text, L0, for Claude and Codex alike. Code and what the user types or
+ * copies stay as they are, so that a command still works when pasted.
+ */
+export const REPORT_LANGUAGE_TEXT =
+  'Write your report and your answers for the user in Italian, unless the user writes to you in another language. Code, file names, paths, commands and error messages stay as they are, untranslated.';
+
 /** How the rules of a project open, before the user's text. */
 export const PROJECT_RULES_INTRO = 'Rules of this project, written by the user: follow them in this work.';
 
@@ -1091,6 +1099,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     ...(skills === undefined ? [] : [skills]),
     ...tail,
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
+    { text: REPORT_LANGUAGE_TEXT, label: 'L0' as const, source: 'arianna:report-language' },
     ...(rules === undefined ? [] : [rules]),
     ...(dossier === undefined ? [] : [dossier]),
     ...restarted,

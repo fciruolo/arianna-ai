@@ -21,7 +21,7 @@ import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '.
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
-import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, type AgentSkills } from '../src/orchestrator/delegate.ts';
+import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, REPORT_LANGUAGE_TEXT, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
@@ -285,7 +285,7 @@ test('the skills of the Coder go after its prompt as one L0 block of data, withi
   assert.deepEqual(asked, [['coder', 128 * 1024]]);
   const { prompt } = received();
   assert.match(prompt, /^You are the Coder/);
-  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, entry, brief');
+  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, language, entry, brief');
   // The block is L0: the brief leaves at the label of the project, as without skills.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
   assert.deepEqual([...log].map((row) => row.label), ['L1']);
@@ -305,7 +305,7 @@ test('the rules of the project go after the prompt, L1, the same text for every 
   const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
   assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules })), ['continued', 'continued', 'answered']);
   const { prompt } = received();
-  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, the template, entry');
+  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, language, the template, entry');
   assert.ok(!prompt.includes('Use pnpm'), "another project's rules stay out");
   // The rules are L1 like the project: the brief leaves at L1, through the gateway.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;

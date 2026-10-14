@@ -16,7 +16,7 @@ import { createClaudeExecutor, createCodexExecutor, type ChatRequest, type Local
 import { createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
 import { processStepJob, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_HISTORY_TEXT } from '../src/orchestrator/delegate.ts';
+import { DIRECT_HISTORY_TEXT, REPORT_LANGUAGE_TEXT } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -158,6 +158,8 @@ test('with only Codex on, a step delegated to the Coder runs on codex, through t
     assert.equal(projectAccess(argv), 'write');
     assert.match(prompt, /^You are the Coder/);
     assert.match(prompt, /Look at README\.md and report\.$/);
+    // The report in Italian, as on Claude: the same opening for both executors.
+    assert.ok(prompt.includes(REPORT_LANGUAGE_TEXT));
     const messages = await db().sql<{ agent: string | null; body: string }[]>`
       SELECT agent, body FROM messages WHERE task_id = ${task.id} AND role = 'assistant' ORDER BY id`;
     assert.deepEqual([...messages].map((row) => [row.agent, row.body]), [['coder', 'ok'], [null, 'Fatto.']]);
