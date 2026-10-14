@@ -2,6 +2,18 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [0.103.0] - 2026-10-14
+
+### Aggiunto
+
+- «Con chi parli» in «+ Nuovo», scheda Agente: oltre agli agenti, il **Modello locale** (conversazione privata, solo `kb.search` e `kb.read`, niente esce dal Mac) e **Claude** senza progetto (chat semplice, solo lavoro, Sonnet o Opus, senza strumenti); ChatGPT compare spento con il motivo finché Codex non risponde senza progetto (D-111 tappa B, D-209).
+- La chat semplice con Claude riprende la sessione dell'ultima risposta da una cartella vuota stabile della conversazione, tolta quando la conversazione si elimina; senza sessione riparte una volta con gli scambi a cui Claude ha risposto (al più 10 e 12 000 caratteri, i più recenti), mai un messaggio bloccato dal gateway o senza risposta, come il ripiego del Coder (D-111b) (D-209).
+
+### Sicurezza
+
+- Migrazione `0063`: il modello locale solo in una conversazione privata, Claude e ChatGPT solo in una di lavoro e senza progetto, il Coder solo di lavoro su un progetto; una conversazione privata non ha mai un interlocutore cloud, anche nel database (D-209).
+- Arianna non delega mai al modello locale di «Con chi parli», e i nomi `claude` e `codex` non si possono dare a un agente dell'utente (D-209).
+
 ## [0.102.0] - 2026-10-14
 
 ### Aggiunto
@@ -10,8 +22,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - I temi sono file `apps/hud/themes/<id>/theme.json` a schema chiuso, letti dal core in sola lettura e serviti già controllati da `GET /api/themes`; un test verifica il contrasto WCAG AA di ogni tema, in scuro e in chiaro (D-103).
 - Costumi di Arianna e del Coder per Corsia (casacca, cuffia, stetoscopio; camice con la croce verde) e Ufficio (camicia e cravatta, badge; giacca e cravatta), disegnati da `build.ts` su tutte le 28 pose come fogli del pacchetto `originali` e coperti dal test dei PNG (D-103).
 - Sfondi dei temi dalle liste chiuse (corrimano, moquette, griglia, puntini, righe), angoli e raggio delle schede HUD scelti dal tema (D-103).
-- «Con chi parli» in «+ Nuovo», scheda Agente: oltre agli agenti, il **Modello locale** (conversazione privata, solo `kb.search` e `kb.read`, niente esce dal Mac) e **Claude** senza progetto (chat semplice, solo lavoro, Sonnet o Opus, senza strumenti); ChatGPT compare spento con il motivo finché Codex non risponde senza progetto (D-111 tappa B, D-209).
-- La chat semplice con Claude riprende la sessione dell'ultima risposta da una cartella vuota stabile della conversazione, tolta quando la conversazione si elimina; senza sessione riparte una volta con gli scambi a cui Claude ha risposto (al più 10 e 12 000 caratteri, i più recenti), mai un messaggio bloccato dal gateway o senza risposta, come il ripiego del Coder (D-111b) (D-209).
 
 ### Cambiato
 
@@ -23,8 +33,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Secondo controllo dei dati personali nel gateway (D-113, tappa 2): prima di ogni uscita verso Claude, Codex, Telegram o il web, Rizzo-PII cerca nomi, indirizzi, telefoni, email e documenti e ferma l'uscita se ne trova; se non risponde l'uscita si ferma, tranne sull'installazione di sviluppo.
-- Migrazione `0063`: il modello locale solo in una conversazione privata, Claude e ChatGPT solo in una di lavoro e senza progetto, il Coder solo di lavoro su un progetto; una conversazione privata non ha mai un interlocutore cloud, anche nel database (D-209).
-- Arianna non delega mai al modello locale di «Con chi parli», e i nomi `claude` e `codex` non si possono dare a un agente dell'utente (D-209).
 
 ## [0.100.1] - 2026-10-14
 
