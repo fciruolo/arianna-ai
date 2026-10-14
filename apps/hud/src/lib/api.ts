@@ -394,7 +394,8 @@ export async function editQueued(id: string, body: string): Promise<QueuedMessag
 }
 
 export async function removeQueued(id: string): Promise<void> {
-  await call('DELETE', `/api/queued-messages/${encodeURIComponent(id)}`);
+  // A body, as every other write: the core wants JSON on anything but a GET.
+  await call('DELETE', `/api/queued-messages/${encodeURIComponent(id)}`, {});
 }
 
 /** "Invia ora": the queued message leaves at once. */
