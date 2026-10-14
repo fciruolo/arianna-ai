@@ -2539,3 +2539,24 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 1. **Anche Excel subito.** Claude propone di leggere i file `.xlsx` con codice nostro (un file `.xlsx` è un archivio zip di file XML: `node:zlib` e un lettore XML ristretto), così nessuna libreria di terzi tocca i dati delle finanze e non serve una dipendenza nuova; `.xls` vecchio (binario) rifiutato con l'invito a salvarlo come `.xlsx` o CSV.
 2. **Regola fissa «mai fuori».** Leggibili dal modello locale, nessuna uscita verso cloud, Telegram, telefono o notifiche con contenuto, nemmeno con l'approvazione dell'utente (niente declassificazione).
 3. **"Fai tutto in parallelo".** Tutte le tappe insieme: F0 (regola del gateway) e le parti pure di F1-F3 in parallelo, poi l'unione con database, pagina e agente F4.
+
+## D-207 — Advisor nel router (idea 6 di D-204)
+
+**Cosa ha scelto l'utente** (D-204, 2026-10-14): «advisor nel router, subito»: quando il router locale non è sicuro chiede a Claude un parere con una domanda astratta, senza dati, giudicata dal gateway.
+
+**Come decide oggi il router** (`packages/router`, letto il 2026-10-14). Nessun modello: la difficoltà viene dalla scheda dell'agente, corretta da regole fisse (`difficulty.ts`): parole «difficili» (migrazione, sicurezza, architettura…) la alzano, parole «banali» (refuso, rinomina, readme…) la abbassano, dieci file o più la alzano, ogni tentativo fallito la alza di un livello. Dalla difficoltà e dalle etichette nasce la scala dei modelli (locale, Sonnet, Opus, Fable). Il router non ha un'idea di «incertezza»: va definita.
+
+**Il punto debole da decidere prima del codice.** Una domanda «senza dati» contiene solo ciò che il router sa già (tipo di passo, agente, numero di file, regole scattate): Claude vedrebbe gli stessi numeri e aggiungerebbe poco. Il valore di un parere viene dal testo della richiesta. `docs/EVALS.md` prevedeva già un «advisor cloud per i soli task L0/L1»: per i testi Pubblici o Interni, che possono già andare a Claude, si può mandare il testo; per i Privati e i Segreti no.
+
+**Proposta di Claude.**
+- **Quando chiede.** Solo nei casi incerti, definiti dal codice: (a) regole in contrasto (parola banale e parola difficile insieme); (b) passo di tipo `plan`, `coding` o `review` senza nessuna regola scattata e difficoltà `normal`, dove la scelta fra locale e Sonnet conta; (c) primo tentativo fallito, prima di salire di livello. Mai per passi già decisi dall'utente (modello scelto in conversazione) né per agenti solo locali (Finanze).
+- **Cosa manda.** Per un passo fino a Interno (L1): il testo della richiesta, che passa dal gateway come ogni uscita. Per un passo Privato o Segreto: niente parere, decidono le regole come oggi. Mai file, nomi di progetto Privati o dati di clienti.
+- **Cosa risponde Claude.** Solo una parola fra `trivial`, `normal`, `hard`, `critical`, letta dal codice; qualsiasi altra cosa vale «nessun parere». Il parere sposta la difficoltà di al più un livello e non può far uscire un passo che le etichette tengono in locale.
+- **Con quale modello.** Il più economico del cloud (Sonnet, o Haiku se aggiunto al catalogo), con `claude` dal profilo di `packages/executors`, senza strumenti, una sola risposta breve; limite di tempo 20 secondi, poi decidono le regole.
+- **Quota.** Al più un parere per passo e un tetto al giorno (per esempio 50), contati negli eventi; sopra il tetto o con la quota settimanale oltre il 90% niente parere.
+- **Traccia.** In `router_decisions` la regola `advisor` con il parere, mai il testo.
+- **Pacchetti toccati.** `packages/router` (resta puro: riceve il parere come segnale), il core (chiede il parere prima di chiamare il router), `packages/policy` (sorgente nuova dell'uscita) e `packages/executors` (chiamata senza strumenti): test positivi e negativi per ogni regola, `pnpm eval` e `pnpm eval:live` sul contratto (circa 10 chiamate).
+
+**Risposte dell'utente** (domande a opzioni del 2026-10-14): (1) **il testo della richiesta solo se Pubblico o Interno**; Privati e Segreti restano alle regole fisse; (2) **al più 50 pareri al giorno, spento con la quota settimanale oltre il 90%**. Accettata come D-207; da costruire su un ramo `task/advisor-router`.
+
+**Da chiarire nel costruirla.** Il core oggi conosce solo l'errore di quota di `claude` (blocco `quota` del router), non la percentuale della settimana, che sta nel file di stato dell'app della barra dei consumi dell'utente, fuori da `ARIANNA_HOME`.
