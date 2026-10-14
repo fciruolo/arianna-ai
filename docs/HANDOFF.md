@@ -12,7 +12,7 @@ Aggiornato: 2026-10-15, 00:30 circa.
 
 **Risposte dell'utente di stamattina** (già nei documenti): 18 idee decise una per una (D-204), Mentor alla Fase 5, operatore telefonico in Fase 4, permessi lasciati come sono (push all'utente), domanda di Rizzo chiusa.
 
-**Coda dei lavori, in ordine:** 4 verifica di oMLX (rimandata, serve il clone di `jundot/omlx` alla v0.6.3rc2 in `Sites` e la riga in `read-allow.local` dall'utente; prima dei dati veri); via veloce B1 di D-113 (oMLX installato non dà le probabilità dei token, provato: vedi PROPOSTE D-113, da rivedere con la verifica di oMLX); D-103 tappe seguenti (Base con i contrasti, feste, temi Cartoon giallo e Salotto animato, personaggi veri); D-111 resto della tappa B (ChatGPT senza progetto, «Parla con…» dall'ufficio, indicatore del contesto); D-107 parte B (chat con più agenti); D-114 tappe C-D (`profile.share`); altre idee di OpenWork (D-093); D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie (D-204, idea 13) va prima del task memoria della Fase 2.
+**Coda dei lavori, in ordine:** verifica di oMLX (serve il clone di `jundot/omlx` alla v0.6.3rc2 in `Sites` e la riga in `read-allow.local` dall'utente; prima dei dati veri), con la via veloce B1 di D-113 (oMLX installato non dà le probabilità dei token); D-103 tappe seguenti (Base con i contrasti, feste, temi Cartoon giallo e Salotto animato); D-107 parte B (chat con più agenti); D-114 voce (nessun dato di «Su di te» nelle chiamate per ora); altre idee di OpenWork (D-093); D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie (D-204, idea 13) va prima del task memoria della Fase 2.
 
 ## Dove siamo
 
