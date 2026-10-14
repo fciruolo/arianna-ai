@@ -9,6 +9,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Prova di Rizzo-PII, il secondo controllo dei dati personali italiani, in un ambiente Python suo (`apps/guard`), separato dalla voce: modello `rizzo-pii-0.3b` nel catalogo col ruolo nuovo «Dati personali» (`pii`), scaricabile con `pnpm arianna:models pull` (D-113, D-203).
 - `pnpm guard:trial` misura il modello su 58 frasi inventate (dati personali, brief di codice, frasi comuni): richiamo e falsi allarmi per tipo, tempo per frase su GPU e CPU, rapporto in `data/evals/report-guard.json` senza il testo delle frasi; per ora non è collegato al gateway né al core (D-113, D-203).
 - Comandi `guard:sync`, `guard:lock` e `test:guard` per l'ambiente di `apps/guard`, come quelli della voce (D-203).
+- Campo `dir` nel catalogo dei modelli: con `dir: guard` un modello si scarica in `data/guard/models` invece di `data/models`; `pnpm arianna:models`, doctor, pagina Modelli (presenza, spazio, download, verifica, cestino) e `apps/guard` prendono la cartella dal catalogo (D-203).
+- Il doctor segnala una copia di un modello di `apps/guard` rimasta in `data/models`, dove oMLX la vedrebbe (D-203).
+
+### Corretto
+
+- Rizzo-PII non compare più fra i modelli di oMLX: sta in `data/guard/models`, il suo download non fa ripartire oMLX, tolto dal disco va nel cestino `data/guard/models/eliminati`, e un server locale il cui comando nomina `data/guard/models` è rifiutato (D-203).
 
 ## [0.95.2] - 2026-10-14
 
