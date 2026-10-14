@@ -7,7 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - I personaggi delle serie hanno la personalità del personaggio vero (D-214): un agente che indossa il Dr. Cox risponde burbero e sarcastico, Pam gentile, Dwight serissimo, dal tema o scelto a mano; il nome e la personalità che hai scritto per l'agente vincono, e regole, strumenti e approvazioni non cambiano.
-- Nella chat un agente con un personaggio delle serie mostra prima il nome del personaggio e sotto, più piccolo, quello dell'agente («Dr. Cox» / «GOD»): intestazione, partecipanti, pannello degli agenti, rapporti, Agenti, ufficio (D-214).
+- Nella chat un agente con un personaggio delle serie mostra prima il nome del personaggio e sotto, più piccolo, quello dell'agente («Dr. Cox» / «GOD»): intestazione, partecipanti, pannello degli agenti, rapporti, Agenti, ufficio; il nome che hai scritto per l'agente in Personalità vince anche qui (D-214).
 
 ### Cambiato
 
@@ -15,10 +15,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
-- I nomi dei personaggi indossati non contano come persone per il secondo controllo dei dati personali, solo finché un agente li indossa (D-214).
-# Registro delle versioni
-
-Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
+- Il nome di un personaggio delle serie non conta come persona per il secondo controllo dei dati personali solo nel pezzo del prompt del personaggio; in un brief «Carla» o «Carla Bianchi» si trovano anche mentre Arianna indossa Carla (D-214).
 
 ## [0.109.0] - 2026-10-14
 

@@ -11,14 +11,22 @@ import type { CharacterListing } from './types.ts';
  */
 export const SERIES_PACK = 'serie';
 
-/** Agent → name of the person of the series it wears; agents in other characters are left out. */
+/**
+ * Agent → the name the chat shows above the agent's: the one the user wrote
+ * for it (it always wins, D-214), else the person of the series it wears;
+ * agents with neither are left out.
+ */
 export function seriesNames(listing: CharacterListing | null | undefined): Record<string, string> {
   const names: Record<string, string> = {};
   if (listing === null || listing === undefined) return names;
+  const own = listing.names ?? {};
+  for (const [agent, name] of Object.entries(own)) {
+    if (typeof name === 'string' && name.trim() !== '' && name.trim() !== agentName(agent)) names[agent] = name.trim();
+  }
   const pack = listing.packs.find((entry) => entry.id === SERIES_PACK);
   if (pack === undefined) return names;
   for (const [agent, choice] of Object.entries(listing.agents)) {
-    if (choice.pack !== SERIES_PACK) continue;
+    if (choice.pack !== SERIES_PACK || Object.hasOwn(names, agent)) continue;
     const name = pack.characters.find((character) => character.id === choice.character)?.name;
     if (name !== undefined && name.trim() !== '') names[agent] = name;
   }

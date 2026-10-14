@@ -339,6 +339,8 @@ export interface CharacterListing {
   packs: CharacterPack[];
   refused: { pack: string; reason: string }[];
   agents: Record<string, CharacterChoice>;
+  /** Agent → the name the user wrote for it (D-214); absent from an older core. */
+  names?: Record<string, string>;
 }
 
 /** How a file changed in the run of a delegation (D-082). */

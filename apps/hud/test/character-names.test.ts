@@ -49,3 +49,12 @@ test('the store remembers the names at each read of the characters, and forgets 
   rememberCharacterNames({ ...listing, agents: { god: { pack: 'originali', character: 'god', rows: 4, from: 'original' } } });
   assert.deepEqual(characterNames.value, {});
 });
+
+test('the name the user wrote for an agent wins over its character’s, in the chat too (D-214)', () => {
+  const names = seriesNames({ ...listing, names: { god: 'Capo', coder: 'Coder', reviewer: '  ' } });
+  assert.deepEqual(agentLabelOf('god', names), { main: 'Capo', sub: 'GOD' });
+  // A name equal to the agent's, or blank, changes nothing.
+  assert.equal(agentLabelOf('coder', names).sub, null);
+  assert.equal(agentLabelOf('reviewer', names).sub, null);
+  assert.deepEqual(agentLabelOf('arianna', names), { main: 'Carla', sub: 'Arianna' });
+});

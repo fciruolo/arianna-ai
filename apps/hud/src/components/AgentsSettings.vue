@@ -141,10 +141,10 @@ watch(
   { immediate: true },
 );
 
-/** A person of the series shows its name first (D-214), unless the user wrote a name of their own. */
+/** A person of the series shows its name first (D-214), unless the user wrote a name of their own (in the form, saved or not). */
 function seriesShown(id: string): boolean {
   const chosen = props.form.personas[id]?.displayName.trim() ?? '';
-  return (chosen === '' || FIXED_NAMES.includes(id)) && agentLabel(id).sub !== null;
+  return (chosen === '' || FIXED_NAMES.includes(id)) && agentLabel(id).sub !== null && props.characters?.agents[id]?.pack === SERIES_PACK;
 }
 
 /** The name on the card: the one chosen in Personalità, else the usual one. */

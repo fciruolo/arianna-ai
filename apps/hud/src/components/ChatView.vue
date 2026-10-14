@@ -16,7 +16,7 @@ import { listImClosings } from '../lib/api.ts';
 import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
-import { activityText, reasonText } from '../lib/italian.ts';
+import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { agentLabelLine } from '../lib/character-names.ts';
 import AgentName from './AgentName.vue';
 import {
@@ -204,6 +204,11 @@ const targetName = computed(() => shortTarget(targets.value));
 const trial = computed(() => props.conversation.trialModel ?? null);
 // D-214: with a person of the series, its name first («Dr. Cox (GOD)» on one line, two lines in the header).
 const directAgent = computed(() => direct.value ?? 'arianna');
+/** «Rapporto del Coder» as always; with a name above the agent's, «Rapporto di Dr. Cox (GOD)». */
+function reportLabel(agent: string): string {
+  const line = agentLabelLine(agent);
+  return line === agentName(agent) ? `Rapporto del ${line}` : `Rapporto di ${line}`;
+}
 const directName = computed(() => trial.value ?? agentLabelLine(directAgent.value));
 /** The model of the agent's latest answer here, from its credit line (D-141). */
 const lastAlias = computed(() => {
@@ -883,7 +888,7 @@ onBeforeUnmount(() => clearInterval(clock));
           </p>
 
           <!-- A report of the agent Arianna delegated to -->
-          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto di ${agentLabelLine(message.agent)}`">
+          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="reportLabel(message.agent)">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase"><AgentName :agent="message.agent" /></span>
               <span class="flex-1 truncate text-xs text-muted">rapporto</span>
