@@ -873,7 +873,8 @@ onBeforeUnmount(() => clearInterval(clock));
               <LabelBadge :label="message.label" />
               <!-- The computer of the run sits at the end of the header, where the live card had it: the body never moves it (D-095). -->
               <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
-              <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <!-- Copy and save float on the card's top edge while the pointer is on it: hidden, they leave no hole in the header. -->
+              <MessageActions class="absolute! -top-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
