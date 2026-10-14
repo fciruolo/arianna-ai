@@ -48,6 +48,8 @@ Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 137-208 ore (8
 
 **Altre eccezioni alla regola delle fasi, scelte dall'utente:** chiamate via internet dalla chat web e chiamate di Arianna (D-066, D-067: Fase 4, "servizio voce" e "policy chiamate in uscita", sul branch `p4-chiamate`); ufficio pixel giocabile, tappa 1 (D-106, 2026-10-05: Fase 3, "pixel-agents"); personalità degli agenti, tappe A1 e A2 (D-107, 2026-10-05: Fase 3, "pagina Impostazioni"; tappa E, memoria di oMLX, è manutenzione). Solo proposte: routine con chiamata del mattino (D-110, vicino al "brief giornaliero" della Fase 5). Il 2026-10-09: la segretaria di I-12 (D-144: impegni con data e promemoria, dalla Fase 5, "brief giornaliero"; tappa S1 in costruzione), il cardwall di I-13 (D-152: tappe C1-C2, dalla Fase 2, "cardwall backend e UI") e i progetti come contenitori con la loro conoscenza di I-11 (D-145: dalla Fase 2, "KB markdown con frontmatter"; tappe P1-P2 in costruzione).
 
+**Computer dell'agente (P10, D-095), scelto dall'utente il 2026-10-14, fuori dall'ordine delle fasi (Fase 3, "flusso eventi → UI"):** tappa 1, terminale e file del lavoro in diretta, in sola lettura, comandi non salvati (1-2 giorni, in costruzione); tappa 2, browser Chromium in Docker per pagine pubbliche, con schermo in diretta (VNC protetto, noVNC nella chat) e presa di controllo (5-8 giorni, dopo P7); tappa 3, desktop, solo con un caso concreto.
+
 **Fase 4 (50-90):** servizio voce Pipecat 12-20 · valutazione STT/TTS italiani locali 8-15 · delega e latenza 8-14 · telefonia SIP 14-26 · policy chiamate in uscita 8-15.
 
 **Fase 5 (25-45):** ingestione fonti 8-14 · agente Mentor e curriculum 8-14 · ripasso FSRS 5-9 · brief giornaliero 4-8.

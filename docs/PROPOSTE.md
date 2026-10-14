@@ -425,7 +425,7 @@ Un "Claude Design" locale è **il Coder già esistente con un modo di lavorare e
 ## D-095 — Computer dell'agente (P10): spazio isolato per run, visibile dalla chat
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); tappa 1 in costruzione. Era: Proposta, da discutere
 - **Collegate:** P10 e P8 di `OPENDOTS.md`, D-050 (sandbox), D-056/D-058 (cartella vera), D-063, D-082/D-083 (file e attività), P7 (lettore di pagine pubbliche), riga 2 di "Idee dalla ricerca" in `SPEC.md` (sandbox a microVM)
 
 ### Contesto
@@ -491,42 +491,16 @@ La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non 
 - **Test:** l'estrazione taglia oltre il limite e scarta i valori del vault rivelati (`packages/executors/test`); una conversazione con clearance sotto l'etichetta del progetto non riceve notifiche `terminal` (`apps/core/test`); durante il run la scheda File mostra solo percorsi e non chiama la rotta dei file (`apps/hud/test`); nell'HUD il pannello non ha campi d'input verso il run (`apps/hud/test`).
 - **Da mettere in coda nei documenti** (con l'approvazione dell'utente): P10 come task con tre tappe in `ROADMAP.md`, così smette di vivere solo in `OPENDOTS.md`.
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **Il "computer dell'agente" nasce e muore con ogni lavoro, o ogni agente ne ha uno sempre acceso?** Raccomandazione: per run (nasce e muore con la delega), non per agente come in OpenDots; niente stato fuori dal registro e niente RAM occupata.
-   - Contesto: Il "computer dell'agente" (P10 nel piano preso da OpenDots) è uno spazio isolato dove l'agente lavora mentre tu guardi dalla chat: terminale, file, più avanti un browser. Si decide se crearlo nuovo per ogni lavoro (un "run") e cancellarlo alla fine, o tenerne uno sempre acceso per ogni agente come fa OpenDots.
-   - Opzione consigliata: Uno per lavoro, poi si cancella — niente memoria nascosta fuori dal registro di Arianna e niente RAM occupata quando nessuno lavora; si pulisce da solo.
-   - Opzione: Uno per agente, sempre acceso — l'agente ritrova i suoi file fra un lavoro e l'altro, ma occupa memoria sul Mac da 32 GB e accumula cose che nessuno controlla.
-   - Esempio: Chiedi al Coder di aggiornare le dipendenze del progetto finto "Agenda Demo". Si crea uno spazio per quel lavoro, lo vedi lavorare e alla fine lo spazio sparisce; il giorno dopo un lavoro nuovo parte da uno spazio pulito.
-2. **I comandi che il Coder lancia si vedono solo in diretta o si salvano anche?** Raccomandazione: tappa 1, solo dal vivo all'inizio; salvarli come le righe di D-083 allarga ciò che il database contiene (contenuti di file L1, possibili segreti di un `.env`).
-   - Contesto: Nella prima tappa la chat mostra in diretta i comandi che il Coder lancia nel terminale e cosa rispondono. Quei testi possono contenere pezzi di file del progetto o perfino password lette da un file .env. Si decide se mostrarli solo dal vivo o salvarli anche nel database, come oggi si salvano le righe di attività (D-083), per rileggerli dopo.
-   - Opzione consigliata: Solo in diretta, all'inizio — li vedi mentre il lavoro è in corso, poi spariscono; il database non si riempie di contenuti di file o segreti.
-   - Opzione: Anche salvati, come le attività — puoi rileggerli il giorno dopo, ma il database contiene pezzi di file e forse segreti, cancellati solo con la conversazione.
-   - Esempio: Il Coder lancia "cat .env" nel progetto finto e l'uscita mostra API_KEY=finta123. In diretta la vedi a schermo e poi non resta da nessuna parte; salvandola, resterebbe nel database finché non cancelli la conversazione.
-3. **Il browser dell'agente gira in Docker e legge solo pagine pubbliche?** Raccomandazione: sì, tappa 2 su Docker (già installato) con un'immagine Chromium fissata, solo per pagine L0 e dopo P7; il CLI `container` di Apple si valuta alla tappa 3.
-   - Contesto: La seconda tappa dà all'agente un browser per leggere pagine web. Il browser va chiuso in un contenitore Docker (già installato sul Mac per il database) e può aprire solo pagine pubbliche (L0). Arriva dopo P7, il lettore sicuro di pagine web previsto nel piano, che blocca gli indirizzi interni. Si decide se procedere così.
-   - Opzione consigliata: Sì: Docker, solo pagine pubbliche — un Chromium in un contenitore usa e getta, senza file del Mac e con la rete filtrata; il "container" di Apple, più isolato, si valuta alla tappa 3.
-   - Opzione: Subito il container di Apple — isolamento migliore (una piccola macchina virtuale per contenitore), ma è uno strumento nuovo e giovane da installare e studiare.
-   - Opzione: Niente browser per ora — nessun lavoro e nessuna nuova uscita in rete; l'agente non può consultare pagine web.
-   - Esempio: Chiedi "leggi la documentazione pubblica di questa libreria e riassumila". Il browser nel contenitore apre la pagina e tu vedi le schermate; se la conversazione contiene dati privati, il browser non è disponibile.
-4. **Lo schermo del browser dell'agente si vede a fotografie, la diretta solo più avanti?** Raccomandazione: sì, screenshot periodici nella tappa 2, VNC/noVNC solo alla tappa 3 e solo con un caso.
-   - Contesto: Per vedere cosa fa il browser dell'agente ci sono due modi: fotografie dello schermo ogni pochi secondi, oppure una vista in diretta con VNC (un programma per vedere uno schermo a distanza), che però porta programmi e una porta di rete in più. Si decide quale usare e quando.
-   - Opzione consigliata: Fotografie ora, diretta più avanti — una schermata ogni 2-4 secondi basta per seguire un browser; la diretta arriva solo se un caso concreto la chiede.
-   - Opzione: Diretta subito — vista fluida, ma programmi e una porta in più da proteggere fin dall'inizio.
-   - Esempio: L'agente cerca un orario su un sito pubblico; nella scheda "Browser" vedi una nuova schermata ogni 3 secondi con la pagina che scorre, senza poter cliccare.
-5. **Potrai cliccare tu nel browser dell'agente?** Raccomandazione: non prima della tappa 3; fino ad allora sola lettura.
-   - Contesto: "Presa di controllo" vuol dire che tu clicchi e scrivi nel browser dell'agente mentre lui è in pausa, per esempio per superare un passaggio difficile. È un canale d'ingresso in più da proteggere. Si decide se offrirla e quando.
-   - Opzione consigliata: Non prima della tappa 3 — fino ad allora guardi soltanto; se servirà, l'agente si ferma, tu agisci e lui rilegge la pagina prima di ripartire.
-   - Opzione: Sì, già dalla tappa 2 — più flessibile, ma un canale d'ingresso e regole di pausa da costruire subito.
-   - Esempio: L'agente si blocca sul banner dei cookie di un sito pubblico. In sola lettura lo vedi e gli scrivi in chat cosa fare; con la presa di controllo cliccheresti tu "Accetta" nel suo browser.
-6. **Il computer dell'agente entra nel piano dei lavori (ROADMAP)?** Raccomandazione: sì, P10 in `ROADMAP.md` con le tre tappe, subito dopo le proposte in attesa; la tappa 1 come prossimo lavoro di P10, le altre in coda.
-   - Contesto: Oggi l'idea del computer dell'agente (P10) vive solo in docs/OPENDOTS.md. Metterla in docs/ROADMAP.md, il piano dei lavori, con le sue tre tappe (terminale e file in diretta, browser, desktop), la rende un lavoro in coda visibile anche nella barra della pagina Sviluppo.
-   - Opzione consigliata: Sì, la tappa 1 come prossimo passo — le tre tappe entrano nel piano; la prima è la prossima di P10, le altre restano in coda dopo le proposte in attesa.
-   - Opzione: Sì, ma tutte in coda — compare nel piano senza priorità; nessuna tappa parte finché non lo dici.
-   - Opzione: No, resta solo in OPENDOTS.md — nessun cambiamento; rischia di essere dimenticata.
-   - Esempio: Dopo la modifica, in ROADMAP.md compare "P10 tappa 1: terminale e file del lavoro in diretta" fra i prossimi lavori, e nella pagina Sviluppo la vedi come "Da fare".
+Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 
----
+1. **Per lavoro:** il computer nasce con la delega e sparisce alla fine; nessun computer sempre acceso per agente.
+2. **Terminale:** comandi e uscite del Coder solo in diretta, mai salvati nel database.
+3. **Browser:** Chromium in un contenitore Docker usa e getta, solo pagine pubbliche (L0), dopo P7; il CLI `container` di Apple si valuta più avanti.
+4. **Schermo in diretta, protetto (cambia la raccomandazione):** l'utente vuole subito la diretta invece delle fotografie («non capisco perché dobbiamo proteggere la porta visto che gira in locale»). Spiegati i rischi (pagine web nel Chrome dell'utente che chiamano 127.0.0.1, porte di Docker pubblicate su tutte le interfacce, altri container e pacchetti sul Mac; VNC riceve anche tasti e clic), ha scelto la diretta protetta: server VNC nel contenitore solo su 127.0.0.1, vista con noVNC nella chat che passa dal core con la stessa autorizzazione della chat (mai la porta diretta), un gettone diverso per ogni lavoro. Due dipendenze nuove (server VNC nell'immagine, noVNC nella chat), ciascuna con la sua voce in DECISIONS quando si costruisce la tappa 2.
+5. **Presa di controllo subito con la diretta (cambia la raccomandazione):** nella tappa 2 un pulsante «Prendi il controllo» nella scheda Browser: l'agente va in pausa, l'utente clicca e scrive, solo dalla chat; alla ripresa l'agente rilegge la pagina.
+6. **Priorità:** P10 entra in `ROADMAP.md`; la tappa 1 parte subito, in parallelo ai lavori in corso; la tappa 2 dopo P7; la tappa 3 (desktop) solo con un caso concreto.
 
 ## D-096 — Backup cifrato notturno, 3-2-1, con prova di ripristino
 
