@@ -134,6 +134,88 @@ test('the names of the cloud assistants are not persons either, a person with th
   assert.equal(check([fragment(person)], CLAUDE, piiReport([person], [[entity(person, 'Claude Rossi', 'FULLNAME')]])).decision, 'block');
 });
 
+// D-215: what Rizzo-PII found in the dossier of GOD and in the diary of the works.
+const blocks = (text: string, value: string, kind: string, names: readonly string[] = []): boolean => {
+  const found = check([fragment(text)], CLAUDE, piiReport([text], [[entity(text, value, kind)]], names));
+  return found.decision === 'block';
+};
+
+test('a CF counts only with the form of a codice fiscale around it', () => {
+  const dossier = '- D-158 (2026-10-10): "Chiama" nella chat; claude-sonnet-5-5 alla 0.85.0';
+  assert.equal(blocks(dossier, '-1', 'CF'), false, 'a piece of a date');
+  assert.equal(blocks(dossier, '5', 'CF'), false, 'a piece of the name of a model');
+  assert.equal(blocks(dossier, '0.85', 'CF'), false, 'a piece of a version');
+  const data = 'cf RSSMRA85T10A562S, figlia bncrsa90a41g702q, scritto RSS MRA 85T10 A562S, sbagliato RSSMRA85X10A562S, ditta 01234567890';
+  assert.ok(blocks(data, 'RSSMRA85T10A562S', 'CF'));
+  assert.ok(blocks(data, 'MRA85', 'CF'), 'a piece of a codice fiscale still counts');
+  assert.ok(blocks(data, 'bncrsa90a41g702q', 'CF'), 'in lowercase');
+  assert.ok(blocks(data, 'RSS MRA 85T10 A562S', 'CF'), 'with spaces');
+  assert.ok(blocks(data, '85T10', 'CF'), 'a piece of the spaced form');
+  assert.ok(blocks(data, 'RSSMRA85X10A562S', 'CF'), 'a wrong month letter still has the form');
+  assert.ok(blocks(data, '01234567890', 'CF'), 'the 11 digits of a company');
+});
+
+test('a TARGA counts only with the form of an Italian plate', () => {
+  const brief = '- 1.2 Installer: download con sha256, 2 modelli, porta 7420, v0.85.0';
+  for (const value of ['2', 'sha256', '7420', '0.85']) assert.equal(blocks(brief, value, 'TARGA'), false, value);
+  const data = 'auto AB123CD, scritta ab 123 cd, moto AB 12345, vecchia MI 123456, ROMA A12345';
+  for (const value of ['AB123CD', 'ab 123 cd', '123', 'AB 12345', 'MI 123456', 'ROMA A12345']) assert.ok(blocks(data, value, 'TARGA'), value);
+});
+
+test('a postcode is five digits and an address needs a house number close to it', () => {
+  const dossier = '`main` alla 0.83.0, larghezza 1120 px; - Etichetta: L1; riga 251';
+  const pairs: [string, string][] = [
+    ['0.83', '1120'],
+    ['0', '251'],
+    ['L1', '251'],
+  ];
+  for (const [zip, number] of pairs) {
+    const found = check([fragment(dossier)], CLAUDE, piiReport([dossier], [[entity(dossier, zip, 'ZIPCODE'), entity(dossier, number, 'BUILDINGNUM')]]));
+    assert.equal(found.decision, 'allow', `${zip} + ${number}`);
+  }
+  const version = 'Versione 1.20121 al civico 12';
+  assert.equal(check([fragment(version)], CLAUDE, piiReport([version], [[entity(version, '20121', 'ZIPCODE'), entity(version, '12', 'BUILDINGNUM')]])).decision, 'allow');
+  const addresses = ['Via dei Glicini 14, 40127 Bologna', 'al 14/B\n40127 Bologna', 'CAP 40127, civico 14'];
+  for (const text of addresses) {
+    const found = check([fragment(text)], CLAUDE, piiReport([text], [[entity(text, '40127', 'ZIPCODE'), entity(text, '14', 'BUILDINGNUM')]]));
+    assert.ok(found.decision === 'block', text);
+    assert.ok(found.pii?.some((finding) => finding.kind === 'ADDRESS'));
+  }
+  const far = `Porta 14 del core. ${'Testo del fascicolo. '.repeat(10)}Ci sono 40127 righe.`;
+  assert.equal(check([fragment(far)], CLAUDE, piiReport([far], [[entity(far, '40127', 'ZIPCODE'), entity(far, '14', 'BUILDINGNUM')]])).decision, 'allow', 'far apart');
+});
+
+test('cadastral data count only with a word of the cadastre', () => {
+  const brief = 'Il pulsante è in GodCarryProposal.vue, riga 78.';
+  assert.equal(blocks(brief, '8', 'CATASTO'), false);
+  const data = 'Appartamento al foglio 12, particella 345, subalterno 6; box fg. 3 part. 77; catasto 9/12';
+  for (const value of ['foglio 12, particella 345, subalterno 6', '345', '6', '77', '9/12']) assert.ok(blocks(data, value, 'CATASTO'), value);
+});
+
+test('a piece of an ignored name is not a person; a person next to it is', () => {
+  const diary = '## 12:44 · Coder · Claude Sonnet (claude-sonnet-5-5) · riuscito\nproject: arianna';
+  const names = ['Claude Sonnet'];
+  assert.equal(blocks(diary, 'Claude Sonnet', 'FULLNAME', names), false);
+  assert.equal(blocks(diary, 'net', 'FULLNAME', names), false, 'a piece of «Claude Sonnet»');
+  assert.equal(blocks(diary, 'a', 'FULLNAME', names), false, 'a piece of «arianna»');
+  assert.ok(blocks(diary, 'Claude Sonnet', 'FULLNAME'), 'without the name of the model it counts');
+  const person = 'Il Coder Claude Sonnetti ha scritto a Mario Rossi';
+  assert.ok(blocks(person, 'Claude Sonnetti', 'FULLNAME', names), 'a longer name');
+  assert.ok(blocks(person, 'Sonnetti', 'FULLNAME', names));
+  const arianna = 'Scrivi ad Arianna Bianchi';
+  assert.ok(blocks(arianna, 'Arianna Bianchi', 'FULLNAME', names));
+  assert.ok(blocks(arianna, 'a Bi', 'FULLNAME', names), 'across the end of an ignored name');
+});
+
+test('inside a local IPv4 address nothing counts; a public one, or an email, still counts', () => {
+  const diary = '- Conversazione: [apri in Arianna](http://127.0.0.1:7420/c/x), anche 192.168.1.20 e 10.0.0.2';
+  for (const value of ['2', '.', '127.0.0.1', '192.168.1.20', '10.0.0.2']) assert.equal(blocks(diary, value, 'EMAIL'), false, value);
+  const data = 'Il server di Mario è 93.41.12.7; scrivi a 127.0.0.1@example.it o a mario127.0.0.1';
+  assert.ok(blocks(data, '93.41.12.7', 'EMAIL'), 'a public address');
+  assert.ok(blocks(data, '127.0.0.1@example.it', 'EMAIL'));
+  assert.ok(blocks(data, 'mario127.0.0.1', 'EMAIL'));
+});
+
 test('an ignored name only covers FULLNAME', () => {
   const text = 'Arianna';
   assert.equal(check([fragment(text)], CLAUDE, piiReport([text], [[{ kind: 'EMAIL', start: 0, end: 7, score: 0.9 }]])).decision, 'block');
