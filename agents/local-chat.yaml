@@ -1,0 +1,23 @@
+# Modello locale (D-111, tappa B, «Con chi parli»): a plain chat with the local
+# model in a private conversation, with the knowledge base read only. Runs on
+# the local model alone, the same model as the orchestrator (the user's answer
+# 11 of D-111: one model in memory on the 32 GB Mac). Two tools only, both
+# reads within the clearance of the conversation (private: work, private and
+# inbox pages, never the reserved ones): no kb.write, no card, no delegation,
+# no plan, no channel. The trifecta breaks on the missing way out, which the
+# code guarantees (the tools offered and the gateway), not trust in the KB.
+name: local-chat
+description: Chats on the local model with the knowledge base read only; nothing leaves this computer
+max_label: L2
+executors: [local]
+tools: [kb.search, kb.read]
+trifecta:
+  private_data: true
+  # The inbox holds links and notes captured from the web (D-080).
+  untrusted_content: true
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 8, max_minutes: 10, max_cost: 0 }
+approvals: []
+prompt: local-chat.md

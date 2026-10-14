@@ -39,7 +39,7 @@ import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
-import { loadConversation, type Conversation, type Message } from '../conversations.ts';
+import { LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
@@ -85,6 +85,8 @@ export interface DelegateEnv {
   codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly; DIRECT_PROMPT by default (tests pick a scenario). */
   directPrompt?: string;
+  /** What Claude reads first in the plain chat with the user (claude-direct.ts, D-111 tappa B); for tests. */
+  chatPrompt?: string;
   /** What Claude reads first when it writes the cards of a plan (D-164); PLANNER_PROMPT by default (tests pick a scenario). */
   plannerPrompt?: string;
   /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */
@@ -179,8 +181,9 @@ export function isCloudRoute(route: DelegationRoute | undefined): route is Cloud
 export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTarget[] {
   const targets: DelegateTarget[] = [];
   for (const [name, agent] of env.agents) {
-    // GOD answers only in its own chat (D-127): Arianna never hands it a work. Nor the agent of the Finances (D-183).
-    if (name === assignee || name === GOD_AGENT || isFinanceCard(agent.card)) continue;
+    // GOD answers only in its own chat (D-127): Arianna never hands it a work. Nor the agent of the Finances (D-183),
+    // nor the local model of «Con chi parli» (D-111, tappa B), which only chats.
+    if (name === assignee || name === GOD_AGENT || name === LOCAL_CHAT_AGENT || isFinanceCard(agent.card)) continue;
     const where = delegationRoute(agent.card);
     if (isCloudRoute(where) ? cloudReady(env, agent.card) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
   }
@@ -394,7 +397,8 @@ export async function directChatHistory(sql: Sql, conversationId: string, delega
 
 const CUT = '[…]';
 
-const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
+/** Two usages of one step summed: a failed resume and the new start after it. */
+export const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
   const sum = (x: number | undefined, y: number | undefined) => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
   const tokensIn = sum(a.tokensIn, b.tokensIn);
   const tokensOut = sum(a.tokensOut, b.tokensOut);

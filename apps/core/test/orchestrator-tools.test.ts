@@ -163,3 +163,24 @@ test('an interrupted run is resumed only by the executor that started it (D-140)
   const unknown = { ...base, resume: { runId: 'old', sessionRef: null } };
   assert.equal(stepFor(unknown, 'codex'), unknown);
 });
+
+test('the local model of «Con chi parli» (D-111, tappa B) is offered kb.search and kb.read only, everywhere', () => {
+  const local = official.get('local-chat');
+  assert.ok(local !== undefined);
+  assert.deepEqual([...orchestratorTools(local)].sort(), ['kb.read', 'kb.search']);
+  // Nothing more with a delegation possible, an open card, nor in the secretary's conversation.
+  assert.deepEqual([...orchestratorTools(local, true, true, false, true)].sort(), ['kb.read', 'kb.search']);
+  assert.deepEqual([...orchestratorTools(local, true, true, true)].sort(), ['kb.read', 'kb.search']);
+  // Its card cannot leave this machine: local executor only, no way out in the trifecta.
+  assert.deepEqual(local.card.executors, ['local']);
+  assert.equal(local.card.trifecta.external_comms, false);
+  assert.equal(local.card.cloudMaxLabel, undefined);
+  // Arianna, by contrast, has more: the list is the card's, not a fixed one.
+  assert.ok(arianna !== undefined && orchestratorTools(arianna).includes('kb.write'));
+});
+
+test('Arianna never hands a step to the local model of «Con chi parli»: it only chats (D-111, tappa B)', () => {
+  const names = delegateTargets(envWith([], true), 'arianna').map(({ name }) => name);
+  assert.ok(!names.includes('local-chat'));
+  assert.ok(names.includes('coder'));
+});

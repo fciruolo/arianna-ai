@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { arrowChoice, cloudNotice, localNote, shortTarget, type DraftChoice } from '../lib/draft.ts';
+import { arrowChoice, cloudNotice, localNote, offReason, shortTarget, type DraftChoice } from '../lib/draft.ts';
 import { agentDescription, agentTitle } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
-import type { CharacterChoice, ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
+import type { CharacterChoice, ConversationMode, DirectAgent, OffInterlocutor, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
 
 /** `initialAgent`: the direct chat with this agent is the first choice (D-133). */
-const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
+/** `off`: the interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B), shown off with why. */
+const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; off?: OffInterlocutor[] | undefined; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
 /** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
 /** Incognito (D-136): with Arianna, private or work, its texts deleted when it closes. */
@@ -41,7 +42,7 @@ const hint = computed(() => {
     return `Come una conversazione ${incognitoMode.value === 'private' ? 'privata' : 'di lavoro'}, ma non compare nella lista e alla chiusura Arianna ne cancella i testi. Prima del primo messaggio vedi cosa resta fuori.`;
   }
   if (kind.value !== 'agent') return MODE_HINT[kind.value];
-  return 'Parli direttamente con un agente, senza Arianna in mezzo. Dove gira e che dati può leggere li decide la sua scheda.';
+  return 'Parli direttamente con il modello locale, con Claude o con un agente, senza Arianna in mezzo. Dove gira e che dati può leggere lo dice la sua scheda.';
 });
 const ready = computed(() => {
   if (kind.value !== 'agent') return true;
@@ -188,6 +189,20 @@ function submit(): void {
             agentDescription(entry.agent, entry.description)
           }}</span>
         </button>
+        <!-- «Con chi parli» (D-111, tappa B): who cannot answer now, off, with why; never chosen. -->
+        <div
+          v-for="entry in off ?? []"
+          :key="`off-${entry.agent}`"
+          aria-disabled="true"
+          class="flex flex-col items-start gap-1 rounded-[10px] border border-dashed border-line bg-surface-2 p-2.5 text-left opacity-60"
+        >
+          <span class="flex w-full items-center gap-2">
+            <PixelAgent :choice="characters?.[entry.agent]" pose="idle" :scale="1" />
+            <span class="min-w-0 flex-1 truncate text-[14.5px] font-medium">{{ agentTitle(entry.agent) }}</span>
+            <span class="shrink-0 rounded-full border border-line-strong px-1.5 py-px font-mono text-[12px] whitespace-nowrap text-muted">non disponibile</span>
+          </span>
+          <span class="line-clamp-2 text-xs leading-snug text-muted">{{ offReason(entry.agent) }}</span>
+        </div>
       </div>
       <p v-else class="text-[13.5px] leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
       <div

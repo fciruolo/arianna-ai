@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { LoadedAgent } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { directPolicies, directPolicyOf, projectFits } from '../src/direct-chat.ts';
+import { CODEX_CHAT_OFF, directPolicies, directPolicyOf, offInterlocutors, projectFits } from '../src/direct-chat.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
 const loaded = committedAgents(resolveHome({}));
@@ -48,12 +48,12 @@ test('a local agent: no project; private too only when its card may read Privato
   assert.equal(directPolicyOf('traduttore', answering('L1'), { claude: false, codex: false })?.cloud, false);
 });
 
-test('never Arianna; the Coder first in the list', () => {
+test('never Arianna; the plain chat with Claude, then the Coder first in the list', () => {
   const arianna = loaded.get('arianna');
   assert.ok(arianna !== undefined);
   assert.equal(directPolicyOf('arianna', arianna, { claude: true, codex: false }), undefined);
   const agents = new Map<string, LoadedAgent>([['zeta', answering('L1')], ['coder', coder], ['arianna', arianna], ['alfa', answering('L1')]]);
-  assert.deepEqual(directPolicies(agents, { claude: true, codex: false }).map((policy) => policy.agent), ['coder', 'alfa', 'zeta']);
+  assert.deepEqual(directPolicies(agents, { claude: true, codex: false }).map((policy) => policy.agent), ['claude', 'coder', 'alfa', 'zeta']);
 });
 
 test('GOD (D-127): read only, on Claude or Codex, and only on a part of the container of Arianna\'s clones', () => {
@@ -72,4 +72,28 @@ test('GOD (D-127): read only, on Claude or Codex, and only on a part of the cont
   assert.equal(projectFits(policy, 'ariannax:main'), false);
   assert.equal(projectFits(policy, undefined), false);
   assert.equal(projectFits({}, 'demo'), true, 'an agent without a container: any project');
+});
+
+test('«Con chi parli» (D-111, tappa B): the local model only in private, Claude without a project only while Claude is on, ChatGPT off', () => {
+  const local = loaded.get('local-chat');
+  assert.ok(local !== undefined);
+  assert.deepEqual(directPolicyOf('local-chat', local, { claude: true, codex: true }), {
+    agent: 'local-chat',
+    description: local.card.description,
+    cloud: false,
+    executors: [],
+    modes: ['private'],
+    project: false,
+    interlocutor: true,
+  });
+  const on = directPolicies(loaded, { claude: true, codex: true });
+  assert.deepEqual(on.slice(0, 3).map((policy) => policy.agent), ['local-chat', 'claude', 'coder']);
+  const claude = on.find((policy) => policy.agent === 'claude');
+  assert.deepEqual(claude && { cloud: claude.cloud, modes: claude.modes, project: claude.project, executors: claude.executors }, { cloud: true, modes: ['work'], project: false, executors: ['claude'] });
+  // Claude off: no plain chat, and it is listed off with why; ChatGPT is always off for now.
+  assert.ok(!directPolicies(loaded, { claude: false, codex: true }).some((policy) => policy.agent === 'claude' || policy.agent === 'codex'));
+  assert.deepEqual(offInterlocutors({ claude: false, codex: true }).map((off) => off.agent), ['claude', 'codex']);
+  assert.deepEqual(offInterlocutors({ claude: true, codex: true }).map((off) => [off.agent, off.reason]), [['codex', CODEX_CHAT_OFF]]);
+  // A card named after an executor never becomes a direct chat of its own.
+  assert.equal(directPolicyOf('claude', coder, { claude: true, codex: true }), undefined);
 });

@@ -1,6 +1,7 @@
 import { isFinanceCard, type LoadedAgent } from '@arianna/agents';
 import { isAtMost, type ConversationMode } from '@arianna/policy';
 
+import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, LOCAL_CHAT_AGENT } from './conversations.ts';
 import { GOD_AGENT, GOD_PROJECT } from './god/clone.ts';
 import { briefCeiling, CLOUD_DELEGATES, delegationRoute, isCloudRoute } from './orchestrator/delegate.ts';
 
@@ -34,6 +35,43 @@ export interface DirectPolicy {
    * from birth, and it answers with its read-only tools on the local model.
    */
   finance?: true;
+  /**
+   * «Con chi parli» (D-111, tappa B): the local model or a plain chat with
+   * Claude, offered first in "+ Nuovo"; not an agent of the team.
+   */
+  interlocutor?: true;
+}
+
+/** An interlocutor of «Con chi parli» that cannot answer now, with why: "+ Nuovo" shows it off. */
+export interface OffInterlocutor {
+  agent: string;
+  description: string;
+  reason: string;
+}
+
+/** What the plain chats say of themselves (L0, ours). */
+const CLAUDE_CHAT_DESCRIPTION = 'Chat semplice con Claude, senza strumenti né progetto: ogni messaggio va ad Anthropic';
+const CODEX_CHAT_DESCRIPTION = 'Chat semplice con i modelli di ChatGPT nella CLI codex, senza progetto';
+/**
+ * Why ChatGPT without a project is off (D-111, tappa B): the adapter of Codex
+ * runs only in the folder of a project (D-140); a run in an empty folder of
+ * the conversation is not built nor tried live yet. With a project, the Coder
+ * on Codex answers.
+ */
+export const CODEX_CHAT_OFF = 'codex does not answer a conversation without a project yet: with a project, talk with the Coder';
+export const CLAUDE_CHAT_OFF = 'claude is off or does not run on this machine';
+
+/** The plain chat with Claude (D-111, tappa B), while Claude runs. */
+function claudeChatPolicy(): DirectPolicy {
+  return { agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, cloud: true, executors: ['claude'], modes: ['work'], project: false, interlocutor: true };
+}
+
+/** The interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B). */
+export function offInterlocutors(available: { claude: boolean; codex: boolean }): OffInterlocutor[] {
+  return [
+    ...(available.claude ? [] : [{ agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, reason: CLAUDE_CHAT_OFF }]),
+    { agent: CODEX_CHAT_AGENT, description: CODEX_CHAT_DESCRIPTION, reason: CODEX_CHAT_OFF },
+  ];
 }
 
 /** True when `project` (a part `<container>:<part>`, or a project of one part) belongs to the container the policy asks for, or the policy asks for none. */
@@ -44,7 +82,12 @@ export function projectFits(policy: Pick<DirectPolicy, 'container'>, project: st
 
 /** The policy of one agent, or undefined when it cannot answer a direct chat now (its executor is off). */
 export function directPolicyOf(name: string, agent: LoadedAgent, available: { claude: boolean; codex: boolean }): DirectPolicy | undefined {
-  if (name === 'arianna') return undefined;
+  if (name === 'arianna' || name === CLAUDE_CHAT_AGENT || name === CODEX_CHAT_AGENT) return undefined;
+  // The local model with the knowledge base read only (D-111, tappa B): a private conversation, its own tools on the local model.
+  if (name === LOCAL_CHAT_AGENT) {
+    if (!agent.card.executors.every((executor) => executor === 'local')) return undefined;
+    return { agent: name, description: agent.card.description, cloud: false, executors: [], modes: ['private'], project: false, interlocutor: true };
+  }
   // The agent of the Finances (D-183): only in a private conversation, marked from birth, nothing of it goes out.
   // It answers with its tools on the local model (as Arianna does), not with one call like the other local agents.
   if (isFinanceCard(agent.card) && agent.card.executors.every((executor) => executor === 'local')) {
@@ -64,13 +107,16 @@ export function directPolicyOf(name: string, agent: LoadedAgent, available: { cl
   return undefined;
 }
 
-/** Every agent the user may talk with now, the Coder first, then by name. */
+/**
+ * Every agent the user may talk with now: the interlocutors of «Con chi
+ * parli» first (the local model, Claude), then the Coder, then by name.
+ */
 export function directPolicies(agents: ReadonlyMap<string, LoadedAgent>, available: { claude: boolean; codex: boolean }): DirectPolicy[] {
-  const out: DirectPolicy[] = [];
+  const out: DirectPolicy[] = available.claude ? [claudeChatPolicy()] : [];
   for (const [name, agent] of agents) {
     const policy = directPolicyOf(name, agent, available);
     if (policy !== undefined) out.push(policy);
   }
-  const rank = (name: string): number => (name === 'coder' ? 0 : 1);
+  const rank = (name: string): number => (name === LOCAL_CHAT_AGENT ? 0 : name === CLAUDE_CHAT_AGENT ? 1 : name === 'coder' ? 2 : 3);
   return out.sort((a, b) => rank(a.agent) - rank(b.agent) || (a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0));
 }

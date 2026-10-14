@@ -30,6 +30,8 @@ import {
   archiveConversation,
   ChatError,
   createConversation,
+  CLAUDE_CHAT_AGENT,
+  CODEX_CHAT_AGENT,
   DIRECT_MODELS,
   isUuid,
   listConversations,
@@ -137,7 +139,7 @@ import type { InstallationInfo } from '../installation.ts';
 import type { Readiness } from '../readiness.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
-import { projectFits, type DirectPolicy } from '../direct-chat.ts';
+import { projectFits, type DirectPolicy, type OffInterlocutor } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
@@ -302,6 +304,10 @@ export interface ApiServerOptions {
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
   /** Who the user may talk with in place of Arianna (D-111d); undefined, nobody. */
   directAgents?: () => readonly DirectPolicy[];
+  /** The interlocutors of «Con chi parli» that cannot answer now, with why (D-111, tappa B); shown off in "+ Nuovo". */
+  offInterlocutors?: () => readonly OffInterlocutor[];
+  /** Removes the empty folder of a plain chat with Claude (D-111, tappa B) once its conversation is purged or erased; never fails the request. */
+  chatFolderGone?: (conversationId: string) => Promise<void>;
   /**
    * Why a local model cannot open a trial chat now (D-142): undefined when it
    * can (in the catalog, a chat model, its files on the disk). Without it no
@@ -500,6 +506,8 @@ interface RouteOptions {
   installation: ApiServerOptions['installation'];
   readiness?: Readiness | undefined;
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
+  offInterlocutors?: (() => readonly OffInterlocutor[]) | undefined;
+  chatFolderGone?: ((conversationId: string) => Promise<void>) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
@@ -2097,7 +2105,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatFolderGone, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2219,7 +2227,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     }),
 
     // The agents the user may talk with directly now (D-111d), with what each one allows: no prompt, no permission.
-    route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [] } })),
+    route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [], off: offInterlocutors?.() ?? [] } })),
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
       onlyFields(body, ['mode', 'project', 'agent', 'incognito', 'trialModel']);
@@ -2246,8 +2254,15 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       }
       const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
-      // this check, against what the selector offers, is the one that counts.
-      const model = body.mode === 'work' ? defaultModel() : undefined;
+      // this check, against what the selector offers, is the one that counts. The plain chat with Claude
+      // (D-111, tappa B) takes it only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT none.
+      const preferred = body.mode === 'work' ? defaultModel() : undefined;
+      const model =
+        policy?.agent === CLAUDE_CHAT_AGENT
+          ? DIRECT_MODELS.find((entry) => entry === preferred)
+          : policy?.agent === CODEX_CHAT_AGENT
+            ? undefined
+            : preferred;
       const conversation = await createConversation(sql, {
         mode: body.mode,
         ...(body.project === undefined ? {} : { project: body.project }),
@@ -2323,6 +2338,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       await purgeConversation(sql, id);
+      await chatFolderGone?.(id).catch(() => undefined);
       return { body: { purged: id } };
     }),
 
@@ -2331,6 +2347,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       const erased = erase === undefined ? await eraseConversation(sql, id) : await erase(id);
+      await chatFolderGone?.(id).catch(() => undefined);
       return { body: { erased: true, cards: erased.cards } };
     }),
 
@@ -3857,6 +3874,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     readiness: options.readiness,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
+    offInterlocutors: options.offInterlocutors,
+    chatFolderGone: options.chatFolderGone,
     trialRefusal: options.trialRefusal,
     services: options.services,
     leaveRule: options.leaveRule,

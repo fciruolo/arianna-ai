@@ -960,6 +960,48 @@ export async function prepareEmptyWorkspace(options: WorkspaceOptions): Promise<
   return workspace;
 }
 
+/** A conversation id as the core writes it: a lowercase uuid. */
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** How the folder of a conversation starts: the core names runs with a bare uuid, so the two never meet. */
+const CONVERSATION_PREFIX = 'chat-';
+
+/** Where the empty folder of a conversation lives: `data/worktrees/chat-<conversationId>`. */
+export function conversationWorkspacePath(options: { data: string; conversationId: string }): string {
+  if (!CONVERSATION_ID.test(options.conversationId)) throw new WorkspaceError(`invalid conversation id ${JSON.stringify(options.conversationId)}`);
+  return join(options.data, WORKTREES_DIR, `${CONVERSATION_PREFIX}${options.conversationId}`);
+}
+
+/**
+ * The empty folder of a conversation (D-111, tappa B: the plain chat with
+ * Claude without a project): like `prepareEmptyWorkspace`, but the same
+ * folder at every run of the conversation, because Claude Code keeps its
+ * sessions per folder and `--resume` finds one only there. Created when
+ * missing; an existing one must be a plain folder at that exact path, never
+ * a symbolic link. The run has no tool, so nothing of the user's is in it.
+ * Removed with `removeConversationWorkspace` when the conversation goes.
+ */
+export async function openConversationWorkspace(options: { data: string; conversationId: string }): Promise<PreparedWorkspace> {
+  const target = conversationWorkspacePath(options);
+  await mkdir(join(options.data, WORKTREES_DIR), { recursive: true });
+  try {
+    await mkdir(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  if (!(await lstat(target)).isDirectory()) throw new WorkspaceError(`the folder of conversation ${options.conversationId} is not a folder`);
+  const real = await realpath(target);
+  if (real !== target) throw new WorkspaceError(`the folder of conversation ${options.conversationId} goes through a symbolic link`);
+  const decision: WorkspaceDecision = { decision: 'allow', rule: 'workspace', reason: 'empty folder of the conversation: no file to read' };
+  const workspace: PreparedWorkspace = Object.freeze({ decision, path: target });
+  prepared.set(workspace, real);
+  return workspace;
+}
+
+/** Removes the folder of a conversation (`openConversationWorkspace`); nothing when it is not there. */
+export async function removeConversationWorkspace(options: { data: string; conversationId: string }): Promise<void> {
+  await rm(conversationWorkspacePath(options), { recursive: true, force: true });
+}
+
 /** Removes the workspace of a run, and the copy of the project's notes made for it (D-166). It is a plain folder: no repository is involved. */
 export async function removeWorkspace(options: WorkspaceOptions): Promise<void> {
   await rm(workspacePath(options), { recursive: true, force: true });

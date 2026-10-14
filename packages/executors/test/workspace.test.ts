@@ -8,6 +8,8 @@ import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 import {
+  openConversationWorkspace,
+  removeConversationWorkspace,
   commitChanges,
   repositoryBranches,
   repositoryLog,
@@ -621,5 +623,34 @@ describe('prepareEmptyWorkspace', () => {
 
   it('refuses a run id that is not a plain folder name', async () => {
     await assert.rejects(prepareEmptyWorkspace({ data: DATA, runId: 'Not A Run' }), WorkspaceError);
+  });
+});
+
+describe('openConversationWorkspace', () => {
+  it('opens the same folder of a conversation at every run, accepted by the adapter, removed with removeConversationWorkspace', async () => {
+    const conversationId = randomUUID();
+    const first = await openConversationWorkspace({ data: DATA, conversationId });
+    assert.equal(first.decision.decision, 'allow');
+    assert.equal(first.path, join(DATA, 'worktrees', `chat-${conversationId}`));
+    assert.ok(preparedPath(first) !== undefined);
+    writeFileSync(join(first.path, '.left-by-the-binary'), '');
+    const again = await openConversationWorkspace({ data: DATA, conversationId });
+    assert.equal(again.path, first.path);
+    assert.ok(preparedPath(again) !== undefined);
+    await removeConversationWorkspace({ data: DATA, conversationId });
+    assert.equal(existsSync(first.path), false);
+    // Nothing there: no error.
+    await removeConversationWorkspace({ data: DATA, conversationId });
+  });
+
+  it('refuses an id that is not a conversation id, and a folder that is a symbolic link', async () => {
+    await assert.rejects(openConversationWorkspace({ data: DATA, conversationId: 'kb' }), WorkspaceError);
+    await assert.rejects(openConversationWorkspace({ data: DATA, conversationId: randomUUID().toUpperCase() }), WorkspaceError);
+    const conversationId = randomUUID();
+    const elsewhere = join(DATA, 'elsewhere', conversationId);
+    mkdirSync(elsewhere, { recursive: true });
+    mkdirSync(join(DATA, 'worktrees'), { recursive: true });
+    symlinkSync(elsewhere, join(DATA, 'worktrees', `chat-${conversationId}`));
+    await assert.rejects(openConversationWorkspace({ data: DATA, conversationId }), WorkspaceError);
   });
 });

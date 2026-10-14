@@ -19,7 +19,7 @@ import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalMod
 import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
-import { CHAT_AGENT, loadConversation, type DirectModel } from '../conversations.ts';
+import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
@@ -135,6 +135,8 @@ export interface OrchestratorOptions {
   codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly (claude-direct.ts); for tests. */
   directPrompt?: string;
+  /** What Claude reads first in the plain chat with the user (claude-direct.ts, D-111 tappa B); for tests. */
+  chatPrompt?: string;
   /** What Claude reads first when it writes the cards of a plan (claude-plan.ts); for tests. */
   plannerPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
@@ -325,6 +327,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.claude === undefined ? {} : { claude: options.claude }),
     ...(options.codex === undefined ? {} : { codex: options.codex }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
+    ...(options.chatPrompt === undefined ? {} : { chatPrompt: options.chatPrompt }),
     ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.advise === undefined ? {} : { advise: options.advise }),
@@ -517,8 +520,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
   /** The task is a message of the direct chat with its assignee (D-111). */
   async function isDirectChat(task: Task): Promise<boolean> {
-    // The agent of the Finances (D-183) answers its marked conversation with its own tools on the local model, as Arianna does.
-    return task.assignee !== CHAT_AGENT && !task.finance && (await directChatOf(sql, task, task.assignee)) !== undefined;
+    // The agent of the Finances (D-183) answers its marked conversation with its own tools on the local model, as Arianna does;
+    // so does the local model of «Con chi parli», and the plain chats with Claude or ChatGPT answer in the step itself (D-111, tappa B).
+    return task.assignee !== CHAT_AGENT && !task.finance && !answersWithoutDelegation(task.assignee) && (await directChatOf(sql, task, task.assignee)) !== undefined;
   }
 
   /**
@@ -631,6 +635,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         const direct = await directFor(task);
         directs.set(key, direct?.model ?? null);
         // The run reads the task and the chat: their label, recorded with it.
+        // A plain chat on the cloud that cannot answer now calls no model: it waits for the user (run).
+        if (direct === undefined && CLOUD_CHAT_AGENTS.includes(task.assignee)) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
         return direct === undefined
           ? localSpec(task)
           : { agent: task.assignee, executor: 'claude', locality: 'cloud', model: direct.model, effectiveLabel: direct.label };
@@ -701,6 +707,20 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       }
       // The direct chat never reaches the local model (D-111).
       if (directChat) return directChatEnd(task, { kind: 'continue', usage: { steps: 0 } });
+
+      // The plain chat with Claude (D-111, tappa B): Claude answers, or nobody; never the local model in its place.
+      if (planned === undefined && CLOUD_CHAT_AGENTS.includes(task.assignee) && (await directChatOf(sql, task, task.assignee)) !== undefined) {
+        const [answered] = await sql<{ id: string }[]>`
+          SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
+        if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
+        const model = plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
+        if (model === undefined) {
+          return { kind: 'wait-user', reason: `${task.assignee} cannot answer now: it is off in the configuration, or the conversation holds more than it may read` };
+        }
+        const history = await historyOf(sql, options.agents, task, [], []);
+        if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
+        return runDirect(env, ctx, model, history, true);
+      }
 
       const agent = options.agents.get(task.assignee);
       if (agent === undefined) return { kind: 'wait-user', reason: `no agent card for ${task.assignee}` };

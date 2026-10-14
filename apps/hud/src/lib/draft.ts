@@ -106,7 +106,9 @@ export function cloudTargets(executors: readonly CloudExecutorKind[] | undefined
  * and the model of its latest answer, when there is one.
  */
 export function whoAnswers(agent: string, model: string | null, last: string | null): string {
-  const chosen = model === null ? 'il modello che il router sceglie a ogni messaggio' : (MODEL_TEXT[model] ?? model);
+  // The plain chat with Claude (D-111, tappa B) has no router: Sonnet when no model is chosen.
+  const fallback = agent === 'claude' ? (MODEL_TEXT.sonnet ?? 'sonnet') : 'il modello che il router sceglie a ogni messaggio';
+  const chosen = model === null ? fallback : (MODEL_TEXT[model] ?? model);
   const latest = last === null ? '' : ` · ultima risposta: ${MODEL_TEXT[last] ?? last}`;
   return `Risponde ${agentName(agent)}, con ${chosen}${latest}`;
 }
@@ -166,7 +168,16 @@ export function arrowChoice<T>(options: readonly T[], current: T, key: string): 
 
 /** The note of a direct chat with a local agent: nothing leaves the Mac. */
 export function localNote(agent: string): string {
+  // The local model of «Con chi parli» (D-111, tappa B): it reads the knowledge base, never writes it.
+  if (agent === 'local-chat') return 'Risponde il modello locale, con la base di conoscenza in sola lettura: niente esce dal Mac. Arianna non è in mezzo.';
   return `${agentName(agent)} risponde con il modello locale: niente esce dal Mac. Arianna non è in mezzo.`;
+}
+
+/** Why an interlocutor of «Con chi parli» cannot answer now (D-111, tappa B), in the words of the window "Nuovo". */
+export function offReason(agent: string): string {
+  if (agent === 'codex') return 'ChatGPT senza progetto non c’è ancora: con un progetto scegli il Coder, che può lavorare con Codex.';
+  if (agent === 'claude') return 'Claude è spento in Impostazioni oppure non gira su questo Mac.';
+  return `${agentName(agent)} non può rispondere adesso.`;
 }
 
 /** Above this many characters a message of a direct chat on Claude asks before it goes (D-111, risposta 5). */

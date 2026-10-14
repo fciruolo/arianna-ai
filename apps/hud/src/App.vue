@@ -79,7 +79,7 @@ import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -1175,6 +1175,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       v-if="showNew"
       :projects="projects"
       :agents="directAgents.filter((entry) => entry.container === undefined)"
+      :off="offInterlocutors"
       :characters="characters?.agents"
       :initial-agent="newWith"
       @close="showNew = false"

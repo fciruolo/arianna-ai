@@ -106,6 +106,9 @@ export {
   type ProjectNoteInput,
 } from './notes.ts';
 export {
+  conversationWorkspacePath,
+  openConversationWorkspace,
+  removeConversationWorkspace,
   prepareEmptyWorkspace,
   prepareWorkspace,
   preparedPath,

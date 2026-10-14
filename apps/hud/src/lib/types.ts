@@ -21,6 +21,15 @@ export interface DirectAgent {
   project: boolean;
   /** Only on a part of this project (GOD, D-127): opened from its own entry, not from "+ Nuovo". */
   container?: string;
+  /** «Con chi parli» (D-111, tappa B): the local model or the plain chat with Claude, not an agent of the team. */
+  interlocutor?: boolean;
+}
+
+/** An interlocutor of «Con chi parli» that cannot answer now (D-111, tappa B): "+ Nuovo" shows it off, with why. */
+export interface OffInterlocutor {
+  agent: string;
+  description: string;
+  reason: string;
 }
 
 export interface Conversation {

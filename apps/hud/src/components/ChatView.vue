@@ -183,6 +183,8 @@ const answersDirect = computed(() => props.conversation.origin === 'system' && p
 /** The direct chat with an agent (D-111d): it answers in place of Arianna, where its card says. */
 const direct = computed(() => props.conversation.agent);
 const directPolicy = computed(() => (direct.value === null ? undefined : props.directAgents?.find((entry) => entry.agent === direct.value)));
+/** The plain chat with Claude (D-111, tappa B): Sonnet or Opus, Sonnet when none is chosen; no context indicator yet. */
+const plain = computed(() => direct.value === 'claude' && props.conversation.workspace === null);
 /** Every message goes to Claude; without the list (an agent turned off), a conversation on a project is taken as one. */
 const cloud = computed(() => direct.value !== null && (directPolicy.value?.cloud ?? props.conversation.workspace !== null));
 /** The cloud executors of the agent that run now (D-140): Claude when an older core does not say. */
@@ -209,14 +211,14 @@ const directPose = computed<Pose>(() => (direct.value === null ? props.arianna.p
 const meter = computed(() => contextMeter(props.conversation.contextTokens));
 const meterClass = { ok: 'bg-accent', warn: 'bg-warn', full: 'bg-danger' } as const;
 const selectable = computed(() =>
-  answersDirect.value
+  answersDirect.value || plain.value
     ? props.models.filter((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model))
     : cloud.value
       ? props.models.filter((entry) => (directExecutors.value as readonly string[]).includes(entry.executor))
       : props.models,
 );
 const selectorName = computed(() => (answersDirect.value ? 'Chi risponde in questa chat' : 'Modello per i passi delegati'));
-const autoText = computed(() => (answersDirect.value ? 'Arianna (locale)' : 'automatico (router)'));
+const autoText = computed(() => (answersDirect.value ? 'Arianna (locale)' : plain.value ? 'Claude Sonnet (predefinito)' : 'automatico (router)'));
 /**
  * The Claude model answering here, or null for the local model. A model no
  * longer selectable (Claude turned off) means Arianna answers, as the core does.
@@ -239,6 +241,7 @@ const selected = computed(() => (answersDirect.value ? (directModel.value ?? off
 /** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
 const answerModel = computed(() => {
   if (direct.value !== null && !cloud.value) return 'locale';
+  if (plain.value && props.conversation.model === null) return MODEL_TEXT.sonnet ?? 'sonnet';
   if (direct.value !== null) return props.conversation.model === null ? `${shortTarget(directExecutors.value)} (router)` : (MODEL_TEXT[props.conversation.model] ?? props.conversation.model);
   return directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value);
 });
@@ -696,7 +699,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <p v-if="sessionProblem !== null" class="mt-1 text-xs text-danger" role="alert">{{ sessionProblem }}</p>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
             <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
-            <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[12px] text-muted">
+            <div v-if="cloud && !plain" class="mt-1.5 flex items-center gap-2 font-mono text-[12px] text-muted">
               <span>CONTESTO</span>
               <span
                 class="relative h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"

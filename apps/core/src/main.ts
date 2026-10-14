@@ -25,12 +25,13 @@ import {
   workParts,
   type TelegramConfig,
 } from '@arianna/config';
-import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
+import { createClaudeExecutor, createCodexExecutor, createLocalModel, removeConversationWorkspace, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
 import { enqueueArchive, notesToPropose, proposeArchive, recordRelocated, relocateArchived } from './archivist.ts';
-import { directPolicies, type DirectPolicy } from './direct-chat.ts';
+import { directPolicies, offInterlocutors, type DirectPolicy } from './direct-chat.ts';
+import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT } from './conversations.ts';
 import { createGodApi } from './god/api.ts';
 import { godGit } from './god/clone.ts';
 import { createGodLanding } from './god/land.ts';
@@ -144,7 +145,8 @@ const userAgents = createUserAgents({
   home: config.home,
   dataDir: config.paths.data,
   agents,
-  official: new Set(agents.keys()),
+  // The plain chats of «Con chi parli» (D-111, tappa B) are named after their executor: no user agent takes those names.
+  official: new Set([...agents.keys(), CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT]),
   catalog: { role: (id) => agentsCatalog.role(id), adoptedRole: (page, path) => agentsCatalog.adoptedRole(page, path) },
   // Deleting an agent drops its [agents.<id>] (model and skills) from arianna.toml (D-161), through the settings page made further below.
   forget: (name) => {
@@ -1001,6 +1003,9 @@ const server = await startApiServer({
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, config.paths.data, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
   directAgents,
+  // D-111, tappa B: who of «Con chi parli» cannot answer now (ChatGPT without a project), and the folder of a plain chat with Claude.
+  offInterlocutors: () => offInterlocutors({ claude: adapters.claude && settings.current().cloud.executors.includes('claude'), codex: adapters.codex && settings.current().cloud.executors.includes('codex') }),
+  chatFolderGone: (conversationId) => removeConversationWorkspace({ data: config.paths.data, conversationId }).catch(report),
   // GOD (D-127): the clone of Arianna's code and GOD's conversations.
   god: createGodApi({
     sql,

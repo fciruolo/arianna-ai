@@ -31,7 +31,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -340,8 +340,10 @@ export async function discussWithGod(ref: ChangelogRef): Promise<Conversation> {
 }
 
 /** The agents the user may talk with directly now (D-111d). */
-export async function listDirectAgents(): Promise<DirectAgent[]> {
-  return (await call<{ agents: DirectAgent[] }>('GET', '/api/direct-agents')).agents;
+/** Who the user may talk with directly (D-111d), with the interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B; absent from an older core). */
+export async function listDirectChoices(): Promise<{ agents: DirectAgent[]; off: OffInterlocutor[] }> {
+  const answer = await call<{ agents: DirectAgent[]; off?: OffInterlocutor[] }>('GET', '/api/direct-agents');
+  return { agents: answer.agents, off: answer.off ?? [] };
 }
 
 /** The projects the user approved, which a new work conversation may choose. */

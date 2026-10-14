@@ -114,6 +114,28 @@ export type DirectModel = (typeof DIRECT_MODELS)[number];
 
 /** The agent that answers in the chat. */
 export const CHAT_AGENT = 'arianna';
+
+/**
+ * «Con chi parli» (D-111, tappa B): the local model with the knowledge base
+ * read only (a card, agents/local-chat.yaml), only in a private conversation;
+ * it answers with its two tools on the local model, as Arianna does, never
+ * through a delegation.
+ */
+export const LOCAL_CHAT_AGENT = 'local-chat';
+/**
+ * Claude and ChatGPT without a project (D-111, tappa B): a plain chat on the
+ * chain of D-064 (claude-direct.ts), no tool, an empty folder of the
+ * conversation; only in a work conversation (L1) and never on a project (with
+ * one the user talks with the Coder). Not cards: names of the executors.
+ */
+export const CLAUDE_CHAT_AGENT = 'claude';
+export const CODEX_CHAT_AGENT = 'codex';
+export const CLOUD_CHAT_AGENTS: readonly string[] = [CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT];
+
+/** Who answers this conversation without a delegation: Arianna, the local model and the plain chats on the cloud. */
+export function answersWithoutDelegation(agent: string | null): boolean {
+  return agent === null || agent === LOCAL_CHAT_AGENT || CLOUD_CHAT_AGENTS.includes(agent);
+}
 /** Longest message the user can send; longer text belongs in a document. */
 export const MAX_MESSAGE_LENGTH = 16_000;
 const TITLE_LENGTH = 80;
@@ -202,6 +224,15 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(options.agent.name) || options.agent.name === CHAT_AGENT) throw new ChatError('invalid', 'agent is not one the user may talk with');
     if (!options.agent.modes.includes(options.mode)) throw new ChatError('invalid', `${options.agent.name} does not answer a ${options.mode} conversation`);
     if (options.agent.project && options.project === undefined) throw new ChatError('invalid', `the direct chat with ${options.agent.name} needs a project`);
+    // «Con chi parli» (D-111, tappa B), as the database checks it too (migration 0063): the mode follows who answers.
+    if (options.agent.name === LOCAL_CHAT_AGENT && options.mode !== 'private') throw new ChatError('invalid', 'the local model answers only a private conversation');
+    if (CLOUD_CHAT_AGENTS.includes(options.agent.name)) {
+      if (options.mode !== 'work') throw new ChatError('invalid', `${options.agent.name} answers only a work conversation`);
+      if (options.project !== undefined) throw new ChatError('invalid', `the plain chat with ${options.agent.name} has no project: with a project the user talks with the Coder`);
+    }
+    if (options.agent.name === CLAUDE_CHAT_AGENT && options.model !== undefined && !(DIRECT_MODELS as readonly string[]).includes(options.model)) {
+      throw new ChatError('invalid', 'the plain chat with Claude takes Sonnet or Opus');
+    }
   }
   const incognito = options.incognito === true;
   // A direct chat keeps its agent's session to resume it (D-111): it has no incognito form.
@@ -241,6 +272,11 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
   if (model !== null && conversation.origin === 'system' && !(DIRECT_MODELS as readonly string[]).includes(model)) {
     throw new ChatError('invalid', 'a system chat is answered by Arianna or by Claude Sonnet or Opus');
   }
+  // The plain chat with Claude (D-111, tappa B) the same: Fable only with a project, behind the budget approval.
+  if (model !== null && conversation.agent === CLAUDE_CHAT_AGENT && !(DIRECT_MODELS as readonly string[]).includes(model)) {
+    throw new ChatError('invalid', 'the plain chat with Claude takes Sonnet or Opus');
+  }
+  if (conversation.agent === CODEX_CHAT_AGENT) throw new ChatError('invalid', 'the plain chat with ChatGPT has no model to choose');
   await sql`UPDATE conversations SET model = ${model} WHERE id = ${id}`;
   await appendEvent(sql, { kind: 'conversation.model', label: 'L0', payload: { conversationId: id, model } });
   const updated = await loadConversation(sql, id);
@@ -545,7 +581,9 @@ export async function writeUserMessage(
 
   // The direct chat runs one Coder at a time in the project folder (D-111): the next message waits for the answer.
   if (conversation.agent !== null && (await directChatBusy(tx, conversationId))) {
-    throw new ChatError('busy', 'the Coder is still working on the previous message: wait for the answer, or stop it');
+    // "still working" is what the chat reads; the name says who (the local model and Claude wait one at a time too).
+    const who = conversation.agent === 'coder' ? 'the Coder' : conversation.agent;
+    throw new ChatError('busy', `${who} is still working on the previous message: wait for the answer, or stop it`);
   }
 
   // The user went on: the waits of this conversation without a pending approval close (D-109).
@@ -568,7 +606,9 @@ export async function writeUserMessage(
   }
   // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
   // The agent of the Finances (D-183) answers on the local model with its tools, as Arianna does: no delegation.
-  if (conversation.agent !== null && !conversation.finance) {
+  // So do the local model and the plain chats with Claude or ChatGPT (D-111, tappa B): the step itself answers.
+  // (`agent !== null` again only for the type: answersWithoutDelegation already says yes to Arianna.)
+  if (!answersWithoutDelegation(conversation.agent) && conversation.agent !== null && !conversation.finance) {
     await createDelegation(tx, {
       taskId: task.id,
       step: DIRECT_STEP,

@@ -22,7 +22,7 @@ import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type Remote
 import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
 import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
@@ -62,6 +62,8 @@ export function createChatStore() {
   const projects = ref<ProjectInfo[]>([]);
   /** Who the user may talk with directly (D-111d), as their cards allow. */
   const directAgents = ref<DirectAgent[]>([]);
+  /** «Con chi parli» (D-111, tappa B): who cannot answer now, shown off in "+ Nuovo". */
+  const offInterlocutors = ref<OffInterlocutor[]>([]);
   /** Approvals decided from Telegram (or the phone) while the page was open. */
   const remoteDecisions = ref<RemoteDecision[]>([]);
   const storage = typeof window === 'undefined' ? undefined : window.localStorage;
@@ -387,7 +389,11 @@ export function createChatStore() {
   async function refreshProjects(): Promise<void> {
     try {
       // The agents too: who is active, and Claude on or off, change without a restart.
-      [projects.value, directAgents.value] = await Promise.all([api.listProjects(), api.listDirectAgents().catch(() => directAgents.value)]);
+      const keep = { agents: directAgents.value, off: offInterlocutors.value };
+      const [list, choices] = await Promise.all([api.listProjects(), api.listDirectChoices().catch(() => keep)]);
+      projects.value = list;
+      directAgents.value = choices.agents;
+      offInterlocutors.value = choices.off;
     } catch (cause) {
       fail(cause);
     }
@@ -1195,7 +1201,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

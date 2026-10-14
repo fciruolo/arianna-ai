@@ -297,7 +297,8 @@ function waitText(detail: string): string {
   return 'In attesa dell’esecutore';
 }
 
-const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD', finanze: 'Finanze' };
+// «Con chi parli» (D-111, tappa B): the local model and the plain chats are named for what they are.
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD', finanze: 'Finanze', 'local-chat': 'Modello locale', claude: 'Claude', codex: 'ChatGPT' };
 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
@@ -319,6 +320,10 @@ export function agentTitle(agent: string): string {
 const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
   arianna: { en: "Plans, assigns and reports; the user's main contact", it: 'Pianifica, assegna e riferisce; è la tua interlocutrice principale' },
   coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
+  'local-chat': {
+    en: 'Chats on the local model with the knowledge base read only; nothing leaves this computer',
+    it: 'Chat con il modello locale, con la base di conoscenza in sola lettura: niente esce dal Mac',
+  },
   reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
   designer: { en: 'Designs pages and screens as self-contained HTML mockups in the project', it: 'Disegna pagine e schermate come mockup HTML autonomi nel progetto' },
   god: { en: 'Develops Arianna from inside Arianna, in a clone of its code', it: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
