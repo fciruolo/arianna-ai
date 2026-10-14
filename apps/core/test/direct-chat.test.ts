@@ -103,6 +103,7 @@ test('the plain chats with Claude and ChatGPT have caps of their own, a card its
   assert.deepEqual(assigneeLimits(agents, 'claude'), PLAIN_CHAT_LIMITS);
   assert.deepEqual(assigneeLimits(agents, 'codex'), PLAIN_CHAT_LIMITS);
   assert.ok(PLAIN_CHAT_LIMITS.maxSteps !== undefined && PLAIN_CHAT_LIMITS.maxMinutes !== undefined, 'a task without caps never starts');
+  assert.equal(PLAIN_CHAT_LIMITS.maxCost, 0, 'nothing paid beyond the subscription, as every card');
   assert.deepEqual(assigneeLimits(agents, 'coder'), agents.get('coder')?.card.limits);
   assert.deepEqual(assigneeLimits(agents, 'nobody'), {});
 });

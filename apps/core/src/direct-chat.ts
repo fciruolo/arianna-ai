@@ -2,8 +2,8 @@ import { isFinanceCard, type LoadedAgent } from '@arianna/agents';
 import { isAtMost, type ConversationMode } from '@arianna/policy';
 
 import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, LOCAL_CHAT_AGENT } from './conversations.ts';
-import type { TaskLimits } from './limits.ts';
 import { GOD_AGENT, GOD_PROJECT } from './god/clone.ts';
+import type { TaskLimits } from './limits.ts';
 import { briefCeiling, CLOUD_DELEGATES, delegationRoute, isCloudRoute } from './orchestrator/delegate.ts';
 
 /**
@@ -67,13 +67,13 @@ function claudeChatPolicy(): DirectPolicy {
   return { agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, cloud: true, executors: ['claude'], modes: ['work'], project: false, interlocutor: true };
 }
 
-/** The interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B). */
 /**
  * The caps of the task of a plain chat with Claude or ChatGPT (D-209): they have
  * no card, and a task without caps never starts. One answer is one step; a
  * resumed session that is gone starts once more (c2), hence two, and a margin.
+ * Each message is a task of its own. No cost beyond the subscription, as every card.
  */
-export const PLAIN_CHAT_LIMITS: Readonly<TaskLimits> = Object.freeze({ maxSteps: 3, maxMinutes: 15 });
+export const PLAIN_CHAT_LIMITS: Readonly<TaskLimits> = Object.freeze({ maxSteps: 3, maxMinutes: 15, maxCost: 0 });
 
 /** The caps of a task by its assignee: the card's, the plain chats' fixed ones, none for anyone else. */
 export function assigneeLimits(agents: ReadonlyMap<string, LoadedAgent>, assignee: string): TaskLimits {
@@ -81,6 +81,7 @@ export function assigneeLimits(agents: ReadonlyMap<string, LoadedAgent>, assigne
   return agents.get(assignee)?.card.limits ?? {};
 }
 
+/** The interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B). */
 export function offInterlocutors(available: { claude: boolean; codex: boolean }): OffInterlocutor[] {
   return [
     ...(available.claude ? [] : [{ agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, reason: CLAUDE_CHAT_OFF }]),
