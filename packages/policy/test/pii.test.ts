@@ -90,19 +90,25 @@ test('the name of the assistant and of the agents is not a person, a longer name
   assert.equal(person.rule, 'pii');
 });
 
-test('a hash of git, a sha256 or a UUID is not a document number; a document is', () => {
-  const brief = 'Skill anthropics/skills/webapp-testing [739de001433318de], commit 2b27894, run 18103917-7caf-4d42-952c-e8fec363cb52';
-  const codes = [entity(brief, '9de001433318de', 'ID_DOC'), entity(brief, '2b27894', 'DOCID'), entity(brief, '7caf-4d42', 'ID_DOC')];
+test('inside a hash of git, a sha256 or a UUID nothing counts; personal data never look like that', () => {
+  const brief = 'Skill webapp-testing [739de001433318de], commit 2b27894, notes in data/worktrees/fc19c988-b759-4e36-8439-83aa3065752b/.notes';
+  const codes = [entity(brief, '9de001433318de', 'ID_DOC'), entity(brief, '2b27894', 'DOCID'), entity(brief, 'b759-4e36-8439', 'IBAN'), entity(brief, '83aa3065752b', 'TELEPHONENUM')];
   assert.equal(check([fragment(brief)], CLAUDE, piiReport([brief], [codes])).decision, 'allow');
-  const card = 'Carta di identità CA12345AB, passaporto YA1234567, documento abcdefabcdef';
-  const documents = [entity(card, 'CA12345AB', 'ID_DOC'), entity(card, 'YA1234567', 'ID_DOC'), entity(card, 'abcdefabcdef', 'DOCID')];
-  for (const found of documents) {
-    const decision = check([fragment(card)], CLAUDE, piiReport([card], [[found]]));
-    assert.ok(decision.decision === 'block', card.slice(found.start, found.end));
+  const data = 'Carta CA12345AB, passaporto YA1234567, IBAN IT00X0000000000000000000000, cell 3331234567, P.IVA 01234567890, codice abcdefabcdef, mail a1b2c3d4@example.it';
+  const found = [
+    entity(data, 'CA12345AB', 'ID_DOC'),
+    entity(data, 'YA1234567', 'ID_DOC'),
+    entity(data, 'IT00X0000000000000000000000', 'IBAN'),
+    entity(data, '3331234567', 'TELEPHONENUM'),
+    entity(data, '01234567890', 'PIVA'),
+    entity(data, 'abcdefabcdef', 'DOCID'),
+    entity(data, 'a1b2c3d4@example.it', 'EMAIL'),
+  ];
+  for (const one of found) {
+    const decision = check([fragment(data)], CLAUDE, piiReport([data], [[one]]));
+    assert.ok(decision.decision === 'block', data.slice(one.start, one.end));
     assert.equal(decision.rule, 'pii');
   }
-  const phone = 'Chiama 3331234567';
-  assert.equal(check([fragment(phone)], CLAUDE, piiReport([phone], [[entity(phone, '3331234567', 'TELEPHONENUM')]])).decision, 'block', 'only document kinds look at hashes');
 });
 
 test('an ignored name only covers FULLNAME', () => {

@@ -40,17 +40,17 @@ export const ASSISTANT_NAMES: readonly string[] = ['Arianna'];
 
 const MAX_NAME = 60;
 
-/** Kinds the model gives to document numbers: a hash of git or a UUID in a brief of code is not one. */
-const DOCUMENT_KINDS: readonly string[] = ['ID_DOC', 'DOCID'];
 const WORD_CHAR = /[0-9A-Za-z_-]/;
 const LOWER_HEX = /^[0-9a-f]{7,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * True when the entity lies inside a lowercase hexadecimal word of 7-64 digits
- * (a commit, a sha256, the version of a skill: `[739de001433318de]`) or a UUID.
- * An Italian identity card, passport or licence number has uppercase letters
- * and letters beyond f (CA12345AB, YA1234567), so it never matches.
+ * True when the entity lies inside an identifier of code: a lowercase
+ * hexadecimal word of 7-64 characters with digits and letters (a commit, a
+ * sha256, the version of a skill: `[739de001433318de]`) or a UUID (the id of a
+ * run in the path of the notes was read once as an IBAN). Personal data never
+ * look like that: a phone, a VAT or card number has digits only, an IBAN, a
+ * codice fiscale or an identity card has uppercase letters (IT60X…, CA12345AB).
  */
 function isCodeIdentifier(text: string, entity: PiiEntity): boolean {
   let start = entity.start;
@@ -58,7 +58,7 @@ function isCodeIdentifier(text: string, entity: PiiEntity): boolean {
   while (start > 0 && WORD_CHAR.test(text.charAt(start - 1))) start--;
   while (end < text.length && WORD_CHAR.test(text.charAt(end))) end++;
   const word = text.slice(start, end);
-  return (LOWER_HEX.test(word) && /[0-9]/.test(word)) || UUID.test(word);
+  return (LOWER_HEX.test(word) && /[0-9]/.test(word) && /[a-f]/.test(word)) || UUID.test(word);
 }
 const KIND = /^[A-Z][A-Z0-9_]{0,39}$/;
 
@@ -124,7 +124,7 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
     const kinds = new Set<string>();
     for (const entity of found) {
       if (entity.kind === 'FULLNAME' && ignored.has(normalizeName(text.slice(entity.start, entity.end)))) continue;
-      if (DOCUMENT_KINDS.includes(entity.kind) && isCodeIdentifier(text, entity)) continue;
+      if (isCodeIdentifier(text, entity)) continue;
       kinds.add(entity.kind);
     }
     for (const kind of kinds) {
