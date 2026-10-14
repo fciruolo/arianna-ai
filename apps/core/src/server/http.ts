@@ -92,7 +92,8 @@ import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
-import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveRewrite, saveUserNote, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { MAX_PROJECTS, PROJECT_KEY, type FollowedProjects, type ProjectNews } from '../followed-projects.ts';
+import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveProjectChoice, saveRewrite, saveUserNote, type AnswerGate, type ProjectChoice, type OpenQuestion } from '../dev-progress.ts';
 import { createUserFacts, FACTS_STATUS, FactsError, MAX_FACT_TEXT, MAX_TOPIC } from '../user-facts.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -3097,10 +3098,14 @@ export interface DevProgressApi {
   newsRecorded?: (key: string) => Promise<void>;
   /** Tests only: the event of «Su di te, per Claude Code» saved (D-114), with the length only. */
   userNoteRecorded?: (chars: number) => Promise<void>;
+  /** The projects followed for ideas (D-202); without them the section is empty. */
+  projects?: FollowedProjects;
+  /** Tests only: the event of a choice on a news of a project. */
+  projectRecorded?: (key: string, choice: ProjectChoice) => Promise<void>;
 }
 
 /** An entry of the news as the page gets it: with the answer already in RISPOSTE.md, if any. */
-function newsView(news: DesignNews | null, answers: Map<string, { state: string; at: string }>): (DesignNews & { items: (NewsItem & { answer: { state: 'new' | 'done'; at: string } | null })[] }) | null {
+function newsView<N extends DesignNews | ProjectNews>(news: N | null, answers: Map<string, { state: string; at: string }>): (N & { items: (NewsItem & { answer: { state: 'new' | 'done'; at: string } | null })[] }) | null {
   if (news === null) return null;
   return {
     ...news,
@@ -3125,6 +3130,11 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
   const need = (): DevProgressApi => {
     if (dev === undefined) throw new HttpError(404, 'not found');
     return dev;
+  };
+  const needProjects = (): FollowedProjects => {
+    const projects = need().projects;
+    if (projects === undefined) throw new HttpError(404, 'not found');
+    return projects;
   };
   const viaGateway: AnswerGate = async (answer, key) => {
     const decision = await passGateway(sql, [{ value: answer, label: 'L1', source: key === 'user-note' ? 'dev:user-note' : 'dev:answer' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, { summary: key });
@@ -3218,6 +3228,61 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       let logged = true;
       try {
         await newsRecorded(saved.key);
+      } catch (error) {
+        logged = false;
+        onError(error);
+      }
+      return { status: 201, body: { ...saved, logged } };
+    }),
+    // The projects followed for ideas (D-202): public text read from GitHub (L0), with what was already chosen.
+    route('GET', '/api/dev/projects', () => {
+      const { home, projects } = need();
+      const answers = answersByKey(home);
+      const list = (projects?.list() ?? []).map((project) => ({ ...project, news: newsView(project.news, answers) }));
+      return Promise.resolve({ body: { projects: list, max: MAX_PROJECTS } });
+    }),
+    route('POST', '/api/dev/projects', async (request) => {
+      const projects = needProjects();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['url']);
+      return { status: 201, body: { project: projects.add(body.url) } };
+    }),
+    route('DELETE', '/api/dev/projects', async (request) => {
+      const projects = needProjects();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['id']);
+      return { body: { project: projects.remove(body.id) } };
+    }),
+    // «Controlla novità»: the check runs in the background; the page reads again while `checking`.
+    route('POST', '/api/dev/projects/check', async (request) => {
+      const projects = needProjects();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['id']);
+      projects.check(body.id);
+      return { status: 202, body: { ok: true } };
+    }),
+    // «Implementiamo» / «Non interessa»: the client names an entry by its key; its text comes from the news of the core.
+    route('POST', '/api/dev/projects/choice', async (request) => {
+      const { home, gate = viaGateway, projectRecorded = (key: string, choice: string) => appendEvent(sql, { kind: 'dev.project_news_choice', label: 'L0', payload: { key: eventKey(key), choice } }) } = need();
+      const projects = needProjects();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['key', 'choice']);
+      const { key, choice } = body;
+      if (typeof key !== 'string' || !PROJECT_KEY.test(key)) throw new HttpError(400, 'key must be the key of a news entry');
+      if (choice !== 'implement' && choice !== 'skip') throw new HttpError(400, 'choice must be implement or skip');
+      const found = projects.findItem(key);
+      if (found === undefined) throw new HttpError(404, 'the news entry is no longer there');
+      let saved;
+      try {
+        saved = await saveProjectChoice(home, found.item, { id: found.project.id, from: found.news.from, to: found.news.to }, choice, gate);
+      } catch (error) {
+        if (!(error instanceof DevAnswerError)) throw error;
+        throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
+      }
+      if (saved.already) return { status: 200, body: saved };
+      let logged = true;
+      try {
+        await projectRecorded(saved.key, choice);
       } catch (error) {
         logged = false;
         onError(error);

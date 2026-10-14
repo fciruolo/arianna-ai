@@ -54,6 +54,7 @@ import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
 import { createLocalSummarizer } from './design-news.ts';
+import { createFollowedProjects, PROJECT_PROMPT } from './followed-projects.ts';
 import { createGithubClient } from './github-api.ts';
 import { CloudTextError, createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
@@ -401,7 +402,7 @@ const kb = createKb({
 function catalogGateway(source: string, summary: string): (repository: string) => Promise<void> {
   return async (repository) => {
     const decision = await passGateway(sql, [{ value: repository, label: 'L0', source }], createContext('L0'), { kind: 'web' }, { summary });
-    if (decision.decision !== 'allow') throw new Error(`${decision.rule}: ${decision.reason}`);
+    if (decision.decision !== 'allow') throw new Error(`gateway ${decision.rule}: ${decision.reason}`);
     const spent = spendAllowed(decision);
     if (spent?.target.kind !== 'web' || spent.texts[0] !== repository) throw new Error('the gateway decision cannot be spent');
   };
@@ -687,6 +688,28 @@ const designCatalog = createDesignCatalog({
       },
     }),
   },
+});
+// The projects followed for ideas (D-202, after D-093): releases and comparisons read from the public
+// API of GitHub only when the user presses «Controlla novità» (only the name of the repository leaves,
+// L0 through the gateway); never a clone, never their code run. Grouped by the local model as D-186.
+const followedProjects = createFollowedProjects({
+  dir: join(config.paths.data, 'catalogs'),
+  get: createGithubClient(),
+  gateway: catalogGateway('settings:followed-projects', 'api.github.com: novità dei progetti seguiti'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  summarize: createLocalSummarizer({
+    model: localModel,
+    prompt: PROJECT_PROMPT,
+    schemaName: 'followed_project_news',
+    pass: async (data) => {
+      const decision = await passGateway(sql, [{ value: data, label: 'L0', source: 'followed-projects:github' }], createContext('L0'), { kind: 'executor', id: 'local', locality: 'local' }, { summary: 'novità dei progetti seguiti' });
+      const [text] = decision.decision === 'allow' ? decision.texts : [];
+      if (text === undefined) throw new Error('the gateway did not let the news reach the local model');
+      return text;
+    },
+  }),
 });
 // The examples of the styles and the Italian descriptions of the skills (I-20, D-185): public text, written by Sonnet
 // without tools through the gateway, only when the user asks; kept in data/catalogs and never made again for the same text.
@@ -994,7 +1017,7 @@ const server = await startApiServer({
   modelReload: localReload,
   huggingface,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
-  devProgress: { home: config.home, news: () => designCatalog.news() },
+  devProgress: { home: config.home, news: () => designCatalog.news(), projects: followedProjects },
   // "Novità": CHANGELOG.md at the root of the home, read only.
   changelog: { home: config.home },
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
