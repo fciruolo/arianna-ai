@@ -12,7 +12,7 @@ import { createContext, createLabelRules } from '@arianna/policy';
 
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createProjectPages, KnowledgeError, readProjectKnowledge } from '../src/project-knowledge.ts';
-import { DIARY_MAX_BYTES, formatWorkEntry, writeWorkDiary, type WorkEntry } from '../src/work-diary.ts';
+import { CLOUD_WORKER_NAMES, DIARY_MAX_BYTES, formatWorkEntry, writeWorkDiary, type WorkEntry } from '../src/work-diary.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `work-diary-${randomUUID()}`);
 const ARIANNA = join(HOME, 'arianna');
@@ -77,6 +77,16 @@ describe('the entry', () => {
     assert.match(text, /### Richiesta\n\n```text\nAggiungi una riga al README\.\n```\n/);
     assert.match(text, /- `README\.md` \(modificato\)\n- `docs\/nuovo\.md` \(rinominato da `docs\/vecchio\.md`\)\n/);
     assert.match(text, /### Riassunto di Coder\n\n```text\nHo aggiunto la riga\.\n```\n/);
+  });
+
+  it('the executor and alias it writes are names the second scanner of personal data ignores (D-215)', () => {
+    assert.ok(CLOUD_WORKER_NAMES.includes('Claude Sonnet'));
+    assert.ok(CLOUD_WORKER_NAMES.includes('Codex Sol'));
+    for (const name of CLOUD_WORKER_NAMES) {
+      const [executor, alias] = name.toLowerCase().split(' ');
+      assert.ok(executor !== undefined && alias !== undefined);
+      assert.ok(formatWorkEntry(entry({ executor: executor as WorkEntry['executor'], alias })).includes(` · ${name} (`), name);
+    }
   });
 
   it('a request that did not leave is not written; a failed or stopped work says why', () => {

@@ -103,6 +103,7 @@ import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
 import { fileSize, trialModels } from './voice/trial.ts';
 import { trialRefusal } from './orchestrator/trial-chat.ts';
+import { CLOUD_WORKER_NAMES } from './work-diary.ts';
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -184,7 +185,7 @@ const sql = connect(config, app);
     createPiiGuard({
       start,
       development: app.development,
-      names: () => [...agents.keys()],
+      names: () => [...agents.keys(), ...CLOUD_WORKER_NAMES],
       onEvent: (event) => {
         if (event !== 'ready' && event !== 'starting' && event !== 'idle-stop') console.error(`pii guard: ${event}`);
       },

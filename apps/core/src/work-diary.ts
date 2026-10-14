@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { Project } from '@arianna/config';
+import { CLOUD_MODELS, executorOfCloudModel, type Project } from '@arianna/config';
 import type { FileChange } from '@arianna/executors';
 import { isAtMost, isLabel, maxLabel, type Label } from '@arianna/policy';
 
@@ -112,6 +112,13 @@ function cut(text: string, max: number): string {
 const OUTCOMES: Record<WorkOutcome, string> = { ok: 'riuscito', failed: 'non riuscito', stopped: 'fermato' };
 const CHANGES: Record<string, string> = { added: 'aggiunto', modified: 'modificato', deleted: 'cancellato', renamed: 'rinominato' };
 const URL = /^http:\/\/[A-Za-z0-9.[\]:-]+\/c\/[0-9a-f-]{36}$/;
+
+/**
+ * The executor and alias of every cloud model as the diary writes them
+ * («Claude Sonnet», «Codex Sol»): names of assistants, never of a person, for
+ * the second scanner of personal data (D-215).
+ */
+export const CLOUD_WORKER_NAMES: readonly string[] = CLOUD_MODELS.map((model) => `${capitalized(executorOfCloudModel(model))} ${capitalized(model)}`);
 
 /** "Coder · Claude Sonnet (claude-sonnet-4-5)". */
 export function workerName(entry: Pick<WorkEntry, 'agent' | 'executor' | 'alias' | 'model'>): string {
