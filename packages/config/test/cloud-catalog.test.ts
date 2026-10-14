@@ -23,7 +23,6 @@ models:
     strengths:
       - text: Fake strength
         source: fake-page
-    api_price: { input: 4, output: 20.5, source: fake-page }
     quota_ratio: { relative_to: sonnet, times: 2, source: fake-page }
     terms: https://example.org/terms
     notes: Only fake
@@ -43,7 +42,6 @@ test('a valid cloud catalog is parsed', () => {
     executor: 'claude',
     names: [{ name: 'claude-opus-9-9', source: 'fake-page', contextTokens: 1000000, maxOutputTokens: 128000, description: 'A fake one' }],
     strengths: [{ text: 'Fake strength', source: 'fake-page' }],
-    apiPrice: { input: 4, output: 20.5, source: 'fake-page' },
     quotaRatio: { relativeTo: 'sonnet', times: 2, source: 'fake-page' },
     terms: 'https://example.org/terms',
     notes: 'Only fake',
@@ -63,9 +61,13 @@ test('the committed cloud catalog loads, one entry per alias, every fact with it
   assert.equal(catalog.models.some((entry) => entry.quotaRatio !== undefined), false);
 });
 
+test('API prices are not a field of the catalog: the subscription is what is paid', () => {
+  assert.throws(() => parseCloudCatalog(VALID.replace('    quota_ratio', '    api_price: { input: 4, output: 20.5, source: fake-page }\n    quota_ratio')), ConfigError);
+});
+
 test('a fact must name a listed source, and every source must be used', () => {
   assert.throws(() => parseCloudCatalog(VALID.replace('source: fake-page\n    strengths', 'source: other\n    strengths')), ConfigError);
-  assert.throws(() => parseCloudCatalog(VALID.replace('    api_price: { input: 4, output: 20.5, source: fake-page }\n', '    api_price: { input: 4, output: 20.5 }\n')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('times: 2, source: fake-page }', 'times: 2 }')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('sources:\n', 'sources:\n  - id: unused\n    url: https://example.org/x\n    read: "2026-10-01"\n')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('sources:\n', 'sources:\n  - id: fake-page\n    url: https://example.org/x\n    read: "2026-10-01"\n')), ConfigError);
 });
@@ -95,14 +97,12 @@ test('names follow the rule of [cloud.models]: valid for --model and of the fami
   assert.throws(() => parseCloudCatalog(twice), ConfigError);
 });
 
-test('strengths, prices, ratios and unknown keys are checked', () => {
+test('strengths, ratios and unknown keys are checked', () => {
   assert.throws(() => parseCloudCatalog(VALID.replace('text: Fake strength', 'text: ""')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('    provider: Fake Other\n', '')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('    family: Fake Codex\n', '')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('    executor: codex\n', '    executor: codex\n    strengths: []\n')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('      - text: Fake strength\n', '      - Fake strength\n')), ConfigError);
-  assert.throws(() => parseCloudCatalog(VALID.replace('input: 4,', 'input: -4,')), ConfigError);
-  assert.throws(() => parseCloudCatalog(VALID.replace('input: 4,', 'input: "4",')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('relative_to: sonnet', 'relative_to: opus')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('times: 2', 'times: 0')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('terms: https://example.org/terms', 'terms: example.org/terms')), ConfigError);

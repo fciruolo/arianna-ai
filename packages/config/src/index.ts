@@ -34,7 +34,6 @@ export {
   EMPTY_CLOUD_CATALOG,
   loadCloudCatalog,
   parseCloudCatalog,
-  type ApiPrice,
   type CloudCatalog,
   type CloudCatalogEntry,
   type CloudModelName,

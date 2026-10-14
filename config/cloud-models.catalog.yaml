@@ -18,8 +18,6 @@
 #                as in [cloud.models]. For Codex the first name is the one
 #                passed to --model when [cloud.models] gives none (D-141)
 #   strengths    1-4 short lines, each with its source
-#   api_price    dollars per million tokens on the API (input, output): not
-#                the subscription, only how heavy a model is next to another
 #   quota_ratio  relative_to, times, source: share of the subscription quota
 #   terms        page of the provider's terms
 #   notes        anything the card must say
@@ -47,7 +45,6 @@ models:
         source: anthropic-models
       - text: Latenza bassa fra i modelli Claude attuali
         source: anthropic-models
-    api_price: { input: 2, output: 10, source: anthropic-models }
     notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
   - alias: opus
     provider: Anthropic
@@ -64,7 +61,6 @@ models:
         source: anthropic-models
       - text: Il modello consigliato da Anthropic per la maggior parte dei lavori
         source: anthropic-models
-    api_price: { input: 4, output: 20, source: anthropic-models }
     notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
   - alias: fable
     provider: Anthropic
@@ -81,7 +77,6 @@ models:
         source: anthropic-models
       - text: Il più lento dei modelli Claude attuali
         source: anthropic-models
-    api_price: { input: 10, output: 50, source: anthropic-models }
     notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
   - alias: luna
     provider: OpenAI

@@ -49,7 +49,6 @@ import {
   modelEntries,
   overviewErrorText,
   pagesText,
-  priceText,
   privacyText,
   providersOf,
   reliabilityText,
@@ -736,10 +735,6 @@ const factKey = 'text-[13px] text-muted';
               <div :class="fact"><dt :class="factKey">Risposta più lunga</dt><dd class="text-[14.5px]">{{ pagesText(currentName?.maxOutputTokens) }}</dd></div>
               <div :class="fact"><dt :class="factKey">Approvazione</dt><dd class="text-[14.5px]">{{ current.view.budgetApproval ? 'ogni passo aspetta il tuo sì' : 'non serve' }}</dd></div>
               <div :class="fact"><dt :class="factKey">Costo</dt><dd class="text-[14.5px]">dentro l’abbonamento</dd></div>
-              <div v-if="priceText(current.view.card?.apiPrice) !== undefined" :class="fact" class="col-span-2">
-                <dt :class="factKey">Prezzo a consumo (solo per confronto)</dt>
-                <dd class="text-[14.5px]">{{ priceText(current.view.card?.apiPrice) }}<small class="block text-[12.5px] text-muted">L’abbonamento non si paga a richiesta: dice solo quanto pesa un modello rispetto a un altro.</small></dd>
-              </div>
               <div v-if="current.view.card?.quotaRatio !== undefined" :class="fact" class="col-span-2">
                 <dt :class="factKey">Abbonamento consumato rispetto a {{ current.view.card.quotaRatio.relativeTo }}</dt>
                 <dd class="text-[14.5px]">circa {{ current.view.card.quotaRatio.times }} volte</dd>

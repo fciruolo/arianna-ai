@@ -13,7 +13,6 @@ import {
   memorySummary,
   modelEntries,
   overviewErrorText,
-  priceText,
   privacyText,
   providerName,
   providersOf,
@@ -108,7 +107,6 @@ const overview: ModelsOverview = {
         executor: 'claude',
         names: [{ name: 'claude-sonnet-5-5', source: 'anthropic-models', contextTokens: 1_000_000, maxOutputTokens: 128_000 }],
         strengths: [{ text: 'Veloce', source: 'anthropic-models' }],
-        apiPrice: { input: 2, output: 10, source: 'anthropic-models' },
       },
     }),
     cloud('opus', { state: 'off', enabled: false, uses: [{ kind: 'coding', tier: 1, tiers: 3 }] }),
@@ -262,12 +260,6 @@ describe('numbers', () => {
       detail: 'Nessun modello in memoria',
     });
     assert.equal(memorySummary(null, overview.local), null);
-  });
-
-  it('writes the API price, or nothing without one', () => {
-    assert.equal(priceText({ input: 2, output: 10, source: 'x' }), '$2 entrata · $10 uscita, per milione di token');
-    assert.equal(priceText({ input: 0.25, output: 1.5, source: 'x' }), '$0,25 entrata · $1,5 uscita, per milione di token');
-    assert.equal(priceText(undefined), undefined);
   });
 });
 

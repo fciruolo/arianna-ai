@@ -49,16 +49,6 @@ export interface CloudStrength {
 }
 
 /**
- * The provider's price for the API, in dollars per million tokens. Not what a
- * subscription costs: it says only how heavy a model is next to another.
- */
-export interface ApiPrice {
-  input: number;
-  output: number;
-  source: string;
-}
-
-/**
  * How much faster than another alias this one uses the subscription quota,
  * as the provider writes it (I-3: "Opus about N times Sonnet").
  */
@@ -75,7 +65,6 @@ export interface CloudCatalogEntry {
   executor: CloudExecutor;
   names: CloudModelName[];
   strengths: CloudStrength[];
-  apiPrice?: ApiPrice;
   quotaRatio?: QuotaRatio;
   /** The provider's terms, a page. */
   terms?: string;
@@ -118,7 +107,7 @@ function parseSource(raw: unknown, where: string): CloudSource {
 
 function parseEntry(raw: unknown, where: string, sourceOf: (value: unknown, where: string) => string): CloudCatalogEntry {
   const entry = asTable(raw, where);
-  onlyKeys(entry, ['alias', 'provider', 'family', 'executor', 'names', 'strengths', 'api_price', 'quota_ratio', 'terms', 'notes'], where);
+  onlyKeys(entry, ['alias', 'provider', 'family', 'executor', 'names', 'strengths', 'quota_ratio', 'terms', 'notes'], where);
   const alias = asOneOf(entry.alias, CLOUD_MODELS, `${where}.alias`);
   const executor = asOneOf(entry.executor, ['claude', 'codex'] as const, `${where}.executor`);
   if (executor !== CLOUD_MODEL_EXECUTOR[alias]) throw new ConfigError(`${where}.executor: ${alias} runs on ${CLOUD_MODEL_EXECUTOR[alias]}`);
@@ -156,12 +145,6 @@ function parseEntry(raw: unknown, where: string, sourceOf: (value: unknown, wher
     names,
     strengths,
   };
-  if (entry.api_price !== undefined) {
-    const at = `${where}.api_price`;
-    const price = asTable(entry.api_price, at);
-    onlyKeys(price, ['input', 'output', 'source'], at);
-    found.apiPrice = { input: asPositive(price.input, `${at}.input`), output: asPositive(price.output, `${at}.output`), source: sourceOf(price.source, `${at}.source`) };
-  }
   if (entry.quota_ratio !== undefined) {
     const at = `${where}.quota_ratio`;
     const ratio = asTable(entry.quota_ratio, at);

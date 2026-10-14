@@ -87,7 +87,6 @@ export interface CloudCard {
   executor: string;
   names: CloudModelName[];
   strengths: { text: string; source: string }[];
-  apiPrice?: { input: number; output: number; source: string };
   quotaRatio?: { relativeTo: CloudModelAlias; times: number; source: string };
   terms?: string;
   notes?: string;
@@ -417,7 +416,7 @@ export function sourceOf(sources: readonly CloudSource[], id: string): CloudSour
 /** The sources a cloud card names, once each. */
 export function cardSources(card: CloudCard | null, sources: readonly CloudSource[]): CloudSource[] {
   if (card === null) return [];
-  const ids = [...card.names.map((item) => item.source), ...card.strengths.map((item) => item.source), card.apiPrice?.source, card.quotaRatio?.source];
+  const ids = [...card.names.map((item) => item.source), ...card.strengths.map((item) => item.source), card.quotaRatio?.source];
   return [...new Set(ids.filter((id): id is string => id !== undefined))].map((id) => sourceOf(sources, id)).filter((source): source is CloudSource => source !== undefined);
 }
 
@@ -426,13 +425,6 @@ export function shownName(card: CloudCard | null, chosen: string): CloudModelNam
   if (card === null) return undefined;
   const name = chosen.trim();
   return card.names.find((item) => item.name === name) ?? (name === '' ? card.names[0] : undefined);
-}
-
-/** "$2 / $10 per milione di token (entrata / uscita)". */
-export function priceText(price: CloudCard['apiPrice']): string | undefined {
-  if (price === undefined) return undefined;
-  const dollars = (value: number): string => `$${value.toLocaleString('it-IT', { maximumFractionDigits: 2 })}`;
-  return `${dollars(price.input)} entrata · ${dollars(price.output)} uscita, per milione di token`;
 }
 
 /**
