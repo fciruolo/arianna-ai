@@ -1,11 +1,12 @@
 import type { Autonomy, ToolId } from '@arianna/agents';
-import { isAtMost, maxLabel, type Context, type Label } from '@arianna/policy';
+import { isAtMost, maxLabel, profileRead, type Context, type Label } from '@arianna/policy';
 
 import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
 import { runFinanceTool } from '../finance-tools.ts';
 import { createTask, type Task } from '../tasks.ts';
+import { listUserFacts } from '../user-facts.ts';
 import { updateCard } from './cards.ts';
 import { addImTool, clientProject, namesInText, type ImProposal, type ImToolEnv } from './im-tool.ts';
 import { KbError, type Kb } from './kb.ts';
@@ -21,8 +22,20 @@ import { KbError, type Kb } from './kb.ts';
  * (delegate.ts). `task.update` moves a card of the conversation (cards.ts).
  * `im.add` writes an item in an IM file of a project (im-tool.ts, D-167).
  * `finance.*` read the expense tracker and mark the task (finance-tools.ts, D-183).
+ * `profile.read` reads one fact of «Su di te» within the step's clearance (D-114, tappa B).
  */
-export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update', 'im.add', 'finance.summary', 'finance.search', 'finance.alerts'] as const satisfies readonly ToolId[];
+export const LOCAL_TOOLS = [
+  'kb.search',
+  'kb.read',
+  'kb.write',
+  'task.create',
+  'task.update',
+  'im.add',
+  'finance.summary',
+  'finance.search',
+  'finance.alerts',
+  'profile.read',
+] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
 export function isLocalTool(tool: ToolId): tool is LocalTool {
@@ -40,6 +53,12 @@ export interface ToolEnv {
   autonomy: Autonomy;
   /** The IM of the projects (D-167); without it `im.add` answers with an error. */
   ims?: ImToolEnv;
+  /**
+   * What of the profile the step may read (D-114, tappa B): the lower of the
+   * task's clearance and the card's `max_label`, as the tail of its prompt.
+   * Without it `profile.read` reads nothing (default-deny).
+   */
+  profileClearance?: Label;
 }
 
 export interface ToolResult {
@@ -77,6 +96,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
       case 'finance.search':
       case 'finance.alerts':
         return await runFinanceTool(tool, args, { sql: env.sql, taskId: env.task.id, context: env.context });
+      case 'profile.read':
+        return await readFact(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };
@@ -104,6 +125,27 @@ function write(args: Record<string, unknown>, env: ToolEnv): ToolResult {
   // The content was written from the task's context: it carries its label.
   const written = env.kb.write(String(args.path), String(args.content), env.context.effective, `task:${env.task.id}`);
   return { text: `written ${written.path}`, label: 'L0' };
+}
+
+/**
+ * One fact of the profile by its topic (D-114, tappa B), within the step's
+ * clearance (`profileRead`): the text with the fact's label; for an L2 fact
+ * in a work step only that it is private (the topic is L1); for an unknown
+ * topic the topics the step may know (L1), or nothing in an L0 step.
+ */
+async function readFact(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const topic = String(args.topic);
+  const read = profileRead(env.profileClearance ?? 'L0', await listUserFacts(env.sql), topic);
+  switch (read.kind) {
+    case 'text':
+      return { text: `${read.topic}: ${read.text}`, label: read.label };
+    case 'private':
+      return { text: `error: profile.read: the text of '${read.topic}' is private and not available in this conversation; ask the user if you need it`, label: 'L1' };
+    case 'missing':
+      return read.topics.length === 0
+        ? { text: 'error: profile.read: the profile has no fact this conversation may read', label: 'L0' }
+        : { text: `error: profile.read: no fact '${topic}'; the topics are: ${read.topics.join(', ')}`, label: 'L1' };
+  }
 }
 
 /** The project of the conversation's workspace (a container, or `container:part`, D-145), when it has one. */

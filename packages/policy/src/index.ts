@@ -32,11 +32,18 @@ export {
   factFieldsToScan,
   isFactLabel,
   isFactLowering,
+  MAX_PROFILE_BLOCK,
+  profileBlock,
   profileFits,
+  profileLine,
+  profileRead,
   type FactField,
   type FactLabel,
   type FittingFact,
+  type ProfileBlock,
+  type ProfileBlockOptions,
   type ProfileFact,
+  type ProfileRead,
 } from './profile.ts';
 export { PROJECT_RULES_LABEL, projectRulesFit } from './project-rules.ts';
 export {

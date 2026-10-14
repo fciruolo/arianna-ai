@@ -45,6 +45,22 @@ test('task.delegate is offered only when an agent can take the step', () => {
   assert.ok(orchestratorTools(arianna, true).includes('task.delegate'));
 });
 
+test('profile.read is offered only when the tail shows the topics alone, and only to a card that lists it (D-114, tappa B)', () => {
+  assert.ok(arianna !== undefined);
+  assert.ok(arianna.card.tools.includes('profile.read'));
+  assert.ok(!orchestratorTools(arianna, true, true).includes('profile.read'));
+  assert.ok(orchestratorTools(arianna, true, true, false, false, true).includes('profile.read'));
+  // In an incognito conversation too: it only reads.
+  assert.ok(orchestratorTools(arianna, true, true, true, false, true).includes('profile.read'));
+  const without = { ...arianna, card: { ...arianna.card, tools: arianna.card.tools.filter((tool) => tool !== 'profile.read') } };
+  assert.ok(!orchestratorTools(without, true, true, false, false, true).includes('profile.read'));
+  // The other tools do not depend on it.
+  assert.deepEqual(
+    orchestratorTools(arianna, true, true, false, false, true).filter((tool) => tool !== 'profile.read'),
+    orchestratorTools(arianna, true, true),
+  );
+});
+
 test('a card that does not list task.update never gets it, with cards or not', () => {
   assert.ok(arianna !== undefined);
   const without = { ...arianna, card: { ...arianna.card, tools: arianna.card.tools.filter((tool) => tool !== 'task.update') } };

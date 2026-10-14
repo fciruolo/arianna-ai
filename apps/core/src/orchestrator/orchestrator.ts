@@ -23,7 +23,8 @@ import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversati
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
-import { minLabel, promptTail, tailParts } from '../prompt-tail.ts';
+import { minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
+import { listUserFacts } from '../user-facts.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
@@ -160,12 +161,15 @@ export interface OrchestratorOptions {
  * In an incognito conversation (D-136) none of INCOGNITO_OFF_TOOLS: what
  * they write would outlive the closing. `task.plan` (D-159) everywhere but
  * the secretary's conversation: the plan is approved in the chat.
+ * `profile.read` (D-114, tappa B) only when `profile`: the tail of the prompt
+ * shows the topics alone, so that the model has a text to read with it; the
+ * prompt of a user without such a profile stays the same byte for byte.
  */
-export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false, secretary = false): ToolId[] {
+export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false, secretary = false, profile = false): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
       !(incognito && (INCOGNITO_OFF_TOOLS as readonly string[]).includes(tool)) &&
-      ((isLocalTool(tool) && (tool !== UPDATE || cards)) ||
+      ((isLocalTool(tool) && (tool !== UPDATE || cards) && (tool !== PROFILE_READ || profile)) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -174,6 +178,8 @@ export function orchestratorTools(agent: LoadedAgent, delegation = false, cards 
         (secretary && !incognito && isSecretaryTool(tool))),
   );
 }
+
+const PROFILE_READ = 'profile.read' satisfies ToolId;
 
 /** How a message of the system starts when the model reads it. */
 export const SYSTEM_MESSAGE_MARK = '[Messaggio del sistema, non dell’utente]';
@@ -782,7 +788,12 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       // The tail of the prompt (D-107, tappa A3): the assignee's persona, within the lower of its card's
       // clearance and the task's (never the user's text for an L0 agent or task). It counts in the label of the step.
-      const tail = tailParts(env.settings(), task.assignee, minLabel(task.clearance, agent.card.maxLabel));
+      const tailClearance = minLabel(task.clearance, agent.card.maxLabel);
+      // Then the profile «Su di te» (D-114, tappa B), within the same clearance: on this machine only, nothing for an
+      // L0 agent or task. Past its limit the topics alone, and profile.read when the card lists it.
+      const readsProfile = agent.card.tools.includes(PROFILE_READ);
+      const profile = profilePart(await listUserFacts(sql), tailClearance, { readTool: readsProfile });
+      const tail = [...tailParts(env.settings(), task.assignee, tailClearance), ...(profile === undefined ? [] : [profile])];
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
       let context: Context = contextOf(task, label);
@@ -818,7 +829,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
-      const offered = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary);
+      const offered = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary, readsProfile && profile?.topicsOnly === true);
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
       const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
       // A plan of Claude that failed in this task is not asked again by the local model: one call per task.
@@ -917,6 +928,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           context,
           autonomy: agent.card.autonomy,
           ...(options.ims === undefined ? {} : { ims: options.ims }),
+          profileClearance: tailClearance,
         });
         // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
         if (ran.context !== undefined) context = ran.context;
@@ -933,7 +945,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
-      if (result.text.startsWith('error: ')) await show(task, step, 'error', result.text.replace(/^error: [^:]+: /, ''));
+      // An error of profile.read names topics: the activity shows the tool alone (D-114b).
+      if (result.text.startsWith('error: ')) await show(task, step, 'error', tool === PROFILE_READ ? PROFILE_READ : result.text.replace(/^error: [^:]+: /, ''));
       else await show(task, step, TOOL_ACTIVITY[tool], toolDetail(tool, answer.arguments));
       return { kind: 'continue', usage };
     },
@@ -950,12 +963,13 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'finance.summary': 'read',
   'finance.search': 'search',
   'finance.alerts': 'read',
+  'profile.read': 'read',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
-  // The finance tools show only their name (D-183): what the model looks for stays in the turn.
-  if (tool.startsWith('finance.')) return tool;
+  // The finance tools and profile.read show only their name (D-183, D-114): what the model looks for stays in the turn.
+  if (tool.startsWith('finance.') || tool === PROFILE_READ) return tool;
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);

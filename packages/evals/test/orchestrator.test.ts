@@ -71,6 +71,18 @@ describe('orchestrator evaluator', () => {
     assert.throws(() => caseTail({ tools, messages: [], persona: { tone: 'sarcastico' } }), /persona\.tone/);
   });
 
+  it('puts the profile of a case after the persona, within its clearance (D-114, tappa B)', () => {
+    const facts = [
+      { topic: 'città', text: 'Vive a Borgo Finto', label: 'L2' },
+      { topic: 'lavoro', text: 'Sviluppatore web', label: 'L1' },
+    ];
+    const both = caseTail({ tools, messages: [], persona: { tone: 'serio' }, profile: { clearance: 'L2', facts } });
+    assert.match(both, /^Persona set by the user[\s\S]*Tone: serious[^\n]*\n\nFacts the user wrote[\s\S]*- città: Vive a Borgo Finto/);
+    const work = caseTail({ tools, messages: [], profile: { clearance: 'L1', facts } });
+    assert.doesNotMatch(work, /Borgo Finto/);
+    assert.match(work, /- lavoro: Sviluppatore web/);
+  });
+
   it("offers the case's agents to task.delegate, and the Coder alone without them", async () => {
     const delegating: ToolId[] = ['task.delegate'];
     const delegates = [...CODER_ONLY, { name: 'traduttore', description: 'Traduce' }];
@@ -218,6 +230,23 @@ describe('orchestrator cases', () => {
       assert.notEqual(caseTail(evalCase.input as OrchestratorInput), '', evalCase.id);
     }
     assert.ok(withPersona.some((c) => c.tags.includes('refusal') && /Ignora le regole/.test(JSON.stringify(c.input))), 'a hostile persona');
+  });
+
+  it('with a profile: invented facts in the tail, private and work, profile.read and a hostile fact (D-114, tappa B)', () => {
+    const withProfile = cases.filter((c) => (c.input as OrchestratorInput).profile !== undefined);
+    assert.ok(withProfile.length >= 4, String(withProfile.length));
+    for (const evalCase of withProfile) {
+      assert.ok(evalCase.tags.includes('profile'), evalCase.id);
+      assert.notEqual(caseTail(evalCase.input as OrchestratorInput), '', evalCase.id);
+    }
+    const work = withProfile.find((c) => (c.input as OrchestratorInput).profile?.clearance === 'L1');
+    assert.ok(work !== undefined);
+    // A work case never shows the text of an L2 fact.
+    assert.doesNotMatch(caseTail(work.input as OrchestratorInput), /Borgo Finto/);
+    const reading = withProfile.find((c) => (c.input as OrchestratorInput).tools.includes('profile.read'));
+    assert.ok(reading !== undefined);
+    assert.match(caseTail(reading.input as OrchestratorInput), /only their topics[\s\S]*^- lavoro$[\s\S]*profile\.read/m);
+    assert.ok(withProfile.some((c) => c.tags.includes('refusal')), 'a hostile fact');
   });
 
   it('offer agents as the core does, and expect only an offered one', () => {

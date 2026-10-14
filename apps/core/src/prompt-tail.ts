@@ -1,6 +1,6 @@
 import { flatPersonaText, personaBlock, personaParts, type PersonaParts } from '@arianna/agents';
 import type { Personas } from '@arianna/config';
-import { isAtMost, scanText, type KnownSecrets, type Label } from '@arianna/policy';
+import { isAtMost, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 /**
@@ -10,8 +10,8 @@ import { knownSecrets } from '@arianna/vault';
  * gateway on its own, with its label and source, and counts in the label of
  * the step; the model reads the texts the gateway let out, joined in order.
  *
- * Today the persona alone. The profile «Su di te» (D-114, tappa B) joins
- * here as a second piece, after the persona, with its own label and source.
+ * The persona first, then, in the steps on this machine only, the profile
+ * «Su di te» (D-114, tappa B, `profilePart`) with its own label and source.
  */
 export interface TailPart {
   text: string;
@@ -64,6 +64,29 @@ export function withoutPersonal(parts: PersonaParts, secrets: KnownSecrets = kno
 export function tailParts(config: { personas: Personas }, agent: string, clearance: Label): TailPart[] {
   const persona = personaPart(config.personas, agent, clearance);
   return persona === undefined ? [] : [persona];
+}
+
+/** The profile as a piece of the tail; `topicsOnly` when only the topics entered (the step may then offer profile.read). */
+export interface ProfilePart extends TailPart {
+  topicsOnly: boolean;
+}
+
+/** Source of the profile piece in gateway_log: no text, no topic. */
+export const PROFILE_SOURCE = 'profile:user';
+
+/**
+ * The profile «Su di te» (D-114, tappa B) as one piece of the tail, for a step
+ * on the local model only, with `clearance` the lower of the card's
+ * `max_label` and the task's: in a private step topics and texts of every
+ * fact (L2 as soon as one L2 text is in), in a work step the texts of the L1
+ * facts and the topics of the L2 ones (L1), nothing for an L0 agent or task
+ * (`profileBlock` of the policy). Past its limit only the topics (L1), and
+ * `readTool` says that the step offers profile.read. Never for a brief to
+ * the cloud: a single fact leaves only with profile.share (tappa C).
+ */
+export function profilePart(facts: readonly ProfileFact[], clearance: Label, options: { readTool?: boolean } = {}): ProfilePart | undefined {
+  const block = profileBlock(clearance, facts, options.readTool === undefined ? {} : { readTool: options.readTool });
+  return block === undefined ? undefined : { text: block.text, label: block.label, source: PROFILE_SOURCE, topicsOnly: block.topicsOnly };
 }
 
 /** The tail as the prompt receives it: the texts the gateway let out, empty ones left out; '' without any. */

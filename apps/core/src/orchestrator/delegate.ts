@@ -45,7 +45,8 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
-import { minLabel, promptTail, tailParts } from '../prompt-tail.ts';
+import { minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
+import { listUserFacts } from '../user-facts.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
@@ -1402,7 +1403,11 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // The skills of the agent join its instructions (D-161), as data within a smaller limit.
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local);
   // The tail of its prompt (D-107, tappa A3): its persona within its clearance and the task's, at the end of the system message.
-  const tail = tailParts(env.settings(), delegation.agent, minLabel(task.clearance, agent.card.maxLabel));
+  const tailClearance = minLabel(task.clearance, agent.card.maxLabel);
+  // Then the profile «Su di te» (D-114, tappa B) within the same clearance, on this machine only: the agent answers
+  // without tools, so past its limit it reads the topics alone. It counts in the label of what it reads and reports.
+  const profile = profilePart(await listUserFacts(sql), tailClearance);
+  const tail = [...tailParts(env.settings(), delegation.agent, tailClearance), ...(profile === undefined ? [] : [profile])];
   const parts = [
     prompt,
     ...(skills === undefined ? [] : [skills]),

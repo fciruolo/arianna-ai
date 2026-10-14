@@ -49,6 +49,8 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'finance.summary': object({ from: text(7), to: text(7) }, []),
   'finance.search': object({ text: text(100), category: text(60), from: text(10), to: text(10), limit: { type: 'integer', minimum: 1, maximum: 50 } }, []),
   'finance.alerts': object({ month: text(7) }, []),
+  // MAX_TOPIC of apps/core/src/user-facts.ts.
+  'profile.read': object({ topic: text(60) }, ['topic']),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -91,6 +93,8 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
     'Find movements of the user\'s bank accounts: "text" is a word of the description (a shop, a service), "category" a category name, "from" and "to" days YYYY-MM-DD or months YYYY-MM, "limit" how many (default 20). Newest first, with the total of the ones found.',
   'finance.alerts':
     'The checks of a month (YYYY-MM, default the current one): possible double charges, budgets over or close to their limit, unusual expenses, subscriptions whose amount changed. Computed by the core.',
+  'profile.read':
+    'Read the text of a fact the user wrote about themselves, by its topic as the list of facts above names it. The core answers with the text this conversation may read, or says it is private here: then do not guess it, ask the user if you need it.',
   'commitment.add':
     'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':

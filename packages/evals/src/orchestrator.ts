@@ -4,6 +4,7 @@
 // after a free `thought` (D-051).
 import { CODER_ONLY, chatMessages, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
+import { profileBlock, type ProfileFact } from '@arianna/policy';
 
 import type { Evaluate } from './types.ts';
 
@@ -21,11 +22,26 @@ export interface OrchestratorInput {
    * conversation (L2). None when omitted: the prompt of today.
    */
   persona?: Record<string, unknown>;
+  /**
+   * The profile «Su di te» (D-114, tappa B): invented facts and the clearance
+   * of the conversation (L2 private, L1 work); its block goes after the
+   * persona's as the core builds it, with the hint of profile.read when the
+   * case offers it. None when omitted.
+   */
+  profile?: { clearance: 'L1' | 'L2'; facts: ProfileFact[]; max?: number };
 }
 
-/** The tail of the prompt for a case: the persona's block, or '' without one. */
+/** The tail of the prompt for a case: the persona's block, then the profile's; '' without either. */
 export function caseTail(input: OrchestratorInput): string {
-  return input.persona === undefined ? '' : personaBlock(personaParts(parsePersona(input.persona, 'persona'), 'L2'));
+  const persona = input.persona === undefined ? '' : personaBlock(personaParts(parsePersona(input.persona, 'persona'), 'L2'));
+  const profile =
+    input.profile === undefined
+      ? undefined
+      : profileBlock(input.profile.clearance, input.profile.facts, {
+          readTool: input.tools.includes('profile.read'),
+          ...(input.profile.max === undefined ? {} : { max: input.profile.max }),
+        });
+  return [persona, profile?.text ?? ''].filter((text) => text !== '').join('\n\n');
 }
 
 export interface OrchestratorActual {

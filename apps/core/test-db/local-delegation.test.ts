@@ -329,6 +329,29 @@ test('the persona of the agent closes its system message, with the label of the 
   assert.match(model.requests[0]?.messages[0]?.content ?? '', /Tone: serious/);
 });
 
+test('the profile «Su di te» closes the system message of the agent, within its clearance (D-114, tappa B)', async () => {
+  // Invented facts; the user's agents read at most L1.
+  await db().sql`INSERT INTO user_facts (topic, text, label) VALUES ('città', 'Vive a Borgo Finto', 'L2'), ('lavoro', 'Sviluppatore web freelance', 'L1')`;
+  try {
+    const { task } = await ask('Traduci: buongiorno a tutti.', 'private');
+    const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+    const executor = orchestrator(model, [translator()]);
+    // A private conversation: the brief is above what the agent reads, the user approves it first.
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    await recordDecision(db().sql, await waitingFor(task.id), 'approved', 'web');
+    await drain(task.id, executor);
+    const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+    const system = call?.messages[0]?.content ?? '';
+    assert.ok(system.endsWith('- città: [private: not available in this conversation]\n- lavoro: Sviluppatore web freelance'), system);
+    // Negative: an L1 card never reads the text of an L2 fact, in a private conversation either.
+    assert.ok(!JSON.stringify(call?.messages).includes('Borgo Finto'));
+    // Arianna, who reads L2, had the whole profile in her own step.
+    assert.match(model.requests[0]?.messages[0]?.content ?? '', /- città: Vive a Borgo Finto/);
+  } finally {
+    await db().sql`SELECT user_fact_delete(id) FROM user_facts`;
+  }
+});
+
 test('the persona of the agent with its skills: each text the gateway let out in its place (D-107, tappa A3)', async () => {
   const persona: Persona = { tone: 'asciutto', address: 'tu', traits: 'Preciso, ama le parole brevi.' };
   const BLOCK = '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----';

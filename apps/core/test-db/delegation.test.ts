@@ -331,6 +331,26 @@ test('the persona of the Coder goes after its prompt, in the brief the gateway j
   assert.deepEqual([...log].map((row) => row.label), ['L1']);
 });
 
+test('the profile «Su di te» stays on this machine: Arianna reads it, the brief to the Coder carries none of it (D-114, tappa B)', async () => {
+  // Invented facts.
+  await db().sql`INSERT INTO user_facts (topic, text, label) VALUES ('città', 'Vive a Borgo Finto', 'L2'), ('lavoro', 'Sviluppatore web freelance', 'L1')`;
+  try {
+    const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+    const model = scripted([DELEGATE, REPLY]);
+    assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'continued', 'answered']);
+    const local = model.requests[0]?.messages[0]?.content ?? '';
+    assert.match(local, /- lavoro: Sviluppatore web freelance/);
+    assert.doesNotMatch(local, /Borgo Finto/);
+    // Negative: no fact, no topic, no block in what reached claude; one fact leaves only with profile.share (tappa C).
+    const { prompt } = received();
+    assert.doesNotMatch(prompt, /Facts the user wrote|Sviluppatore web freelance|Borgo Finto|città/);
+    const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+    assert.deepEqual([...log].map((row) => row.label), ['L1']);
+  } finally {
+    await db().sql`SELECT user_fact_delete(id) FROM user_facts`;
+  }
+});
+
 test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {
   const config = { projectRules: { template: 'T', projects: { own: 'O', empty: '' } } };
   assert.deepEqual(projectRulesPart(config, 'own', 'L1', 'claude'), { text: `${PROJECT_RULES_INTRO}\n\nO`, label: 'L1', source: 'project-rules:own' });

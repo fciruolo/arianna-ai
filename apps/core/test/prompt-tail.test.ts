@@ -7,7 +7,7 @@ import { MAX_PERSONA_BLOCK, personaBlock, personaParts, type AgentCard, type Per
 import { secretMatcher } from '@arianna/policy';
 
 import { cloudCeiling } from '../src/orchestrator/delegate.ts';
-import { minLabel, personaPart, promptTail, tailParts, withoutPersonal } from '../src/prompt-tail.ts';
+import { minLabel, personaPart, PROFILE_SOURCE, profilePart, promptTail, tailParts, withoutPersonal } from '../src/prompt-tail.ts';
 
 const PLAYFUL: Persona = { tone: 'scherzoso', address: 'lei', displayName: 'Ari', traits: 'Ama le metafore di cucina.', specialization: 'Segretaria di casa.' };
 
@@ -96,4 +96,38 @@ test('withoutPersonal: a text holding a value of the vault is dropped, one witho
   const vault = secretMatcher([{ ref: 'vault://persona-test', value: 'zq-finto-segreto-8842' }]);
   const parts = withoutPersonal({ tone: 'serio', address: 'tu', label: 'L1', traits: 'La parola è zq-finto-segreto-8842.', specialization: 'Contabile di casa.' }, vault);
   assert.deepEqual(parts, { tone: 'serio', address: 'tu', label: 'L1', specialization: 'Contabile di casa.' });
+});
+
+// The profile «Su di te» (D-114, tappa B), invented facts.
+const FACTS = [
+  { topic: 'città', text: 'Vive a Borgo Finto', label: 'L2' },
+  { topic: 'lavoro', text: 'Sviluppatore web freelance', label: 'L1' },
+];
+
+test('profilePart: a private step reads every fact, labeled L2, from its own source', () => {
+  const part = profilePart(FACTS, 'L2');
+  assert.ok(part !== undefined);
+  assert.deepEqual([part.label, part.source, part.topicsOnly], ['L2', PROFILE_SOURCE, false]);
+  assert.match(part.text, /Borgo Finto/);
+  assert.match(part.text, /Sviluppatore web freelance/);
+});
+
+test('profilePart: a work step reads the L1 texts and the L2 topics, never an L2 text; an L0 step nothing', () => {
+  const part = profilePart(FACTS, 'L1');
+  assert.ok(part !== undefined);
+  assert.equal(part.label, 'L1');
+  assert.doesNotMatch(part.text, /Borgo Finto/);
+  assert.match(part.text, /- città: \[private/);
+  assert.equal(profilePart(FACTS, 'L0'), undefined);
+  assert.equal(profilePart([], 'L2'), undefined);
+  // Its source names neither a topic nor a text.
+  assert.doesNotMatch(PROFILE_SOURCE, /città|lavoro/);
+});
+
+test('profilePart: past the limit, the topics alone, L1, with the hint only when the step offers profile.read', () => {
+  const many = Array.from({ length: 10 }, (_, index) => ({ topic: `tema ${String(index)}`, text: 'y'.repeat(250), label: 'L2' }));
+  const part = profilePart(many, 'L2', { readTool: true });
+  assert.deepEqual([part?.label, part?.topicsOnly], ['L1', true]);
+  assert.match(part?.text ?? '', /profile\.read/);
+  assert.doesNotMatch(profilePart(many, 'L2')?.text ?? '', /profile\.read/);
 });

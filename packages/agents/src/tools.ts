@@ -59,6 +59,9 @@ export const TOOLS = {
   'finance.summary': { description: 'Totals of the expense tracker per month and per category in a span, computed by the core', opens: [], localOnly: true },
   'finance.search': { description: 'Movements of the expense tracker by text, category and span, at most a few', opens: [], localOnly: true },
   'finance.alerts': { description: 'Checks of a month of the expense tracker: double charges, budgets, unusual expenses, changed subscriptions', opens: [], localOnly: true },
+  // The user's profile «Su di te» (D-114, tappa B): read only, the text the step's clearance admits, written by
+  // the core from the database. On this machine only: no fact leaves with it (one leaves with profile.share, tappa C).
+  'profile.read': { description: "Read the text of a fact of the user's profile by its topic, within the clearance", opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only
