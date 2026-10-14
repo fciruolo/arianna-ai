@@ -828,9 +828,23 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const tailClearance = minLabel(task.clearance, agent.card.maxLabel);
       // Then the profile «Su di te» (D-114, tappa B), within the same clearance: on this machine only, nothing for an
       // L0 agent or task. Past its limit the topics alone, and profile.read when the card lists it.
+      // The agents this step may delegate to (D-119, tappa T3): the Coder and the user's active ones.
+      const delegates = delegateTargets(env, task.assignee);
+      // In an incognito conversation nothing that outlives it is offered (D-136): no KB note, no card.
+      const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
+      // The secretary's conversation (D-144): the commitments, and no delegation.
+      const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
+      // The cloud agents profile.share may give a fact to, with what a brief to each carries (D-114, tappa C).
+      const shareTargets = new Map<string, Label>();
+      for (const target of delegates) {
+        const card = options.agents.get(target.name)?.card;
+        if (card !== undefined && isCloudRoute(delegationRoute(card))) shareTargets.set(target.name, briefCeiling(card));
+      }
       const readsProfile = agent.card.tools.includes(PROFILE_READ);
       const facts = await listUserFacts(sql);
-      const profile = profilePart(facts, tailClearance, { readTool: readsProfile });
+      // A private fact says how to ask for it when profile.share is offered at this step (D-213).
+      const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, incognito, secretary, false, shareTargets.size > 0).includes(PROFILE_SHARE);
+      const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
       const tail = [...tailParts(env.settings(), task.assignee, tailClearance), ...(profile === undefined ? [] : [profile])];
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
@@ -861,18 +875,6 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         (part) => part.value,
       );
 
-      // The agents this step may delegate to (D-119, tappa T3): the Coder and the user's active ones.
-      const delegates = delegateTargets(env, task.assignee);
-      // In an incognito conversation nothing that outlives it is offered (D-136): no KB note, no card.
-      const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
-      // The secretary's conversation (D-144): the commitments, and no delegation.
-      const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
-      // The cloud agents profile.share may give a fact to, with what a brief to each carries (D-114, tappa C).
-      const shareTargets = new Map<string, Label>();
-      for (const target of delegates) {
-        const card = options.agents.get(target.name)?.card;
-        if (card !== undefined && isCloudRoute(delegationRoute(card))) shareTargets.set(target.name, briefCeiling(card));
-      }
       const offered = orchestratorTools(
         agent,
         delegates.length > 0,

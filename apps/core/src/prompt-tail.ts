@@ -81,11 +81,15 @@ export const PROFILE_SOURCE = 'profile:user';
  * fact (L2 as soon as one L2 text is in), in a work step the texts of the L1
  * facts and the topics of the L2 ones (L1), nothing for an L0 agent or task
  * (`profileBlock` of the policy). Past its limit only the topics (L1), and
- * `readTool` says that the step offers profile.read. Never for a brief to
- * the cloud: a single fact leaves only with profile.share (tappa C).
+ * `readTool` says that the step offers profile.read; `shareTool` that it
+ * offers profile.share, and a private fact says how to ask for it (D-213).
+ * Never for a brief to the cloud: a single fact leaves only with profile.share.
  */
-export function profilePart(facts: readonly ProfileFact[], clearance: Label, options: { readTool?: boolean } = {}): ProfilePart | undefined {
-  const block = profileBlock(clearance, facts, options.readTool === undefined ? {} : { readTool: options.readTool });
+export function profilePart(facts: readonly ProfileFact[], clearance: Label, options: { readTool?: boolean; shareTool?: boolean } = {}): ProfilePart | undefined {
+  const block = profileBlock(clearance, facts, {
+    ...(options.readTool === undefined ? {} : { readTool: options.readTool }),
+    ...(options.shareTool === undefined ? {} : { shareTool: options.shareTool }),
+  });
   return block === undefined ? undefined : { text: block.text, label: block.label, source: PROFILE_SOURCE, topicsOnly: block.topicsOnly };
 }
 

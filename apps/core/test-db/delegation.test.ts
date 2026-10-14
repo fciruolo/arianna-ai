@@ -14,6 +14,7 @@ import { personaBlock, personaParts, type Answer, type LoadedAgent, type Persona
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project, type ProjectRules } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
+import { SHARE_MARK } from '@arianna/policy';
 import { Secret } from '@arianna/vault';
 
 import { archiveConversation, createConversation, postUserMessage, purgeConversation, setConversationModel } from '../src/conversations.ts';
@@ -386,6 +387,8 @@ test('profile.share: the user sees the exact text, approves it, and only that fa
 
     await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
     assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    // Offered profile.share, the private fact says how to ask for it (D-213); without it the mark stays (profile-prompt.test.ts).
+    assert.ok((model.requests[0]?.messages[0]?.content ?? '').includes(`- città: ${SHARE_MARK}`));
     assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /the user agreed to share 'città' with coder/);
     const asked = model.requests.flatMap((request) => request.messages.map((message) => message.content)).join('\n');
     assert.doesNotMatch(asked, /Borgo Finto/);

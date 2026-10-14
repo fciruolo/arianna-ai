@@ -39,6 +39,7 @@ export function caseTail(input: OrchestratorInput): string {
       ? undefined
       : profileBlock(input.profile.clearance, input.profile.facts, {
           readTool: input.tools.includes('profile.read'),
+          shareTool: input.tools.includes('profile.share'),
           ...(input.profile.max === undefined ? {} : { max: input.profile.max }),
         });
   return [persona, profile?.text ?? ''].filter((text) => text !== '').join('\n\n');

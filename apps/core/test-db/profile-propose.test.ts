@@ -168,7 +168,8 @@ test('profile.propose: a topic that looks like personal data or the same fact ag
   const quiet = scripted([{ action: 'reply', text: 'Ok.' }]);
   await drain(posted.task.id, quiet);
   assert.ok(quiet.requests.length > 0);
-  assert.doesNotMatch(quiet.requests[0]?.messages[0]?.content ?? '', /profile\.propose|profile\.share/);
+  assert.match(model.requests[0]?.messages[0]?.content ?? '', /^- profile\.propose:/m);
+  assert.doesNotMatch(quiet.requests[0]?.messages[0]?.content ?? '', /^- profile\.(propose|share):/m);
 });
 
 test('the database: a fact approval only with its fields; a share binds to a delegation only with its lowering', async () => {
