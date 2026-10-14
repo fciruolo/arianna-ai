@@ -53,6 +53,7 @@ export {
   MAX_PERSONA_BLOCK,
   MAX_SPECIALIZATION,
   MAX_TRAITS,
+  flatPersonaText,
   parsePersona,
   personaBlock,
   PersonaError,

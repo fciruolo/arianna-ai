@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { MAX_PERSONA_BLOCK, personaBlock, personaParts, type AgentCard, type Persona } from '@arianna/agents';
+import { secretMatcher } from '@arianna/policy';
 
 import { cloudCeiling } from '../src/orchestrator/delegate.ts';
-import { minLabel, personaPart, promptTail, tailParts } from '../src/prompt-tail.ts';
+import { minLabel, personaPart, promptTail, tailParts, withoutPersonal } from '../src/prompt-tail.ts';
 
 const PLAYFUL: Persona = { tone: 'scherzoso', address: 'lei', displayName: 'Ari', traits: 'Ama le metafore di cucina.', specialization: 'Segretaria di casa.' };
 
@@ -70,4 +71,29 @@ test('the longest persona stays within the cap of the block: about 400 tokens re
   assert.ok(length <= MAX_PERSONA_BLOCK, String(length));
   // 3.5 characters per token (the estimate of the Personality page, D-107f): at most about 400 tokens.
   assert.ok(Math.ceil(length / 3.5) <= 400, String(length));
+});
+
+test('personaPart: a free text with personal data, written by hand in arianna.toml, is dropped; tone and address stay', () => {
+  const iban: Persona = { ...PLAYFUL, traits: 'Ricorda l\'IBAN IT60X0542811101000000123456.' };
+  const part = personaPart({ coder: iban }, 'coder', 'L1');
+  assert.ok(part !== undefined);
+  assert.doesNotMatch(part.text, /IT60X|<persona>/);
+  assert.match(part.text, /Tone: playful/);
+  assert.match(part.text, /Segretaria di casa/);
+  // Only the clean texts stay; nothing clean left gives L0.
+  const bare = withoutPersonal({ tone: 'scherzoso', address: 'lei', label: 'L1', traits: 'Il mio codice fiscale è RSSMRA80A01H501U' });
+  assert.deepEqual(bare, { tone: 'scherzoso', address: 'lei', label: 'L0' });
+  // A clean text is kept as it is.
+  assert.deepEqual(withoutPersonal(personaParts(PLAYFUL, 'L1')), personaParts(PLAYFUL, 'L1'));
+});
+
+test('withoutPersonal: a value split over lines or tabs, which the block would join again, is dropped too', () => {
+  const split = withoutPersonal({ tone: 'serio', address: 'tu', label: 'L1', traits: 'Conto IT60 X054\n2811 1010 0000 0123 456', specialization: 'Carta 4111 1111\t1111 1111' });
+  assert.deepEqual(split, { tone: 'serio', address: 'tu', label: 'L0' });
+});
+
+test('withoutPersonal: a text holding a value of the vault is dropped, one without it stays', () => {
+  const vault = secretMatcher([{ ref: 'vault://persona-test', value: 'zq-finto-segreto-8842' }]);
+  const parts = withoutPersonal({ tone: 'serio', address: 'tu', label: 'L1', traits: 'La parola è zq-finto-segreto-8842.', specialization: 'Contabile di casa.' }, vault);
+  assert.deepEqual(parts, { tone: 'serio', address: 'tu', label: 'L1', specialization: 'Contabile di casa.' });
 });

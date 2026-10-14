@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { parsePersona, PersonaError, type Persona } from '@arianna/agents';
+import { flatPersonaText, parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
   checkFetchSites,
   checkSecretary,
@@ -496,9 +496,11 @@ function personasFromBody(value: unknown): NonNullable<Settings['personas']> {
       const text = given[field];
       if (text === undefined || text === null || text === '') continue;
       if (typeof text === 'string') {
-        const kinds = [...new Set(scanText(text).map((finding) => finding.kind))];
+        // Also as the prompt shows it (flatPersonaText): a value split over lines joins again there.
+        const forms = [text, flatPersonaText(text)];
+        const kinds = [...new Set(forms.flatMap((form) => scanText(form).map((finding) => finding.kind)))];
         if (kinds.length > 0) invalid(`${where}.${field} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
-        if (knownSecrets.find(text).length > 0) invalid(`${where}.${field} holds a value of the vault: not saved`);
+        if (forms.some((form) => knownSecrets.find(form).length > 0)) invalid(`${where}.${field} holds a value of the vault: not saved`);
       }
       raw[key] = text;
     }

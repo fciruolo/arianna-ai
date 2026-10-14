@@ -13,6 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Il testo della personalità entra solo dove la clearance dell'agente e del compito ammette L1: mai per un agente o un compito Pubblico, mai sopra il tetto cloud di un agente; altrimenti restano solo le frasi fisse di tono e forma. Nelle chiamate, senza la scheda di Arianna a disposizione, solo le frasi fisse (D-107g).
+- Un testo della personalità scritto a mano in `arianna.toml` con dati personali (un IBAN, un codice fiscale) o un valore del vault non entra nel prompt, nemmeno del modello locale: restano tono e forma. Il controllo, anche al salvataggio dalla pagina, legge pure il testo appiattito su una riga, così un IBAN spezzato da un a-capo non passa (la pagina Impostazioni lo rifiutava già al salvataggio; scelta dell'utente del 2026-10-14) (D-107g).
 
 ## [0.93.0] - 2026-10-14
 

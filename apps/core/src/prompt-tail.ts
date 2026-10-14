@@ -1,6 +1,7 @@
-import { personaBlock, personaParts } from '@arianna/agents';
+import { flatPersonaText, personaBlock, personaParts, type PersonaParts } from '@arianna/agents';
 import type { Personas } from '@arianna/config';
-import { isAtMost, type Label } from '@arianna/policy';
+import { isAtMost, scanText, type KnownSecrets, type Label } from '@arianna/policy';
+import { knownSecrets } from '@arianna/vault';
 
 /**
  * The tail of an agent's system prompt (D-107, tappa A3): labeled pieces
@@ -31,12 +32,32 @@ export function minLabel(a: Label, b: Label): Label {
  * when nothing is left: the prompt is then the same byte for byte as without
  * a persona. Own keys only: an agent named `constructor` has no persona.
  */
-export function personaPart(personas: Personas, agent: string, clearance: Label): TailPart | undefined {
+export function personaPart(personas: Personas, agent: string, clearance: Label, secrets: KnownSecrets = knownSecrets): TailPart | undefined {
   const persona = Object.hasOwn(personas, agent) ? personas[agent] : undefined;
   if (persona === undefined) return undefined;
-  const parts = personaParts(persona, clearance);
+  const parts = withoutPersonal(personaParts(persona, clearance), secrets);
   const text = personaBlock(parts);
   return text === '' ? undefined : { text, label: parts.label, source: `persona:${agent}` };
+}
+
+/**
+ * The parts without a free text that looks like personal data or holds a
+ * value of the vault (the user's choice of 2026-10-14): the settings page
+ * already refuses such a text, but `arianna.toml` can be written by hand. The
+ * text is dropped, tone and address stay; the label falls back to L0 when no
+ * text is left. The gateway would stop it towards the cloud anyway; this keeps
+ * it out of the local prompt too, and says nothing of the text.
+ */
+export function withoutPersonal(parts: PersonaParts, secrets: KnownSecrets = knownSecrets): PersonaParts {
+  // Both the text as written and as the block shows it (flatPersonaText): a value split over lines joins again there.
+  const clean = (text: string | undefined): boolean =>
+    text === undefined || [text, flatPersonaText(text)].every((form) => scanText(form).length === 0 && secrets.find(form).length === 0);
+  const kept: PersonaParts = { tone: parts.tone, address: parts.address, label: 'L0' };
+  if (parts.displayName !== undefined && clean(parts.displayName)) kept.displayName = parts.displayName;
+  if (parts.traits !== undefined && clean(parts.traits)) kept.traits = parts.traits;
+  if (parts.specialization !== undefined && clean(parts.specialization)) kept.specialization = parts.specialization;
+  if (kept.displayName !== undefined || kept.traits !== undefined || kept.specialization !== undefined) kept.label = parts.label;
+  return kept;
 }
 
 /** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */

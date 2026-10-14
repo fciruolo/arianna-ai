@@ -482,6 +482,8 @@ describe('personas (D-107)', () => {
     const value = new Secret('vault://persona-test', `segreto-${randomUUID()}`).reveal();
     const cases: [Record<string, unknown>, RegExp][] = [
       [{ traits: `Paga sempre su ${iban}.` }, /personas\.coder\.traits .*iban/],
+      // Split over lines: the prompt shows it on one line, so it is refused as well.
+      [{ traits: 'Conto IT60 X054\n2811 1010 0000 0123 456' }, /personas\.coder\.traits .*iban/],
       [{ specialization: `Usa la chiave ${value} per tutto.` }, /personas\.coder\.specialization holds a value of the vault/],
       [{ displayName: 'Dario', traits: `token ghp_${'a'.repeat(36)}` }, /personas\.coder\.traits .*token/],
       [{ displayName: value }, /personas\.coder\.displayName holds a value of the vault/],

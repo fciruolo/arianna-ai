@@ -147,9 +147,18 @@ const ADDRESS_SENTENCES: Record<Address, string> = {
   lei: 'Address the user with "lei".',
 };
 
+/**
+ * A free text on one line, as the block shows it: line breaks and tabs become
+ * spaces, invisible controls go. The checks for personal data read this form
+ * too, so that a value split over lines cannot pass them and join again here.
+ */
+export function flatPersonaText(text: string): string {
+  return text.replace(/\r\n|[\r\n\t]/g, ' ').replace(new RegExp(CONTROL.source, 'gu'), '');
+}
+
 /** A free text as the block shows it: one line in `<fence>`, its tags neutralized, within `max`. */
 function fenced(text: string, max: number, fence: string): string {
-  const flat = Array.from(text.replace(/\r\n|[\r\n\t]/g, ' ').replace(new RegExp(CONTROL.source, 'gu'), ''))
+  const flat = Array.from(flatPersonaText(text))
     .slice(0, max)
     .join('')
     .replace(TAGS, (_tag, name: string) => `[${name.toLowerCase()}]`)
