@@ -1467,7 +1467,7 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
 ## D-110 — Routine: appuntamenti ricorrenti che Arianna esegue da sola (resoconto in chat, poi chiamata, poi email)
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere. **Fuori fase:** la Fase 1A è in corso. Il brief giornaliero è nella Fase 5, il cardwall nella Fase 2 e le chiamate in uscita nella Fase 4. Costruirne una tappa prima del suo turno è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md` come l'anticipo di D-066 e la tappa 1 di D-106, già annotati.
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-05 (sotto) e la conferma del 2026-10-14: nessun anticipo, si costruisce nelle sue fasi. Era: Proposta, da discutere. **Fuori fase:** la Fase 1A è in corso. Il brief giornaliero è nella Fase 5, il cardwall nella Fase 2 e le chiamate in uscita nella Fase 4. Costruirne una tappa prima del suo turno è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md` come l'anticipo di D-066 e la tappa 1 di D-106, già annotati.
 - **Collegate:**
   - D-066 (chiamate via internet, `[voice.outgoing]`, il ringer, Web Push) e D-067 (voce);
   - D-004 (coda `jobs`, anche per i lavori programmati) e D-035 (motore dei task, colonne del cardwall);
