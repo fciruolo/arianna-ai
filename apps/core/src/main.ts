@@ -40,6 +40,7 @@ import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
+import { seriesNamesInUse } from './prompt-tail.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -185,7 +186,8 @@ const sql = connect(config, app);
     createPiiGuard({
       start,
       development: app.development,
-      names: () => [...agents.keys(), ...CLOUD_WORKER_NAMES],
+      // D-214: the people of the series the agents wear are characters, not persons.
+      names: () => [...agents.keys(), ...CLOUD_WORKER_NAMES, ...seriesNamesInUse(settings.current(), [...agents.keys()])],
       onEvent: (event) => {
         if (event !== 'ready' && event !== 'starting' && event !== 'idle-stop') console.error(`pii guard: ${event}`);
       },
@@ -542,7 +544,16 @@ const host = config.server.host.includes(':') ? `[${config.server.host}]` : conf
 const calls = createCalls({
   sql,
   voice: voice.service,
-  config: () => ({ roles: settings.current().roles, voice: voiceSettings(), local: settings.current().local, personas: settings.current().personas }),
+  config: () => ({
+    roles: settings.current().roles,
+    voice: voiceSettings(),
+    local: settings.current().local,
+    personas: settings.current().personas,
+    // D-214: the person of the series an agent wears speaks in the calls too.
+    characters: settings.current().characters,
+    appearance: settings.current().appearance,
+    home: config.home,
+  }),
   candidates,
   model: localModel,
   coreUrl: `http://${host}:${String(config.server.port)}`,

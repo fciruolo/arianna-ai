@@ -1,3 +1,4 @@
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync } from 'node:fs';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -249,4 +250,32 @@ export async function listThemes(dir: string): Promise<ThemeListing> {
 /** The theme in use: the one chosen when it is served, otherwise Base. */
 export function currentTheme(chosen: string, themes: readonly Theme[]): string {
   return themes.some((theme) => theme.id === chosen) ? chosen : BASE_THEME;
+}
+
+/**
+ * The characters the theme `id` gives the agents (D-214), read at once for a
+ * step of the model: the same checks as `listThemes` for that one folder (a
+ * real folder, theme.json alone, at most 16 KB, never through a link, the
+ * closed schema). Base, a missing or refused theme: none.
+ */
+export function themeCharactersSync(dir: string, id: string): Record<string, string> {
+  if (id === BASE_THEME || !THEME_ID.test(id)) return {};
+  try {
+    const path = join(dir, id);
+    if (!lstatSync(path).isDirectory() || realpathSync(path) !== join(realpathSync(dir), id)) return {};
+    const entries = readdirSync(path);
+    if (entries.length !== 1 || entries[0] !== 'theme.json') return {};
+    const handle = openSync(join(path, 'theme.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = fstatSync(handle);
+      if (!info.isFile() || info.size > MAX_THEME_BYTES) return {};
+      const buffer = Buffer.alloc(info.size);
+      readSync(handle, buffer, 0, info.size, 0);
+      return parseTheme(buffer.toString('utf8'), id).characters;
+    } finally {
+      closeSync(handle);
+    }
+  } catch {
+    return {};
+  }
 }

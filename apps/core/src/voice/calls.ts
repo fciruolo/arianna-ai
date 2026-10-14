@@ -14,7 +14,7 @@ import { passGateway } from '../gateway.ts';
 import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
-import { minLabel, tailParts, type TailPart } from '../prompt-tail.ts';
+import { minLabel, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
 import { loadTask } from '../tasks.ts';
 import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
@@ -115,7 +115,7 @@ export interface CallsOptions {
   /** `hold`, from the switch of the core, keeps the service in place from the check of its state to the row of a new call. */
   voice: Pick<VoiceService, 'state' | 'request'> & { hold?: <T>(work: () => Promise<T>) => Promise<T> };
   /** Read at each call: roles, limits and local servers of the current configuration. */
-  config: () => { roles: { voice?: string }; voice: VoiceConfig; local: { endpoints: readonly { models: Record<string, string> }[] }; personas?: Personas };
+  config: () => { roles: { voice?: string }; voice: VoiceConfig; local: { endpoints: readonly { models: Record<string, string> }[] }; personas?: Personas } & Omit<TailConfig, 'personas'>;
   candidates: () => TrialModel[];
   model: () => LocalModel;
   /** Where the voice reaches the core back, on loopback. */
@@ -342,7 +342,10 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /** The tail of the speaker's system prompt (D-107, tappa A3): its persona, read at each turn, within `clearance`. */
-  const voiceTail = (agent: string, clearance: Label): TailPart[] => tailParts({ personas: options.config().personas ?? {} }, agent, clearance);
+  const voiceTail = (agent: string, clearance: Label): TailPart[] => {
+    const { personas, characters, appearance, home } = options.config();
+    return tailParts({ personas: personas ?? {}, ...(characters === undefined ? {} : { characters }), ...(appearance === undefined ? {} : { appearance }), ...(home === undefined ? {} : { home }) }, agent, clearance);
+  };
 
   /**
    * What the voice model reads: the anchored window (D-072), allowed by the
