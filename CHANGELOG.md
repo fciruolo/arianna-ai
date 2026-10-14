@@ -2,11 +2,16 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
-## [0.110.0] - 2026-10-14
+## [0.111.0] - 2026-10-14
 
 ### Aggiunto
 
 - L'ufficio pixel segue il tema (D-216): con Scrubs diventa il Sacro Cuore (piastrelle, corrimano, croce verde, banco delle infermiere, letti, carrelli, distributore), con The Office la Dunder Mifflin (moquette, ufficio vetrato di Michael, reception di Pam, fotocopiatrice, sala riunioni, cartello); con Base resta com'è. Isole, scrivanie, cardwall, Decisioni e archivio restano al loro posto.
+
+## [0.110.0] - 2026-10-14
+
+### Aggiunto
+
 - I personaggi delle serie hanno la personalità del personaggio vero (D-214): un agente che indossa il Dr. Cox risponde burbero e sarcastico, Pam gentile, Dwight serissimo, dal tema o scelto a mano; il nome e la personalità che hai scritto per l'agente vincono, e regole, strumenti e approvazioni non cambiano.
 - Ogni personaggio delle serie apre o chiude ogni risposta con una sua battuta tipica, a rotazione («Che vuoi, pivello?» del Dr. Cox, «Frick!» di Elliot, «È quello che ha detto lei!» di Michael…), senza che cambi il contenuto della risposta (D-214).
 - `pnpm test:guard` passa anche il testo di ogni personaggio delle serie dal secondo controllo vero, quando il modello c'è (D-214).
