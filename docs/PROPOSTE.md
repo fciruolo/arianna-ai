@@ -747,7 +747,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni (le domande erano 
 ## D-103 — Temi: colori, sfondo e costumi dei personaggi, scelti in Impostazioni
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). **Prima tappa applicata (D-208, ramo `task/temi-serie`, da provare):** formato `theme.json` a schema chiuso, `GET /api/themes`, scelta in Impostazioni → Aspetto («Tema» e «Modalità»), `[appearance]` in `arianna.toml`, test del contrasto AA, temi Corsia e Ufficio con i costumi di Arianna e del Coder su tutte le 28 pose. **Manca:** Cartoon giallo e Salotto animato; i personaggi veri delle serie; il tema Base in `theme.json` con i sette contrasti corretti; feste, date e computus; decori diversi da corrimano e moquette, interruttore dei decori animati; temi dell'utente in `data/themes/`; token dell'ufficio pixel. Era: Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). **Prima tappa applicata (D-208, ramo `task/temi-serie`, da provare):** formato `theme.json` a schema chiuso, `GET /api/themes`, scelta in Impostazioni → Aspetto («Tema» e «Modalità»), `[appearance]` in `arianna.toml`, test del contrasto AA, temi Corsia e Ufficio con i costumi di Arianna e del Coder su tutte le 28 pose. **Seconda tappa applicata (D-211, ramo `task/temi-personaggi`, da provare):** i personaggi veri di Scrubs (J.D., Turk, Elliot, Carla, Dr. Cox) e di The Office (Michael, Dwight, Jim, Pam) disegnati da Claude con tutte le pose, nel pacchetto `serie` del repository (fan art per uso personale, da togliere prima di condividerlo), assegnati agli agenti dai temi Corsia e Ufficio. **Manca:** Cartoon giallo e Salotto animato, con i loro personaggi veri; il tema Base in `theme.json` con i sette contrasti corretti; feste, date e computus; decori diversi da corrimano e moquette, interruttore dei decori animati; temi dell'utente in `data/themes/`; token dell'ufficio pixel. Era: Proposta, da discutere
 - **Collegate:** D-060 (identità grafica, pacchetti di personaggi, diritti), D-061 (icone dietro un punto unico), D-062 (font serviti in locale), D-087b (sfondo della Conoscenza), pagina Impostazioni (3.5, `SettingsPage.vue`), `docs/OPENDOTS.md` (P1, P2), anteprima `docs/mockups/temi.html`
 
 ### Contesto
@@ -846,7 +846,7 @@ Un tema non valido compare in Impostazioni con il motivo e non si può scegliere
 
 **Attivazione per data, da confermare:** se l'utente la accende, durante la finestra il tema stagionale prende il posto di quello scelto, ma solo quando il tema scelto è "Base"; un tema scelto a mano non viene mai sostituito. Vale la data locale del Mac. Le feste mobili (Carnevale, Pasqua) le calcola una funzione con il computus, provata su anni noti. Il Carnevale ambrosiano (Milano, qualche giorno dopo) resta fuori, salvo tua richiesta.
 
-**(b) Temi ispirati a serie e cartoni.** Qui c'è un limite. **Nel repository** il tema può portare solo una **palette e un'ambientazione generica**, con un nome generico e **senza nomi, loghi, scritte, sigle né personaggi delle opere**:
+**(b) Temi ispirati a serie e cartoni.** La proposta iniziale metteva un limite: **nel repository** il tema poteva portare solo una **palette e un'ambientazione generica**, con un nome generico e **senza nomi, loghi, scritte, sigle né personaggi delle opere**. L'utente l'ha tolto per i personaggi (punto 4 delle «Domande chiuse», D-211: personaggi veri nel pacchetto `serie`, temi che possono chiamarsi come le serie); la tabella resta come descrizione di palette e ambienti:
 
 | Richiesta | Tema nel repository | Cosa contiene | Arianna e Coder |
 | --- | --- | --- | --- |
@@ -855,14 +855,14 @@ Un tema non valido compare in Impostazioni con il motivo e non si può scegliere
 | Simpsons | **Cartoon giallo** | cielo azzurro con nuvole, giallo acceso, contorni spessi | colori pieni e contorni più marcati; la pelle resta la sua |
 | Griffin | **Salotto animato** | carta da parati a righe e colori caldi di un salotto qualsiasi | colori pieni, nessun dettaglio riconoscibile |
 
-I **personaggi veri** (i protagonisti della serie o del cartone) arrivano solo come **pacchetto dell'utente** in `data/characters/<pacchetto>/`, nel formato di D-060. L'utente li assegna agli agenti da Impostazioni, oppure con un tema suo in `data/themes/`, che può chiamare come vuole. Nel repository non c'è niente di loro.
+I **personaggi veri** (i protagonisti della serie o del cartone) li disegna Claude in pixel art, nel formato di D-060 con tutte le pose, come fan art per uso personale, e stanno **nel repository**, nel pacchetto `serie` (`apps/hud/characters/serie/`), separato dagli originali così si toglie intero; il tema della serie li assegna agli agenti e l'utente può sceglierli a mano in Impostazioni → Agenti. **Prima di rendere pubblico o condividere il repository vanno tolti, anche dalla storia di git** (elenco in `apps/hud/characters/serie/LEGGIMI.md`). È la scelta dell'utente del 2026-10-14 (punto 4 delle «Domande chiuse», D-211), che cambia la proposta iniziale: lì i personaggi veri arrivavano solo come pacchetto dell'utente in `data/characters/`.
 
-**Perché c'è questo limite:**
+**Perché la proposta iniziale metteva questo limite** (le ragioni restano vere, e sono il motivo per toglierli prima di condividere):
 
 1. **Diritto d'autore.** I personaggi di una serie o di un cartone (aspetto, costume, tratti riconoscibili) sono opere protette. Una loro versione in pixel art "fatta da noi" resta un'opera derivata: ridisegnarla non la rende nostra. Palette, colori e ambientazioni generiche (una corsia d'ospedale, un ufficio, un cielo da cartone) non sono protetti.
 2. **Marchi.** Titoli, loghi e nomi dei personaggi sono marchi registrati: un tema del repository chiamato col titolo della serie userebbe quel marchio.
 3. **Il repository si può condividere.** Ciò che sta in git si copia e si pubblica, e finisce nei cloni e nei backup condivisi. `data/` invece resta sulla macchina dell'utente, per uso personale, sotto la sua responsabilità.
-4. **D-060 lo dice già.** I personaggi di film, telefilm e cartoni stanno "solo in `data/`, mai in git, mai disegnati o scaricati da Claude". Il tema ispirato è il massimo che si può mettere in git senza violare D-060.
+4. **D-060 lo diceva.** I personaggi di film, telefilm e cartoni stavano "solo in `data/`, mai in git, mai disegnati o scaricati da Claude"; per i personaggi delle serie dei temi l'utente l'ha cambiato (D-211), per gli altri resta.
 
 Non è un parere legale: è la linea prudente già decisa.
 
@@ -897,7 +897,7 @@ Totale: circa 26-37 ore. La parte lunga è disegnare i costumi in tutte le 28 po
 
 - **Temi come file CSS liberi in `data/themes/`.** Un CSS può caricare immagini da fuori (`url(...)`) e, con i selettori d'attributo, far uscire pezzi di testo della pagina, dove c'è L2 in chiaro. Uno schema chiuso fatto di soli colori non lascia questa porta.
 - **Una libreria di temi (daisyUI o simili).** Sarebbe una dipendenza nuova e porterebbe un'identità diversa da quella di D-060; i nostri token bastano.
-- **"Parodie" o versioni "simili" dei personaggi delle serie nel repository.** Resterebbero opere derivate di personaggi protetti; D-060 lo esclude.
+- **"Parodie" o versioni "simili" dei personaggi delle serie nel repository.** Resterebbero opere derivate di personaggi protetti; D-060 lo escludeva. Superata dalla scelta dell'utente (D-211): i personaggi veri, riconoscibili, come fan art per uso personale.
 - **Scaricare pacchetti di fan art da internet o generarli con un modello d'immagini.** Licenze incerte, accesso alla rete, qualità e coerenza fra le pose da verificare; e D-060 vieta a Claude di scaricarli.
 - **Temi che cambiano anche voce, suoni o carattere di Arianna.** La voce non si tocca (prove e scelte di D-066 già fatte), e una personalità che cambia con le feste renderebbe incoerenti gli eval dell'orchestratore.
 - **Un tema per conversazione o per agente.** Più stato e più casi per poco guadagno: l'agente ha già il suo personaggio.
@@ -906,7 +906,7 @@ Totale: circa 26-37 ore. La parte lunga è disegnare i costumi in tutte le 28 po
 ### Rischi
 
 - **Privacy: basso.** I temi sono solo presentazione: non escono dalla macchina, non caricano nulla dalla rete, non toccano dati, etichette, gateway né instradamento. Il rischio vero (un CSS che fa uscire testo) è chiuso dallo schema.
-- **Diritti.** I pacchetti dell'utente in `data/characters/` finiscono nel backup cifrato di D-096, che resta personale; non vanno mai in un backup condiviso né in screenshot pubblici. Va scritto accanto alle istruzioni dei pacchetti.
+- **Diritti.** I pacchetti dell'utente in `data/characters/` finiscono nel backup cifrato di D-096, che resta personale; non vanno mai in un backup condiviso né in screenshot pubblici. Va scritto accanto alle istruzioni dei pacchetti. Il pacchetto `serie` (D-211) sta invece in git e quindi anche nella copia su GitHub: finché il repository è privato e solo dell'utente va bene; prima di condividerlo va tolto anche dalla storia di git, come dice `apps/hud/characters/serie/LEGGIMI.md`.
 - **Leggibilità.** Un tema stagionale molto colorato può peggiorare la chat ogni giorno per settimane. Il test AA e i decori a bassa opacità lo limitano, e "Torna a Base" è sempre a un clic.
 - **Sorprese.** Un cambio di tema per data può sembrare un errore ("perché è tutto rosso?"). Per questo vale solo con il tema Base, e una riga in Impostazioni dice quale festa è attiva.
 - **Manutenzione.** Ogni ritocco alle pose di Arianna va riprovato su ogni costume. Le parti sovrapposte lo rendono automatico, ma un cappello disegnato per la testa frontale può non stare su quella laterale: a ogni modifica va guardato a occhio.
@@ -923,7 +923,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 1. **Feste automatiche:** sì, solo sopra il tema Base, con l'interruttore «Feste automatiche» acceso di base; un tema scelto a mano non viene mai sostituito.
 2. **Ordine (cambia la raccomandazione):** prima i temi delle serie, poi il tema Base con i contrasti corretti e le feste. Halloween 2026 può arrivare tardi: scelta consapevole dell'utente.
 3. **Altre feste:** Carnevale, Estate e Pasqua, oltre a Natale, San Patrizio e Halloween.
-4. **Personaggi veri delle serie (cambia D-060):** l'utente vuole i personaggi veri (Scrubs, The Office, Simpsons, Griffin…), disegnati da Claude in pixel art 16×32 come fan art per uso personale («il repo ed il progetto sono solo per me!»), e **nel repository** (seconda domanda: dove salvarli; spiegato che GitHub è la copia di sicurezza e che prima di condividere il repository andrebbero tolti anche dalla storia di git). I temi possono chiamarsi come le serie. Prima di rendere pubblico o condividere il repository vanno tolti.
+4. **Personaggi veri delle serie (cambia D-060):** l'utente vuole i personaggi veri (Scrubs, The Office, Simpsons, Griffin…), disegnati da Claude in pixel art 16×32 come fan art per uso personale («il repo ed il progetto sono solo per me!»), e **nel repository** (seconda domanda: dove salvarli; spiegato che GitHub è la copia di sicurezza e che prima di condividere il repository andrebbero tolti anche dalla storia di git). I temi possono chiamarsi come le serie. Prima di rendere pubblico o condividere il repository vanno tolti. Fatto per Scrubs e The Office in D-211 (pacchetto `serie`).
 5. **Dove vale il tema:** su tutti i dispositivi (salvato in `arianna.toml`); chiaro o scuro resta per browser.
 6. **Pose:** tutte le 28, per costumi delle feste e personaggi delle serie (servono all'ufficio).
 7. **Voce e suoni:** no, solo grafica.
@@ -1289,7 +1289,7 @@ L'anteprima `docs/mockups/ufficio.html` lo mostra:
 
 **6. Il tuo personaggio.**
 - **Movimento:** frecce o WASD, oppure clic o tocco, con un percorso a tessere (ricerca in ampiezza) e collisioni con muri e mobili. Gli agenti bloccano solo da vicino e non chiudono mai in un angolo.
-- **Aspetto:** un personaggio a scelta fra i pacchetti di D-060. Nel repository entra un avatar originale "Tu", ridisegnato **partendo da** quello dell'anteprima con tutte le pose (scrittura, lettura, quarta riga), in `apps/hud/characters/art/user.ts`, costruito da `build.ts` e coperto dal test dei PNG. Personaggi di film e cartoni restano solo in `data/characters/` (D-060).
+- **Aspetto:** un personaggio a scelta fra i pacchetti di D-060. Nel repository entra un avatar originale "Tu", ridisegnato **partendo da** quello dell'anteprima con tutte le pose (scrittura, lettura, quarta riga), in `apps/hud/characters/art/user.ts`, costruito da `build.ts` e coperto dal test dei PNG. Personaggi di film e cartoni restano solo in `data/characters/` (D-060), salvo quelli delle serie dei temi nel pacchetto `serie` (D-211).
 
 **7. Privacy: la garanzia vale per ciò che si disegna.**
 - **Il componente dell'ufficio** (canvas, nomi, etichette, elenco "Nell'ufficio") **riceve solo `OfficeSnapshot`**, il tipo del punto 3. Questo tipo non ha titoli, testo, percorsi, comandi né nomi visualizzati.

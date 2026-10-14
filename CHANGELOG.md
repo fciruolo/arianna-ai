@@ -2,6 +2,17 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Personaggi veri delle serie nei temi (D-211, tappa di D-103): J.D., Turk, Elliot, Carla e Dr. Cox di Scrubs nel tema Corsia, Michael, Dwight, Jim e Pam di The Office nel tema Ufficio, disegnati in pixel art con tutte le pose come fan art per uso personale, nel pacchetto `serie` da togliere prima di condividere il repository.
+- Gruppo «Serie (fan art)» nella galleria dei personaggi di Impostazioni → Agenti (D-211).
+
+### Cambiato
+
+- I temi Corsia e Ufficio vestono Arianna, il Coder, GOD, il revisore e gli altri agenti con i personaggi delle serie invece dei costumi, che restano sceglibili a mano (D-211).
+
 ## [0.105.0] - 2026-10-14
 
 ### Aggiunto
