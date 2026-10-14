@@ -33,10 +33,15 @@ export {
   isFactLabel,
   isFactLowering,
   MAX_PROFILE_BLOCK,
+  MAX_SHARE_REASON,
   profileBlock,
   profileFits,
   profileLine,
   profileRead,
+  SHARE_FACT_ACTION,
+  sharedFact,
+  sharedFactText,
+  shareFactRequest,
   type FactField,
   type FactLabel,
   type FittingFact,
@@ -44,6 +49,9 @@ export {
   type ProfileBlockOptions,
   type ProfileFact,
   type ProfileRead,
+  type ShareApproval,
+  type SharedFact,
+  type ShareFactDetail,
 } from './profile.ts';
 export { PROJECT_RULES_LABEL, projectRulesFit } from './project-rules.ts';
 export {
