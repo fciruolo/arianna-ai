@@ -12,7 +12,7 @@ import { resolveHome } from '@arianna/config';
 import { piiReport, piiVerdict } from '@arianna/policy';
 
 import { fragmentNamesOf } from '../src/gateway.ts';
-import { characterChoiceOf, characterDirsOf, characterPart, tailParts, type TailConfig } from '../src/prompt-tail.ts';
+import { characterChoiceOf, characterDirsOf, characterPart, PROFILE_SOURCE, profilePart, promptTail, tailParts, type TailConfig } from '../src/prompt-tail.ts';
 import { servesSync, readSmallSync } from '../src/characters.ts';
 import { themeCharactersSync } from '../src/themes.ts';
 
@@ -204,4 +204,32 @@ test('themeCharactersSync reads a theme with the checks of listThemes, and nothi
   mkdirSync(join(themes, 'rotto'));
   writeFileSync(join(themes, 'rotto', 'theme.json'), '{ nope');
   assert.deepEqual(themeCharactersSync(themes, 'rotto'), {});
+});
+
+test('the character, the user’s persona and the profile «Su di te» (D-213) live together in the tail, each with its label and source', () => {
+  const facts = [
+    { topic: 'Lavoro', text: 'Lavoro da casa il venerdì.', label: 'L1' },
+    { topic: 'Salute', text: 'Allergico alle arachidi.', label: 'L2' },
+  ];
+  const config = corsia({ personas: { arianna: { tone: 'scherzoso', address: 'tu' } } });
+  for (const clearance of ['L2', 'L1'] as const) {
+    const profile = profilePart(facts, clearance, { shareTool: true });
+    assert.ok(profile !== undefined, clearance);
+    const tail = [...tailParts(config, 'arianna', clearance), profile];
+    assert.deepEqual(
+      tail.map((piece) => piece.source),
+      ['character:serie/carla', 'persona:arianna', PROFILE_SOURCE],
+      clearance,
+    );
+    // The character stays L0 and does not lower nor raise the profile's label.
+    assert.equal(tail[0]?.label, 'L0');
+    assert.equal(tail[2]?.label, profile.label);
+    const text = promptTail(tail.map((piece) => piece.text));
+    assert.ok(text.indexOf('<character>') < text.indexOf('Persona set by the user') && text.indexOf('Persona set by the user') < text.indexOf('Lavoro'), clearance);
+    // The second scanner takes «Carla» for no person in the character's piece only, never in the profile.
+    assert.deepEqual(
+      fragmentNamesOf(tail.map((piece) => ({ value: piece.text, label: piece.label, source: piece.source }))),
+      [['Carla'], undefined, undefined],
+    );
+  }
 });
