@@ -511,11 +511,12 @@ export async function loadMessage(sql: Queryable, id: string): Promise<Message |
 export const DIRECT_STEP = 1;
 
 /**
- * A task of the direct chat is still at work: ready, running, or waiting for
- * an approval the user has not decided (workspace, budget). One at a time,
- * since they work in the same project folder (D-111).
+ * A task of the conversation is still at work: ready, running, or waiting for
+ * an approval the user has not decided (workspace, budget). The direct chat
+ * runs one at a time, since they work in the same project folder (D-111);
+ * every chat queues the messages written meanwhile (D-218).
  */
-async function directChatBusy(tx: Queryable, conversationId: string): Promise<boolean> {
+export async function conversationBusy(tx: Queryable, conversationId: string): Promise<boolean> {
   const [row] = await tx<{ busy: boolean }[]>`
     SELECT EXISTS (
       SELECT FROM tasks t WHERE t.conversation_id = ${conversationId}
@@ -551,6 +552,53 @@ export interface MessageOptions {
   design?: { style: string | null; skills: readonly string[] };
 }
 
+/** What a user message is checked against: the conversation, locked for the transaction. */
+export interface MessageTarget {
+  mode: ConversationMode;
+  clearance: Label;
+  title: string | null;
+  archived: boolean;
+  agent: ConversationAgent | null;
+  workspace: string | null;
+  incognito: boolean;
+  finance: boolean;
+}
+
+/** Locks the conversation a user message goes to; refuses one that does not exist or is purged. */
+export async function lockForMessage(tx: Queryable, conversationId: string): Promise<MessageTarget> {
+  const conversation = isUuid(conversationId)
+    ? (
+        await tx<MessageTarget[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance FROM conversations
+        WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
+      )[0]
+    : undefined;
+  if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
+  return conversation;
+}
+
+/**
+ * The checks of a user message, also for one that waits in the queue
+ * (D-218): text, archive, the scanner of a work conversation, the style and
+ * skills of the Studio.
+ */
+export function checkUserMessage(conversation: MessageTarget, body: string, options: MessageOptions = {}): void {
+  checkMessageBody(body);
+  if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');
+
+  if (conversation.mode === 'work') {
+    const kinds = [...new Set(scanText(body).map((finding) => finding.kind))];
+    if (kinds.length > 0) {
+      throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
+    }
+  }
+
+  // The style and skills of the Studio (D-184): only in the direct chat with the Designer.
+  if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
+    throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
+  }
+}
+
 /**
  * Writes the user's message and starts the task that answers it, in one
  * transaction. The message carries the conversation's clearance (the user
@@ -578,31 +626,11 @@ export async function writeUserMessage(
   body: string,
   options: MessageOptions = {},
 ): Promise<{ message: Message; task: Task }> {
-  checkMessageBody(body);
-  const conversation = isUuid(conversationId)
-    ? (
-        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean; finance: boolean }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance FROM conversations
-        WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
-      )[0]
-    : undefined;
-  if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
-  if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');
-
-  if (conversation.mode === 'work') {
-    const kinds = [...new Set(scanText(body).map((finding) => finding.kind))];
-    if (kinds.length > 0) {
-      throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
-    }
-  }
-
-  // The style and skills of the Studio (D-184): only in the direct chat with the Designer.
-  if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
-    throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
-  }
+  const conversation = await lockForMessage(tx, conversationId);
+  checkUserMessage(conversation, body, options);
 
   // The direct chat runs one Coder at a time in the project folder (D-111): the next message waits for the answer.
-  if (conversation.agent !== null && (await directChatBusy(tx, conversationId))) {
+  if (conversation.agent !== null && (await conversationBusy(tx, conversationId))) {
     // "still working" is what the chat reads; the name says who (the local model and Claude wait one at a time too).
     const who = conversation.agent === 'coder' ? 'the Coder' : conversation.agent;
     throw new ChatError('busy', `${who} is still working on the previous message: wait for the answer, or stop it`);

@@ -32,7 +32,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -368,9 +368,43 @@ export async function listMessages(conversationId: string, beforeId?: string): P
   return (await call<{ messages: Message[] }>('GET', path)).messages;
 }
 
-/** `design`: the style and skills chosen in the Studio (I-19, D-184), only for the direct chat with the Designer. */
-export async function sendMessage(conversationId: string, body: string, design?: { style?: string; skills?: string[] }): Promise<{ message: Message; task: Task }> {
+/**
+ * `design`: the style and skills chosen in the Studio (I-19, D-184), only for the direct chat with the Designer.
+ * While an answer is at work the core queues the message (D-218): `queued` instead of the message and its task.
+ */
+export async function sendMessage(
+  conversationId: string,
+  body: string,
+  design?: { style?: string; skills?: string[] },
+): Promise<{ message: Message; task: Task } | { queued: QueuedMessage }> {
   return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
+}
+
+/** The messages waiting for the answer at work (D-218), and whether "Ferma" paused them. */
+export async function loadQueue(conversationId: string): Promise<QueueView> {
+  return (await call<{ queue: QueueView }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/queue`)).queue;
+}
+
+export async function resumeQueue(conversationId: string): Promise<QueueView> {
+  return (await call<{ queue: QueueView }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/queue/resume`, {})).queue;
+}
+
+export async function editQueued(id: string, body: string): Promise<QueuedMessage> {
+  return (await call<{ queued: QueuedMessage }>('PATCH', `/api/queued-messages/${encodeURIComponent(id)}`, { body })).queued;
+}
+
+export async function removeQueued(id: string): Promise<void> {
+  await call('DELETE', `/api/queued-messages/${encodeURIComponent(id)}`);
+}
+
+/** "Invia ora": the queued message leaves at once. */
+export async function sendQueuedNow(id: string): Promise<{ message: Message; task: Task }> {
+  return call('POST', `/api/queued-messages/${encodeURIComponent(id)}/send`, {});
+}
+
+/** "Ferma" (D-218): the answers at work in the conversation stop, its queue pauses. */
+export async function stopConversation(conversationId: string): Promise<{ stopped: number }> {
+  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/stop`, {});
 }
 
 /** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */

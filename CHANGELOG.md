@@ -2,6 +2,17 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- «Ferma» nella chat (D-218): un pulsante accanto all'invio interrompe la risposta in corso; sotto il messaggio compare «fermato» con «Riprova».
+- Coda dei messaggi (D-218): ciò che scrivi mentre Arianna o un agente risponde aspetta sopra il campo, si può modificare o togliere e parte da solo quando la risposta finisce; dopo «Ferma» la coda resta in pausa finché non scegli «Invia ora» o «Riprendi la coda».
+
+### Cambiato
+
+- Nella chat con Arianna due messaggi della stessa conversazione non lavorano più insieme, e nella chat diretta il secondo messaggio non viene più rifiutato: aspetta in coda (D-218).
+
 ## [0.112.0] - 2026-10-14
 
 ### Aggiunto

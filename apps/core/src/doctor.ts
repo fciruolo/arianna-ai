@@ -237,7 +237,7 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   if (rewritable !== '') problems.push(`may update append-only ${rewritable}`);
   if (names((table) => table.name === 'schema_migrations' && table.writes) !== '') problems.push('may write schema_migrations');
 
-  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183) and of a fact of «Su di te» (D-114).
+  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183), of a fact of «Su di te» (D-114) and of a queued message (D-218).
   const definers = await owner<{ name: string }[]>`
     SELECT p.proname AS name FROM pg_proc p
     WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
@@ -248,10 +248,11 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
       AND p.oid IS DISTINCT FROM to_regprocedure('erase_conversation(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('finance_delete(text, uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('user_fact_delete(uuid)')
+      AND p.oid IS DISTINCT FROM to_regprocedure('queued_message_delete(bigint)')
     ORDER BY p.proname`;
   if (definers.length > 0) problems.push(`may run as the owner through ${definers.map((row) => row.name).join(', ')}`);
   // The deletions of the Finances (D-183) too: an import undone, a category, a rule, a budget.
-  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)']) {
+  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)', 'queued_message_delete(bigint)']) {
     const purgeName = signature.slice(0, signature.indexOf('('));
     const [purge] = await owner<{ public: boolean; pinned: boolean }[]>`
       SELECT has_function_privilege('public', p.oid, 'EXECUTE') AS public,

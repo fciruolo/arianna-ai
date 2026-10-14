@@ -26,6 +26,7 @@ import {
 } from './runs.ts';
 import { createTask, loadTask, moveTask, openDependencies, setTaskLimits, STEP_QUEUE, TaskError, type NewTask, type Task } from './tasks.ts';
 import { applyFactProposal } from './user-facts.ts';
+import { stopTaskByUser } from './chat-stop.ts';
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -592,6 +593,13 @@ export async function retryTaskIn(tx: Queryable, taskId: string): Promise<Task> 
   if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
   if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
   if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
+  // One answer at a time in a conversation (D-218): another task still at work there, the retry waits for it.
+  const [busy] = await tx`
+    SELECT 1 FROM tasks o JOIN tasks t ON t.id = ${taskId} AND o.conversation_id = t.conversation_id
+    WHERE o.id <> t.id AND (o.status IN ('ready', 'running')
+      OR (o.status = 'waiting_user' AND EXISTS (SELECT FROM approvals a WHERE a.task_id = o.id AND a.state = 'pending')))
+    LIMIT 1`;
+  if (busy !== undefined) throw new TaskError(`task ${taskId}: another answer of its conversation is at work`);
   const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
   await mustSchedule(tx, taskId);
   await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
@@ -621,8 +629,8 @@ export interface WorkerOptions extends EngineOptions {
  * timeout, it takes back the jobs of dead workers: this is what makes a task
  * resume after `kill -9` of the core.
  */
-/** Why a step is stopped for good: an incognito closing (D-136), an erased conversation (D-157), "Ferma" of a subtask of GOD (D-127). */
-export type StopCause = 'incognito' | 'erase' | 'god';
+/** Why a step is stopped for good: an incognito closing (D-136), an erased conversation (D-157), "Ferma" of a subtask of GOD (D-127), "Ferma" in the chat (D-218). */
+export type StopCause = 'incognito' | 'erase' | 'god' | 'user';
 
 export interface Worker {
   start(): Promise<void>;
@@ -710,6 +718,7 @@ export function createWorker(options: WorkerOptions): Worker {
       const result = await failJob(tx, jobId, worker, cause, null);
       // Only a step still running here: one that already ended (its job done, the next one queued) is left as it is.
       if (cause === 'god' && result === 'failed' && taskId !== undefined) await failTask(tx, taskId, { origin: 'engine', code: 'engine.stopped', details: {} });
+      if (cause === 'user' && result === 'failed' && taskId !== undefined) await stopTaskByUser(tx, taskId);
     });
   }
 
@@ -762,10 +771,10 @@ export function createWorker(options: WorkerOptions): Worker {
   };
 }
 
-/** The cause a step was stopped with for good: `incognito` unless it was `erase` or `god`. */
+/** The cause a step was stopped with for good: `incognito` unless it was `erase`, `god` or `user`. */
 function stopCause(signal: AbortSignal): StopCause {
-  if (signal.reason === 'erase') return 'erase';
-  return signal.reason === 'god' ? 'god' : 'incognito';
+  const causes: readonly StopCause[] = ['erase', 'god', 'user'];
+  return causes.find((cause) => cause === signal.reason) ?? 'incognito';
 }
 
 /** A step that kept failing: the task fails with the reason the user reads, its open runs are closed. */

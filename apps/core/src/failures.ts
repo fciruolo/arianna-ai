@@ -60,6 +60,8 @@ const CODES: Record<string, readonly DetailKey[]> = {
   'engine.lock-expired': [],
   // "Ferma" of a subtask of GOD (D-127): stopped by the user.
   'engine.stopped': [],
+  // "Ferma" in the chat (D-218): stopped by the user.
+  'engine.user-stopped': [],
   'engine.step-failed': ['executor'],
   'engine.database': ['sqlstate', 'attempts'],
   'engine.unknown': ['error', 'attempts'],

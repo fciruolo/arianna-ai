@@ -85,6 +85,11 @@ const CATALOG: Record<string, (details: Details) => FailureText> = {
     explanation: 'Hai fermato questo lavoro con «Ferma» nella pagina GOD.',
     steps: ['Per continuare premi «Riprendi» nella pagina GOD, oppure scrivi un messaggio in questa chat.'],
   }),
+  'engine.user-stopped': () => ({
+    title: 'Fermato da te',
+    explanation: 'Hai fermato questa risposta con «Ferma» nella chat.',
+    steps: ['Per rifarla premi «Riprova» sotto il messaggio, oppure scrivi un messaggio nuovo.'],
+  }),
   'engine.lock-expired': () => ({
     title: 'Arianna si è fermata mentre lavorava',
     explanation: 'Il processo che eseguiva il task si è interrotto più volte (riavvio, arresto o crollo di Arianna).',

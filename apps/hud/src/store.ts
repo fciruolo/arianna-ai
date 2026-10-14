@@ -23,7 +23,7 @@ import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type Remote
 import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
 import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
@@ -57,6 +57,8 @@ export function createChatStore() {
   const cardsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
+  /** The messages of the open conversation waiting for the answer at work (D-218). */
+  const queue = ref<QueueView>({ paused: false, messages: [] });
   /** The cloud models a work conversation may choose (task 1.10). */
   const models = ref<CloudModel[]>([]);
   /** The approved projects (D-058); the list changes without a restart, so it is read again when needed. */
@@ -351,6 +353,56 @@ export function createChatStore() {
     }
   }
 
+  async function refreshQueue(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return;
+    const read = await api.loadQueue(id);
+    if (chat.value?.conversationId === id) queue.value = read;
+  }
+
+  /** One action on the queue or "Ferma" (D-218): the queue is read again after it, an error shows as the others. */
+  async function onQueue(action: () => Promise<unknown>): Promise<boolean> {
+    error.value = null;
+    try {
+      await action();
+      await refreshQueue();
+      return true;
+    } catch (cause) {
+      fail(cause);
+      void refreshQueue().catch(() => undefined);
+      return false;
+    }
+  }
+
+  /** "Ferma": the answer at work stops; with messages in the queue, the queue pauses. */
+  function stopAnswer(): Promise<boolean> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return Promise.resolve(false);
+    return onQueue(() => api.stopConversation(id));
+  }
+
+  function editQueued(queuedId: string, body: string): Promise<boolean> {
+    return onQueue(() => api.editQueued(queuedId, body));
+  }
+
+  function removeQueued(queuedId: string): Promise<boolean> {
+    return onQueue(() => api.removeQueued(queuedId));
+  }
+
+  function sendQueuedNow(queuedId: string): Promise<boolean> {
+    return onQueue(async () => {
+      const { message, task } = await api.sendQueuedNow(queuedId);
+      if (chat.value?.conversationId === message.conversationId) chat.value = mergeMessages(chat.value, [message]);
+      tasks.value = { ...tasks.value, [task.id]: task };
+    });
+  }
+
+  function resumeQueue(): Promise<boolean> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return Promise.resolve(false);
+    return onQueue(() => api.resumeQueue(id));
+  }
+
   async function refreshParticipants(): Promise<void> {
     const id = chat.value?.conversationId;
     if (id === undefined) return;
@@ -526,8 +578,9 @@ export function createChatStore() {
     activityCounts.value = {};
     calls.value = [];
     participants.value = [];
+    queue.value = { paused: false, messages: [] };
     try {
-      await Promise.all([refreshMessages(), refreshCalls(), refreshParticipants()]);
+      await Promise.all([refreshMessages(), refreshCalls(), refreshParticipants(), refreshQueue()]);
     } catch (cause) {
       fail(cause);
     }
@@ -827,9 +880,14 @@ export function createChatStore() {
       }
       // Whatever is left must be a message: a command never reaches Arianna.
       if (!goesToArianna(body)) return false;
-      const { message, task } = await api.sendMessage(state.conversationId, body, design);
-      if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
-      tasks.value = { ...tasks.value, [task.id]: task };
+      const posted = await api.sendMessage(state.conversationId, body, design);
+      // An answer is at work (D-218): the message waits in the queue, shown above the field.
+      if ('queued' in posted) {
+        if (chat.value?.conversationId === state.conversationId) await refreshQueue();
+        return true;
+      }
+      if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [posted.message]);
+      tasks.value = { ...tasks.value, [posted.task.id]: posted.task };
       return true;
     } catch (cause) {
       fail(cause);
@@ -1055,6 +1113,10 @@ export function createChatStore() {
         }
         break;
       }
+      // The queue of a conversation changed (D-218): the event names the conversation, never the text.
+      case 'conversation.queue':
+        if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshQueue());
+        break;
       case 'participant.added':
       case 'participant.removed':
         if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshParticipants());
@@ -1203,7 +1265,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

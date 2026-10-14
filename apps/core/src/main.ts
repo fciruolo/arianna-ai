@@ -51,7 +51,9 @@ import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { configureWornNames, passGateway } from './gateway.ts';
-import { nameLabelOf } from './participants.ts';
+import { nameLabelOf, type LeaveRule } from './participants.ts';
+import { stopConversation } from './chat-stop.ts';
+import { createQueueDispatcher } from './message-queue.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalReload, servedByLocalServer } from './local-reload.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
@@ -513,6 +515,8 @@ const orchestrator = createOrchestrator({
 const refused = [...(claude === undefined ? ['claude'] : []), ...(codex === undefined ? ['codex'] : [])];
 console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${refused.length === 0 ? '' : ` (sandbox refused: ${refused.join(', ')})`}`);
 
+// I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself; also for a queued message (D-218).
+const leaveRule = (): LeaveRule => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) });
 const worker = createWorker({
   sql,
   executor: orchestrator,
@@ -1015,7 +1019,7 @@ const server = await startApiServer({
   financeAgents: () => [...agents].filter(([, agent]) => isFinanceCard(agent.card)).map(([name]) => name),
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
-  leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
+  leaveRule,
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, config.paths.data, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
@@ -1102,11 +1106,16 @@ const server = await startApiServer({
   readiness: createReadiness({ config: () => settings.current(), sql, app }),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   // "Elimina" (D-157): the steps of the worker stop first, as for an incognito.
+  // "Ferma" in the chat (D-218): the steps of the worker stop as for GOD's, and the queue pauses.
+  stopChat: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
   erase: (conversationId) => eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report }),
   incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
   onError: report,
 });
 await worker.start();
+// D-218: the messages written while an answer was at work leave when it ends, one at a time.
+const queueDispatcher = createQueueDispatcher({ sql, leave: leaveRule, onError: report });
+queueDispatcher.start();
 // D-136: 10 minutes without a page on an incognito conversation close it; the pages hear it a minute before.
 const incognitoWatch = createIncognitoWatch({
   list: () => openIncognito(sql),
@@ -1220,6 +1229,7 @@ async function shutdown(): Promise<void> {
   imWatcher.stop();
   clearInterval(godTicker);
   incognitoWatch.stop();
+  queueDispatcher.stop();
   stopNotices();
   await telegram.close();
   await server.close();

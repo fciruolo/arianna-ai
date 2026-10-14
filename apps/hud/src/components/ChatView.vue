@@ -37,7 +37,7 @@ import {
 import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { isAddingLine, isEventLine, participantPose, withText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, QueueView, StatusSnapshot, Task } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
@@ -59,6 +59,8 @@ import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
+import QueuedMessages from './QueuedMessages.vue';
+import { isWorking, stoppedTasks } from '../lib/queue.ts';
 import SessionLine from './SessionLine.vue';
 import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
 import { startDesignerSession } from '../lib/api.ts';
@@ -90,6 +92,8 @@ const props = defineProps<{
   studioLink?: boolean;
   /** The mockup open in the Studio, for the summary of «Riparti» (D-185). */
   studioFile?: string | undefined;
+  /** The messages waiting for the answer at work (D-218). */
+  queue?: QueueView | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -108,6 +112,12 @@ const emit = defineEmits<{
   explain: [task: Task];
   retry: [taskId: string];
   attachQuestion: [];
+  /** "Ferma" (D-218): the answer at work stops, the queue pauses. */
+  stop: [];
+  editQueued: [id: string, body: string];
+  removeQueued: [id: string];
+  sendQueued: [id: string];
+  resumeQueue: [];
   open: [conversationId: string];
   /** "Chiamami quando finisci" on a task at work (D-066). */
   callWhenDone: [taskId: string];
@@ -164,6 +174,21 @@ async function newDesignerSession(): Promise<void> {
   } finally {
     sessionBusy.value = false;
   }
+}
+
+/** An answer of this conversation is at work (D-218): "Ferma" shows, a new message waits in the queue. */
+const working = computed(() => isWorking(props.tasks));
+/** A request above waits for the user's decision: the queue waits for it too. */
+const waitingDecision = computed(() => props.approvals.length > 0);
+/** The tasks the user stopped with "Ferma": a failed one reads "fermato", with "Riprova". */
+const stopped = computed(() => stoppedTasks(props.chat.messages, props.tasks));
+const stopping = ref(false);
+async function stopNow(): Promise<void> {
+  stopping.value = true;
+  emit('stop');
+  // The button comes back when the task has moved, or after a while if nothing was at work.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  stopping.value = false;
 }
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
@@ -860,9 +885,15 @@ onBeforeUnmount(() => clearInterval(clock));
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <template v-if="taskOf(message) !== undefined">
-                <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
+                <template v-if="taskOf(message)!.status === 'failed' && stopped.has(taskOf(message)!.id)">
+                  <span class="text-muted">fermato</span>
+                  <button type="button" class="inline-flex items-center gap-1 text-info hover:underline" title="Rimanda lo stesso messaggio" @click="emit('retry', taskOf(message)!.id)">
+                    <Icon name="retry" :size="12" />Riprova
+                  </button>
+                </template>
+                <span v-else :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
                 <button
-                  v-if="taskOf(message)!.status === 'failed'"
+                  v-if="taskOf(message)!.status === 'failed' && !stopped.has(taskOf(message)!.id)"
                   type="button"
                   class="grid size-4 place-items-center rounded-full bg-danger/15 font-bold text-danger hover:bg-danger/30"
                   aria-label="Perché è fallito"
@@ -1042,6 +1073,16 @@ onBeforeUnmount(() => clearInterval(clock));
           <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[14px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
           <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
+        <QueuedMessages
+          v-if="queue !== undefined"
+          :queue="queue"
+          :working="working"
+          :waiting-decision="waitingDecision"
+          @edit="(id, body) => emit('editQueued', id, body)"
+          @remove="(id) => emit('removeQueued', id)"
+          @send="(id) => emit('sendQueued', id)"
+          @resume="emit('resumeQueue')"
+        />
         <form
           class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
           @submit.prevent="submit()"
@@ -1075,7 +1116,19 @@ onBeforeUnmount(() => clearInterval(clock));
             @input="onInput"
           />
           <button
+            v-if="working"
+            type="button"
+            class="grid size-[38px] shrink-0 place-items-center rounded-full border border-line-strong text-ink hover:border-danger hover:text-danger disabled:opacity-40"
+            :disabled="stopping"
+            aria-label="Ferma la risposta"
+            title="Ferma la risposta in corso; i messaggi in coda restano in pausa"
+            @click="stopNow"
+          >
+            <Icon name="stop" :size="16" />
+          </button>
+          <button
             type="submit"
+            :title="working ? 'Mettilo in coda: parte quando finisce la risposta in corso' : undefined"
             :disabled="sending || draft.trim() === ''"
             class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Invia"

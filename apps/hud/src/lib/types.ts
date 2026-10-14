@@ -120,6 +120,21 @@ export interface CloudModel {
   model: string;
 }
 
+/** A message waiting for the answer at work in its conversation (D-218). */
+export interface QueuedMessage {
+  id: string;
+  conversationId: string;
+  label: Label;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QueueView {
+  paused: boolean;
+  messages: QueuedMessage[];
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -145,6 +160,8 @@ export interface Task {
   effectiveLabel: Label;
   waitingReason: string | null;
   waitingApprovalId: string | null;
+  /** When the task last moved; the core always sends it (D-218 reads it to tell a stop from a later failure). */
+  updatedAt?: string;
 }
 
 /** Why a task failed (D-064): no text, the page explains the code (lib/failures.ts). */

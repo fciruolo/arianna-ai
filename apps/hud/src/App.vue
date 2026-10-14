@@ -79,7 +79,7 @@ import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -1046,9 +1046,15 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :status="status"
             :calls="calls"
             :participants="participants"
+            :queue="queue"
             :characters="characters?.agents"
             :direct-agents="directAgents"
             @send="(body) => store.send(body, messageDesign(studioDesign))"
+            @stop="store.stopAnswer"
+            @edit-queued="store.editQueued"
+            @remove-queued="store.removeQueued"
+            @send-queued="store.sendQueuedNow"
+            @resume-queue="store.resumeQueue"
             :studio-file="studioAddress.file"
             @restarted="(id) => store.reloadConversation(id)"
             @remove-participant="store.removeParticipant"
@@ -1115,9 +1121,15 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :status="status"
         :calls="calls"
         :participants="participants"
+        :queue="queue"
         :characters="characters?.agents"
         :direct-agents="directAgents"
         @send="store.send"
+        @stop="store.stopAnswer"
+        @edit-queued="store.editQueued"
+        @remove-queued="store.removeQueued"
+        @send-queued="store.sendQueuedNow"
+        @resume-queue="store.resumeQueue"
         @remove-participant="store.removeParticipant"
         @call-when-done="store.callWhenDone"
         @cancel-call="store.cancelScheduled"
