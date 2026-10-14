@@ -2,12 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
-## [Non rilasciato]
+## [0.95.1] - 2026-10-14
 
 ### Corretto
 
 - Una personalità (o una regola dei progetti) con un dato personale o un valore del vault ora si rifiuta con un messaggio in italiano che dice il campo e il tipo di dato, senza ripetere il valore, al posto del messaggio tecnico inglese (D-107g).
 - Il pulsante «Computer» non si sposta più sotto il cursore mentre il Coder lavora: sta nell'intestazione della card (anche nel rapporto) e la card al lavoro ha un'altezza fissa, con passi e modifiche che scorrono dentro (D-095).
+- Nel rapporto del Coder l'intestazione non si taglia più: «Computer» sta in fondo e «Copia» e «Salva in inbox» compaiono al passaggio del mouse sul bordo in basso, senza lasciare un buco (D-095).
 - «Controlla novità» dei progetti seguiti e le novità di Open Design si raggruppano di nuovo col modello locale: il modello riceve i commit numerati al posto degli sha, un numero che non esiste si scarta invece di far ripiegare tutto sull'elenco per tipo (D-202, D-186).
 
 ## [0.95.0] - 2026-10-14
