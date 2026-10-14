@@ -9,6 +9,8 @@ import {
   canAskRewrite,
   checkAnswer,
   countStates,
+  devTabFromSearch,
+  devTabSearch,
   filterItems,
   filterQuestions,
   groupItems,
@@ -223,4 +225,20 @@ test('a rewrite asked is shown, keeps the question open and hides the button (D-
   const answered = markAnswered(asked, 'b', '2026-10-10 09:05');
   assert.deepEqual(answered[1]?.answer, { state: 'new', at: '2026-10-10 09:05' });
   assert.equal(pendingCount(answered), 1);
+});
+
+test('devTabFromSearch: «Progetti seguiti» only with scheda=progetti, the questions otherwise', () => {
+  assert.equal(devTabFromSearch('?scheda=progetti'), 'followed');
+  assert.equal(devTabFromSearch('?a=1&scheda=progetti'), 'followed');
+  assert.equal(devTabFromSearch(''), 'questions');
+  assert.equal(devTabFromSearch('?scheda=altro'), 'questions');
+  assert.equal(devTabFromSearch('?scheda=Progetti'), 'questions');
+});
+
+test('devTabSearch: sets or drops scheda, other parameters kept', () => {
+  assert.equal(devTabSearch('', 'followed'), '?scheda=progetti');
+  assert.equal(devTabSearch('?scheda=progetti', 'questions'), '');
+  assert.equal(devTabSearch('?a=1&scheda=progetti', 'questions'), '?a=1');
+  assert.equal(devTabSearch('?a=1', 'followed'), '?a=1&scheda=progetti');
+  assert.equal(devTabFromSearch(devTabSearch('', 'followed')), 'followed');
 });

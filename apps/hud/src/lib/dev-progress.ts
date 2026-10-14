@@ -291,3 +291,28 @@ export function pendingBadge(count: number): string | null {
   if (!Number.isSafeInteger(count) || count <= 0) return null;
   return count > 99 ? '99+' : String(count);
 }
+
+/** The two tabs of the page: the questions with the progress, and the projects followed for ideas (D-202). */
+export type DevTab = 'questions' | 'followed';
+
+export const DEV_TABS: readonly { id: DevTab; text: string }[] = [
+  { id: 'questions', text: 'Domande' },
+  { id: 'followed', text: 'Progetti seguiti' },
+];
+
+/** The address remembers the tab: `?scheda=progetti`; anything else is the questions. */
+const TAB_PARAM = 'scheda';
+const FOLLOWED_VALUE = 'progetti';
+
+export function devTabFromSearch(search: string): DevTab {
+  return new URLSearchParams(search).get(TAB_PARAM) === FOLLOWED_VALUE ? 'followed' : 'questions';
+}
+
+/** The query of the address for a tab, the other parameters kept: '' for the questions alone. */
+export function devTabSearch(search: string, tab: DevTab): string {
+  const params = new URLSearchParams(search);
+  if (tab === 'followed') params.set(TAB_PARAM, FOLLOWED_VALUE);
+  else params.delete(TAB_PARAM);
+  const query = params.toString();
+  return query === '' ? '' : `?${query}`;
+}

@@ -380,7 +380,9 @@ const settingsDirty = ref(false);
 
 function openSettings(slug?: string): void {
   settingsSection.value = slug;
-  openPage('settings', settingsPathFor(slug), 'Impostazioni');
+  const path = settingsPathFor(slug);
+  // The same section again (a reload, «indietro»): its query stays, e.g. the tab of «Sviluppo» (`?scheda=progetti`).
+  openPage('settings', window.location.pathname === path ? `${path}${window.location.search}` : path, 'Impostazioni');
 }
 
 /** The node the knowledge page selects when it opens (D-090: "Apri nel grafo"). */

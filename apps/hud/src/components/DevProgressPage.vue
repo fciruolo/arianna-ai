@@ -8,6 +8,9 @@ import {
   canAskRewrite,
   checkAnswer,
   countStates,
+  DEV_TABS,
+  devTabFromSearch,
+  devTabSearch,
   filterItems,
   filterQuestions,
   groupItems,
@@ -30,6 +33,7 @@ import {
   STATE_TEXT,
   STATES,
   KIND_TEXT,
+  type DevTab,
   type ItemKind,
   type ItemState,
   type OpenQuestion,
@@ -48,8 +52,15 @@ import Icon from './Icon.vue';
  * answer as in the chat with Claude; the list, filterable. The answers go to
  * data/dev/RISPOSTE.md and Claude Code applies them at the start of its next
  * session. Title, sentence and width are the settings page's; the news of
- * Open Design moved to «Skill e stili».
+ * Open Design moved to «Skill e stili». Two tabs: «Domande» (all of the
+ * above) and «Progetti seguiti» (D-202); the address remembers the open one.
  */
+const tab = ref<DevTab>(devTabFromSearch(window.location.search));
+function openTab(next: DevTab): void {
+  tab.value = next;
+  const { pathname, search, hash } = window.location;
+  window.history.replaceState(window.history.state, '', `${pathname}${devTabSearch(search, next)}${hash}`);
+}
 const progress = ref<Progress | null>(null);
 const maxAnswer = ref(4000);
 const loading = ref(true);
@@ -181,10 +192,42 @@ onMounted(refresh);
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex flex-wrap items-center justify-end gap-2">
-      <button type="button" class="btn px-2.5 py-1 text-[13px]" title="Apri i documenti dello sviluppo nella Conoscenza" @click="emit('knowledge')">Leggi i documenti</button>
-      <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="refresh">Aggiorna</button>
+    <div class="flex flex-wrap items-end gap-2 border-b border-line">
+      <div class="mr-auto flex gap-1" role="tablist" aria-label="Viste dello sviluppo">
+        <button
+          v-for="item in DEV_TABS"
+          :id="`dev-tab-${item.id}`"
+          :key="item.id"
+          type="button"
+          role="tab"
+          class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-[14px] whitespace-nowrap"
+          :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
+          :aria-selected="tab === item.id"
+          :aria-controls="`dev-panel-${item.id}`"
+          @click="openTab(item.id)"
+        >
+          {{ item.text }}
+          <span
+            v-if="item.id === 'questions' && tab === 'followed' && pendingDot !== null"
+            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[12px] leading-5 font-semibold text-accent-ink"
+            :title="pendingLabel ?? undefined"
+            :aria-label="pendingLabel ?? undefined"
+            role="img"
+          >{{ pendingDot }}</span>
+        </button>
+      </div>
+      <div v-if="tab === 'questions'" class="flex gap-2 pb-1.5">
+        <button type="button" class="btn px-2.5 py-1 text-[13px]" title="Apri i documenti dello sviluppo nella Conoscenza" @click="emit('knowledge')">Leggi i documenti</button>
+        <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="refresh">Aggiorna</button>
+      </div>
     </div>
+
+    <!-- «Progetti seguiti» (D-202) -->
+    <div v-if="tab === 'followed'" id="dev-panel-followed" role="tabpanel" aria-labelledby="dev-tab-followed">
+      <FollowedProjects />
+    </div>
+
+    <div v-else id="dev-panel-questions" role="tabpanel" aria-labelledby="dev-tab-questions" class="flex flex-col gap-4">
 
     <div v-if="loadError !== null" role="alert" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2.5 text-[14px]">
       <span class="min-w-[220px] flex-1">{{ loadError }}</span>
@@ -334,9 +377,6 @@ onMounted(refresh);
       </div>
     </section>
 
-    <!-- The projects followed for ideas (D-202) -->
-    <FollowedProjects />
-
     <!-- The list -->
     <section v-if="progress !== null" class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="dev-list">
       <div class="mb-3 flex flex-wrap items-center gap-2">
@@ -375,6 +415,7 @@ onMounted(refresh);
 
     <!-- «Su di te, per Claude Code» (D-114): data/dev/UTENTE.md, through the gateway -->
     <DevUserNote />
+    </div>
   </div>
 </template>
 
