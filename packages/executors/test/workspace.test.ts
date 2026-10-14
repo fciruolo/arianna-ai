@@ -653,4 +653,31 @@ describe('openConversationWorkspace', () => {
     symlinkSync(elsewhere, join(DATA, 'worktrees', `chat-${conversationId}`));
     await assert.rejects(openConversationWorkspace({ data: DATA, conversationId }), WorkspaceError);
   });
+
+  it('makes the folder an empty git repository for codex (D-212), once, and never for claude', async () => {
+    const conversationId = randomUUID();
+    const folder = join(DATA, 'worktrees', `chat-${conversationId}`);
+    await openConversationWorkspace({ data: DATA, conversationId });
+    assert.equal(existsSync(join(folder, '.git')), false, 'the chat with Claude has no repository');
+    const codex = await openConversationWorkspace({ data: DATA, conversationId, repository: true });
+    assert.equal(codex.path, folder);
+    assert.ok(lstatSync(join(folder, '.git')).isDirectory());
+    // Its own repository, without commits nor templates (no sample hooks).
+    assert.equal(git(folder, 'rev-parse', '--show-toplevel').trim(), folder);
+    assert.throws(() => git(folder, 'rev-parse', '--quiet', '--verify', 'HEAD'));
+    assert.equal(existsSync(join(folder, '.git', 'hooks')), false);
+    writeFileSync(join(folder, '.git', 'marker'), '');
+    await openConversationWorkspace({ data: DATA, conversationId, repository: true });
+    assert.ok(existsSync(join(folder, '.git', 'marker')), 'an existing repository is kept as it is');
+    await removeConversationWorkspace({ data: DATA, conversationId });
+  });
+
+  it('refuses a .git that is not a folder (D-212)', async () => {
+    const conversationId = randomUUID();
+    const folder = join(DATA, 'worktrees', `chat-${conversationId}`);
+    await openConversationWorkspace({ data: DATA, conversationId });
+    writeFileSync(join(folder, '.git'), 'gitdir: /elsewhere\n');
+    await assert.rejects(openConversationWorkspace({ data: DATA, conversationId, repository: true }), WorkspaceError);
+    await removeConversationWorkspace({ data: DATA, conversationId });
+  });
 });

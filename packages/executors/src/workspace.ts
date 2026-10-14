@@ -979,8 +979,14 @@ export function conversationWorkspacePath(options: { data: string; conversationI
  * missing; an existing one must be a plain folder at that exact path, never
  * a symbolic link. The run has no tool, so nothing of the user's is in it.
  * Removed with `removeConversationWorkspace` when the conversation goes.
+ *
+ * `repository` (D-212, the plain chat with ChatGPT): the folder is also an
+ * empty git repository, without commits or templates, because `codex exec`
+ * runs only inside one (the profile never passes `--skip-git-repo-check`).
+ * Its own `.git` keeps the binary from taking a repository above it (an
+ * ARIANNA_HOME that is a clone) as the project of the run.
  */
-export async function openConversationWorkspace(options: { data: string; conversationId: string }): Promise<PreparedWorkspace> {
+export async function openConversationWorkspace(options: { data: string; conversationId: string; repository?: boolean }): Promise<PreparedWorkspace> {
   const target = conversationWorkspacePath(options);
   await mkdir(join(options.data, WORKTREES_DIR), { recursive: true });
   try {
@@ -991,6 +997,16 @@ export async function openConversationWorkspace(options: { data: string; convers
   if (!(await lstat(target)).isDirectory()) throw new WorkspaceError(`the folder of conversation ${options.conversationId} is not a folder`);
   const real = await realpath(target);
   if (real !== target) throw new WorkspaceError(`the folder of conversation ${options.conversationId} goes through a symbolic link`);
+  if (options.repository === true) {
+    let present = false;
+    try {
+      present = (await lstat(join(target, '.git'))).isDirectory();
+      if (!present) throw new WorkspaceError(`the folder of conversation ${options.conversationId} has a .git that is not a folder`);
+    } catch (error) {
+      if (error instanceof WorkspaceError || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (!present) await git(target, ['init', '--quiet', '--template=', '--initial-branch=arianna']);
+  }
   const decision: WorkspaceDecision = { decision: 'allow', rule: 'workspace', reason: 'empty folder of the conversation: no file to read' };
   const workspace: PreparedWorkspace = Object.freeze({ decision, path: target });
   prepared.set(workspace, real);
