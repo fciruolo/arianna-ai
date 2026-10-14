@@ -8,6 +8,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
+import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { AgentRoleListing, AgentRoleText, AgentsStatus } from './agents-catalog.ts';
@@ -1045,6 +1046,29 @@ export async function prepareFactShare(id: string, fields: { topic: string; text
 /** «Condivisibile», second step: once, within a few minutes. */
 export async function confirmFactShare(id: string): Promise<UserFact> {
   return (await call<{ fact: UserFact }>('POST', '/api/profile/facts/share/confirm', { id })).fact;
+}
+
+/** "Progetti seguiti" (D-202): the projects followed for ideas, with their last news and what was already chosen. */
+export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number }> {
+  return call<{ projects: FollowedProject[]; max: number }>('GET', '/api/dev/projects');
+}
+
+export async function addFollowedProject(url: string): Promise<void> {
+  await call('POST', '/api/dev/projects', { url });
+}
+
+export async function removeFollowedProject(id: string): Promise<void> {
+  await call('DELETE', '/api/dev/projects', { id });
+}
+
+/** «Controlla novità»: the check runs in the core; the page reads again while the project is `checking`. */
+export async function checkFollowedProject(id: string): Promise<void> {
+  await call('POST', '/api/dev/projects/check', { id });
+}
+
+/** «Implementiamo» / «Non interessa»: the entry, named by its key only, goes to data/dev/RISPOSTE.md; `already` when it was there. */
+export async function sendProjectChoice(key: string, choice: ProjectChoice): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
+  return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/projects/choice', { key, choice });
 }
 
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */

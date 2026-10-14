@@ -38,6 +38,7 @@ import {
 } from '../lib/dev-progress.ts';
 import { errorText } from '../lib/italian.ts';
 import DevUserNote from './DevUserNote.vue';
+import FollowedProjects from './FollowedProjects.vue';
 import Icon from './Icon.vue';
 
 /**
@@ -332,6 +333,9 @@ onMounted(refresh);
         </article>
       </div>
     </section>
+
+    <!-- The projects followed for ideas (D-202) -->
+    <FollowedProjects />
 
     <!-- The list -->
     <section v-if="progress !== null" class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="dev-list">
