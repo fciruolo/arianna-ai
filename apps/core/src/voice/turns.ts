@@ -42,7 +42,14 @@ export const MAX_TURN_CHARS = 4000;
 export interface VoicePrompt {
   /** Each part with its label, as the gateway checks them before the model reads them. */
   messages: { role: 'system' | 'user' | 'assistant'; content: string; label: Label }[];
-  /** The highest label among what the model reads: the reply inherits it. */
+  /**
+   * The tail of the system prompt (D-107, tappa A3: the speaker's persona),
+   * each piece with its label and source: the gateway checks them after the
+   * messages, and `voiceMessages` puts what it lets out at the end of the
+   * system message.
+   */
+  tail: { content: string; label: Label; source: string }[];
+  /** The highest label among what the model reads, the tail too: the reply inherits it. */
   label: Label;
   /** The id of the first message read: the next turn starts from it too. */
   anchor: string | undefined;
@@ -54,14 +61,22 @@ export interface VoicePrompt {
  * `history`, or when the window grew past the maximum, it starts again from
  * the latest messages.
  */
-export function voicePrompt(history: readonly Message[], floor: Label, anchor?: string, system: { content: string; label: Label } = { content: VOICE_SYSTEM_PROMPT, label: 'L0' }): VoicePrompt {
+export function voicePrompt(
+  history: readonly Message[],
+  floor: Label,
+  anchor?: string,
+  system: { content: string; label: Label } = { content: VOICE_SYSTEM_PROMPT, label: 'L0' },
+  tail: readonly { text: string; label: Label; source: string }[] = [],
+): VoicePrompt {
   const spoken = history.filter((message) => message.role !== 'system');
   const from = anchor === undefined ? -1 : spoken.findIndex((message) => message.id === anchor);
   const kept = from !== -1 && spoken.length - from <= HISTORY_MAX_MESSAGES ? spoken.slice(from) : spoken.slice(-HISTORY_MESSAGES);
-  const label = kept.reduce<Label>((highest, message) => maxLabel(highest, message.label), maxLabel(floor, system.label));
+  const read = tail.reduce<Label>((highest, part) => maxLabel(highest, part.label), maxLabel(floor, system.label));
+  const label = kept.reduce<Label>((highest, message) => maxLabel(highest, message.label), read);
   return {
     label,
     anchor: kept[0]?.id,
+    tail: tail.map((part) => ({ content: part.text, label: part.label, source: part.source })),
     messages: [
       { role: 'system', content: system.content, label: system.label },
       ...kept.map((message) => ({
@@ -71,6 +86,24 @@ export function voicePrompt(history: readonly Message[], floor: Label, anchor?: 
       })),
     ],
   };
+}
+
+/**
+ * What the voice model reads, from the texts the gateway let out for
+ * `[...prompt.messages, ...prompt.tail]` in that order: the tail joins the
+ * end of the system message (one system message, as chat templates want),
+ * the messages follow as they are.
+ */
+export function voiceMessages(prompt: VoicePrompt, texts: readonly string[]): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+  const count = prompt.messages.length;
+  const tail = texts
+    .slice(count, count + prompt.tail.length)
+    .filter((text) => text !== '')
+    .join('\n\n');
+  return prompt.messages.map((part, index) => {
+    const content = texts[index] ?? '';
+    return { role: part.role, content: index === 0 && tail !== '' ? `${content}\n\n${tail}` : content };
+  });
 }
 
 export type VoiceReply = { kind: 'say'; text: string } | { kind: 'delegate'; request: string };

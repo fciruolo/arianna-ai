@@ -10,7 +10,7 @@ import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { type Answer, type LoadedAgent } from '@arianna/agents';
+import { personaBlock, personaParts, type Answer, type LoadedAgent, type Persona } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project, type ProjectRules } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
@@ -113,6 +113,8 @@ interface Setup {
   skills?: (agent: string, maxBytes: number) => AgentSkills;
   /** The Coder's card with untrusted_content closed. */
   closedCoder?: boolean;
+  /** `[personas]` (D-107); absent, none. */
+  personas?: Record<string, Persona>;
 }
 
 function orchestrator(setup: Setup): StepExecutor {
@@ -131,6 +133,7 @@ function orchestrator(setup: Setup): StepExecutor {
       ...(setup.extraProjects ?? []),
     ],
     projectRules: setup.projectRules ?? { projects: {} },
+    personas: setup.personas ?? {},
   });
   return createOrchestrator({
     sql: db().sql,
@@ -313,6 +316,19 @@ test('the rules of the project go after the prompt, L1, the same text for every 
   assert.deepEqual(await drain(bare.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules: { ...projectRules, projects: { site: '' } } })), ['continued', 'continued', 'answered']);
   assert.ok(!received().prompt.includes(PROJECT_RULES_INTRO));
   assert.ok(received().prompt.includes(NO_COMMIT_TEXT));
+});
+
+test('the persona of the Coder goes after its prompt, in the brief the gateway judges (D-107, tappa A3)', async () => {
+  const personas: Record<string, Persona> = { coder: { tone: 'asciutto', address: 'tu', traits: 'Commenti brevi, niente fronzoli.' }, arianna: { tone: 'scherzoso', address: 'lei' } };
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), personas })), ['continued', 'continued', 'answered']);
+  const block = personaBlock(personaParts(personas.coder as Persona, 'L1'));
+  const { prompt } = received();
+  assert.ok(prompt.includes(`\n\n${block}\n\n${NO_COMMIT_TEXT}`), 'prompt, persona, no commit');
+  assert.ok(!prompt.includes('Tone: playful'), "Arianna's persona stays hers");
+  // L1 by declaration: the brief leaves at L1, through the gateway, as without it.
+  const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...log].map((row) => row.label), ['L1']);
 });
 
 test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {

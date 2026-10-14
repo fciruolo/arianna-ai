@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { type Answer, type Autonomy } from '@arianna/agents';
+import { type Answer, type Autonomy, type Persona } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { createContext } from '@arianna/policy';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
@@ -663,4 +663,55 @@ test('task.update in a task without a conversation: its own cards only, and an e
     (await update(task, { task_id: 'abcdefab', status: 'ready' })).text,
     "error: task.update: no open card 'abcdefab' among the cards of this task; there is no open card among the cards of this task",
   );
+});
+
+// The persona in the tail of the prompt (D-107, tappa A3). Invented texts.
+const PLAYFUL: Persona = { tone: 'scherzoso', address: 'lei', traits: 'Ama le metafore di cucina.' };
+const withPersonas = (model: LocalModel, personas: Record<string, Persona>) =>
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas }), rules: RULES });
+const systemOf = (request: ChatRequest | undefined): string => request?.messages[0]?.content ?? '';
+
+test('persona: in a private conversation its block goes after the examples and before the thought rule', async () => {
+  const { task } = await ask('private', 'Ciao!');
+  const model = scripted([{ action: 'reply', text: 'Buongiorno!' }]);
+  assert.deepEqual(await drain(task.id, model, withPersonas(model, { arianna: PLAYFUL })), ['answered']);
+  const system = systemOf(model.requests[0]);
+  const block = system.indexOf('Persona set by the user');
+  assert.ok(block > system.indexOf('Example 10.'), 'after the examples');
+  assert.ok(block < system.indexOf('Every answer starts with "thought"'), 'before the thought rule');
+  assert.match(system, /Address the user with "lei"\.\nTone: playful[^\n]*\n<persona>Ama le metafore di cucina\.<\/persona>\n\nEvery answer starts/);
+  // The prefix up to the block is the same as without a persona (D-075).
+  const plain = scripted([{ action: 'reply', text: 'Ciao!' }]);
+  const { task: other } = await ask('private', 'Ciao!');
+  await drain(other.id, plain);
+  const without = systemOf(plain.requests[0]);
+  assert.ok(!without.includes('Persona set by the user'));
+  assert.equal(system.slice(0, block), without.slice(0, block));
+  assert.equal((await assistantMessages(task.id))[0]?.label, 'L2');
+});
+
+test('persona: in a work conversation the text enters (L1 by declaration) and the reply stays L1', async () => {
+  const { task } = await ask('work', 'Ciao!');
+  const model = scripted([{ action: 'reply', text: 'Buongiorno!' }]);
+  assert.deepEqual(await drain(task.id, model, withPersonas(model, { arianna: PLAYFUL })), ['answered']);
+  assert.match(systemOf(model.requests[0]), /<persona>Ama le metafore di cucina\.<\/persona>/);
+  assert.equal((await assistantMessages(task.id))[0]?.label, 'L1');
+});
+
+test('persona: an L0 task never reads the text, only the fixed sentences, and its label stays L0', async () => {
+  const task = await submitTask(db().sql, { title: 'Saluta', assignee: 'arianna', label: 'L0', clearance: 'L0', effectiveLabel: 'L0' });
+  const model = scripted([{ action: 'reply', text: 'Ciao.' }]);
+  assert.deepEqual(await drain(task.id, model, withPersonas(model, { arianna: PLAYFUL })), ['to-verify']);
+  const system = systemOf(model.requests[0]);
+  assert.match(system, /Tone: playful/);
+  assert.doesNotMatch(system, /metafore|<persona>/);
+  assert.equal((await loadTurns(db().sql, task.id))[0]?.label, 'L0');
+  assert.equal((await loadTask(db().sql, task.id))?.effectiveLabel, 'L0');
+});
+
+test('persona: only the assignee’s own persona, and none with the defaults', async () => {
+  const { task } = await ask('private', 'Ciao!');
+  const model = scripted([{ action: 'reply', text: 'Ciao!' }]);
+  await drain(task.id, model, withPersonas(model, { coder: PLAYFUL, arianna: { tone: 'equilibrato', address: 'tu' } }));
+  assert.doesNotMatch(systemOf(model.requests[0]), /Persona set by the user|metafore/);
 });

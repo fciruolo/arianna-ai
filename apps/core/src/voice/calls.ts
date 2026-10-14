@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { promptLabelOf, type AgentCard, type LoadedAgent } from '@arianna/agents';
-import { VOICE_ALIAS, type VoiceConfig } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, VOICE_ALIAS, type Personas, type VoiceConfig } from '@arianna/config';
 import type { LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForUserMessage, maxLabel, scanText, type Label, type Target } from '@arianna/policy';
 
@@ -14,6 +14,7 @@ import { passGateway } from '../gateway.ts';
 import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
+import { minLabel, tailParts, type TailPart } from '../prompt-tail.ts';
 import { loadTask } from '../tasks.ts';
 import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
@@ -32,6 +33,7 @@ import {
   sentenceSplitter,
   speakable,
   summaryToSay,
+  voiceMessages,
   voicePrompt,
   type CallReadiness,
   type Speaker,
@@ -113,7 +115,7 @@ export interface CallsOptions {
   /** `hold`, from the switch of the core, keeps the service in place from the check of its state to the row of a new call. */
   voice: Pick<VoiceService, 'state' | 'request'> & { hold?: <T>(work: () => Promise<T>) => Promise<T> };
   /** Read at each call: roles, limits and local servers of the current configuration. */
-  config: () => { roles: { voice?: string }; voice: VoiceConfig; local: { endpoints: readonly { models: Record<string, string> }[] } };
+  config: () => { roles: { voice?: string }; voice: VoiceConfig; local: { endpoints: readonly { models: Record<string, string> }[] }; personas?: Personas };
   candidates: () => TrialModel[];
   model: () => LocalModel;
   /** Where the voice reaches the core back, on loopback. */
@@ -339,6 +341,9 @@ export function createCalls(options: CallsOptions): Calls {
     });
   }
 
+  /** The tail of the speaker's system prompt (D-107, tappa A3): its persona, read at each turn, within `clearance`. */
+  const voiceTail = (agent: string, clearance: Label): TailPart[] => tailParts({ personas: options.config().personas ?? {} }, agent, clearance);
+
   /**
    * What the voice model reads: the anchored window (D-072), allowed by the
    * gateway like the orchestrator does; undefined when the gateway blocks it.
@@ -358,22 +363,28 @@ export function createCalls(options: CallsOptions): Calls {
         'L0',
         session.anchor,
         { content: agentVoiceSystem(agent.prompt), label: promptLabelOf(agent) },
+        voiceTail(speaker.agent, minLabel(conversation.clearance, ceiling)),
       );
       if (!isAtMost(prompt.label, ceiling)) return undefined;
       target = { kind: 'executor', id: 'local', locality: 'local' };
     } else {
-      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor);
+      // Arianna's persona within her card and the conversation; without her card, the fixed sentences alone (default-deny).
+      const ceiling = options.agents?.().get(ORCHESTRATOR_AGENT)?.card.maxLabel ?? 'L0';
+      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor, undefined, voiceTail(ORCHESTRATOR_AGENT, minLabel(conversation.clearance, ceiling)));
       target = { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' };
     }
     const effective = maxLabel(conversation.effectiveLabel, prompt.label);
     const decision = await passGateway(
       sql,
-      prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
+      [
+        ...prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
+        ...prompt.tail.map((part) => ({ value: part.content, label: part.label, source: part.source })),
+      ],
       contextOf(conversation, effective),
       target,
     );
-    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) return undefined;
-    const allowed = prompt.messages.map((part, index) => ({ role: part.role, content: decision.texts[index] ?? '' }));
+    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length + prompt.tail.length) return undefined;
+    const allowed = voiceMessages(prompt, decision.texts);
     return { prompt, effective, allowed };
   }
 

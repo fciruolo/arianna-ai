@@ -2,7 +2,7 @@
 // docs/EVALS.md): one model call per case, with schema-constrained decoding.
 // The model answers with one JSON object: call a tool, reply, plan, or refuse,
 // after a free `thought` (D-051).
-import { CODER_ONLY, chatMessages, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
+import { CODER_ONLY, chatMessages, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 
 import type { Evaluate } from './types.ts';
@@ -15,6 +15,17 @@ export interface OrchestratorInput {
   delegates?: DelegateTarget[];
   /** Who writes the cards of `task.plan` (D-164): the model itself when omitted, Claude in a work conversation. */
   planner?: Planner;
+  /**
+   * The orchestrator's persona (D-107, tappa A3), a table as `[personas.arianna]`
+   * of arianna.toml: its block goes in the tail of the prompt as in a private
+   * conversation (L2). None when omitted: the prompt of today.
+   */
+  persona?: Record<string, unknown>;
+}
+
+/** The tail of the prompt for a case: the persona's block, or '' without one. */
+export function caseTail(input: OrchestratorInput): string {
+  return input.persona === undefined ? '' : personaBlock(personaParts(parsePersona(input.persona, 'persona'), 'L2'));
 }
 
 export interface OrchestratorActual {
@@ -124,7 +135,7 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
     const result = await model().chat({
       ...(signal === undefined ? {} : { signal }),
       model: 'local-large',
-      messages: chatMessages(agentPrompt, input.tools, input.messages, thought, '', delegates, planner),
+      messages: chatMessages(agentPrompt, input.tools, input.messages, thought, caseTail(input), delegates, planner),
       schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(input.tools, thought, delegates, planner) },
       temperature: 0,
       // Room for the thought before the answer (with 1024 the JSON could be cut

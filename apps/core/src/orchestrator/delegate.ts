@@ -45,6 +45,7 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
+import { minLabel, promptTail, tailParts } from '../prompt-tail.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
@@ -191,7 +192,12 @@ export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTar
  */
 export function briefCeiling(card: AgentCard): Label {
   if (delegationRoute(card) === 'local') return card.maxLabel;
-  return isAtMost(card.cloudMaxLabel ?? card.maxLabel, 'L1') ? (card.cloudMaxLabel ?? card.maxLabel) : 'L1';
+  return cloudCeiling(card);
+}
+
+/** The highest label `card` reads in the cloud: its `cloud_max_label` (else its clearance), never above L1. */
+export function cloudCeiling(card: AgentCard): Label {
+  return minLabel(card.cloudMaxLabel ?? card.maxLabel, 'L1');
 }
 
 /**
@@ -1068,6 +1074,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const message: BriefFragment = { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) };
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
+  // The tail of the agent's prompt (D-107, tappa A3: its persona): more pieces of the brief the gateway judges,
+  // within the cloud ceiling of its card and the task's clearance; a resumed session read them when it started.
+  const tail = tailParts(env.settings(), delegation.agent, minLabel(task.clearance, cloudCeiling(agent.card)));
   const dossier = godDossierPart(container, path, folder.label);
   // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
   // A new session of the Designer in its conversation (I-20, D-185): the summary of what came before, once.
@@ -1080,6 +1089,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
+    ...tail,
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
     ...(rules === undefined ? [] : [rules]),
     ...(dossier === undefined ? [] : [dossier]),
@@ -1371,11 +1381,14 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
   // The skills of the agent join its instructions (D-161), as data within a smaller limit.
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local);
+  // The tail of its prompt (D-107, tappa A3): its persona within its clearance and the task's, at the end of the system message.
+  const tail = tailParts(env.settings(), delegation.agent, minLabel(task.clearance, agent.card.maxLabel));
   const parts = [
     prompt,
     ...(skills === undefined ? [] : [skills]),
     ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     ...history,
+    ...tail,
     { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) },
   ];
   const read = parts.reduce<Label>((top, part) => maxLabel(top, part.label), prompt.label);
@@ -1389,7 +1402,8 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
   if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
   const brief = decision.texts.at(-1) ?? '';
-  const between = decision.texts.slice(1, -1);
+  const allowedTail = promptTail(decision.texts.slice(-1 - tail.length, -1));
+  const between = decision.texts.slice(1, -1 - tail.length);
   const allowedSkills = skills === undefined ? undefined : between.shift();
   const instructions = `${decision.texts[0] ?? ''}${allowedSkills === undefined ? '' : `\n\n${allowedSkills}`}`;
   const middle = between;
@@ -1408,7 +1422,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}` },
+        { role: 'system', content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}${allowedTail === '' ? '' : `\n\n${allowedTail}`}` },
         ...turns,
         { role: 'user', content: brief },
       ],

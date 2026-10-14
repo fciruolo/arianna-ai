@@ -22,7 +22,7 @@ export const FIXED_NAMES: readonly string[] = ['arianna'];
 export const PERSONA_NOTICE = 'Questi testi possono arrivare a Claude e Codex: non scriverci nomi di clienti, importi o password.';
 
 /** Where the user's text of a persona applies: L1 by declaration. */
-export const PERSONA_WHERE = 'Vale nelle conversazioni private e di lavoro e nelle deleghe a Claude e Codex; mai per un agente o un compito Pubblico.';
+export const PERSONA_WHERE = 'Vale nelle conversazioni private e di lavoro, nelle chiamate e nelle deleghe a Claude e Codex; mai per un agente o un compito Pubblico.';
 
 export const TONE_TEXT: Record<Tone, string> = {
   serio: 'Serio',

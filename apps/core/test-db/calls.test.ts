@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 
 import { request as httpRequest } from 'node:http';
 
-import type { LoadedAgent } from '@arianna/agents';
+import { personaBlock, personaParts, type LoadedAgent, type Persona } from '@arianna/agents';
 import { DEFAULT_VOICE } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
@@ -551,11 +551,13 @@ const directAgents = new Map<string, LoadedAgent>([
 let claudeOn = true;
 let agentModelOf: string | undefined = 'local-large';
 let direct: Calls | undefined;
+/** `[personas]` of the calls with agents (D-107, tappa A3); none by default. */
+let personas: Record<string, Persona> = {};
 function directCalls(): Calls {
   direct ??= createCalls({
     sql: db().sql,
     voice,
-    config: () => ({ roles, voice: { ...DEFAULT_VOICE, limits: { ...DEFAULT_VOICE.limits, delegations: 3, delegationSeconds: 2 } }, local }),
+    config: () => ({ roles, voice: { ...DEFAULT_VOICE, limits: { ...DEFAULT_VOICE.limits, delegations: 3, delegationSeconds: 2 } }, local, personas }),
     candidates: () => READY,
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
@@ -739,4 +741,35 @@ test('a local agent in a call never reads above its card: what it may not read s
   assert.equal(asked.length, asking);
   directAgents.set('traduttore', localAgent('L2'));
   await directCalls().end(call.id, 'hangup');
+});
+
+test('the persona of the speaker closes the system message of a call, within its card; Arianna without her card reads only the fixed sentences (D-107, tappa A3)', async () => {
+  const translator: Persona = { tone: 'caloroso', address: 'tu', traits: 'Parla piano e sorride.' };
+  personas = { traduttore: translator, arianna: { tone: 'serio', address: 'lei', traits: 'Testo di Arianna.' } };
+  try {
+    const conversation = await createConversation(db().sql, { mode: 'private', agent: TRANSLATOR });
+    const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+    nextReply = 'Cat si dice gatto.';
+    await directCalls().turn(call.id, tokenOf(call.id), 'Come si dice gatto?');
+    const system = lastAsked().messages[0]?.content ?? '';
+    assert.ok(system.startsWith(AGENT_VOICE_FRAME));
+    assert.ok(system.endsWith(`Traduci in inglese il testo che ricevi.\n\n${personaBlock(personaParts(translator, 'L2'))}`));
+    assert.doesNotMatch(system, /Testo di Arianna|Tone: serious/);
+    assert.equal(lastAsked().messages.filter((message) => message.role === 'system').length, 1);
+    await directCalls().end(call.id, 'hangup');
+
+    // Arianna's call on a core that has not given her card: her text stays out (default-deny), the tone enters.
+    const plain = await createConversation(db().sql, { mode: 'private' });
+    const started = await directCalls().start(plain.id, { sdp: SDP, type: 'offer' });
+    nextReply = 'Buongiorno.';
+    await directCalls().turn(started.call.id, tokenOf(started.call.id), 'Ciao');
+    const ariannaSystem = lastAsked().messages[0]?.content ?? '';
+    assert.ok(ariannaSystem.startsWith(VOICE_SYSTEM_PROMPT));
+    assert.match(ariannaSystem, /Address the user with "lei"\.\nTone: serious/);
+    assert.doesNotMatch(ariannaSystem, /Testo di Arianna/);
+    await directCalls().end(started.call.id, 'hangup');
+  } finally {
+    personas = {};
+    nextReply = 'Ciao! Tutto bene.';
+  }
 });

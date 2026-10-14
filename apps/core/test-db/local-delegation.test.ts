@@ -9,7 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { loadAgent, userCard, userPresets, type Answer, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, personaBlock, personaParts, userCard, userPresets, type Answer, type LoadedAgent, type Persona } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
@@ -75,7 +75,7 @@ function scripted(answers: Answer[], reports: unknown[]): LocalModel & { request
   };
 }
 
-function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => AgentSkills): StepExecutor {
+function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => AgentSkills, personas: Record<string, Persona> = {}): StepExecutor {
   const agents = new Map<string, LoadedAgent>(loaded);
   for (const agent of extra) agents.set(agent.card.name, agent);
   const settings = () => ({
@@ -85,6 +85,7 @@ function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: 
     // Claude off: the agents that only answer work without it.
     cloud: { executors: [], models: defaultCloudModels() },
     projects: [{ name: 'site', path: 'repos/site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } satisfies Project],
+    personas,
   });
   return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(skills === undefined ? {} : { skills }) });
 }
@@ -307,4 +308,46 @@ test('a task assigned to an agent on the local model reads its skills after its 
   await drain(closed.id, orchestrator(third, [closedAgent], skills));
   assert.deepEqual(asked, []);
   assert.doesNotMatch(third.requests[0]?.messages[0]?.content ?? '', /BEGIN SKILL/);
+});
+
+test('the persona of the agent closes its system message, with the label of the report (D-107, tappa A3)', async () => {
+  const persona: Persona = { tone: 'asciutto', address: 'tu', displayName: 'Tito', traits: 'Preciso, ama le parole brevi.' };
+  const { task } = await ask('Traduci: buongiorno a tutti.');
+  const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+  // Arianna's persona stays hers: the agent never reads it.
+  const executor = orchestrator(model, [translator()], undefined, { traduttore: persona, arianna: { tone: 'serio', address: 'lei' } });
+  assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+  const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+  const block = personaBlock(personaParts(persona, 'L1'));
+  assert.equal(call?.messages[0]?.content, `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n\n\n${ENTRY_TEXT}\n\n${block}`);
+  assert.match(block, /Call yourself "Tito"\.[\s\S]*<persona>Preciso, ama le parole brevi\.<\/persona>/);
+  assert.doesNotMatch(call.messages[0].content, /Tone: serious/);
+  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'Traduci: buongiorno a tutti.' }], 'the brief stays the last turn');
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([delegation?.status, delegation?.resultLabel], ['ok', 'L1']);
+  // Arianna's own steps read hers, in the tail of her prompt.
+  assert.match(model.requests[0]?.messages[0]?.content ?? '', /Tone: serious/);
+});
+
+test('the persona of the agent with its skills: each text the gateway let out in its place (D-107, tappa A3)', async () => {
+  const persona: Persona = { tone: 'asciutto', address: 'tu', traits: 'Preciso, ama le parole brevi.' };
+  const BLOCK = '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----';
+  const skills = (): AgentSkills => ({ block: BLOCK, skipped: 0 });
+  const { task } = await ask('Traduci: buongiorno a tutti.');
+  const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+  assert.deepEqual(await drain(task.id, orchestrator(model, [translator()], skills, { traduttore: persona })), ['continued', 'continued', 'answered']);
+  const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+  const block = personaBlock(personaParts(persona, 'L1'));
+  assert.equal(call?.messages[0]?.content, `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n\n\n${BLOCK}\n\n${ENTRY_TEXT}\n\n${block}`);
+  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'Traduci: buongiorno a tutti.' }]);
+
+  // A card of the agent on the local model: skills after its prompt, its persona in the tail, the request as the user's turn.
+  const card = await submitTask(db().sql, { title: 'Traduci: ciao.', assignee: 'traduttore', label: 'L1', clearance: 'L1' });
+  const cardModel = scripted([REPLY], []);
+  await drain(card.id, orchestrator(cardModel, [translator()], skills, { traduttore: persona }));
+  const system = cardModel.requests[0]?.messages[0]?.content ?? '';
+  assert.ok(system.startsWith(`Traduci in inglese il testo che ricevi.\n\n\n${BLOCK}\n\n`));
+  assert.ok(system.includes(`\n\n${block}\n\nEvery answer starts with "thought"`));
+  assert.equal(system.split(BLOCK).length, 2, 'the skills once');
+  assert.match(cardModel.requests[0]?.messages.at(-1)?.content ?? '', /^Traduci: ciao\./);
 });

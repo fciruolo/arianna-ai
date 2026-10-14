@@ -497,7 +497,7 @@ const host = config.server.host.includes(':') ? `[${config.server.host}]` : conf
 const calls = createCalls({
   sql,
   voice: voice.service,
-  config: () => ({ roles: settings.current().roles, voice: voiceSettings(), local: settings.current().local }),
+  config: () => ({ roles: settings.current().roles, voice: voiceSettings(), local: settings.current().local, personas: settings.current().personas }),
   candidates,
   model: localModel,
   coreUrl: `http://${host}:${String(config.server.port)}`,

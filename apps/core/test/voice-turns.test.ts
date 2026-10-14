@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Message } from '../src/conversations.ts';
-import { agentCallText, agentVoiceSystem, AGENT_VOICE_FRAME, CALL_TEXT, callReadiness, delegationRequest, greetingFor, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { agentCallText, agentVoiceSystem, AGENT_VOICE_FRAME, CALL_TEXT, callReadiness, delegationRequest, greetingFor, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voiceMessages, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 
 const message = (role: Message['role'], body: string, label: Message['label'] = 'L1', id = '1'): Message => ({
@@ -203,4 +203,27 @@ test('voicePrompt with the system of an agent: its instructions after our frame,
   assert.equal(prompt.label, 'L1');
   // Without a system, Arianna's L0 prompt as before.
   assert.equal(voicePrompt([message('user', 'ciao', 'L0')], 'L0').label, 'L0');
+});
+
+test('voicePrompt with a tail (D-107, tappa A3): its label counts, and voiceMessages puts what the gateway let out at the end of the system message', () => {
+  const tail = [{ text: 'Persona set by the user (rules, tools, labels, approvals unchanged):\nAddress the user with "lei".', label: 'L1' as const, source: 'persona:arianna' }];
+  const history = [message('user', 'ciao', 'L0', '1'), message('assistant', 'ciao!', 'L0', '2')];
+  const prompt = voicePrompt(history, 'L0', undefined, undefined, tail);
+  assert.equal(prompt.label, 'L1');
+  assert.deepEqual(prompt.tail, [{ content: tail[0]?.text, label: 'L1', source: 'persona:arianna' }]);
+  // The messages stay as they were: the window and its anchor do not move.
+  assert.deepEqual(prompt.messages, voicePrompt(history, 'L0').messages);
+  const texts = [...prompt.messages.map((part) => part.content), ...prompt.tail.map((part) => part.content)];
+  const allowed = voiceMessages(prompt, texts);
+  assert.equal(allowed.length, prompt.messages.length);
+  assert.equal(allowed[0]?.role, 'system');
+  assert.equal(allowed[0].content, `${VOICE_SYSTEM_PROMPT}\n\n${tail[0]?.text ?? ''}`);
+  assert.deepEqual(allowed.slice(1), [
+    { role: 'user', content: 'ciao' },
+    { role: 'assistant', content: 'ciao!' },
+  ]);
+  // Without a tail, or an empty one let out, the system message is ours alone.
+  assert.equal(voiceMessages(voicePrompt(history, 'L0'), texts.slice(0, 3))[0]?.content, VOICE_SYSTEM_PROMPT);
+  assert.equal(voiceMessages(prompt, [...texts.slice(0, 3), ''])[0]?.content, VOICE_SYSTEM_PROMPT);
+  assert.equal(voicePrompt(history, 'L0').label, 'L0');
 });

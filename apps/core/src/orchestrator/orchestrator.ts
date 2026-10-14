@@ -23,6 +23,7 @@ import { CHAT_AGENT, loadConversation, type DirectModel } from '../conversations
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
+import { minLabel, promptTail, tailParts } from '../prompt-tail.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
@@ -344,6 +345,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     signal: AbortSignal,
     delegates: readonly DelegateTarget[],
     planner: Planner,
+    tail: string,
   ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
@@ -351,7 +353,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const call = async (thought: boolean) => {
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
-        messages: chatMessages(prompt, tools, history, thought, '', delegates, planner),
+        messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner),
         schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates, planner) },
         temperature: 0,
         maxTokens: options.maxTokens ?? 2048,
@@ -754,7 +756,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       }
       const history = await historyOf(sql, options.agents, task, turns, delegations, view);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
-      const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
+      // The tail of the prompt (D-107, tappa A3): the assignee's persona, within the lower of its card's
+      // clearance and the task's (never the user's text for an L0 agent or task). It counts in the label of the step.
+      const tail = tailParts(env.settings(), task.assignee, minLabel(task.clearance, agent.card.maxLabel));
+      const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
       let context: Context = contextOf(task, label);
       // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
@@ -766,14 +771,17 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         [
           ...history.map((part) => ({ value: part.value.content, label: part.label, source: part.source })),
           ...(skills === undefined ? [] : [{ value: skills.text, label: skills.label, source: skills.source }]),
+          ...tail.map((part) => ({ value: part.text, label: part.label, source: part.source })),
         ],
         context,
         { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
         { taskId: task.id, runId },
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
-      if (decision.texts.length !== history.length + (skills === undefined ? 0 : 1)) throw new Error('the gateway allowed a different number of texts');
+      const skillsCount = skills === undefined ? 0 : 1;
+      if (decision.texts.length !== history.length + skillsCount + tail.length) throw new Error('the gateway allowed a different number of texts');
       const allowedSkills = skills === undefined ? undefined : decision.texts[history.length];
+      const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount));
       const prompt = allowedSkills === undefined || allowedSkills === '' ? agent.prompt : `${agent.prompt}\n\n${allowedSkills}`;
       // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
       const allowed = joinSameRole(history.map((part, index) => ({ ...part, value: { role: part.value.role, content: decision.texts[index] ?? '' } }))).map(
@@ -795,7 +803,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };
