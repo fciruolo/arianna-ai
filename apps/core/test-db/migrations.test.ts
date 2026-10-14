@@ -59,6 +59,7 @@ test('migrations apply from zero and create every table', async () => {
       'task_turns',
       'tasks',
       'telegram_state',
+      'user_facts',
     ],
   );
 });

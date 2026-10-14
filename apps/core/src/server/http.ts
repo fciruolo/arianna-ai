@@ -91,7 +91,8 @@ import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
-import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveNewsRedo, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveRewrite, saveUserNote, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { createUserFacts, FACTS_STATUS, FactsError, MAX_FACT_TEXT, MAX_TOPIC } from '../user-facts.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
@@ -3087,6 +3088,8 @@ export interface DevProgressApi {
   news?: () => NewsPair;
   /** Tests only: the event of a news sent, which otherwise uses the database of the core. */
   newsRecorded?: (key: string) => Promise<void>;
+  /** Tests only: the event of «Su di te, per Claude Code» saved (D-114), with the length only. */
+  userNoteRecorded?: (chars: number) => Promise<void>;
 }
 
 /** An entry of the news as the page gets it: with the answer already in RISPOSTE.md, if any. */
@@ -3117,7 +3120,7 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
     return dev;
   };
   const viaGateway: AnswerGate = async (answer, key) => {
-    const decision = await passGateway(sql, [{ value: answer, label: 'L1', source: 'dev:answer' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, { summary: key });
+    const decision = await passGateway(sql, [{ value: answer, label: 'L1', source: key === 'user-note' ? 'dev:user-note' : 'dev:answer' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, { summary: key });
     if (decision.decision !== 'allow') return { allow: false, reason: decision.rule };
     const [text] = decision.texts;
     return text === undefined ? { allow: false, reason: 'empty' } : { allow: true, text };
@@ -3153,6 +3156,33 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       }
       return { status: 201, body: { key: saved.key, at: saved.at, ...(rewrite === true ? { rewrite: true, already: false } : {}), logged } };
     }),
+    // «Su di te, per Claude Code» (D-114): the text saved now, and its limit.
+    route('GET', '/api/dev/user-note', () => Promise.resolve({ body: { note: readUserNote(need().home), max: MAX_USER_NOTE_CHARS } })),
+    // Replaces data/dev/UTENTE.md, through the gateway towards Claude Code as an answer; empty text removes it.
+    route('POST', '/api/dev/user-note', async (request) => {
+      const { home, gate = viaGateway, userNoteRecorded = async (chars: number) => {
+        await appendEvent(sql, { kind: 'dev.user_note_saved', label: 'L0', payload: { chars } });
+      } } = need();
+      const body = await readJson(request, 64 * 1024);
+      onlyFields(body, ['text']);
+      if (typeof body.text !== 'string') throw new HttpError(400, 'text is required');
+      let saved;
+      try {
+        saved = await saveUserNote(home, body.text, gate);
+      } catch (error) {
+        if (!(error instanceof DevAnswerError)) throw error;
+        throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
+      }
+      // The file is written: an event that fails is reported, never the text.
+      let logged = true;
+      try {
+        await userNoteRecorded(saved.text.length);
+      } catch (error) {
+        logged = false;
+        onError(error);
+      }
+      return { body: { note: saved, logged } };
+    }),
     // The news of Open Design (I-21, D-186): public text of the catalog (L0), with what was already sent.
     route('GET', '/api/dev/od-news', () => {
       const { home, news } = need();
@@ -3187,6 +3217,29 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       }
       return { status: 201, body: { ...saved, logged } };
     }),
+  ];
+}
+
+/**
+ * «Su di te» (D-114, tappa A): the facts of the user's profile, read and
+ * written only by the page of the Settings in the local web chat; no agent or
+ * tool reaches these calls. Making a fact shareable (L2 → L1) is prepared and
+ * confirmed, as a privacy change of the Settings (D-071).
+ */
+function profileRoutes(sql: Sql): Route[] {
+  const facts = createUserFacts(sql);
+  return [
+    route('GET', '/api/profile/facts', async () => ({ body: { facts: await facts.list(), max: { topic: MAX_TOPIC, text: MAX_FACT_TEXT } } })),
+    route('POST', '/api/profile/facts', async (request) => ({ status: 201, body: { fact: await facts.create(await readJson(request)) } })),
+    route('POST', '/api/profile/facts/share/confirm', async (request) => ({ body: { fact: await facts.confirmShare(await readJson(request)) } })),
+    route('POST', '/api/profile/facts/:id', async (request, _url, params) => ({ body: { fact: await facts.update(idParam(params, 'id'), await readJson(request)) } })),
+    route('DELETE', '/api/profile/facts/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      await facts.remove(id);
+      return { body: { ok: true } };
+    }),
+    route('POST', '/api/profile/facts/:id/share/prepare', async (request, _url, params) => ({ body: await facts.prepareShare(idParam(params, 'id'), await readJson(request)) })),
   ];
 }
 
@@ -3555,6 +3608,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
+  if (error instanceof FactsError) return { status: FACTS_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof ReleaseError) return { status: RELEASE_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof ArchiveError) return { status: ARCHIVE_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof KnowledgeError) {
@@ -3672,6 +3726,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     skillsCatalog: options.skillsCatalog,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
+  table.push(...profileRoutes(sql));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
   table.push(route('GET', '/api/notifications/latest', () => Promise.resolve({ body: { notice: options.notices?.latest() ?? null } })));
   // A trial notice (I-1): the same way as a real one, to every open page, with no conversation;
