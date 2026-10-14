@@ -2,6 +2,14 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Prova di Rizzo-PII, il secondo controllo dei dati personali italiani, in un ambiente Python suo (`apps/guard`), separato dalla voce: modello `rizzo-pii-0.3b` nel catalogo col ruolo nuovo «Dati personali» (`pii`), scaricabile con `pnpm arianna:models pull` (D-113, D-202).
+- `pnpm guard:trial` misura il modello su 58 frasi inventate (dati personali, brief di codice, frasi comuni): richiamo e falsi allarmi per tipo, tempo per frase su GPU e CPU, rapporto in `data/evals/report-guard.json` senza il testo delle frasi; per ora non è collegato al gateway né al core (D-113, D-202).
+- Comandi `guard:sync`, `guard:lock` e `test:guard` per l'ambiente di `apps/guard`, come quelli della voce (D-202).
+
 ## [0.95.2] - 2026-10-14
 
 ### Rimosso

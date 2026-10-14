@@ -483,6 +483,7 @@ arianna/
   apps/core/             API, orchestratore, eventi, scheduler
   apps/hud/              interfaccia Vue (chat, HUD, cardwall)
   apps/voice/            servizio vocale Python
+  apps/guard/            secondo controllo dei dati personali, Python (D-113)
   packages/policy/       etichette di privacy e gateway d'uscita
   packages/router/       scelta del modello
   packages/executors/    adattatori (locale, claude, codex) e confinamento

@@ -1990,7 +1990,7 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 ## D-113 — Modelli piccoli accanto al 27B: un secondo scanner dei dati personali (Rizzo-PII) e decisioni tipate (Laya, Rizzo Flow)
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire dopo la pagina «Su di te» (D-114 A). Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). Tappa 1 costruita il 2026-10-14 nel ramo `task/guard-rizzo` (D-202, numeri sotto in «Prova su testi finti»); l'integrazione nel gateway (tappa 2) la decide l'utente guardando i numeri. Era: Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
 - **Collegate:** D-016 e regola 10 (canali esterni), gateway e scanner di `packages/policy`, D-066 (Python solo in `apps/voice`, gabbia di rete), D-081 (prove dei modelli), D-086 (riordino delle note), D-107 (personalità L1, scanner al salvataggio), D-107e (memoria di oMLX), D-110 (routine), D-111 (chi risponde)
 
 ### Contesto
@@ -2044,13 +2044,22 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 5. **Prima prova della via veloce:** tipo e tag delle note nel riordino (D-086); poi chi risponde fra più agenti (D-111 B).
 6. **Quando:** dopo la pagina «Su di te» (tappa A di D-114): la tappa 1 di Rizzo-PII in `apps/guard`, l'integrazione nel gateway, la via veloce sulle note. Il backup (D-096) va per ultimo, prima dei dati veri (correzione dell'utente del 2026-10-14; prima diceva «dopo il backup»).
 
+### Prova su testi finti (tappa 1, 2026-10-14)
+
+Costruita in `apps/guard` (D-202): modello `rizzoaiacademy/rizzo-pii-0.3B` al commit `d4f98933`, licenza MIT letta sulla scheda, caricato con `transformers` e `torch`; 58 frasi inventate in `apps/guard/eval/cases.json`, `pnpm guard:trial`, rapporto in `data/evals/report-guard.json`.
+
+- **Dati personali:** 84 valori in 32 frasi; 82 trovati col tipo giusto, 84 con un tipo qualsiasi. Ogni frase con dati personali (anche i 4 brief di codice con un nome, un'email, un IBAN o un indirizzo) avrebbe fermato l'uscita. Mancati col tipo giusto: un telefono scritto con i punti (preso per documento) e una ditta (presa per via).
+- **Falsi allarmi:** 0 su 12 frasi comuni; **2 su 14 brief di codice**: la porta `7420` presa per numero civico e il nome «Arianna» per nome di persona. Con «Arianna» in quasi ogni brief, la regola del gateway dovrà ignorare il nome dell'assistente o i nomi dei personaggi, e decidere quali tipi bloccano.
+- **Tempo:** circa 20-35 ms a frase sulla GPU del Mac (MPS), 60-570 ms sulla CPU secondo il carico, 110-125 ms sulla GPU per un testo di 4 KB; caricamento 6-11 s, memoria di picco circa 1,3 GB. Stessi riscontri su GPU e CPU.
+- **Non misurato:** brief di codice lunghi e veri (con diff, percorsi, log), testi con dati personali scritti male o in dialetto, memoria del processo acceso a lungo.
+
 ### Cose non verificate (D-113)
 
 - Tutti i numeri (latenze, accuratezze, F1, memoria) sono quelli dichiarati dagli autori o da articoli che li riportano; nessuno è stato misurato su questo Mac. La latenza di Laya è su una GPU Tesla T4, non su Apple Silicon.
-- La licenza di Rizzo-PII e la libreria con cui si carica (transformers, ONNX o altro) non sono state lette sulla scheda del modello.
+- Licenza di Rizzo-PII e libreria con cui si carica: verificate il 2026-10-14, MIT e `transformers` (D-202).
 - Che oMLX esponga le probabilità dei token del prompt (serve a B1): da verificare sulla versione installata.
 - Il repository di Rizzo Flow non è stato letto: forma delle domande, modelli supportati e licenza dei pesi consigliati.
-- Il comportamento di Rizzo-PII su testo misto italiano e codice (brief di coding) non è documentato: è la prima cosa che misura la tappa 1.
+- Il comportamento di Rizzo-PII su testo misto italiano e codice: misurato su 14 brief brevi inventati (2 falsi allarmi, sopra); da rifare su brief lunghi.
 
 Fonti: [Jev vs Laya](https://www.orcarouter.ai/it/blog/jev-vs-laya), [Laya spiegato](https://www.orcarouter.ai/blog/laya-decision-model-explained), [Laya su GameBusiness.jp](https://www.gamebusiness.jp/article/2026/10/01/28183.html), [Rizzo-PII, articolo](https://pasqualepillitteri.it/news/9105/rizzo-pii-anonimizzazione-pii-locale-italiano), [Rizzo-PII su Hugging Face](https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B), [Rizzo Flow su Trendshift](https://trendshift.io/repositories/252179).
 
