@@ -11,10 +11,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
-- Codice fiscale, targa, CAP con numero civico e dati catastali contano solo con la loro forma intorno al riscontro (codice fiscale anche spaziato o in parte, targa italiana, CAP di 5 cifre entro 100 caratteri dal civico, parole del catasto); nessuna esclusione generica, e i dati veri delle prove restano bloccati (D-215).
-# Registro delle versioni
-
-Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
+- Codice fiscale, targa, CAP con numero civico e dati catastali contano solo con la loro forma intorno al riscontro (cercata nel testo come lo vede un lettore, come il primo scanner: codice fiscale anche spaziato, con barre, a capo, a larghezza piena o scritto a metà, targa italiana anche coi punti, CAP di 5 cifre entro 100 caratteri dal civico, parole del catasto); nessuna esclusione generica, e i dati veri delle prove restano bloccati (D-215).
 
 ## [0.108.0] - 2026-10-14
 

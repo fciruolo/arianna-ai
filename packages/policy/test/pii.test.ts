@@ -155,6 +155,28 @@ test('a CF counts only with the form of a codice fiscale around it', () => {
   assert.ok(blocks(data, '01234567890', 'CF'), 'the 11 digits of a company');
 });
 
+test('the form is looked for as a reader sees the text: other spaces, separators, invisible and full-width characters (reviewer of D-215)', () => {
+  const cases: [string, string, string][] = [
+    ['CF RSS MRA 85T10 A562S di Mario', '85T10', 'CF'],
+    ['CF RSS  MRA  85T10  A562S', 'MRA', 'CF'],
+    ['CF RSS/MRA/85T10/A562S', 'A562S', 'CF'],
+    ['CF RSSMRA\n85T10A562S', '85T10', 'CF'],
+    ['CF RSS_MRA_85T10_A562S', 'RSS', 'CF'],
+    ['codicefiscaleRSSMRA85T10A562S', 'RSSMRA', 'CF'],
+    ['CF RSSMRA85​T10A562S', 'T10', 'CF'],
+    ['CF ＲＳＳＭＲＡ８５Ｔ１０Ａ５６２Ｓ', '８５', 'CF'],
+    ['Il CF di Mario inizia con RSSMRA85T10', 'RSSMRA85T10', 'CF'],
+    ['P.IVA IT01234567890', '01234567890', 'CF'],
+    ['targa AB 123 CD', '123', 'TARGA'],
+    ['targa AB.123.CD', 'AB.123', 'TARGA'],
+    ['targa ＡＢ１２３ＣＤ', '１２３', 'TARGA'],
+  ];
+  for (const [text, value, kind] of cases) assert.ok(blocks(text, value, kind), JSON.stringify(text));
+  const invisible = 'Via Roma 14, 401​27 Bologna';
+  const address = check([fragment(invisible)], CLAUDE, piiReport([invisible], [[entity(invisible, '14', 'BUILDINGNUM'), entity(invisible, '401', 'ZIPCODE')]]));
+  assert.ok(address.decision === 'block' && address.pii?.some((finding) => finding.kind === 'ADDRESS'), 'a postcode with an invisible character');
+});
+
 test('a TARGA counts only with the form of an Italian plate', () => {
   const brief = '- 1.2 Installer: download con sha256, 2 modelli, porta 7420, v0.85.0';
   for (const value of ['2', 'sha256', '7420', '0.85']) assert.equal(blocks(brief, value, 'TARGA'), false, value);
@@ -190,6 +212,8 @@ test('cadastral data count only with a word of the cadastre', () => {
   assert.equal(blocks(brief, '8', 'CATASTO'), false);
   const data = 'Appartamento al foglio 12, particella 345, subalterno 6; box fg. 3 part. 77; catasto 9/12';
   for (const value of ['foglio 12, particella 345, subalterno 6', '345', '6', '77', '9/12']) assert.ok(blocks(data, value, 'CATASTO'), value);
+  assert.ok(blocks('Immobile F. 12 P. 345 a Lucca', '345', 'CATASTO'), 'abbreviations of a visura');
+  assert.ok(blocks('Dati 12/345/6 (foglio/particella/sub)', '12/345/6', 'CATASTO'), 'the word after the numbers');
 });
 
 test('a piece of an ignored name is not a person; a person next to it is', () => {
@@ -202,6 +226,10 @@ test('a piece of an ignored name is not a person; a person next to it is', () =>
   const person = 'Il Coder Claude Sonnetti ha scritto a Mario Rossi';
   assert.ok(blocks(person, 'Claude Sonnetti', 'FULLNAME', names), 'a longer name');
   assert.ok(blocks(person, 'Sonnetti', 'FULLNAME', names));
+  const display = 'Scrivi a Giulia Bianchi';
+  assert.equal(blocks(display, 'Giulia Bianchi', 'FULLNAME', ['Giulia Bianchi']), false, 'a name of two words ignored whole');
+  assert.ok(blocks(display, 'Giulia', 'FULLNAME', ['Giulia Bianchi']), 'but not its pieces');
+  assert.ok(blocks(display, 'Bianchi', 'FULLNAME', ['Giulia Bianchi']));
   const arianna = 'Scrivi ad Arianna Bianchi';
   assert.ok(blocks(arianna, 'Arianna Bianchi', 'FULLNAME', names));
   assert.ok(blocks(arianna, 'a Bi', 'FULLNAME', names), 'across the end of an ignored name');
@@ -214,6 +242,8 @@ test('inside a local IPv4 address nothing counts; a public one, or an email, sti
   assert.ok(blocks(data, '93.41.12.7', 'EMAIL'), 'a public address');
   assert.ok(blocks(data, '127.0.0.1@example.it', 'EMAIL'));
   assert.ok(blocks(data, 'mario127.0.0.1', 'EMAIL'));
+  assert.ok(blocks('scrivi a mario@10.1.2.3', '1.2.3', 'EMAIL'), 'after an @');
+  assert.ok(blocks('telefono 10.345.678.901', '10.345.678.901', 'TELEPHONENUM'), 'not an address: octets over 255');
 });
 
 test('an ignored name only covers FULLNAME', () => {

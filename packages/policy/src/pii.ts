@@ -52,7 +52,10 @@ const CF_SHAPE = /^[a-z]{6}[0-9]{2}[a-z][0-9]{2}[a-z][0-9]{3}[a-z]$/;
 
 const DOTTED_CHAR = /[0-9.]/;
 /** An IPv4 address of this machine or of a private network: 127.x, 10.x, 172.16-31.x, 192.168.x, 0.0.0.0. */
-const LOCAL_IPV4 = /^(?:127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2}|0\.0\.0\.0)$/;
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const LOCAL_IPV4 = new RegExp(
+  `^(?:127(?:\\.${OCTET}){3}|10(?:\\.${OCTET}){3}|172\\.(?:1[6-9]|2\\d|3[01])(?:\\.${OCTET}){2}|192\\.168(?:\\.${OCTET}){2}|0\\.0\\.0\\.0)$`,
+);
 
 /**
  * True when the entity lies inside a local IPv4 address (D-215): the address
@@ -66,7 +69,7 @@ function isLocalAddress(text: string, entity: PiiEntity): boolean {
   while (end < text.length && DOTTED_CHAR.test(text.charAt(end))) end++;
   // Inside the address only, and the address alone: not a part of a longer word.
   if (!/^[0-9.]+$/.test(text.slice(entity.start, entity.end))) return false;
-  if (WORD_CHAR.test(text.charAt(start - 1)) || /[A-Za-z_@-]/.test(text.charAt(end))) return false;
+  if (/[A-Za-z0-9_@-]/.test(text.charAt(start - 1)) || /[A-Za-z_@-]/.test(text.charAt(end))) return false;
   return LOCAL_IPV4.test(text.slice(start, end).replace(/\.$/, ''));
 }
 
@@ -75,8 +78,8 @@ function isLocalAddress(text: string, entity: PiiEntity): boolean {
  * run in the path of the notes was read once as an IBAN) or a lowercase
  * hexadecimal word of 12-64 characters with digits and letters mixed (a
  * sha256, the version of a skill: `[739de001433318de]`, read once as a
- * document), or a local IPv4 address. Personal data never take that form: shorter words, the shape of
- * a document or a plate (letters, digits, letters), the shape of a codice
+ * document), or a local IPv4 address. Personal data never take that form:
+ * shorter words, the shape of a document or a plate (letters, digits, letters), the shape of a codice
  * fiscale, and a word next to `@` (the start of an email) always count.
  */
 function isCodeIdentifier(text: string, entity: PiiEntity): boolean {
@@ -103,48 +106,81 @@ const END = '(?![A-Za-z0-9])';
 /** A digit of a codice fiscale, or the letter that replaces it (omocodia). */
 const OMO = '[0-9LMNPQRSTUV]';
 /** How far around a finding its form is looked for: more than the longest form, separators included. */
-const REACH = 32;
-const SEP = '[ .-]?';
+const REACH = 48;
+/** Between characters of a form: up to two spaces (any, after normalization), dots, slashes, underscores or hyphens. */
+const SEP = '[ ._/-]{0,2}';
 /**
  * A codice fiscale: the 16 characters of a person (any month letter, so a typo
- * still counts; one space, dot or hyphen allowed between characters), or the 11
- * digits of a company.
+ * still counts; separators allowed between characters; also glued to a word,
+ * `codicefiscaleRSSMRA85T10A562S`), its first 11 characters with real digits
+ * (`RSSMRA85T10`, a codice fiscale written in part), or the 11 digits of a
+ * company (also after `IT`).
  */
 const CF_FORM = new RegExp(
-  `${START}(?:${['[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', OMO, OMO, '[A-Z]', OMO, OMO, '[A-Z]', OMO, OMO, OMO, '[A-Z]'].join(SEP)}|\\d{11})${END}`,
+  `(?:${['[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', OMO, OMO, '[A-Z]', OMO, OMO, '[A-Z]', OMO, OMO, OMO, '[A-Z]'].join(SEP)}|${['[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '[A-Z]', '\\d', '\\d', '[A-Z]', '\\d', '\\d'].join(SEP)}|(?<!\\d)\\d{11}(?!\\d))`,
   'gi',
 );
 /**
  * An Italian plate: the cars since 1994 (AB 123 CD), the motorbikes since 1999
  * and the provincial plates before 1994 (MI 123456, MI A12345, ROMA 123456).
  */
-const TARGA_FORM = new RegExp(`${START}(?:[A-Z]{2}[ -]?\\d{3}[ -]?[A-Z]{2}|[A-Z]{2}[ -]?[0-9A-Z]?\\d{4,6}|ROMA[ -]?[0-9A-Z]?\\d{4,6})${END}`, 'gi');
+const TARGA_FORM = new RegExp(`${START}(?:[A-Z]{2}${SEP}\\d{3}${SEP}[A-Z]{2}|[A-Z]{2}${SEP}[0-9A-Z]?\\d{4,6}|ROMA${SEP}[0-9A-Z]?\\d{4,6})${END}`, 'gi');
 /** A postcode: five digits, not a piece of a decimal or of a version (`0.83.0`, `1.20121`). */
 const ZIPCODE_FORM = new RegExp(`${START}(?<!\\d[.,])\\d{5}(?![.,]\\d)${END}`, 'g');
 /** A house number: up to four digits, maybe a letter (14, 14b, 14/A), not a piece of a decimal or of a version. */
 const BUILDINGNUM_FORM = new RegExp(`${START}(?<!\\d[.,])\\d{1,4}(?![.,]?\\d)(?:[ /]?[A-Za-z]${END})?`, 'g');
 /**
  * Cadastral data are numbers alone (`foglio 12, particella 345`): they count only
- * with a word of the cadastre before them or in them, never in «riga 78».
+ * with a word of the cadastre near them (80 characters before, 30 after, or in
+ * them), never in «riga 78». The abbreviations of a visura count with a number
+ * (`fg. 12`, `F. 12 P. 345`).
  */
-const CATASTO_WORD = /(?<![\p{L}\p{N}])(?:foglio|fogli|particella|particelle|mappale|mappali|subalterno|subalterni|catasto|catastale|catastali|nceu|nct|censuario|censuaria|(?:fg|part|mapp|map|sub)\.?\s*\d)/iu;
-const CATASTO_REACH = 80;
+const CATASTO_WORD = /(?<![\p{L}\p{N}])(?:foglio|fogli|particella|particelle|mappale|mappali|subalterno|subalterni|catasto|catastale|catastali|nceu|nct|censuario|censuaria|(?:fg|part|mapp|map|sub)\.?\s*\d|[fp]\.\s*\d)/iu;
+const CATASTO_BEFORE = 80;
+const CATASTO_AFTER = 30;
 /** A postcode and a house number make an address when this close (characters between them). */
 const ADDRESS_REACH = 100;
 
+// Invisible characters that would split a form without changing what a reader sees (as the first scanner).
+const INVISIBLE = /^[\u00AD\u180E\u200B-\u200D\u2060\uFEFF]$/;
+
+/**
+ * The text as a reader sees it, as the first scanner reads it: compatibility
+ * form (full-width digits become digits), no invisible characters, every space
+ * (a no-break one, a newline) a plain space. `at[i]` is where the character `i`
+ * of the result starts in `text`, and `at[length]` is the end of `text`.
+ */
+function normalized(text: string): { text: string; at: number[] } {
+  let out = '';
+  const at: number[] = [];
+  let index = 0;
+  for (const char of text) {
+    if (!INVISIBLE.test(char)) {
+      const plain = /^\s$/u.test(char) ? ' ' : char.normalize('NFKC');
+      for (let i = 0; i < plain.length; i++) at.push(index);
+      out += plain;
+    }
+    index += char.length;
+  }
+  at.push(index);
+  return { text: out, at };
+}
+
 /**
  * True when a match of `form` (a global regex) overlaps the entity, looked for
- * within REACH of it. Only that window is read, so a long brief costs the same
- * as a short one; at its edges a cut word may look like a whole one, which can
- * only make a form appear, never hide one.
+ * within REACH of it in the normalized text. Only that window is read, so a
+ * long brief costs the same as a short one; at its edges a cut word may look
+ * like a whole one, which can only make a form appear, never hide one.
  */
 function formAround(text: string, entity: PiiEntity, form: RegExp): boolean {
   const from = Math.max(0, entity.start - REACH);
-  const window = text.slice(from, Math.min(text.length, entity.end + REACH));
+  const window = normalized(text.slice(from, Math.min(text.length, entity.end + REACH)));
   const start = entity.start - from;
   const end = entity.end - from;
-  for (const match of window.matchAll(form)) {
-    if (match.index < end && match.index + match[0].length > start) return true;
+  for (const match of window.text.matchAll(form)) {
+    const matchStart = window.at[match.index] ?? 0;
+    const matchEnd = window.at[match.index + match[0].length] ?? 0;
+    if (matchStart < end && matchEnd > start) return true;
   }
   return false;
 }
@@ -164,7 +200,7 @@ function hasForm(text: string, entity: PiiEntity): boolean {
     case 'BUILDINGNUM':
       return formAround(text, entity, BUILDINGNUM_FORM);
     case 'CATASTO':
-      return CATASTO_WORD.test(text.slice(Math.max(0, entity.start - CATASTO_REACH), entity.end));
+      return CATASTO_WORD.test(normalized(text.slice(Math.max(0, entity.start - CATASTO_BEFORE), Math.min(text.length, entity.end + CATASTO_AFTER))).text);
     default:
       return true;
   }
@@ -175,9 +211,16 @@ function hasForm(text: string, entity: PiiEntity): boolean {
  * street was missed; far apart in a long text they are two numbers.
  */
 function isAddress(entities: readonly PiiEntity[]): boolean {
-  const zips = entities.filter((entity) => entity.kind === 'ZIPCODE');
-  const numbers = entities.filter((entity) => entity.kind === 'BUILDINGNUM');
-  return zips.some((zip) => numbers.some((number) => Math.max(zip.start, number.start) - Math.min(zip.end, number.end) <= ADDRESS_REACH));
+  const parts = entities.filter((entity) => entity.kind === 'ZIPCODE' || entity.kind === 'BUILDINGNUM').sort((a, b) => a.start - b.start);
+  // In order of start: the farthest end so far of each kind is enough to know whether one of the other kind is close.
+  const lastEnd = { ZIPCODE: -Infinity, BUILDINGNUM: -Infinity };
+  for (const part of parts) {
+    const kind = part.kind as keyof typeof lastEnd;
+    const other = kind === 'ZIPCODE' ? 'BUILDINGNUM' : 'ZIPCODE';
+    if (part.start - lastEnd[other] <= ADDRESS_REACH) return true;
+    lastEnd[kind] = Math.max(lastEnd[kind], part.end);
+  }
+  return false;
 }
 
 function escapeRegExp(text: string): string {
@@ -188,10 +231,15 @@ function escapeRegExp(text: string): string {
  * Where the ignored names appear in the text, as whole words, whatever the case
  * and the spaces between their words: a FULLNAME inside one of these is a piece
  * of the name (`net` of «Claude Sonnet», `a` of «arianna»), never a person.
+ * Only names of one word and names of a cloud assistant (the first word is
+ * one of `ASSISTANT_NAMES`: «Claude Sonnet», «Codex Sol»): a name of two words
+ * like a person's («Giulia Bianchi») is ignored only whole.
  */
 function nameSpans(text: string, names: readonly string[]): [number, number][] {
   const spans: [number, number][] = [];
+  const assistants = new Set(ASSISTANT_NAMES.map(normalizeName));
   for (const name of names) {
+    if (name.includes(' ') && !assistants.has(name.split(' ')[0] ?? '')) continue;
     const words = name.split(' ').map(escapeRegExp).join('\\s+');
     for (const match of text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'giu'))) {
       spans.push([match.index, match.index + match[0].length]);
@@ -244,8 +292,9 @@ function isEntity(value: unknown, length: number): value is PiiEntity {
  * per text. An answer of the wrong shape, or with a position outside its text,
  * is a check that did not happen (`malformed`), never a clean one.
  *
- * `ignoreNames` are names of the assistant and of the agents: a FULLNAME whose
- * text is exactly one of them is not a person (`ASSISTANT_NAMES` always count).
+ * `ignoreNames` are names of the assistant, of the agents and of the cloud
+ * models: a FULLNAME whose text is exactly one of them, or a piece of one of
+ * them as `nameSpans` says, is not a person (`ASSISTANT_NAMES` always count).
  */
 export function piiReport(texts: readonly string[], entities: unknown, ignoreNames: readonly string[] = []): PiiCheck {
   if (!Array.isArray(texts) || !texts.every((text) => typeof text === 'string')) return piiUnavailable('malformed');
