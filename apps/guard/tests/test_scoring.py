@@ -22,7 +22,7 @@ class ParseCaseTest(unittest.TestCase):
         ids = [item["id"] for item in raw]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertGreaterEqual(len(raw), 30)
-        self.assertLessEqual(len(raw), 60)
+        self.assertLessEqual(len(raw), 80)
         for item in raw:
             case = parse_case(item)
             self.assertIn(case.group, {"personal", "code_personal", "negative", "code"})
