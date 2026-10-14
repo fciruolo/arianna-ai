@@ -39,6 +39,8 @@ export {
   profileLine,
   profileRead,
   SHARE_FACT_ACTION,
+  SHARE_MARK,
+  SHARE_RULE,
   sharedFact,
   sharedFactText,
   shareFactRequest,
