@@ -6,7 +6,12 @@ Aggiornato: 2026-10-14, 02:40 circa.
 
 **2026-10-14, 02:40 circa — notte in autonomia (l'utente dorme: «non chiedermi niente… se hai qualche dubbio decidi tu e poi domani mi riproponi le scelte»).** Claude porta a termine i sette rami in corso (`task/su-di-te`, `task/omlx-ricarica`, `task/guard-rizzo`, `task/personalita-prompt`, `task/computer-agente`, `task/openwork-idee`, `task/progetti-seguiti`): revisore, correzioni, `pnpm check` (e `test:db` dove serve); **nessuna unione su `main` senza la prova dell'utente**. Le scelte prese da Claude durante la notte vanno nella sezione «Scelte della notte da riproporre» qui sotto, da chiedere all'utente una alla volta domattina. Lavori in coda avviati solo se la proiezione della quota settimanale resta sotto il 100% (alle 02:40 la settimana era al 50%, proiezione circa 100%). Domattina: le altre domande aperte (Mentor, operatore telefonico, 18 idee, permessi), poi le prove una alla volta.
 
-**Scelte della notte da riproporre:** (nessuna per ora)
+**Rami pronti per la prova (notte del 2026-10-14):**
+- `task/guard-rizzo` (D-113 tappa 1, D-202): Rizzo-PII in `apps/guard`, revisore fatto dal subagente. Prova su 58 frasi finte: 84/84 dati trovati, 0 falsi allarmi sulle frasi comuni, 2 su 14 brief di codice (porta 7420 come civico, «Arianna» come nome); 20-35 ms a frase sulla GPU, 1,3 GB. Per provarlo nella cartella principale: `pii = "rizzo-pii-0.3b"` in `[roles]`, `pnpm arianna:models pull`, `pnpm guard:sync`, `pnpm guard:trial`. Da controllare: che oMLX ignori la cartella del modello. Proposta per la tappa 2 nel rapporto: blocco solo sui tipi che identificano, nomi dell'assistente ignorati, civico/CAP solo con una via, uscite ferme se il guard non risponde.
+- Fuori dalle prove: le idee di OpenWork (solo documenti) portate su `main` (`9a8f443`) per farle comparire nella pagina Sviluppo; il push resta negato a Claude.
+
+**Scelte della notte da riproporre:**
+- Idee di OpenWork su `main` senza prova (sono solo domande nei documenti).
 
 **2026-10-14, 01:55 circa:** nessuna risposta nuova in `RISPOSTE.md`; servizi accesi; quota settimanale proiettata al 99% circa (pieno sforzo, un subagente alla volta). In costruzione da un subagente nel suo worktree: **D-114 tappa A** sul ramo `task/su-di-te` (migrazione 0061 `user_facts`, pagina Impostazioni → «Su di te», casella «Su di te, per Claude Code» in `/sviluppo`); poi revisore, prova dell'utente, unione con versione minor. Senza anteprima: la pagina segue lo stile della Personalità.
 
