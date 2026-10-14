@@ -111,6 +111,14 @@ test('inside a hash of git, a sha256 or a UUID nothing counts; personal data nev
   }
 });
 
+test('the names of the cloud assistants are not persons either, a person with that first name is', () => {
+  const prompt = 'You are Claude, in a plain chat; Codex and ChatGPT answer elsewhere';
+  const names = [entity(prompt, 'Claude', 'FULLNAME'), entity(prompt, 'Codex', 'FULLNAME'), entity(prompt, 'ChatGPT', 'FULLNAME')];
+  assert.equal(check([fragment(prompt)], CLAUDE, piiReport([prompt], [names])).decision, 'allow');
+  const person = 'Scrivi a Claude Rossi';
+  assert.equal(check([fragment(person)], CLAUDE, piiReport([person], [[entity(person, 'Claude Rossi', 'FULLNAME')]])).decision, 'block');
+});
+
 test('an ignored name only covers FULLNAME', () => {
   const text = 'Arianna';
   assert.equal(check([fragment(text)], CLAUDE, piiReport([text], [[{ kind: 'EMAIL', start: 0, end: 7, score: 0.9 }]])).decision, 'block');

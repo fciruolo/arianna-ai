@@ -35,8 +35,13 @@ export const PII_NON_BLOCKING: readonly string[] = ['AGE', 'AMOUNT', 'BUILDINGNU
 /** A house number with a postcode in the same text is an address, even when the street was missed. */
 const ADDRESS_PAIR: readonly string[] = ['BUILDINGNUM', 'ZIPCODE'];
 
-/** The name of the assistant: in almost every brief, never a person (the trial took it for one). */
-export const ASSISTANT_NAMES: readonly string[] = ['Arianna'];
+/**
+ * Names of assistants, in almost every brief and fixed prompt, never a person:
+ * Arianna, and the cloud ones she talks to («You are Claude…» was taken for a
+ * person in the trial of the plain chat). A longer name, «Arianna Bianchi»,
+ * still counts.
+ */
+export const ASSISTANT_NAMES: readonly string[] = ['Arianna', 'Claude', 'Codex', 'ChatGPT'];
 
 const MAX_NAME = 60;
 
