@@ -9,10 +9,10 @@ import { after, test } from 'node:test';
 
 import { MAX_SERIES_TEXT, SERIES_PERSONAS, SERIES_QUOTES, seriesNamesOfSource, seriesPersonaBlock, seriesPersonaOf, type Persona } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
-import { piiReport, piiVerdict } from '@arianna/policy';
+import { piiReport, piiVerdict, secretMatcher } from '@arianna/policy';
 
-import { fragmentNamesOf } from '../src/gateway.ts';
-import { characterChoiceOf, characterDirsOf, characterPart, PROFILE_SOURCE, profilePart, promptTail, tailParts, type TailConfig } from '../src/prompt-tail.ts';
+import { configureWornNames, fragmentNamesOf } from '../src/gateway.ts';
+import { characterChoiceOf, characterDirsOf, characterPart, rosterPart, userNamesPart, wornSeriesNames, PROFILE_SOURCE, profilePart, promptTail, tailParts, type TailConfig } from '../src/prompt-tail.ts';
 import { servesSync, readSmallSync } from '../src/characters.ts';
 import { themeCharactersSync } from '../src/themes.ts';
 
@@ -25,7 +25,9 @@ after(() => {
 });
 
 /** The theme Corsia with the packs in git; data/characters empty. */
-const corsia = (extra: Partial<TailConfig> = {}): TailConfig => ({ personas: {}, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root }, ...extra });
+/** The cards of agents/ and one agent of the user (D-119), as main.ts tells the tail. */
+const LOADED = { official: ['arianna', 'coder', 'god', 'designer', 'finanze', 'reviewer'], user: ['mio-agente'] };
+const corsia = (extra: Partial<TailConfig> = {}): TailConfig => ({ personas: {}, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root }, agentsNow: () => LOADED, ...extra });
 
 test('every person of the pack serie has a name as in pack.json, a personality and 3-5 short catchphrases within 600 characters, and nobody else has one', () => {
   const pack = JSON.parse(readFileSync(join(HOME, 'apps', 'hud', 'characters', 'serie', 'pack.json'), 'utf8')) as { characters: { id: string; name: string }[] };
@@ -119,7 +121,14 @@ test('an agent of the user (D-119) with a person of the series chosen by hand sp
   assert.deepEqual([part?.label, part?.source], ['L0', 'character:serie/pam']);
   assert.match(part?.text ?? '', /Call yourself "Pam"/);
   // Its name is no person in its own piece for the second scanner, as for a card of agents/.
-  assert.deepEqual(fragmentNamesOf([{ value: part?.text ?? '', label: 'L0', source: part?.source ?? '' }]), [['Pam']]);
+  assert.ok(fragmentNamesOf([{ value: part?.text ?? '', label: 'L0', source: part?.source ?? '' }], [])[0]?.includes('Pam'));
+  // And the others know it by that name (D-217), in the piece of the user's text: its name is the user's, L1.
+  const mine = corsia({ appearance: { theme: 'base' }, characters: { 'mio-agente': 'serie/pam' } });
+  assert.equal(rosterPart(mine, 'arianna'), undefined);
+  const names = userNamesPart(mine, 'arianna', 'L1');
+  assert.deepEqual([names?.label, names?.source], ['L1', 'persona:names']);
+  assert.match(names?.text ?? '', /- Mio-agente: "Pam"/);
+  assert.equal(userNamesPart(mine, 'arianna', 'L0'), undefined);
 });
 
 test('the name and the personality the user wrote win over the character’s, whatever the clearance', () => {
@@ -145,6 +154,7 @@ test('tailParts: the character first, then the user’s persona, each with its l
     parts.map((piece) => [piece.label, piece.source]),
     [
       ['L0', 'character:serie/carla'],
+      ['L0', 'character:roster'],
       ['L0', 'persona:arianna'],
     ],
   );
@@ -180,10 +190,11 @@ test('the second scanner: the character’s name passes in its own piece, a real
   );
   assert.ok(verdict.verdict === 'found');
   assert.deepEqual(verdict.findings, [{ kind: 'FULLNAME', fragment: 1 }]);
-  // «Cox» and «JD» count in their own piece only; a source that only looks like one has none.
-  assert.deepEqual(seriesNamesOfSource('character:serie/cox'), ['Dr. Cox', 'Cox', 'Dr Cox']);
-  assert.deepEqual(seriesNamesOfSource('character:serie/jd'), ['J.D.', 'JD']);
-  for (const source of ['brief', 'persona:god', 'character:miei/cox', 'character:serie/sparito', undefined, 7]) assert.equal(seriesNamesOfSource(source), undefined, String(source));
+  // Every name of the series, with «Cox» and «JD», in the pieces of the characters and of who is who only (D-217).
+  for (const source of ['character:serie/cox', 'character:roster']) {
+    for (const name of ['Dr. Cox', 'Cox', 'Dr Cox', 'J.D.', 'JD', 'Carla', 'Pam']) assert.ok(seriesNamesOfSource(source)?.includes(name), `${source} ${name}`);
+  }
+  for (const source of ['brief', 'persona:god', 'persona:names', 'character:miei/cox', 'character:serie/sparito', undefined, 7]) assert.equal(seriesNamesOfSource(source), undefined, String(source));
 });
 
 test('themeCharactersSync reads a theme with the checks of listThemes, and nothing from a refused one', () => {
@@ -218,18 +229,115 @@ test('the character, the user’s persona and the profile «Su di te» (D-213) l
     const tail = [...tailParts(config, 'arianna', clearance), profile];
     assert.deepEqual(
       tail.map((piece) => piece.source),
-      ['character:serie/carla', 'persona:arianna', PROFILE_SOURCE],
+      ['character:serie/carla', 'character:roster', 'persona:arianna', PROFILE_SOURCE],
       clearance,
     );
     // The character stays L0 and does not lower nor raise the profile's label.
     assert.equal(tail[0]?.label, 'L0');
-    assert.equal(tail[2]?.label, profile.label);
+    assert.equal(tail[3]?.label, profile.label);
     const text = promptTail(tail.map((piece) => piece.text));
     assert.ok(text.indexOf('<character>') < text.indexOf('Persona set by the user') && text.indexOf('Persona set by the user') < text.indexOf('Lavoro'), clearance);
-    // The second scanner takes «Carla» for no person in the character's piece only, never in the profile.
+    // Without names worn (no theme told to the gateway) the second scanner takes «Carla» for no person in the
+    // character's pieces only, never in the profile; with a theme the worn names count everywhere, whole (D-217).
     assert.deepEqual(
-      fragmentNamesOf(tail.map((piece) => ({ value: piece.text, label: piece.label, source: piece.source }))),
-      [['Carla'], undefined, undefined],
+      fragmentNamesOf(
+        tail.map((piece) => ({ value: piece.text, label: piece.label, source: piece.source })),
+        [],
+      ).map((names) => names?.includes('Carla') ?? false),
+      [true, true, false, false],
     );
   }
+});
+
+test('who is who (D-217): each agent reads the names of the others in the theme, the user’s names winning, with their label', () => {
+  const roster = rosterPart(corsia(), 'god');
+  assert.ok(roster !== undefined);
+  assert.deepEqual([roster.label, roster.source], ['L0', 'character:roster']);
+  assert.match(roster.text, /call it by its name here \(Arianna is also the assistant, the system\)/);
+  assert.match(roster.text, /- Arianna: "Carla"/);
+  assert.match(roster.text, /- Coder: "J\.D\."/);
+  assert.match(roster.text, /- Reviewer: "Elliot"/);
+  // Not itself, nor an agent in a costume of the originals.
+  assert.doesNotMatch(roster.text, /GOD|Designer/);
+  // An agent without a person of the series still reads the others' names.
+  assert.match(rosterPart(corsia(), 'designer')?.text ?? '', /- GOD: "Dr\. Cox"/);
+  // Base and no choice: nobody.
+  assert.equal(rosterPart(corsia({ appearance: { theme: 'base' } }), 'god'), undefined);
+  // The name the user wrote wins: out of the L0 piece, into the user's piece, L1 and only where L1 fits.
+  const named = corsia({ personas: { arianna: { tone: 'equilibrato', address: 'tu' }, coder: { tone: 'equilibrato', address: 'tu', displayName: 'Bruno' } } });
+  assert.doesNotMatch(rosterPart(named, 'god')?.text ?? '', /Coder|J\.D\./);
+  const own = userNamesPart(named, 'god', 'L1');
+  assert.deepEqual([own?.label, own?.source], ['L1', 'persona:names']);
+  assert.match(own?.text ?? '', /- Coder: "Bruno"/);
+  assert.equal(userNamesPart(named, 'god', 'L0'), undefined);
+  assert.equal(userNamesPart(named, 'coder', 'L1'), undefined, 'its own name is in its persona');
+  // The names worn now, whole, for the gateway.
+  assert.deepEqual(wornSeriesNames(corsia()).sort(), ['Carla', 'Cox', 'Dr Cox', 'Dr. Cox', 'Elliot', 'J.D.', 'JD', 'Turk']);
+  assert.deepEqual(wornSeriesNames(corsia({ appearance: { theme: 'base' } })), []);
+});
+
+test('an answer that called an agent by its character goes on in a brief; a real person does not (D-217)', () => {
+  const brief = 'Ne ho parlato con Carla e con il Dr. Cox. Scrivi a Carla Bianchi e a Pam.';
+  const at = (name: string, from = 0) => brief.indexOf(name, from);
+  const people: [number, number, number][] = [
+    [0, at('Carla'), at('Carla') + 5],
+    [0, at('Dr. Cox'), at('Dr. Cox') + 7],
+    [0, at('Carla Bianchi'), at('Carla Bianchi') + 13],
+    [0, at('Pam'), at('Pam') + 3],
+  ];
+  const texts = [brief];
+  const entities = [people.map(([, start, end]) => ({ kind: 'FULLNAME', start, end, score: 0.9 }))];
+  const check = (worn: readonly string[]) => piiVerdict(piiReport(texts, entities, [], fragmentNamesOf([{ value: brief, label: 'L1', source: 'message:1' }], worn)), texts);
+  // With Scrubs: Carla and Dr. Cox are names worn now and pass whole; Carla Bianchi and Pam (nobody wears Pam) are persons.
+  const scrubs = check(wornSeriesNames(corsia()));
+  assert.ok(scrubs.verdict === 'found');
+  const only = (names: string[]) => piiVerdict(piiReport([names.join(' e ')], [names.map((name, index) => ({ kind: 'FULLNAME', start: names.slice(0, index).join(' e ').length + (index > 0 ? 3 : 0), end: names.slice(0, index).join(' e ').length + (index > 0 ? 3 : 0) + name.length, score: 0.9 }))], [], fragmentNamesOf([{ value: names.join(' e '), label: 'L1', source: 'message:1' }], wornSeriesNames(corsia()))), [names.join(' e ')]);
+  assert.deepEqual(only(['Carla', 'Dr. Cox']), { verdict: 'clean' });
+  // The scanner finds «Cox» alone in «il Dr. Cox» (measured on Rizzo-PII): the form counts too.
+  assert.deepEqual(only(['Cox', 'Elliot', 'Turk']), { verdict: 'clean' });
+  assert.equal(only(['Carla Bianchi']).verdict, 'found');
+  assert.equal(only(['Pam']).verdict, 'found');
+  // Without a theme nobody is worn: Carla is a person again.
+  assert.equal(check([]).verdict, 'found');
+});
+
+test('a key of [characters] or of the theme without a loaded agent counts for nothing, in who is who and for the gateway (D-217)', () => {
+  const stale = corsia({ characters: { cancellato: 'serie/pam' } });
+  assert.doesNotMatch(rosterPart(stale, 'god')?.text ?? '', /Pam|Cancellato/);
+  assert.ok(!wornSeriesNames(stale).includes('Pam'));
+  // Nothing loaded (main.ts has not told the tail yet): nobody in who is who, no name worn.
+  const none = corsia({ agentsNow: () => ({ official: [], user: [] }) });
+  assert.equal(rosterPart(none, 'god'), undefined);
+  assert.deepEqual(wornSeriesNames(none), []);
+});
+
+test('a name the user wrote that looks like personal data or holds a value of the vault stays out of who is who (D-217)', () => {
+  const named = corsia({ personas: { coder: { tone: 'equilibrato', address: 'tu', displayName: 'Bruno Zqfinto' } } });
+  assert.match(userNamesPart(named, 'god', 'L1')?.text ?? '', /Bruno Zqfinto/);
+  assert.equal(userNamesPart(named, 'god', 'L1', secretMatcher([{ ref: 'vault://nome-finto', value: 'Bruno Zqfinto' }])), undefined);
+});
+
+test('the piece of the names the user wrote passes the second scanner with its own names, only there (D-217)', () => {
+  const named = corsia({ personas: { coder: { tone: 'equilibrato', address: 'tu', displayName: 'Bruno' } } });
+  const piece = userNamesPart(named, 'god', 'L1');
+  assert.ok(piece !== undefined);
+  const [own, other] = fragmentNamesOf(
+    [
+      { value: piece.text, label: piece.label, source: piece.source },
+      { value: 'Scrivi a Bruno.', label: 'L1', source: 'message:1' },
+    ],
+    [],
+  );
+  assert.deepEqual(own, ['Coder', 'Bruno']);
+  assert.equal(other, undefined);
+});
+
+test('the gateway reads the names worn from main.ts when not given (configureWornNames)', () => {
+  configureWornNames(() => ['Carla']);
+  try {
+    assert.deepEqual(fragmentNamesOf([{ value: 'Ciao Carla', label: 'L1', source: 'message:1' }]), [['Carla']]);
+  } finally {
+    configureWornNames(() => []);
+  }
+  assert.deepEqual(fragmentNamesOf([{ value: 'Ciao Carla', label: 'L1', source: 'message:1' }]), [undefined]);
 });

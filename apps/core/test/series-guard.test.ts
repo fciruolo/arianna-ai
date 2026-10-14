@@ -7,16 +7,19 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { SERIES_PERSONAS, seriesNamesOfSource, seriesPersonaBlock, seriesSource } from '@arianna/agents';
+import { loadAgents, SERIES_PERSONAS, seriesNamesOfSource, seriesPersonaBlock, seriesSource } from '@arianna/agents';
 import { DATA_DIR, guardPaths, resolveHome } from '@arianna/config';
 import { piiVerdict } from '@arianna/policy';
 
+import { fragmentNamesOf } from '../src/gateway.ts';
 import { createPiiGuard, guardStarter } from '../src/pii-guard.ts';
+import { rosterPart, userNamesPart, wornSeriesNames } from '../src/prompt-tail.ts';
 
 const MODEL = process.env.ARIANNA_GUARD_MODEL ?? '';
 const available = MODEL !== '' && existsSync(join(MODEL, 'model.safetensors'));
 const home = resolveHome();
-const guard = available ? createPiiGuard({ start: guardStarter(guardPaths(home, join(home, DATA_DIR)), MODEL), development: false, startTimeoutMs: 120_000, requestTimeoutMs: 120_000 }) : undefined;
+// The names of the agents are no persons, as main.ts tells the guard.
+const guard = available ? createPiiGuard({ start: guardStarter(guardPaths(home, join(home, DATA_DIR)), MODEL), development: false, names: () => [...loadAgents(join(home, 'agents')).keys()], startTimeoutMs: 120_000, requestTimeoutMs: 120_000 }) : undefined;
 
 after(async () => {
   await guard?.stop();
@@ -29,4 +32,43 @@ test('the piece of every person of the series passes the second scanner, its nam
     const check = await guard.scan([text], [seriesNamesOfSource(seriesSource(id))]);
     assert.deepEqual(piiVerdict(check, [text]), { verdict: 'clean' }, id);
   }
+});
+
+test('who is who and an answer that names the agents by their characters pass the real scanner; a real person does not (D-217)', { skip: !available && 'Rizzo-PII is not in data/guard/models' }, async () => {
+  assert.ok(guard !== undefined);
+  for (const theme of ['corsia', 'ufficio']) {
+    const config = { personas: {}, appearance: { theme }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) };
+    for (const agent of ['arianna', 'coder', 'god', 'designer']) {
+      const roster = rosterPart(config, agent);
+      assert.ok(roster !== undefined, `${theme} ${agent}`);
+      const check = await guard.scan([roster.text], fragmentNamesOf([{ value: roster.text, label: roster.label, source: roster.source }], []));
+      assert.deepEqual(piiVerdict(check, [roster.text]), { verdict: 'clean' }, `${theme} ${agent}`);
+    }
+  }
+  const worn = wornSeriesNames({ personas: {}, appearance: { theme: 'corsia' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
+  const answer = 'Ne ho parlato con Carla e con il Dr. Cox; Elliot rivede il diff e Turk fa i conti.';
+  const clean = await guard.scan([answer], fragmentNamesOf([{ value: answer, label: 'L1', source: 'message:1' }], worn));
+  assert.deepEqual(piiVerdict(clean, [answer]), { verdict: 'clean' });
+  const person = 'Scrivi a Carla Bianchi per il preventivo.';
+  const found = await guard.scan([person], fragmentNamesOf([{ value: person, label: 'L1', source: 'message:2' }], worn));
+  assert.equal(piiVerdict(found, [person]).verdict, 'found');
+});
+
+test('the piece of the names the user wrote passes the real scanner, the same name in a brief does not (D-217)', { skip: !available && 'Rizzo-PII is not in data/guard/models' }, async () => {
+  assert.ok(guard !== undefined);
+  const config = {
+    personas: { coder: { tone: 'equilibrato' as const, address: 'tu' as const, displayName: 'Bruno' } },
+    appearance: { theme: 'corsia' },
+    home,
+    paths: { data: join(home, DATA_DIR) },
+    agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }),
+  };
+  const piece = userNamesPart(config, 'god', 'L1');
+  assert.ok(piece !== undefined);
+  const brief = 'Scrivi a Bruno Ferri per il preventivo.';
+  const texts = [piece.text, brief];
+  const check = await guard.scan(texts, fragmentNamesOf([{ value: piece.text, label: piece.label, source: piece.source }, { value: brief, label: 'L1', source: 'message:1' }], []));
+  const verdict = piiVerdict(check, texts);
+  assert.ok(verdict.verdict === 'found');
+  assert.deepEqual(verdict.findings.map((finding) => finding.fragment), [1]);
 });

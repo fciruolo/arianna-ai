@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 
-import { flatPersonaText, personaBlock, personaParts, seriesPersonaBlock, seriesPersonaOf, seriesSource, type PersonaParts } from '@arianna/agents';
+import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesRosterBlock, seriesSource, type PersonaParts, type SeriesPersona } from '@arianna/agents';
 import { ORIGINAL_PACK, type CharacterChoices, type Personas } from '@arianna/config';
-import { isAtMost, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
+import { isAtMost, PERSONA_LABEL, personaFits, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 import { servesSync, type CharacterDirs } from './characters.ts';
@@ -81,6 +81,22 @@ export interface TailConfig {
   themeCharacters?: (theme: string) => Record<string, string>;
   /** Whether a pack serves a character; read from `home` and `paths` when not given (tests give it). */
   serves?: (pack: string, character: string) => boolean;
+  /** The agents loaded now, by origin (D-217); `configureTailAgents` when not given (tests give it). */
+  agentsNow?: () => TailAgents;
+}
+
+/** The agents loaded now: the cards of agents/ (in git, their names L0) and the user's (D-119, their names L1). */
+export interface TailAgents {
+  official: readonly string[];
+  user: readonly string[];
+}
+
+// Set by main.ts; none until then, so nobody is listed in who is who.
+let tailAgents: () => TailAgents = () => ({ official: [], user: [] });
+
+/** What tells the tail which agents are loaded now (D-217): a key of `[characters]` without its agent counts for nothing. */
+export function configureTailAgents(read: () => TailAgents): void {
+  tailAgents = read;
 }
 
 /** The folders of the packs, as main.ts gives them to the chat. */
@@ -96,6 +112,15 @@ export function characterDirsOf(home: string, data: string): CharacterDirs {
  * Undefined when nothing can be read (no home and no reader).
  */
 export function characterChoiceOf(config: TailConfig, agent: string): string | undefined {
+  return characterResolver(config)?.choose(agent);
+}
+
+/**
+ * The choice of `characterChoiceOf` for many agents at once (D-217): the
+ * theme is read once, and only when a choice does not decide. `agents` are
+ * those that may wear a character of the theme or of `[characters]`.
+ */
+function characterResolver(config: TailConfig): { choose: (agent: string) => string | undefined; agents: () => string[] } | undefined {
   const home = config.home;
   const serves =
     config.serves ?? (home === undefined || config.paths === undefined ? undefined : ((dirs: CharacterDirs) => (pack: string, character: string) => servesSync(dirs, pack, character))(characterDirsOf(home, config.paths.data)));
@@ -104,15 +129,104 @@ export function characterChoiceOf(config: TailConfig, agent: string): string | u
     const [pack, character, ...rest] = (choice ?? '').split('/');
     return pack !== undefined && character !== undefined && rest.length === 0 && serves(pack, character);
   };
-  const chosen = config.characters !== undefined && Object.hasOwn(config.characters, agent) ? config.characters[agent] : undefined;
-  if (served(chosen)) return chosen;
-  const theme = config.appearance?.theme;
-  const read = config.themeCharacters ?? (home === undefined ? undefined : (id: string) => themeCharactersSync(join(home, 'apps', 'hud', 'themes'), id));
-  const themed = theme === undefined || read === undefined ? {} : read(theme);
-  const fromTheme = Object.hasOwn(themed, agent) ? themed[agent] : undefined;
-  if (served(fromTheme)) return fromTheme;
-  for (const fallback of [`${ORIGINAL_PACK}/${agent}`, `${ORIGINAL_PACK}/coder`]) if (served(fallback)) return fallback;
-  return undefined;
+  let themed: Record<string, string> | undefined;
+  const themeCharacters = (): Record<string, string> => {
+    if (themed !== undefined) return themed;
+    const theme = config.appearance?.theme;
+    const read = config.themeCharacters ?? (home === undefined ? undefined : (id: string) => themeCharactersSync(join(home, 'apps', 'hud', 'themes'), id));
+    themed = theme === undefined || read === undefined ? {} : read(theme);
+    return themed;
+  };
+  return {
+    choose: (agent) => {
+      const chosen = config.characters !== undefined && Object.hasOwn(config.characters, agent) ? config.characters[agent] : undefined;
+      if (served(chosen)) return chosen;
+      const fromTheme = Object.hasOwn(themeCharacters(), agent) ? themeCharacters()[agent] : undefined;
+      if (served(fromTheme)) return fromTheme;
+      for (const fallback of [`${ORIGINAL_PACK}/${agent}`, `${ORIGINAL_PACK}/coder`]) if (served(fallback)) return fallback;
+      return undefined;
+    },
+    agents: () => [...new Set([...Object.keys(config.characters ?? {}), ...Object.keys(themeCharacters())])],
+  };
+}
+
+/** How an agent is named in the roster (D-217): as the cards and the chat call it. */
+const AGENT_LABEL: Readonly<Record<string, string>> = { arianna: 'Arianna', coder: 'Coder', god: 'GOD', designer: 'Designer', finanze: 'Finanze', reviewer: 'Reviewer' };
+
+function agentLabel(agent: string): string {
+  return Object.hasOwn(AGENT_LABEL, agent) ? (AGENT_LABEL[agent] ?? agent) : agent.charAt(0).toUpperCase() + agent.slice(1);
+}
+
+/**
+ * Every loaded agent that wears a person of the series now, Arianna first,
+ * with that person and whether it is one of the user's (its name is then L1).
+ * A key of `[characters]` or of the theme without a loaded agent is left out.
+ */
+export function wornSeries(config: TailConfig): { agent: string; person: SeriesPersona; user: boolean }[] {
+  const resolver = characterResolver(config);
+  if (resolver === undefined) return [];
+  const loaded = (config.agentsNow ?? tailAgents)();
+  return resolver
+    .agents()
+    .filter((agent) => loaded.official.includes(agent) || loaded.user.includes(agent))
+    .sort((a, b) => (a === 'arianna' ? -1 : b === 'arianna' ? 1 : a.localeCompare(b)))
+    .flatMap((agent) => {
+      const person = seriesPersonaOf(resolver.choose(agent));
+      return person === undefined ? [] : [{ agent, person, user: !loaded.official.includes(agent) }];
+    });
+}
+
+/**
+ * The names of the people of the series worn now, whole, with their forms
+ * («Cox» for «Dr. Cox», which the scanner finds alone) (D-217): what an
+ * answer of an agent may call another by, and so what a later brief may hold.
+ * The gateway takes them for no person in every fragment, only as the whole
+ * name the scanner found: «Carla Bianchi» is still a person.
+ */
+export function wornSeriesNames(config: TailConfig): string[] {
+  return [...new Set(wornSeries(config).flatMap(({ person }) => seriesNamesOf(person)))];
+}
+
+/** The display name the user wrote for `agent`, if any: own keys only. */
+function ownName(config: TailConfig, agent: string): string | undefined {
+  return Object.hasOwn(config.personas, agent) ? config.personas[agent]?.displayName : undefined;
+}
+
+/**
+ * Who is who in the theme for `agent` (D-217), one L0 piece: the other cards
+ * of agents/ that wear a person of the series, by its name. An agent the user
+ * named in Personalità, or one of the user's agents (its name is the user's
+ * text), is left to `userNamesPart`, L1.
+ */
+export function rosterPart(config: TailConfig, agent: string): TailPart | undefined {
+  const entries = wornSeries(config)
+    .filter((entry) => entry.agent !== agent && !entry.user && ownName(config, entry.agent) === undefined)
+    .map((entry) => ({ agent: agentLabel(entry.agent), name: entry.person.name }));
+  const text = seriesRosterBlock(entries);
+  return text === '' ? undefined : { text, label: 'L0', source: SERIES_ROSTER_SOURCE };
+}
+
+/** Source of the piece with the names the user wrote for the other agents (D-217). */
+export const USER_NAMES_SOURCE = SERIES_USER_NAMES_SOURCE;
+
+/**
+ * Who is who where the user's text is in (D-217): the names the user wrote in
+ * Personalità for the other agents that wear a person of the series (they win
+ * over the character's), and the user's agents (D-119) with the character they
+ * wear (their own name is the user's text). L1 by declaration as the persona
+ * (D-107): only when the clearance admits it, never with a name or an agent
+ * that looks like personal data or holds a value of the vault.
+ */
+export function userNamesPart(config: TailConfig, agent: string, clearance: Label, secrets: KnownSecrets = knownSecrets): TailPart | undefined {
+  if (!personaFits(clearance)) return undefined;
+  const clean = (text: string) => scanText(text).length === 0 && secrets.find(text).length === 0;
+  const entries = wornSeries(config).flatMap((entry) => {
+    const name = ownName(config, entry.agent) ?? (entry.user ? entry.person.name : undefined);
+    const label = agentLabel(entry.agent);
+    return entry.agent === agent || name === undefined || !clean(name) || !clean(label) ? [] : [{ agent: label, name }];
+  });
+  const text = seriesRosterBlock(entries);
+  return text === '' ? undefined : { text, label: PERSONA_LABEL, source: USER_NAMES_SOURCE };
 }
 
 /**
@@ -134,9 +248,8 @@ export function characterPart(config: TailConfig, agent: string): TailPart | und
 
 /** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */
 export function tailParts(config: TailConfig, agent: string, clearance: Label): TailPart[] {
-  const character = characterPart(config, agent);
-  const persona = personaPart(config.personas, agent, clearance);
-  return [...(character === undefined ? [] : [character]), ...(persona === undefined ? [] : [persona])];
+  const pieces = [characterPart(config, agent), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
+  return pieces.filter((piece): piece is TailPart => piece !== undefined);
 }
 
 /** The profile as a piece of the tail; `topicsOnly` when only the topics entered (the step may then offer profile.read). */

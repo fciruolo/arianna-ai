@@ -45,12 +45,31 @@ function textsOf(payload: readonly Labeled<unknown>[]): readonly string[] | unde
 
 /**
  * For the second scanner, by position: the names that are no persons in that
- * fragment alone (D-214). Only the piece of a character of the series
- * (`character:serie/<id>`) has some, its character's; every other fragment
- * none, so a «Carla» in a brief is still a person while Arianna wears Carla.
+ * fragment alone, only whole. The pieces of the characters and of who is who
+ * (`character:…`, D-214, D-217) every name of the series; every other fragment
+ * the names worn now (`worn`, D-217), so that an answer that called an agent
+ * «Carla» can go on in a brief, while «Carla Bianchi», or «Pam» when nobody
+ * wears Pam, is still a person.
  */
-export function fragmentNamesOf(payload: readonly Labeled<unknown>[]): (readonly string[] | undefined)[] {
-  return payload.map((fragment) => seriesNamesOfSource((fragment as Partial<Labeled<unknown>> | null)?.source));
+export function fragmentNamesOf(payload: readonly Labeled<unknown>[], worn: readonly string[] = wornNames()): (readonly string[] | undefined)[] {
+  return payload.map((fragment) => {
+    const item = fragment as Partial<Labeled<unknown>> | null;
+    return seriesNamesOfSource(item?.source, item?.value) ?? (worn.length === 0 ? undefined : worn);
+  });
+}
+
+// The names of the people of the series worn now (D-217), set by main.ts; none until then.
+let wornNames: () => readonly string[] = () => [];
+
+/**
+ * What tells the gateway the names worn now (D-217): an answer of an agent
+ * calls another by its character's name («ne parlo con Carla»), and that answer
+ * may go on in a later brief. Those names, whole and only while worn, are no
+ * person for the second scanner in any fragment; a longer name («Carla
+ * Bianchi») or a name no agent wears is still a person.
+ */
+export function configureWornNames(read: () => readonly string[]): void {
+  wornNames = read;
 }
 
 /** Bytes and sha256 of the texts. */

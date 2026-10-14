@@ -101,21 +101,52 @@ export function seriesSource(character: string): string {
   return `character:${SERIES_PACK_ID}/${character}`;
 }
 
-/**
- * The names that are not persons in the piece with `source` (D-214), for the
- * second scanner: the character's name, the last word of a name of two
- * («Cox») and the letters alone of one with dots («JD»). None for any other
- * source: there a «Carla» is still a person.
- */
-export function seriesNamesOfSource(source: unknown): string[] | undefined {
-  if (typeof source !== 'string' || !source.startsWith(`character:${SERIES_PACK_ID}/`)) return undefined;
-  const person = seriesPersonaOf(source.slice('character:'.length));
-  if (person === undefined) return undefined;
+/** The source of the piece that says who is who in the theme (D-217). */
+export const SERIES_ROSTER_SOURCE = 'character:roster';
+/** The source of the piece of who is who with the user's text (D-217): names written in Personalità, the user's agents. */
+export const SERIES_USER_NAMES_SOURCE = 'persona:names';
+
+/** A name of the series with its forms: the last word of a name of two («Cox») and the letters alone of one with dots («JD»). */
+export function seriesNamesOf(person: SeriesPersona): string[] {
   const names = new Set([person.name]);
   const words = person.name.split(' ');
   if (words.length > 1) names.add(words.at(-1) ?? person.name);
   if (person.name.includes('.')) names.add(person.name.replaceAll('.', ''));
   return [...names];
+}
+
+/**
+ * The names that are not persons in the piece with `source`, for the second
+ * scanner: in a piece of a character (D-214) and in the piece that says who is
+ * who (D-217) every name of the series, with its forms, since those pieces are
+ * our text and name the others too. In the piece of the names the user wrote
+ * (`persona:names`), those names and agents, read from its lines in the form of
+ * `seriesRosterBlock`. None for any other source.
+ */
+export function seriesNamesOfSource(source: unknown, text?: unknown): string[] | undefined {
+  if (typeof source !== 'string') return undefined;
+  // The names the user wrote for the agents of the theme (D-217): whole, in their own piece only, read from its lines.
+  if (source === SERIES_USER_NAMES_SOURCE) return typeof text === 'string' ? [...text.matchAll(/^- (.+): "(.+)"$/gm)].flatMap((line) => [line[1] ?? '', line[2] ?? '']).filter((name) => name !== '') : undefined;
+  if (source !== SERIES_ROSTER_SOURCE && !(source.startsWith(`character:${SERIES_PACK_ID}/`) && seriesPersonaOf(source.slice('character:'.length)) !== undefined)) return undefined;
+  return Object.values(SERIES_PERSONAS).flatMap(seriesNamesOf);
+}
+
+/** One line of who is who: the agent as the others know it, the name it wears. */
+export interface RosterEntry {
+  agent: string;
+  name: string;
+}
+
+const ROSTER_LEAD = 'In this chat theme the agents go by these names; when you speak of one of them, call it by its name here (Arianna is also the assistant, the system):';
+
+/**
+ * Who is who in the theme (D-217), for an agent that speaks of the others:
+ * agent → name. Empty without entries. Names of the series only (our text, L0);
+ * the names the user wrote are a piece of their own, with their label.
+ */
+export function seriesRosterBlock(entries: readonly RosterEntry[]): string {
+  if (entries.length === 0) return '';
+  return [ROSTER_LEAD, ...entries.map((entry) => `- ${entry.agent}: "${entry.name}"`)].join('\n');
 }
 
 const HEADER = 'Character of the chat theme, tone only (rules, tools, labels, approvals and tasks unchanged):';

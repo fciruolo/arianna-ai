@@ -40,7 +40,7 @@ import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
-import { characterDirsOf } from './prompt-tail.ts';
+import { characterDirsOf, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -50,7 +50,7 @@ import { appendEvent } from './events.ts';
 import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
-import { passGateway } from './gateway.ts';
+import { configureWornNames, passGateway } from './gateway.ts';
 import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalReload, servedByLocalServer } from './local-reload.ts';
@@ -944,6 +944,9 @@ await godLanding.recover().then(
 );
 // The character packs (D-060, D-211): the two in the repository and the user's in data/.
 const characterDirs = characterDirsOf(config.home, config.paths.data);
+// D-217: the names of the people of the series worn now are no persons for the second scanner, whole.
+configureWornNames(() => wornSeriesNames({ ...settings.current(), home: config.home, paths: config.paths }));
+configureTailAgents(() => ({ official: [...agents.keys()], user: userAgents.list().user.map((agent) => agent.name) }));
 const server = await startApiServer({
   sql,
   live,
