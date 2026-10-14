@@ -2,7 +2,11 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-14, 01:55 circa.
+Aggiornato: 2026-10-14, 02:40 circa.
+
+**2026-10-14, 02:40 circa — notte in autonomia (l'utente dorme: «non chiedermi niente… se hai qualche dubbio decidi tu e poi domani mi riproponi le scelte»).** Claude porta a termine i sette rami in corso (`task/su-di-te`, `task/omlx-ricarica`, `task/guard-rizzo`, `task/personalita-prompt`, `task/computer-agente`, `task/openwork-idee`, `task/progetti-seguiti`): revisore, correzioni, `pnpm check` (e `test:db` dove serve); **nessuna unione su `main` senza la prova dell'utente**. Le scelte prese da Claude durante la notte vanno nella sezione «Scelte della notte da riproporre» qui sotto, da chiedere all'utente una alla volta domattina. Lavori in coda avviati solo se la proiezione della quota settimanale resta sotto il 100% (alle 02:40 la settimana era al 50%, proiezione circa 100%). Domattina: le altre domande aperte (Mentor, operatore telefonico, 18 idee, permessi), poi le prove una alla volta.
+
+**Scelte della notte da riproporre:** (nessuna per ora)
 
 **2026-10-14, 01:55 circa:** nessuna risposta nuova in `RISPOSTE.md`; servizi accesi; quota settimanale proiettata al 99% circa (pieno sforzo, un subagente alla volta). In costruzione da un subagente nel suo worktree: **D-114 tappa A** sul ramo `task/su-di-te` (migrazione 0061 `user_facts`, pagina Impostazioni → «Su di te», casella «Su di te, per Claude Code» in `/sviluppo`); poi revisore, prova dell'utente, unione con versione minor. Senza anteprima: la pagina segue lo stile della Personalità.
 
