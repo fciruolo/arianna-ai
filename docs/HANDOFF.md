@@ -8,10 +8,13 @@ Aggiornato: 2026-10-14, 02:40 circa.
 
 **Rami pronti per la prova (notte del 2026-10-14):**
 - `task/guard-rizzo` (D-113 tappa 1, D-202): Rizzo-PII in `apps/guard`, revisore fatto dal subagente. Prova su 58 frasi finte: 84/84 dati trovati, 0 falsi allarmi sulle frasi comuni, 2 su 14 brief di codice (porta 7420 come civico, «Arianna» come nome); 20-35 ms a frase sulla GPU, 1,3 GB. Per provarlo nella cartella principale: `pii = "rizzo-pii-0.3b"` in `[roles]`, `pnpm arianna:models pull`, `pnpm guard:sync`, `pnpm guard:trial`. Da controllare: che oMLX ignori la cartella del modello. Proposta per la tappa 2 nel rapporto: blocco solo sui tipi che identificano, nomi dell'assistente ignorati, civico/CAP solo con una via, uscite ferme se il guard non risponde.
+- `task/progetti-seguiti` (D-093, decisione nuova numerata D-202 come quella di `task/guard-rizzo`: **all'unione va rinumerata**, la seconda che entra prende il primo numero libero): scheda «Progetti seguiti» nella pagina Sviluppo, Open Design fisso col suo catalogo e OpenWork seguito, «Controlla novità» (solo API pubblica di GitHub dal gateway), «Implementiamo»/«Non interessa» in `RISPOSTE.md` con chiave `gh-<owner>__<repo>-<sha>`, comando `pnpm projects:followed`. Revisore fatto dal subagente. Solo il pulsante, nessun controllo periodico (sarebbe un'uscita in rete non chiesta: scelta da riproporre). Possibile conflitto con `task/su-di-te` in `DevProgressPage.vue`.
+- `task/computer-agente` (D-095 tappa 1): revisore fatto; `pnpm test:db` aveva 13 regressioni sui passi locali (finiscono in `waiting-user`), rimandate al subagente. `secretary.test.ts:149` fallisce anche su `main` di notte (dipende dall'ora): da guardare a parte.
 - Fuori dalle prove: le idee di OpenWork (solo documenti) portate su `main` (`9a8f443`) per farle comparire nella pagina Sviluppo; il push resta negato a Claude.
 
 **Scelte della notte da riproporre:**
 - Idee di OpenWork su `main` senza prova (sono solo domande nei documenti).
+- Progetti seguiti: solo il pulsante «Controlla novità», nessun controllo automatico giornaliero verso GitHub.
 
 **2026-10-14, 01:55 circa:** nessuna risposta nuova in `RISPOSTE.md`; servizi accesi; quota settimanale proiettata al 99% circa (pieno sforzo, un subagente alla volta). In costruzione da un subagente nel suo worktree: **D-114 tappa A** sul ramo `task/su-di-te` (migrazione 0061 `user_facts`, pagina Impostazioni → «Su di te», casella «Su di te, per Claude Code» in `/sviluppo`); poi revisore, prova dell'utente, unione con versione minor. Senza anteprima: la pagina segue lo stile della Personalità.
 
