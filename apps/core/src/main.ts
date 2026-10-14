@@ -58,6 +58,7 @@ import { createFollowedProjects, PROJECT_PROMPT } from './followed-projects.ts';
 import { createGithubClient } from './github-api.ts';
 import { downloadPixelAgents } from './pixel-agents-pack.ts';
 import { CloudTextError, createCloudText } from './cloud-text.ts';
+import { createAdvisor } from './orchestrator/advisor.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
 import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-reports.ts';
@@ -434,9 +435,18 @@ const agentsCatalog = createAgentsCatalog({
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
   },
 });
+// The router's advisor (D-207): Sonnet without tools on a brief up to L1, only while the user keeps claude on.
+const askAdvice = createCloudText({ sql, claude, data: config.paths.data });
+const advise = createAdvisor({
+  sql,
+  data: config.paths.data,
+  ask: (request) =>
+    settings.current().cloud.executors.includes('claude') ? askAdvice(request) : Promise.reject(new CloudTextError('unavailable', 'claude is off')),
+});
 const orchestrator = createOrchestrator({
   sql,
   agents,
+  advise,
   // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
   // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
   skills: (agent, maxBytes, card) => {
@@ -1009,6 +1019,7 @@ const server = await startApiServer({
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), arianna: ariannaDocs },
   modelEvals,
+  advisorData: config.paths.data,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>
     loadModelsOverview(sql, {

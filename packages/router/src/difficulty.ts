@@ -11,6 +11,12 @@ export interface DifficultySignals {
   files?: number;
   /** Earlier attempts of this step that failed. */
   failedAttempts?: number;
+  /**
+   * Claude's opinion on the difficulty when the rules are unsure (D-207,
+   * `adviceWanted`): it moves the result of the keyword and file rules by one
+   * level at most, before the failed attempts count.
+   */
+  advice?: Difficulty;
 }
 
 export interface DifficultyEstimate {
@@ -65,10 +71,17 @@ function words(text: string): string[] {
   return text.toLowerCase().match(/\p{L}+/gu) ?? [];
 }
 
+/** Whether the text has a hard and a trivial keyword: the rules pull both ways (D-207). */
+export function keywordsConflict(text: string): boolean {
+  const found = words(text);
+  return found.some((word) => HARD_WORDS.has(word)) && found.some((word) => TRIVIAL_WORDS.has(word));
+}
+
 /**
  * In order: a trivial keyword lowers `normal` to `trivial` when at most one
  * file is involved and nothing hard is mentioned; a hard keyword or at least
- * HARD_FILES files raise to at least `hard`; each failed attempt raises one level.
+ * HARD_FILES files raise to at least `hard`; the advice moves one level at
+ * most towards itself; each failed attempt raises one level.
  */
 export function estimateDifficulty(signals: DifficultySignals): DifficultyEstimate {
   const rules: string[] = [];
@@ -94,6 +107,12 @@ export function estimateDifficulty(signals: DifficultySignals): DifficultyEstima
   if (files !== undefined && files >= HARD_FILES && current < level('hard')) {
     current = level('hard');
     rules.push('many-files');
+  }
+  if (signals.advice !== undefined) {
+    const advised = level(signals.advice);
+    if (advised === -1) throw new TypeError(`not a difficulty: ${JSON.stringify(signals.advice)}`);
+    current += Math.sign(advised - current);
+    rules.push(`advisor:${signals.advice}`);
   }
   const failed = signals.failedAttempts ?? 0;
   if (!Number.isSafeInteger(failed) || failed < 0) throw new TypeError('failedAttempts must be an integer of at least 0');

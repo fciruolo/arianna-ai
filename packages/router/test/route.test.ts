@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { createContext, recordRead, type Context, type Label } from '@arianna/policy';
 
 import {
+  adviceWanted,
   createRouterConfig,
   needsBudgetApproval,
   route,
@@ -504,5 +505,70 @@ describe('typical use of a model (I-3)', () => {
     for (const model of ['sonnet', 'opus', 'codex', 'local-large', 'local-small', 'gpt']) assert.equal(needsBudgetApproval(model), false, model);
     const fable = route(coding({ preferredModel: 'fable' }), ctx('L1'), FREE, CONFIG);
     assert.equal(fable.decision === 'route' && fable.approval, 'budget');
+  });
+});
+
+describe('advisor (D-207)', () => {
+  const conflict = 'sistema il refuso nella pagina di migrazione';
+
+  it('asks when the keywords pull both ways', () => {
+    assert.equal(adviceWanted(coding({ text: conflict }), ctx('L1')), 'conflicting-rules');
+    assert.equal(adviceWanted(coding({ text: conflict }), ctx('L0')), 'conflicting-rules');
+  });
+
+  it('asks for a normal plan, coding or review step where no rule fired', () => {
+    assert.equal(adviceWanted(coding({ text: 'aggiungi un pulsante' }), ctx('L1')), 'no-rule');
+    assert.equal(adviceWanted({ kind: 'review', agent: CODER, text: 'rivedi il diff' }, ctx('L1')), 'no-rule');
+    assert.equal(adviceWanted({ kind: 'plan', agent: CODER, text: 'prepara il piano' }, ctx('L1')), 'no-rule');
+  });
+
+  it('does not ask when a rule already decided, or for other steps and defaults', () => {
+    assert.equal(adviceWanted(coding({ text: 'correggi un refuso' }), ctx('L1')), undefined);
+    assert.equal(adviceWanted(coding({ text: 'rivedi la sicurezza' }), ctx('L1')), undefined);
+    assert.equal(adviceWanted({ kind: 'summarize', agent: CODER, text: 'riassumi' }, ctx('L1')), undefined);
+    assert.equal(adviceWanted(coding({ agent: { ...CODER, difficulty: 'hard' }, text: 'aggiungi un pulsante' }), ctx('L1')), undefined);
+  });
+
+  it('asks after the first failed attempt, not after more', () => {
+    const failed = { executor: 'claude', model: 'sonnet', outcome: 'tests-failed' } as const;
+    assert.equal(adviceWanted(coding({ text: 'correggi un refuso', attempts: [failed] }), ctx('L1')), 'failed-attempt');
+    assert.equal(adviceWanted(coding({ text: 'correggi un refuso', attempts: [failed, failed] }), ctx('L1')), undefined);
+  });
+
+  it('never asks for a private, finance or unissued context', () => {
+    assert.equal(adviceWanted(coding({ text: conflict }), ctx('L2')), undefined);
+    assert.equal(adviceWanted(coding({ text: conflict }), createContext('L2', 'L2', { finance: true })), undefined);
+    assert.equal(adviceWanted(coding({ text: conflict }), { effective: 'L0' } as unknown as Context), undefined);
+  });
+
+  it('never asks for a model the user chose, an agent that never runs on Claude, or a step without text', () => {
+    assert.equal(adviceWanted(coding({ text: conflict, preferredModel: 'opus' }), ctx('L1')), undefined);
+    assert.equal(adviceWanted({ kind: 'plan', agent: ARIANNA, text: conflict }, ctx('L1')), undefined);
+    assert.equal(adviceWanted(coding({ agent: { ...CODER, executors: ['codex', 'local'] }, text: conflict }), ctx('L1')), undefined);
+    assert.equal(adviceWanted(coding(), ctx('L1')), undefined);
+    assert.equal(adviceWanted(coding({ text: '   ' }), ctx('L1')), undefined);
+  });
+
+  it('a trivial advice brings a conflicting step from Opus down to Sonnet', () => {
+    assert.equal(pick(route(coding({ text: conflict }), ctx('L1'), FREE, CONFIG)), 'claude/opus');
+    const advised = route(coding({ text: conflict, advice: 'trivial' }), ctx('L1'), FREE, CONFIG);
+    assert.equal(pick(advised), 'claude/sonnet');
+    assert.match(advised.reason, /advisor:trivial/);
+    assert.ok(!advised.reason.includes('refuso'));
+  });
+
+  it('a hard advice brings a normal step from Sonnet up to Opus', () => {
+    assert.equal(pick(route(coding({ text: 'aggiungi un pulsante', advice: 'hard' }), ctx('L1'), FREE, CONFIG)), 'claude/opus');
+  });
+
+  it('the advice never takes a step out of the Mac', () => {
+    for (const advice of ['trivial', 'critical'] as const) {
+      const decision = route(coding({ text: conflict, advice }), ctx('L2'), FREE, CONFIG);
+      assert.equal(decision.decision === 'route' && decision.locality, 'local');
+    }
+  });
+
+  it('an advice that is not a difficulty is refused', () => {
+    assert.throws(() => route(coding({ text: conflict, advice: 'easy' as never }), ctx('L1'), FREE, CONFIG), TypeError);
   });
 });

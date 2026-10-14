@@ -52,3 +52,21 @@ test('bad signals are rejected', () => {
   assert.throws(() => estimateDifficulty({ base: 'normal', files: -1 }), /files/);
   assert.throws(() => estimateDifficulty({ base: 'normal', failedAttempts: 1.5 }), /failedAttempts/);
 });
+
+test('the advice moves the rules one level at most, towards itself (D-207)', () => {
+  assert.deepEqual(estimateDifficulty({ base: 'normal', text: 'refuso nella migrazione', advice: 'trivial' }), {
+    difficulty: 'normal',
+    rules: ['hard-keyword', 'advisor:trivial'],
+  });
+  assert.equal(estimateDifficulty({ base: 'normal', advice: 'critical' }).difficulty, 'hard');
+  assert.equal(estimateDifficulty({ base: 'normal', advice: 'hard' }).difficulty, 'hard');
+  assert.deepEqual(estimateDifficulty({ base: 'normal', advice: 'normal' }), { difficulty: 'normal', rules: ['advisor:normal'] });
+});
+
+test('failed attempts still count after the advice', () => {
+  assert.equal(estimateDifficulty({ base: 'normal', advice: 'trivial', failedAttempts: 1 }).difficulty, 'normal');
+});
+
+test('an advice that is not a difficulty is refused', () => {
+  assert.throws(() => estimateDifficulty({ base: 'normal', advice: 'easy' as never }), TypeError);
+});

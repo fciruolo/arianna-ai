@@ -15,6 +15,7 @@ import { listTaskTerminal } from '../live-terminal.ts';
 import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
+import { advisorStatus, writeAdvisorSettings } from '../orchestrator/advisor.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
@@ -217,6 +218,8 @@ export interface ApiServerOptions {
     archive?: (path: string) => Promise<boolean>;
     arianna?: AriannaDocs;
   };
+  /** data/, where the router's advisor keeps the path of the usage status file (D-207); without it the routes answer 404. */
+  advisorData?: string;
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel' | 'compare' | 'compareCases'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
@@ -482,6 +485,7 @@ interface RouteOptions {
   local: LocalApi | undefined;
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
+  advisorData: ApiServerOptions['advisorData'];
   approvedProjects: () => readonly Project[];
   projectContainers: () => readonly Project[];
   knowledge?: KnowledgeEnv | undefined;
@@ -1006,6 +1010,34 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       if (archive === undefined) throw new HttpError(503, 'notes cannot be archived now');
       await archive(note.path);
       return { status: 202, body: { path: note.path, proposing: true } };
+    }),
+  ];
+}
+
+/**
+ * The router's advisor in Settings → Modelli (D-207): the path of the status
+ * file of the user's usage bar app, the week as read now and today's
+ * opinions. Only the path is written; the file itself is never served.
+ */
+function advisorRoutes(sql: Sql, data: string | undefined): Route[] {
+  const need = (): string => {
+    if (data === undefined) throw new HttpError(404, 'not found');
+    return data;
+  };
+  return [
+    route('GET', '/api/router/advisor', async () => ({ body: await advisorStatus(sql, need()) })),
+    route('POST', '/api/router/advisor', async (request) => {
+      const dir = need();
+      const body = await readJson(request);
+      onlyFields(body, ['usageFile']);
+      if (typeof body.usageFile !== 'string') throw new HttpError(400, 'usageFile must be a string');
+      try {
+        await writeAdvisorSettings(dir, { usageFile: body.usageFile });
+      } catch (error) {
+        if (error instanceof TypeError) throw new HttpError(400, error.message);
+        throw error;
+      }
+      return { body: await advisorStatus(sql, dir) };
     }),
   ];
 }
@@ -2060,7 +2092,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2082,6 +2114,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...financeRoutes(sql),
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
     ...modelEvalRoutes(modelEvals),
+    ...advisorRoutes(sql, advisorData),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
     ...searchRoutes(sql, capture),
@@ -3791,6 +3824,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     local: options.local,
     capture: options.capture,
     modelEvals: options.modelEvals,
+    advisorData: options.advisorData,
     approvedProjects: options.approvedProjects ?? (() => []),
     projectContainers: options.projectContainers ?? (() => []),
     cards: options.cards,

@@ -70,6 +70,7 @@ import { MODEL_ROLES, ROLE_TEXT, roleOptions, type CatalogModel, type CloudModel
 import HubEntryPanel from './HubEntryPanel.vue';
 import HuggingFaceSearch from './HuggingFaceSearch.vue';
 import Icon from './Icon.vue';
+import AdvisorSettings from './AdvisorSettings.vue';
 import ModelsCompare from './ModelsCompare.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
 
@@ -500,6 +501,9 @@ const factKey = 'text-[13px] text-muted';
         </div>
       </div>
     </section>
+
+    <!-- Claude's opinion on the difficulty of an unsure step (D-207) -->
+    <AdvisorSettings />
 
     <!-- Every model -->
     <section :class="card" aria-labelledby="models-all">

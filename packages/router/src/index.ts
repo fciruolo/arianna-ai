@@ -12,11 +12,14 @@ export {
 } from './config.ts';
 export { estimateDifficulty, HARD_FILES, type DifficultyEstimate, type DifficultySignals } from './difficulty.ts';
 export {
+  ADVICE_REASONS,
+  adviceWanted,
   ATTEMPT_OUTCOMES,
   needsBudgetApproval,
   route,
   STEP_KINDS,
   usesOf,
+  type AdviceReason,
   type Attempt,
   type AttemptOutcome,
   type Budget,

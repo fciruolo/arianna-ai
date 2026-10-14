@@ -47,6 +47,7 @@ import {
   type DelegateEnv,
   type DelegationPlan,
 } from './delegate.ts';
+import type { Advise } from './advisor.ts';
 import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
@@ -142,6 +143,8 @@ export interface OrchestratorOptions {
   trialModel?: (modelId: string) => LocalModel;
   /** The skills block of an agent's delivery (D-161), with the style and skills of a Designer card (D-163); absent, no agent reads skills. */
   skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+  /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
+  advise?: Advise;
   /** The IM files of the approved projects for `im.add` (D-167, P4b); absent, the tool answers with an error. */
   ims?: ImToolEnv;
 }
@@ -324,6 +327,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
     ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
+    ...(options.advise === undefined ? {} : { advise: options.advise }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, StepPlan>();

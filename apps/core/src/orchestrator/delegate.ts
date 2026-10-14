@@ -29,7 +29,7 @@ import {
   type ProjectNoteInput,
 } from '@arianna/executors';
 import { isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
-import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
+import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision, type Step } from '@arianna/router';
 
 import { contextOf, outputSource, type Marked } from '../finance-mark.ts';
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
@@ -56,6 +56,7 @@ import type { Task } from '../tasks.ts';
 import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { writeWeekSummary } from '../work-diary-week.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
+import type { Advise } from './advisor.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 import { recordVariantDesign } from '../studio.ts';
 
@@ -95,6 +96,8 @@ export interface DelegateEnv {
    * Designer card join the block (D-163). Absent, no agent reads skills.
    */
   skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+  /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
+  advise?: Advise;
 }
 
 /** The style of Open Design and the skills chosen on a Designer card (D-163). */
@@ -576,16 +579,20 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   const conversation = task.conversationId === null ? undefined : await loadConversation(env.sql, task.conversationId);
   const preferred = conversation?.model;
   const preferredModel = preferred !== null && preferred !== undefined && (MODEL_ALIASES as readonly string[]).includes(preferred) ? { preferredModel: preferred as ModelAlias } : {};
+  const step: Step = {
+    kind: cloudStepKind(agent.card),
+    agent: card,
+    text: delegation.brief,
+    budgetApproved: budget?.state === 'approved',
+    ...preferredModel,
+  };
+  // With the task's finance mark (D-183): a marked task is never routed to the cloud.
+  const context = contextOf(task, label);
+  // When the rules are unsure, Claude's opinion on the difficulty (D-207); never fails the plan.
+  const advice = await env.advise?.(step, context, { taskId: task.id, step: delegation.step }).catch(() => undefined);
   const decision = route(
-    {
-      kind: cloudStepKind(agent.card),
-      agent: card,
-      text: delegation.brief,
-      budgetApproved: budget?.state === 'approved',
-      ...preferredModel,
-    },
-    // With the task's finance mark (D-183): a marked task is never routed to the cloud.
-    contextOf(task, label),
+    { ...step, ...(advice === undefined ? {} : { advice }) },
+    context,
     await budgetOf(env.sql),
     routerConfigOf(env.settings(), adaptersOf(env)),
   );

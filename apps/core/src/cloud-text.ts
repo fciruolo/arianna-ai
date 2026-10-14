@@ -11,7 +11,8 @@ import { budgetOf } from './orchestrator/routing.ts';
 /**
  * One answer of Claude (Sonnet, or Opus when asked) on public text, outside any task (I-20, D-185):
  * the examples of the styles of Open Design and the Italian descriptions of
- * the skills. The text is L0 (catalogs downloaded from GitHub); it passes the
+ * the skills; and the router's advisor on a brief up to L1 (D-207). The text
+ * is L0 (catalogs downloaded from GitHub) or L1; it passes the
  * gateway towards `claude` as everything else, the run has no tools, an empty
  * folder and no saved session, and it never starts while Claude is out of
  * quota. Events carry the purpose and the sizes, never the text.
@@ -35,8 +36,11 @@ export interface CloudTextDeps {
 }
 
 export interface CloudTextRequest {
-  /** Our fixed instructions (L0), then the public text. */
-  parts: readonly { text: string; source: string }[];
+  /**
+   * Our fixed instructions (L0), then the public text. A part is L0 unless it
+   * says L1: the brief the router's advisor judges (D-207).
+   */
+  parts: readonly { text: string; source: string; label?: 'L0' | 'L1' }[];
   /** What it is for, in gateway_log and the events (no text of the request). */
   purpose: string;
   timeoutMs?: number;
@@ -59,8 +63,8 @@ export function createCloudText(deps: CloudTextDeps): AskCloudText {
       await claude.check(launch);
       const decision = await passGateway(
         deps.sql,
-        request.parts.map((part) => ({ value: part.text, label: 'L0' as const, source: part.source })),
-        createContext('L1', 'L0'),
+        request.parts.map((part) => ({ value: part.text, label: part.label ?? 'L0', source: part.source })),
+        createContext('L1', request.parts.some((part) => part.label === 'L1') ? 'L1' : 'L0'),
         { kind: 'executor', id: 'claude', locality: 'cloud' },
         { summary: request.purpose },
       );

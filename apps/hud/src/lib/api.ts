@@ -545,6 +545,24 @@ export async function cancelModelAction(modelId: string): Promise<ModelAction> {
   return (await call<{ action: ModelAction }>('POST', `/api/models/${encodeURIComponent(modelId)}/cancel`, {})).action;
 }
 
+/** The router's advisor (D-207): the path of the usage bar's status file, the week as read now, today's opinions. */
+export interface AdvisorStatus {
+  usageFile: string | null;
+  weekPercent: number | null;
+  today: number;
+  dailyCap: number;
+  weekLimit: number;
+}
+
+export async function loadAdvisor(): Promise<AdvisorStatus> {
+  return call<AdvisorStatus>('GET', '/api/router/advisor');
+}
+
+/** An empty path removes it. */
+export async function saveAdvisor(usageFile: string): Promise<AdvisorStatus> {
+  return call<AdvisorStatus>('POST', '/api/router/advisor', { usageFile });
+}
+
 /** Closes the line that asks to restart oMLX by hand after a download (D-201). */
 export async function dismissModelReload(): Promise<void> {
   await call<{ ok: boolean }>('POST', '/api/models/reload/dismiss', {});

@@ -1,7 +1,7 @@
 // The router (docs/ROUTER-SPEC.md): privacy filter, budget filter, difficulty
 // by rules, choice with escalation. Pure: no I/O, no model, no clock. The core
 // writes every decision to router_decisions.
-import type { Difficulty, ExecutorKind } from '@arianna/agents';
+import { DIFFICULTIES, type Difficulty, type ExecutorKind } from '@arianna/agents';
 import { canSendTo, isAtMost, isContext, isFinanceContext, labelOrDefault, type Context, type Label, type Locality } from '@arianna/policy';
 
 import {
@@ -14,7 +14,7 @@ import {
   type ModelAlias,
   type RouterConfig,
 } from './config.ts';
-import { estimateDifficulty } from './difficulty.ts';
+import { estimateDifficulty, keywordsConflict } from './difficulty.ts';
 
 export const STEP_KINDS = ['extract', 'classify', 'summarize', 'plan', 'judge', 'coding', 'review'] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
@@ -56,6 +56,37 @@ export interface Step {
    * and the escalation allow; otherwise the ladder decides as usual.
    */
   preferredModel?: ModelAlias;
+  /** Claude's opinion on the difficulty, asked only when `adviceWanted` says so (D-207). */
+  advice?: Difficulty;
+}
+
+/** Why the rules are unsure of a step (D-207). */
+export const ADVICE_REASONS = ['conflicting-rules', 'no-rule', 'failed-attempt'] as const;
+export type AdviceReason = (typeof ADVICE_REASONS)[number];
+
+/** Steps where the choice between the local model and Sonnet, or Sonnet and Opus, matters. */
+const ADVISED_KINDS: readonly StepKind[] = ['plan', 'coding', 'review'];
+
+/**
+ * Whether the core should ask Claude's opinion on the difficulty of a step
+ * before routing it (D-207), and why: the keywords pull both ways; a plan,
+ * coding or review step of normal difficulty where no rule fired; or the
+ * first attempt failed. Never when the text may not reach Claude (above L1,
+ * finance data, a context not issued by the policy), for an agent that never
+ * runs on Claude (local only, or Codex only: its brief would reach Claude for
+ * the opinion alone), for a model the user chose, or without a text to judge.
+ */
+export function adviceWanted(step: Step, context: Context): AdviceReason | undefined {
+  if (step.preferredModel !== undefined || step.text === undefined || step.text.trim() === '') return undefined;
+  if (!isContext(context) || isFinanceContext(context) || !isAtMost(labelOrDefault(context.effective), 'L1')) return undefined;
+  if (!step.agent.executors.includes('claude')) return undefined;
+  const attempts = step.attempts?.length ?? 0;
+  if (attempts > 1) return undefined;
+  if (attempts === 1) return 'failed-attempt';
+  if (keywordsConflict(step.text)) return 'conflicting-rules';
+  const estimate = estimateDifficulty({ base: step.agent.difficulty, text: step.text, ...(step.files === undefined ? {} : { files: step.files }) });
+  if (ADVISED_KINDS.includes(step.kind) && step.agent.difficulty === 'normal' && estimate.rules.length === 0) return 'no-rule';
+  return undefined;
 }
 
 /**
@@ -190,6 +221,7 @@ const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\
  */
 function check(step: Step, budget: Budget): Budget {
   if (!(STEP_KINDS as readonly string[]).includes(step.kind)) throw new TypeError(`unknown step kind ${JSON.stringify(step.kind)}`);
+  if (step.advice !== undefined && !(DIFFICULTIES as readonly string[]).includes(step.advice)) throw new TypeError(`unknown advice ${JSON.stringify(step.advice)}`);
   if (step.preferredModel !== undefined && executorOf(step.preferredModel) === undefined) {
     throw new TypeError(`unknown preferred model ${JSON.stringify(step.preferredModel)}`);
   }
@@ -248,6 +280,7 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
     base: agent.difficulty,
     ...(step.text === undefined ? {} : { text: step.text }),
     ...(step.files === undefined ? {} : { files: step.files }),
+    ...(step.advice === undefined ? {} : { advice: step.advice }),
   };
   // The logged difficulty counts the failures; the starting tier does not,
   // because the floor already escalates past them (Sonnet → Opus → Fable).
