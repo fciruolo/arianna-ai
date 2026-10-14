@@ -410,6 +410,18 @@ export async function loadCharacters(): Promise<CharacterListing> {
   return call<CharacterListing>('GET', '/api/characters');
 }
 
+/** Downloads the characters of pixel-agents into data/characters/pixel-agents (D-206): only their PNGs and licence. */
+export async function downloadPixelAgents(): Promise<PixelAgentsResult> {
+  return call<PixelAgentsResult>('POST', '/api/characters/pixel-agents');
+}
+
+/** The pack written by a download of pixel-agents (D-206). */
+export interface PixelAgentsResult {
+  pack: string;
+  characters: number;
+  replaced: boolean;
+}
+
 /** Where the sheet of a character is served; `version` changes the address after a replacement (D-118). */
 export function sheetUrl(choice: CharacterChoice, version = 0): string {
   const path = `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;

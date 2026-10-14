@@ -2,6 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Galleria dei personaggi nella scheda Aspetto della pagina Agenti: miniature animate divise in Originali, Tuoi e pixel-agents, un clic assegna il personaggio all'agente e Salva lo tiene (D-206).
+- Pulsante «Scarica da GitHub» nella galleria e comando `pnpm characters:pixel-agents`: scaricano solo i PNG dei personaggi di pixel-agents e la licenza in `data/characters/pixel-agents`, mai in git, solo per uso personale (D-206).
+
 ## [0.98.0] - 2026-10-14
 
 ### Cambiato

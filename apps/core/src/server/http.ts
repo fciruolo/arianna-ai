@@ -22,6 +22,8 @@ import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTE
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
+import { GithubError } from '../github-api.ts';
+import { PixelAgentsError, type PixelAgentsResult } from '../pixel-agents-pack.ts';
 import {
   archiveConversation,
   ChatError,
@@ -186,7 +188,7 @@ export interface ApiServerOptions {
   /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
   financeAgents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
-  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
+  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices; downloadPixelAgents?: () => Promise<PixelAgentsResult> };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
   voice?: VoiceApi;
   /** Calls from the chat (D-066); refused while the voice is off. */
@@ -2123,6 +2125,18 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         if (error instanceof HttpError && error.status === 413) throw new HttpError(413, 'the sheet is too large');
         if (error instanceof UploadError && error.code === 'conflict') return { status: 409, body: { error: error.message, existing: error.existing } };
         throw error;
+      }
+    }),
+    // The characters of pixel-agents (D-206): only their PNG sheets and licence, from the public API of
+    // GitHub, into data/characters/pixel-agents; for personal use only, never in git.
+    route('POST', '/api/characters/pixel-agents', async () => {
+      if (characters?.downloadPixelAgents === undefined) throw new HttpError(404, 'not found');
+      try {
+        return { body: await characters.downloadPixelAgents() };
+      } catch (error) {
+        if (error instanceof GithubError && error.code === 'limited') throw new HttpError(429, 'GitHub limita le richieste senza account (60 l’ora): riprova fra un’ora');
+        if (error instanceof GithubError || error instanceof PixelAgentsError) throw new HttpError(502, error.message);
+        throw new HttpError(502, 'the download failed');
       }
     }),
     route('GET', '/api/characters/:pack/:character', async (_request, _url, params) => {

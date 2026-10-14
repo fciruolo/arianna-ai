@@ -42,6 +42,7 @@
     "skills:catalog": "node scripts/skills-catalog.ts",
     "agents:catalog": "node scripts/agents-catalog.ts",
     "projects:followed": "node scripts/followed-projects.ts",
+    "characters:pixel-agents": "node scripts/pixel-agents.ts",
     "god:clone": "node scripts/god-clone.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",

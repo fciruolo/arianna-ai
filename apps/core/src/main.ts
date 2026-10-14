@@ -56,6 +56,7 @@ import { createDesignCatalog } from './design-catalog.ts';
 import { createLocalSummarizer } from './design-news.ts';
 import { createFollowedProjects, PROJECT_PROMPT } from './followed-projects.ts';
 import { createGithubClient } from './github-api.ts';
+import { downloadPixelAgents } from './pixel-agents-pack.ts';
 import { CloudTextError, createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
@@ -979,6 +980,12 @@ const server = await startApiServer({
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
     choices: () => settings.current().characters,
+    downloadPixelAgents: () =>
+      downloadPixelAgents({
+        dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
+        get: createGithubClient(),
+        gateway: catalogGateway('settings:pixel-agents', 'api.github.com: personaggi di pixel-agents'),
+      }),
   },
   voice: { service: voice.service, voice: () => voiceSettings().voice, models: candidates, clones: voiceDirs.clones },
   calls,

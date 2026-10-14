@@ -10,7 +10,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
+import { downloadPixelAgents, listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
 import { dayText } from '../lib/design-catalog.ts';
 import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName } from '../lib/italian.ts';
@@ -96,6 +96,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   cancel: [];
   uploaded: [agent: string, saved: UploadedCharacter];
+  /** A pack downloaded (D-206): the page lists the characters again. */
+  packs: [];
   changed: [];
   newAgent: [];
   section: [slug: string];
@@ -298,6 +300,41 @@ function previewOf(agent: string): CharacterChoice | undefined {
   return value === '' ? props.characters?.agents[agent] : undefined;
 }
 const animationsOpen = ref(false);
+
+// The gallery (D-206): every character served, by group; a click picks it, Salva keeps it.
+const PIXEL_AGENTS_PACK = 'pixel-agents';
+const gallery = computed(() => {
+  const groups = [
+    { id: 'originali', title: 'Originali', items: characterOptions.value.filter((option) => option.pack.original) },
+    { id: 'tuoi', title: 'Tuoi', items: characterOptions.value.filter((option) => !option.pack.original && option.pack.id !== PIXEL_AGENTS_PACK) },
+    { id: PIXEL_AGENTS_PACK, title: 'pixel-agents', items: characterOptions.value.filter((option) => option.pack.id === PIXEL_AGENTS_PACK) },
+  ];
+  return groups.filter((group) => group.items.length > 0 || group.id === PIXEL_AGENTS_PACK);
+});
+function chosen(agent: string): string {
+  const preview = previewOf(agent);
+  return preview === undefined ? '' : `${preview.pack}/${preview.character}`;
+}
+function pickCharacter(agent: string, value: string): void {
+  props.form.characters[agent] = value;
+}
+const pixelBusy = ref(false);
+const pixelMessage = ref('');
+const pixelError = ref('');
+async function fetchPixelAgents(): Promise<void> {
+  pixelBusy.value = true;
+  pixelError.value = '';
+  pixelMessage.value = '';
+  try {
+    const result = await downloadPixelAgents();
+    pixelMessage.value = `${result.replaced ? 'Aggiornati' : 'Scaricati'} ${String(result.characters)} personaggi.`;
+    emit('packs');
+  } catch (cause) {
+    pixelError.value = `Download non riuscito: ${cause instanceof Error ? cause.message : String(cause)}`;
+  } finally {
+    pixelBusy.value = false;
+  }
+}
 const POSES = [
   { pose: 'idle', text: 'fermo' },
   { pose: 'thinking', text: 'pensa' },
@@ -871,6 +908,41 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             </div>
           </div>
           <SheetPreview v-if="animationsOpen && previewOf(current.id)" :src="sheetUrl(previewOf(current.id)!, sheetVersion)" :rows="previewOf(current.id)!.rows" />
+          <div class="flex flex-col gap-3">
+            <h3 class="text-[14px] font-medium">Galleria</h3>
+            <p class="text-[12.5px] text-muted">Clicca un personaggio per darlo a {{ nameOf(current.id) }}; premi Salva nella barra in basso per tenerlo.</p>
+            <div v-for="group in gallery" :key="group.id" class="flex flex-col gap-2">
+              <p class="text-[12.5px] font-medium text-muted">{{ group.title }}</p>
+              <div v-if="group.items.length > 0" class="flex flex-wrap gap-2">
+                <button
+                  v-for="item in group.items"
+                  :key="item.value"
+                  type="button"
+                  class="flex w-[76px] flex-col items-center gap-1 rounded-[10px] border px-1.5 pt-2 pb-1.5 text-[12px]"
+                  :class="chosen(current.id) === item.value ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:border-line-strong'"
+                  :aria-pressed="chosen(current.id) === item.value"
+                  :title="`${item.character.name} (${item.pack.name})`"
+                  @click="pickCharacter(current.id, item.value)"
+                >
+                  <PixelAgent :choice="{ pack: item.pack.id, character: item.character.id, rows: item.character.rows }" pose="reading" :scale="2" :version="sheetVersion" />
+                  <span class="w-full truncate text-center">{{ item.character.name }}</span>
+                </button>
+              </div>
+              <div v-if="group.id === PIXEL_AGENTS_PACK" class="flex flex-col gap-1.5">
+                <p class="text-[12.5px] text-muted">
+                  I personaggi del progetto pixel-agents, disegnati su quelli di JIK-A-4 (Metro City): solo per uso personale. Il pulsante scarica da GitHub solo i loro PNG e la licenza, in
+                  <span class="font-mono">data/characters/pixel-agents</span>, mai in git; da togliere prima di condividere la cartella. Esce solo il nome del progetto; GitHub accetta circa un aggiornamento l’ora senza account.
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="pixelBusy" @click="fetchPixelAgents">
+                    {{ pixelBusy ? 'Scarico…' : group.items.length > 0 ? 'Aggiorna da GitHub' : 'Scarica da GitHub' }}
+                  </button>
+                  <span v-if="pixelMessage" class="text-[12.5px] text-ok" role="status">{{ pixelMessage }}</span>
+                  <span v-if="pixelError" class="text-[12.5px] text-warn" role="alert">{{ pixelError }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
           <p class="text-[12.5px] text-muted">Un personaggio caricato o disegnato qui resta sul Mac, fra i tuoi, e si può dare anche ad altri agenti.</p>
         </section>
 

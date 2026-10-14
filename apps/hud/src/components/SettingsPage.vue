@@ -498,6 +498,15 @@ async function onAgentsChanged(): Promise<void> {
     // The next reload lists it.
   }
 }
+/** A pack downloaded (D-206): the characters listed again, the sheets asked again. */
+async function onPacks(): Promise<void> {
+  sheetVersion.value += 1;
+  try {
+    characters.value = await loadCharacters();
+  } catch {
+    // A reload lists them.
+  }
+}
 /** A sheet saved in the pack miei (D-118): listed again and chosen for the agent; the bar's Salva keeps it. */
 async function onUploaded(agent: string, uploaded: UploadedCharacter): Promise<void> {
   sheetVersion.value += 1;
@@ -969,6 +978,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 :save="() => save('agents', AGENT_PARTS)"
                 @cancel="resetAgents"
                 @uploaded="onUploaded"
+                @packs="onPacks"
                 @changed="onAgentsChanged"
                 @new-agent="openNewAgent"
                 @section="openSection"
