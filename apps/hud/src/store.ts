@@ -1,6 +1,7 @@
 import { computed, ref, shallowRef, watch } from 'vue';
 
 import * as api from './lib/api.ts';
+import type { ThemeListing } from './lib/themes.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
@@ -77,6 +78,8 @@ export function createChatStore() {
   const officeSignals = ref<OfficeSignals>(emptySignals());
   /** Character packs and who wears what; read at the start and when the panel asks. */
   const characters = ref<CharacterListing | null>(null);
+  /** The themes of the chat (D-103); null until read, and Base while it is. */
+  const themes = ref<ThemeListing | null>(null);
   let statusTimer: number | undefined;
   let statusPoll: number | undefined;
   let stopOpenWatch: (() => void) | undefined;
@@ -932,6 +935,15 @@ export function createChatStore() {
     }
   }
 
+  /** The themes (D-103): a failed read keeps the theme on screen. */
+  async function refreshThemes(): Promise<void> {
+    try {
+      themes.value = await api.loadThemes();
+    } catch {
+      // An older core has no /api/themes: Base stays.
+    }
+  }
+
   async function refreshAll(): Promise<void> {
     await Promise.all([
       refreshAllConversations(),
@@ -941,6 +953,7 @@ export function createChatStore() {
       refreshProjects(),
       refreshStatus(),
       refreshCharacters(),
+      refreshThemes(),
     ]);
   }
 
@@ -1182,7 +1195,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

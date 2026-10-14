@@ -115,6 +115,13 @@ export function projectRulesProblem(form: ProjectRulesForm): string | undefined 
   return long ? `Al massimo ${String(MAX_PROJECT_RULES)} caratteri per testo.` : undefined;
 }
 
+/** `[appearance]` (D-103): the id of the theme, `base` for the chat as it comes. */
+export interface AppearanceValues {
+  theme: string;
+}
+
+export const DEFAULT_APPEARANCE: AppearanceValues = { theme: 'base' };
+
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: { models: Record<CloudModelAlias, boolean | string> };
@@ -136,6 +143,8 @@ export interface SettingsValues {
   notifications: NotificationsValues;
   /** `[secretary]` (I-12, D-144). Optional: a core without it sends none. */
   secretary?: SecretaryValues;
+  /** `[appearance]` (D-103): the theme of the chat on every device. Optional: an older core sends none. */
+  appearance?: AppearanceValues;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectValues[];
@@ -205,7 +214,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -249,6 +258,7 @@ export const SECTION_TEXT: Record<string, string> = {
   voice: 'Voce',
   notifications: 'Notifiche',
   secretary: 'Segretaria',
+  appearance: 'Tema',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
   projects: 'Progetti',

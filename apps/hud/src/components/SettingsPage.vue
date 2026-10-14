@@ -9,6 +9,7 @@ import {
   loadCharacters,
   loadLocalLog,
   loadSettings,
+  loadThemes,
   loadVoiceTrial,
   preparePrivacy,
   restartLocal,
@@ -47,6 +48,7 @@ import {
   pushChanged,
   pushProblem,
   rolesBody,
+  DEFAULT_APPEARANCE,
   DEFAULT_SECRETARY,
   secretaryBody,
   projectRulesBody,
@@ -81,6 +83,7 @@ import {
   type PrivacyProposal,
   type PrivacySection,
   type ProjectValues,
+  type AppearanceValues,
   type SecretaryValues,
   type Section,
   type SettingsBody,
@@ -106,6 +109,8 @@ import NotificationDevice from './NotificationDevice.vue';
 import OdNews from './OdNews.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
+import ThemePicker from './ThemePicker.vue';
+import type { ThemeListing } from '../lib/themes.ts';
 import SettingsSaveBar from './SettingsSaveBar.vue';
 import VoiceListen from './VoiceListen.vue';
 
@@ -164,6 +169,7 @@ interface Forms {
   voice: VoiceForm;
   notifications: NotificationsForm;
   secretary: SecretaryValues;
+  appearance: AppearanceValues;
   executors: string[];
   telegram: TelegramForm;
   projects: ProjectValues[];
@@ -185,6 +191,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     voice: voiceForm(values.voice, defaults),
     notifications: notificationsForm(values.notifications),
     secretary: copy(values.secretary ?? DEFAULT_SECRETARY),
+    appearance: copy(values.appearance ?? DEFAULT_APPEARANCE),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
     projects: values.projects.map((project) => ({ ...project })),
@@ -193,7 +200,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -331,6 +338,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('participants')) values.participants = current.participants;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   if (parts.includes('secretary')) values.secretary = secretaryBody(current.secretary);
+  // An older core has no themes (D-103): nothing to send.
+  if (parts.includes('appearance') && view.value?.values?.appearance !== undefined) values.appearance = { theme: current.appearance.theme };
   // An older core has no rules of the projects (D-174): nothing to send.
   if (parts.includes('projectRules') && view.value?.values?.projectRules !== undefined) values.projectRules = projectRulesBody(current.projectRules);
   generation += 1;
@@ -441,8 +450,44 @@ const characters = ref<CharacterListing | null>(null);
 /** "Novità": the current version, at the bottom of the index and next to its title; null until read or when there is none. */
 const currentVersion = ref<string | null>(null);
 
+/** The themes (D-103): read with the page and again after a choice. */
+const themeListing = ref<ThemeListing | null>(null);
+function readThemes(): void {
+  void loadThemes()
+    .then((listing) => {
+      themeListing.value = listing;
+    })
+    .catch(() => undefined);
+}
+
+/** The mode on screen, for the preview of the themes: the choice of this browser, or the system's. */
+const lightQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-color-scheme: light)');
+const systemLight = ref(lightQuery?.matches ?? false);
+function followSystem(event: MediaQueryListEvent): void {
+  systemLight.value = event.matches;
+}
+lightQuery?.addEventListener('change', followSystem);
+onBeforeUnmount(() => lightQuery?.removeEventListener('change', followSystem));
+const screenMode = computed<'dark' | 'light'>(() => {
+  const mode = props.theme ?? 'system';
+  return mode === 'system' ? (systemLight.value ? 'light' : 'dark') : mode;
+});
+
+/** A theme chosen (D-103): saved at once in [appearance], the other edits of the page kept. */
+async function chooseTheme(id: string): Promise<void> {
+  if (forms.value === null || forms.value.appearance.theme === id) return;
+  forms.value.appearance.theme = id;
+  if (!(await save('appearance'))) {
+    reset('appearance');
+    return;
+  }
+  readThemes();
+  characters.value = await loadCharacters().catch(() => characters.value);
+}
+
 onMounted(() => {
   void reload();
+  readThemes();
   void loadChangelog()
     .then((changelog) => {
       currentVersion.value = changelog.current;
@@ -876,9 +921,18 @@ const grid = 'grid gap-3 sm:grid-cols-6';
 
         <!-- Aspetto e installazione: the theme of this browser (D-158) and what this installation is (D-098) -->
         <template v-else-if="active === 'system'">
-          <SettingsCard id="theme" title="Tema">
+          <SettingsCard id="theme" title="Tema" :busy="busy === 'appearance'">
+            <template #header>
+              <span v-if="saved === 'appearance'" class="pill text-ok border-ok/50">Salvato</span>
+              <span v-else class="pill text-ok border-ok/50">Vale subito, su tutti i dispositivi</span>
+            </template>
+            <ThemePicker v-if="forms !== null" :listing="themeListing" :chosen="forms.appearance.theme" :characters="characters" :mode="screenMode" :busy="busy !== null || locked" @choose="chooseTheme" />
+            <p v-else class="text-[14px] text-muted">Le impostazioni non sono lette: il tema si sceglie quando tornano.</p>
+            <p v-if="errors.appearance !== undefined" class="text-[14px] text-danger">{{ errors.appearance }}</p>
+          </SettingsCard>
+          <SettingsCard id="mode" title="Modalità">
             <template #header><span class="pill text-ok border-ok/50">Vale subito, solo in questo browser</span></template>
-            <div class="inline-flex self-start overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Tema">
+            <div class="inline-flex self-start overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Modalità">
               <button
                 v-for="option in THEMES"
                 :key="option"

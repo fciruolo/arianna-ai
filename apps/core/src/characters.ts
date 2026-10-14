@@ -62,7 +62,7 @@ class PackError extends Error {
  * link: O_NOFOLLOW refuses one at open, and the checks are made on the open
  * handle, so a file swapped for a link after a check is not followed.
  */
-async function readSmall(path: string, max: number): Promise<Buffer> {
+export async function readSmall(path: string, max: number): Promise<Buffer> {
   let handle;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -219,26 +219,46 @@ export async function readSheet(dirs: CharacterDirs, pack: string, character: st
   }
 }
 
+/** Where the character an agent wears comes from: `[characters]`, the theme (D-103) or the originals. */
+export type CharacterSource = 'choice' | 'theme' | 'original';
+
+export interface AssignedCharacter {
+  pack: string;
+  character: string;
+  rows: 3 | 4;
+  from: CharacterSource;
+}
+
 /**
  * The character each agent wears: the user's choice when its pack and
- * character are served, otherwise the original of the same name, otherwise
- * the Coder's.
+ * character are served, otherwise the costume of the theme (D-103: an
+ * explicit choice always wins), otherwise the original of the same name,
+ * otherwise the Coder's.
  */
 export function assignCharacters(
   agents: readonly string[],
   choices: CharacterChoices,
   packs: readonly CharacterPack[],
-): Record<string, { pack: string; character: string; rows: 3 | 4 }> {
+  themed: CharacterChoices = {},
+): Record<string, AssignedCharacter> {
   const find = (pack: string, character: string) =>
     packs.find((entry) => entry.id === pack)?.characters.find((entry) => entry.id === character);
-  const result: Record<string, { pack: string; character: string; rows: 3 | 4 }> = {};
+  const split = (choice: string | undefined): [string, string] => {
+    const [pack = '', character = ''] = (choice ?? '').split('/');
+    return [pack, character];
+  };
+  const result: Record<string, AssignedCharacter> = {};
   for (const agent of agents) {
-    const [pack = '', character = ''] = (choices[agent] ?? '').split('/');
-    const candidates: [string, string][] = [[pack, character], [ORIGINAL_PACK, agent], [ORIGINAL_PACK, 'coder']];
-    for (const [packId, characterId] of candidates) {
+    const candidates: [[string, string], CharacterSource][] = [
+      [split(Object.hasOwn(choices, agent) ? choices[agent] : undefined), 'choice'],
+      [split(Object.hasOwn(themed, agent) ? themed[agent] : undefined), 'theme'],
+      [[ORIGINAL_PACK, agent], 'original'],
+      [[ORIGINAL_PACK, 'coder'], 'original'],
+    ];
+    for (const [[packId, characterId], from] of candidates) {
       const found = find(packId, characterId);
       if (found !== undefined) {
-        result[agent] = { pack: packId, character: characterId, rows: found.rows };
+        result[agent] = { pack: packId, character: characterId, rows: found.rows, from };
         break;
       }
     }

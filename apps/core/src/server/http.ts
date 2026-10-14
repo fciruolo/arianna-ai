@@ -22,6 +22,7 @@ import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
+import { currentTheme, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import { GithubError } from '../github-api.ts';
 import { PixelAgentsError, type PixelAgentsResult } from '../pixel-agents-pack.ts';
@@ -188,8 +189,12 @@ export interface ApiServerOptions {
   agents?: () => readonly string[];
   /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
   financeAgents?: () => readonly string[];
-  /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
-  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices; downloadPixelAgents?: () => Promise<PixelAgentsResult> };
+  /**
+   * The pixel characters (D-060): pack folders and the user's choices, read at each request; with
+   * `themes` (D-103) the folder of the themes and the one chosen in `[appearance]`, whose costumes the
+   * agents wear when `[characters]` names none.
+   */
+  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices; themes?: { dir: string; chosen: () => string }; downloadPixelAgents?: () => Promise<PixelAgentsResult> };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
   voice?: VoiceApi;
   /** Calls from the chat (D-066); refused while the voice is off. */
@@ -2146,7 +2151,22 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('GET', '/api/characters', async () => {
       if (characters === undefined) return { body: { packs: [], refused: [], agents: {} } };
       const { packs, refused } = await listPacks(characters.dirs);
-      return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs) } };
+      let themed: Record<string, string> = {};
+      if (characters.themes !== undefined) {
+        const { themes } = await listThemes(characters.themes.dir);
+        const current = currentTheme(characters.themes.chosen(), themes);
+        themed = themes.find((theme) => theme.id === current)?.characters ?? {};
+      }
+      return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed) } };
+    }),
+    // The themes (D-103): only those that pass the closed schema, the refused folders with the reason,
+    // the one chosen in [appearance] and the one in use (Base when the chosen one is missing or invalid).
+    route('GET', '/api/themes', async () => {
+      const themes = characters?.themes;
+      if (themes === undefined) return { body: { themes: [], refused: [], chosen: 'base', current: 'base' } };
+      const listing = await listThemes(themes.dir);
+      const chosen = themes.chosen();
+      return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes) } };
     }),
     // A sheet uploaded from the chat (D-118): decoded, written again, saved in data/characters/miei.
     // A character of the same name answers 409 with `existing`: the page asks, then sends `replace`.

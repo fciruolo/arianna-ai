@@ -74,6 +74,7 @@ import {
 import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
+import { activeTheme, applyTheme } from './lib/themes.ts';
 import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
@@ -321,6 +322,20 @@ watch(
   { immediate: true },
 );
 
+// The theme of the chat (D-103), the same on every device: its colours for the mode on screen.
+const lightQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-color-scheme: light)');
+const systemLight = ref(lightQuery?.matches ?? false);
+lightQuery?.addEventListener('change', (event) => {
+  systemLight.value = event.matches;
+});
+watch(
+  [() => activeTheme(store.themes.value), theme, systemLight],
+  ([active, mode, light]) => {
+    applyTheme(document.documentElement, active, mode === 'system' ? (light ? 'light' : 'dark') : mode);
+  },
+  { immediate: true },
+);
+
 // The clock of the top bar, as on the mockup.
 const now = ref(new Date());
 let clock: number | undefined;
@@ -542,7 +557,9 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): 
 
 /** A save of the settings page: the chat shows the new characters, projects and agents (models follow the live feed). */
 function settingsChanged(sections: string[]): void {
-  if (sections.includes('characters')) void store.refreshCharacters();
+  // A new theme (D-103) changes the colours and the costumes the agents wear.
+  if (sections.includes('appearance')) void store.refreshThemes();
+  if (sections.includes('characters') || sections.includes('appearance')) void store.refreshCharacters();
   if (sections.includes('projects')) void store.refreshProjects();
   if (sections.includes('voice')) void store.refreshVoice();
   // An agent activated or deactivated from the Agents page (D-119): the status panel lists the running ones.

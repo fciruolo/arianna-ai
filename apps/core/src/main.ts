@@ -1020,6 +1020,7 @@ const server = await startApiServer({
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
     choices: () => settings.current().characters,
+    themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
     downloadPixelAgents: () =>
       downloadPixelAgents({
         dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },

@@ -5,10 +5,12 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { flatPersonaText, parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
+  checkAppearance,
   checkFetchSites,
   checkSecretary,
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
+  DEFAULT_APPEARANCE,
   DEFAULT_SECRETARY,
   CONFIG_FILE,
   DEFAULT_LEAVE_AFTER,
@@ -44,6 +46,7 @@ import {
   type ModelRole,
   type NotificationsConfig,
   type ProjectSettings,
+  type AppearanceConfig,
   type SecretaryConfig,
   type Settings,
   type SpriteModel,
@@ -74,7 +77,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -132,6 +135,8 @@ export interface SettingsValues {
   notifications: NotificationsValues;
   /** `[secretary]` (I-12, D-144); the defaults when the file has no section. */
   secretary: SecretaryConfig;
+  /** `[appearance]` (D-103): the theme of the chat on every device; Base when the file has no section. */
+  appearance: AppearanceConfig;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectSettings[];
@@ -443,6 +448,18 @@ function notificationsFromBody(value: unknown): NotificationsConfig {
   return next;
 }
 
+/** `[appearance]` from the page (D-103): the id of a theme; whether its folder is valid the core says when it serves the themes. */
+function appearanceFromBody(value: unknown): AppearanceConfig {
+  const table = record(value, 'appearance');
+  only(table, ['theme'], 'appearance');
+  try {
+    return checkAppearance({ theme: text(table.theme, 'appearance.theme') });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
+}
+
 /** `[secretary]` from the page (D-144): the switch, three clocks "HH:MM" in order, the days. */
 function secretaryFromBody(value: unknown): SecretaryConfig {
   const table = record(value, 'secretary');
@@ -663,6 +680,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     voice: voiceOf(settings.voice),
     notifications: notificationsOf(settings.notifications),
     secretary: structuredClone(settings.secretary ?? DEFAULT_SECRETARY),
+    appearance: { ...(settings.appearance ?? DEFAULT_APPEARANCE) },
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
     projects: settings.projects.map((project) => ({ ...project })),
@@ -690,6 +708,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.notifications;
     case 'secretary':
       return settings.secretary;
+    case 'appearance':
+      return settings.appearance;
     case 'executors':
       return settings.cloud.executors;
     case 'fetchSites':
@@ -954,6 +974,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       }
       if (given.notifications !== undefined) next.notifications = notificationsFromBody(given.notifications);
       if (given.secretary !== undefined) next.secretary = secretaryFromBody(given.secretary);
+      if (given.appearance !== undefined) next.appearance = appearanceFromBody(given.appearance);
       const sections = check(settings, next, catalog, ORDINARY_SECTIONS);
       if (sections.length > 0) {
         write(next, catalog, fingerprint);

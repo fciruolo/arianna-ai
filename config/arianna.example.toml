@@ -264,6 +264,15 @@ port = 7420
 # evening = "18:30"
 # days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
+# The theme of the web chat (D-103): colours, background and the costumes
+# of the characters, the same on every device. A folder of
+# apps/hud/themes/; "base" is the chat as it comes. A theme that is missing
+# or invalid falls back to base. Light or dark stays a choice of each
+# browser. Absent: base. Applies without a restart.
+#
+# [appearance]
+# theme = "base"
+
 # Links fetched and summarized (D-154): the links of these sites saved in
 # kb/inbox are downloaded by the core and summarized by the local model
 # when the note is organized. A site covers its subdomains (x.com also

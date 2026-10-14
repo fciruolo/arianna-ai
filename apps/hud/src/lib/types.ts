@@ -322,6 +322,8 @@ export interface CharacterChoice {
   pack: string;
   character: string;
   rows: 3 | 4;
+  /** Where it comes from (D-103): `[characters]`, the theme or the originals; absent from an older core. */
+  from?: 'choice' | 'theme' | 'original';
 }
 
 export interface CharacterListing {

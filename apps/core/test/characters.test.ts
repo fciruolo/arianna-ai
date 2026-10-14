@@ -118,12 +118,24 @@ test('assignCharacters: the choice when it is served, else the original of the a
   assert.deepEqual(
     assignCharacters(['arianna', 'coder', 'scout', 'writer'], { arianna: 'robots/robot', coder: 'robots/nobody', scout: 'gone/x' }, packs),
     {
-      arianna: { pack: 'robots', character: 'robot', rows: 3 },
-      coder: { pack: 'originali', character: 'coder', rows: 4 },
-      scout: { pack: 'originali', character: 'coder', rows: 4 },
-      writer: { pack: 'originali', character: 'coder', rows: 4 },
+      arianna: { pack: 'robots', character: 'robot', rows: 3, from: 'choice' },
+      coder: { pack: 'originali', character: 'coder', rows: 4, from: 'original' },
+      scout: { pack: 'originali', character: 'coder', rows: 4, from: 'original' },
+      writer: { pack: 'originali', character: 'coder', rows: 4, from: 'original' },
     },
   );
+});
+
+test('assignCharacters: the costume of the theme when there is no choice, a choice always wins, a costume not served falls back (D-103)', async () => {
+  const { packs } = await listPacks({ original: ORIGINAL, data: join(root, 'missing') });
+  const themed = { arianna: 'originali/arianna-corsia', coder: 'originali/coder-corsia', god: 'originali/god-sparito' };
+  assert.deepEqual(assignCharacters(['arianna', 'coder', 'god'], { coder: 'originali/coder' }, packs, themed), {
+    arianna: { pack: 'originali', character: 'arianna-corsia', rows: 4, from: 'theme' },
+    coder: { pack: 'originali', character: 'coder', rows: 4, from: 'choice' },
+    god: { pack: 'originali', character: 'god', rows: 4, from: 'original' },
+  });
+  // Without a theme nothing changes.
+  assert.equal(assignCharacters(['arianna'], {}, packs).arianna?.from, 'original');
 });
 
 // D-118: uploads into data/characters/miei.

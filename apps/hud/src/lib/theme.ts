@@ -19,9 +19,9 @@ export const THEME_TEXT: Record<Theme, string> = {
 /** The icon of each theme, the one the header button shows for the active theme. */
 export const THEME_ICON = { light: 'theme-light', dark: 'theme-dark', system: 'theme-system' } as const satisfies Record<Theme, string>;
 
-/** "Tema: chiaro", the title and the name of the header button. */
+/** "Modalità: chiaro", the title and the name of the header button; "Tema" is the theme of D-103. */
 export function themeLabel(theme: Theme): string {
-  return `Tema: ${{ light: 'chiaro', dark: 'scuro', system: 'automatico' }[theme]}`;
+  return `Modalità: ${{ light: 'chiaro', dark: 'scuro', system: 'automatico' }[theme]}`;
 }
 
 interface StorageLike {

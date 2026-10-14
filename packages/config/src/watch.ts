@@ -90,6 +90,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('sprites') ? ['sprites'] : []),
       ...(changed('notifications') ? ['notifications'] : []),
       ...(changed('secretary') ? ['secretary'] : []),
+      ...(changed('appearance') ? ['appearance'] : []),
       ...(changed('capture') ? ['capture'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],

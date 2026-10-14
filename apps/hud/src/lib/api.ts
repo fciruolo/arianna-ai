@@ -1,3 +1,4 @@
+import type { ThemeListing } from './themes.ts';
 import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
@@ -408,6 +409,11 @@ export async function loadStatus(): Promise<StatusSnapshot> {
 /** The character packs and who wears what (D-060). */
 export async function loadCharacters(): Promise<CharacterListing> {
   return call<CharacterListing>('GET', '/api/characters');
+}
+
+/** The themes the core serves already checked, the chosen one and the one in use (D-103). */
+export async function loadThemes(): Promise<ThemeListing> {
+  return call<ThemeListing>('GET', '/api/themes');
 }
 
 /** Downloads the characters of pixel-agents into data/characters/pixel-agents (D-206): only their PNGs and licence. */

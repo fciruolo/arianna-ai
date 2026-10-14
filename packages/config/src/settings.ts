@@ -16,6 +16,7 @@ import type { ProjectFolder, ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
 import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
+import type { AppearanceConfig } from './appearance.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
 import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
@@ -73,6 +74,8 @@ export interface Settings {
   notifications?: NotificationsConfig;
   /** `[secretary]` (I-12, D-144): written only when the file has it; absent, the defaults. */
   secretary?: SecretaryConfig;
+  /** `[appearance]` (D-103): written only when the file has it; absent, Base. */
+  appearance?: AppearanceConfig;
   /** `[capture] fetch_sites` (D-154): written only when the file has it; absent, no site. */
   fetchSites?: string[];
   telegram?: { token: string; chats: number[] };
@@ -148,6 +151,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     // Kept absent when the file has no section: saving another card does not add it.
     ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
     ...(raw.secretary === undefined ? {} : { secretary: structuredClone(config.secretary) }),
+    ...(raw.appearance === undefined ? {} : { appearance: { ...config.appearance } }),
     ...(raw.capture === undefined ? {} : { fetchSites: [...config.capture.fetchSites] }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
@@ -273,6 +277,10 @@ function secretarySection(secretary: SecretaryConfig | undefined): string[] {
     `days = ${list(days)}`,
   ];
   return secretary === undefined ? ['#', ...lines.map((line) => `# ${line}`)] : lines;
+}
+
+function appearanceSection(appearance: AppearanceConfig | undefined): string[] {
+  return appearance === undefined ? ['#', '# [appearance]', '# theme = "base"'] : ['[appearance]', `theme = ${str(appearance.theme)}`];
 }
 
 function captureSection(fetchSites: string[] | undefined): string[] {
@@ -546,6 +554,13 @@ export function renderSettings(settings: Settings): string {
     '# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a',
     '# restart.',
     ...secretarySection(settings.secretary),
+    '',
+    '# The theme of the web chat (D-103): colours, background and the costumes',
+    '# of the characters, the same on every device. A folder of',
+    '# apps/hud/themes/; "base" is the chat as it comes. A theme that is missing',
+    '# or invalid falls back to base. Light or dark stays a choice of each',
+    '# browser. Absent: base. Applies without a restart.',
+    ...appearanceSection(settings.appearance),
     '',
     '# Links fetched and summarized (D-154): the links of these sites saved in',
     '# kb/inbox are downloaded by the core and summarized by the local model',

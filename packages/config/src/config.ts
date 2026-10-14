@@ -18,6 +18,7 @@ import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseParticipants, type ParticipantsConfig } from './participants.ts';
 import { parseSecretary, type SecretaryConfig } from './secretary.ts';
+import { parseAppearance, type AppearanceConfig } from './appearance.ts';
 import { parseSprites, type SpritesConfig } from './sprites.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
@@ -86,6 +87,8 @@ export interface AriannaConfig {
   notifications: NotificationsConfig;
   /** `[secretary]` (I-12, D-144): reminders on or off, the three moments and the days; absent, the defaults. Applied without a restart. */
   secretary: SecretaryConfig;
+  /** `[appearance]` (D-103): the theme of the web chat on every device; absent, Base. Applied without a restart. */
+  appearance: AppearanceConfig;
   /** `[capture]` (D-154): the sites whose links are fetched and summarized by themselves; absent, none. Applied without a restart. */
   capture: CaptureConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
@@ -116,7 +119,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'appearance', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -160,6 +163,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     participants: parseParticipants(root.participants),
     notifications: parseNotifications(root.notifications),
     secretary: parseSecretary(root.secretary),
+    appearance: parseAppearance(root.appearance),
     capture: parseCapture(root.capture),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),

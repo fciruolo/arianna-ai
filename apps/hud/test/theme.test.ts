@@ -34,9 +34,9 @@ test('a broken or blocked storage means the system theme, never an error', () =>
 });
 
 test('the header button says and shows the active theme (D-158)', () => {
-  assert.equal(themeLabel('light'), 'Tema: chiaro');
-  assert.equal(themeLabel('dark'), 'Tema: scuro');
-  assert.equal(themeLabel('system'), 'Tema: automatico');
+  assert.equal(themeLabel('light'), 'Modalità: chiaro');
+  assert.equal(themeLabel('dark'), 'Modalità: scuro');
+  assert.equal(themeLabel('system'), 'Modalità: automatico');
   assert.equal(THEME_ICON.light, 'theme-light');
   assert.equal(THEME_ICON.dark, 'theme-dark');
   assert.equal(THEME_ICON.system, 'theme-system');

@@ -747,7 +747,7 @@ Risposte dell'utente del 2026-10-14, con le domande a opzioni (le domande erano 
 ## D-103 — Temi: colori, sfondo e costumi dei personaggi, scelti in Impostazioni
 
 - **Data:** 2026-10-05
-- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»); da costruire, in coda in `HANDOFF.md`. Era: Proposta, da discutere
+- **Stato:** Accettata con le risposte dell'utente del 2026-10-14 (sotto, «Domande chiuse»). **Prima tappa applicata (D-208, ramo `task/temi-serie`, da provare):** formato `theme.json` a schema chiuso, `GET /api/themes`, scelta in Impostazioni → Aspetto («Tema» e «Modalità»), `[appearance]` in `arianna.toml`, test del contrasto AA, temi Corsia e Ufficio con i costumi di Arianna e del Coder su tutte le 28 pose. **Manca:** Cartoon giallo e Salotto animato; i personaggi veri delle serie; il tema Base in `theme.json` con i sette contrasti corretti; feste, date e computus; decori diversi da corrimano e moquette, interruttore dei decori animati; temi dell'utente in `data/themes/`; token dell'ufficio pixel. Era: Proposta, da discutere
 - **Collegate:** D-060 (identità grafica, pacchetti di personaggi, diritti), D-061 (icone dietro un punto unico), D-062 (font serviti in locale), D-087b (sfondo della Conoscenza), pagina Impostazioni (3.5, `SettingsPage.vue`), `docs/OPENDOTS.md` (P1, P2), anteprima `docs/mockups/temi.html`
 
 ### Contesto

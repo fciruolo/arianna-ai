@@ -183,13 +183,13 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'I programmi sul Mac che fanno girare i modelli e la voce. Vedono i dati privati, perciò un cambio chiede conferma.',
         example: 'se la chat smette di rispondere e qui oMLX «non risponde», premi Riavvia.',
       },
-      // The theme (D-158) and what this installation is (D-098), in one entry.
+      // The theme (D-103), the mode of this browser (D-158) and what this installation is (D-098), in one entry.
       {
         id: 'system',
         slug: 'aspetto-e-installazione',
         title: 'Aspetto e installazione',
         behaviour: 'browser',
-        lead: 'Il tema di questo browser e cosa è questa installazione di Arianna.',
+        lead: 'Il tema della chat (colori, sfondo e costumi, su tutti i dispositivi), chiaro o scuro in questo browser e cosa è questa installazione di Arianna.',
       },
     ],
   },

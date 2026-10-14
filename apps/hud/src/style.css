@@ -76,6 +76,9 @@
   --graph-4: #f2b34b;
   --graph-5: #c08bf0;
   --graph-6: #f07fa8;
+  /* The two colours of the decorations of a theme (D-103): ornaments, under the content. */
+  --deco-a: #4fd1c1;
+  --deco-b: #93aeaa;
   /* The header of an incognito conversation (D-136): dark in both themes, so it is never mistaken for another. */
   --incognito: #17141f;
   --incognito-ink: #ece8f4;
@@ -118,6 +121,8 @@
     --graph-4: #b07612;
     --graph-5: #8a52c4;
     --graph-6: #c0447a;
+    --deco-a: #23887c;
+    --deco-b: #56635f;
     --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;
     --office-window: #bcd9d4; --office-window-light: #e4f2ef; --office-desk: #b98f63; --office-desk-top: #d6b386; --office-desk-shadow: #c2b49b;
     --office-monitor: #24302e; --office-screen-off: #46524f; --office-screen: #3fb8a9; --office-chair: #3d7e75;
@@ -155,6 +160,8 @@
   --graph-4: #b07612;
   --graph-5: #8a52c4;
   --graph-6: #c0447a;
+  --deco-a: #23887c;
+  --deco-b: #56635f;
   --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;
   --office-window: #bcd9d4; --office-window-light: #e4f2ef; --office-desk: #b98f63; --office-desk-top: #d6b386; --office-desk-shadow: #c2b49b;
   --office-monitor: #24302e; --office-screen-off: #46524f; --office-screen: #3fb8a9; --office-chair: #3d7e75;
@@ -220,6 +227,64 @@ body {
   color: var(--ink);
   font: 15px/1.55 var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The background of a theme (D-103), from closed lists only: the page sets
+ * data-pattern and data-decor on <html> from the values the core checked,
+ * and the drawing is ours, coloured by the tokens. Under the content, fixed,
+ * at low opacity, never clickable; still, so nothing moves or flashes.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+[data-pattern="griglia"] body::before {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.5;
+}
+[data-pattern="puntini"] body::before {
+  background-image: radial-gradient(var(--line-strong) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+  opacity: 0.6;
+}
+[data-pattern="righe"] body::before {
+  background-image: linear-gradient(var(--line) 1px, transparent 1px);
+  background-size: 100% 28px;
+  opacity: 0.5;
+}
+/* Corsia: a handrail halfway up the wall, the lower wall a shade darker. */
+[data-decor="corrimano"] body::before {
+  background-image:
+    linear-gradient(to bottom, transparent 54%, var(--deco-a) 54%, var(--deco-a) calc(54% + 6px), var(--deco-b) calc(54% + 6px), var(--deco-b) calc(54% + 8px), transparent calc(54% + 8px)),
+    linear-gradient(to bottom, transparent 54%, color-mix(in srgb, var(--deco-a) 35%, transparent) 54%);
+  opacity: 0.16;
+}
+/* Ufficio: the flecks of a grey carpet. */
+[data-decor="moquette"] body::before {
+  background-image:
+    radial-gradient(var(--deco-a) 1px, transparent 1.5px),
+    radial-gradient(var(--deco-b) 1px, transparent 1.5px);
+  background-size: 7px 7px, 11px 11px;
+  background-position: 0 0, 3px 5px;
+  opacity: 0.22;
+}
+/* The HUD of a theme: no corner brackets, a squarer or softer radius. */
+[data-corners="off"] .hud-card::before,
+[data-corners="off"] .hud-card::after {
+  display: none;
+}
+[data-radius="squadrato"] .hud-card {
+  border-radius: 8px;
+}
+[data-radius="morbido"] .hud-card {
+  border-radius: 20px;
 }
 
 :focus-visible {

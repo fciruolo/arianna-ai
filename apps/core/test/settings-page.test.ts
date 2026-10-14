@@ -176,6 +176,20 @@ describe('update (ordinary)', () => {
     assert.deepEqual(config.cloud.executors, ['claude']);
   });
 
+  it('the theme (D-103): [appearance] written alone, Base when absent, an invalid id or key refused', () => {
+    assert.deepEqual(page.read().values?.appearance, { theme: 'base' });
+    const before = parseConfig(text(), home, loadCatalog(home), userHome);
+    page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia' } } });
+    assert.deepEqual(changes, [{ sections: ['appearance'], privacy: false }]);
+    const after = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.deepEqual(after.appearance, { theme: 'corsia' });
+    assert.deepEqual({ ...after, appearance: before.appearance }, before, 'nothing else changes');
+    assert.deepEqual(page.read().values?.appearance, { theme: 'corsia' });
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: { theme: '../corsia' } } }), refused('invalid', /appearance\.theme/));
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia', css: 'x' } } }), refused('invalid'));
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: 'corsia' } }), refused('invalid'));
+  });
+
   it("the agents' models (D-116): only an agent with a card, only a model the card allows", () => {
     page.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'opus' }, arianna: { model: null } } } });
     assert.deepEqual(changes, [{ sections: ['agents'], privacy: false }]);
