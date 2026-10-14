@@ -67,6 +67,7 @@ Gli schemi degli argomenti stanno in `TOOL_ARGS` di `packages/agents/src/protoco
 | Reviewer | Rivede diff e test con un modello diverso da chi ha scritto | L1 | Codex, Claude Code, locale | Comunicazione esterna |
 | Designer | Disegna pagine e schermate come mockup HTML autonomi nel progetto | L1 nel cloud; L2 solo con modello locale | Claude Code, Codex, locale (sceglie l'utente a ogni card) | Dati privati nel cloud (`cloud_max_label: L1`); comunicazione esterna in locale |
 | GOD | Sviluppa Arianna da dentro Arianna (D-127): legge un clone del suo codice in `repos/arianna`, risponde e propone il piano dei sottocompiti; solo in chat diretta sul progetto `arianna`, mai destinatario delle deleghe di Arianna | L1 | Claude Code, Codex (a scelta col modello della chat) | Dati privati (L1 al massimo, solo `repo.read`, niente KB né rete) |
+| Modello locale (`local-chat`) | Chat con la base di conoscenza in sola lettura (`kb.search`, `kb.read`), solo in privata (D-208) | L2 | Locale | Comunicazione esterna |
 | Archivista | Classifica e estrae documenti | L2 (L3 solo come riferimenti al vault) | Locale | Comunicazione esterna |
 | Segretario | Bozze, agenda, promemoria | L2 | Locale | Invio senza approvazione; lettura di posta vera solo con Dual LLM |
 | Ricercatore | Cerca sul web | L0 | Claude Code, Codex, locale | Dati privati |
@@ -74,6 +75,8 @@ Gli schemi degli argomenti stanno in `TOOL_ARGS` di `packages/agents/src/protoco
 | Ops | Server, backup, spazio disco, consumi | L1 | Locale | Contenuti non fidati |
 
 In Fase 1A servono solo Arianna e Coder (`agents/arianna.yaml`, `agents/coder.yaml`); il Reviewer (`agents/reviewer.yaml`) è arrivato con Codex (D-140): Codex per primo, poi Claude Code, cartella del progetto in sola lettura (`repo.read`, `repo.test`, niente `repo.write`; su Claude Code senza `Bash`, quindi senza test), passo di tipo `review` per il router; il Designer (`agents/designer.yaml`, D-159) con la tappa C3 del cardwall: `repo.read`, `repo.write`, `task.update`, niente `repo.test` (su Claude Code quindi senza `Bash`), niente `kb.*` né rete, `executor_choice: ask`; scrive solo file HTML autonomi (CSS e JS in linea, immagini `data:`, nessuna risorsa remota) in `mockups/` del progetto (`docs/mockups/` nel repository di Arianna), varianti numerate, e legge il `DESIGN.md` del progetto se c'è, più lo stile di Open Design e le skill scelti sulla card, come dati con la loro licenza (D-163); gli altri arrivano con le fasi che li usano.
+
+- **local-chat** (D-111 tappa B, D-208): il «Modello locale» di «Con chi parli». `max_label: L2`, solo `local`, strumenti `kb.search` e `kb.read`; trifecta `private_data: true`, `untrusted_content: true` (`kb/inbox` tiene link e note catturati, D-080), `external_comms: false`: il triangolo si rompe perché manca l'uscita, garantita dagli strumenti offerti e dal gateway. Risponde solo in una conversazione privata nata con lui, nel ciclo dell'orchestratore con i soli strumenti della sua scheda; non è fra gli agenti a cui Arianna delega.
 
 ## Agenti creati dall'utente
 

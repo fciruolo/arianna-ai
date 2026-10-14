@@ -6,11 +6,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Temi della chat (D-103, prima tappa, D-208): in Impostazioni → Aspetto la scheda «Tema» sceglie fra Base, Corsia (ispirato a Scrubs) e Ufficio (ispirato a The Office), con anteprima dal vivo; la scelta va in `[appearance]` di `arianna.toml` e vale subito su tutti i dispositivi.
-- I temi sono file `apps/hud/themes/<id>/theme.json` a schema chiuso, letti dal core in sola lettura e serviti già controllati da `GET /api/themes`; un test verifica il contrasto WCAG AA di ogni tema, in scuro e in chiaro (D-103).
-- Costumi di Arianna e del Coder per Corsia (casacca, cuffia, stetoscopio; camice con la croce verde) e Ufficio (camicia e cravatta, badge; giacca e cravatta), disegnati da `build.ts` su tutte le 28 pose come fogli del pacchetto `originali` e coperti dal test dei PNG (D-103).
-- Sfondi dei temi dalle liste chiuse (corrimano, moquette, griglia, puntini, righe), angoli e raggio delle schede HUD scelti dal tema (D-103).
-
 ### Cambiato
 
 - La scelta chiaro/scuro/automatico si chiama «Modalità», anche nel pulsante in alto; «Tema» è ora il tema della chat (D-103).
@@ -21,6 +16,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Secondo controllo dei dati personali nel gateway (D-113, tappa 2): prima di ogni uscita verso Claude, Codex, Telegram o il web, Rizzo-PII cerca nomi, indirizzi, telefoni, email e documenti e ferma l'uscita se ne trova; se non risponde l'uscita si ferma, tranne sull'installazione di sviluppo.
+- Migrazione `0063`: il modello locale solo in una conversazione privata, Claude e ChatGPT solo in una di lavoro e senza progetto, il Coder solo di lavoro su un progetto; una conversazione privata non ha mai un interlocutore cloud, anche nel database (D-208).
+- Arianna non delega mai al modello locale di «Con chi parli», e i nomi `claude` e `codex` non si possono dare a un agente dell'utente (D-208).
 
 ## [0.100.1] - 2026-10-14
 
