@@ -7,6 +7,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - I personaggi delle serie hanno la personalità del personaggio vero (D-214): un agente che indossa il Dr. Cox risponde burbero e sarcastico, Pam gentile, Dwight serissimo, dal tema o scelto a mano; il nome e la personalità che hai scritto per l'agente vincono, e regole, strumenti e approvazioni non cambiano.
+- Ogni personaggio delle serie apre o chiude ogni risposta con una sua battuta tipica, a rotazione («Che vuoi, pivello?» del Dr. Cox, «Frick!» di Elliot, «È quello che ha detto lei!» di Michael…), senza che cambi il contenuto della risposta (D-214).
+- `pnpm test:guard` passa anche il testo di ogni personaggio delle serie dal secondo controllo vero, quando il modello c'è (D-214).
 - Nella chat un agente con un personaggio delle serie mostra prima il nome del personaggio e sotto, più piccolo, quello dell'agente («Dr. Cox» / «GOD»): intestazione, partecipanti, pannello degli agenti, rapporti, Agenti, ufficio; il nome che hai scritto per l'agente in Personalità vince anche qui (D-214).
 
 ### Cambiato
