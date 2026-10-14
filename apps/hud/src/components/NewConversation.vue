@@ -10,13 +10,21 @@ import PixelAgent from './PixelAgent.vue';
 
 /** `initialAgent`: the direct chat with this agent is the first choice (D-133). */
 /** `off`: the interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B), shown off with why. */
-const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; off?: OffInterlocutor[] | undefined; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
+/** `initialProject`: the project chosen first («Parla con…» from an island of the office, D-212), while it is approved. */
+const props = defineProps<{
+  projects: ProjectInfo[];
+  agents: DirectAgent[];
+  off?: OffInterlocutor[] | undefined;
+  characters?: Record<string, CharacterChoice> | undefined;
+  initialAgent?: string | undefined;
+  initialProject?: string | undefined;
+}>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
 /** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
 /** Incognito (D-136): with Arianna, private or work, its texts deleted when it closes. */
 type Kind = 'private' | 'work' | 'agent' | 'incognito';
 const kind = ref<Kind>(props.initialAgent === undefined ? 'private' : 'agent');
-const project = ref('');
+const project = ref(props.initialProject ?? '');
 const agent = ref(props.initialAgent ?? '');
 const agentMode = ref<ConversationMode>('private');
 const incognitoMode = ref<ConversationMode>('private');

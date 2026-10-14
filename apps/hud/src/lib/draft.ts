@@ -100,14 +100,23 @@ export function cloudTargets(executors: readonly CloudExecutorKind[] | undefined
 }
 
 /**
+ * The model of a plain chat when none is chosen (D-111 tappa B, D-212): the
+ * same as CHAT_DEFAULT_MODEL and CODEX_CHAT_DEFAULT_MODEL of the core.
+ */
+export const PLAIN_DEFAULT_MODEL: Readonly<Record<string, string>> = { claude: 'sonnet', codex: 'sol' };
+/** The models of a plain chat (D-212): Sonnet or Opus for Claude, the three of Codex for ChatGPT. */
+export const PLAIN_MODELS: Readonly<Record<string, readonly string[]>> = { claude: ['sonnet', 'opus'], codex: ['luna', 'sol', 'astra'] };
+
+/**
  * Who answers a direct chat on the cloud, and with what (D-141, asked by the
  * user: "se apro la singola chat del coder chi mi risponde?"): always the
  * agent, never Arianna; the model chosen here, or the router at each message;
  * and the model of its latest answer, when there is one.
  */
 export function whoAnswers(agent: string, model: string | null, last: string | null): string {
-  // The plain chat with Claude (D-111, tappa B) has no router: Sonnet when no model is chosen.
-  const fallback = agent === 'claude' ? (MODEL_TEXT.sonnet ?? 'sonnet') : 'il modello che il router sceglie a ogni messaggio';
+  // The plain chats with Claude (D-111, tappa B) and ChatGPT (D-212) have no router: Sonnet or Sol when no model is chosen.
+  const plainDefault = PLAIN_DEFAULT_MODEL[agent];
+  const fallback = plainDefault === undefined ? 'il modello che il router sceglie a ogni messaggio' : (MODEL_TEXT[plainDefault] ?? plainDefault);
   const chosen = model === null ? fallback : (MODEL_TEXT[model] ?? model);
   const latest = last === null ? '' : ` · ultima risposta: ${MODEL_TEXT[last] ?? last}`;
   return `Risponde ${agentName(agent)}, con ${chosen}${latest}`;
@@ -175,7 +184,7 @@ export function localNote(agent: string): string {
 
 /** Why an interlocutor of «Con chi parli» cannot answer now (D-111, tappa B), in the words of the window "Nuovo". */
 export function offReason(agent: string): string {
-  if (agent === 'codex') return 'ChatGPT senza progetto non c’è ancora: con un progetto scegli il Coder, che può lavorare con Codex.';
+  if (agent === 'codex') return 'Codex è spento in Impostazioni oppure non gira su questo Mac.';
   if (agent === 'claude') return 'Claude è spento in Impostazioni oppure non gira su questo Mac.';
   return `${agentName(agent)} non può rispondere adesso.`;
 }

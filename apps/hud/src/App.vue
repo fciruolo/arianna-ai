@@ -202,14 +202,17 @@ const showLegend = ref(false);
 const showNew = ref(false);
 /** The agent "+ Nuovo" opens on ("Apri una chat" in Impostazioni → Agenti, D-133); undefined: the usual first choice. */
 const newWith = ref<string | undefined>(undefined);
+/** The project "+ Nuovo" opens on («Parla con…» from an island of the office, D-212); undefined: the first one. */
+const newProject = ref<string | undefined>(undefined);
 function openSearch(): void {
   showSidebar.value = false;
   showSearch.value = true;
 }
-function openNew(agent?: string): void {
+function openNew(agent?: string, project?: string): void {
   showSidebar.value = false;
   void store.refreshProjects();
   newWith.value = agent;
+  newProject.value = project;
   showNew.value = true;
 }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -1077,7 +1080,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :cards-version="cardsVersion"
         :decide="store.decide"
         @open="openConversation"
+        :direct-agents="directAgents.filter((entry) => entry.container === undefined).map((entry) => entry.agent)"
         @draft="(mode, project) => openDraft({ mode, project })"
+        @talk="(agent, project) => openNew(agent, project)"
       />
       <IncognitoClosed v-else-if="incognitoEnd !== null" :end="incognitoEnd" @back="leaveClosed" />
       <DraftChat
@@ -1178,6 +1183,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :off="offInterlocutors"
       :characters="characters?.agents"
       :initial-agent="newWith"
+      :initial-project="newProject"
       @close="showNew = false"
       @create="openDraft"
       @refresh="store.refreshProjects"

@@ -35,8 +35,10 @@ const props = defineProps<{
   signals: OfficeSignals;
   cardsVersion: number;
   decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  /** The agents the user may talk with directly now (D-111d): «Parla con…» opens a chat with them (D-212). */
+  directAgents?: string[] | undefined;
 }>();
-const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string] }>();
+const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string]; talk: [agent: string, project?: string] }>();
 
 const parsed = parseMapText(baseMapText);
 const map = parsed.ok ? parsed.map : null;
@@ -145,12 +147,13 @@ function projectOf(agent: OfficeAgent): string | undefined {
 
 function targetOf(agentId: string): TalkTarget {
   const agent = snapshot.value.agents.find((item) => item.id === agentId);
-  return talkTarget(agentId, work.value, props.conversations, agent === undefined ? undefined : projectOf(agent));
+  return talkTarget(agentId, work.value, props.conversations, agent === undefined ? undefined : projectOf(agent), props.directAgents);
 }
 
 function talk(agentId: string): void {
   const target = targetOf(agentId);
   if (target.kind === 'conversation') emit('open', target.id);
+  else if (target.kind === 'new') emit('talk', target.agent, target.project);
   else emit('draft', target.mode, target.project);
 }
 

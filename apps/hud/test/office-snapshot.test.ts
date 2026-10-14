@@ -326,6 +326,26 @@ test('talk: the conversation the agent works on; else Arianna\'s latest private 
   assert.deepEqual(talkTarget('coder', [{ agent: 'arianna', conversationId: 'w-run', repo: null }], list), { kind: 'draft', mode: 'work' });
 });
 
+test('talk with an agent of the direct chat (D-212): its latest direct chat, on the project of its island, else "+ Nuovo" on it', () => {
+  const list = [
+    conversation('c-demo-old', 'work', '2026-10-01T10:00:00Z', { agent: 'coder', workspace: 'demo' }),
+    conversation('c-demo-new', 'work', '2026-10-03T10:00:00Z', { agent: 'coder', workspace: 'demo' }),
+    conversation('c-site', 'work', '2026-10-04T10:00:00Z', { agent: 'coder', workspace: 'site' }),
+    conversation('d-archived', 'work', '2026-10-05T10:00:00Z', { agent: 'designer', workspace: 'demo', archivedAt: '2026-10-05T11:00:00Z' }),
+    conversation('w-arianna', 'work', '2026-10-06T10:00:00Z', { workspace: 'demo' }),
+  ];
+  const direct = ['coder', 'designer', 'traduttore'];
+  assert.deepEqual(talkTarget('coder', [], list, 'demo', direct), { kind: 'conversation', id: 'c-demo-new' });
+  assert.deepEqual(talkTarget('coder', [], list, undefined, direct), { kind: 'conversation', id: 'c-site' }, 'off an island: its latest direct chat anywhere');
+  assert.deepEqual(talkTarget('coder', [], list, 'other', direct), { kind: 'new', agent: 'coder', project: 'other' });
+  assert.deepEqual(talkTarget('designer', [], list, 'demo', direct), { kind: 'new', agent: 'designer', project: 'demo' }, 'an archived chat is not opened');
+  assert.deepEqual(talkTarget('traduttore', [], list, undefined, direct), { kind: 'new', agent: 'traduttore' });
+  // Running work still comes first; an agent off the list keeps the draft of before; Arianna her private chat.
+  assert.deepEqual(talkTarget('coder', [{ agent: 'coder', conversationId: 'w-arianna', repo: 'demo' }], list, 'demo', direct), { kind: 'conversation', id: 'w-arianna' });
+  assert.deepEqual(talkTarget('reviewer', [], list, 'demo', direct), { kind: 'draft', mode: 'work', project: 'demo' });
+  assert.deepEqual(talkTarget('arianna', [], [], undefined, [...direct, 'arianna']), { kind: 'draft', mode: 'private' });
+});
+
 test('running work keeps who, where and which conversation, never the title', () => {
   const row: RecentDelegation = {
     id: 'd1', conversationId: 'c1', conversationTitle: 'Titolo segreto', agent: 'coder', repo: 'demo', status: 'running',

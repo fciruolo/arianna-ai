@@ -9,7 +9,7 @@ import NewConversation from './NewConversation.vue';
 
 /** "+ Nuovo" of the left bar (D-097): private, work or with an agent (D-111d), and the project. */
 /** `initialAgent`: opened on the direct chat with this agent ("Apri una chat" in Impostazioni → Agenti, D-133). */
-defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; off?: OffInterlocutor[] | undefined; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
+defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; off?: OffInterlocutor[] | undefined; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined; initialProject?: string | undefined }>();
 const emit = defineEmits<{ close: []; create: [choice: DraftChoice]; refresh: [] }>();
 
 const dialog = ref<HTMLElement | null>(null);
@@ -37,7 +37,7 @@ function create(choice: DraftChoice): void {
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
       <div class="px-4 py-4">
-        <NewConversation :projects="projects" :agents="agents" :off="off ?? []" :characters="characters" :initial-agent="initialAgent" @create="create" @refresh="emit('refresh')" />
+        <NewConversation :projects="projects" :agents="agents" :off="off ?? []" :characters="characters" :initial-agent="initialAgent" :initial-project="initialProject" @create="create" @refresh="emit('refresh')" />
       </div>
     </section>
   </div>

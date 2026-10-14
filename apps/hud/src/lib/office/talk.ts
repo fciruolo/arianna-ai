@@ -8,8 +8,18 @@ import type { Conversation, Label, RecentDelegation } from '../types.ts';
  * draft, as "Nuovo" (D-108): the conversation is born with its first message.
  * Only conversations of the list up to L2: one above is never named here.
  * This stays outside the canvas: the canvas never sees a conversation id.
+ *
+ * «Parla con…» (D-111, risposta 10; D-212): when the user may talk with the
+ * agent directly (`direct`, the agents of "+ Nuovo"), its latest direct chat
+ * opens (on the project of its island, when it sits at one); without one,
+ * "+ Nuovo" opens on that agent and project, where the user chooses private
+ * or work as its card allows. Arianna and the agents that cannot answer a
+ * direct chat now keep the ways above.
  */
-export type TalkTarget = { kind: 'conversation'; id: string } | { kind: 'draft'; mode: 'private' | 'work'; project?: string };
+export type TalkTarget =
+  | { kind: 'conversation'; id: string }
+  | { kind: 'draft'; mode: 'private' | 'work'; project?: string }
+  | { kind: 'new'; agent: string; project?: string };
 
 /** A running delegation reduced to who, where and in which conversation: never its title or brief. */
 export interface RunningWork {
@@ -26,14 +36,14 @@ export function runningWork(rows: readonly RecentDelegation[]): RunningWork[] {
 
 const VISIBLE: readonly Label[] = ['L0', 'L1', 'L2'];
 
-type ConversationRef = Pick<Conversation, 'id' | 'mode' | 'origin' | 'archivedAt' | 'lastMessageAt' | 'createdAt' | 'effectiveLabel'>;
+type ConversationRef = Pick<Conversation, 'id' | 'mode' | 'origin' | 'archivedAt' | 'lastMessageAt' | 'createdAt' | 'effectiveLabel'> & Partial<Pick<Conversation, 'agent' | 'workspace'>>;
 
 function when(conversation: ConversationRef): number {
   const time = Date.parse(conversation.lastMessageAt ?? conversation.createdAt);
   return Number.isNaN(time) ? 0 : time;
 }
 
-export function talkTarget(agent: string, work: readonly RunningWork[], conversations: readonly ConversationRef[], project?: string): TalkTarget {
+export function talkTarget(agent: string, work: readonly RunningWork[], conversations: readonly ConversationRef[], project?: string, direct?: readonly string[]): TalkTarget {
   const usable = conversations.filter((item) => item.archivedAt === null && item.origin === 'user' && VISIBLE.includes(item.effectiveLabel));
   const known = new Set(usable.map((item) => item.id));
   const running = work.find((item) => item.agent === agent && known.has(item.conversationId));
@@ -41,6 +51,13 @@ export function talkTarget(agent: string, work: readonly RunningWork[], conversa
   if (agent === 'arianna') {
     const latest = usable.filter((item) => item.mode === 'private').sort((a, b) => when(b) - when(a))[0];
     return latest === undefined ? { kind: 'draft', mode: 'private' } : { kind: 'conversation', id: latest.id };
+  }
+  if (direct?.includes(agent) === true) {
+    const latest = usable
+      .filter((item) => item.agent === agent && (project === undefined || item.workspace === project))
+      .sort((a, b) => when(b) - when(a))[0];
+    if (latest !== undefined) return { kind: 'conversation', id: latest.id };
+    return project === undefined ? { kind: 'new', agent } : { kind: 'new', agent, project };
   }
   return project === undefined ? { kind: 'draft', mode: 'work' } : { kind: 'draft', mode: 'work', project };
 }
