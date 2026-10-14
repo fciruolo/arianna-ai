@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Un dato di «Su di te» alla volta verso Claude e Codex (D-213, D-114 tappa C): quando a un lavoro serve un dato «Solo in casa», Arianna chiede con `profile.share` e nella chat compare la scheda «Coder chiede: città», con il motivo e il testo esatto che esce; «Dagli solo questo» lo aggiunge una volta al prossimo lavoro di quell'agente, «No» e Arianna va avanti senza. Il dato in Impostazioni resta com'è.
 - Chi lavora per Arianna nel cloud chiede un dato su di te con una riga «Mi serve: <argomento>» nel rapporto, e Arianna lo legge come richiesta da girarti (D-213).
+- Quando può chiederlo con `profile.share`, Arianna vede scritto accanto al dato privato come averlo, e non ti chiede più che cosa contiene; una proposta di dato riusa l'argomento che c'è già (D-213).
 - Arianna propone di ricordare un dato stabile che le dici («mi sono trasferito a…») con `profile.propose`: la scheda «Vuoi che ricordi: città?» e, con «Sì, ricorda», il dato entra in «Su di te» come «Solo in casa» (D-213, D-114 tappa D).
 
 ### Sicurezza
