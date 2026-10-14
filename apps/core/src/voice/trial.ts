@@ -17,7 +17,7 @@ export interface TrialModel {
   id: string;
   family: string;
   kind: TrialKind;
-  /** Every file of the catalog entry is in data/models with the right size. */
+  /** Every file of the catalog entry is in its folder (data/models for the voice) with the right size. */
   present: boolean;
   /** Assigned to the role in [roles] of arianna.toml. */
   assigned: boolean;

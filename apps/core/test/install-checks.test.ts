@@ -151,7 +151,11 @@ ${extra}    ram_min_gib: 1
   mkdirSync(join(data, 'models', 'fake-pii'), { recursive: true });
   const stray = guardDirChecks(catalog, data).find((check) => check.id === 'models.guard-dir');
   assert.equal(stray?.ok, false);
-  assert.match(stray.detail, /data\/models\/fake-pii: oMLX sees it, move it to data\/guard\/models\/fake-pii/);
+  assert.match(stray.detail, /data\/models\/fake-pii .*oMLX may see it, move it to data\/guard\/models\/fake-pii/);
+  // A copy in the bin of data/models counts too.
+  rmSync(join(data, 'models', 'fake-pii'), { recursive: true });
+  mkdirSync(join(data, 'models', 'eliminati', '2026-10-07T21-00-00-000Z-fake-pii'), { recursive: true });
+  assert.equal(guardDirChecks(catalog, data)[0]?.ok, false);
   // Without a model of apps/guard in the catalog there is nothing to check.
   assert.deepEqual(guardDirChecks({ version: 1, models: catalog.models.filter((model) => model.dir !== 'guard') }, data), []);
 });

@@ -263,7 +263,10 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
 export function guardDirChecks(catalog: ModelCatalog, data: string): DoctorCheck[] {
   const guarded = catalog.models.filter((model) => model.dir === 'guard');
   if (guarded.length === 0) return [];
-  const stray = guarded.filter((model) => existsSync(join(data, modelsRoot(), model.id)));
+  const root = join(data, modelsRoot());
+  const binned = existsSync(join(root, 'eliminati')) ? readdirSync(join(root, 'eliminati')) : [];
+  // In data/models, or in its bin (a folder of a removal before D-203, named <time>-<id>).
+  const stray = guarded.filter((model) => existsSync(join(root, model.id)) || binned.some((name) => name.endsWith(`-${model.id}`)));
   return [
     {
       id: 'models.guard-dir',
@@ -271,7 +274,7 @@ export function guardDirChecks(catalog: ModelCatalog, data: string): DoctorCheck
       detail:
         stray.length === 0
           ? 'the models of apps/guard are out of data/models'
-          : `${stray.map((model) => `data/models/${model.id}`).join(', ')}: oMLX sees it, move it to ${stray.map((model) => modelFolderText(model)).join(', ')}`,
+          : `${stray.map((model) => modelFolderText({ id: model.id })).join(', ')} (or its bin data/models/eliminati): oMLX may see it, move it to ${stray.map((model) => modelFolderText(model)).join(', ')}`,
     },
   ];
 }

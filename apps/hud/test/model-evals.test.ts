@@ -80,5 +80,5 @@ test('the codes and refusals of a trial become Italian, unknown ones generic', (
   assert.equal(modelEvalErrorText('TypeError'), 'errore di Arianna');
   assert.equal(errorText(new ApiError(409, 'a trial of this model is already queued or running')), 'Una prova di questo modello è già in coda o in corso.');
   assert.equal(errorText(new ApiError(409, 'the trial is already passed')), 'Questa prova è già finita.');
-  assert.match(errorText(new ApiError(409, 'the files of the model are not in data/models')), /arianna:models pull/);
+  assert.match(errorText(new ApiError(409, 'the files of the model are not on the disk')), /arianna:models pull/);
 });

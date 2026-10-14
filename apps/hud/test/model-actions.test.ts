@@ -143,10 +143,10 @@ describe('confirmations', () => {
   });
 
   it('emptying the bin counts folders and bytes and says it cannot be undone', () => {
-    const shown = emptyTrashConfirmation({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
+    const shown = emptyTrashConfirmation({ folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
     assert.match(shown.lines[0] ?? '', /2 cartelle in data\/models\/eliminati: 3 GB/);
     // D-203: the bin of data/guard/models is named too when it holds something.
-    const both = emptyTrashConfirmation({ folder: 'data/models/eliminati', folders: ['data/models/eliminati', 'data/guard/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
+    const both = emptyTrashConfirmation({ folders: ['data/models/eliminati', 'data/guard/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
     assert.match(both.lines[0] ?? '', /in data\/models\/eliminati e data\/guard\/models\/eliminati: 3 GB/);
     assert.match(shown.lines[1] ?? '', /Non si può annullare/);
     assert.equal(shown.danger, true);
@@ -170,8 +170,8 @@ describe('progress and outcomes', () => {
   });
 
   it('the bin in one line', () => {
-    assert.equal(trashText({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [], sizeBytes: 0 }), 'Il cestino è vuoto.');
-    assert.equal(trashText({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 5e8 }], sizeBytes: 5e8 }), '1 cartella, 500 MB');
+    assert.equal(trashText({ folders: ['data/models/eliminati'], entries: [], sizeBytes: 0 }), 'Il cestino è vuoto.');
+    assert.equal(trashText({ folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 5e8 }], sizeBytes: 5e8 }), '1 cartella, 500 MB');
   });
 });
 

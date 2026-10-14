@@ -66,7 +66,11 @@ function parseEndpoint(value: unknown, where: string, roles: Roles): LocalEndpoi
   return endpoint;
 }
 
-/** An argument that names data/guard/models or a folder inside it (`--model-dir=…` included). */
+/**
+ * An argument that names data/guard/models or a folder inside it (`--model-dir=…` included).
+ * A parent folder (`data`, `data/guard`) or a path through `~` or a variable is not caught:
+ * the doctor still finds a copy in data/models, and oMLX is started with data/models.
+ */
 function readsGuardModels(arg: string): boolean {
   const parts = arg.split(/[\\/=]/).filter((part) => part !== '' && part !== '.');
   return parts.some((part, index) => part === 'guard' && parts[index + 1] === 'models');

@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import { modelsRoot } from './catalog.ts';
+
 /**
  * Where apps/guard lives on disk (D-113): the second scanner of personal data,
  * a Python environment of its own like apps/voice, everything inside ARIANNA_HOME.
@@ -34,7 +36,7 @@ export function guardPaths(home: string, data: string): GuardPaths {
     uvPython: join(root, 'python'),
     uvCache: join(root, 'cache'),
     tmp: join(root, 'tmp'),
-    models: join(root, 'models'),
+    models: join(data, modelsRoot('guard')),
     evals: join(data, 'evals'),
   };
 }

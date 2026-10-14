@@ -346,7 +346,7 @@ describe('remove and the bin', () => {
 
   it('empties the bin only with confirm: true, and tells how much it freed', async () => {
     const { actions, state } = setup();
-    assert.deepEqual(actions.trash(), { folder: `data/models/${TRASH_DIR}`, folders: [`data/models/${TRASH_DIR}`], entries: [], sizeBytes: 0 });
+    assert.deepEqual(actions.trash(), { folders: [`data/models/${TRASH_DIR}`], entries: [], sizeBytes: 0 });
     install(state.data, 'fake-a');
     await actions.remove('fake-a', 'fake-a');
     assert.equal(actions.trash().sizeBytes, WEIGHTS.length + CONFIG.length);

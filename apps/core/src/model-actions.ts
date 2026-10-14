@@ -48,9 +48,7 @@ export interface ModelAction {
 
 /** What the bin holds: one folder per removed model (or per set of wrong files replaced). */
 export interface TrashView {
-  /** The bin of data/models. */
-  folder: string;
-  /** The bins that hold something, data/models first (D-203: data/guard/models has its own); `folder` alone when empty. */
+  /** The bins that hold something, data/models first (D-203: data/guard/models has its own); the bin of data/models alone when empty. */
   folders: string[];
   entries: { name: string; sizeBytes: number }[];
   sizeBytes: number;
@@ -287,8 +285,13 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
   }
 
   function trash(): TrashView {
-    const view: TrashView = { folder: trashText(), folders: [], entries: [], sizeBytes: 0 };
-    for (const bin of bins()) {
+    return trashOf(bins());
+  }
+
+  /** The view of what `bins()` read: emptyTrash erases exactly what it counts. */
+  function trashOf(read: ReturnType<typeof bins>): TrashView {
+    const view: TrashView = { folders: [], entries: [], sizeBytes: 0 };
+    for (const bin of read) {
       if (bin.names.length > 0) view.folders.push(trashText(bin.dir));
       for (const name of bin.names) {
         const sizeBytes = folderBytes(join(bin.path, name));
@@ -296,7 +299,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
         view.sizeBytes += sizeBytes;
       }
     }
-    if (view.folders.length === 0) view.folders.push(view.folder);
+    if (view.folders.length === 0) view.folders.push(trashText());
     return view;
   }
 
@@ -419,8 +422,9 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
       if (confirm !== true) throw new ModelActionError('invalid', 'emptying the bin needs the confirmation of the user');
       // A download may be moving a wrong file into the bin now.
       idle();
-      const view = trash();
-      for (const bin of bins()) for (const name of bin.names) rmSync(join(bin.path, name), { recursive: true, force: true });
+      const read = bins();
+      const view = trashOf(read);
+      for (const bin of read) for (const name of bin.names) rmSync(join(bin.path, name), { recursive: true, force: true });
       emit('model.trash.emptied', { outcome: 'ok', removed: view.entries.length });
       return { removed: view.entries.length, sizeBytes: view.sizeBytes };
     },

@@ -75,8 +75,8 @@ test('a development copy passes the tripwire; the data of an installation or rea
   writeFileSync(join(dir, 'config', 'arianna.toml'), '[database]\npassword = "vault://db-owner-password"\n');
   assert.match(godCloneRefusal(dir) ?? '', /password/);
   rmSync(join(dir, 'config'), { recursive: true });
-  for (const name of ['vault', 'postgres', 'archive', 'kb', 'models']) {
-    mkdirSync(join(dir, 'data', name));
+  for (const name of ['vault', 'postgres', 'archive', 'kb', 'models', 'guard/models']) {
+    mkdirSync(join(dir, 'data', name), { recursive: true });
     assert.match(godCloneRefusal(dir) ?? '', new RegExp(`data/${name}`));
     rmSync(join(dir, 'data', name), { recursive: true });
   }

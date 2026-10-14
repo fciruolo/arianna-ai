@@ -79,7 +79,7 @@ export function godPartOf(workspace: string | null | undefined): string | undefi
 }
 
 /** What makes a folder not a development copy, in the words the user reads. */
-const FORBIDDEN_DATA = ['vault', 'postgres', 'archive', 'kb', 'models'];
+const FORBIDDEN_DATA = ['vault', 'postgres', 'archive', 'kb', 'models', 'guard/models'];
 
 /**
  * Why a clone is not a development copy, or undefined when it is one (D-127).

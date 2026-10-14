@@ -321,7 +321,7 @@ export interface ComparisonTrial extends Omit<ModelEvalRow, 'cases'> {
    */
   model: { name: string; provider: string | null; sizeBytes: number | null; quantization: string | null; ramMinGib: number | null; from: 'trial' | 'catalog' | 'id' };
   inCatalog: boolean;
-  /** Its files are in data/models with the size of the catalog. */
+  /** Its files are in its folder (modelPath) with the size of the catalog. */
   present: boolean;
   /** The model the role uses now: the reference. */
   inUse: boolean;
@@ -776,7 +776,7 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
       const check = checkCandidate(options.catalog(), modelId, role, options.dataDir, size);
       if (!check.ok) {
         if (check.code === 'not-in-catalog') throw new ModelEvalError('not-found', 'the model is not in the catalog');
-        throw new ModelEvalError('conflict', check.code === 'role' ? 'the catalog does not list this role for the model' : 'the files of the model are not in data/models');
+        throw new ModelEvalError('conflict', check.code === 'role' ? 'the catalog does not list this role for the model' : 'the files of the model are not on the disk');
       }
       if (trialEndpoints(options.endpoints(), modelId).length === 0) throw new ModelEvalError('conflict', 'no local endpoint in arianna.toml');
       try {

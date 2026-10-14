@@ -282,7 +282,7 @@ export function cardOf(raw: unknown, repo: string, models: readonly CatalogEntry
 export interface HuggingFaceOptions {
   /** ARIANNA_HOME: the catalogs are read at each request, the user one written there. */
   home: string;
-  /** data/: a model with a folder in data/models is never taken out of the catalog. */
+  /** data/: a model with a folder (modelPath) is never taken out of the catalog. */
   dataDir: string;
   client: HubClient;
   /** passGateway: decides and writes gateway_log before anything leaves. */

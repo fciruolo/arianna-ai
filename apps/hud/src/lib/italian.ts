@@ -154,7 +154,7 @@ const ERRORS: Record<string, string> = {
   // Trials of a model (D-081).
   'the model is not in the catalog': 'Il modello non è nel catalogo.',
   'the catalog does not list this role for the model': 'Il catalogo non indica questo modello per l’orchestratore.',
-  'the files of the model are not in data/models': 'I file del modello non sono in data/models: scaricali con pnpm arianna:models pull.',
+  'the files of the model are not on the disk': 'I file del modello non sono sul disco: scaricali con pnpm arianna:models pull.',
   'no local endpoint in arianna.toml': 'Nessun server locale in arianna.toml: aggiungilo nelle impostazioni.',
   'a trial of this model is already queued or running': 'Una prova di questo modello è già in coda o in corso.',
 };
@@ -352,7 +352,7 @@ const MODEL_EVAL_ERRORS: Record<string, string> = {
   'lock-lost': 'interrotta: Arianna ha perso il controllo della coda',
   'not-in-catalog': 'il modello non è più nel catalogo',
   role: 'il catalogo non indica più il modello per l’orchestratore',
-  'files-missing': 'i file del modello non sono in data/models',
+  'files-missing': 'i file del modello non sono sul disco',
   'no-endpoint': 'nessun server locale in arianna.toml',
 };
 

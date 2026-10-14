@@ -31,8 +31,6 @@ export interface ModelAction {
 }
 
 export interface TrashView {
-  /** The bin of data/models. */
-  folder: string;
   /** The bins that hold something (data/guard/models has its own, D-203); `folder` alone when empty. */
   folders: string[];
   entries: { name: string; sizeBytes: number }[];

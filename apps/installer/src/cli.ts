@@ -8,6 +8,7 @@
 // (tasks 1.17 and 1.18, docs/INSTALLER-PORTABILITY.md). Credentials of Claude
 // Code and Codex are never touched: their login stays manual.
 import { spawnSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { stdin, stdout } from 'node:process';
@@ -17,6 +18,8 @@ import {
   DEFAULT_SETTINGS,
   loadCatalog,
   loadConfig,
+  MODEL_DIRS,
+  modelsRoot,
   parseProjects,
   resolveHome,
   userHomeOf,
@@ -25,7 +28,7 @@ import {
 } from '@arianna/config';
 import { runDoctor, type DoctorCheck } from '@arianna/core/doctor';
 import { ensureLayout, folderProblem, freeBytes, installationChecks, systemChecks } from '@arianna/core/install-checks';
-import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from '@arianna/core/model-files';
+import { modelStatus, pullModels, selectedModels, type FileStatus } from '@arianna/core/model-files';
 import { createFetcher } from '@arianna/core/model-http';
 import { writeDoctorRecord } from '@arianna/core/readiness';
 
@@ -73,12 +76,18 @@ async function pull(config: AriannaConfig, verify = false, trial = false): Promi
   // Also makes data/ private before anything is written in it.
   ensureLayout(config.paths.data);
   const models = selected(config, trial);
-  const needed = (await modelStatus(models, config.paths.data))
-    .filter((status) => status.state !== 'present')
-    .reduce((sum, status) => sum + status.file.sizeBytes, 0);
-  const free = freeBytes(join(config.paths.data, MODELS_DIR));
-  if (needed + SPARE_BYTES > free) {
-    throw new Error(`not enough disk: ${gib(needed)} to download plus ${gib(SPARE_BYTES)} spare, ${gib(free)} free`);
+  const statuses = await modelStatus(models, config.paths.data);
+  // Per folder of the models (D-203: data/guard/models may be on another disk through a link).
+  for (const dir of MODEL_DIRS) {
+    const ids = new Set(models.filter((model) => (model.dir ?? 'models') === dir).map((model) => model.id));
+    const needed = statuses.filter((status) => ids.has(status.model) && status.state !== 'present').reduce((sum, status) => sum + status.file.sizeBytes, 0);
+    if (needed === 0) continue;
+    const root = join(config.paths.data, modelsRoot(dir));
+    mkdirSync(root, { recursive: true });
+    const free = freeBytes(root);
+    if (needed + SPARE_BYTES > free) {
+      throw new Error(`not enough disk: ${gib(needed)} to download plus ${gib(SPARE_BYTES)} spare, ${gib(free)} free`);
+    }
   }
   let last = 0;
   const pulled = await pullModels(models, config.paths.data, {

@@ -13,8 +13,6 @@ import { pipeline } from 'node:stream/promises';
 
 import { modelPath, type AriannaConfig, type CatalogEntry, type ModelCatalog, type ModelFile } from '@arianna/config';
 
-/** data/models, the folder oMLX reads; a model with `dir: guard` lives in data/guard/models instead (D-203). */
-export const MODELS_DIR = 'models';
 export const PART_SUFFIX = '.part';
 
 export type FileState = 'ok' | 'present' | 'missing' | 'partial' | 'wrong-size' | 'wrong-hash';

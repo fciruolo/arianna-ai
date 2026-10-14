@@ -217,7 +217,7 @@ export interface SettingsPageOptions {
   home: string;
   /** For `~/` of the projects: the same home the core read the file with. */
   userHome: string;
-  /** data/: the models are in data/models. */
+  /** data/: each model in its folder (modelPath, D-203). */
   dataDir: string;
   /** The configuration in use (`settings.current()`). */
   running: () => AriannaConfig;
