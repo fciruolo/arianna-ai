@@ -25,6 +25,19 @@ export {
 } from './context.ts';
 export { PolicyError } from './errors.ts';
 export { PERSONA_LABEL, personaFits } from './persona.ts';
+export {
+  DEFAULT_FACT_LABEL,
+  FACT_LABELS,
+  FACT_TOPIC_LABEL,
+  factFieldsToScan,
+  isFactLabel,
+  isFactLowering,
+  profileFits,
+  type FactField,
+  type FactLabel,
+  type FittingFact,
+  type ProfileFact,
+} from './profile.ts';
 export { PROJECT_RULES_LABEL, projectRulesFit } from './project-rules.ts';
 export {
   canSendTo,
