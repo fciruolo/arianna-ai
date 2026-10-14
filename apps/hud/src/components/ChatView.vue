@@ -8,6 +8,7 @@ import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
+import { computerTask } from '../lib/computer.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
@@ -38,6 +39,7 @@ import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Dir
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import ComputerButton from './ComputerButton.vue';
 import ComputerPanel from './ComputerPanel.vue';
 import CreditLine from './CreditLine.vue';
 import ImClosingCard from './ImClosingCard.vue';
@@ -387,8 +389,15 @@ async function readClosings(): Promise<void> {
 }
 watch(() => [props.conversation.secretary === true, props.chat.conversationId, props.chat.messages.length], () => void readClosings(), { immediate: true });
 
-/** The computer of the Coder's run (D-095): a read-only panel at the right, closed when the conversation changes. */
+/**
+ * The computer of the Coder's run (D-095): a read-only panel at the right, closed when the conversation changes.
+ * It opens from the block of the Coder's task it shows (the live card or the report), next to who is working.
+ */
 const computerOpen = ref(false);
+const computerTaskId = computed(() => computerTask(props.chat, props.credits));
+function showsComputer(message: { taskId: string | null }): boolean {
+  return message.taskId !== null && message.taskId === computerTaskId.value;
+}
 watch(
   () => props.chat.conversationId,
   () => (computerOpen.value = false),
@@ -719,18 +728,6 @@ onBeforeUnmount(() => clearInterval(clock));
               CODER <b class="font-medium text-accent">al lavoro · {{ EXECUTOR_TEXT[coderRun.executor] ?? coderRun.executor }}</b>
             </div>
           </div>
-          <button
-            type="button"
-            class="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-line px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-surface-2"
-            :class="[computerOpen ? 'bg-surface-2' : '', 'ml-auto sm:ml-0']"
-            :aria-pressed="computerOpen"
-            aria-label="Computer del Coder"
-            title="Computer del Coder: terminale, file e attività del lavoro, in sola lettura"
-            @click="computerOpen = !computerOpen"
-          >
-            <Icon name="computer" :size="16" />Computer
-            <span v-if="coderRun !== null" class="size-2 animate-pulse rounded-full bg-ok" aria-hidden="true"></span>
-          </button>
         </section>
 
         <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
@@ -871,6 +868,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
@@ -914,7 +912,8 @@ onBeforeUnmount(() => clearInterval(clock));
           <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directName}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="flex-1 font-medium">{{ directName }} al lavoro</span>
-              <span class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" working @toggle="computerOpen = !computerOpen" />
+              <span v-else class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
             <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[14px]">
               <li v-for="(line, index) in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2.5">
