@@ -2,6 +2,14 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Progetti seguiti: nella pagina «Sviluppo di Arianna» l'elenco dei progetti GitHub da cui Arianna prende idee (Open Design col suo catalogo, OpenWork e quelli che aggiungi, al più 20), con «Controlla novità» che legge le release dall'API pubblica di GitHub (esce solo il nome del progetto) e le raggruppa col modello locale (D-202).
+- Ogni novità di un progetto seguito ha «Implementiamo» e «Non interessa», che la scrivono in `data/dev/RISPOSTE.md` con la chiave `gh-<owner>__<repo>-<sha>` per Claude Code (D-202).
+- Comando `pnpm projects:followed [list|add|remove|check]` con gli stessi passi dal terminale (D-202).
+
 ## [0.94.0] - 2026-10-14
 
 ### Aggiunto
