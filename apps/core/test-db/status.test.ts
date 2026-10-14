@@ -164,8 +164,9 @@ test('GET /api/characters lists the originals and falls back when a pack is gone
   const body = JSON.parse(listing.body.toString('utf8')) as { packs: { id: string }[]; agents: Record<string, { pack: string; character: string }> };
   assert.deepEqual(body.packs.map(({ id }) => id), ['originali']);
   assert.deepEqual(body.agents, {
-    arianna: { pack: 'originali', character: 'arianna', rows: 4 },
-    coder: { pack: 'originali', character: 'coder', rows: 4 },
+    // `from` (D-103): no [characters] and no costume of a theme, so the originals.
+    arianna: { pack: 'originali', character: 'arianna', rows: 4, from: 'original' },
+    coder: { pack: 'originali', character: 'coder', rows: 4, from: 'original' },
   });
 
   const sheet = await get('/api/characters/originali/arianna');
