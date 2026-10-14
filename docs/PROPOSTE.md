@@ -2057,7 +2057,7 @@ Costruita in `apps/guard` (D-203): modello `rizzoaiacademy/rizzo-pii-0.3B` al co
 
 - Tutti i numeri (latenze, accuratezze, F1, memoria) sono quelli dichiarati dagli autori o da articoli che li riportano; nessuno è stato misurato su questo Mac. La latenza di Laya è su una GPU Tesla T4, non su Apple Silicon.
 - Licenza di Rizzo-PII e libreria con cui si carica: verificate il 2026-10-14, MIT e `transformers` (D-203).
-- Che oMLX esponga le probabilità dei token del prompt (serve a B1): da verificare sulla versione installata.
+- Che oMLX esponga le probabilità dei token (serve a B1): **provato il 2026-10-14 sulla versione installata, non le espone.** Con `logprobs: true, top_logprobs: 5` su `/v1/chat/completions` e con `logprobs: 5, echo: true` su `/v1/completions` (modello `qwen3-4b-instruct-2507-4bit`, testo inventato) risponde 200 con il testo e l'uso, senza nessun campo `logprobs`. B1 resta possibile solo con una versione di oMLX che le esponga (da cercare nella verifica del codice di oMLX) o caricando il modello in un altro modo; altrimenti si passa a B2 (Laya) con l'addestramento accettato dall'utente.
 - Il repository di Rizzo Flow non è stato letto: forma delle domande, modelli supportati e licenza dei pesi consigliati.
 - Il comportamento di Rizzo-PII su testo misto italiano e codice: misurato su 14 brief brevi inventati (2 falsi allarmi, sopra); da rifare su brief lunghi.
 
