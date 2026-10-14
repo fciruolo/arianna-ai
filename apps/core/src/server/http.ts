@@ -33,6 +33,7 @@ import {
   createConversation,
   CLAUDE_CHAT_AGENT,
   CODEX_CHAT_AGENT,
+  CODEX_CHAT_MODELS,
   DIRECT_MODELS,
   isUuid,
   listConversations,
@@ -2271,13 +2272,14 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts. The plain chat with Claude
-      // (D-111, tappa B) takes it only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT none.
+      // (D-111, tappa B) takes it only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT
+      // only when it is a model of Codex (else Sol answers, D-212).
       const preferred = body.mode === 'work' ? defaultModel() : undefined;
       const model =
         policy?.agent === CLAUDE_CHAT_AGENT
           ? DIRECT_MODELS.find((entry) => entry === preferred)
           : policy?.agent === CODEX_CHAT_AGENT
-            ? undefined
+            ? CODEX_CHAT_MODELS.find((entry) => entry === preferred)
             : preferred;
       const conversation = await createConversation(sql, {
         mode: body.mode,

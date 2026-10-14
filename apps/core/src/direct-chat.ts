@@ -52,19 +52,19 @@ export interface OffInterlocutor {
 
 /** What the plain chats say of themselves (L0, ours). */
 const CLAUDE_CHAT_DESCRIPTION = 'Chat semplice con Claude, senza strumenti né progetto: ogni messaggio va ad Anthropic';
-const CODEX_CHAT_DESCRIPTION = 'Chat semplice con i modelli di ChatGPT nella CLI codex, senza progetto';
-/**
- * Why ChatGPT without a project is off (D-111, tappa B): the adapter of Codex
- * runs only in the folder of a project (D-140); a run in an empty folder of
- * the conversation is not built nor tried live yet. With a project, the Coder
- * on Codex answers.
- */
-export const CODEX_CHAT_OFF = 'codex does not answer a conversation without a project yet: with a project, talk with the Coder';
+const CODEX_CHAT_DESCRIPTION = 'Chat semplice con i modelli di ChatGPT nella CLI codex, senza progetto: ogni messaggio va a OpenAI';
+/** Why ChatGPT without a project is off (D-212): codex is off in `[cloud] executors`, or its sandbox does not run here. */
+export const CODEX_CHAT_OFF = 'codex is off or does not run on this machine';
 export const CLAUDE_CHAT_OFF = 'claude is off or does not run on this machine';
 
 /** The plain chat with Claude (D-111, tappa B), while Claude runs. */
 function claudeChatPolicy(): DirectPolicy {
   return { agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, cloud: true, executors: ['claude'], modes: ['work'], project: false, interlocutor: true };
+}
+
+/** The plain chat with ChatGPT (D-212), while Codex runs: the same chain as Claude's, on `codex exec`. */
+function codexChatPolicy(): DirectPolicy {
+  return { agent: CODEX_CHAT_AGENT, description: CODEX_CHAT_DESCRIPTION, cloud: true, executors: ['codex'], modes: ['work'], project: false, interlocutor: true };
 }
 
 /**
@@ -85,7 +85,7 @@ export function assigneeLimits(agents: ReadonlyMap<string, LoadedAgent>, assigne
 export function offInterlocutors(available: { claude: boolean; codex: boolean }): OffInterlocutor[] {
   return [
     ...(available.claude ? [] : [{ agent: CLAUDE_CHAT_AGENT, description: CLAUDE_CHAT_DESCRIPTION, reason: CLAUDE_CHAT_OFF }]),
-    { agent: CODEX_CHAT_AGENT, description: CODEX_CHAT_DESCRIPTION, reason: CODEX_CHAT_OFF },
+    ...(available.codex ? [] : [{ agent: CODEX_CHAT_AGENT, description: CODEX_CHAT_DESCRIPTION, reason: CODEX_CHAT_OFF }]),
   ];
 }
 
@@ -124,14 +124,14 @@ export function directPolicyOf(name: string, agent: LoadedAgent, available: { cl
 
 /**
  * Every agent the user may talk with now: the interlocutors of «Con chi
- * parli» first (the local model, Claude), then the Coder, then by name.
+ * parli» first (the local model, Claude, ChatGPT), then the Coder, then by name.
  */
 export function directPolicies(agents: ReadonlyMap<string, LoadedAgent>, available: { claude: boolean; codex: boolean }): DirectPolicy[] {
-  const out: DirectPolicy[] = available.claude ? [claudeChatPolicy()] : [];
+  const out: DirectPolicy[] = [...(available.claude ? [claudeChatPolicy()] : []), ...(available.codex ? [codexChatPolicy()] : [])];
   for (const [name, agent] of agents) {
     const policy = directPolicyOf(name, agent, available);
     if (policy !== undefined) out.push(policy);
   }
-  const rank = (name: string): number => (name === LOCAL_CHAT_AGENT ? 0 : name === CLAUDE_CHAT_AGENT ? 1 : name === 'coder' ? 2 : 3);
+  const rank = (name: string): number => (name === LOCAL_CHAT_AGENT ? 0 : name === CLAUDE_CHAT_AGENT ? 1 : name === CODEX_CHAT_AGENT ? 2 : name === 'coder' ? 3 : 4);
   return out.sort((a, b) => rank(a.agent) - rank(b.agent) || (a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0));
 }

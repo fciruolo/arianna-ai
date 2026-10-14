@@ -88,6 +88,8 @@ export interface DelegateEnv {
   directPrompt?: string;
   /** What Claude reads first in the plain chat with the user (claude-direct.ts, D-111 tappa B); for tests. */
   chatPrompt?: string;
+  /** What ChatGPT reads first in its plain chat with the user (claude-direct.ts, D-212); for tests. */
+  codexChatPrompt?: string;
   /** What Claude reads first when it writes the cards of a plan (D-164); PLANNER_PROMPT by default (tests pick a scenario). */
   plannerPrompt?: string;
   /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */

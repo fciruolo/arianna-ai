@@ -19,7 +19,7 @@ import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalMod
 import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
-import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversation, type DirectModel } from '../conversations.ts';
+import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
@@ -29,7 +29,7 @@ import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, particip
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
-import { canAnswerDirectly, directModelOf, runDirect } from './claude-direct.ts';
+import { canAnswerDirectly, directTargetOf, runDirect, type DirectTarget } from './claude-direct.ts';
 import {
   briefCeiling,
   delegateTargets,
@@ -138,6 +138,8 @@ export interface OrchestratorOptions {
   directPrompt?: string;
   /** What Claude reads first in the plain chat with the user (claude-direct.ts, D-111 tappa B); for tests. */
   chatPrompt?: string;
+  /** What ChatGPT reads first in its plain chat with the user (claude-direct.ts, D-212); for tests. */
+  codexChatPrompt?: string;
   /** What Claude reads first when it writes the cards of a plan (claude-plan.ts); for tests. */
   plannerPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
@@ -334,14 +336,15 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.codex === undefined ? {} : { codex: options.codex }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
     ...(options.chatPrompt === undefined ? {} : { chatPrompt: options.chatPrompt }),
+    ...(options.codexChatPrompt === undefined ? {} : { codexChatPrompt: options.codexChatPrompt }),
     ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.advise === undefined ? {} : { advise: options.advise }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, StepPlan>();
-  /** What `plan` decided about Claude answering directly (null: Arianna answers), for its `run`. */
-  const directs = new Map<string, DirectModel | null>();
+  /** What `plan` decided about Claude (or ChatGPT, D-212) answering directly (null: Arianna answers), for its `run`. */
+  const directs = new Map<string, DirectTarget | null>();
   const summaryEnv = { sql, model: options.model };
   const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
@@ -391,15 +394,16 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
    * The Claude model that answers this task directly: in a work system chat
    * where the user chose one, while Claude can run and what it would read
    * (the task and the chat) is within L1. `label` is that, for the run's
-   * record. Otherwise Arianna answers on the local model.
+   * record. Otherwise Arianna answers on the local model. In the plain chat
+   * with ChatGPT (D-212) the same, on `codex`.
    */
-  async function directFor(task: Task): Promise<{ model: DirectModel; label: Label } | undefined> {
-    if (task.conversationId === null || !canAnswerDirectly(env)) return undefined;
-    const model = directModelOf(await loadConversation(sql, task.conversationId), enabledCloudModels(env.settings().cloud));
-    if (model === undefined) return undefined;
+  async function directFor(task: Task): Promise<{ target: DirectTarget; label: Label } | undefined> {
+    if (task.conversationId === null) return undefined;
+    const target = directTargetOf(await loadConversation(sql, task.conversationId), enabledCloudModels(env.settings().cloud));
+    if (target === undefined || !canAnswerDirectly(env, target.executor)) return undefined;
     const history = await historyOf(sql, options.agents, task, [], []);
     const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
-    return isAtMost(label, 'L1') ? { model, label } : undefined;
+    return isAtMost(label, 'L1') ? { target, label } : undefined;
   }
 
   /**
@@ -639,13 +643,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (planned === undefined && directChat) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
       if (planned === undefined) {
         const direct = await directFor(task);
-        directs.set(key, direct?.model ?? null);
+        directs.set(key, direct?.target ?? null);
         // The run reads the task and the chat: their label, recorded with it.
         // A plain chat on the cloud that cannot answer now calls no model: it waits for the user (run).
         if (direct === undefined && CLOUD_CHAT_AGENTS.includes(task.assignee)) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
         return direct === undefined
           ? localSpec(task)
-          : { agent: task.assignee, executor: 'claude', locality: 'cloud', model: direct.model, effectiveLabel: direct.label };
+          : { agent: task.assignee, executor: direct.target.executor, locality: 'cloud', model: direct.target.model, effectiveLabel: direct.label };
       }
       plans.set(key, planned);
       // Waiting for the user's choice, or the "Non ora" answered without a model: no model is called.
@@ -719,13 +723,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         const [answered] = await sql<{ id: string }[]>`
           SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
         if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
-        const model = plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
-        if (model === undefined) {
+        const target = plannedDirect === undefined ? (await directFor(task))?.target : (plannedDirect ?? undefined);
+        if (target === undefined) {
           return { kind: 'wait-user', reason: `${task.assignee} cannot answer now: it is off in the configuration, or the conversation holds more than it may read` };
         }
         const history = await historyOf(sql, options.agents, task, [], []);
         if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
-        return runDirect(env, ctx, model, history, true);
+        return runDirect(env, ctx, target.model, history, true, target.executor);
       }
 
       const agent = options.agents.get(task.assignee);
@@ -751,11 +755,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (ctx.approval?.kind === 'im') return imDecisionAnswer(sql, ctx, options.ims);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
-      const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
+      const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.target : (plannedDirect ?? undefined);
       if (direct !== undefined) {
         const history = await historyOf(sql, options.agents, task, [], []);
         if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
-        return runDirect(env, ctx, direct, history);
+        return runDirect(env, ctx, direct.model, history, false, direct.executor);
       }
 
       const turns = await loadTurns(sql, task.id);

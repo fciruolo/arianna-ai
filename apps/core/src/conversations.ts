@@ -1,5 +1,7 @@
 import { clearanceFor, createContext, labelForUserMessage, scanText, type ConversationMode, type Label } from '@arianna/policy';
 
+import type { CodexModel } from '@arianna/executors';
+
 import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
@@ -34,6 +36,8 @@ export interface Conversation {
   /**
    * Direct chat only (D-111, tappa A2): tokens in the agent's session after
    * its latest answer, for the context indicator; null before it or elsewhere.
+   * The plain chats with Claude or ChatGPT read it from the run that wrote the
+   * latest answer (`runs.context_tokens`, D-212).
    */
   contextTokens: number | null;
   /** One line, from the first user message or the user; null until the first message. Carries the clearance. */
@@ -112,6 +116,14 @@ export interface Message {
 export const DIRECT_MODELS = ['sonnet', 'opus'] as const;
 export type DirectModel = (typeof DIRECT_MODELS)[number];
 
+/**
+ * The models of the plain chat with ChatGPT (D-212): the three aliases of
+ * Codex (D-141, the same list as CODEX_MODELS of @arianna/executors). None
+ * of them asks for a budget approval, so any of them may answer.
+ */
+export const CODEX_CHAT_MODELS = ['luna', 'sol', 'astra'] as const satisfies readonly CodexModel[];
+export type CodexChatModel = (typeof CODEX_CHAT_MODELS)[number];
+
 /** The agent that answers in the chat. */
 export const CHAT_AGENT = 'arianna';
 
@@ -166,7 +178,11 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
-  CASE WHEN c.agent IS NULL THEN NULL ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+  CASE WHEN c.agent IS NULL THEN NULL
+    WHEN c.agent IN ('claude', 'codex') AND c.workspace IS NULL THEN (SELECT r.context_tokens FROM runs r JOIN tasks t ON t.id = r.task_id
+      WHERE t.conversation_id = c.id AND r.context_tokens IS NOT NULL AND r.started_at >= coalesce(c.direct_session_at, '-infinity'::timestamptz)
+      ORDER BY r.started_at DESC, r.id DESC LIMIT 1)
+    ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
     WHERE t.conversation_id = c.id AND d.status = 'ok' AND d.created_at >= coalesce(c.direct_session_at, '-infinity'::timestamptz)
     ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
@@ -233,6 +249,9 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
     if (options.agent.name === CLAUDE_CHAT_AGENT && options.model !== undefined && !(DIRECT_MODELS as readonly string[]).includes(options.model)) {
       throw new ChatError('invalid', 'the plain chat with Claude takes Sonnet or Opus');
     }
+    if (options.agent.name === CODEX_CHAT_AGENT && options.model !== undefined && !(CODEX_CHAT_MODELS as readonly string[]).includes(options.model)) {
+      throw new ChatError('invalid', 'the plain chat with ChatGPT takes a model of Codex');
+    }
   }
   const incognito = options.incognito === true;
   // A direct chat keeps its agent's session to resume it (D-111): it has no incognito form.
@@ -276,7 +295,10 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
   if (model !== null && conversation.agent === CLAUDE_CHAT_AGENT && !(DIRECT_MODELS as readonly string[]).includes(model)) {
     throw new ChatError('invalid', 'the plain chat with Claude takes Sonnet or Opus');
   }
-  if (conversation.agent === CODEX_CHAT_AGENT) throw new ChatError('invalid', 'the plain chat with ChatGPT has no model to choose');
+  // The plain chat with ChatGPT (D-212): one of the models of Codex.
+  if (model !== null && conversation.agent === CODEX_CHAT_AGENT && !(CODEX_CHAT_MODELS as readonly string[]).includes(model)) {
+    throw new ChatError('invalid', 'the plain chat with ChatGPT takes a model of Codex');
+  }
   await sql`UPDATE conversations SET model = ${model} WHERE id = ${id}`;
   await appendEvent(sql, { kind: 'conversation.model', label: 'L0', payload: { conversationId: id, model } });
   const updated = await loadConversation(sql, id);

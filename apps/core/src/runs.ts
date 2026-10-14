@@ -71,6 +71,16 @@ export async function setSessionRef(sql: Queryable, runId: string, sessionRef: s
   await sql`UPDATE runs SET session_ref = ${sessionRef} WHERE id = ${runId} AND status = 'running'`;
 }
 
+/**
+ * How full the session is after the run (D-212): tokens of its latest model
+ * response, for the context indicator of the plain chats. Only a number; a
+ * value out of range is not written.
+ */
+export async function setRunContext(sql: Queryable, runId: string, tokens: number): Promise<void> {
+  if (!Number.isSafeInteger(tokens) || tokens < 0 || tokens > 100_000_000) return;
+  await sql`UPDATE runs SET context_tokens = ${tokens} WHERE id = ${runId} AND status = 'running'`;
+}
+
 /** Usage as reported by an executor; throws on values that would switch a cap off. */
 export function checkUsage(usage: RunUsage): RunUsage {
   const count = (value: number | undefined, name: string) => {
