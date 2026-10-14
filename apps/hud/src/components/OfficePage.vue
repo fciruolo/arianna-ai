@@ -2,8 +2,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import baseMapText from '../office/maps/base.json?raw';
+import corsiaMapText from '../office/maps/corsia.json?raw';
+import ufficioMapText from '../office/maps/ufficio.json?raw';
 import { listDelegations } from '../lib/api.ts';
-import { boardPoint, parseMapText } from '../lib/office/map.ts';
+import { boardPoint } from '../lib/office/map.ts';
+import { officeMapOf, skinOfTheme } from '../lib/office/skins.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
@@ -38,14 +41,19 @@ const props = defineProps<{
   decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
   /** The agents the user may talk with directly now (D-111d): «Parla con…» opens a chat with them (D-212). */
   directAgents?: string[] | undefined;
+  /** The theme in use (D-103): Scrubs and The Office have a place of their own (D-216); undefined is Base. */
+  theme?: string | undefined;
 }>();
 const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string]; talk: [agent: string, project?: string] }>();
 
-const parsed = parseMapText(baseMapText);
-const map = parsed.ok ? parsed.map : null;
-const mapProblem = parsed.ok ? null : parsed.reason;
+// The place of the theme (D-216): its map, or the base one with its colours when it does not pass.
+const MAP_TEXTS = { base: baseMapText, corsia: corsiaMapText, ufficio: ufficioMapText };
+const skin = computed(() => skinOfTheme(props.theme));
+const chosenMap = computed(() => officeMapOf(skin.value, MAP_TEXTS));
+const map = computed(() => chosenMap.value.map);
+const mapProblem = computed(() => chosenMap.value.problem);
 /** The map hangs a cardwall on a wall (D-165). */
-const hasBoard = map !== null && boardPoint(map) !== null;
+const hasBoard = computed(() => map.value !== null && boardPoint(map.value) !== null);
 
 // What waits for the user: the same total as the panel's row (D-091), the folder requests counted as the Coder's.
 const pendingSignal = computed(() => [props.status, props.approvals]);
@@ -109,7 +117,7 @@ const snapshot = computed<OfficeSnapshot>(() =>
       { id: 'coder', state: 'idle', run: null },
     ],
     projects: props.projects,
-    slots: map?.anchors.islands.length ?? 0,
+    slots: map.value?.anchors.islands.length ?? 0,
     activity: props.signals.activity,
     coderConversations: work.value.filter((item) => item.agent === 'coder').map((item) => item.conversationId),
     pending: pending.value,
@@ -202,10 +210,14 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
         <p v-if="map === null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
           La mappa dell'ufficio non è valida: {{ mapProblem }}.
         </p>
+        <p v-else-if="chosenMap.fallback" class="mb-2 text-[13px] text-muted">La pianta del tema non è valida ({{ mapProblem }}): l'ufficio usa quella di base con i colori del tema.</p>
+        <!-- A new place is a new canvas (D-216): the map, the anchors and the paths are read when it starts. -->
         <OfficeCanvas
           v-else
+          :key="`${skin}:${map.id}`"
           ref="office"
           :map="map"
+          :skin="skin"
           :snapshot="snapshot"
           :sheets="sheets"
           @talk="talk"

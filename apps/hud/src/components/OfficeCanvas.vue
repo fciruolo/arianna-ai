@@ -7,6 +7,7 @@ import { characterNames } from '../lib/character-names.ts';
 import { sheetUrl } from '../lib/api.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import { drawOffice, readColors, type Colors, type Figure } from '../lib/office/draw.ts';
+import { skinColors, type OfficeSkin } from '../lib/office/skins.ts';
 import {
   archivePoint,
   archiveTiles,
@@ -43,6 +44,8 @@ import type { CharacterChoice, Label } from '../lib/types.ts';
  */
 const props = defineProps<{
   map: OfficeMap;
+  /** The place of the theme (D-216): colours and furniture; the map is `map`. */
+  skin?: OfficeSkin | undefined;
   snapshot: OfficeSnapshot;
   sheets: Record<string, CharacterChoice | undefined>;
 }>();
@@ -332,6 +335,7 @@ function render(): void {
     figures,
     decisionsWaiting: props.snapshot.decisions.total > 0,
     boardNear: near === 'cardwall',
+    skin: props.skin ?? 'base',
   });
   const hintElement = hint.value;
   if (hintElement !== null) {
@@ -466,7 +470,7 @@ function onClick(event: MouseEvent): void {
 }
 
 function readTheme(): void {
-  colors = readColors(getComputedStyle(document.documentElement));
+  colors = skinColors(readColors(getComputedStyle(document.documentElement)), props.skin ?? 'base');
   wake();
 }
 const themeObserver = typeof MutationObserver === 'undefined' ? undefined : new MutationObserver(readTheme);

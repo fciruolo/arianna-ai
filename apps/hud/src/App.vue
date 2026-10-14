@@ -1079,6 +1079,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :signals="officeSignals"
         :cards-version="cardsVersion"
         :decide="store.decide"
+        :theme="activeTheme(store.themes.value)?.id"
         @open="openConversation"
         :direct-agents="directAgents.filter((entry) => entry.container === undefined).map((entry) => entry.agent)"
         @draft="(mode, project) => openDraft({ mode, project })"

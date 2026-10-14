@@ -1,4 +1,5 @@
 import { isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
+import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import type { Bubble } from './snapshot.ts';
 
 /**
@@ -44,6 +45,8 @@ export interface Scene {
   decisionsWaiting: boolean;
   /** The cardwall within reach of the user (D-165): underlined like a figure. */
   boardNear: boolean;
+  /** The place of the theme (D-216): absent or `base`, the office as it always was. */
+  skin?: OfficeSkin;
 }
 
 const FRAME_W = 16;
@@ -78,8 +81,29 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     });
   };
 
-  // Floor and rugs.
-  for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) rect((c + r) % 2 === 1 ? C['floor-alt'] : C.floor, c * TILE, r * TILE, TILE, TILE);
+  const skin = scene.skin ?? 'base';
+  const I = SKIN_INK;
+
+  // Floor and rugs. The Sacro Cuore has tiles with their joints, the Dunder Mifflin a flecked carpet (D-216).
+  if (skin === 'corsia') {
+    for (let r = 0; r < map.height; r++) {
+      for (let c = 0; c < map.width; c++) {
+        rect(C.floor, c * TILE, r * TILE, TILE, TILE);
+        rect(C['floor-alt'], c * TILE + TILE - 1, r * TILE, 1, TILE);
+        rect(C['floor-alt'], c * TILE, r * TILE + TILE - 1, TILE, 1);
+        rect(C['floor-alt'], c * TILE + 7, r * TILE + 7, 1, 1);
+      }
+    }
+  } else if (skin === 'ufficio') {
+    for (let r = 0; r < map.height; r++) {
+      for (let c = 0; c < map.width; c++) {
+        rect(C.floor, c * TILE, r * TILE, TILE, TILE);
+        for (let i = 0; i < 6; i++) rect(C['floor-alt'], c * TILE + ((c * 7 + r * 3 + i * 5) % TILE), r * TILE + ((c * 5 + r * 11 + i * 9) % TILE), 1, 1);
+      }
+    }
+  } else {
+    for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) rect((c + r) % 2 === 1 ? C['floor-alt'] : C.floor, c * TILE, r * TILE, TILE, TILE);
+  }
   const rug = (room: Room, color: string): void => {
     const x = room[0] * TILE + 2;
     const y = room[1] * TILE + 2;
@@ -126,6 +150,18 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   rug(anchors.pause.room, C['rug-neutral']);
   rug(anchors.decisions.room, C['rug-neutral']);
   rug(anchors.archive.room, C['rug-neutral']);
+  // Michael's glass office around the private island, open towards the floor (D-216).
+  if (skin === 'ufficio') {
+    const [c0, r0, c1, r1] = anchors.private.room;
+    const x0 = c0 * TILE;
+    const y0 = r0 * TILE;
+    const x1 = (c1 + 1) * TILE - 1;
+    const y1 = (r1 + 1) * TILE - 1;
+    rect(I.glass, x1 - 1, y0, 2, y1 - y0 - TILE);
+    rect(I.glass, x0, y1 - 1, x1 - x0 - TILE * 2, 2);
+    for (let y = y0; y < y1 - TILE; y += TILE) rect(C.outline, x1 - 1, y, 2, 2);
+    for (let x = x0; x < x1 - TILE * 2; x += TILE) rect(C.outline, x, y1 - 1, 2, 2);
+  }
 
   // Walls: a face where the floor is below, the top elsewhere; windows, a shelf and the cardwall on the faces.
   // The cardwall spans its run: drawn after every face, which would cover it.
@@ -143,7 +179,24 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       }
       rect(C['wall-face'], x, y, TILE, TILE);
       rect(C['wall-line'], x, y + TILE - 2, TILE, 2);
-      if (kind === 'window') {
+      // The handrail halfway up the corridor's wall (D-216, the decor of the theme Corsia).
+      if (skin === 'corsia') rect(C['wall-line'], x, y + 9, TILE, 1);
+      if (kind === 'shelf' && skin === 'corsia') {
+        // The green cross of the hospital on a white plate.
+        rect(C.outline, x + 2, y + 1, 12, 12);
+        rect(C.paper, x + 3, y + 2, 10, 10);
+        rect(I.cross, x + 7, y + 3, 2, 8);
+        rect(I.cross, x + 4, y + 6, 8, 2);
+      } else if (kind === 'shelf' && skin === 'ufficio') {
+        // The sign of the paper company: a dark plate with a stack of paper and two lines of writing.
+        rect(C.outline, x + 1, y + 2, 14, 10);
+        rect(I.sign, x + 2, y + 3, 12, 8);
+        rect(I.signInk, x + 3, y + 4, 3, 4);
+        rect(I.sign, x + 4, y + 5, 1, 2);
+        rect(I.signInk, x + 7, y + 5, 6, 1);
+        rect(I.signInk, x + 7, y + 7, 4, 1);
+        rect(I.signInk, x + 3, y + 9, 10, 1);
+      } else if (kind === 'window') {
         rect(C.outline, x + 1, y + 2, 14, 11);
         rect(C.window, x + 2, y + 3, 12, 9);
         rect(C['window-light'], x + 3, y + 4, 4, 3);
@@ -220,6 +273,23 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       rect(C['counter-top'], x + 1, y - 2, w - 2, 6);
       rect(C.counter, x + 1, y + 4, w - 2, 9);
       for (let i = 0; i < counter[2] - 1; i++) rect(C['counter-top'], x + 8 + i * 18, y + 7, 10, 2);
+      if (skin === 'corsia') {
+        // The nurses' station: the green cross on the front, a clipboard and the files on top.
+        rect(C.paper, x + 3, y + 5, 7, 7);
+        rect(I.cross, x + 6, y + 6, 1, 5);
+        rect(I.cross, x + 4, y + 8, 5, 1);
+        rect(C.outline, x + w - 14, y - 6, 6, 8);
+        rect(C.paper, x + w - 13, y - 5, 4, 6);
+        rect(C.outline, x + w - 12, y - 7, 2, 1);
+      } else if (skin === 'ufficio') {
+        // The reception: the jar of sweets and the telephone.
+        rect(C.outline, x + 3, y - 8, 6, 7);
+        rect(I.glass, x + 4, y - 7, 4, 5);
+        for (let i = 0; i < 4; i++) rect(I.candy[i] ?? C.accent, x + 4 + (i % 2) * 2, y - 5 + Math.floor(i / 2) * 2, 1, 1);
+        rect(C.outline, x + w - 12, y - 5, 8, 4);
+        rect(C.monitor, x + w - 11, y - 4, 6, 2);
+        rect(C.outline, x + w - 12, y - 7, 8, 2);
+      }
       const bx = bell[0] - 3;
       rect(C.outline, bx, y - 7, 7, 5);
       rect(scene.decisionsWaiting ? C.warn : C.muted, bx + 1, y - 6, 5, 3);
@@ -227,13 +297,75 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     },
   });
 
+  /** The vending machine and the cart of the Sacro Cuore, the water cooler and the photocopier of the Dunder Mifflin (D-216). */
+  const skinItem = (kind: 'coffee' | 'cabinet', x: number, y: number): void => {
+    if (skin === 'corsia' && kind === 'coffee') {
+      rect(C.outline, x + 1, y - 10, 14, 24);
+      rect(I.metalDark, x + 2, y - 9, 12, 22);
+      rect(I.glass, x + 3, y - 8, 7, 14);
+      for (let row = 0; row < 4; row++) for (let col = 0; col < 2; col++) rect(I.snack[(row + col) % 4] ?? C.accent, x + 4 + col * 3, y - 7 + row * 3, 2, 2);
+      rect(C.paper, x + 11, y - 6, 2, 4);
+      rect(C.outline, x + 3, y + 8, 7, 3);
+    } else if (skin === 'corsia') {
+      // The medicine cart: drawers in three colours, the green cross on the side.
+      rect(C.outline, x + 1, y - 6, 14, 18);
+      rect(I.metal, x + 2, y - 5, 12, 16);
+      const drawers = [I.blanket, I.crossLight, C.paper];
+      for (let i = 0; i < 3; i++) rect(drawers[i] ?? C.paper, x + 3, y - 4 + i * 5, 10, 4);
+      rect(I.cross, x + 7, y - 9, 2, 3);
+      rect(I.cross, x + 6, y - 8, 4, 1);
+      rect(C.outline, x + 2, y + 12, 2, 2);
+      rect(C.outline, x + 12, y + 12, 2, 2);
+    } else if (kind === 'coffee') {
+      // The water cooler.
+      rect(C.outline, x + 4, y - 12, 8, 9);
+      rect(I.water, x + 5, y - 11, 6, 7);
+      rect(C.outline, x + 3, y - 3, 10, 17);
+      rect(C.paper, x + 4, y - 2, 8, 15);
+      rect(I.water, x + 6, y + 2, 1, 2);
+      rect(C.danger, x + 9, y + 2, 1, 2);
+    } else {
+      // The photocopier: the lid, the glass, the paper tray.
+      rect(C.outline, x, y - 6, 16, 20);
+      rect(I.copier, x + 1, y - 5, 14, 18);
+      rect(I.copierDark, x + 1, y - 5, 14, 3);
+      rect(C.monitor, x + 10, y - 1, 4, 2);
+      rect(C.ok, x + 13, y - 1, 1, 1);
+      rect(C.paper, x + 3, y + 5, 10, 3);
+      rect(I.copierDark, x + 1, y + 9, 14, 1);
+    }
+  };
+  /** A run of `sofa` tiles: hospital beds in the Sacro Cuore, the meeting table in the Dunder Mifflin (D-216). */
+  const skinRun = (x: number, y: number, w: number, tiles: number): void => {
+    if (skin === 'corsia') {
+      for (let i = 0; i < tiles; i++) {
+        const bx = x + i * TILE;
+        rect(C.outline, bx + 1, y - 4, 14, 17);
+        rect(I.metal, bx + 2, y - 3, 12, 15);
+        rect(C.sofa, bx + 3, y - 3, 10, 12);
+        rect(C.paper, bx + 4, y - 2, 8, 3);
+        rect(C['sofa-dark'], bx + 3, y + 3, 10, 6);
+        rect(C.outline, bx + 2, y + 12, 2, 2);
+        rect(C.outline, bx + 12, y + 12, 2, 2);
+      }
+    } else {
+      rect(C.outline, x, y - 2, w, 14);
+      rect(C['sofa-dark'], x + 1, y - 1, w - 2, 12);
+      rect(C.sofa, x + 1, y - 1, w - 2, 9);
+      for (let i = 0; i < tiles; i++) rect(C.paper, x + 4 + i * TILE, y + 1, 6, 4);
+      for (let i = 0; i < tiles; i++) rect(C.chair, x + 4 + i * TILE, y - 6, 8, 4);
+    }
+  };
+
   // Single furniture tiles and runs of sofa.
   for (let r = 0; r < map.height; r++) {
     for (let c = 0; c < map.width; c++) {
       const kind = tileAt(map, c, r);
       const x = c * TILE;
       const y = r * TILE;
-      if (kind === 'plant') {
+      if (skin !== 'base' && (kind === 'coffee' || kind === 'cabinet')) {
+        items.push({ y: y + 14, draw: () => { skinItem(kind, x, y); } });
+      } else if (kind === 'plant') {
         items.push({ y: y + 14, draw: () => { pixels(PLANT, x + 2, y + 2, { g: C.plant, G: C['plant-dark'], p: C.pot, P: C['pot-dark'] }); } });
       } else if (kind === 'coffee') {
         items.push({
@@ -258,6 +390,11 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
             }
           },
         });
+      } else if (kind === 'sofa' && tileAt(map, c - 1, r) !== 'sofa' && skin !== 'base') {
+        let end = c;
+        while (tileAt(map, end + 1, r) === 'sofa') end++;
+        const w = (end - c + 1) * TILE;
+        items.push({ y: y + 14, draw: () => { skinRun(x, y, w, end - c + 1); } });
       } else if (kind === 'sofa' && tileAt(map, c - 1, r) !== 'sofa') {
         let end = c;
         while (tileAt(map, end + 1, r) === 'sofa') end++;
