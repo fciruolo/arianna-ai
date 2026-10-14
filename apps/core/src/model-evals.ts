@@ -469,6 +469,13 @@ export async function trialOpen(sql: Queryable, modelId: string): Promise<boolea
   return row?.open === true;
 }
 
+/** A trial at work now, whatever its model: a restart of oMLX waits for it (D-201). */
+export async function trialRunning(sql: Queryable): Promise<boolean> {
+  const [row] = await sql<{ running: boolean }[]>`
+    SELECT EXISTS (SELECT FROM model_evals WHERE status = 'running') AS running`;
+  return row?.running === true;
+}
+
 /** Closes a trial with its status and code; false when it was already closed. */
 async function closeTrial(tx: Queryable, id: string, modelId: string, status: 'error' | 'cancelled', code: string): Promise<boolean> {
   const rows = await tx`

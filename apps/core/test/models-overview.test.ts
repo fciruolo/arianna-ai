@@ -218,6 +218,12 @@ describe('buildModelsOverview', () => {
     assert.deepEqual(overview.trash, trash);
   });
 
+  it('carries the reload of oMLX after a download, null without it (D-201)', () => {
+    assert.equal(buildModelsOverview(inputs()).reload, null);
+    const reload = { state: 'waiting' as const, models: ['fake-spare'] };
+    assert.deepEqual(buildModelsOverview(inputs({ reload })).reload, reload);
+  });
+
   it('carries the sources of the cards and no error by default', () => {
     const overview = buildModelsOverview(inputs());
     assert.deepEqual(overview.sources, [{ id: 'fake-page', url: 'https://example.org/models', read: '2026-10-01' }]);
@@ -348,6 +354,38 @@ describe('GET /api/models/overview', () => {
     const bare = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
     try {
       assert.equal((await fetch(`http://127.0.0.1:${String(bare.port)}/api/models/overview`)).status, 404);
+    } finally {
+      await bare.close();
+    }
+  });
+
+  it('POST /api/models/reload/dismiss closes the line of the reload; 404 without it, 400 with fields (D-201)', async () => {
+    let dismissed = 0;
+    const post = (origin: string, body: unknown): Promise<Response> =>
+      fetch(`${origin}/api/models/reload/dismiss`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const server = await startApiServer({
+      sql: undefined as unknown as Sql,
+      live: undefined as unknown as LiveFeed,
+      host: '127.0.0.1',
+      port: 0,
+      modelReload: {
+        dismiss: () => {
+          dismissed += 1;
+        },
+      },
+    });
+    try {
+      const origin = `http://127.0.0.1:${String(server.port)}`;
+      assert.equal((await post(origin, {})).status, 200);
+      assert.equal(dismissed, 1);
+      assert.equal((await post(origin, { models: ['x'] })).status, 400);
+      assert.equal(dismissed, 1);
+    } finally {
+      await server.close();
+    }
+    const bare = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
+    try {
+      assert.equal((await post(`http://127.0.0.1:${String(bare.port)}`, {})).status, 404);
     } finally {
       await bare.close();
     }

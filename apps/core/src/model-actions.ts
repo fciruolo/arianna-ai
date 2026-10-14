@@ -87,6 +87,11 @@ export interface ModelActionsOptions {
   trialOpen: (modelId: string) => Promise<boolean>;
   /** One L0 event: the kind and the model id with the outcome. */
   onEvent: (kind: string, payload: Record<string, string | number>) => void;
+  /**
+   * A download ended with every file checked against the catalog: the local
+   * server must see the model (D-201). Never called for a failed or stopped one.
+   */
+  onDownloaded?: (entry: CatalogEntry) => void;
   freeBytes?: (path: string) => number;
   now?: () => Date;
   onError?: (error: unknown) => void;
@@ -253,6 +258,13 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
           ...(action.error === null ? {} : { error: action.error }),
           ...(kind === 'verify' ? { bad: action.bad.length } : {}),
         });
+        if (kind === 'download' && action.status === 'done') {
+          try {
+            options.onDownloaded?.(entry);
+          } catch (error) {
+            onError(error);
+          }
+        }
       }
     })();
     return { ...action };

@@ -210,6 +210,51 @@ describe('download', () => {
     assert.deepEqual(state.events.at(-1), { kind: 'model.download.finished', payload: { modelId: 'fake-a', outcome: 'cancelled', error: 'cancelled' } });
     assert.throws(() => actions.cancel('fake-a'), code('conflict'));
   });
+
+  it('tells the core when a download ends with every file checked, so that oMLX sees the model (D-201)', async () => {
+    const downloaded: string[] = [];
+    const { actions } = setup({ onDownloaded: (model) => downloaded.push(model.id) });
+    actions.download('fake-a');
+    await settled(actions, 'fake-a');
+    assert.deepEqual(downloaded, ['fake-a']);
+  });
+
+  it('never tells it for a failed or stopped download, nor for a verification (D-201)', async () => {
+    const downloaded: string[] = [];
+    const stalled = new PassThrough();
+    const wrong = setup({ onDownloaded: (model) => downloaded.push(model.id) });
+    wrong.actions.download('fake-bad');
+    assert.equal((await settled(wrong.actions, 'fake-bad')).status, 'failed');
+    const stopped = setup({
+      onDownloaded: (model) => downloaded.push(model.id),
+      fetch: () => {
+        stalled.write(WEIGHTS.subarray(0, 500));
+        return Promise.resolve({ status: 200, body: stalled });
+      },
+    });
+    stopped.actions.download('fake-a');
+    for (let tries = 0; tries < 200 && (stopped.actions.list()[0]?.bytesDone ?? 0) === 0; tries += 1) await new Promise((resolve) => setTimeout(resolve, 2));
+    stopped.actions.cancel('fake-a');
+    assert.equal((await settled(stopped.actions, 'fake-a')).status, 'cancelled');
+    const verified = setup({ onDownloaded: (model) => downloaded.push(model.id) });
+    install(verified.state.data, 'fake-a');
+    verified.actions.verify('fake-a');
+    assert.equal((await settled(verified.actions, 'fake-a')).status, 'done');
+    assert.deepEqual(downloaded, []);
+  });
+
+  it('a listener that throws does not change the outcome of the download (D-201)', async () => {
+    const errors: unknown[] = [];
+    const { actions } = setup({
+      onDownloaded: () => {
+        throw new Error('broken listener');
+      },
+      onError: (error) => errors.push(error),
+    });
+    actions.download('fake-a');
+    assert.equal((await settled(actions, 'fake-a')).status, 'done');
+    assert.equal(errors.length, 1);
+  });
 });
 
 describe('verify', () => {
