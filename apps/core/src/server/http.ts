@@ -16,6 +16,7 @@ import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { advisorStatus, writeAdvisorSettings } from '../orchestrator/advisor.ts';
+import { loadUsage, parsePeriod, USAGE_PERIODS } from '../usage.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
@@ -1051,6 +1052,20 @@ function advisorRoutes(sql: Sql, data: string | undefined): Route[] {
         throw error;
       }
       return { body: await advisorStatus(sql, dir) };
+    }),
+  ];
+}
+
+/**
+ * «Consumi» (D-093, idea 10): runs, delegations, exits and failures per model
+ * and per kind of task over a period. Read only, metadata only (L0).
+ */
+function usageRoutes(sql: Sql): Route[] {
+  return [
+    route('GET', '/api/usage', async (_request, url) => {
+      const period = parsePeriod(url.searchParams.get('period'));
+      if (period === undefined) throw new HttpError(400, `period must be one of ${USAGE_PERIODS.join(', ')}`);
+      return { body: await loadUsage(sql, period) };
     }),
   ];
 }
@@ -2128,6 +2143,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
     ...modelEvalRoutes(modelEvals),
     ...advisorRoutes(sql, advisorData),
+    ...usageRoutes(sql),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
     ...searchRoutes(sql, capture),

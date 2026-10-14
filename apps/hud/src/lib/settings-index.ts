@@ -197,6 +197,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
     group: 'Informazioni',
     items: [
       { id: 'changelog', slug: 'novita', title: 'Novità', behaviour: 'read', lead: 'Cosa è cambiato a ogni versione. Passa sopra una riga per chiederne a GOD.' },
+      // «Consumi» (D-093, idea 10 of OpenWork): counts and times only, read from the database of this Mac.
+      {
+        id: 'usage',
+        slug: 'consumi',
+        title: 'Consumi',
+        behaviour: 'read',
+        lead: 'Quanto ha lavorato Arianna, per modello e per tipo di compito: lavori, passi, deleghe, uscite verso il cloud, fallimenti e tempi. Solo conteggi, mai il testo dei lavori.',
+        example: 'in «7 giorni» vedi che Claude Code · Claude Sonnet ha fatto 12 lavori con 1 fallito, e che il gateway ha bloccato 2 uscite.',
+      },
       {
         id: 'dev-progress',
         slug: 'sviluppo',

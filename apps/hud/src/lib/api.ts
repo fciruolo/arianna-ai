@@ -26,6 +26,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
+import type { UsagePeriod, UsageReport } from './usage.ts';
 import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, TranslationsStatus } from './studio.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
@@ -569,6 +570,11 @@ export async function loadAdvisor(): Promise<AdvisorStatus> {
 /** An empty path removes it. */
 export async function saveAdvisor(usageFile: string): Promise<AdvisorStatus> {
   return call<AdvisorStatus>('POST', '/api/router/advisor', { usageFile });
+}
+
+/** «Consumi» (D-093, idea 10): counts, times and names of the period, never a text. */
+export async function loadUsage(period: UsagePeriod): Promise<UsageReport> {
+  return call<UsageReport>('GET', `/api/usage?period=${encodeURIComponent(period)}`);
 }
 
 /** Closes the line that asks to restart oMLX by hand after a download (D-201). */
