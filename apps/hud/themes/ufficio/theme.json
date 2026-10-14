@@ -1,8 +1,8 @@
 {
   "id": "ufficio",
-  "name": "Ufficio",
+  "name": "The Office",
   "kind": "serie",
-  "description": "Ispirato a The Office: beige, moquette grigia, azzurro da cartellina. Pam è Arianna, Jim il Coder, Michael è GOD, Dwight il revisore.",
+  "description": "La Dunder Mifflin: beige, moquette grigia, azzurro da cartellina. Pam è Arianna, Jim il Coder, Michael è GOD, Dwight il revisore.",
   "background": { "pattern": "nessuno", "decor": "moquette" },
   "hud": { "corners": false, "glow": "nessuno", "radius": "squadrato" },
   "characters": { "arianna": "serie/pam", "coder": "serie/jim", "god": "serie/michael", "reviewer": "serie/dwight", "finanze": "originali/coder-ufficio", "designer": "originali/coder-ufficio" },

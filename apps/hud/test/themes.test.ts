@@ -25,6 +25,14 @@ const repoThemes: ChatTheme[] = readdirSync(THEMES_DIR).map((folder) => JSON.par
 test('the repository has the themes of the series, each in its folder (D-103)', () => {
   assert.deepEqual(repoThemes.map((theme) => theme.id).sort(), ['corsia', 'ufficio']);
   for (const folder of readdirSync(THEMES_DIR)) assert.deepEqual(readdirSync(join(THEMES_DIR, folder)), ['theme.json'], folder);
+  // The names of the series (D-214), the ids unchanged so that a saved choice still works.
+  assert.deepEqual(
+    repoThemes.map((theme) => [theme.id, theme.name]).sort(),
+    [
+      ['corsia', 'Scrubs'],
+      ['ufficio', 'The Office'],
+    ],
+  );
 });
 
 test('every token a theme may set is a colour token of style.css, in both modes (D-103)', () => {

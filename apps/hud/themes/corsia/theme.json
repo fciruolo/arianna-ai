@@ -1,8 +1,8 @@
 {
   "id": "corsia",
-  "name": "Corsia",
+  "name": "Scrubs",
   "kind": "serie",
-  "description": "Ispirato a Scrubs: verde acqua e bianco d'ospedale, il corrimano a metà parete. Carla è Arianna, J.D. il Coder, il Dr. Cox è GOD.",
+  "description": "Il Sacro Cuore: verde acqua e bianco d'ospedale, il corrimano a metà parete. Carla è Arianna, J.D. il Coder, il Dr. Cox è GOD.",
   "background": { "pattern": "nessuno", "decor": "corrimano" },
   "hud": { "corners": false, "glow": "tenue", "radius": "morbido" },
   "characters": { "arianna": "serie/carla", "coder": "serie/jd", "god": "serie/cox", "reviewer": "serie/elliot", "finanze": "serie/turk", "designer": "originali/coder-corsia" },
