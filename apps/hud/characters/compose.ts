@@ -27,6 +27,63 @@ export interface CharacterArt {
   palette: Readonly<Record<string, string>>;
   /** Parts of each direction by name (`head`, `body-type1`, `legs-step2`…). */
   parts: Readonly<Record<Direction, Readonly<Record<string, Part>>>>;
+  /** The layers of a costume (D-103), drawn on every pose after the layer they follow. */
+  extra?: Readonly<Record<Direction, readonly CostumeLayer[]>>;
+}
+
+/** The kinds of layer of a frame: a costume layer follows one of them. */
+export type LayerKind = 'legs' | 'body' | 'head' | 'over';
+
+/**
+ * One piece of a costume (D-103): a cap, a stethoscope, a tie. It is drawn
+ * right after the layer of its kind on every frame, and moves with it (the
+ * head that nods while asleep takes its cap along). `skip` leaves it out of
+ * the frames whose layer of that kind starts with one of the names, e.g.
+ * `body-read` where the book covers the chest.
+ */
+export interface CostumeLayer {
+  name: string;
+  after: LayerKind;
+  part: Part;
+  skip?: readonly string[];
+}
+
+/**
+ * A costume of a theme (D-103), a variant of an original character: colours
+ * replaced, new letters, and layers for each of the three directions. Every
+ * layer has its part in all three directions (rows may be empty where it is
+ * not seen, as a tie from behind): a cap drawn only from the front would be a
+ * costume by half.
+ */
+export interface Costume {
+  /** The theme: the sheet is `<character>-<theme>`. */
+  theme: string;
+  /** Letters of the character's palette with a new colour. */
+  recolor?: Readonly<Record<string, string>>;
+  /** New letters, never one of the character's. */
+  palette?: Readonly<Record<string, string>>;
+  layers: Readonly<Record<Direction, readonly CostumeLayer[]>>;
+}
+
+const HEX = /^#[0-9a-f]{6}$/;
+
+/** The character in a costume: a sheet of its own, `<character>-<theme>`. Throws on a costume by half. */
+export function dress(art: CharacterArt, costume: Costume): CharacterArt {
+  const where = `${art.id}-${costume.theme}`;
+  for (const [letter, colour] of Object.entries(costume.recolor ?? {})) {
+    if (art.palette[letter] === undefined) throw new Error(`${where}: recolor "${letter}" is not in the palette of ${art.id}`);
+    if (!HEX.test(colour)) throw new Error(`${where}: recolor "${letter}" is not #rrggbb`);
+  }
+  for (const [letter, colour] of Object.entries(costume.palette ?? {})) {
+    if (art.palette[letter] !== undefined) throw new Error(`${where}: "${letter}" is already a letter of ${art.id}: use recolor`);
+    if (letter.length !== 1 || letter === '.' || !HEX.test(colour)) throw new Error(`${where}: palette "${letter}" is one letter and #rrggbb`);
+  }
+  const names = (direction: Direction) => costume.layers[direction].map((layer) => layer.name).sort().join(',');
+  for (const direction of DIRECTIONS) {
+    if (names(direction) !== names('down')) throw new Error(`${where}.${direction}: every layer needs its part in down, up and right`);
+    if (new Set(costume.layers[direction].map((layer) => layer.name)).size !== costume.layers[direction].length) throw new Error(`${where}.${direction}: a layer is named twice`);
+  }
+  return { id: where, palette: { ...art.palette, ...costume.recolor, ...costume.palette }, parts: art.parts, extra: costume.layers };
 }
 
 /** One part to draw: its name and an optional vertical shift. */
@@ -82,7 +139,8 @@ function resolvePart(parts: Readonly<Record<string, Part>>, name: string): Part 
 /** Throws on a map whose lines are not 16 wide, leave the frame, or use a letter outside the palette. */
 export function checkArt(art: CharacterArt): void {
   for (const direction of DIRECTIONS) {
-    for (const [name, part] of Object.entries(art.parts[direction])) {
+    const extra = Object.fromEntries((art.extra?.[direction] ?? []).map((layer) => [`costume:${layer.name}`, layer.part]));
+    for (const [name, part] of Object.entries({ ...art.parts[direction], ...extra })) {
       const where = `${art.id}.${direction}.${name}`;
       if (part.top < 0 || part.top + part.rows.length > FRAME_HEIGHT) throw new Error(`${where}: outside the frame`);
       part.rows.forEach((line, index) => {
@@ -110,6 +168,22 @@ export function renderSheet(art: CharacterArt): { width: number; height: number;
   for (let row = 0; row < rows; row++) {
     const direction = DIRECTIONS[row] ?? 'down';
     const parts = art.parts[direction];
+    const draw = (part: Part, column: number, dy: number) => {
+      part.rows.forEach((line, index) => {
+        const y = part.top + index + dy;
+        if (y < 0 || y >= FRAME_HEIGHT) return;
+        for (let x = 0; x < FRAME_WIDTH; x++) {
+          const letter = line[x] ?? '.';
+          if (letter === '.') continue;
+          const [r, g, b] = rgb(art.palette[letter] ?? '#000000');
+          const at = ((row * FRAME_HEIGHT + y) * width + column * FRAME_WIDTH + x) * 4;
+          rgba[at] = r;
+          rgba[at + 1] = g;
+          rgba[at + 2] = b;
+          rgba[at + 3] = 255;
+        }
+      });
+    };
     framesOf(row).forEach((layers, column) => {
       for (const layer of layers) {
         const part = resolvePart(parts, layer.part);
@@ -118,20 +192,13 @@ export function renderSheet(art: CharacterArt): { width: number; height: number;
           if (layer.part.startsWith('over-')) continue;
           throw new Error(`${art.id}.${direction}: part "${layer.part}" is missing`);
         }
-        part.rows.forEach((line, index) => {
-          const y = part.top + index + (layer.dy ?? 0);
-          if (y < 0 || y >= FRAME_HEIGHT) return;
-          for (let x = 0; x < FRAME_WIDTH; x++) {
-            const letter = line[x] ?? '.';
-            if (letter === '.') continue;
-            const [r, g, b] = rgb(art.palette[letter] ?? '#000000');
-            const at = ((row * FRAME_HEIGHT + y) * width + column * FRAME_WIDTH + x) * 4;
-            rgba[at] = r;
-            rgba[at + 1] = g;
-            rgba[at + 2] = b;
-            rgba[at + 3] = 255;
-          }
-        });
+        draw(part, column, layer.dy ?? 0);
+        // The costume (D-103): its layers of this kind, unless this frame skips them.
+        const kind = layer.part.split('-')[0];
+        for (const extra of art.extra?.[direction] ?? []) {
+          if (extra.after !== kind || (extra.skip ?? []).some((name) => layer.part.startsWith(name))) continue;
+          draw(extra.part, column, layer.dy ?? 0);
+        }
       }
     });
   }

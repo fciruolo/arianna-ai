@@ -2,13 +2,30 @@ import { join } from 'node:path';
 
 import { ARIANNA } from './art/arianna.ts';
 import { CODER } from './art/coder.ts';
+import { ARIANNA_CORSIA, CODER_CORSIA } from './art/costumes/corsia.ts';
+import { ARIANNA_UFFICIO, CODER_UFFICIO } from './art/costumes/ufficio.ts';
 import { GOD } from './art/god.ts';
-import { renderSheet, type CharacterArt } from './compose.ts';
+import { dress, renderSheet, type CharacterArt } from './compose.ts';
 import { encodePng } from './png.ts';
 
 /** The pack of the original characters, in git: also the fallback when a pack in data/ is missing or invalid (D-060). */
 export const PACK_DIR = join(import.meta.dirname, 'originali');
 export const ORIGINALS: readonly CharacterArt[] = [ARIANNA, CODER, GOD];
+
+/**
+ * The costumes of the themes (D-103), sheets of their own in the same pack:
+ * `<character>-<theme>`, with the name the chat shows. The test of the PNGs
+ * covers them as the originals.
+ */
+export const COSTUMED: readonly { art: CharacterArt; name: string }[] = [
+  { art: dress(ARIANNA, ARIANNA_CORSIA), name: 'Arianna · Corsia' },
+  { art: dress(CODER, CODER_CORSIA), name: 'Coder · Corsia' },
+  { art: dress(ARIANNA, ARIANNA_UFFICIO), name: 'Arianna · Ufficio' },
+  { art: dress(CODER, CODER_UFFICIO), name: 'Coder · Ufficio' },
+];
+
+/** Every sheet of the pack `originali`, as pack.json lists them. */
+export const SHEETS: readonly CharacterArt[] = [...ORIGINALS, ...COSTUMED.map(({ art }) => art)];
 
 export function sheetPng(art: CharacterArt): Buffer {
   const { width, height, rgba } = renderSheet(art);

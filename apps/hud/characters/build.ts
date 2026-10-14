@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { APP_ICONS, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, sheetPng } from './originals.ts';
+import { APP_ICONS, headIconPng, NOTIFICATION_ICON, notificationIconPng, PACK_DIR, publicPath, SHEETS, sheetPng } from './originals.ts';
 import { encodePng } from './png.ts';
 import { renderSheet, type CharacterArt } from './compose.ts';
 
@@ -35,7 +35,7 @@ function preview(art: CharacterArt): Buffer {
 }
 
 const home = join(import.meta.dirname, '..', '..', '..');
-for (const art of ORIGINALS) {
+for (const art of SHEETS) {
   writeFileSync(join(PACK_DIR, `${art.id}.png`), sheetPng(art));
   console.log(`Written ${art.id}.png`);
 }
@@ -48,6 +48,6 @@ for (const icon of APP_ICONS) {
 if (process.argv.includes('--preview')) {
   const dir = join(home, 'data', 'characters-preview');
   mkdirSync(dir, { recursive: true });
-  for (const art of ORIGINALS) writeFileSync(join(dir, `${art.id}.png`), preview(art));
+  for (const art of SHEETS) writeFileSync(join(dir, `${art.id}.png`), preview(art));
   console.log('Previews in data/characters-preview/');
 }

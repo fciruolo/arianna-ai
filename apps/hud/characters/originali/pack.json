@@ -1,9 +1,13 @@
 {
   "name": "Originali",
-  "source": "Arianna, disegnati da Claude per il progetto (D-060); rigenerati con node apps/hud/characters/build.ts",
+  "source": "Arianna, disegnati da Claude per il progetto (D-060), con i costumi dei temi (D-103); rigenerati con node apps/hud/characters/build.ts",
   "characters": [
     { "id": "arianna", "name": "Arianna", "file": "arianna.png" },
     { "id": "coder", "name": "Coder", "file": "coder.png" },
-    { "id": "god", "name": "GOD", "file": "god.png" }
+    { "id": "god", "name": "GOD", "file": "god.png" },
+    { "id": "arianna-corsia", "name": "Arianna · Corsia", "file": "arianna-corsia.png" },
+    { "id": "coder-corsia", "name": "Coder · Corsia", "file": "coder-corsia.png" },
+    { "id": "arianna-ufficio", "name": "Arianna · Ufficio", "file": "arianna-ufficio.png" },
+    { "id": "coder-ufficio", "name": "Coder · Ufficio", "file": "coder-ufficio.png" }
   ]
 }
