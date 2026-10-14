@@ -14,6 +14,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - I temi Corsia e Ufficio si chiamano «Scrubs» e «The Office»; le scelte salvate restano valide (D-214).
+- Il tema Scrubs non ha più il corrimano sullo sfondo della chat: la riga a metà finestra sembrava un errore (D-214).
 
 ### Sicurezza
 

@@ -102,7 +102,10 @@ test('a theme sets only the tokens of the list, with a valid colour; Base remove
   };
   applyTheme(target, CORSIA, 'light');
   assert.equal(set.get('--bg'), '#f2f7f6');
-  assert.deepEqual(Object.fromEntries(attributes), { 'data-pattern': 'nessuno', 'data-decor': 'corrimano', 'data-corners': 'off', 'data-radius': 'morbido' });
+  // Scrubs has no decor any more (D-214: the handrail across the window looked like a mistake).
+  assert.deepEqual(Object.fromEntries(attributes), { 'data-pattern': 'nessuno', 'data-corners': 'off', 'data-radius': 'morbido' });
+  applyTheme(target, { ...CORSIA, background: { ...CORSIA.background, decor: 'moquette' } }, 'light');
+  assert.equal(attributes.get('data-decor'), 'moquette');
   applyTheme(target, undefined, 'light');
   assert.equal(set.size, 0);
   assert.equal(attributes.size, 0);
