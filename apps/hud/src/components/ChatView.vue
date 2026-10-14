@@ -868,11 +868,11 @@ onBeforeUnmount(() => clearInterval(clock));
           <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
-              <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
-              <!-- The computer of the run sits in the header, where the live card had it: the body never moves it (D-095). -->
-              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
+              <span class="flex-1 truncate text-xs text-muted">rapporto</span>
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
+              <!-- The computer of the run sits at the end of the header, where the live card had it: the body never moves it (D-095). -->
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />

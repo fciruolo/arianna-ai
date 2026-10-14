@@ -627,6 +627,9 @@ const PERSONA_FIELD_TEXT: Record<string, string> = {
   specialization: '«Specializzazione»',
 };
 
+/** "arianna" → "Arianna": the agent's id as the page names it. */
+const capitalized = (id: string): string => id.charAt(0).toUpperCase() + id.slice(1);
+
 /**
  * The core's refusal of a free text with personal data or a value of the
  * vault (D-107g), in plain Italian: which field and which kind, never the
@@ -636,7 +639,7 @@ export function personalDataText(message: string): string | undefined {
   const persona = /^personas\.([a-z0-9_-]+)\.(displayName|traits|specialization) /.exec(message);
   const rules = /^projectRules\.(template|projects\.[a-z0-9-]+) /.exec(message);
   let where: string;
-  if (persona !== null) where = `Il campo ${PERSONA_FIELD_TEXT[persona[2] ?? ''] ?? ''} della personalità di ${persona[1] ?? ''}`;
+  if (persona !== null) where = `Il campo ${PERSONA_FIELD_TEXT[persona[2] ?? ''] ?? ''} della personalità di ${capitalized(persona[1] ?? '')}`;
   else if (rules?.[1] === 'template') where = 'Il modello delle regole dei progetti';
   else if (rules !== null) where = `La regola del progetto ${(rules[1] ?? '').slice('projects.'.length)}`;
   else return undefined;
