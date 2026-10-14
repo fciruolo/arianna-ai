@@ -157,7 +157,8 @@ test('"cosa ho domani?": the list is written by the code from SQL, and ends the 
   assert.ok(reply !== undefined);
   assert.equal(reply.label, 'L2');
   assert.ok(reply.body.startsWith(`Domani, ${dayText(tomorrow)}:\n`));
-  assert.match(reply.body, /- 10:00 · Ritirare il pacco\n- Rilascio della funzionalità X/);
+  // The bank of the test above is on Thursday: on a Wednesday it is tomorrow too.
+  assert.match(reply.body, /- 10:00 · Ritirare il pacco\n(?:- 15:00 · Andare in banca per la fideiussione\n)?- Rilascio della funzionalità X/);
 });
 
 test('"il pacco l’ho ritirato": the commitment found by its words, marked done after the confirmation', async () => {
