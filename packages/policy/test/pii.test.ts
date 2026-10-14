@@ -343,3 +343,18 @@ test('the deterministic rules come first', () => {
   assert.ok(l2.decision === 'block');
   assert.equal(l2.rule, 'cloud-label', 'a clean second scan never lets L2 out');
 });
+
+test('names of one fragment (D-214) are no persons in that fragment alone, and still are in the others', () => {
+  const character = 'Call yourself "Dr. Cox". <character>Burbero</character>';
+  const brief = 'Scrivi a Dr. Cox e a Cox Bianchi';
+  const texts = [character, brief];
+  const found = [[entity(character, 'Dr. Cox', 'FULLNAME')], [entity(brief, 'Dr. Cox', 'FULLNAME'), entity(brief, 'Cox Bianchi', 'FULLNAME')]];
+  const payload = [fragment(character), fragment(brief)];
+  // Positive: the piece of the character alone passes with its own names.
+  assert.equal(check([fragment(character)], CLAUDE, piiReport([character], [found[0]], [], [['Dr. Cox', 'Cox']])).decision, 'allow');
+  // Negative: the same names do not reach the brief, and without them the piece of the character is found too.
+  const decision = check(payload, CLAUDE, piiReport(texts, found, [], [['Dr. Cox', 'Cox'], undefined]));
+  assert.ok(decision.decision === 'block');
+  assert.deepEqual(decision.pii, [{ kind: 'FULLNAME', fragment: 1 }]);
+  assert.ok(check([fragment(character)], CLAUDE, piiReport([character], [found[0]])).decision === 'block');
+});

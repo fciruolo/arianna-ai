@@ -40,7 +40,7 @@ import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
-import { seriesNamesInUse } from './prompt-tail.ts';
+import { characterDirsOf } from './prompt-tail.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -186,8 +186,7 @@ const sql = connect(config, app);
     createPiiGuard({
       start,
       development: app.development,
-      // D-214: the people of the series the agents wear are characters, not persons.
-      names: () => [...agents.keys(), ...CLOUD_WORKER_NAMES, ...seriesNamesInUse(settings.current(), [...agents.keys()])],
+      names: () => [...agents.keys(), ...CLOUD_WORKER_NAMES],
       onEvent: (event) => {
         if (event !== 'ready' && event !== 'starting' && event !== 'idle-stop') console.error(`pii guard: ${event}`);
       },
@@ -553,6 +552,7 @@ const calls = createCalls({
     characters: settings.current().characters,
     appearance: settings.current().appearance,
     home: config.home,
+    paths: config.paths,
   }),
   candidates,
   model: localModel,
@@ -943,11 +943,7 @@ await godLanding.recover().then(
   },
 );
 // The character packs (D-060, D-211): the two in the repository and the user's in data/.
-const characterDirs = {
-  original: join(config.home, 'apps', 'hud', 'characters', 'originali'),
-  series: join(config.home, 'apps', 'hud', 'characters', 'serie'),
-  data: join(config.paths.data, 'characters'),
-};
+const characterDirs = characterDirsOf(config.home, config.paths.data);
 const server = await startApiServer({
   sql,
   live,
@@ -1043,6 +1039,11 @@ const server = await startApiServer({
   characters: {
     dirs: characterDirs,
     choices: () => settings.current().characters,
+    // D-214: the name the user wrote for an agent wins over its character's in the chat too.
+    names: () =>
+      Object.fromEntries(
+        Object.entries(settings.current().personas).flatMap(([agent, persona]) => (persona.displayName === undefined ? [] : [[agent, persona.displayName]])),
+      ),
     themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
     downloadPixelAgents: () =>
       downloadPixelAgents({

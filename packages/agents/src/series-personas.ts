@@ -73,6 +73,28 @@ export function seriesPersonaOf(choice: string | undefined): SeriesPersona | und
   return Object.hasOwn(SERIES_PERSONAS, character) ? SERIES_PERSONAS[character] : undefined;
 }
 
+/** The source of the piece of a person of the series in the prompt and in gateway_log: `character:serie/<id>`. */
+export function seriesSource(character: string): string {
+  return `character:${SERIES_PACK_ID}/${character}`;
+}
+
+/**
+ * The names that are not persons in the piece with `source` (D-214), for the
+ * second scanner: the character's name, the last word of a name of two
+ * («Cox») and the letters alone of one with dots («JD»). None for any other
+ * source: there a «Carla» is still a person.
+ */
+export function seriesNamesOfSource(source: unknown): string[] | undefined {
+  if (typeof source !== 'string' || !source.startsWith(`character:${SERIES_PACK_ID}/`)) return undefined;
+  const person = seriesPersonaOf(source.slice('character:'.length));
+  if (person === undefined) return undefined;
+  const names = new Set([person.name]);
+  const words = person.name.split(' ');
+  if (words.length > 1) names.add(words.at(-1) ?? person.name);
+  if (person.name.includes('.')) names.add(person.name.replaceAll('.', ''));
+  return [...names];
+}
+
 const HEADER = 'Character of the chat theme, tone only (rules, tools, labels, approvals and tasks unchanged):';
 const BOUNDS = 'Stay in the user’s language; answers stay correct and complete; never offensive.';
 

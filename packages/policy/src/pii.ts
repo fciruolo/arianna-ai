@@ -295,24 +295,26 @@ function isEntity(value: unknown, length: number): value is PiiEntity {
  * `ignoreNames` are names of the assistant, of the agents and of the cloud
  * models: a FULLNAME whose text is exactly one of them, or a piece of one of
  * them as `nameSpans` says, is not a person (`ASSISTANT_NAMES` always count).
+ * `fragmentNames` are more names for one fragment alone, by position (D-214:
+ * the name of a character of the series in its own piece of the prompt), and
+ * only whole; in every other fragment the same name is still a person.
  */
-export function piiReport(texts: readonly string[], entities: unknown, ignoreNames: readonly string[] = []): PiiCheck {
+export function piiReport(texts: readonly string[], entities: unknown, ignoreNames: readonly string[] = [], fragmentNames: readonly (readonly string[] | undefined)[] = []): PiiCheck {
   if (!Array.isArray(texts) || !texts.every((text) => typeof text === 'string')) return piiUnavailable('malformed');
   if (!Array.isArray(entities) || entities.length !== texts.length) return piiUnavailable('malformed');
-  const ignored = new Set(
-    [...ASSISTANT_NAMES, ...ignoreNames]
-      .filter((name) => typeof name === 'string' && name.trim() !== '' && name.length <= MAX_NAME)
-      .map(normalizeName),
-  );
+  const usable = (names: readonly string[]) => names.filter((name) => typeof name === 'string' && name.trim() !== '' && name.length <= MAX_NAME).map(normalizeName);
+  const ignored = new Set(usable([...ASSISTANT_NAMES, ...ignoreNames]));
   const findings: PiiFinding[] = [];
   for (const [fragment, text] of texts.entries()) {
     const found: unknown = entities[fragment];
     if (!Array.isArray(found) || !found.every((entity) => isEntity(entity, text.length))) return piiUnavailable('malformed');
+    const own = Array.isArray(fragmentNames[fragment]) ? new Set(usable(fragmentNames[fragment] ?? [])) : undefined;
     let names: [number, number][] | undefined;
     const kept: PiiEntity[] = [];
     for (const entity of found) {
       if (entity.kind === 'FULLNAME') {
-        if (ignored.has(normalizeName(text.slice(entity.start, entity.end)))) continue;
+        const name = normalizeName(text.slice(entity.start, entity.end));
+        if (ignored.has(name) || own?.has(name) === true) continue;
         names ??= nameSpans(text, [...ignored]);
         if (names.some(([start, end]) => start <= entity.start && entity.end <= end)) continue;
       }

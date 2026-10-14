@@ -1,10 +1,11 @@
 import { join } from 'node:path';
 
-import { flatPersonaText, personaBlock, personaParts, seriesPersonaBlock, seriesPersonaOf, type PersonaParts } from '@arianna/agents';
-import type { CharacterChoices, Personas } from '@arianna/config';
+import { flatPersonaText, personaBlock, personaParts, seriesPersonaBlock, seriesPersonaOf, seriesSource, type PersonaParts } from '@arianna/agents';
+import { ORIGINAL_PACK, type CharacterChoices, type Personas } from '@arianna/config';
 import { isAtMost, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
+import { servesSync, type CharacterDirs } from './characters.ts';
 import { themeCharactersSync } from './themes.ts';
 
 /**
@@ -72,28 +73,46 @@ export interface TailConfig {
   characters?: CharacterChoices;
   /** `[appearance]`: the theme whose characters the agents wear without a choice. */
   appearance?: { theme: string };
-  /** ARIANNA_HOME, where `apps/hud/themes` is. */
+  /** ARIANNA_HOME, where `apps/hud/themes` and the packs in git are. */
   home?: string;
+  /** Where data/characters is. */
+  paths?: { data: string };
   /** The characters of a theme by id; read from `home` when not given (tests give it). */
   themeCharacters?: (theme: string) => Record<string, string>;
+  /** Whether a pack serves a character; read from `home` and `paths` when not given (tests give it). */
+  serves?: (pack: string, character: string) => boolean;
+}
+
+/** The folders of the packs, as main.ts gives them to the chat. */
+export function characterDirsOf(home: string, data: string): CharacterDirs {
+  return { original: join(home, 'apps', 'hud', 'characters', 'originali'), series: join(home, 'apps', 'hud', 'characters', 'serie'), data: join(data, 'characters') };
 }
 
 /**
- * The `<pack>/<character>` `agent` wears as the core assigns it (D-103): the
- * user's choice, else the theme's. Undefined with neither.
+ * The `<pack>/<character>` `agent` wears, chosen as `assignCharacters` chooses
+ * it for the chat (D-103): the user's choice when it is served, else the
+ * theme's when served, else the original of the same name, else the Coder's.
+ * The theme is read once, and only when the choice does not decide.
+ * Undefined when nothing can be read (no home and no reader).
  */
 export function characterChoiceOf(config: TailConfig, agent: string): string | undefined {
-  if (config.characters !== undefined && Object.hasOwn(config.characters, agent)) return config.characters[agent];
+  const home = config.home;
+  const serves =
+    config.serves ?? (home === undefined || config.paths === undefined ? undefined : ((dirs: CharacterDirs) => (pack: string, character: string) => servesSync(dirs, pack, character))(characterDirsOf(home, config.paths.data)));
+  if (serves === undefined) return undefined;
+  const served = (choice: string | undefined): boolean => {
+    const [pack, character, ...rest] = (choice ?? '').split('/');
+    return pack !== undefined && character !== undefined && rest.length === 0 && serves(pack, character);
+  };
+  const chosen = config.characters !== undefined && Object.hasOwn(config.characters, agent) ? config.characters[agent] : undefined;
+  if (served(chosen)) return chosen;
   const theme = config.appearance?.theme;
-  if (theme === undefined) return undefined;
-  const read = config.themeCharacters ?? (config.home === undefined ? undefined : (id: string) => themeCharactersSync(join(config.home ?? '', 'apps', 'hud', 'themes'), id));
-  const characters = read?.(theme) ?? {};
-  return Object.hasOwn(characters, agent) ? characters[agent] : undefined;
-}
-
-/** Source of the piece of a person of the series in gateway_log: the character, never a text. */
-export function characterSource(choice: string): string {
-  return `character:${choice}`;
+  const read = config.themeCharacters ?? (home === undefined ? undefined : (id: string) => themeCharactersSync(join(home, 'apps', 'hud', 'themes'), id));
+  const themed = theme === undefined || read === undefined ? {} : read(theme);
+  const fromTheme = Object.hasOwn(themed, agent) ? themed[agent] : undefined;
+  if (served(fromTheme)) return fromTheme;
+  for (const fallback of [`${ORIGINAL_PACK}/${agent}`, `${ORIGINAL_PACK}/coder`]) if (served(fallback)) return fallback;
+  return undefined;
 }
 
 /**
@@ -101,6 +120,8 @@ export function characterSource(choice: string): string {
  * the repository, so it enters every step, an L0 agent's and a brief to the
  * cloud too. The name and the personality the user wrote for the agent win:
  * each of them leaves the character's out, whatever the clearance of the step.
+ * Source `character:serie/<id>`: the second scanner takes the character's name
+ * for no person in this piece alone (`seriesNamesOfSource`).
  */
 export function characterPart(config: TailConfig, agent: string): TailPart | undefined {
   const choice = characterChoiceOf(config, agent);
@@ -108,27 +129,7 @@ export function characterPart(config: TailConfig, agent: string): TailPart | und
   if (person === undefined || choice === undefined) return undefined;
   const own = Object.hasOwn(config.personas, agent) ? config.personas[agent] : undefined;
   const text = seriesPersonaBlock(person, { withName: own?.displayName === undefined, withTraits: own?.traits === undefined });
-  return text === '' ? undefined : { text, label: 'L0', source: characterSource(choice) };
-}
-
-/**
- * The names of the people of the series the agents wear now (D-214), for the
- * second scanner (D-113): «Dr. Cox» in the tail is the character, not a
- * person. Only those in use, never the whole pack: a real Carla in a brief is
- * still found while no agent wears Carla. With the last word of a name of two
- * («Cox») and the letters alone of one with dots («JD»).
- */
-export function seriesNamesInUse(config: TailConfig, agents: readonly string[]): string[] {
-  const names = new Set<string>();
-  for (const agent of agents) {
-    const person = seriesPersonaOf(characterChoiceOf(config, agent));
-    if (person === undefined) continue;
-    names.add(person.name);
-    const words = person.name.split(' ');
-    if (words.length > 1) names.add(words.at(-1) ?? person.name);
-    if (person.name.includes('.')) names.add(person.name.replaceAll('.', ''));
-  }
-  return [...names];
+  return text === '' ? undefined : { text, label: 'L0', source: seriesSource(choice.split('/')[1] ?? '') };
 }
 
 /** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */

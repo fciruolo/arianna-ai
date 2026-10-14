@@ -17,6 +17,7 @@ import {
   type Labeled,
   type Target,
 } from '@arianna/policy';
+import { seriesNamesOfSource } from '@arianna/agents';
 import { knownSecrets } from '@arianna/vault';
 
 import { loadApproval } from './approvals.ts';
@@ -40,6 +41,16 @@ function textsOf(payload: readonly Labeled<unknown>[]): readonly string[] | unde
     texts.push(text);
   }
   return texts;
+}
+
+/**
+ * For the second scanner, by position: the names that are no persons in that
+ * fragment alone (D-214). Only the piece of a character of the series
+ * (`character:serie/<id>`) has some, its character's; every other fragment
+ * none, so a «Carla» in a brief is still a person while Arianna wears Carla.
+ */
+export function fragmentNamesOf(payload: readonly Labeled<unknown>[]): (readonly string[] | undefined)[] {
+  return payload.map((fragment) => seriesNamesOfSource((fragment as Partial<Labeled<unknown>> | null)?.source));
 }
 
 /** Bytes and sha256 of the texts. */
@@ -70,7 +81,7 @@ export async function passGateway(
   let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'));
   if (decision.decision === 'block' && decision.rule === 'pii-unavailable') {
     const texts = textsOf(payload);
-    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts));
+    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts, fragmentNamesOf(payload)));
   }
   if (!isTarget(target)) return decision;
 

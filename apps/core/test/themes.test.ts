@@ -9,6 +9,7 @@ import { resolveHome } from '@arianna/config';
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
+import { characterChoiceOf } from '../src/prompt-tail.ts';
 import { currentTheme, listThemes, MAX_THEME_BYTES, parseTheme, THEME_TOKENS, ThemeError } from '../src/themes.ts';
 import { THEME_TOKENS as PAGE_TOKENS } from '../../hud/src/lib/themes.ts';
 
@@ -155,14 +156,26 @@ test('GET /api/themes serves the checked themes and the characters of the chosen
     host: '127.0.0.1',
     port: 0,
     agents: () => ['arianna', 'coder', 'god', 'designer'],
-    characters: { dirs: { original: ORIGINAL, series: SERIES, data: join(root, 'no-characters') }, choices: () => ({ coder: 'originali/coder' }), themes: { dir: REPO_THEMES, chosen: () => chosen } },
+    characters: {
+      dirs: { original: ORIGINAL, series: SERIES, data: join(root, 'no-characters') },
+      choices: () => ({ coder: 'originali/coder' }),
+      themes: { dir: REPO_THEMES, chosen: () => chosen },
+      names: () => ({ reviewer: 'Revisore' }),
+    },
   });
   try {
     const origin = `http://127.0.0.1:${String(server.port)}`;
     const themes = (await (await fetch(`${origin}/api/themes`)).json()) as { themes: { id: string }[]; chosen: string; current: string };
     assert.deepEqual(themes.themes.map(({ id }) => id), ['corsia', 'ufficio']);
     assert.equal(themes.current, 'corsia');
-    const characters = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { character: string; from: string }> };
+    const characters = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { pack: string; character: string; from: string }>; names: Record<string, string> };
+    // The name the user wrote wins in the chat (D-214).
+    assert.deepEqual(characters.names, { reviewer: 'Revisore' });
+    // The prompt of a step chooses each agent's character as the chat does (D-214).
+    for (const [agent, choice] of Object.entries(characters.agents)) {
+      const config = { personas: {}, characters: { coder: 'originali/coder' }, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root } };
+      assert.equal(characterChoiceOf(config, agent), `${choice.pack}/${choice.character}`, agent);
+    }
     // The people of the series (D-211) and a costume of the originals, both from the theme.
     assert.deepEqual(characters.agents.arianna, { pack: 'serie', character: 'carla', rows: 4, from: 'theme' });
     assert.deepEqual(characters.agents.god, { pack: 'serie', character: 'cox', rows: 4, from: 'theme' });

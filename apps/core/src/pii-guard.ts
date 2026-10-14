@@ -21,7 +21,8 @@ import { cleanChildEnv } from './child-env.ts';
  * stops the exit, except on a development installation (D-113, question 2).
  */
 export interface PiiGuard {
-  scan(texts: readonly string[]): Promise<PiiCheck>;
+  /** `fragmentNames`: names that are not persons in that fragment alone (D-214), by position. */
+  scan(texts: readonly string[], fragmentNames?: readonly (readonly string[] | undefined)[]): Promise<PiiCheck>;
   readonly state: PiiGuardState;
   stop(): Promise<void>;
 }
@@ -256,7 +257,7 @@ export function createPiiGuard(options: PiiGuardOptions): PiiGuard {
     });
   }
 
-  async function scan(texts: readonly string[]): Promise<PiiCheck> {
+  async function scan(texts: readonly string[], fragmentNames: readonly (readonly string[] | undefined)[] = []): Promise<PiiCheck> {
     if (state === 'off' || state === 'stopped') return unavailable('off');
     if (state === 'failed' && Date.now() - failedAt < retryMs) return unavailable('error');
     const parts = batches(texts);
@@ -275,7 +276,7 @@ export function createPiiGuard(options: PiiGuardOptions): PiiGuard {
       // A count that does not match its request makes the whole answer malformed.
       return list.length === parts[index]?.length ? list : [undefined];
     });
-    return piiReport(texts, entities, options.names?.() ?? []);
+    return piiReport(texts, entities, options.names?.() ?? [], fragmentNames);
   }
 
   return {
@@ -348,8 +349,8 @@ export function stopPiiGuard(): Promise<void> {
 }
 
 /** The second check of `texts`, for passGateway. */
-export function piiCheckOf(texts: readonly string[]): Promise<PiiCheck> {
-  return current.scan(texts);
+export function piiCheckOf(texts: readonly string[], fragmentNames: readonly (readonly string[] | undefined)[] = []): Promise<PiiCheck> {
+  return current.scan(texts, fragmentNames);
 }
 
 /**

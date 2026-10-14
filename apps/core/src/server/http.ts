@@ -196,9 +196,16 @@ export interface ApiServerOptions {
   /**
    * The pixel characters (D-060): pack folders and the user's choices, read at each request; with
    * `themes` (D-103) the folder of the themes and the one chosen in `[appearance]`, whose costumes the
-   * agents wear when `[characters]` names none.
+   * agents wear when `[characters]` names none. `names`: agent → the name the user wrote for it in
+   * `[personas]` (D-214), which the chat shows instead of a character's.
    */
-  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices; themes?: { dir: string; chosen: () => string }; downloadPixelAgents?: () => Promise<PixelAgentsResult> };
+  characters?: {
+    dirs: CharacterDirs;
+    choices: () => CharacterChoices;
+    themes?: { dir: string; chosen: () => string };
+    names?: () => Record<string, string>;
+    downloadPixelAgents?: () => Promise<PixelAgentsResult>;
+  };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
   voice?: VoiceApi;
   /** Calls from the chat (D-066); refused while the voice is off. */
@@ -2174,7 +2181,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
 
     // The character packs and who wears what. Refused folders are named with the reason, never their content.
     route('GET', '/api/characters', async () => {
-      if (characters === undefined) return { body: { packs: [], refused: [], agents: {} } };
+      if (characters === undefined) return { body: { packs: [], refused: [], agents: {}, names: {} } };
       const { packs, refused } = await listPacks(characters.dirs);
       let themed: Record<string, string> = {};
       if (characters.themes !== undefined) {
@@ -2182,7 +2189,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         const current = currentTheme(characters.themes.chosen(), themes);
         themed = themes.find((theme) => theme.id === current)?.characters ?? {};
       }
-      return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed) } };
+      return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed), names: characters.names?.() ?? {} } };
     }),
     // The themes (D-103): only those that pass the closed schema, the refused folders with the reason,
     // the one chosen in [appearance] and the one in use (Base when the chosen one is missing or invalid).

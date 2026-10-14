@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -86,6 +86,22 @@ export async function readSmall(path: string, max: number): Promise<Buffer> {
   }
 }
 
+/** `readSmall` at once, for a step of the model (D-214): the same rules, never through a link. */
+export function readSmallSync(path: string, max: number): Buffer {
+  const handle = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = fstatSync(handle);
+    if (!info.isFile()) throw new PackError('not a regular file');
+    if (info.size > max) throw new PackError('file too large');
+    const buffer = Buffer.alloc(max + 1);
+    const bytesRead = readSync(handle, buffer, 0, max + 1, 0);
+    if (bytesRead > max) throw new PackError('file too large');
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    closeSync(handle);
+  }
+}
+
 /** The number of rows of a sheet, from its PNG header; throws when it is not a sheet. */
 export function sheetRows(png: Buffer): 3 | 4 {
   if (png.length < 33 || !png.subarray(0, 8).equals(PNG_SIGNATURE) || png.toString('ascii', 12, 16) !== 'IHDR') {
@@ -154,6 +170,35 @@ async function packDir(dirs: CharacterDirs, id: string): Promise<string> {
   const real = await realpath(dir);
   if (real !== join(await realpath(dirs.data), id)) throw new PackError('not a folder');
   return real;
+}
+
+/**
+ * Whether `pack` serves `character` now, read at once (D-214): the checks of
+ * `readPack` and `readSheet` for that one character (the folder, its
+ * pack.json, the sheet). What the prompt of a step reads to know the
+ * character an agent wears, as `assignCharacters` does for the chat.
+ */
+export function servesSync(dirs: CharacterDirs, pack: string, character: string): boolean {
+  if (!CHARACTER_ID.test(pack) || !CHARACTER_ID.test(character)) return false;
+  try {
+    let dir: string;
+    if (pack === ORIGINAL_PACK) dir = realpathSync(dirs.original);
+    else if (pack === SERIES_PACK) {
+      if (dirs.series === undefined) return false;
+      dir = realpathSync(dirs.series);
+    } else {
+      const folder = join(dirs.data, pack);
+      if (!lstatSync(folder).isDirectory()) return false;
+      dir = realpathSync(folder);
+      if (dir !== join(realpathSync(dirs.data), pack)) return false;
+    }
+    const entry = parseManifest(readSmallSync(join(dir, 'pack.json'), MAX_MANIFEST_BYTES)).characters.find((item) => item.id === character);
+    if (entry === undefined) return false;
+    sheetRows(readSmallSync(join(dir, entry.file), MAX_SHEET_BYTES));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readManifest(dir: string): Promise<Manifest> {
