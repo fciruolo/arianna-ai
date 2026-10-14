@@ -14,6 +14,8 @@ Prima di rendere pubblico, condividere o dare a qualcuno una copia del repositor
 
 I luoghi delle serie nell'ufficio pixel (D-216) vanno tolti anche loro: le mappe `apps/hud/src/office/maps/corsia.json` e `ufficio.json` con la loro scelta in `apps/hud/src/components/OfficePage.vue`, `apps/hud/src/lib/office/skins.ts` e i rami `corsia`/`ufficio` di `apps/hud/src/lib/office/draw.ts`, il test `apps/hud/test/office-skins.test.ts` (con `apps/hud/test/support/office-raster.ts`, che può restare). Senza di loro l'ufficio è quello di base con ogni tema.
 
+Chi è chi nel tema (D-217) va tolto con loro: `seriesRosterBlock`, `seriesNamesOf` e `SERIES_ROSTER_SOURCE` in `packages/agents/src/series-personas.ts`, `rosterPart`, `userNamesPart`, `wornSeries` e `wornSeriesNames` in `apps/core/src/prompt-tail.ts`, `configureWornNames` in `apps/core/src/gateway.ts` con la sua chiamata in `apps/core/src/main.ts`, e i loro test.
+
 Il nome `serie` può restare riservato: `SERIES_PACK` in `packages/config/src/characters.ts` e i controlli di `apps/core/src/characters.ts` non contengono nulla delle serie, e tengono rifiutata una cartella `data/characters/serie`.
 
 I fogli si rigenerano dalle mappe con `node apps/hud/characters/build.ts`; un test fallisce se i PNG non corrispondono alle mappe.
