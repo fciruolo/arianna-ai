@@ -2,6 +2,18 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- La personalità scritta in Impostazioni → Agenti entra davvero nelle risposte: in coda al prompt di Arianna e degli agenti che lavorano sul modello locale, dopo il prefisso che oMLX tiene in cache, come pezzo etichettato che passa dal gateway (D-107, tappa A3, D-107g).
+- La personalità di un agente va anche nelle sue deleghe a Claude e Codex, come pezzo del brief che il gateway giudica, e nelle chiamate: quella di Arianna o dell'agente della chat diretta che parla (D-107g).
+- Sei casi con personalità negli eval del modello (`pnpm eval:models`): serio, scherzoso, caloroso e una personalità ostile su rifiuti, segreti e iniezione (D-107g).
+
+### Sicurezza
+
+- Il testo della personalità entra solo dove la clearance dell'agente e del compito ammette L1: mai per un agente o un compito Pubblico, mai sopra il tetto cloud di un agente; altrimenti restano solo le frasi fisse di tono e forma. Nelle chiamate, senza la scheda di Arianna a disposizione, solo le frasi fisse (D-107g).
+
 ## [0.93.0] - 2026-10-14
 
 ### Aggiunto

@@ -1063,7 +1063,7 @@ L'"ufficio virtuale" visibile (stanze, scrivanie, personaggi che vanno al tavolo
 | --- | --- | --- | --- |
 | A1 | `persona.ts` (tipo, validazione, blocco, scarto per clearance), `[personas]` in config, blocco in coda al prompt, `personaLabel` in `packages/policy`, riga in PRIVACY-POLICY-SPEC, test | 6-8 h | — |
 | A2 | Sezione "Personalità" in Impostazioni: tono e forma ordinari, `personaLabels` in `PRIVACY_SECTIONS` con conferma, scanner + `secretMatcher` al salvataggio, anteprima | 5-7 h | A1 |
-| A3 | Personalità come pezzo etichettato nell'orchestratore, nelle deleghe cloud e in `voicePrompt` (frase fissa neutra); eval con tre configurazioni; `pnpm test:db` | 4-6 h | A1 |
+| A3 | Personalità come pezzo etichettato nell'orchestratore, nelle deleghe cloud e in `voicePrompt` (frase fissa neutra); eval con tre configurazioni; `pnpm test:db`. **Fatta il 2026-10-14 (D-107g):** coda del prompt in `apps/core/src/prompt-tail.ts`, anche nelle deleghe locali; la frase fissa della voce resta "Sei Arianna…" perché il nome di Arianna non si cambia (D-107a2); eval in `evals/orchestrator/persona.jsonl`, da eseguire | 4-6 h | A1 |
 | B1 | `conversation_participants` (prossima migrazione libera), `team.add` con controlli e A0, righe di sistema, barra dei partecipanti, personaggi Designer ed esperto SEO (mappe e PNG), DATA-MODEL, riga in AGENT-CARDS; `pnpm test:db` | 12-16 h | A1, D-094 per il designer |
 | B2 | `team.ask` (riga di delega + run, clearance, tetti, finestra), declassamento L1 → L0, nota "solo il brief", tetti del giro, `@`, `/giro`, `/basta`; PRIVACY-POLICY-SPEC e SPEC; `pnpm test:db` | 20-28 h | B1 |
 | B3 | Schede del catalogo approvate come partecipanti (attivazione di D-079), eval multi-agente | 6-10 h | B2, attivazione D-079 |
