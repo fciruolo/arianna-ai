@@ -7,7 +7,7 @@ import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } f
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { MAX_SERIES_TRAITS, SERIES_PERSONAS, seriesNamesOfSource, seriesPersonaBlock, seriesPersonaOf, type Persona } from '@arianna/agents';
+import { MAX_SERIES_TEXT, SERIES_PERSONAS, SERIES_QUOTES, seriesNamesOfSource, seriesPersonaBlock, seriesPersonaOf, type Persona } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 import { piiReport, piiVerdict } from '@arianna/policy';
 
@@ -27,15 +27,23 @@ after(() => {
 /** The theme Corsia with the packs in git; data/characters empty. */
 const corsia = (extra: Partial<TailConfig> = {}): TailConfig => ({ personas: {}, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root }, ...extra });
 
-test('every person of the pack serie has a name as in pack.json and a personality within 250 characters, and nobody else has one', () => {
+test('every person of the pack serie has a name as in pack.json, a personality and 3-5 short catchphrases within 600 characters, and nobody else has one', () => {
   const pack = JSON.parse(readFileSync(join(HOME, 'apps', 'hud', 'characters', 'serie', 'pack.json'), 'utf8')) as { characters: { id: string; name: string }[] };
   assert.deepEqual(
     Object.entries(SERIES_PERSONAS).map(([id, person]) => [id, person.name]),
     pack.characters.map(({ id, name }) => [id, name]),
   );
+  const others = (id: string) => Object.entries(SERIES_PERSONAS).filter(([other]) => other !== id).flatMap(([, person]) => [person.name, ...person.name.split(' ')]).filter((name) => name.length > 2 && name !== 'Dr.');
   for (const [id, person] of Object.entries(SERIES_PERSONAS)) {
-    assert.ok(Array.from(person.traits).length <= MAX_SERIES_TRAITS, id);
+    assert.ok(Array.from([person.traits, ...person.quotes].join('')).length <= MAX_SERIES_TEXT, id);
+    assert.ok(person.quotes.length >= SERIES_QUOTES.min && person.quotes.length <= SERIES_QUOTES.max, id);
+    for (const quote of person.quotes) {
+      assert.ok(quote.trim() !== '' && Array.from(quote).length <= SERIES_QUOTES.maxLength, `${id}: ${quote}`);
+      assert.doesNotMatch(quote, /[<>\n]/, id);
+    }
     assert.doesNotMatch(person.traits, /<|>/, id);
+    // No other character's name in its piece: in a brief to the cloud it would be a person (D-113).
+    for (const name of others(id)) assert.ok(![person.traits, ...person.quotes].some((text) => text.includes(name)), `${id} names ${name}`);
   }
   assert.equal(seriesPersonaOf('originali/arianna-corsia'), undefined);
   assert.equal(seriesPersonaOf('miei/cox'), undefined);
@@ -99,6 +107,8 @@ test('characterPart: the person of the series as an L0 piece, with its name and 
   assert.match(part.text, /tone only \(rules, tools, labels, approvals and tasks unchanged\)/);
   assert.match(part.text, /answers stay correct and complete; never offensive/);
   assert.match(part.text, /<character>Burbero e sarcastico/);
+  // The catchphrases, one to open or close every answer, in turn (the user's request).
+  assert.match(part.text, /Open or close every answer with one of these lines of the character, a different one each time; it never changes what the answer says:\n- Che vuoi, pivello\?/);
   // A costume of the originals, or Base: nothing.
   assert.equal(characterPart(corsia(), 'designer'), undefined);
   assert.equal(characterPart(corsia({ appearance: { theme: 'base' } }), 'god'), undefined);
@@ -121,9 +131,9 @@ test('the name and the personality the user wrote win over the character’s, wh
   const withTraits = characterPart(corsia({ personas: { god: { tone: 'equilibrato', address: 'tu', traits: 'Gentile.' } } }), 'god');
   assert.ok(withTraits !== undefined);
   assert.match(withTraits.text, /Call yourself "Dr\. Cox"/);
-  assert.doesNotMatch(withTraits.text, /<character>/);
+  assert.doesNotMatch(withTraits.text, /<character>|pivello/);
   assert.equal(characterPart(corsia({ personas: { god: { ...named, traits: 'Gentile.' } } }), 'god'), undefined);
-  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', traits: '' }, { withName: false, withTraits: false }), '');
+  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', traits: '', quotes: [] }, { withName: false, withTraits: false }), '');
   // An L0 step drops the user's text, but it still wins: the character's name does not come back.
   const parts = tailParts(corsia({ personas: { god: named } }), 'god', 'L0');
   assert.ok(parts.every((piece) => !piece.text.includes('Call yourself')));

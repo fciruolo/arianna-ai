@@ -64,7 +64,7 @@ export {
   type PersonaParts,
   type Tone,
 } from './persona.ts';
-export { MAX_SERIES_TRAITS, SERIES_PACK_ID, SERIES_PERSONAS, seriesNamesOfSource, seriesPersonaBlock, seriesPersonaOf, seriesSource, type SeriesPersona } from './series-personas.ts';
+export { MAX_SERIES_TEXT, SERIES_PACK_ID, SERIES_QUOTES, SERIES_PERSONAS, seriesNamesOfSource, seriesPersonaBlock, seriesPersonaOf, seriesSource, type SeriesPersona } from './series-personas.ts';
 export { validate, type JsonSchema } from './schema.ts';
 export {
   AGENCY_CARD_MARK,

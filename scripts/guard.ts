@@ -82,6 +82,10 @@ if (command === 'sync') {
   needVenv();
   // The tests of the real model run only when its weights are on disk.
   process.exitCode = run(paths.python, ['-m', 'unittest', 'discover', '-s', 'tests'], { ...cage(), ARIANNA_GUARD_MODEL: modelPath(data, piiModel()) });
+  // The pieces of the people of the series through the real model (D-214), from the core as the gateway asks.
+  if (process.exitCode === 0) {
+    process.exitCode = run(process.execPath, ['--test', join(home, 'apps', 'core', 'test', 'series-guard.test.ts')], { ...base, ARIANNA_HOME: home, ARIANNA_GUARD_MODEL: modelPath(data, piiModel()) });
+  }
 } else {
   needVenv();
   const entry = piiModel();
