@@ -354,6 +354,122 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
    - Opzione: No, non serve — nessuna modifica; la regola resta affidata alla memoria.
    - Esempio: Fra sei mesi installi un nuovo programma tipo "AgenteX" e stai per aprirlo sulla cartella delle note; rileggendo SECURITY.md trovi "mai sulla cartella di Arianna né su cartelle private" e lo apri invece su un progetto di prova.
 
+### Risposte dell'utente (2026-10-14, riga D-093 di `docs/DECISIONS.md`)
+
+1. Fuori, prendiamo solo le idee: accettata e allargata («dobbiamo tirare fuori le idee (come fatto per open design) e poi fare in modo di implementare le features che ci interessano»). Le idee sono nella sezione qui sotto; le domande 2 e 3 restano aperte.
+
+### Idee da OpenWork (2026-10-14)
+
+**Cosa si è letto.** Repository `different-ai/openwork`, ramo `dev` al commit `0a572cbf` del 13 ottobre 2026 (ultima release **v0.18.58** del 13 ottobre, «Run OpenWork Web on your own self-hosted deployment»), letto in sola lettura con un clone superficiale in `data/test-tmp/openwork/` (fuori da git, nulla eseguito): `README.md`, i registri delle release in `changelog/release-tracker-*.md` da agosto a ottobre (da v0.18.9 a v0.18.58, solo le voci per «desktop users» ed «everyone»), `docs/features/` (attività, sessioni senza interfaccia, automazioni, artefatti come MCP App, statistiche dei modelli), `docs/browser/task-experience.md` e `docs/session-offloading-architecture.md`. Nessun file copiato: le idee vanno riscritte nel nostro stack, come per Open Design (D-160, D-186). Rispetto alla lettura del 2026-10-05 sono arrivati soprattutto la Library (skill, plugin e connettori in un posto), il calendario delle automazioni, il cruscotto personale di artefatti, la vista affiancata, le chat laterali, la coda dei messaggi con «Stop», le scorciatoie ai modelli, il browser con consenso per azione, il motore OpenCode 2 e molte funzioni per le organizzazioni (Den).
+
+**Confronto con Arianna.** Stato: **già c'è** (con il riferimento), **in coda** (decisa, con il riferimento), **nuova** (domanda qui sotto), **fuori** (contro le regole di `CLAUDE.md`). Stime grossolane, in ore di sessione di Claude.
+
+| Idea di OpenWork | Cosa fa là | In Arianna | Stato | Privacy | Stima |
+| --- | --- | --- | --- | --- | --- |
+| Agente su una cartella | Lavora sui file locali di una cartella scelta | Coder e Codex nella cartella del progetto approvato, in sandbox | già c'è: D-055, D-056, D-058, D-138, D-140 | — | — |
+| File modificati e diff del lavoro | Rail degli artefatti con i file della sessione | «File modificati» e diff sotto il rapporto del Coder | già c'è: D-082, D-117 | — | — |
+| Attività dei sottoagenti nella conversazione | L'attività degli aiutanti si vede nella chat principale | Righe di attività dal vivo e salvate; agenti in chat come colleghi | già c'è: D-083, D-125 | — | — |
+| Ricerca e palette con ⌘K | Cerca sessioni per titolo e cartella | «Cerca» con ⌘K, conversazioni fissate | già c'è: D-089 | — | — |
+| Notifiche a lavoro finito | Notifiche native e centro attività | Notifiche web e aiutante nativo del Mac, senza testo | già c'è: D-126, D-128 | — | — |
+| Ripresa dopo un'interruzione | Il lavoro interrotto riparte | Ripresa della sessione, riaccodamento a fine quota | già c'è: D-053, D-055 | — | — |
+| Library di skill e plugin | Skill, plugin e connettori in un posto, con versioni | Cataloghi di agenti, stili e skill, solo testo, con «Aggiorna» | già c'è: D-079, D-160, D-161 | — | — |
+| Anteprima isolata dei file HTML | L'HTML gira separato dall'app e dal computer | Anteprima in iframe isolato dello Studio | già c'è: D-184 (O1) | — | — |
+| Modello scelto per conversazione e per agente | Selettore, preferiti, nomi leggibili | Con chi parli, alias dei modelli, modello per agente | già c'è: D-111, D-116, D-141 | — | — |
+| Registro delle release | Note per release con pubblico e motivo | Pagina «Novità» dal `CHANGELOG.md` | già c'è: D-121 | — | — |
+| Terminale del lavoro in diretta | Terminale vero (`node-pty`) | Terminale in sola lettura dagli eventi del run | in coda: D-095 tappa 1 | — | in D-095 |
+| Browser integrato | Browser nel pannello, con accessi salvati | Browser in Docker solo per dati L0 | in coda: D-095 tappa 3 (affinamento: domanda 12) | alta | in D-095 |
+| Pochi strumenti MCP generici | `search_capabilities`, `execute_capability`, `list_skills`, `get_skill` | Server MCP di Arianna | in coda: task 1.10 | — | nel 1.10 |
+| Automazioni programmate | Compiti ricorrenti con modello e luogo d'esecuzione | Routine | in coda: D-110 (tappe nelle loro fasi) | media | in D-110 |
+| Novità delle release seguite | — | Novità di OpenWork scelte una per una, come per Open Design | in coda: D-093, secondo lavoro (D-186 generalizzato) | bassa | a parte |
+| Ferma, coda e modifica mentre risponde | «Stop», messaggi in coda, modifica di un messaggio in coda | Solo «Ferma» nella pagina GOD | nuova: domanda 4 | nessuno | 6-10 h |
+| Calendario delle automazioni | Automazioni nel calendario, una nuova da uno spazio vuoto | Routine e impegni della segretaria in un calendario | nuova: domanda 5 | bassa | 8-12 h dopo D-110 |
+| Cruscotto personale di artefatti vivi | Riquadri con artefatti aggiornati dalle automazioni | Pagina «Cruscotto» con riquadri fissati dalla chat | nuova: domanda 6 | media | 15-25 h |
+| Vista affiancata | Due sessioni, anche di cartelle diverse, una accanto all'altra | Due conversazioni, o conversazione e progetto, affiancate | nuova: domanda 7 | nessuno | 6-10 h |
+| Chat laterale | Domanda a parte che non sporca la conversazione | «Chiedi a lato» su una risposta | nuova: domanda 8 | bassa | 5-8 h |
+| Immagini e file incollati in chat | Incolla immagini e testo, ⌘U per allegare | Allegati letti solo dal modello locale | nuova: domanda 9 | alta | 10-16 h |
+| Consumi per modello e per compito | Statistiche di uso, fallimenti e consumi (nel loro cloud, con consenso) | Pagina «Consumi» locale, solo metadati | nuova: domanda 10 | bassa | 6-10 h |
+| Attività: cosa è cambiato | Modelli, skill e connessioni nuovi o tolti, come osservazioni | «Cosa è cambiato» in Arianna, in un posto | nuova: domanda 11 | nessuno | 5-8 h |
+| Consenso del browser per azione | Consenso per conversazione e per clic, «Share result», «Take over» | Regole del browser di D-095 tappa 3 | nuova: domanda 12 | alta | +4-6 h in D-095 |
+| Campo di scrittura più ricco | Menu «+» unico, scorciatoie ai modelli preferiti, bozze per sessione | Menu «+», tasti per i modelli, bozza per conversazione | nuova: domanda 13 | nessuno | 4-6 h |
+| Importare la configurazione di Claude | Un agente sposta plugin e skill di Claude Cowork | Skill personali di Claude Code nel catalogo D-161 | nuova: domanda 14 | media | 4-6 h |
+| Den, organizzazioni, SSO, analisi d'organizzazione | Piano di controllo per team | Un utente solo | fuori: fuori scopo | — | — |
+| 50+ fornitori con chiavi, modello gratuito «Auto», AI Gateway | Modelli via API con chiavi o crediti | Solo binari ufficiali con abbonamento e modello locale | fuori: D-002, «Mai token OAuth» | alta | — |
+| Connettori Google Workspace, Microsoft 365, Slack (Workbot) | OAuth verso servizi cloud, risposte su Slack | Nessun canale esterno con dati L2 | fuori: regola privacy, D-110 (Telegram spento) | alta | — |
+| Sessioni comandate da remoto via cloud | Lavoro mandato al desktop da Slack o da un altro agente, via Den | Il core resta su loopback | fuori: D-033 | alta | — |
+| Telemetria (Sentry, statistiche) e aggiornamenti in rete | Segnalazioni d'errore e aggiornamenti automatici | Nessuna telemetria | fuori: regola privacy | alta | — |
+
+Conteggio: 10 già ci sono, 5 in coda, 11 nuove (domande 4-14), 5 righe fuori per regola.
+
+### Domande per l'utente sulle idee da OpenWork
+
+4. **Aggiungiamo «Ferma», la coda dei messaggi e la modifica mentre Arianna risponde?** Raccomandazione: sì, è l'idea più utile tutti i giorni e non tocca la privacy.
+   - Contesto: Oggi, mentre Arianna o il Coder lavorano, puoi scrivere un altro messaggio ma non vedi che è in fila, e non puoi fermare il lavoro dalla chat: «Ferma» esiste solo nella pagina GOD. In OpenWork un pulsante «Stop» ferma la risposta, i messaggi scritti nel frattempo restano in coda, visibili, e si possono correggere o togliere prima che partano.
+   - Opzione consigliata: Implementiamo — in coda come lavoro piccolo: pulsante «Ferma» accanto all'invio, messaggi in attesa visibili e modificabili, «Ferma» tiene il testo in coda; circa 6-10 ore.
+   - Opzione: Più avanti — resta annotata qui; nessun lavoro ora.
+   - Opzione: Non interessa — la domanda si chiude; si continua ad aspettare la fine della risposta.
+   - Esempio: Chiedi al Coder di rifare il menu del progetto finto "Pasticceria Rossi", poi ti accorgi che volevi solo cambiare un colore. Premi «Ferma», il lavoro si ferma, e il messaggio "solo il colore del menu" che avevi già scritto parte subito dopo.
+5. **Mettiamo le routine in un calendario, con la creazione da un'ora libera?** Raccomandazione: sì, ma dopo la prima tappa delle routine (D-110).
+   - Contesto: Le routine di D-110 sono appuntamenti che Arianna esegue da sola. OpenWork mostra le sue automazioni in un calendario accanto agli impegni: si vede la settimana a colpo d'occhio e se ne crea una nuova cliccando su un'ora libera. Arianna ha già gli impegni della segretaria e il calendario degli IM dei progetti, ma non le routine.
+   - Opzione consigliata: Implementiamo dopo D-110 — un calendario unico con routine e impegni della segretaria; un clic su un'ora libera apre «Nuova routine»; circa 8-12 ore dopo la prima tappa di D-110.
+   - Opzione: Più avanti — le routine restano un elenco; il calendario si decide quando D-110 è fatta.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: Lunedì apri il calendario e vedi "8:00 riassunto delle email finte" ogni giorno e "venerdì 17:00 diario della settimana"; clicchi su giovedì alle 9 e crei "controlla le scadenze del cliente Bianchi Srl".
+6. **Facciamo un «Cruscotto» personale con riquadri fissati dalla chat e aggiornati dalle routine?** Raccomandazione: più avanti, dopo le routine; è grande e chiede regole sulle etichette dei riquadri.
+   - Contesto: In OpenWork una tabella o un grafico prodotto in chat si fissa su una pagina personale e un'automazione lo aggiorna (si rifanno i dati, non il disegno). In Arianna un riquadro erediterebbe l'etichetta dei suoi dati: uno con dati Privati si aggiornerebbe solo col modello locale. Ci sono già cruscotti fissi (Finanze, guadagni del cliente), non uno tuo da comporre.
+   - Opzione consigliata: Più avanti — da riprendere dopo D-110; nessun lavoro ora.
+   - Opzione: Implementiamo — in coda: pagina «Cruscotto», «Fissa nel cruscotto» sotto una risposta, aggiornamento con una routine; circa 15-25 ore.
+   - Opzione: Non interessa — la domanda si chiude; restano i cruscotti delle singole pagine.
+   - Esempio: Chiedi "quante ore ho lavorato per progetto questa settimana?", fissi la tabella nel cruscotto, e ogni lunedì mattina la routine la rifà dal diario dei lavori senza che tu lo chieda.
+7. **Aggiungiamo la vista affiancata, con due conversazioni una accanto all'altra?** Raccomandazione: più avanti; sul portatile (D-150) lo spazio è poco.
+   - Contesto: OpenWork divide la finestra in due e mostra due sessioni insieme, anche di progetti diversi. In Arianna servirebbe per seguire il Coder mentre parli con Arianna, o per tenere la pagina di un progetto accanto alla chat. Sul MacBook da 14 pollici ogni metà sarebbe stretta.
+   - Opzione consigliata: Più avanti — nessun lavoro ora; si riprende con uno schermo grande o se ti manca davvero.
+   - Opzione: Implementiamo — in coda: pulsante «Affianca» su una conversazione, due colonne da 1280 px di larghezza in su; circa 6-10 ore.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: A sinistra il Coder sistema il sito finto "todo-demo", a destra chiedi ad Arianna di preparare la fattura finta del cliente Verdi; vedi entrambi senza cambiare pagina.
+8. **Aggiungiamo «Chiedi a lato» su una risposta, una domanda veloce che non entra nella conversazione?** Raccomandazione: sì, piccola e utile nelle conversazioni lunghe.
+   - Contesto: A volte, leggendo una risposta, vuoi chiedere una cosa veloce ("che vuol dire questa parola?") senza allungare la conversazione principale, che il modello rilegge ogni volta. OpenWork ha le chat laterali, che non occupano spazio nell'elenco. In Arianna sarebbe un pannello piccolo che parte da un messaggio, con la stessa etichetta della conversazione, e si chiude senza lasciare traccia nel filo principale.
+   - Opzione consigliata: Implementiamo — in coda: «Chiedi a lato» fra le azioni del messaggio, pannello temporaneo, stesso modello e stessa etichetta; circa 5-8 ore.
+   - Opzione: Più avanti — resta annotata qui.
+   - Opzione: Non interessa — la domanda si chiude; le domande veloci vanno nella conversazione.
+   - Esempio: Arianna ti spiega il preventivo finto per "Pasticceria Rossi" e cita "IVA in reverse charge"; clicchi «Chiedi a lato», chiedi cosa significa, leggi e chiudi; la conversazione sul preventivo resta pulita.
+9. **Si possono incollare immagini e file nella chat, letti solo dal modello locale?** Raccomandazione: più avanti, quando il modello locale dell'orchestratore legge le immagini; un allegato vale sempre Privato (L2).
+   - Contesto: In OpenWork incolli uno screenshot o un PDF e il modello lo legge. In Arianna un allegato in chat sarebbe un dato non etichettato, quindi L2: lo leggerebbe solo il modello locale e non andrebbe mai a Claude o Codex. Serve un modello locale che veda le immagini; oggi in chat entrano solo testi.
+   - Opzione consigliata: Più avanti — da riprendere con un modello locale che legge le immagini; nessun lavoro ora.
+   - Opzione: Implementiamo — in coda: incolla o trascina in chat, copia privata in `data/`, sempre L2, solo modello locale; circa 10-16 ore più la scelta del modello.
+   - Opzione: Non interessa — la domanda si chiude; i file restano nelle note e nei progetti.
+   - Esempio: Incolli lo screenshot di un errore del sito finto "todo-demo" e chiedi "cosa vuol dire?"; il modello locale legge l'immagine e risponde, e lo screenshot non esce mai dal Mac.
+10. **Facciamo una pagina «Consumi» con uso, durate, fallimenti e quota di Claude e Codex?** Raccomandazione: sì, solo con i metadati che Arianna già registra; non esce niente di nuovo.
+   - Contesto: OpenWork mostra quanto consumano ogni modello e ogni compito e dove falliscono, ma raccogliendo i dati nel suo cloud. Arianna ha già gli eventi delle deleghe (chi, quanto è durato, esito) e quelli della quota di Claude e Codex con l'ora del reset, ma li mostra solo in «Deleghe recenti» (le ultime 8). Una pagina locale li riassumerebbe per settimana, per agente e per modello.
+   - Opzione consigliata: Implementiamo — in coda: pagina «Consumi» in Impostazioni, solo numeri ed esiti già salvati, quota attuale e ora del reset; circa 6-10 ore.
+   - Opzione: Più avanti — restano le deleghe recenti nel pannello di stato.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: Venerdì apri «Consumi» e vedi: Coder su Claude 14 deleghe, 2 fermate dalla quota, 3 ore in tutto; Arianna locale 230 risposte; la quota settimanale di Claude al 62% con il reset lunedì alle 9.
+11. **Raccogliamo in un posto solo «Cosa è cambiato» in Arianna (modelli, cataloghi, agenti, skill)?** Raccomandazione: più avanti; oggi le novità sono sparse ma ci sono.
+   - Contesto: OpenWork ha una pagina «Attività» che dice cosa è diventato disponibile o non lo è più (un modello, una skill, una connessione), come osservazioni di quel computer e non come registro di chi ha fatto cosa. In Arianna le stesse cose oggi stanno in posti diversi: «Novità» delle versioni, novità di Open Design, pagina Modelli, cataloghi.
+   - Opzione consigliata: Più avanti — restano i posti di oggi; si riprende se perdi dei cambi.
+   - Opzione: Implementiamo — in coda: pagina «Cosa è cambiato» col pallino, una riga per modello scaricato, catalogo adottato, agente acceso o spento; circa 5-8 ore.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: Dopo un fine settimana apri Arianna e leggi: "catalogo di Open Design aggiornato (3 stili nuovi)", "modello di prova scaricato", "agente Archivista acceso"; un clic porta alla pagina giusta.
+12. **Il browser di D-095 adotta le regole di consenso di OpenWork (per conversazione, per azione, «Condividi il risultato», «Prendi il controllo»)?** Raccomandazione: sì, si scrivono nella tappa 3 di D-095.
+   - Contesto: D-095 ha già deciso un browser in Docker solo per dati L0, con la presa di controllo. OpenWork aggiunge regole precise: prima di usare il browser in una conversazione chiede il permesso una volta; ogni clic, campo compilato o tasto chiede «Consenti una volta» o «Nega» col bersaglio scritto; ciò che una pagina restituisce si vede prima e va al modello solo con «Condividi il risultato»; «Prendi il controllo» ferma l'agente e ritira il permesso. Sono regole da riscrivere, non codice da copiare.
+   - Opzione consigliata: Le adottiamo in D-095 — tappa 3 un po' più lunga (circa 4-6 ore in più); ogni azione che cambia un sito passa da un consenso esplicito.
+   - Opzione: Solo il consenso per conversazione — meno domande durante il lavoro, ma clic e invii di moduli partono senza conferma.
+   - Opzione: Non interessa — D-095 resta com'è decisa.
+   - Esempio: Chiedi ad Arianna di controllare l'orario del sito finto "museo-demo.example"; scorrere e leggere vanno da sé, ma quando vuole cliccare «Prenota» compare "Consentire il clic su «Prenota»?" e tu premi «Nega».
+13. **Arricchiamo il campo di scrittura con un menu «+» unico, tasti per i modelli preferiti e la bozza per conversazione?** Raccomandazione: sì, tre ritocchi piccoli insieme.
+   - Contesto: In OpenWork un solo menu «+» nel campo raccoglie allegati, skill e agenti, i modelli preferiti hanno una scorciatoia da tastiera e il testo non inviato resta nella sua sessione. In Arianna il testo non inviato oggi segue nella conversazione successiva, le azioni del campo sono pulsanti sparsi e il menu «/» c'è già.
+   - Opzione consigliata: Implementiamo — in coda: bozza salvata per conversazione (mai per l'incognito), menu «+» con le azioni del campo, tasti per due o tre modelli preferiti; circa 4-6 ore.
+   - Opzione: Solo la bozza per conversazione — il ritocco più piccolo; circa 1-2 ore.
+   - Opzione: Più avanti — resta annotata qui.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: Stai scrivendo una lunga richiesta al Coder sul progetto finto "todo-demo", passi un attimo alla chat con Arianna e torni: la frase a metà è ancora lì, e non è finita per sbaglio nell'altra chat.
+14. **Arianna importa nel catalogo le skill che hai già in Claude Code?** Raccomandazione: più avanti; legge file tuoi fuori dalla cartella di Arianna, quindi solo col tuo consenso e senza mai eseguirli.
+   - Contesto: OpenWork ha un comando che sposta plugin e skill di Claude Cowork in OpenWork. Arianna ha già il catalogo di skill nel formato `SKILL.md` (D-161), lo stesso di Claude Code, che oggi si riempie da GitHub. Si potrebbe aggiungere come sorgente la tua cartella delle skill di Claude Code: si copiano solo i testi, trattati come testo di terzi non fidato, e nulla viene eseguito.
+   - Opzione consigliata: Più avanti — il catalogo resta alimentato da GitHub; si riprende se scrivi skill tue.
+   - Opzione: Implementiamo — in coda: «Importa da Claude Code» in Impostazioni → Skill e stili, con anteprima e conferma; circa 4-6 ore.
+   - Opzione: Non interessa — la domanda si chiude.
+   - Esempio: Hai una skill tua "verbale-riunione" in Claude Code; premi «Importa da Claude Code», vedi l'elenco, ne scegli una e la assegni all'agente Segretaria, che da quel momento scrive i verbali finti con quella skill.
+
 ---
 
 ## D-094 — "Claude Design" locale: mockup del Coder nel progetto, anteprima isolata in chat
