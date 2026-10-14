@@ -19,7 +19,8 @@ import { speakCall, transcribeCall, trialModels, type TrialModel } from '../src/
 
 const HOME = resolveHome({});
 const CATALOG: ModelCatalog = loadCatalog(HOME);
-const MODELS = join(HOME, DATA_DIR, 'models');
+const DATA = join(HOME, DATA_DIR);
+const MODELS = join(DATA, 'models');
 /** Every voice file of the catalog is "on disk". */
 const allPresent = (path: string): number | undefined => {
   for (const entry of CATALOG.models) {
@@ -30,7 +31,7 @@ const allPresent = (path: string): number | undefined => {
 const pcm = (seconds: number): string => Buffer.alloc(Math.round(seconds * 16_000) * 2).toString('base64');
 
 test('trialModels: the stt and tts candidates of the catalog, on disk or not, and who holds the role', () => {
-  const models = trialModels(CATALOG, { stt: 'parakeet-tdt-0.6b-v3-mlx' }, MODELS, allPresent);
+  const models = trialModels(CATALOG, { stt: 'parakeet-tdt-0.6b-v3-mlx' }, DATA, allPresent);
   assert.deepEqual(
     models.map(({ id, kind, present, assigned }) => [id, kind, present, assigned]),
     [
@@ -48,7 +49,7 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
   assert.deepEqual(models.find((model) => model.family === 'parakeet')?.voices, []);
   // Qwen3-TTS Base speaks with the voices copied from a sample (D-069), none yet.
   assert.deepEqual(models.find((model) => model.family === 'qwen3-tts-base')?.voices, []);
-  const withClones = trialModels(CATALOG, {}, MODELS, allPresent, ['moglie', 'jarvis']);
+  const withClones = trialModels(CATALOG, {}, DATA, allPresent, ['moglie', 'jarvis']);
   assert.deepEqual(withClones.find((model) => model.family === 'qwen3-tts-base')?.voices, ['moglie', 'jarvis']);
   assert.deepEqual(withClones.find((model) => model.family === 'qwen3-tts')?.voices, ['serena', 'vivian', 'ryan', 'aiden']);
   // A voice file in the folder of another family is not a voice of the model.
@@ -58,27 +59,27 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
       entry.family === 'kokoro' ? { ...entry, files: entry.files.map((file) => ({ ...file, path: file.path.replace('voices/', 'voice_embedding/') })) } : entry,
     ),
   };
-  assert.deepEqual(trialModels(mixed, {}, MODELS, () => undefined).find((model) => model.family === 'kokoro')?.voices, []);
+  assert.deepEqual(trialModels(mixed, {}, DATA, () => undefined).find((model) => model.family === 'kokoro')?.voices, []);
   // A file with the wrong size is not "present"; the orchestrator models are not candidates.
-  const absent = trialModels(CATALOG, {}, MODELS, (path) => (path.endsWith('model.safetensors') ? 1 : allPresent(path)));
+  const absent = trialModels(CATALOG, {}, DATA, (path) => (path.endsWith('model.safetensors') ? 1 : allPresent(path)));
   assert.equal(absent.find((model) => model.family === 'parakeet')?.present, false);
   assert.equal(absent.find((model) => model.family === 'kokoro')?.present, true);
   assert.ok(!absent.some((model) => model.id.startsWith('qwen3-4b') || model.id.startsWith('qwen3.')));
 });
 
 test('transcribeCall: audio between 0.3 and 30 s goes to every present stt model; anything else is refused', () => {
-  const models = trialModels(CATALOG, {}, MODELS, allPresent);
+  const models = trialModels(CATALOG, {}, DATA, allPresent);
   const call = transcribeCall({ pcm16: pcm(1) }, models);
   assert.deepEqual(call.models.map(({ family }) => family), ['parakeet']);
   assert.equal(call.rate, 16_000);
   for (const body of [{}, { pcm16: pcm(0.1) }, { pcm16: pcm(31) }, { pcm16: 'not base64!' }, { pcm16: 'QUJD' }, { pcm16: pcm(1), models: [] }, { pcm16: 1 }]) {
     assert.throws(() => transcribeCall(body, models), { name: 'TrialError' }, JSON.stringify(body).slice(0, 40));
   }
-  assert.throws(() => transcribeCall({ pcm16: pcm(1) }, trialModels(CATALOG, {}, MODELS, () => undefined)), /pull --trial/);
+  assert.throws(() => transcribeCall({ pcm16: pcm(1) }, trialModels(CATALOG, {}, DATA, () => undefined)), /pull --trial/);
 });
 
 test('speakCall: one present tts candidate with one of its own voices', () => {
-  const models = trialModels(CATALOG, {}, MODELS, allPresent);
+  const models = trialModels(CATALOG, {}, DATA, allPresent);
   assert.deepEqual(speakCall({ text: ' Ciao ', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara' }, models), {
     text: 'Ciao',
     model: { id: 'kokoro-82m-bf16-mlx', family: 'kokoro' },
@@ -163,7 +164,7 @@ const tmpRoot = join(HOME, DATA_DIR, 'test-tmp', randomUUID());
 let service: VoiceService;
 let server: ApiServer;
 let origin: string;
-let models: TrialModel[] = trialModels(CATALOG, {}, MODELS, allPresent);
+let models: TrialModel[] = trialModels(CATALOG, {}, DATA, allPresent);
 
 before(async () => {
   mkdirSync(tmpRoot, { recursive: true });
@@ -276,11 +277,11 @@ test('trial API: bad requests, errors of the voice and missing models are report
   const broken = await call('POST', '/api/voice/trial/speak', { text: 'rompi', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara' });
   assert.equal(broken.status, 502);
   assert.deepEqual(JSON.parse(broken.body.toString('utf8')), { error: 'voice: inference' });
-  models = trialModels(CATALOG, {}, MODELS, () => undefined);
+  models = trialModels(CATALOG, {}, DATA, () => undefined);
   const missing = await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(1) });
   assert.equal(missing.status, 400);
   assert.match(missing.body.toString('utf8'), /pull --trial/);
-  models = trialModels(CATALOG, {}, MODELS, allPresent);
+  models = trialModels(CATALOG, {}, DATA, allPresent);
   // 30 s of audio fits the larger limit of this route, more does not.
   assert.equal((await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(30) })).status, 200);
   assert.equal((await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(40) })).status, 413);

@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import type { CatalogEntry, ModelCatalog, ModelRole } from '@arianna/config';
 import { LocalModelError, type ChatMessage, type LocalModel } from '@arianna/executors';
 import { TRIAL_ALIAS } from '@arianna/evals/library';
@@ -9,7 +7,7 @@ import { isUuid } from '../conversations.ts';
 import type { Queryable, Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { openReply, postActivity } from '../reply.ts';
-import type { FileSize } from '../voice/trial.ts';
+import { filesPresent, type FileSize } from '../voice/trial.ts';
 
 /**
  * The trial chat of a local model (D-142): "Prova in chat" in the card of a
@@ -35,11 +33,11 @@ const MAX_TOKENS = 2_048;
  * none yet, as a model just added from Hugging Face), every file on the disk
  * with its size. The sha256 is "Verifica"'s: a trial reads what is there.
  */
-export function trialRefusal(catalog: ModelCatalog, modelId: string, modelsDir: string, size: FileSize): string | undefined {
+export function trialRefusal(catalog: ModelCatalog, modelId: string, dataDir: string, size: FileSize): string | undefined {
   const entry: CatalogEntry | undefined = catalog.models.find((model) => model.id === modelId);
   if (entry === undefined) return 'the model is not in the catalog';
   if (entry.roles.length > 0 && !entry.roles.some((role) => CHAT_ROLES.includes(role))) return 'the model does not write text: it has no chat';
-  if (!entry.files.every((file) => size(join(modelsDir, entry.id, file.path)) === file.sizeBytes)) return 'the files of the model are not on the disk: download them first';
+  if (!filesPresent(dataDir, entry, size)) return 'the files of the model are not on the disk: download them first';
   return undefined;
 }
 

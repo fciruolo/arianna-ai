@@ -17,7 +17,7 @@ export interface GuardPaths {
   uvCache: string;
   /** Private scratch files: the caches of torch and transformers stay here. */
   tmp: string;
-  /** Model weights, shared with the catalog: data/models/<id>. */
+  /** The models of the catalog with `dir: guard` (D-203): data/guard/models/<id>, never read by oMLX. */
   models: string;
   /** Reports of the trial on invented sentences. */
   evals: string;
@@ -34,7 +34,7 @@ export function guardPaths(home: string, data: string): GuardPaths {
     uvPython: join(root, 'python'),
     uvCache: join(root, 'cache'),
     tmp: join(root, 'tmp'),
-    models: join(data, 'models'),
+    models: join(root, 'models'),
     evals: join(data, 'evals'),
   };
 }

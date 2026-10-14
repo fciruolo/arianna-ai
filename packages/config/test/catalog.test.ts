@@ -12,6 +12,8 @@ import {
   loadCatalog,
   loadCuratedCatalog,
   loadUserCatalog,
+  modelFolderText,
+  modelPath,
   modelSize,
   parseCatalog,
   renderUserCatalog,
@@ -76,11 +78,33 @@ test('unsupported versions, roles, runtimes and statuses are rejected', () => {
 });
 
 test('the pii role and the transformers runtime go together, alone (D-113)', () => {
-  const pii = VALID.replace('runtime: mlx', 'runtime: transformers').replace('[orchestrator, extractor]', '[pii]');
+  const pii = VALID.replace('runtime: mlx', 'runtime: transformers\n    dir: guard').replace('[orchestrator, extractor]', '[pii]');
   assert.deepEqual(parseCatalog(pii).models[0]?.roles, ['pii']);
   assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[pii]')), ConfigError);
   assert.throws(() => parseCatalog(pii.replace('[pii]', '[pii, extractor]')), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: transformers')), ConfigError);
+});
+
+test('dir: guard puts a model in data/guard/models, out of the folder oMLX reads (D-203)', () => {
+  const pii = VALID.replace('runtime: mlx', 'runtime: transformers\n    dir: guard').replace('[orchestrator, extractor]', '[pii]');
+  const [guarded] = parseCatalog(pii).models;
+  assert.ok(guarded !== undefined);
+  assert.equal(guarded.dir, 'guard');
+  assert.equal(modelPath(join('/', 'h', 'data'), guarded), join('/', 'h', 'data', 'guard', 'models', 'fake-model-mlx'));
+  assert.equal(modelFolderText(guarded), 'data/guard/models/fake-model-mlx');
+  // Without the field: data/models, as always; the field is not added.
+  const [plain] = parseCatalog(VALID).models;
+  assert.ok(plain !== undefined);
+  assert.equal('dir' in plain, false);
+  assert.equal(modelPath(join('/', 'h', 'data'), plain), join('/', 'h', 'data', 'models', 'fake-model-mlx'));
+  assert.equal(modelFolderText(plain), 'data/models/fake-model-mlx');
+  assert.equal(parseCatalog(VALID.replace('runtime: mlx', 'runtime: mlx\n    dir: models')).models[0]?.dir, 'models');
+  // A pii or transformers model without dir: guard would land where oMLX looks.
+  assert.throws(() => parseCatalog(pii.replace('\n    dir: guard', '')), /needs dir: guard/);
+  assert.throws(() => parseCatalog(pii.replace('dir: guard', 'dir: models')), /needs dir: guard/);
+  // guard is only for transformers; any other value is refused.
+  assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: mlx\n    dir: guard')), /guard is only/);
+  assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: mlx\n    dir: elsewhere')), ConfigError);
 });
 
 test('roles must be listed, once each; RAM must be a positive integer', () => {
@@ -199,6 +223,9 @@ test('user catalog: files only from one commit of the repository of the page, on
   // A file whose address is not its own path.
   assert.throws(user(USER.replace('path: model.safetensors', 'path: other.safetensors')), ConfigError);
   assert.equal(user(USER)().models.length, 1);
+  // A model from Hugging Face never goes in data/guard/models (D-203), not even under transformers.
+  assert.throws(user(USER.replace('runtime: mlx', 'runtime: transformers\n    dir: guard')), /guard is only/);
+  assert.throws(user(USER.replace('runtime: mlx', 'runtime: transformers')), /needs dir: guard/);
 });
 
 test('repository ids of Hugging Face', () => {

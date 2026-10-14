@@ -1,6 +1,6 @@
 """Rizzo-PII on the Mac: a text in, the personal data found out (D-113).
 
-The weights come only from the folder of the catalog (data/models/<id>), with
+The weights come only from the folder of the catalog (data/guard/models/<id>, D-203), with
 Hugging Face offline. The text is never logged: errors name the step, not the
 content, and the results carry only kinds, positions and scores.
 """

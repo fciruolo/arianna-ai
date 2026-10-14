@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 
 import { isToolId, type ToolId } from '@arianna/agents';
 import type { CatalogEntry, LocalEndpointConfig, ModelCatalog } from '@arianna/config';
@@ -21,7 +20,7 @@ import type { Queryable, Sql } from './db/client.ts';
 import { STEP_QUEUE } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, type Job } from './jobs.ts';
-import { fileSize, type FileSize } from './voice/trial.ts';
+import { filesPresent, fileSize, type FileSize } from './voice/trial.ts';
 
 /**
  * Trials of a catalog model with the orchestrator evals, in the background
@@ -62,12 +61,12 @@ export type CandidateCheck =
   | { ok: true; entry: CatalogEntry }
   | { ok: false; code: 'not-in-catalog' | 'role' | 'files-missing' };
 
-/** A model can be tried for a role when the catalog has it, lists the role and its files are in `modelsDir/<id>` with the right size. */
-export function checkCandidate(catalog: ModelCatalog, modelId: string, role: EvalRole, modelsDir: string, size: FileSize = fileSize): CandidateCheck {
+/** A model can be tried for a role when the catalog has it, lists the role and its files are in its folder (modelPath) with the right size. */
+export function checkCandidate(catalog: ModelCatalog, modelId: string, role: EvalRole, dataDir: string, size: FileSize = fileSize): CandidateCheck {
   const entry = catalog.models.find((model) => model.id === modelId);
   if (entry === undefined) return { ok: false, code: 'not-in-catalog' };
   if (!entry.roles.includes(role)) return { ok: false, code: 'role' };
-  if (!entry.files.every((file) => size(join(modelsDir, entry.id, file.path)) === file.sizeBytes)) return { ok: false, code: 'files-missing' };
+  if (!filesPresent(dataDir, entry, size)) return { ok: false, code: 'files-missing' };
   return { ok: true, entry };
 }
 
@@ -490,8 +489,8 @@ export interface ModelEvalsOptions {
   sql: Sql;
   /** Read at each request and each trial: a new entry needs no restart. */
   catalog: () => ModelCatalog;
-  /** data/models. */
-  modelsDir: string;
+  /** data/: each model in its folder (modelPath, D-203). */
+  dataDir: string;
   /** The endpoints of the current arianna.toml. */
   endpoints: () => readonly LocalEndpointConfig[];
   /**
@@ -611,7 +610,7 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
       return;
     }
     const id = row.id;
-    const check = isRole(row.role) ? checkCandidate(options.catalog(), row.modelId, row.role, options.modelsDir, size) : ({ ok: false, code: 'role' } as const);
+    const check = isRole(row.role) ? checkCandidate(options.catalog(), row.modelId, row.role, options.dataDir, size) : ({ ok: false, code: 'role' } as const);
     const endpoints = trialEndpoints(options.endpoints(), row.modelId);
     const refusal = !check.ok ? check.code : endpoints.length === 0 ? 'no-endpoint' : undefined;
     if (refusal !== undefined) {
@@ -774,7 +773,7 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
     async request(modelId, role) {
       if (typeof modelId !== 'string' || modelId === '') throw new ModelEvalError('invalid', 'modelId is required');
       if (!isRole(role)) throw new ModelEvalError('invalid', `role must be one of ${EVAL_ROLES.join(', ')}`);
-      const check = checkCandidate(options.catalog(), modelId, role, options.modelsDir, size);
+      const check = checkCandidate(options.catalog(), modelId, role, options.dataDir, size);
       if (!check.ok) {
         if (check.code === 'not-in-catalog') throw new ModelEvalError('not-found', 'the model is not in the catalog');
         throw new ModelEvalError('conflict', check.code === 'role' ? 'the catalog does not list this role for the model' : 'the files of the model are not in data/models');
@@ -820,7 +819,7 @@ export function createModelEvals(options: ModelEvalsOptions): ModelEvals {
         role,
         catalog: options.catalog(),
         inUse: options.roleModel?.(role),
-        present: (entry) => entry.files.every((file) => size(join(options.modelsDir, entry.id, file.path)) === file.sizeBytes),
+        present: (entry) => filesPresent(options.dataDir, entry, size),
         casesSha256: casesFingerprint(options.casesDir),
         questions: countCases(options.casesDir),
       });

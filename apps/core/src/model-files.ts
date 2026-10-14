@@ -11,8 +11,9 @@ import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import type { AriannaConfig, CatalogEntry, ModelCatalog, ModelFile } from '@arianna/config';
+import { modelPath, type AriannaConfig, type CatalogEntry, type ModelCatalog, type ModelFile } from '@arianna/config';
 
+/** data/models, the folder oMLX reads; a model with `dir: guard` lives in data/guard/models instead (D-203). */
 export const MODELS_DIR = 'models';
 export const PART_SUFFIX = '.part';
 
@@ -54,8 +55,9 @@ export interface Download {
 /** Opens `url` from byte `offset`; the default is `createFetcher` (model-http.ts). */
 export type Fetcher = (url: string, offset: number, signal?: AbortSignal) => Promise<Download>;
 
-export function fileTarget(data: string, model: string, file: ModelFile): string {
-  return join(data, MODELS_DIR, model, file.path);
+/** Where a file of a model goes: inside the folder the catalog gives it (modelPath, D-203). */
+export function fileTarget(data: string, model: Pick<CatalogEntry, 'id' | 'dir'>, file: ModelFile): string {
+  return join(modelPath(data, model), file.path);
 }
 
 export async function sha256Of(path: string, signal?: AbortSignal): Promise<string> {
@@ -79,14 +81,14 @@ export function selectedModels(config: Pick<AriannaConfig, 'roles'>, catalog: Mo
 }
 
 /**
- * Compares `data/models` with the models to install. Without `hash` only sizes are
+ * Compares the model folders (data/models, data/guard/models) with the models to install. Without `hash` only sizes are
  * checked (seconds); with it every present file is read (minutes for tens of GB).
  */
 export async function modelStatus(models: readonly CatalogEntry[], data: string, options: { hash?: boolean } = {}): Promise<FileStatus[]> {
   const statuses: FileStatus[] = [];
   for (const model of models) {
     for (const file of model.files) {
-      const target = fileTarget(data, model.id, file);
+      const target = fileTarget(data, model, file);
       const size = sizeOf(target);
       let state: FileState;
       if (size === undefined) state = sizeOf(`${target}${PART_SUFFIX}`) === undefined ? 'missing' : 'partial';

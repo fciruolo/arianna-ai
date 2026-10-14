@@ -2,13 +2,14 @@
 //   init [--reconfigure|--defaults]  the wizard that writes config/arianna.toml
 //   install                   prerequisites, data/ layout, models, database, doctor
 //   doctor                    is this installation ready for real data? (exit 1 if not)
-//   models list|verify|pull   compare data/models with the models assigned to a role
+//   models list|verify|pull   compare data/models (data/guard/models with `dir: guard`,
+//                             D-203) with the models assigned to a role
 //                             (pull --trial: also the candidates of the voice trial page)
 // (tasks 1.17 and 1.18, docs/INSTALLER-PORTABILITY.md). Credentials of Claude
 // Code and Codex are never touched: their login stays manual.
 import { spawnSync } from 'node:child_process';
 import { totalmem } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 
@@ -62,8 +63,10 @@ async function doctor(config: AriannaConfig): Promise<number> {
   return failed === 0 ? 0 : 1;
 }
 
-function describe(status: FileStatus): string {
-  return `${status.state.padEnd(10)}  ${status.model}/${status.file.path}  ${gib(status.file.sizeBytes)}`;
+/** One file with its folder under data/ (D-203: a model of apps/guard is in data/guard/models). */
+function describe(status: FileStatus, data: string): string {
+  const where = `data/${relative(data, status.target).split(sep).join('/')}`;
+  return `${status.state.padEnd(10)}  ${where}  ${gib(status.file.sizeBytes)}`;
 }
 
 async function pull(config: AriannaConfig, verify = false, trial = false): Promise<void> {
@@ -203,7 +206,7 @@ try {
   else if (command === 'models' && (sub === 'list' || sub === 'verify')) {
     const config = loadConfig();
     const statuses = await modelStatus(selected(config), config.paths.data, { hash: sub === 'verify' });
-    for (const status of statuses) console.log(describe(status));
+    for (const status of statuses) console.log(describe(status, config.paths.data));
     if (statuses.length === 0) console.log('No model assigned to a role yet (pnpm arianna:init).');
     process.exitCode = statuses.every((status) => status.state === (sub === 'verify' ? 'ok' : 'present')) ? 0 : 1;
   } else if (command === 'models' && sub === 'pull' && (flag === undefined || flag === '--verify' || flag === '--trial')) {

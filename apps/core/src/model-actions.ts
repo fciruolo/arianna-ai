@@ -2,16 +2,17 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, statfsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { CatalogEntry, ModelCatalog, ModelRole } from '@arianna/config';
+import { MODEL_DIRS, modelPath, modelsRoot, type CatalogEntry, type ModelCatalog, type ModelDir, type ModelRole } from '@arianna/config';
 
 import { errorCode } from './jobs.ts';
-import { MODELS_DIR, ModelError, PART_SUFFIX, pullFile, type Fetcher, type FileStatus } from './model-files.ts';
+import { fileTarget, ModelError, PART_SUFFIX, pullFile, type Fetcher, type FileStatus } from './model-files.ts';
 
 /**
  * The actions of the "Modelli" page on a local model (I-3, stage M4, D-137):
  * download (the logic of `pnpm arianna:models pull`: catalog URLs only,
  * resumed from the `.part`, sha256 checked), verify (sha256 of every file),
- * remove from the disk (into the bin `data/models/eliminati`, never erased),
+ * remove from the disk (into the bin `data/models/eliminati`, never erased;
+ * `data/guard/models/eliminati` for a model with `dir: guard`, D-203),
  * empty the bin, unload from the memory of the local server.
  *
  * Downloads and verifications run in the background of the core, one at a
@@ -21,7 +22,7 @@ import { MODELS_DIR, ModelError, PART_SUFFIX, pullFile, type Fetcher, type FileS
  * of the machine, never anything a file holds.
  */
 
-/** The bin inside data/models: a catalog id may never take this name. */
+/** The bin inside data/models (and data/guard/models): a catalog id may never take this name. */
 export const TRASH_DIR = 'eliminati';
 
 const SAFE_ID = /^[A-Za-z0-9][\w.-]{0,127}$/;
@@ -47,7 +48,10 @@ export interface ModelAction {
 
 /** What the bin holds: one folder per removed model (or per set of wrong files replaced). */
 export interface TrashView {
+  /** The bin of data/models. */
   folder: string;
+  /** The bins that hold something, data/models first (D-203: data/guard/models has its own); `folder` alone when empty. */
+  folders: string[];
   entries: { name: string; sizeBytes: number }[];
   sizeBytes: number;
 }
@@ -73,7 +77,7 @@ export class ModelActionError extends Error {
 export interface ModelActionsOptions {
   /** Read at each action: a new entry needs no restart. */
   catalog: () => ModelCatalog;
-  /** data/: the models are in data/models/<id>. */
+  /** data/: the models are in data/models/<id>, or data/guard/models/<id> (modelPath, D-203). */
   dataDir: string;
   /** The roles of the running configuration. */
   roles: () => Partial<Record<ModelRole, string>>;
@@ -102,7 +106,7 @@ export interface ModelActions {
   verify(modelId: string): ModelAction;
   /** Stops the download or the verification in progress of the model. */
   cancel(modelId: string): ModelAction;
-  /** Moves data/models/<id> into the bin; `confirm` must be the model id. */
+  /** Moves the folder of the model into the bin next to it; `confirm` must be the model id. */
   remove(modelId: string, confirm: unknown): Promise<{ modelId: string; folder: string }>;
   unload(modelId: string): Promise<{ modelId: string; outcome: UnloadOutcome }>;
   trash(): TrashView;
@@ -139,7 +143,7 @@ export function folderBytes(path: string): number {
 
 /** What is on the disk for a model, from sizes only (no hash): what the page shows next to the buttons. */
 export function diskState(dataDir: string, entry: CatalogEntry): DiskState {
-  const folder = join(dataDir, MODELS_DIR, entry.id);
+  const folder = modelPath(dataDir, entry);
   let hasFiles = false;
   try {
     lstatSync(folder);
@@ -191,8 +195,9 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
   const now = options.now ?? (() => new Date());
   const free = options.freeBytes ?? freeBytesOf;
   const onError = options.onError ?? (() => undefined);
-  const modelsDir = join(options.dataDir, MODELS_DIR);
-  const trashDir = join(modelsDir, TRASH_DIR);
+  /** The bin next to the models of `dir`: a guard model never goes in data/models, not even removed (D-203). */
+  const trashDirOf = (dir: ModelDir = 'models'): string => join(options.dataDir, modelsRoot(dir), TRASH_DIR);
+  const trashText = (dir: ModelDir = 'models'): string => `data/${modelsRoot(dir).split(/[\\/]/).join('/')}/${TRASH_DIR}`;
   /** The last action of each model, the running one included. */
   const last = new Map<string, ModelAction>();
   let running: { action: ModelAction; controller: AbortController; done: Promise<void> } | undefined;
@@ -206,7 +211,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
   }
 
   function entryOf(modelId: unknown): CatalogEntry {
-    // A catalog id names a folder of data/models: never the bin, never a path.
+    // A catalog id names a model folder: never the bin, never a path.
     if (typeof modelId !== 'string' || !SAFE_ID.test(modelId) || modelId === TRASH_DIR) throw new ModelActionError('not-found', 'the model is not in the catalog');
     const entry = options.catalog().models.find((model) => model.id === modelId);
     if (entry === undefined) throw new ModelActionError('not-found', 'the model is not in the catalog');
@@ -226,9 +231,11 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
   }
 
   /** The bin, created when missing; refused when something else took its name. */
-  function ensureTrash(): void {
+  function ensureTrash(dir: ModelDir | undefined): string {
+    const trashDir = trashDirOf(dir);
     mkdirSync(trashDir, { recursive: true, mode: 0o700 });
-    if (!lstatSync(trashDir).isDirectory()) throw new ModelActionError('invalid', `data/${MODELS_DIR}/${TRASH_DIR} is not a folder`);
+    if (!lstatSync(trashDir).isDirectory()) throw new ModelActionError('invalid', `${trashText(dir)} is not a folder`);
+    return trashDir;
   }
 
   function start(entry: CatalogEntry, kind: ActionKind, bytesTotal: number, work: (action: ModelAction, signal: AbortSignal) => Promise<void>): ModelAction {
@@ -270,14 +277,26 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
     return { ...action };
   }
 
+  /** What each bin holds, data/models first. */
+  function bins(): { dir: ModelDir; path: string; names: string[] }[] {
+    return MODEL_DIRS.map((dir) => {
+      const path = trashDirOf(dir);
+      const names = existsSync(path) && lstatSync(path).isDirectory() ? readdirSync(path).sort() : [];
+      return { dir, path, names };
+    });
+  }
+
   function trash(): TrashView {
-    const view: TrashView = { folder: `data/${MODELS_DIR}/${TRASH_DIR}`, entries: [], sizeBytes: 0 };
-    if (!existsSync(trashDir) || !lstatSync(trashDir).isDirectory()) return view;
-    for (const name of readdirSync(trashDir).sort()) {
-      const sizeBytes = folderBytes(join(trashDir, name));
-      view.entries.push({ name, sizeBytes });
-      view.sizeBytes += sizeBytes;
+    const view: TrashView = { folder: trashText(), folders: [], entries: [], sizeBytes: 0 };
+    for (const bin of bins()) {
+      if (bin.names.length > 0) view.folders.push(trashText(bin.dir));
+      for (const name of bin.names) {
+        const sizeBytes = folderBytes(join(bin.path, name));
+        view.entries.push({ name, sizeBytes });
+        view.sizeBytes += sizeBytes;
+      }
     }
+    if (view.folders.length === 0) view.folders.push(view.folder);
     return view;
   }
 
@@ -294,13 +313,14 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
       const replaced = needed.filter((status) => status.state === 'wrong-size' || status.state === 'present');
       // missingBytes already counts a file of the wrong size; a wrong sha256 of the right size is on top.
       const toFetch = missingBytes + replaced.filter((status) => status.state === 'present').reduce((total, status) => total + status.file.sizeBytes, 0);
-      mkdirSync(modelsDir, { recursive: true });
-      if (free(modelsDir) < toFetch) throw new ModelActionError('conflict', `not enough free space: ${String(toFetch)} bytes to download`);
+      const root = join(options.dataDir, modelsRoot(entry.dir));
+      mkdirSync(root, { recursive: true });
+      if (free(root) < toFetch) throw new ModelActionError('conflict', `not enough free space: ${String(toFetch)} bytes to download`);
       const total = needed.reduce((sum, status) => sum + status.file.sizeBytes, 0);
       return start(entry, 'download', total, async (action, signal) => {
         // A wrong file goes into the bin, never erased: the download writes a new one.
         if (replaced.length > 0) {
-          ensureTrash();
+          const trashDir = ensureTrash(entry.dir);
           const bin = join(trashDir, binName(trashDir, now(), entry.id));
           for (const status of replaced) {
             const to = join(bin, status.file.path);
@@ -367,19 +387,19 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
       if (roles.length > 0) throw new ModelActionError('conflict', `the model has the role ${roles.join(', ')}: give the role to another model first`);
       if (running?.action.modelId === entry.id) throw new ModelActionError('conflict', 'a download or verification of the model is running: stop it first');
       if (options.loaded(entry.id).length > 0) throw new ModelActionError('conflict', 'the model is loaded in memory: unload it first');
-      const from = join(modelsDir, entry.id);
+      const from = modelPath(options.dataDir, entry);
       try {
         lstatSync(from);
       } catch {
         throw new ModelActionError('not-found', 'the model has no files on the disk');
       }
-      ensureTrash();
+      const trashDir = ensureTrash(entry.dir);
       const name = binName(trashDir, now(), entry.id);
-      // A rename inside data/models: the same disk, instant, and a link moves as a link.
+      // A rename inside the folder of the models: the same disk, instant, and a link moves as a link.
       renameSync(from, join(trashDir, name));
       last.delete(entry.id);
       emit('model.removed', { modelId: entry.id, outcome: 'ok' });
-      return { modelId: entry.id, folder: `data/${MODELS_DIR}/${TRASH_DIR}/${name}` };
+      return { modelId: entry.id, folder: `${trashText(entry.dir)}/${name}` };
     },
 
     async unload(modelId) {
@@ -400,7 +420,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
       // A download may be moving a wrong file into the bin now.
       idle();
       const view = trash();
-      for (const { name } of view.entries) rmSync(join(trashDir, name), { recursive: true, force: true });
+      for (const bin of bins()) for (const name of bin.names) rmSync(join(bin.path, name), { recursive: true, force: true });
       emit('model.trash.emptied', { outcome: 'ok', removed: view.entries.length });
       return { removed: view.entries.length, sizeBytes: view.sizeBytes };
     },
@@ -423,7 +443,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
 /** The sizes of the files of one model, synchronously (the hash is the verification's job). */
 function modelStatusSync(dataDir: string, entry: CatalogEntry): FileStatus[] {
   return entry.files.map((file) => {
-    const target = join(dataDir, MODELS_DIR, entry.id, file.path);
+    const target = fileTarget(dataDir, entry, file);
     const size = sizeOf(target);
     const state: FileStatus['state'] = size === undefined ? (sizeOf(`${target}${PART_SUFFIX}`) === undefined ? 'missing' : 'partial') : size === file.sizeBytes ? 'present' : 'wrong-size';
     return { model: entry.id, file, target, state };

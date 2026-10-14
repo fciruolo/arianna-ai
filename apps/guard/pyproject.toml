@@ -8,7 +8,7 @@ name = "arianna-guard"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  # Loads ModernBertForTokenClassification and its tokenizer from data/models.
+  # Loads ModernBertForTokenClassification and its tokenizer from data/guard/models (D-203).
   "transformers==5.19.0",
   # The tensors under transformers, on the CPU or the GPU of Apple Silicon (MPS).
   "torch==2.14.1",

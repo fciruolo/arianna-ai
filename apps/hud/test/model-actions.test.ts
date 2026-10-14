@@ -42,6 +42,7 @@ const local = (id: string, overrides: Partial<LocalModelView> = {}): LocalModelV
   uses: [],
   present: true,
   state: 'on-disk',
+  folder: `data/models/${id}`,
   hasFiles: true,
   missingBytes: 0,
   action: null,
@@ -127,6 +128,10 @@ describe('confirmations', () => {
     assert.equal(canConfirm(shown, 'fake'), false);
     assert.equal(canConfirm(shown, 'FAKE-A'), false);
     assert.equal(canConfirm(shown, ' fake-a '), true);
+    // A model of apps/guard (D-203): its own folder and its own bin, never data/models.
+    const guard = confirmationOf('remove', local('fake-pii', { folder: 'data/guard/models/fake-pii' }));
+    assert.match(guard.lines[0] ?? '', /da data\/guard\/models\/fake-pii al cestino data\/guard\/models\/eliminati/);
+    assert.match(confirmationOf('download', local('fake-pii', { ...MISSING, folder: 'data/guard/models/fake-pii' })).lines[0] ?? '', / in data\/guard\/models\/fake-pii,/);
   });
 
   it('verify, unload and stop say what happens', () => {
@@ -138,8 +143,11 @@ describe('confirmations', () => {
   });
 
   it('emptying the bin counts folders and bytes and says it cannot be undone', () => {
-    const shown = emptyTrashConfirmation({ folder: 'data/models/eliminati', entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
+    const shown = emptyTrashConfirmation({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
     assert.match(shown.lines[0] ?? '', /2 cartelle in data\/models\/eliminati: 3 GB/);
+    // D-203: the bin of data/guard/models is named too when it holds something.
+    const both = emptyTrashConfirmation({ folder: 'data/models/eliminati', folders: ['data/models/eliminati', 'data/guard/models/eliminati'], entries: [{ name: 'a', sizeBytes: 1e9 }, { name: 'b', sizeBytes: 2e9 }], sizeBytes: 3e9 });
+    assert.match(both.lines[0] ?? '', /in data\/models\/eliminati e data\/guard\/models\/eliminati: 3 GB/);
     assert.match(shown.lines[1] ?? '', /Non si può annullare/);
     assert.equal(shown.danger, true);
   });
@@ -162,8 +170,8 @@ describe('progress and outcomes', () => {
   });
 
   it('the bin in one line', () => {
-    assert.equal(trashText({ folder: 'data/models/eliminati', entries: [], sizeBytes: 0 }), 'Il cestino è vuoto.');
-    assert.equal(trashText({ folder: 'data/models/eliminati', entries: [{ name: 'a', sizeBytes: 5e8 }], sizeBytes: 5e8 }), '1 cartella, 500 MB');
+    assert.equal(trashText({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [], sizeBytes: 0 }), 'Il cestino è vuoto.');
+    assert.equal(trashText({ folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [{ name: 'a', sizeBytes: 5e8 }], sizeBytes: 5e8 }), '1 cartella, 500 MB');
   });
 });
 
@@ -173,6 +181,8 @@ describe('actionErrorText', () => {
     assert.equal(actionErrorText(new ApiError(409, 'a download of fake-b is running: wait for it or stop it')), 'Aspetta la fine: sto scaricando fake-b.');
     assert.match(actionErrorText(new ApiError(409, 'not enough free space: 123 bytes to download')), /spazio libero/);
     assert.match(actionErrorText(new ApiError(409, 'a trial of the model is queued or running: cancel it first')), /prova/);
+    assert.equal(actionErrorText(new ApiError(400, 'data/models/eliminati is not a folder')), 'data/models/eliminati non è una cartella: sistemala a mano.');
+    assert.equal(actionErrorText(new ApiError(400, 'data/guard/models/eliminati is not a folder')), 'data/guard/models/eliminati non è una cartella: sistemala a mano.');
   });
 
   it('anything else as the other errors of the chat', () => {

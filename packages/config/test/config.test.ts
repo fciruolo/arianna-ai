@@ -334,6 +334,16 @@ test('invalid local endpoints are rejected', () => {
   assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('id = "lmstudio"', 'id = "lmstudio"\nkey = "x"')}`, HOME), ConfigError);
 });
 
+test('a local server never reads data/guard/models, the folder of apps/guard (D-203)', () => {
+  const withDir = (dir: string) => `${VALID}${LOCAL.replace('"--port", "8000"]', `"--port", "8000", ${dir}]`)}`;
+  for (const dir of ['"--model-dir", "data/guard/models"', '"--model-dir=data/guard/models/"', '"--model-dir", "./data/guard/models/rizzo-pii-0.3b"']) {
+    assert.throws(() => parseConfig(withDir(dir), HOME), /data\/guard\/models is only for apps\/guard/, dir);
+  }
+  // data/models and the other folders of data/guard are fine.
+  assert.deepEqual(parseConfig(withDir('"--model-dir", "data/models"'), HOME).local.endpoints[0]?.command?.slice(-2), ['--model-dir', 'data/models']);
+  assert.ok(parseConfig(withDir('"--cache", "data/guard/tmp"'), HOME));
+});
+
 const SHA = 'b'.repeat(64);
 const CATALOG = parseCatalog(`
 version: 1

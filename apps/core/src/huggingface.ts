@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 import {
   HUB_REVISION,
@@ -10,6 +9,7 @@ import {
   loadCatalog,
   loadUserCatalog,
   MODEL_ROLES,
+  modelPath,
   writeUserCatalog,
   type CatalogEntry,
   type ModelFile,
@@ -19,7 +19,6 @@ import { createContext, spendAllowed, type Context, type Decision, type Labeled,
 
 import { HubError, type HubClient } from './hub-http.ts';
 import { TRASH_DIR } from './model-actions.ts';
-import { MODELS_DIR } from './model-files.ts';
 
 /**
  * Hugging Face from the "Modelli" page (I-10, D-139): search the public
@@ -446,7 +445,7 @@ export function createHuggingFace(options: HuggingFaceOptions): HuggingFace {
       const assigned = Object.entries(options.roles()).filter(([, id]) => id === entry.id).map(([role]) => role);
       if (assigned.length > 0) throw new HubError('conflict', `the model has the role ${assigned.join(', ')}: give it to another model first`);
       if (options.busy(entry.id)) throw new HubError('conflict', 'a download or verification of the model is running: stop it first');
-      if (existsSync(join(options.dataDir, MODELS_DIR, entry.id))) throw new HubError('conflict', 'the model still has files on the disk: remove them from the disk first');
+      if (existsSync(modelPath(options.dataDir, entry))) throw new HubError('conflict', 'the model still has files on the disk: remove them from the disk first');
       const user = loadUserCatalog(options.home);
       writeUserCatalog(options.home, { version: 1, models: user.models.filter((model) => model.id !== entry.id) });
       options.onEvent('model.catalog.removed', { modelId: entry.id, outcome: 'ok' });

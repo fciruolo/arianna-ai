@@ -89,7 +89,7 @@ function service(models: CatalogEntry[], model: LocalModel, overrides: Partial<M
   const created = createModelEvals({
     sql: db().sql,
     catalog: () => ({ version: 1, models }),
-    modelsDir: join('/fake', 'models'),
+    dataDir: join('/fake', 'data'),
     endpoints: () => ENDPOINTS,
     assignedModels: () => ['current-model', 'voice-model'],
     prompt: () => 'You are a fake Arianna.',

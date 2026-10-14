@@ -31,7 +31,10 @@ export interface ModelAction {
 }
 
 export interface TrashView {
+  /** The bin of data/models. */
   folder: string;
+  /** The bins that hold something (data/guard/models has its own, D-203); `folder` alone when empty. */
+  folders: string[];
   entries: { name: string; sizeBytes: number }[];
   sizeBytes: number;
 }
@@ -58,8 +61,8 @@ export interface Confirmation {
   typed?: string;
 }
 
-const folderOf = (id: string): string => `data/models/${id}`;
-const TRASH = 'data/models/eliminati';
+/** The bin next to the folder of a model: data/models/eliminati, or data/guard/models/eliminati (D-203). */
+const binOf = (view: LocalModelView): string => `${view.folder.slice(0, view.folder.lastIndexOf('/'))}/eliminati`;
 
 /** The action running anywhere, which holds every other download or verification. */
 export function runningAction(local: readonly LocalModelView[]): ModelAction | undefined {
@@ -121,11 +124,11 @@ export function confirmationOf(kind: ButtonKind, view: LocalModelView): Confirma
     case 'download': {
       const wrong = wrongFiles(view);
       const lines = [
-        `Scarica ${sizeText(Math.max(view.missingBytes, 1))}${view.missingBytes < view.sizeBytes && view.missingBytes > 0 ? ` (di ${sizeText(view.sizeBytes)}: il resto è già sul disco)` : ''} in ${folderOf(id)}, solo dagli indirizzi del catalogo.`,
+        `Scarica ${sizeText(Math.max(view.missingBytes, 1))}${view.missingBytes < view.sizeBytes && view.missingBytes > 0 ? ` (di ${sizeText(view.sizeBytes)}: il resto è già sul disco)` : ''} in ${view.folder}, solo dagli indirizzi del catalogo.`,
         'Ogni file si controlla con lo sha256 del catalogo; se si interrompe, riprende da dove era arrivato.',
         'Dal Mac esce solo la richiesta dei file pubblici del modello, nessun tuo dato.',
       ];
-      if (wrong.length > 0) lines.splice(1, 0, `I file sbagliati (${wrong.join(', ')}) vanno nel cestino ${TRASH} e si riscaricano.`);
+      if (wrong.length > 0) lines.splice(1, 0, `I file sbagliati (${wrong.join(', ')}) vanno nel cestino ${binOf(view)} e si riscaricano.`);
       return { kind, modelId: id, title: `Scaricare ${id}?`, lines, button: 'Scarica', danger: false };
     }
     case 'verify':
@@ -133,7 +136,7 @@ export function confirmationOf(kind: ButtonKind, view: LocalModelView): Confirma
         kind,
         modelId: id,
         title: `Verificare ${id}?`,
-        lines: [`Rilegge ${sizeText(view.sizeBytes)} in ${folderOf(id)} e confronta lo sha256 di ogni file con il catalogo.`, 'Con file grandi il disco lavora per qualche minuto; non cambia nulla.'],
+        lines: [`Rilegge ${sizeText(view.sizeBytes)} in ${view.folder} e confronta lo sha256 di ogni file con il catalogo.`, 'Con file grandi il disco lavora per qualche minuto; non cambia nulla.'],
         button: 'Verifica',
         danger: false,
       };
@@ -158,7 +161,7 @@ export function confirmationOf(kind: ButtonKind, view: LocalModelView): Confirma
         modelId: id,
         title: `Togliere ${id} dal disco?`,
         lines: [
-          `Sposta ${sizeText(Math.max(onDisk(view), 1))} da ${folderOf(id)} al cestino ${TRASH}: non cancella niente.`,
+          `Sposta ${sizeText(Math.max(onDisk(view), 1))} da ${view.folder} al cestino ${binOf(view)}: non cancella niente.`,
           'Lo spazio si libera solo con «Svuota il cestino». Per riaverlo si riscarica, o si rimette a mano dal cestino.',
         ],
         button: 'Togli dal disco',
@@ -184,7 +187,7 @@ export function emptyTrashConfirmation(trash: TrashView): Confirmation {
     kind: 'empty-trash',
     modelId: null,
     title: 'Svuotare il cestino dei modelli?',
-    lines: [`Cancella per sempre ${count} in ${trash.folder}: ${sizeText(Math.max(trash.sizeBytes, 1))}.`, 'Non si può annullare: per riavere un modello bisogna riscaricarlo.'],
+    lines: [`Cancella per sempre ${count} in ${trash.folders.join(' e ')}: ${sizeText(Math.max(trash.sizeBytes, 1))}.`, 'Non si può annullare: per riavere un modello bisogna riscaricarlo.'],
     button: 'Svuota il cestino',
     danger: true,
   };
@@ -249,7 +252,7 @@ const REFUSALS: [RegExp, (match: RegExpExecArray) => string][] = [
   [/^the model is not loaded by Arianna/, () => 'Arianna non ha questo modello in memoria.'],
   [/^a request (or a call )?is using the model now/, () => 'Una richiesta o una chiamata lo sta usando adesso: riprova quando finisce.'],
   [/^emptying the bin needs the confirmation/, () => 'Svuotare il cestino chiede la tua conferma.'],
-  [/ is not a folder$/, () => 'data/models/eliminati non è una cartella: sistemala a mano.'],
+  [/^(data\/(?:guard\/)?models\/eliminati) is not a folder$/, (match) => `${match[1] ?? 'data/models/eliminati'} non è una cartella: sistemala a mano.`],
 ];
 
 export function actionErrorText(cause: unknown): string {

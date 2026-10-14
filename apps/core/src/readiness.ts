@@ -55,7 +55,7 @@ function groupOf(id: string): ReadinessId {
   if (id === 'database.default-passwords') return 'default-passwords';
   if (id === 'events.chain') return 'events';
   if (id.startsWith('layout.')) return 'folders';
-  if (id === 'models') return 'models';
+  if (id === 'models' || id === 'models.guard-dir') return 'models';
   if (id === 'models.ram') return 'memory';
   if (/^local\..+\.log-level$/.test(id)) return 'model-log';
   if (id.startsWith('system.')) return 'programs';

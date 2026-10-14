@@ -94,7 +94,7 @@ test('a missing model is downloaded, verified and then reported present and ok',
   assert.deepEqual((await modelStatus(wanted, data)).map((status) => status.state), ['missing']);
   const pulled = await pullModels(wanted, data, { fetch });
   assert.equal(pulled.length, 1);
-  const target = fileTarget(data, 'fake-model', { path: 'weights/model.bin', url: '', sizeBytes: 0, sha256: '' });
+  const target = fileTarget(data, { id: 'fake-model' }, { path: 'weights/model.bin', url: '', sizeBytes: 0, sha256: '' });
   assert.deepEqual(readFileSync(target), BODY);
   assert.equal(existsSync(`${target}${PART_SUFFIX}`), false);
   assert.deepEqual((await modelStatus(wanted, data)).map((status) => status.state), ['present']);

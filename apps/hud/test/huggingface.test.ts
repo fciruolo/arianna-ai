@@ -50,6 +50,7 @@ const local = (overrides: Partial<LocalModelView> = {}): LocalModelView => ({
   uses: [],
   present: false,
   state: 'missing',
+  folder: 'data/models/fake-4bit',
   hasFiles: false,
   missingBytes: 2_000_000_100,
   action: null,

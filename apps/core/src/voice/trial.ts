@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ModelCatalog, Roles } from '@arianna/config';
+import { modelPath, type CatalogEntry, type ModelCatalog, type Roles } from '@arianna/config';
 
 /**
  * The voice trial page (D-066): the candidates of the catalog for hearing
@@ -37,6 +37,12 @@ export const fileSize: FileSize = (path) => {
   }
 };
 
+/** Every file of the entry in its folder (modelPath, D-203) with the size of the catalog. */
+export function filesPresent(dataDir: string, entry: Pick<CatalogEntry, 'id' | 'dir' | 'files'>, size: FileSize = fileSize): boolean {
+  const folder = modelPath(dataDir, entry);
+  return entry.files.every((file) => size(join(folder, file.path)) === file.sizeBytes);
+}
+
 // One file per voice: Kokoro in voices/, Voxtral in voice_embedding/ (D-067), as apps/voice reads them.
 const VOICE_FOLDERS: Record<string, string> = { kokoro: 'voices', 'voxtral-tts': 'voice_embedding' };
 const VOICE_FILE = /^([a-z_]+)\/([a-z][a-z0-9_]{1,40})\.safetensors$/;
@@ -57,7 +63,7 @@ function voicesOf(family: string, paths: readonly string[], clones: readonly str
   });
 }
 
-export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: string, size: FileSize = fileSize, clones: readonly string[] = []): TrialModel[] {
+export function trialModels(catalog: ModelCatalog, roles: Roles, dataDir: string, size: FileSize = fileSize, clones: readonly string[] = []): TrialModel[] {
   const out: TrialModel[] = [];
   for (const entry of catalog.models) {
     const kind = entry.roles.includes('stt') ? 'stt' : entry.roles.includes('tts') ? 'tts' : undefined;
@@ -69,7 +75,7 @@ export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: stri
       id: entry.id,
       family: entry.family,
       kind,
-      present: entry.files.every((file) => size(join(modelsDir, entry.id, file.path)) === file.sizeBytes),
+      present: filesPresent(dataDir, entry, size),
       assigned: roles[kind] === entry.id,
       sizeBytes: entry.files.reduce((sum, file) => sum + file.sizeBytes, 0),
       voices: kind === 'tts' ? voicesOf(entry.family, entry.files.map((file) => file.path), clones) : [],

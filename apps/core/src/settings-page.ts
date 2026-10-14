@@ -21,6 +21,7 @@ import {
   LABELS_FILE,
   loadCatalog,
   MODEL_ROLES,
+  modelPath,
   parseConfig,
   PROJECT_NAME,
   parseSkillIds,
@@ -35,6 +36,7 @@ import {
   VAPID_PRIVATE_KEY_REF,
   writeSettings,
   type AriannaConfig,
+  type CatalogEntry,
   type CloudModel,
   type CloudModelSetting,
   type EndpointSettings,
@@ -145,7 +147,7 @@ export interface CatalogModel {
   ramMinGib: number;
   roles: ModelRole[];
   status: string;
-  /** Every file in data/models/<id> with its size. */
+  /** Every file in the folder of the model (modelPath, D-203) with its size. */
   present: boolean;
 }
 
@@ -753,11 +755,12 @@ function configMessage(error: unknown): string | undefined {
   return error instanceof Error && error.name === 'ConfigError' ? error.message : undefined;
 }
 
-/** Every file of the model in data/models/<id> with its size (sizes, not sha256). */
-export function present(dataDir: string, id: string, files: readonly { path: string; sizeBytes: number }[]): boolean {
-  return files.every((file) => {
+/** Every file of the model in its folder (data/models/<id> or data/guard/models/<id>, D-203) with its size (sizes, not sha256). */
+export function present(dataDir: string, entry: Pick<CatalogEntry, 'id' | 'dir' | 'files'>): boolean {
+  const folder = modelPath(dataDir, entry);
+  return entry.files.every((file) => {
     try {
-      return statSync(join(dataDir, 'models', id, file.path)).size === file.sizeBytes;
+      return statSync(join(folder, file.path)).size === file.sizeBytes;
     } catch {
       return false;
     }
@@ -869,14 +872,14 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       labels = null;
     }
     const file = load();
-    const catalog = file.catalog.models.map(({ id, family, runtime, ramMinGib, roles, status, files }) => ({
-      id,
-      family,
-      runtime,
-      ramMinGib,
-      roles: [...roles],
-      status,
-      present: present(options.dataDir, id, files),
+    const catalog = file.catalog.models.map((entry) => ({
+      id: entry.id,
+      family: entry.family,
+      runtime: entry.runtime,
+      ramMinGib: entry.ramMinGib,
+      roles: [...entry.roles],
+      status: entry.status,
+      present: present(options.dataDir, entry),
     }));
     try {
       const settings = readSettings(file.text, options.home, file.catalog, options.userHome);

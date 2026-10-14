@@ -1,10 +1,13 @@
 # Curated catalog of local models (docs/INSTALLER-PORTABILITY.md, task 1.18).
 # A short list chosen by the user, not every model there is. `pnpm arianna:init`
 # assigns entries to roles in config/arianna.toml; `pnpm arianna:install`
-# downloads the assigned ones into data/models/<id>/. Weights are never synced:
-# this catalog travels, the files are downloaded again.
+# downloads the assigned ones into data/models/<id>/ (data/guard/models/<id>/
+# with `dir: guard`). Weights are never synced: this catalog travels, the files
+# are downloaded again.
 #
 # The id is also the folder in data/models, hence the model name oMLX serves.
+# `dir: guard` (D-203) puts a model loaded by apps/guard in data/guard/models
+# instead, where oMLX never looks; required for runtime transformers.
 # A new model enters as `experimental` and becomes `verified` only after
 # `pnpm eval` (router) and `pnpm eval:models` (extraction) pass with it.
 # The real entries come from the oMLX configuration on the Mac Studio (task 1.17).
@@ -13,9 +16,10 @@
 #
 #   - id: example-model-4bit-mlx
 #     family: example
-#     runtime: mlx              # mlx | llama.cpp | vllm
+#     runtime: mlx              # mlx | llama.cpp | vllm | transformers
 #     ram_min_gib: 20           # memory once loaded
-#     roles: [orchestrator]     # orchestrator | extractor | embedder | voice
+#     roles: [orchestrator]     # orchestrator | extractor | embedder | voice | stt | tts | pii
+#     # dir: guard              # only with runtime transformers: data/guard/models (D-203)
 #     status: experimental      # experimental | verified
 #     # Optional, for the "Modelli" page (I-3), written by hand, never guessed:
 #     provider: "Example Lab"     # who makes it (and who converted it)
@@ -488,6 +492,7 @@ models:
   - id: rizzo-pii-0.3b
     family: rizzo-pii
     runtime: transformers
+    dir: guard
     ram_min_gib: 2
     roles: [pii]
     status: experimental

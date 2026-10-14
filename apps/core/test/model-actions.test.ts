@@ -46,6 +46,8 @@ const CATALOG: ModelCatalog = {
     entry('fake-b'),
     // A catalog whose sha256 is wrong for what the server sends.
     entry('fake-bad', { files: [{ path: 'model.bin', url: 'https://example.org/weights.bin', sizeBytes: WEIGHTS.length, sha256: 'b'.repeat(64) }] }),
+    // A model of apps/guard (D-203): its folder is data/guard/models, out of oMLX's sight.
+    entry('fake-guard', { runtime: 'transformers', roles: ['pii'], dir: 'guard' }),
   ],
 };
 
@@ -344,7 +346,7 @@ describe('remove and the bin', () => {
 
   it('empties the bin only with confirm: true, and tells how much it freed', async () => {
     const { actions, state } = setup();
-    assert.deepEqual(actions.trash(), { folder: `data/models/${TRASH_DIR}`, entries: [], sizeBytes: 0 });
+    assert.deepEqual(actions.trash(), { folder: `data/models/${TRASH_DIR}`, folders: [`data/models/${TRASH_DIR}`], entries: [], sizeBytes: 0 });
     install(state.data, 'fake-a');
     await actions.remove('fake-a', 'fake-a');
     assert.equal(actions.trash().sizeBytes, WEIGHTS.length + CONFIG.length);
@@ -353,6 +355,34 @@ describe('remove and the bin', () => {
     assert.deepEqual(actions.emptyTrash(true), { removed: 1, sizeBytes: WEIGHTS.length + CONFIG.length });
     assert.deepEqual(readdirSync(join(state.data, 'models', TRASH_DIR)), []);
     assert.deepEqual(state.events.at(-1), { kind: 'model.trash.emptied', payload: { outcome: 'ok', removed: 1 } });
+  });
+
+  it('keeps a model of apps/guard in data/guard/models: download, verify, removal and bin (D-203)', async () => {
+    const downloaded: string[] = [];
+    const { actions, state } = setup({ onDownloaded: (done) => downloaded.push(done.id) });
+    actions.download('fake-guard');
+    assert.equal((await settled(actions, 'fake-guard')).status, 'done');
+    const guardDir = join(state.data, 'guard', 'models', 'fake-guard');
+    assert.deepEqual(readFileSync(join(guardDir, 'weights', 'model.bin')), WEIGHTS);
+    // Nothing of it in data/models, the folder oMLX reads.
+    assert.equal(existsSync(join(state.data, 'models', 'fake-guard')), false);
+    assert.deepEqual(downloaded, ['fake-guard']);
+    assert.deepEqual(actions.disk(entry('fake-guard', { dir: 'guard' })), { hasFiles: true, missingBytes: 0 });
+    actions.verify('fake-guard');
+    assert.deepEqual((await settled(actions, 'fake-guard')).bad, []);
+    const result = await actions.remove('fake-guard', 'fake-guard');
+    assert.deepEqual(result, { modelId: 'fake-guard', folder: `data/guard/models/${TRASH_DIR}/2026-10-07T21-00-00-000Z-fake-guard` });
+    assert.equal(existsSync(guardDir), false);
+    // Not even in the bin of data/models: oMLX would still list it from there.
+    assert.equal(existsSync(join(state.data, 'models', TRASH_DIR)), false);
+    install(state.data, 'fake-a');
+    await actions.remove('fake-a', 'fake-a');
+    const bin = actions.trash();
+    assert.deepEqual(bin.folders, [`data/models/${TRASH_DIR}`, `data/guard/models/${TRASH_DIR}`]);
+    assert.equal(bin.entries.length, 2);
+    assert.equal(actions.emptyTrash(true).removed, 2);
+    assert.deepEqual(readdirSync(join(state.data, 'guard', 'models', TRASH_DIR)), []);
+    assert.deepEqual(readdirSync(join(state.data, 'models', TRASH_DIR)), []);
   });
 
   it('counts a folder without following links out of it, and empties a link without touching what it points at', () => {

@@ -36,9 +36,12 @@ export interface ReloadView {
 /** The roles apps/voice loads on its own (mlx-audio, D-066): a model only for them never goes to oMLX. */
 const VOICE_PROCESS_ROLES: readonly ModelRole[] = ['stt', 'tts'];
 
-/** Whether oMLX serves the model, so that a download of it needs a restart. */
-export function servedByLocalServer(entry: Pick<CatalogEntry, 'runtime' | 'roles'>): boolean {
-  if (entry.runtime !== 'mlx') return false;
+/**
+ * Whether oMLX serves the model, so that a download of it needs a restart.
+ * A model with `dir: guard` lives in data/guard/models, out of oMLX's sight (D-203): never.
+ */
+export function servedByLocalServer(entry: Pick<CatalogEntry, 'runtime' | 'roles' | 'dir'>): boolean {
+  if (entry.dir === 'guard' || entry.runtime !== 'mlx') return false;
   return entry.roles.length === 0 || entry.roles.some((role) => !VOICE_PROCESS_ROLES.includes(role));
 }
 

@@ -538,7 +538,7 @@ export async function dismissModelReload(): Promise<void> {
   await call<{ ok: boolean }>('POST', '/api/models/reload/dismiss', {});
 }
 
-/** Moves the files of a local model into data/models/eliminati; `confirm` is the id typed by the user. Where they went. */
+/** Moves the files of a local model into the bin next to them (data/models/eliminati, or data/guard/models/eliminati, D-203); `confirm` is the id typed by the user. Where they went. */
 export async function removeModel(modelId: string, confirm: string): Promise<string> {
   return (await call<{ folder: string }>('POST', `/api/models/${encodeURIComponent(modelId)}/remove`, { confirm })).folder;
 }

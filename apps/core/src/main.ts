@@ -490,7 +490,7 @@ const candidates = () =>
   trialModels(
     loadCatalog(config.home),
     settings.current().roles,
-    voiceDirs.models,
+    config.paths.data,
     fileSize,
     listClones(voiceDirs.clones).map(({ id }) => id),
   );
@@ -546,7 +546,7 @@ const settingsPage = createSettingsPage({
 const modelEvals = createModelEvals({
   sql,
   catalog: () => loadCatalog(config.home),
-  modelsDir: voiceDirs.models,
+  dataDir: config.paths.data,
   endpoints: () => settings.current().local.endpoints,
   assignedModels: () => Object.values(settings.current().roles),
   roleModel: (role) => settings.current().roles[role],
@@ -957,7 +957,7 @@ const server = await startApiServer({
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
-  trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, voiceDirs.models, fileSize),
+  trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, config.paths.data, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
   directAgents,
   // GOD (D-127): the clone of Arianna's code and GOD's conversations.

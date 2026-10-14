@@ -4,6 +4,7 @@ import {
   CLOUD_MODELS,
   loadCatalog,
   loadCloudCatalog,
+  modelFolderText,
   modelSize,
   ORCHESTRATOR_AGENT,
   type AriannaConfig,
@@ -80,10 +81,12 @@ export interface LocalModelView {
   agents: string[];
   /** The steps the router gives its aliases. */
   uses: ModelUse[];
-  /** Every file in data/models/<id> with its size (sha256 not checked here). */
+  /** Where its files go: `data/models/<id>`, or `data/guard/models/<id>` with `dir: guard` (D-203). */
+  folder: string;
+  /** Every file in its folder with its size (sha256 not checked here). */
   present: boolean;
   state: LocalState;
-  /** A folder data/models/<id> exists, complete or not: something to remove. */
+  /** Its folder exists, complete or not: something to remove. */
   hasFiles: boolean;
   /** Bytes still to download (a partial download counts for what it holds). */
   missingBytes: number;
@@ -200,6 +203,7 @@ function localView(entry: CatalogEntry, inputs: OverviewInputs): LocalModelView 
     aliases,
     agents: assigned.includes('orchestrator') ? [ORCHESTRATOR_AGENT] : [],
     uses: usesOfAliases(aliases),
+    folder: modelFolderText(entry),
     present: isPresent,
     state: loaded.length > 0 ? 'loaded' : isPresent ? 'on-disk' : 'missing',
     hasFiles: disk.hasFiles,
@@ -333,7 +337,7 @@ export async function loadModelsOverview(sql: Queryable, options: ModelsOverview
     catalog,
     cloudCatalog,
     config: options.config(),
-    present: (entry) => present(options.dataDir, entry.id, entry.files),
+    present: (entry) => present(options.dataDir, entry),
     memory: options.memory?.(),
     lastEvals: trials,
     adapters: options.adapters(),

@@ -4,9 +4,9 @@ import { chmodSync, mkdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { resolveHome } from '@arianna/config';
+import { parseCatalog, resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
+import { DATA_LAYOUT, ensureLayout, guardDirChecks, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 
@@ -128,4 +128,30 @@ test('omlxLogChecks refuses the oMLX levels that log the prompts, and only for o
   assert.match(checks[1]?.detail ?? '', /data\/b\.log/);
   assert.match(checks[3]?.detail ?? '', /add --log-level info/);
   assert.match(checks[7]?.detail ?? '', /without a value/);
+});
+
+test('a model of data/guard/models left in data/models fails the doctor: oMLX would list it (D-203)', () => {
+  const sha = 'a'.repeat(64);
+  const entry = (id: string, extra: string) => `
+  - id: ${id}
+    family: fake
+${extra}    ram_min_gib: 1
+    status: experimental
+    files:
+      - path: model.safetensors
+        url: https://example.org/${id}/model.safetensors
+        size_bytes: 10
+        sha256: ${sha}
+`;
+  const catalog = parseCatalog(`version: 1\nmodels:${entry('fake-pii', '    runtime: transformers\n    dir: guard\n    roles: [pii]\n')}${entry('fake-mlx', '    runtime: mlx\n    roles: [orchestrator]\n')}`);
+  const data = join(HOME, 'guard-dir');
+  mkdirSync(join(data, 'models', 'fake-mlx'), { recursive: true });
+  mkdirSync(join(data, 'guard', 'models', 'fake-pii'), { recursive: true });
+  assert.deepEqual(guardDirChecks(catalog, data).map(({ id, ok }) => ({ id, ok })), [{ id: 'models.guard-dir', ok: true }]);
+  mkdirSync(join(data, 'models', 'fake-pii'), { recursive: true });
+  const stray = guardDirChecks(catalog, data).find((check) => check.id === 'models.guard-dir');
+  assert.equal(stray?.ok, false);
+  assert.match(stray.detail, /data\/models\/fake-pii: oMLX sees it, move it to data\/guard\/models\/fake-pii/);
+  // Without a model of apps/guard in the catalog there is nothing to check.
+  assert.deepEqual(guardDirChecks({ version: 1, models: catalog.models.filter((model) => model.dir !== 'guard') }, data), []);
 });

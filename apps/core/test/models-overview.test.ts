@@ -128,6 +128,10 @@ describe('buildModelsOverview', () => {
     assert.equal(large.provider, 'Fake Lab');
     assert.deepEqual(large.strengths, ['Pianifica bene']);
     assert.equal(large.license, 'Apache-2.0');
+    // Where its files go (D-203): data/models without `dir`, data/guard/models with `dir: guard`.
+    assert.equal(large.folder, 'data/models/fake-large');
+    const guarded = buildModelsOverview(inputs({ catalog: { version: 1, models: [{ ...LARGE, dir: 'guard' }] } })).local[0];
+    assert.equal(guarded?.folder, 'data/guard/models/fake-large');
     assert.equal(large.contextTokens, null);
     assert.deepEqual(large.loaded, [{ endpoint: 'omlx', gib: 8, busy: true }]);
     assert.deepEqual(large.suitedRoles, ['orchestrator']);
@@ -208,7 +212,7 @@ describe('buildModelsOverview', () => {
       plain.local.map(({ id, present }) => ({ id, hasFiles: present, missingBytes: present ? 0 : 25, action: null })),
     );
     const action = { modelId: 'fake-spare', kind: 'download' as const, status: 'running' as const, bytesDone: 5, bytesTotal: 25, startedAt: '2026-10-07T21:00:00.000Z', finishedAt: null, error: null, bad: [] };
-    const trash = { folder: 'data/models/eliminati', entries: [{ name: '2026-10-07T21-00-00-000Z-fake-old', sizeBytes: 9 }], sizeBytes: 9 };
+    const trash = { folder: 'data/models/eliminati', folders: ['data/models/eliminati'], entries: [{ name: '2026-10-07T21-00-00-000Z-fake-old', sizeBytes: 9 }], sizeBytes: 9 };
     const overview = buildModelsOverview(inputs({ actions: [action], trash, disk: (model) => ({ hasFiles: model.id !== 'fake-small', missingBytes: model.id === 'fake-spare' ? 20 : 0 }) }));
     const spare = overview.local.find(({ id }) => id === 'fake-spare');
     assert.deepEqual(spare?.action, action);

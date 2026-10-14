@@ -59,9 +59,17 @@ function parseEndpoint(value: unknown, where: string, roles: Roles): LocalEndpoi
       asString(arg, `${where}.command[${String(index)}]`),
     );
     if (command.length === 0) throw new ConfigError(`${where}.command: must not be empty`);
+    // D-203: data/guard/models holds the models of apps/guard; a local server never reads them.
+    if (command.some(readsGuardModels)) throw new ConfigError(`${where}.command: data/guard/models is only for apps/guard, a local server never reads it`);
     endpoint.command = command;
   }
   return endpoint;
+}
+
+/** An argument that names data/guard/models or a folder inside it (`--model-dir=…` included). */
+function readsGuardModels(arg: string): boolean {
+  const parts = arg.split(/[\\/=]/).filter((part) => part !== '' && part !== '.');
+  return parts.some((part, index) => part === 'guard' && parts[index + 1] === 'models');
 }
 
 /**

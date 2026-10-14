@@ -55,6 +55,7 @@ const local = (id: string, overrides: Partial<LocalModelView> = {}): LocalModelV
   uses: [],
   present: true,
   state: 'on-disk',
+  folder: `data/models/${id}`,
   hasFiles: true,
   missingBytes: 0,
   action: null,

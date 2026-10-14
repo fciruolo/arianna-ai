@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, DATA_DIR, guardPaths, loadCatalog, loadConfig, resolveHome, uvEnvironment } from '@arianna/config';
+import { CONFIG_FILE, DATA_DIR, guardPaths, loadCatalog, loadConfig, modelFolderText, modelPath, resolveHome, uvEnvironment, type CatalogEntry } from '@arianna/config';
 
 import { cleanChildEnv } from '../apps/core/src/child-env.ts';
 
@@ -23,7 +23,8 @@ if (!['sync', 'lock', 'test', 'trial'].includes(command ?? '') || extra.length >
 // Everything works before arianna.toml exists, with the default data/.
 const config = existsSync(join(resolveHome(), CONFIG_FILE)) ? loadConfig() : undefined;
 const home = config?.home ?? resolveHome();
-const paths = guardPaths(home, config?.paths.data ?? join(home, DATA_DIR));
+const data = config?.paths.data ?? join(home, DATA_DIR);
+const paths = guardPaths(home, data);
 // uv gets a short environment: no secret of the shell reaches it.
 const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TMPDIR', 'SSL_CERT_FILE'];
 const base = Object.fromEntries(INHERITED.flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]])));
@@ -65,17 +66,16 @@ function needVenv(): void {
   }
 }
 
-/** The model of the `pii` role, or the only catalog entry suited to it. */
-function piiModel(): string {
+/** The model of the `pii` role, or the first catalog entry suited to it; its folder comes from the catalog (D-203). */
+function piiModel(): CatalogEntry {
   const assigned = config?.roles.pii;
-  if (assigned !== undefined) return assigned;
   const candidates = loadCatalog(home).models.filter((model) => model.roles.includes('pii'));
-  const first = candidates[0];
-  if (first === undefined) {
-    console.error('config/models.catalog.yaml: no model has the pii role');
+  const chosen = assigned === undefined ? candidates[0] : candidates.find((model) => model.id === assigned);
+  if (chosen === undefined) {
+    console.error(assigned === undefined ? 'config/models.catalog.yaml: no model has the pii role' : `${assigned}: not a pii model of config/models.catalog.yaml`);
     process.exit(1);
   }
-  return first.id;
+  return chosen;
 }
 
 if (command === 'sync') {
@@ -91,12 +91,13 @@ if (command === 'sync') {
 } else if (command === 'test') {
   needVenv();
   // The tests of the real model run only when its weights are on disk.
-  process.exitCode = run(paths.python, ['-m', 'unittest', 'discover', '-s', 'tests'], { ...cage(), ARIANNA_GUARD_MODEL: join(paths.models, piiModel()) });
+  process.exitCode = run(paths.python, ['-m', 'unittest', 'discover', '-s', 'tests'], { ...cage(), ARIANNA_GUARD_MODEL: modelPath(data, piiModel()) });
 } else {
   needVenv();
-  const model = join(paths.models, piiModel());
+  const entry = piiModel();
+  const model = modelPath(data, entry);
   if (!existsSync(join(model, 'model.safetensors'))) {
-    console.error(`${model} is missing: assign the pii role in config/arianna.toml, then pnpm arianna:models pull`);
+    console.error(`${modelFolderText(entry)} is missing: assign the pii role in config/arianna.toml, then pnpm arianna:models pull`);
     process.exit(1);
   }
   mkdirSync(paths.evals, { recursive: true, mode: 0o700 });

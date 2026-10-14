@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { DATA_DIR, resolveHome } from '@arianna/config';
+import { DATA_DIR, loadCuratedCatalog, resolveHome } from '@arianna/config';
 
 import { createLocalReload, servedByLocalServer, type LocalReloadOptions } from '../src/local-reload.ts';
 import { createLocalServers, type LocalServerEvent } from '../src/local-servers.ts';
@@ -62,6 +62,18 @@ describe('servedByLocalServer', () => {
     assert.equal(servedByLocalServer({ runtime: 'mlx', roles: ['stt'] }), false);
     assert.equal(servedByLocalServer({ runtime: 'mlx', roles: ['stt', 'tts'] }), false);
     assert.equal(servedByLocalServer({ runtime: 'llama.cpp', roles: ['orchestrator'] }), false);
+  });
+
+  it('is false for a model of data/guard/models, whatever else it says (D-203)', () => {
+    assert.equal(servedByLocalServer({ runtime: 'transformers', roles: ['pii'], dir: 'guard' }), false);
+    assert.equal(servedByLocalServer({ runtime: 'mlx', roles: ['orchestrator'], dir: 'guard' }), false);
+    assert.equal(servedByLocalServer({ runtime: 'mlx', roles: ['orchestrator'], dir: 'models' }), true);
+  });
+
+  it('is false for every pii model of the committed catalog: oMLX never restarts for it (D-203)', () => {
+    const pii = loadCuratedCatalog(resolveHome({})).models.filter((model) => model.roles.includes('pii'));
+    assert.ok(pii.length > 0);
+    for (const model of pii) assert.equal(servedByLocalServer(model), false, model.id);
   });
 });
 

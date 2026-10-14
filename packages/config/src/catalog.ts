@@ -63,7 +63,35 @@ export type ModelRuntime = (typeof MODEL_RUNTIMES)[number];
 export const MODEL_STATUSES = ['verified', 'experimental'] as const;
 export type ModelStatus = (typeof MODEL_STATUSES)[number];
 
-/** One downloadable file of a model; stored at `data/models/<model id>/<path>`. */
+/**
+ * Where the weights of a model live under data/ (D-203). `models` is
+ * data/models, the folder oMLX reads (`--model-dir data/models`); `guard` is
+ * data/guard/models, read only by apps/guard: oMLX never sees what is there.
+ */
+export const MODEL_DIRS = ['models', 'guard'] as const;
+export type ModelDir = (typeof MODEL_DIRS)[number];
+
+/** The parent folder of the models of `dir`, relative to data/; the bin `eliminati` of each is inside it. */
+export function modelsRoot(dir: ModelDir = 'models'): string {
+  return dir === 'guard' ? join('guard', 'models') : 'models';
+}
+
+/** The folder of a model relative to data/: models/<id>, or guard/models/<id> with `dir: guard`. */
+export function modelFolder(entry: Pick<CatalogEntry, 'id' | 'dir'>): string {
+  return join(modelsRoot(entry.dir), entry.id);
+}
+
+/** The absolute folder of a model: the only place that composes it (D-203). */
+export function modelPath(data: string, entry: Pick<CatalogEntry, 'id' | 'dir'>): string {
+  return join(data, modelFolder(entry));
+}
+
+/** The folder of a model as the pages and messages show it: `data/models/<id>`, always with slashes. */
+export function modelFolderText(entry: Pick<CatalogEntry, 'id' | 'dir'>): string {
+  return `data/${modelFolder(entry).split(/[\\/]/).join('/')}`;
+}
+
+/** One downloadable file of a model; stored at `<model folder>/<path>` (see modelPath). */
 export interface ModelFile {
   path: string;
   url: string;
@@ -85,6 +113,8 @@ export interface CatalogEntry {
   roles: ModelRole[];
   status: ModelStatus;
   files: ModelFile[];
+  /** `guard`: the weights go in data/guard/models (D-203); absent means data/models. */
+  dir?: ModelDir;
   /**
    * What the "Modelli" page shows of the model (I-3), all optional and written
    * by hand: who makes it, the context as the local server serves it, 1-4 short lines on
@@ -139,7 +169,7 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   const entry = asTable(raw, where);
   onlyKeys(
     entry,
-    ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files', 'provider', 'context_tokens', 'strengths', 'license', 'notes', 'source'],
+    ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files', 'dir', 'provider', 'context_tokens', 'strengths', 'license', 'notes', 'source'],
     where,
   );
 
@@ -164,6 +194,15 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   if (runtime === 'transformers' && roles.some((role) => role !== 'pii')) {
     throw new ConfigError(`${where}.runtime: transformers is only for the pii role`);
   }
+  // D-203: the weights of a model loaded by apps/guard stay out of data/models, which oMLX
+  // reads; only such a model of the curated catalog goes in data/guard/models.
+  const dir = entry.dir === undefined ? undefined : asOneOf(entry.dir, MODEL_DIRS, `${where}.dir`);
+  if (dir === 'guard' && (runtime !== 'transformers' || user)) {
+    throw new ConfigError(`${where}.dir: guard is only for a model of the curated catalog with runtime transformers`);
+  }
+  if ((runtime === 'transformers' || roles.includes('pii')) && dir !== 'guard') {
+    throw new ConfigError(`${where}.dir: a model with runtime transformers or the pii role needs dir: guard, out of the folder oMLX reads`);
+  }
   const files = asArray(entry.files, `${where}.files`).map((file, index) =>
     parseFile(file, `${where}.files[${String(index)}]`),
   );
@@ -179,6 +218,7 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
     roles,
     status: asOneOf(entry.status, MODEL_STATUSES, `${where}.status`),
     files,
+    ...(dir === undefined ? {} : { dir }),
     ...describedBy(entry, where),
   };
   if (user) {
@@ -302,6 +342,7 @@ export function renderUserCatalog(catalog: ModelCatalog): string {
     ram_min_gib: model.ramMinGib,
     roles: model.roles,
     status: model.status,
+    ...(model.dir === undefined ? {} : { dir: model.dir }),
     ...(model.provider === undefined ? {} : { provider: model.provider }),
     ...(model.contextTokens === undefined ? {} : { context_tokens: model.contextTokens }),
     ...(model.strengths === undefined ? {} : { strengths: model.strengths }),

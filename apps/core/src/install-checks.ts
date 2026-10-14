@@ -8,7 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync,
 import { arch, platform, totalmem } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { loadCatalog, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type Project } from '@arianna/config';
+import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type ModelCatalog, type Project } from '@arianna/config';
 
 import type { DoctorCheck } from './doctor.ts';
 import { modelStatus, selectedModels } from './model-files.ts';
@@ -251,7 +251,28 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
     ...omlxLogChecks(config.local.endpoints),
     ...(await modelsChecks(config)),
+    ...guardDirChecks(loadCatalog(config.home), config.paths.data),
     ...projectChecks(config.home, config.projects),
+  ];
+}
+
+/**
+ * D-203: a model of data/guard/models (`dir: guard`) left in data/models too,
+ * where oMLX would list it. One check when the catalog has such a model.
+ */
+export function guardDirChecks(catalog: ModelCatalog, data: string): DoctorCheck[] {
+  const guarded = catalog.models.filter((model) => model.dir === 'guard');
+  if (guarded.length === 0) return [];
+  const stray = guarded.filter((model) => existsSync(join(data, modelsRoot(), model.id)));
+  return [
+    {
+      id: 'models.guard-dir',
+      ok: stray.length === 0,
+      detail:
+        stray.length === 0
+          ? 'the models of apps/guard are out of data/models'
+          : `${stray.map((model) => `data/models/${model.id}`).join(', ')}: oMLX sees it, move it to ${stray.map((model) => modelFolderText(model)).join(', ')}`,
+    },
   ];
 }
 

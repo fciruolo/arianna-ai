@@ -60,9 +60,11 @@ export interface LocalModelView {
   aliases: string[];
   agents: string[];
   uses: ModelUse[];
+  /** Where its files go: `data/models/<id>`, or `data/guard/models/<id>` for a model of apps/guard (D-203). */
+  folder: string;
   present: boolean;
   state: LocalState;
-  /** A folder data/models/<id> exists, complete or not. */
+  /** Its folder exists, complete or not. */
   hasFiles: boolean;
   /** Bytes still to download. */
   missingBytes: number;

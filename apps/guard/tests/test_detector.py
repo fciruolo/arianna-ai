@@ -10,7 +10,7 @@ from pathlib import Path
 MODEL = Path(os.environ.get("ARIANNA_GUARD_MODEL", ""))
 
 
-@unittest.skipUnless(str(MODEL) != "." and (MODEL / "model.safetensors").is_file(), "Rizzo-PII is not in data/models")
+@unittest.skipUnless(str(MODEL) != "." and (MODEL / "model.safetensors").is_file(), "Rizzo-PII is not in data/guard/models")
 class DetectorTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

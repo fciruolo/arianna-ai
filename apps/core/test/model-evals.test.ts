@@ -27,7 +27,7 @@ function entry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
 }
 
 const catalog = (...models: CatalogEntry[]): ModelCatalog => ({ version: 1, models });
-const DIR = join('/fake', 'data', 'models');
+const DIR = join('/fake', 'data');
 /** Every file present with the size the catalog says. */
 const allThere = (path: string): number | undefined => (path.endsWith('config.json') ? 10 : path.endsWith('model.safetensors') ? 20 : undefined);
 
@@ -51,13 +51,13 @@ test('a candidate is in the catalog, suited to the role and on disk', () => {
   assert.deepEqual(checkCandidate(catalog(entry()), 'fake-model-4bit', 'orchestrator', DIR, missing), { ok: false, code: 'files-missing' });
   const short = (path: string): number | undefined => (path.endsWith('config.json') ? 10 : 19);
   assert.deepEqual(checkCandidate(catalog(entry()), 'fake-model-4bit', 'orchestrator', DIR, short), { ok: false, code: 'files-missing' });
-  // The files are looked for in data/models/<id>.
+  // The files are looked for in data/models/<id> (modelPath).
   const seen: string[] = [];
   checkCandidate(catalog(entry()), 'fake-model-4bit', 'orchestrator', DIR, (path) => {
     seen.push(path);
     return allThere(path);
   });
-  assert.deepEqual(seen, [join(DIR, 'fake-model-4bit', 'config.json'), join(DIR, 'fake-model-4bit', 'model.safetensors')]);
+  assert.deepEqual(seen, [join(DIR, 'models', 'fake-model-4bit', 'config.json'), join(DIR, 'models', 'fake-model-4bit', 'model.safetensors')]);
 });
 
 test('the stored outcome has ids, outcomes, times and codes, never what the model said', () => {

@@ -7,7 +7,7 @@ import type { CatalogEntry, ModelCatalog } from '@arianna/config';
 
 import { trialRefusal } from '../src/orchestrator/trial-chat.ts';
 
-const DIR = '/srv/models';
+const DIR = '/srv/data';
 
 function entry(id: string, roles: CatalogEntry['roles']): CatalogEntry {
   return {
@@ -47,5 +47,5 @@ test('a model outside the catalog, without text, or without its files opens none
     seen.push(path);
     return 100;
   });
-  assert.deepEqual(seen, [join(DIR, 'chat-model', 'model.safetensors')]);
+  assert.deepEqual(seen, [join(DIR, 'models', 'chat-model', 'model.safetensors')]);
 });
