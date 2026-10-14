@@ -2,7 +2,7 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-14, 02:40 circa.
+Aggiornato: 2026-10-14, 06:10 circa.
 
 **2026-10-14, 02:40 circa — notte in autonomia (l'utente dorme: «non chiedermi niente… se hai qualche dubbio decidi tu e poi domani mi riproponi le scelte»).** Claude porta a termine i sette rami in corso (`task/su-di-te`, `task/omlx-ricarica`, `task/guard-rizzo`, `task/personalita-prompt`, `task/computer-agente`, `task/openwork-idee`, `task/progetti-seguiti`): revisore, correzioni, `pnpm check` (e `test:db` dove serve); **nessuna unione su `main` senza la prova dell'utente**. Le scelte prese da Claude durante la notte vanno nella sezione «Scelte della notte da riproporre» qui sotto, da chiedere all'utente una alla volta domattina. Lavori in coda avviati solo se la proiezione della quota settimanale resta sotto il 100% (alle 02:40 la settimana era al 50%, proiezione circa 100%). Domattina: le altre domande aperte (Mentor, operatore telefonico, 18 idee, permessi), poi le prove una alla volta.
 
@@ -17,14 +17,9 @@ Aggiornato: 2026-10-14, 02:40 circa.
 
 **Ordine proposto per le prove di domattina** (un ramo alla volta, cartella principale sul ramo con `git switch --detach`, riavvio di core e chat; dopo «Funziona» unione su `main` con versione e tag, conflitti attesi in `CHANGELOG.md`, `DECISIONS.md` e `DevProgressPage.vue`): 1 `task/su-di-te` (0.92.0, migrazione 0061; oMLX è già 0.91.1), 2 `task/personalita-prompt`, 3 `task/computer-agente`, 4 `task/progetti-seguiti`, 5 `task/guard-rizzo` (prova da terminale con `pnpm guard:trial`). Il push lo lancia l'utente. Lavori in coda non avviati stanotte: la quota della settimana era al 51% alle 02:50 con proiezione intorno al 100%.
 
-**Scelte della notte da riproporre:**
-- Idee di OpenWork su `main` senza prova (sono solo domande nei documenti).
-- oMLX: riavvio invece di una ricarica (il sorgente di oMLX non è leggibile dal repository); se oMLX ha una rotta di ricarica la si mette al posto del riavvio.
-- «Su di te»: il testo di un fatto reso Condivisibile resta nel registro delle approvazioni anche dopo una modifica o un'eliminazione (il registro non si modifica); accettato perché a quel punto il testo è già L1 per tua scelta. Va deciso prima dell'unione, perché la migrazione 0061 poi non si cambia.
-- «Su di te»: un fatto nuovo creato direttamente Condivisibile, o il testo cambiato di un fatto già Condivisibile, vale subito senza finestra di conferma (solo controllo dei dati personali e del vault); la conferma c'è solo per il passaggio da Solo in casa a Condivisibile, come nella proposta.
-- Personalità: in una conversazione di lavoro un passo che ha letto solo dati pubblici sale a Interno (L1) quando la personalità ha un testo (D-107g).
-- Personalità: nessun controllo dei dati personali al caricamento del file; verso il cloud ci pensa il gateway (una personalità con un IBAN ferma la delega).
-- Progetti seguiti: solo il pulsante «Controlla novità», nessun controllo automatico giornaliero verso GitHub.
+**Scelte della notte, risposte dell'utente del 2026-10-14 mattina:** confermate tutte tranne la 6: OpenWork su `main` va bene (e l'utente ha risposto alle domande 2-14, vedi sotto); oMLX col riavvio; «Su di te» col testo nel registro e la conferma solo al passaggio di label; personalità che alza a Interno; progetti seguiti col solo pulsante. **Da fare su `task/personalita-prompt` prima della sua prova:** controllo dei dati personali e dei valori del vault al salvataggio della personalità (come già scritto in D-107 A: «scanner deterministico e `secretMatcher` al salvataggio»), con un messaggio chiaro nella pagina.
+
+**Idee di OpenWork, risposte del 2026-10-14 mattina (in PROPOSTE e D-093):** in coda «Ferma» e coda dei messaggi, Cruscotto, vista affiancata, «Chiedi a lato», allegati in chat solo locali, «Consumi», «Cosa è cambiato», campo di scrittura più ricco; calendario delle routine dopo D-110; consenso per azione nel browser di D-095 tappa 3; import delle skill di Claude Code più avanti; riga in `SECURITY.md` scritta.
 
 **2026-10-14, 01:55 circa:** nessuna risposta nuova in `RISPOSTE.md`; servizi accesi; quota settimanale proiettata al 99% circa (pieno sforzo, un subagente alla volta). In costruzione da un subagente nel suo worktree: **D-114 tappa A** sul ramo `task/su-di-te` (migrazione 0061 `user_facts`, pagina Impostazioni → «Su di te», casella «Su di te, per Claude Code» in `/sviluppo`); poi revisore, prova dell'utente, unione con versione minor. Senza anteprima: la pagina segue lo stile della Personalità.
 
