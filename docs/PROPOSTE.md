@@ -1159,7 +1159,7 @@ Totale circa 73-111 h. Nessuna dipendenza esterna nuova (solo la dipendenza inte
 ## D-106 — Ufficio pixel giocabile: il tuo personaggio va a parlare con gli agenti
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere. **La tappa 1 è anticipata su scelta dell'utente** (2026-10-05, in costruzione stanotte): è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md`
+- **Stato:** **Ufficio dei temi delle serie applicato (D-216, ramo `task/ufficio-temi`, da provare):** col tema Scrubs l'ufficio è il Sacro Cuore, con The Office la Dunder Mifflin, con Base resta com'è; mappe per tema nel formato esistente con gli stessi ancoraggi, colori e arredi disegnati dal codice; tileset e cartella del tema allargata restano la tappa 5. Prima: Proposta, da discutere. **La tappa 1 è anticipata su scelta dell'utente** (2026-10-05, in costruzione stanotte): è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md`
 - **Collegate:**
   - D-011 (pixel-agents incorporato nell'HUD): questa proposta la sostituisce solo in parte, vedi "Alternative";
   - D-006: già sostituita da D-011;
@@ -1353,7 +1353,7 @@ L'anteprima `docs/mockups/ufficio.html` lo mostra:
   - **Raggiungibilità:** ogni posto e la scrivania Decisioni si raggiungono dall'ingresso, con una ricerca in ampiezza come nell'anteprima.
   - Un test con un caso che passa e uno che fallisce per ogni regola.
 - **Ripiego.** Una mappa non valida non blocca nulla: l'ufficio usa la mappa `base` con i colori del tema, e Impostazioni mostra il motivo (per esempio "manca l'ancoraggio «decisioni»"). Vale anche per un tema senza mappa.
-- **Ambienti di opere protette.** L'ospedale di Scrubs, la casa dei Simpson e simili arrivano **solo come pacchetto dell'utente** in `data/themes/<id>/`, fuori da git, con lo stesso validatore. Non vengono disegnati né scaricati da Claude (D-060). Valgono le ragioni di D-103: diritto d'autore, marchi, repository condivisibile.
+- **Ambienti di opere protette.** Nella proposta iniziale l'ospedale di Scrubs, la casa dei Simpson e simili arrivavano **solo come pacchetto dell'utente** in `data/themes/<id>/`, fuori da git, con lo stesso validatore, mai disegnati né scaricati da Claude (D-060), per le ragioni di D-103: diritto d'autore, marchi, repository condivisibile. **Cambiato dall'utente il 2026-10-14 (D-216):** per i temi delle serie del repository i luoghi li disegna Claude come fan art per uso personale, nel repository come i personaggi di D-211 (il Sacro Cuore per Scrubs, la Dunder Mifflin per The Office), da togliere anche dalla storia di git prima di condividerlo; le ragioni di prima sono il motivo per toglierli. Scaricarli resta escluso.
 
 **9. Accessibilità.** L'ufficio **non sostituisce la chat**, e nessuna azione esiste solo lì.
 - **Elenco "Nell'ufficio"** con stato, isola, etichetta e i pulsanti "Raggiungi" e "Parla subito", più "Decisioni in attesa" con "Apri subito".
@@ -1484,7 +1484,7 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
    - Opzione: Selettore separato — puoi combinare per esempio i colori di Natale con la mappa "corsia", ma è una scelta in più.
    - Esempio: Scegli il tema "Corsia" e l'ufficio diventa il reparto d'ospedale; torni a "Base" e torna l'open space.
 11. **Vuoi un comando che controlla le mappe che prepari tu?** Le mappe ispirate a opere vere le prepari o procuri tu in `data/themes/`; proposta di un controllo da riga di comando, `pnpm arianna:themes check`.
-   - Contesto: Le mappe ispirate a opere vere (l'ospedale di Scrubs, la casa dei Simpson) non possono stare nel repository: le prepari o procuri tu nella cartella privata data/themes/. Si decide se vuoi un comando che ti dica se la tua mappa è valida prima di usarla.
+   - Contesto: Le mappe dei temi del repository (il Sacro Cuore e la Dunder Mifflin, D-216) le controlla già un test; le mappe che prepari tu nella cartella privata data/themes/ no. Si decide se vuoi un comando che ti dica se la tua mappa è valida prima di usarla.
    - Opzione consigliata: Sì, un comando di controllo — ti dice cosa non va (per esempio "manca il posto delle decisioni") prima di aprire l'ufficio.
    - Opzione: No, basta l'avviso in Impostazioni — una mappa non valida non blocca nulla: l'ufficio usa la mappa base e le Impostazioni mostrano il motivo.
    - Esempio: Copi in data/themes/ospedale/ la tua mappa, lanci il comando e leggi "riga 4: tessera «x» non nella legenda"; la correggi e il tema funziona.
