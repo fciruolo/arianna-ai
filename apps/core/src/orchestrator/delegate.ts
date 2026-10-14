@@ -39,7 +39,7 @@ import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
-import { LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
+import { CHAT_AGENT, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
@@ -59,6 +59,7 @@ import { writeWeekSummary } from '../work-diary-week.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
 import type { Advise } from './advisor.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
+import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-share.ts';
 import { recordVariantDesign } from '../studio.ts';
 
 /**
@@ -263,7 +264,7 @@ interface ApprovalRow {
 async function declassificationOf(sql: Sql, delegation: Delegation): Promise<ApprovalRow | undefined> {
   const [row] = await sql<ApprovalRow[]>`
     SELECT id::text, state, detail FROM approvals
-    WHERE task_id = ${delegation.taskId} AND kind = 'declassify' AND detail ->> 'sha256' = ${sha256Hex(delegation.brief)}
+    WHERE task_id = ${delegation.taskId} AND kind = 'declassify' AND action <> 'share_fact' AND detail ->> 'sha256' = ${sha256Hex(delegation.brief)}
     ORDER BY requested_at DESC, id DESC LIMIT 1`;
   return row;
 }
@@ -548,6 +549,9 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
   }
+
+  // The facts the user shared with this delegation (D-114, tappa C): they leave with it, at their approved label.
+  label = maxLabel(label, ...(await sharedFactFragments(env.sql, delegation.id)).map((fragment) => fragment.label));
 
   // The folder itself (D-056): with changes the user has not committed, the launch waits for their word.
   const folder = await folderOf(env, delegation);
@@ -1114,6 +1118,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     ...tail,
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
     { text: REPORT_LANGUAGE_TEXT, label: 'L0' as const, source: 'arianna:report-language' },
+    // A delegation of Arianna's (D-213): the agent asks for a fact about the user in its report, never guesses it.
+    ...(!direct && task.assignee === CHAT_AGENT ? [{ text: FACT_ASK_TEXT, label: 'L0' as const, source: 'arianna:fact-ask' }] : []),
     ...(rules === undefined ? [] : [rules]),
     ...(dossier === undefined ? [] : [dossier]),
     ...restarted,
@@ -1207,7 +1213,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const projectNotes = await projectNotesFor(env, { task, step, runId }, delegation.agent, container, executor);
   // A style or skills chosen with this message (the Studio, D-184): a resumed session never saw the opening, so they go with the message.
   const chosen = session !== undefined && skills !== undefined && (await cardDesignOf(sql, task, delegation.agent)) !== undefined ? [skills] : [];
-  const asked: BriefFragment[] = [...chosen, ...(projectNotes === undefined ? [] : [projectNotes.fragment]), message];
+  // The facts the user shared with this delegation (D-114, tappa C), next to the brief: the approved text, each on its own.
+  const shared = await sharedFactFragments(sql, delegation.id);
+  const asked: BriefFragment[] = [...chosen, ...(projectNotes === undefined ? [] : [projectNotes.fragment]), message, ...shared];
   // The copy of the notes lives as long as this attempt: removed however it ends.
   try {
     let result: CloudStepResult;
@@ -1257,8 +1265,11 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         const files = listed === undefined ? {} : { files: storableFiles(changed) };
         const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
         const toolChanges = changedToolConfig(tools, await toolConfigFiles(path).catch(() => new Map([['(unreadable)', '']])));
+        // The facts the agent asks for (D-213): Arianna reads them, and asks the user with profile.share.
+        const asks = task.assignee === CHAT_AGENT && !direct ? factRequestNote(report, delegation.agent) : undefined;
         const text = [
           report,
+          ...(asks === undefined ? [] : [asks]),
           ...(changed.length === 0 ? [] : [`Files changed in the project ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.map((item) => item.path).join(', ')}`]),
           // Run by other tools when the user opens the folder with them, outside any sandbox: the user must know.
           ...(toolChanges.length === 0

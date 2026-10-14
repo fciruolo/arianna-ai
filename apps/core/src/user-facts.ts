@@ -21,9 +21,10 @@ import { applyDeclassifyIn } from './gateway.ts';
 
 /**
  * «Su di te» (D-114, tappa A): the user's profile, single facts each with its
- * label, read and written only from Settings in the web chat. An agent never
- * writes a fact nor lowers its label: there is no tool for it, only these
- * calls of the page.
+ * label, read and written from Settings in the web chat. An agent never
+ * writes a fact nor lowers its label: it may only propose one (profile.propose,
+ * tappa D), written "Solo in casa" once the user confirms it in the web chat
+ * (`applyFactProposal`).
  *
  * - A new fact is "Solo in casa" (L2) unless the user chooses "Condivisibile" (L1).
  * - The topic is L1 by the user's declaration: the scanner and the values of
@@ -325,4 +326,55 @@ export function createUserFacts(sql: Sql, options: UserFactsOptions = {}): UserF
       });
     },
   };
+}
+
+/**
+ * A fact Arianna proposes (D-114, tappa D; D-213), checked as the page checks
+ * a fact "Solo in casa": topic and text within their limits, the topic past
+ * the scanner and the values of the vault (it is L1). The error message, for
+ * the model, names the field and the kind of finding, never the text.
+ */
+export function checkProposal(topic: unknown, text: unknown): { topic: string; text: string } | { error: string } {
+  try {
+    const fact = { topic: topicOf(topic), text: textOf(text) };
+    checkLeaving(fact, DEFAULT_FACT_LABEL);
+    return fact;
+  } catch (error) {
+    if (error instanceof FactsError) return { error: error.message };
+    throw error;
+  }
+}
+
+/**
+ * Writes an approved proposal of Arianna (an approval of kind `fact`, decided
+ * in the web chat), in the decision's transaction: a new fact, or the text of
+ * the fact with that topic replaced; either way "Solo in casa" (L2: raising is
+ * immediate, never a lowering). Checked again here, the vault may have changed:
+ * a proposal that no longer holds, or a full profile, writes nothing (the next
+ * step says so). Events with topic and ids, never the text.
+ */
+export async function applyFactProposal(tx: Queryable, approval: { id: string; kind: string; state: string; detail: Record<string, unknown> }): Promise<boolean> {
+  if (approval.kind !== 'fact' || approval.state !== 'approved') return false;
+  const checked = checkProposal(approval.detail.topic, approval.detail.text);
+  if ('error' in checked) return false;
+  const [current] = await tx<{ id: string; label: string }[]>`
+    SELECT id::text, label::text AS label FROM user_facts WHERE lower(topic) = lower(${checked.topic}) FOR UPDATE`;
+  // Only what the card said: a fact written meanwhile with that topic is never replaced by a proposal shown as new.
+  if ((current !== undefined) !== (approval.detail.replaces === true)) return false;
+  if (current !== undefined) {
+    await tx`UPDATE user_facts SET text = ${checked.text}, label = 'L2' WHERE id = ${current.id}::uuid`;
+    await appendEvent(tx, {
+      kind: 'user_fact.updated',
+      label: 'L1',
+      payload: { factId: current.id, topic: checked.topic, from: current.label, to: 'L2', fields: ['text'], approvalId: approval.id },
+    });
+    return true;
+  }
+  const [{ count } = { count: 0 }] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM user_facts`;
+  if (count >= MAX_FACTS) return false;
+  const [row] = await tx<{ id: string }[]>`
+    INSERT INTO user_facts (topic, text, label) VALUES (${checked.topic}, ${checked.text}, 'L2') RETURNING id::text`;
+  if (row === undefined) throw new Error('INSERT INTO user_facts returned no row');
+  await appendEvent(tx, { kind: 'user_fact.created', label: 'L1', payload: { factId: row.id, topic: checked.topic, label: 'L2', approvalId: approval.id } });
+  return true;
 }

@@ -61,6 +61,17 @@ test('profile.read is offered only when the tail shows the topics alone, and onl
   );
 });
 
+test('profile.share only with facts and a delegation, never in the secretary or incognito; profile.propose everywhere but incognito (D-213)', () => {
+  assert.ok(arianna !== undefined);
+  assert.ok(!orchestratorTools(arianna, true, true).includes('profile.share'));
+  assert.ok(orchestratorTools(arianna, true, true, false, false, false, true).includes('profile.share'));
+  assert.ok(!orchestratorTools(arianna, false, true, false, false, false, true).includes('profile.share'));
+  assert.ok(!orchestratorTools(arianna, true, true, false, true, false, true).includes('profile.share'));
+  assert.ok(!orchestratorTools(arianna, true, true, true, false, false, true).includes('profile.share'));
+  assert.ok(orchestratorTools(arianna, false, false).includes('profile.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true, true).includes('profile.propose'));
+});
+
 test('a card that does not list task.update never gets it, with cards or not', () => {
   assert.ok(arianna !== undefined);
   const without = { ...arianna, card: { ...arianna.card, tools: arianna.card.tools.filter((tool) => tool !== 'task.update') } };

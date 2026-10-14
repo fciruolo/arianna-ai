@@ -51,6 +51,9 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'finance.alerts': object({ month: text(7) }, []),
   // MAX_TOPIC of apps/core/src/user-facts.ts.
   'profile.read': object({ topic: text(60) }, ['topic']),
+  'profile.share': object({ topic: text(60), agent: text(60), reason: text(200) }, ['topic', 'agent', 'reason']),
+  // MAX_FACT_TEXT of apps/core/src/user-facts.ts.
+  'profile.propose': object({ topic: text(60), text: text(300) }, ['topic', 'text']),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -95,6 +98,10 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
     'The checks of a month (YYYY-MM, default the current one): possible double charges, budgets over or close to their limit, unusual expenses, subscriptions whose amount changed. Computed by the core.',
   'profile.read':
     'Read the text of a fact the user wrote about themselves, by its topic as the list of facts above names it. The core answers with the text this conversation may read, or says it is private here: then do not guess it, ask the user if you need it.',
+  'profile.share':
+    'Ask the user to give one fact about themselves to an agent you will delegate to: "topic" as the list of facts names it, "agent" the agent, "reason" one short line on why the agent needs it. Use it when a work needs a fact the agent may not read (a private one, or one an agent asked for with "Mi serve:" in its report). The core shows the exact text to the user, who decides; approved, the core adds it to your next task.delegate to that agent, once: never write the fact in the brief yourself. Refused, go on without it and say in the brief that the user did not share it.',
+  'profile.propose':
+    'Propose to remember a stable fact the user just told you about themselves (where they live, their job, a preference): "topic" one or two general words (the place, the job, the children: never names or numbers in the topic), "text" the fact in the user\'s words. The user confirms it in the chat; it is saved as private ("Solo in casa"). Never for health, documents or credentials, never for something said in passing or about other people.',
   'commitment.add':
     'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':

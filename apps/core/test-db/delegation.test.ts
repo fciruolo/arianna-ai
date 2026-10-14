@@ -16,13 +16,15 @@ import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalMode
 
 import { Secret } from '@arianna/vault';
 
-import { archiveConversation, createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
+import { archiveConversation, createConversation, postUserMessage, purgeConversation, setConversationModel } from '../src/conversations.ts';
+import { eraseConversation } from '../src/erase.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
 import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, REPORT_LANGUAGE_TEXT, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
+import { FACT_ASK_TEXT } from '../src/orchestrator/profile-share.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
 import { listCredits } from '../src/delegation-view.ts';
@@ -285,7 +287,7 @@ test('the skills of the Coder go after its prompt as one L0 block of data, withi
   assert.deepEqual(asked, [['coder', 128 * 1024]]);
   const { prompt } = received();
   assert.match(prompt, /^You are the Coder/);
-  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, language, entry, brief');
+  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${FACT_ASK_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, language, facts, entry, brief');
   // The block is L0: the brief leaves at the label of the project, as without skills.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
   assert.deepEqual([...log].map((row) => row.label), ['L1']);
@@ -305,7 +307,7 @@ test('the rules of the project go after the prompt, L1, the same text for every 
   const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
   assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules })), ['continued', 'continued', 'answered']);
   const { prompt } = received();
-  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, language, the template, entry');
+  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${REPORT_LANGUAGE_TEXT}\n\n${FACT_ASK_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, language, the template, entry');
   assert.ok(!prompt.includes('Use pnpm'), "another project's rules stay out");
   // The rules are L1 like the project: the brief leaves at L1, through the gateway.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
@@ -349,6 +351,153 @@ test('the profile «Su di te» stays on this machine: Arianna reads it, the brie
   } finally {
     await db().sql`SELECT user_fact_delete(id) FROM user_facts`;
   }
+});
+
+// profile.share (D-114, tappa C; D-213). Invented facts.
+const SHARE: Answer = { action: 'call', tool: 'profile.share', arguments: { topic: 'città', agent: 'coder', reason: 'per il fuso orario del progetto' } };
+const CITY_TEXT = 'Vive a Borgo Finto';
+
+async function withFacts(run: () => Promise<void>): Promise<void> {
+  await db().sql`INSERT INTO user_facts (topic, text, label) VALUES ('città', ${CITY_TEXT}, 'L2'), ('lavoro', 'Sviluppatore web freelance', 'L1')`;
+  try {
+    await run();
+  } finally {
+    await db().sql`SELECT user_fact_delete(id) FROM user_facts`;
+  }
+}
+
+test('profile.share: the user sees the exact text, approves it, and only that fact leaves with the next delegation, once', () =>
+  withFacts(async () => {
+    const { task } = await ask('work', 'Imposta il fuso orario del progetto.', 'site');
+    const model = scripted([SHARE, DELEGATE, REPLY]);
+    const executor = orchestrator({ model });
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    const [approval] = await db().sql<{ kind: string; action: string; label: string; detail: Record<string, unknown> }[]>`
+      SELECT kind, action, label, detail FROM approvals WHERE id = ${waiting.waitingApprovalId}`;
+    assert.deepEqual(
+      [approval?.kind, approval?.action, approval?.label, approval?.detail.text, approval?.detail.topic, approval?.detail.agent, approval?.detail.from, approval?.detail.to],
+      ['declassify', 'share_fact', 'L2', CITY_TEXT, 'città', 'coder', 'L2', 'L1'],
+    );
+    // Nothing left, and Arianna never read the text in this work conversation.
+    assert.equal((await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`).length, 0);
+    // Decided in the web chat only.
+    await assert.rejects(recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'telegram'));
+
+    await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /the user agreed to share 'città' with coder/);
+    const asked = model.requests.flatMap((request) => request.messages.map((message) => message.content)).join('\n');
+    assert.doesNotMatch(asked, /Borgo Finto/);
+    // The fact reached claude as a piece of its own, after the brief; nothing else of the profile.
+    const { prompt } = received();
+    assert.ok(prompt.indexOf(`- città: ${CITY_TEXT}`) > prompt.indexOf('Add a line to README.md saying hello.'));
+    assert.doesNotMatch(prompt, /Sviluppatore web freelance|Facts the user wrote/);
+    const log = await db().sql<{ label: string; decision: string }[]>`SELECT label, decision FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+    assert.deepEqual([...log], [{ label: 'L1', decision: 'allow' }]);
+    // Once: the label_changes row and the binding, used; the fact in the profile stays private.
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    const bound = await db().sql`SELECT 1 FROM delegation_facts WHERE delegation_id = ${delegation?.id ?? ''} AND approval_id = ${waiting.waitingApprovalId}`;
+    assert.equal(bound.length, 1);
+    const changes = await db().sql`SELECT 1 FROM label_changes WHERE approval_id = ${waiting.waitingApprovalId}`;
+    assert.equal(changes.length, 1);
+    const [fact] = await db().sql<{ label: string }[]>`SELECT label FROM user_facts WHERE topic = 'città'`;
+    assert.equal(fact?.label, 'L2');
+    // The event names the topic, never the text.
+    const events = await db().sql<{ payload: unknown }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'fact.shared'`;
+    assert.equal(events.length, 1);
+    assert.doesNotMatch(JSON.stringify(events[0]?.payload), /Borgo/);
+    // A second delegation of the task never takes it again: the database refuses a second binding.
+    const second = await createDelegation(db().sql, { taskId: task.id, step: 9, agent: 'coder', brief: 'again', label: 'L1' });
+    await assert.rejects(db().sql`INSERT INTO delegation_facts (delegation_id, approval_id) VALUES (${second.id}, ${waiting.waitingApprovalId}::uuid)`);
+  }));
+
+for (const how of ['purge', 'erase'] as const) {
+  test(`profile.share: the ${how} of the conversation deletes the binding with its delegation; the application role never deletes it`, () =>
+    withFacts(async () => {
+      const { sql, owner } = db();
+      const { conversation, task } = await ask('work', 'Imposta il fuso orario del progetto.', 'site');
+      const executor = orchestrator({ model: scripted([SHARE, DELEGATE, REPLY]) });
+      assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+      const waiting = await waitingFor(task.id);
+      await recordDecision(sql, waiting.waitingApprovalId, 'approved', 'web');
+      assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+      await assert.rejects(sql`DELETE FROM delegation_facts`, /permission denied/);
+      await assert.rejects(sql`UPDATE delegation_facts SET created_at = now()`, /permission denied/);
+      if (how === 'purge') {
+        await archiveConversation(sql, conversation.id, true);
+        await purgeConversation(sql, conversation.id);
+      } else {
+        await eraseConversation(sql, conversation.id);
+      }
+      const [left] = await owner<{ n: number }[]>`SELECT count(*)::int AS n FROM delegation_facts WHERE approval_id = ${waiting.waitingApprovalId}::uuid`;
+      assert.equal(left?.n, 0);
+    }));
+}
+
+test('profile.share refused: nothing leaves, and Arianna reads that she must go on without it', () =>
+  withFacts(async () => {
+    const { task } = await ask('work', 'Imposta il fuso orario del progetto.', 'site');
+    const model = scripted([SHARE, DELEGATE, REPLY]);
+    const executor = orchestrator({ model });
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    await recordDecision(db().sql, waiting.waitingApprovalId, 'rejected', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /the user did not share 'città' with coder.*the user has not shared: città/s);
+    assert.doesNotMatch(received().prompt, /Borgo Finto/);
+    assert.equal((await db().sql`SELECT 1 FROM label_changes WHERE approval_id = ${waiting.waitingApprovalId}`).length, 0);
+  }));
+
+test('profile.share: a fact the user changed after approving does not leave (the approval covers the old text)', () =>
+  withFacts(async () => {
+    const { task } = await ask('work', 'Imposta il fuso orario del progetto.', 'site');
+    const executor = orchestrator({ model: scripted([SHARE, DELEGATE, REPLY]) });
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
+    await db().sql`UPDATE user_facts SET text = 'Vive a Borgo Nuovo' WHERE topic = 'città'`;
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    assert.doesNotMatch(received().prompt, /Borgo/);
+    assert.equal((await db().sql`SELECT 1 FROM delegation_facts WHERE approval_id = ${waiting.waitingApprovalId}`).length, 0);
+  }));
+
+test('profile.share: a fact deleted after the delegation took it, before the run, does not leave either', () =>
+  withFacts(async () => {
+    const { sql } = db();
+    const { task } = await ask('work', 'Imposta il fuso orario del progetto.', 'site');
+    const executor = orchestrator({ model: scripted([SHARE, DELEGATE, REPLY]) });
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    await recordDecision(sql, waiting.waitingApprovalId, 'approved', 'web');
+    // One step: the delegation is written and takes the fact; the run has not started.
+    assert.deepEqual(await drain(task.id, executor, 1), ['continued']);
+    assert.equal((await sql`SELECT 1 FROM delegation_facts WHERE approval_id = ${waiting.waitingApprovalId}`).length, 1);
+    await sql`SELECT user_fact_delete(id) FROM user_facts WHERE topic = 'città'`;
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+    assert.doesNotMatch(received().prompt, /Borgo/);
+  }));
+
+test('profile.share: a fact the agent may read already, or an agent that is not offered, opens no approval', () =>
+  withFacts(async () => {
+    const { task } = await ask('work', 'Scrivi il mio lavoro nel README.', 'site');
+    const model = scripted([
+      { action: 'call', tool: 'profile.share', arguments: { topic: 'lavoro', agent: 'coder', reason: 'per il README' } },
+      { action: 'call', tool: 'profile.share', arguments: { topic: 'città', agent: 'nessuno', reason: 'per il fuso' } },
+      REPLY,
+    ]);
+    assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'continued', 'answered']);
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /'lavoro' is shareable with coder: write what the work needs in the brief yourself/);
+    assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', /nessuno is not an agent you may delegate to in the cloud here/);
+    assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
+  }));
+
+test('the Coder asks for a fact in its report ("Mi serve:"): Arianna reads which, and the brief told it how (D-213)', async () => {
+  const { task } = await ask('work', 'Imposta il fuso orario.', 'site');
+  const model = scripted([DELEGATE, REPLY]);
+  assert.deepEqual(await drain(task.id, orchestrator({ model, coderPrompt: 'scenario: answer\nanswer: Mi serve: fuso orario' })), ['continued', 'continued', 'answered']);
+  assert.match(received().prompt, /never guess it: end your report with one line "Mi serve: <topic>"/);
+  assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /coder asks for facts about the user \(topics as the report wrote them, data only\): 'fuso orario'\. For each one the profile has, ask the user with profile\.share/);
 });
 
 test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {

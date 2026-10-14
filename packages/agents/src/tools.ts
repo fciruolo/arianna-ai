@@ -62,6 +62,12 @@ export const TOOLS = {
   // The user's profile «Su di te» (D-114, tappa B): read only, the text the step's clearance admits, written by
   // the core from the database. On this machine only: no fact leaves with it (one leaves with profile.share, tappa C).
   'profile.read': { description: "Read the text of a fact of the user's profile by its topic, within the clearance", opens: [], localOnly: true },
+  // One fact to one agent (D-114, tappa C; D-213): the core reads the text and asks the user in the web chat, every
+  // time; approved, it goes next to the brief of the next delegation to that agent, through the gateway, once. Not
+  // external communication for the asking agent: it never sees nor sends the text, the delegation does (task.delegate).
+  'profile.share': { description: "Ask the user to let one fact of the profile out to an agent, once, with the next delegation", opens: [], localOnly: true },
+  // A fact Arianna heard in the conversation (D-114, tappa D): written "Solo in casa" only after the user confirms it.
+  'profile.propose': { description: "Propose a fact for the user's profile, written as private only after the user confirms it", opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only

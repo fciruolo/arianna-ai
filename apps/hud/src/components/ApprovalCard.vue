@@ -5,6 +5,7 @@ import { executorChoices, planRows } from '../lib/cardwall.ts';
 import { outcomeText, reportEntries } from '../lib/commitments.ts';
 import { IM_NO, IM_YES, imConfirmation } from '../lib/im-approval.ts';
 import { ACTION_TEXT, CHOICE_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
@@ -27,7 +28,11 @@ async function chooseExecutor(choice: ExecutorChoice): Promise<void> {
 }
 
 const title = computed(() => ACTION_TEXT[props.approval.action] ?? props.approval.action);
-const isDeclassify = computed(() => props.approval.kind === 'declassify');
+/** One fact of «Su di te» to an agent, once (D-114, tappa C): who asks, why, the exact text. */
+const share = computed(() => factShare(props.approval));
+/** A fact Arianna would remember (D-114, tappa D). */
+const proposal = computed(() => factProposal(props.approval));
+const isDeclassify = computed(() => props.approval.kind === 'declassify' && share.value === undefined);
 /** A workspace approval names the repository and the files with uncommitted changes. */
 const workspace = computed(() => {
   if (props.approval.kind !== 'workspace') return undefined;
@@ -91,7 +96,21 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </header>
 
     <div class="flex min-w-0 flex-col gap-2 px-[15px] py-3">
-      <template v-if="isDeclassify && text !== undefined">
+      <template v-if="share !== undefined">
+        <p class="text-[15px]"><strong>{{ share.title }}</strong></p>
+        <p class="break-words text-muted">Perché, secondo chi chiede: «{{ share.reason }}»</p>
+        <p>Testo che esce:</p>
+        <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">«{{ share.text }}»</p>
+        <p class="text-xs text-muted">{{ share.note }}</p>
+      </template>
+      <template v-else-if="proposal !== undefined">
+        <p>
+          Vuoi che ricordi: <strong>{{ proposal.topic }}</strong>?
+        </p>
+        <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ proposal.text }}</p>
+        <p class="text-xs text-muted">{{ proposal.note }}</p>
+      </template>
+      <template v-else-if="isDeclassify && text !== undefined">
         <p>Approvando, questo testo esatto viene declassato e può uscire dalla macchina. Nient'altro.</p>
         <pre class="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{{ text }}</pre>
       </template>
@@ -183,9 +202,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

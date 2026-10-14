@@ -25,6 +25,7 @@ import {
   type RunUsage,
 } from './runs.ts';
 import { createTask, loadTask, moveTask, openDependencies, setTaskLimits, STEP_QUEUE, TaskError, type NewTask, type Task } from './tasks.ts';
+import { applyFactProposal } from './user-facts.ts';
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -458,7 +459,8 @@ export async function processStepJob(
         // Only a pending confirmation of this very task: anything else is the executor's mistake.
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
-          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind IN ('commitment', 'plan', 'executor', 'im')`;
+          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id}
+            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });
@@ -540,6 +542,8 @@ export async function recordDecisionIn(
   if (decided.kind === 'commitment' && state === 'approved') await applyCommitmentApproval(tx, decided);
   // An approved plan (D-159): its cards and their dependencies are created with the decision.
   if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
+  // A fact Arianna proposed (D-114, tappa D): written "Solo in casa" with the decision.
+  if (decided.kind === 'fact' && state === 'approved') await applyFactProposal(tx, decided);
   if (decided.taskId !== null) {
     const task = await loadTask(tx, decided.taskId);
     if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {

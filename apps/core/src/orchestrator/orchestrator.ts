@@ -54,6 +54,19 @@ import { createDelegation, loadDelegations, openDelegation, updateDelegation, ty
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { imDecisionAnswer, imReplay, requestIm, WAITING_IM } from './im-step.ts';
+import {
+  bindSharedFacts,
+  PROFILE_PROPOSE,
+  PROFILE_SHARE,
+  proposeDecisionAnswer,
+  proposeReplay,
+  requestPropose,
+  requestShare,
+  shareReplay,
+  shareResults,
+  WAITING_PROPOSE,
+  WAITING_SHARE,
+} from './profile-share.ts';
 import type { ImToolEnv } from './im-tool.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
@@ -166,12 +179,22 @@ export interface OrchestratorOptions {
  * `profile.read` (D-114, tappa B) only when `profile`: the tail of the prompt
  * shows the topics alone, so that the model has a text to read with it; the
  * prompt of a user without such a profile stays the same byte for byte.
+ * `profile.share` (D-114, tappa C) only with `shares` (the profile holds a
+ * fact) and where `task.delegate` is offered: it gives a fact to a delegation.
  */
-export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false, secretary = false, profile = false): ToolId[] {
+export function orchestratorTools(
+  agent: LoadedAgent,
+  delegation = false,
+  cards = false,
+  incognito = false,
+  secretary = false,
+  profile = false,
+  shares = false,
+): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
       !(incognito && (INCOGNITO_OFF_TOOLS as readonly string[]).includes(tool)) &&
-      ((isLocalTool(tool) && (tool !== UPDATE || cards) && (tool !== PROFILE_READ || profile)) ||
+      ((isLocalTool(tool) && (tool !== UPDATE || cards) && (tool !== PROFILE_READ || profile) && (tool !== PROFILE_SHARE || (delegation && !secretary && shares))) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -182,6 +205,7 @@ export function orchestratorTools(agent: LoadedAgent, delegation = false, cards 
 }
 
 const PROFILE_READ = 'profile.read' satisfies ToolId;
+const PROFILE_TOOLS: readonly string[] = [PROFILE_READ, PROFILE_SHARE, PROFILE_PROPOSE];
 
 /** How a message of the system starts when the model reads it. */
 export const SYSTEM_MESSAGE_MARK = '[Messaggio del sistema, non dell’utente]';
@@ -244,11 +268,13 @@ async function historyOf(
       history.push({ value: { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${note}` }, label, source: `participants:${task.conversationId}` });
     }
   }
+  // A profile.share the user decided (D-114, tappa C): the model reads the decision, never the text.
+  const shared = await shareResults(sql, task.id, turns);
   for (const turn of turns) {
     const source = `turn:${task.id}:${String(turn.step)}`;
     history.push({ value: { role: 'assistant', content: answerText(turn.answer) }, label: turn.label, source });
     if (turn.result !== null) {
-      history.push({ value: { role: 'tool', content: clip(turn.result) }, label: turn.label, source });
+      history.push({ value: { role: 'tool', content: clip(shared.get(turn.step) ?? turn.result) }, label: turn.label, source });
     } else if (turn.answer.action === 'call' && turn.answer.tool === DELEGATE) {
       // A call that opened a delegation: its outcome is the result.
       const result = delegationResult(delegations.find((delegation) => delegation.step === turn.step));
@@ -597,6 +623,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const asked = await sql.begin(async (tx) => {
       await recordTurn(tx, { ...turn, label });
       const delegation = await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, ...(repo === undefined ? {} : { repo }) });
+      // The facts the user agreed to give this agent (D-114, tappa C): bound to this delegation, once.
+      if (isCloudRoute(where)) await bindSharedFacts(tx, task, delegation);
       // The choice is written with the delegation: a crash leaves both or neither (the replay waits for it again).
       const approvalId = ways === undefined ? undefined : await requestDelegationExecutor(tx, task, delegation, ways);
       if (conversationId === null) return approvalId;
@@ -753,6 +781,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (ctx.approval?.kind === 'plan') return planDecisionAnswer(sql, ctx);
       // The user decided an IM item above what the IM holds (D-167, P4b): written now, the answer here too.
       if (ctx.approval?.kind === 'im') return imDecisionAnswer(sql, ctx, options.ims);
+      // The user decided a fact Arianna proposed (D-114, tappa D): written with the decision, the answer here.
+      if (ctx.approval?.kind === 'fact') return proposeDecisionAnswer(sql, ctx);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.target : (plannedDirect ?? undefined);
@@ -769,7 +799,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const done = turns.find((turn) => turn.step === step);
       if (done !== undefined) {
         // A confirmation asked at that step and still pending: wait for it again.
-        const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ?? (await executorReplay(done, delegations));
+        const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ??
+          (await shareReplay(sql, ctx, done)) ??
+          (await proposeReplay(sql, ctx, done)) ??
+          (await executorReplay(done, delegations));
         if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
           const card = options.agents.get(name)?.card;
@@ -796,7 +829,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // Then the profile «Su di te» (D-114, tappa B), within the same clearance: on this machine only, nothing for an
       // L0 agent or task. Past its limit the topics alone, and profile.read when the card lists it.
       const readsProfile = agent.card.tools.includes(PROFILE_READ);
-      const profile = profilePart(await listUserFacts(sql), tailClearance, { readTool: readsProfile });
+      const facts = await listUserFacts(sql);
+      const profile = profilePart(facts, tailClearance, { readTool: readsProfile });
       const tail = [...tailParts(env.settings(), task.assignee, tailClearance), ...(profile === undefined ? [] : [profile])];
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
@@ -833,7 +867,21 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
-      const offered = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary, readsProfile && profile?.topicsOnly === true);
+      // The cloud agents profile.share may give a fact to, with what a brief to each carries (D-114, tappa C).
+      const shareTargets = new Map<string, Label>();
+      for (const target of delegates) {
+        const card = options.agents.get(target.name)?.card;
+        if (card !== undefined && isCloudRoute(delegationRoute(card))) shareTargets.set(target.name, briefCeiling(card));
+      }
+      const offered = orchestratorTools(
+        agent,
+        delegates.length > 0,
+        !incognito && (await updateOffered(sql, task)),
+        incognito,
+        secretary,
+        readsProfile && profile?.topicsOnly === true,
+        profile !== undefined && shareTargets.size > 0,
+      );
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
       const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
       // A plan of Claude that failed in this task is not asked again by the local model: one call per task.
@@ -933,10 +981,20 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           autonomy: agent.card.autonomy,
           ...(options.ims === undefined ? {} : { ims: options.ims }),
           profileClearance: tailClearance,
+          shareTargets,
         });
         // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
         if (ran.context !== undefined) context = ran.context;
         // An IM item above what the IM holds (D-167): the turn and the confirmation together, nothing written yet.
+        // A fact to share or to remember (D-114, tappe C e D): the turn and the approval together; nothing leaves, nothing is written yet.
+        if (ran.share !== undefined) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_SHARE });
+          return { ...ran, approvalId: await requestShare(tx, { taskId: task.id, step, detail: ran.share }) };
+        }
+        if (ran.propose !== undefined) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PROPOSE });
+          return { ...ran, approvalId: await requestPropose(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.propose }) };
+        }
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
           return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.confirm }) };
@@ -945,12 +1003,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         return { ...ran, approvalId: undefined };
       });
       if (result.approvalId !== undefined) {
-        // The IM number only: the title stays in the approval.
-        await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
+        // The IM number only: the title stays in the approval. A fact: the tool's name only (D-213).
+        if (result.share !== undefined || result.propose !== undefined) await show(task, step, 'wait', tool);
+        else await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
-      // An error of profile.read names topics: the activity shows the tool alone (D-114b).
-      if (result.text.startsWith('error: ')) await show(task, step, 'error', tool === PROFILE_READ ? PROFILE_READ : result.text.replace(/^error: [^:]+: /, ''));
+      // An error of a profile tool names topics: the activity shows the tool alone (D-114b).
+      if (result.text.startsWith('error: ')) await show(task, step, 'error', PROFILE_TOOLS.includes(tool) ? tool : result.text.replace(/^error: [^:]+: /, ''));
       else await show(task, step, TOOL_ACTIVITY[tool], toolDetail(tool, answer.arguments));
       return { kind: 'continue', usage };
     },
@@ -968,12 +1027,14 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'finance.search': 'search',
   'finance.alerts': 'read',
   'profile.read': 'read',
+  'profile.share': 'wait',
+  'profile.propose': 'write',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   // The finance tools and profile.read show only their name (D-183, D-114): what the model looks for stays in the turn.
-  if (tool.startsWith('finance.') || tool === PROFILE_READ) return tool;
+  if (tool.startsWith('finance.') || PROFILE_TOOLS.includes(tool)) return tool;
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);

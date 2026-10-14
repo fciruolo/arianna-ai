@@ -1,15 +1,29 @@
 import type { Autonomy, ToolId } from '@arianna/agents';
-import { isAtMost, maxLabel, profileRead, type Context, type Label } from '@arianna/policy';
+import {
+  FACT_TOPIC_LABEL,
+  isAtMost,
+  isFactLabel,
+  isFinanceContext,
+  maxLabel,
+  PolicyError,
+  profileRead,
+  shareFactRequest,
+  type Context,
+  type Label,
+  type ProfileFact,
+  type ShareFactDetail,
+} from '@arianna/policy';
 
 import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
 import { runFinanceTool } from '../finance-tools.ts';
 import { createTask, type Task } from '../tasks.ts';
-import { listUserFacts } from '../user-facts.ts';
+import { checkProposal, listUserFacts, MAX_FACTS } from '../user-facts.ts';
 import { updateCard } from './cards.ts';
 import { addImTool, clientProject, namesInText, type ImProposal, type ImToolEnv } from './im-tool.ts';
 import { KbError, type Kb } from './kb.ts';
+import { WAITING_PROPOSE, WAITING_SHARE, type FactProposal } from './profile-share.ts';
 
 /**
  * The tools the orchestrator runs itself, on this machine (task 1.10, D-053).
@@ -23,6 +37,7 @@ import { KbError, type Kb } from './kb.ts';
  * `im.add` writes an item in an IM file of a project (im-tool.ts, D-167).
  * `finance.*` read the expense tracker and mark the task (finance-tools.ts, D-183).
  * `profile.read` reads one fact of «Su di te» within the step's clearance (D-114, tappa B).
+ * `profile.share` asks the user to let one fact out to an agent, `profile.propose` to remember one (D-114, tappe C e D).
  */
 export const LOCAL_TOOLS = [
   'kb.search',
@@ -35,6 +50,8 @@ export const LOCAL_TOOLS = [
   'finance.search',
   'finance.alerts',
   'profile.read',
+  'profile.share',
+  'profile.propose',
 ] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
@@ -59,6 +76,12 @@ export interface ToolEnv {
    * Without it `profile.read` reads nothing (default-deny).
    */
   profileClearance?: Label;
+  /**
+   * The agents `profile.share` may name (D-114, tappa C): the cloud ones
+   * this step may delegate to, each with the highest label a brief to it
+   * carries (`briefCeiling`). Without it the tool shares with nobody.
+   */
+  shareTargets?: ReadonlyMap<string, Label>;
 }
 
 export interface ToolResult {
@@ -69,6 +92,10 @@ export interface ToolResult {
   confirm?: ImProposal;
   /** The step's context after the tool, when the tool changed it (a finance read marks it, D-183). */
   context?: Context;
+  /** `profile.share`: the declassification the user decides in the web chat (D-114, tappa C). */
+  share?: ShareFactDetail;
+  /** `profile.propose`: the fact the user confirms in the web chat (D-114, tappa D). */
+  propose?: FactProposal;
 }
 
 /** Longest page text shown to the model in one result. */
@@ -98,6 +125,10 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await runFinanceTool(tool, args, { sql: env.sql, taskId: env.task.id, context: env.context });
       case 'profile.read':
         return await readFact(args, env);
+      case 'profile.share':
+        return await shareFact(args, env);
+      case 'profile.propose':
+        return await proposeFact(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };
@@ -146,6 +177,67 @@ async function readFact(args: Record<string, unknown>, env: ToolEnv): Promise<To
         ? { text: 'error: profile.read: the profile has no fact this conversation may read', label: 'L0' }
         : { text: `error: profile.read: no fact '${topic}'; the topics are: ${read.topics.join(', ')}`, label: 'L1' };
   }
+}
+
+const factKey = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** The fact of the profile with `topic`, case and spaces aside; only an L1 or L2 one. */
+function factNamed(facts: readonly ProfileFact[], topic: string): ProfileFact | undefined {
+  return facts.find((fact) => isFactLabel(fact.label) && factKey(fact.topic) === factKey(topic));
+}
+
+/**
+ * `profile.share {topic, agent, reason}` (D-114, tappa C): the core reads the
+ * fact and prepares its declassification for the user, the model never sees
+ * the text here. Only a topic the step may know (an L0 step knows none), only
+ * a cloud agent the step may delegate to, only a fact above what a brief to
+ * it carries (one within it goes in the brief as it is). The policy refuses a
+ * context that has read finance data. Errors name topics (L1), never texts.
+ */
+async function shareFact(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const topic = String(args.topic);
+  const agent = String(args.agent);
+  const clearance = env.profileClearance ?? 'L0';
+  const facts = await listUserFacts(env.sql);
+  const known = profileRead(clearance, facts, topic);
+  if (known.kind === 'missing') {
+    return known.topics.length === 0
+      ? { text: 'error: profile.share: the profile has no fact this conversation may know', label: 'L0' }
+      : { text: `error: profile.share: no fact '${topic}'; the topics are: ${known.topics.join(', ')}. For anything else, ask the user`, label: FACT_TOPIC_LABEL };
+  }
+  const fact = factNamed(facts, known.topic);
+  if (fact === undefined) return { text: 'error: profile.share: the profile has no fact this conversation may know', label: 'L0' };
+  const ceiling = env.shareTargets?.get(agent);
+  if (ceiling === undefined) return { text: `error: profile.share: ${agent} is not an agent you may delegate to in the cloud here`, label: 'L0' };
+  if (isFactLabel(fact.label) && isAtMost(fact.label, ceiling)) {
+    return { text: `error: profile.share: '${fact.topic}' is shareable with ${agent}: write what the work needs in the brief yourself (profile.read reads it)`, label: FACT_TOPIC_LABEL };
+  }
+  try {
+    const share = shareFactRequest(fact, ceiling, env.context, { agent, reason: String(args.reason) });
+    return { text: WAITING_SHARE, label: FACT_TOPIC_LABEL, share };
+  } catch (error) {
+    if (!(error instanceof PolicyError)) throw error;
+    if (isFinanceContext(env.context)) return { text: 'error: profile.share: this conversation has read finance data: nothing of it leaves this machine', label: 'L0' };
+    return { text: `error: profile.share: ${error.message.replace(/^profile\.share: /, '')}`, label: 'L0' };
+  }
+}
+
+/**
+ * `profile.propose {topic, text}` (D-114, tappa D): a fact the user said,
+ * written "Solo in casa" only once the user confirms it in the web chat. The
+ * topic passes the scanner and the vault (it is L1); never from a context that
+ * has read finance data (a movement would become a fact, then leave with
+ * profile.share), never the same fact again.
+ */
+async function proposeFact(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  if (isFinanceContext(env.context)) return { text: 'error: profile.propose: nothing read from the finances goes into the profile', label: 'L0' };
+  const checked = checkProposal(args.topic, args.text);
+  if ('error' in checked) return { text: `error: profile.propose: ${checked.error}`, label: 'L0' };
+  const facts = await listUserFacts(env.sql);
+  const current = factNamed(facts, checked.topic);
+  if (current !== undefined && current.text === checked.text) return { text: `error: profile.propose: the profile already holds '${current.topic}' with this text`, label: FACT_TOPIC_LABEL };
+  if (current === undefined && facts.length >= MAX_FACTS) return { text: `error: profile.propose: the profile is full (${String(MAX_FACTS)} facts): tell the user`, label: 'L0' };
+  return { text: WAITING_PROPOSE, label: 'L0', propose: { topic: current?.topic ?? checked.topic, text: checked.text, replaces: current !== undefined } };
 }
 
 /** The project of the conversation's workspace (a container, or `container:part`, D-145), when it has one. */

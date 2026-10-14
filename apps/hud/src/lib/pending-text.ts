@@ -52,6 +52,10 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
   const detail = approval.detail;
   switch (approval.kind) {
     case 'declassify': {
+      // One fact of «Su di te» to an agent (D-114, tappa C): the topic, never the text.
+      if (approval.action === 'share_fact' && typeof detail.topic === 'string' && typeof detail.agent === 'string') {
+        return `Dare a ${agentTitle(detail.agent)} il dato «${detail.topic}», una volta`;
+      }
       const labels = declassifyLabels(detail);
       return labels === undefined ? 'Far uscire un testo declassato dalla macchina' : `Far uscire un testo declassato (${labels}) dalla macchina`;
     }
@@ -70,6 +74,8 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
       const count = Array.isArray(detail.cards) ? detail.cards.length : 0;
       return typeof detail.title === 'string' && count > 0 ? `Creare ${String(count)} card per «${detail.title}»` : 'Creare le card di un piano';
     }
+    case 'fact':
+      return typeof detail.topic === 'string' ? `Ricordare «${detail.topic}» in «Su di te»` : 'Ricordare un dato in «Su di te»';
     case 'executor':
       // A delegation of the chat (D-159): the agent and the request it works on.
       if (typeof detail.delegation === 'string' && typeof detail.agent === 'string') {

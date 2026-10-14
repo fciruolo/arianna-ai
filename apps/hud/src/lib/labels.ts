@@ -94,6 +94,9 @@ export const ACTION_TEXT: Record<string, string> = {
   'card.executor': 'Con chi lavora?',
   // The IM of a project (D-167).
   'im.add': 'Scrivo nell’IM?',
+  // «Su di te» (D-114, tappe C e D).
+  share_fact: 'Gli do questo dato?',
+  'profile.propose': 'Lo ricordo?',
 };
 
 /** The ways a card of an agent may run, as the user chooses them (D-159). */

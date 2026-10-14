@@ -48,7 +48,7 @@ export function scannerRefusal(kinds: readonly string[]): string {
  * commitment of the secretary (D-144), a plan and the choice of an executor
  * (D-159; the database refuses them from Telegram too).
  */
-export const WEB_ONLY_KINDS = ['declassify', 'commitment', 'plan', 'executor', 'im'] as const;
+export const WEB_ONLY_KINDS = ['declassify', 'commitment', 'plan', 'executor', 'im', 'fact'] as const;
 
 export function isWebOnly(kind: string): boolean {
   return (WEB_ONLY_KINDS as readonly string[]).includes(kind);
@@ -74,6 +74,8 @@ export function approvalNotice(kind: string, action: string, title?: string): st
                 ? 'Un lavoro di un agente aspetta che tu scelga chi lo fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'
                 : kind === 'im'
                   ? 'Arianna chiede di scrivere una voce in un IM: si conferma solo dalla chat web.'
+                  : kind === 'fact'
+                    ? 'Arianna propone di ricordare un dato su di te: si conferma solo dalla chat web.'
                   : `Approvazione richiesta: ${actionName(action)}.`;
   const task = title === undefined || oneLine(title) === '' ? '' : `\nTask: ${oneLine(title)}`;
   const tail = isWebOnly(kind) ? '' : '\nIl dettaglio è nella chat web.';
