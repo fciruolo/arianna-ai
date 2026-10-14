@@ -82,18 +82,38 @@ describe('a check of a project', () => {
   it('groups with the local model, checked, and with the keys of the project', async () => {
     const github = fakeGithub({ '/repos/different-ai/openwork/releases': releases('v2', 'v1'), '/repos/different-ai/openwork/compare/': compare(['feat: a', 'feat: b']) });
     const state = await checkProject(
-      { ...github, now: NOW, summarize: () => Promise.resolve({ value: { items: [{ title: 'Note vocali', summary: 'Si parla alla chat.', commits: [sha(1).slice(0, 7), sha(2).slice(0, 7)] }] }, finishReason: 'stop', model: 'm' }) },
+      { ...github, now: NOW, summarize: () => Promise.resolve({ value: { items: [{ title: 'Note vocali', summary: 'Si parla alla chat.', commits: [1, 2] }] }, finishReason: 'stop', model: 'm' }) },
       OPENWORK,
       EMPTY,
     );
     assert.equal(state.news?.source, 'model');
     assert.equal(state.news.items.length, 1);
-    assert.equal(state.news.items[0]?.key, `${keyPrefix(OPENWORK.id)}${sha(1).slice(0, 7)}`);
+    // Number 1 is the newest commit, the first of the list the model reads.
+    assert.equal(state.news.items[0]?.key, `${keyPrefix(OPENWORK.id)}${sha(2).slice(0, 7)}`);
+  });
+
+  it('a malformed model answer falls back to the raw list (D-202)', async () => {
+    const github = fakeGithub({ '/repos/different-ai/openwork/releases': releases('v2', 'v1'), '/repos/different-ai/openwork/compare/': compare(['feat: a', 'fix: b']) });
+    const state = await checkProject({ ...github, summarize: () => Promise.resolve({ value: { items: 'Ecco le novità' }, finishReason: 'stop', model: 'm' }) }, OPENWORK, EMPTY);
+    assert.equal(state.news?.source, 'raw');
+    assert.match(state.news.message ?? '', /non ha passato i controlli \(not the shape asked\)/);
+    assert.equal(state.news.items.length, 2);
+  });
+
+  it('a number the model invents is dropped, the rest of its grouping kept (D-202)', async () => {
+    const github = fakeGithub({ '/repos/different-ai/openwork/releases': releases('v2', 'v1'), '/repos/different-ai/openwork/compare/': compare(['feat: a', 'feat: b']) });
+    const state = await checkProject(
+      { ...github, now: NOW, summarize: () => Promise.resolve({ value: { items: [{ title: 'Note vocali', summary: 'Si parla alla chat.', commits: [2, 17] }, { title: 'Inventata', summary: 'Niente.', commits: [5] }] }, finishReason: 'stop', model: 'm' }) },
+      OPENWORK,
+      EMPTY,
+    );
+    assert.equal(state.news?.source, 'model');
+    assert.deepEqual(state.news.items.map((item) => [item.title, item.commits.map((commit) => commit.sha)]), [['Note vocali', [sha(1)]]]);
   });
 
   it('a model answer that fails the checks falls back to the raw list', async () => {
     const github = fakeGithub({ '/repos/different-ai/openwork/releases': releases('v2', 'v1'), '/repos/different-ai/openwork/compare/': compare(['feat: a']) });
-    const state = await checkProject({ ...github, summarize: () => Promise.resolve({ value: { items: [{ title: 'x', summary: 'y', commits: ['0000000'] }] }, finishReason: 'stop', model: 'm' }) }, OPENWORK, EMPTY);
+    const state = await checkProject({ ...github, summarize: () => Promise.resolve({ value: { items: [{ title: 'x', summary: 'y', commits: [9] }] }, finishReason: 'stop', model: 'm' }) }, OPENWORK, EMPTY);
     assert.equal(state.news?.source, 'raw');
     assert.match(state.news.message ?? '', /non ha passato i controlli/);
   });

@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Una personalità (o una regola dei progetti) con un dato personale o un valore del vault ora si rifiuta con un messaggio in italiano che dice il campo e il tipo di dato, senza ripetere il valore, al posto del messaggio tecnico inglese (D-107g).
 - Il pulsante «Computer» non si sposta più sotto il cursore mentre il Coder lavora: sta nell'intestazione della card (anche nel rapporto) e la card al lavoro ha un'altezza fissa, con passi e modifiche che scorrono dentro (D-095).
+- «Controlla novità» dei progetti seguiti e le novità di Open Design si raggruppano di nuovo col modello locale: il modello riceve i commit numerati al posto degli sha, un numero che non esiste si scarta invece di far ripiegare tutto sull'elenco per tipo (D-202, D-186).
 
 ## [0.95.0] - 2026-10-14
 

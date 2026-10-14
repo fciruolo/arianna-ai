@@ -14,6 +14,7 @@ import {
   classify,
   createLocalSummarizer,
   MAX_ITEM_TITLE,
+  modelData,
   modelInput,
   NEWS_KEY,
   NEXT_NEWS_FILE,
@@ -141,8 +142,8 @@ const COMMITS: NewsCommit[] = [1, 2, 3].map((n) => ({ sha: sha(n), short: sha(n)
 const answer = (items: unknown, finishReason = 'stop') => ({ value: { items }, finishReason });
 
 describe('the answer of the model', () => {
-  it('keeps entries whose shas are in the data, with the commits of origin', () => {
-    const checked = checkModelItems(answer([{ title: 'Commenti sugli elementi', summary: 'Si commenta un elemento del canvas.', commits: [COMMITS[0]?.short, COMMITS[1]?.short, COMMITS[0]?.short] }]), COMMITS);
+  it('maps the numbers of the commits back to their commits of origin (D-202)', () => {
+    const checked = checkModelItems(answer([{ title: 'Commenti sugli elementi', summary: 'Si commenta un elemento del canvas.', commits: [1, 2, 1] }]), COMMITS);
     assert.ok('items' in checked);
     assert.equal(checked.items[0]?.key, `od-${COMMITS[0]?.short ?? ''}`);
     assert.deepEqual(
@@ -152,14 +153,18 @@ describe('the answer of the model', () => {
     assert.equal(checked.items[0].group, null);
   });
 
-  it('refuses an answer with an invented sha, a link, hidden characters, the wrong shape or too long', () => {
-    const good = { title: 'Titolo', summary: 'Frase.', commits: [COMMITS[0]?.short] };
+  it('refuses an answer with only invented numbers, a sha, a link, hidden characters, the wrong shape or too long', () => {
+    const good = { title: 'Titolo', summary: 'Frase.', commits: [1] };
     const refused = (items: unknown, finishReason?: string): string => {
       const checked = checkModelItems(answer(items, finishReason), COMMITS);
       assert.ok('reason' in checked, JSON.stringify(items));
       return checked.reason;
     };
-    assert.match(refused([{ ...good, commits: ['deadbee'] }]), /not in the data/);
+    assert.match(refused([{ ...good, commits: [99] }]), /no entry with a commit of the data/);
+    assert.match(refused([{ ...good, commits: [0, -1] }]), /no entry with a commit of the data/);
+    assert.match(refused([{ ...good, commits: ['deadbee'] }]), /shape/);
+    assert.match(refused([{ ...good, commits: [1.5] }]), /shape/);
+    assert.match(refused([{ ...good, commits: [{ id: 1 }] }]), /shape/);
     assert.match(refused([{ ...good, commits: [] }]), /without commits/);
     assert.match(refused([{ ...good, summary: 'Vedi https://evil.example' }]), /link/);
     assert.match(refused([{ ...good, title: 'Ti\u200btolo' }]), /hidden/);
@@ -173,12 +178,44 @@ describe('the answer of the model', () => {
     assert.ok('reason' in checkModelItems({ value: { items: [good], note: 'x' }, finishReason: 'stop' }, COMMITS));
   });
 
+  it('drops a number that is not in the data and keeps the rest of the answer (D-202)', () => {
+    const checked = checkModelItems(
+      answer([
+        { title: 'Commenti', summary: 'Frase.', commits: [2, 42] },
+        { title: 'Inventata', summary: 'Frase.', commits: [4] },
+        { title: 'Testo', summary: 'Frase.', commits: [' 3 '] },
+      ]),
+      COMMITS,
+    );
+    assert.ok('items' in checked);
+    assert.deepEqual(
+      checked.items.map((item) => [item.title, item.commits.map((commit) => commit.sha)]),
+      [
+        ['Commenti', [COMMITS[1]?.sha]],
+        ['Testo', [COMMITS[2]?.sha]],
+      ],
+    );
+    // Only the commits the model read count: the fourth of the list was not given.
+    assert.ok('reason' in checkModelItems(answer([{ title: 'x', summary: 'y', commits: [4] }]), COMMITS.slice(0, 3)));
+  });
+
+  it('numbers the commits for the model, without their sha', () => {
+    const { text, given } = modelData(COMMITS, []);
+    const data = JSON.parse(text) as { commits: { id: number; message: string }[] };
+    assert.deepEqual(data.commits, COMMITS.map((commit, index) => ({ id: index + 1, message: commit.message })));
+    assert.deepEqual(given, COMMITS);
+    for (const commit of COMMITS) assert.ok(!text.includes(commit.short), 'no sha reaches the model');
+  });
+
   it('gives the model one JSON object of data within its size', () => {
     const many: NewsCommit[] = Array.from({ length: 300 }, (_, n) => ({ sha: sha(n), short: sha(n).slice(0, 7), message: `feat: ${'x'.repeat(190)}` }));
     const text = modelInput(many, [{ tag: 'v1', name: 'v1', publishedAt: null, url: '', notes: 'n'.repeat(1500) }]);
     assert.ok(Buffer.byteLength(text, 'utf8') <= 24 * 1024);
-    const data = JSON.parse(text) as { commits: { sha: string }[] };
+    const data = JSON.parse(text) as { commits: { id: number }[] };
     assert.ok(data.commits.length > 10 && data.commits.length <= 120);
+    // The commits left after the cut are the ones numbered: the numbers map back to them.
+    assert.equal(modelData(many, [{ tag: 'v1', name: 'v1', publishedAt: null, url: '', notes: 'n'.repeat(1500) }]).given.length, data.commits.length);
+    assert.equal(data.commits.at(-1)?.id, data.commits.length);
   });
 
   it('the local summarizer passes the data through the gateway, then asks the schema', async () => {
@@ -279,14 +316,13 @@ describe('prepareNews', () => {
 
   it('with the model, its entries; when it fails or answers badly, the raw list', async () => {
     const pages = { [COMPARE_PATH]: compare(['feat: comments', 'fix: crash']), [RELEASES_PATH]: RELEASES };
-    const first = sha(1).slice(0, 7);
     let given = '';
     const good = await prepareNews(
       deps({
         pages,
         summarize: (data) => {
           given = data;
-          return Promise.resolve({ value: { items: [{ title: 'Commenti', summary: 'Si commentano gli elementi.', commits: [first] }] }, finishReason: 'stop', model: 'qwen' });
+          return Promise.resolve({ value: { items: [{ title: 'Commenti', summary: 'Si commentano gli elementi.', commits: [1] }] }, finishReason: 'stop', model: 'qwen' });
         },
       }),
       FROM,
@@ -301,7 +337,7 @@ describe('prepareNews', () => {
     const down = await prepareNews(deps({ pages, summarize: () => Promise.reject(new LocalModelError('unavailable', 'no server')) }), FROM, { commit: NEW });
     assert.equal(down.source, 'raw');
     assert.match(down.message ?? '', /non è disponibile/);
-    const invented = await prepareNews(deps({ pages, summarize: () => Promise.resolve({ value: { items: [{ title: 'x', summary: 'y', commits: ['fffffff'] }] }, finishReason: 'stop', model: 'q' }) }), FROM, { commit: NEW });
+    const invented = await prepareNews(deps({ pages, summarize: () => Promise.resolve({ value: { items: [{ title: 'x', summary: 'y', commits: [7] }] }, finishReason: 'stop', model: 'q' }) }), FROM, { commit: NEW });
     assert.equal(invented.source, 'raw');
     assert.match(invented.message ?? '', /non ha passato i controlli/);
     assert.equal(invented.items.length, 2);

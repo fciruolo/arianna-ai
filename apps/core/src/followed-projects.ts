@@ -7,7 +7,7 @@ import {
   checkModelItems,
   fetchFailure,
   modelFailure,
-  modelInput,
+  modelData,
   NEWS_MODEL,
   newsPrompt,
   parseCompare,
@@ -283,13 +283,14 @@ export async function checkProject(deps: Omit<FollowedDeps, 'dir' | 'onEvent'>, 
   const prefix = keyPrefix(project.id);
   const raw = (why: string): ProjectNews => ({ ...found, state: 'ready', source: 'raw', message: `Elenco dei commit per tipo: ${why}.`, items: rawItems(comparison.commits, prefix) });
   if (deps.summarize === undefined) return done(raw(deps.noModel ?? 'il modello locale non è configurato'));
+  const data = modelData(comparison.commits, between);
   let result;
   try {
-    result = await deps.summarize(modelInput(comparison.commits, between));
+    result = await deps.summarize(data.text);
   } catch (error) {
     return done(raw(modelFailure(error)));
   }
-  const checked = checkModelItems(result, comparison.commits, prefix);
+  const checked = checkModelItems(result, data.given, prefix);
   if ('reason' in checked) return done(raw(`la risposta del modello locale non ha passato i controlli (${checked.reason})`));
   return done({ ...found, state: 'ready', source: 'model', model: cleanLine(result.model, 80) || NEWS_MODEL, message: null, items: checked.items });
 }
