@@ -1,13 +1,14 @@
 import { taskIds, type ChatState, type TerminalCall } from './chat-state.ts';
 import { canPreview } from './delegations.ts';
-import type { DelegationFile, MessageCredit, TaskStatus } from './types.ts';
+import type { DelegationFile, MessageCredit, SavedTerminal, TaskStatus } from './types.ts';
 
 /**
  * The "Computer" panel of a conversation (D-095, tappa 1): what the Coder's
  * run is doing, read only, in three tabs. Pure logic of the chat, tested
  * without a browser; the texts are in the component and italian.ts.
  *
- * - Terminale: commands and outputs of Bash, live only (never stored).
+ * - Terminale: commands and outputs of Bash, live while the run works, then
+ *   as saved with the delegation (migration 0062).
  * - File: while the run works, only the paths of its changes (from the live
  *   changes of D-117); once it ended, the files of the delegation (D-082),
  *   whose contents the existing route GET /api/delegations/:id/files/:index
@@ -77,6 +78,20 @@ export function mayReadFile(view: FilesView, index: number): view is Extract<Fil
 /** The calls of the terminal of a task, oldest first. */
 export function terminalCalls(chat: ChatState, taskId: string): TerminalCall[] {
   return chat.terminal[taskId] ?? [];
+}
+
+/** The saved terminal of a task (D-095, migration 0062) as the calls the panel shows: a command and its output paired by call. */
+export function savedCalls(rows: readonly SavedTerminal[]): TerminalCall[] {
+  const calls: TerminalCall[] = [];
+  for (const row of rows) {
+    let call = calls.find((item) => item.callId === row.callId);
+    if (call === undefined) {
+      call = { callId: row.callId, step: row.step };
+      calls.push(call);
+    }
+    call[row.part] = { total: 1, pieces: {}, text: row.text, truncated: row.truncated, hidden: row.hidden, refused: row.refused, error: row.error };
+  }
+  return calls;
 }
 
 /**

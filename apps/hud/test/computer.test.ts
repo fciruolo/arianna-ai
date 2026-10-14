@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { applyEdit, applyTerminal, emptyChat, mergeMessages } from '../src/lib/chat-state.ts';
-import { atWork, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal } from '../src/lib/computer.ts';
+import { atWork, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, savedCalls } from '../src/lib/computer.ts';
 import { parseServerMessage } from '../src/lib/protocol.ts';
 import type { EditPiece, Message, MessageCredit, Task, TerminalPiece } from '../src/lib/types.ts';
 
@@ -98,6 +98,22 @@ describe('the File tab', () => {
     // Arianna at work on her own is not a run of the Coder, and an unknown status is not "at work".
     assert.equal(atWork(task('running').t1?.status), true);
     assert.equal(atWork(undefined), false);
+  });
+});
+
+describe('savedCalls', () => {
+  it('pairs a saved command with its output, in order', () => {
+    const row = { step: 1, truncated: false, hidden: 0, refused: false, error: false };
+    const calls = savedCalls([
+      { ...row, callId: 'a', part: 'command', text: 'ls' },
+      { ...row, callId: 'b', part: 'command', text: 'git status' },
+      { ...row, callId: 'a', part: 'output', text: 'README.md', error: true },
+    ]);
+    assert.deepEqual(calls.map((call) => [call.callId, call.command?.text, call.output?.text, call.output?.error]), [
+      ['a', 'ls', 'README.md', true],
+      ['b', 'git status', undefined, undefined],
+    ]);
+    assert.deepEqual(savedCalls([]), []);
   });
 });
 

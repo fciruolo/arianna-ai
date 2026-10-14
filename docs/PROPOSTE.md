@@ -540,7 +540,7 @@ La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non 
 Risposte dell'utente del 2026-10-14, con le domande a opzioni.
 
 1. **Per lavoro:** il computer nasce con la delega e sparisce alla fine; nessun computer sempre acceso per agente.
-2. **Terminale:** comandi e uscite del Coder solo in diretta, mai salvati nel database.
+2. **Terminale:** comandi e uscite del Coder solo in diretta, mai salvati nel database. *Cambiata dall'utente durante la prova (2026-10-14 mattina): «Salva comandi e uscite», con la delega, mai in incognito (migrazione 0062, riga D-095 di DECISIONS).*
 3. **Browser:** Chromium in un contenitore Docker usa e getta, solo pagine pubbliche (L0), dopo P7; il CLI `container` di Apple si valuta più avanti.
 4. **Schermo in diretta, protetto (cambia la raccomandazione):** l'utente vuole subito la diretta invece delle fotografie («non capisco perché dobbiamo proteggere la porta visto che gira in locale»). Spiegati i rischi (pagine web nel Chrome dell'utente che chiamano 127.0.0.1, porte di Docker pubblicate su tutte le interfacce, altri container e pacchetti sul Mac; VNC riceve anche tasti e clic), ha scelto la diretta protetta: server VNC nel contenitore solo su 127.0.0.1, vista con noVNC nella chat che passa dal core con la stessa autorizzazione della chat (mai la porta diretta), un gettone diverso per ogni lavoro. Due dipendenze nuove (server VNC nell'immagine, noVNC nella chat), ciascuna con la sua voce in DECISIONS quando si costruisce la tappa 2.
 5. **Presa di controllo subito con la diretta (cambia la raccomandazione):** nella tappa 2 un pulsante «Prendi il controllo» nella scheda Browser: l'agente va in pausa, l'utente clicca e scrive, solo dalla chat; alla ripresa l'agente rilegge la pagina.

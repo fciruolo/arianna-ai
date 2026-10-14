@@ -25,7 +25,7 @@ export type LiveMessage = (
   | ({ type: 'activity' } & ActivityNotice)
   /** A piece of a live change of the Coder (D-117): web chat only. */
   | ({ type: 'edit' } & EditNotice)
-  /** A piece of the terminal of a run of the Coder (D-095): web chat only, never stored. */
+  /** A piece of the terminal of a run of the Coder (D-095): to the web chat; saved apart with the delegation (migration 0062). */
   | ({ type: 'terminal' } & TerminalNotice)
 ) & { incognito?: true };
 

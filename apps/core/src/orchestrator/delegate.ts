@@ -46,7 +46,7 @@ import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
-import { postTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
+import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
 import { coderNotes, KnowledgeError, privateKnowledge, type CoderNotes } from '../project-knowledge.ts';
@@ -1025,6 +1025,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const { repo, container, part } = folder;
   // What the live changes of the run carry (D-117): the project's label, or the brief's when higher.
   const editLabel = maxLabel(folder.label, label);
+  // The terminal saved with the delegation (D-095, migration 0062): never in incognito, at most MAX_SAVED_TERMINAL rows.
+  let terminalSaving = persistSession;
+  let terminalSaved = 0;
   const before = new Set(workspace.dirty ?? []);
   const path = workspace.path ?? '';
   // The files the user had already changed: the ones the run changes again are told too (D-117).
@@ -1140,13 +1143,22 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
             });
           }
         } else if (event.type === 'command' || event.type === 'command-output') {
-          // The terminal of the run (D-095): live only, never stored, only within the clearance of the task.
+          // The terminal of the run (D-095), only within the clearance of the task: live, and saved with the
+          // delegation (never in incognito, D-136) so that the panel shows it once the run ended.
           const terminal = terminalFor(task, step, editLabel, event);
           if (terminal !== undefined) {
             await postTerminal(sql, terminal.where, terminal.entry).catch((error: unknown) => {
               // The run goes on; the log says only the kind of error, never the command or its output.
               console.error(terminalFailure(error));
             });
+            if (terminalSaving && terminalSaved < MAX_SAVED_TERMINAL) {
+              terminalSaved += 1;
+              await saveTerminal(sql, delegation.id, terminal.entry).catch((error: unknown) => {
+                // One failure stops the saving for this run: the log says it once.
+                terminalSaving = false;
+                console.error(terminalFailure(error));
+              });
+            }
           }
         } else {
           await show(sql, task, step, 'tool', event.name);

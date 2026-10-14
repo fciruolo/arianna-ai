@@ -11,6 +11,7 @@ import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
+import { listTaskTerminal } from '../live-terminal.ts';
 import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -2338,6 +2339,12 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const activities = await listTaskActivities(sql, idParam(params, 'id'));
       if (activities === undefined) throw new HttpError(404, 'not found');
       return { body: { activities } };
+    }),
+    // The saved terminal of a task's runs of the Coder (D-095, migration 0062), read as its activity lines are.
+    route('GET', '/api/tasks/:id/terminal', async (_request, _url, params) => {
+      const terminal = await listTaskTerminal(sql, idParam(params, 'id'));
+      if (terminal === undefined) throw new HttpError(404, 'not found');
+      return { body: { terminal } };
     }),
     // How many lines each task of a conversation saved: the chat offers "Mostra i passi (N)" (D-083).
     route('GET', '/api/conversations/:id/activity-counts', async (_request, _url, params) => {

@@ -6,13 +6,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Computer del Coder: icona dello schermo nell'intestazione della conversazione che apre un pannello a destra, in sola lettura, con le schede Terminale, File e Attività del lavoro (D-095, tappa 1).
-- Terminale del lavoro in diretta: comandi e uscite del Coder su Claude, tagliati a 200 righe o 16 KiB, con le righe che contengono un valore del vault nascoste; mai salvati, spariscono con una ricarica della pagina (D-095).
+- Computer del Coder: pulsante «Computer» nel blocco del Coder (nella card «al lavoro», col pallino che pulsa, e in fondo al suo rapporto) che apre un pannello in sola lettura con le schede Terminale, File e Attività del lavoro; sugli schermi larghi il pannello sta accanto alla chat (D-095, tappa 1).
+- Riga «Isolato» nel pannello, con la spiegazione della gabbia del Coder (solo la cartella del progetto, rete spenta, ambiente pulito, sola lettura), e l'etichetta «Bloccato dall'isolamento» sulle uscite che la sandbox ha rifiutato (D-095).
+- Terminale del lavoro in diretta: comandi e uscite del Coder su Claude, tagliati a 200 righe o 16 KiB, con le righe che contengono un valore del vault nascoste; salvati con la delega (migrazione `0062_task_terminal.sql`, mai in incognito, cancellati con la conversazione), così il Terminale si rivede a lavoro finito e dopo una ricarica (D-095, scelta dell'utente durante la prova).
 - Scheda File: durante il lavoro i percorsi dei file che il Coder cambia, a lavoro finito i file della delega da aprire e leggere (D-095).
 
 ### Sicurezza
 
-- Il terminale arriva solo alla chat web, per progetti fino a L1 e solo se la clearance del lavoro (che sta dentro quella della conversazione) raggiunge l'etichetta del progetto; i valori del vault si nascondono prima del taglio; mai a Telegram né nel database (D-095).
+- Il terminale arriva solo alla chat web, per progetti fino a L1 e solo se la clearance del lavoro (che sta dentro quella della conversazione) raggiunge l'etichetta del progetto; i valori del vault si nascondono prima del taglio; mai a Telegram. Le password scritte nei file del progetto (un `.env`) non sono note al vault e restano visibili e salvate (D-095).
 
 ## [0.92.0] - 2026-10-14
 

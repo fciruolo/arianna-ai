@@ -56,6 +56,7 @@ test('migrations apply from zero and create every table', async () => {
       'task_delegations',
       'task_dependencies',
       'task_errors',
+      'task_terminal',
       'task_turns',
       'tasks',
       'telegram_state',

@@ -24,7 +24,7 @@ export interface ChatState {
   edits: Record<string, LiveEdit[]>;
   /** The paths the Coder's run changed so far (D-095, the "File" tab), by task id: paths only, in memory only. */
   touched: Record<string, string[]>;
-  /** The terminal of the Coder's run (D-095), by task id, oldest first: in memory only, never stored. */
+  /** The terminal of the Coder's run (D-095), by task id, oldest first: in the page's memory; the core saves it too (migration 0062). */
   terminal: Record<string, TerminalCall[]>;
 }
 

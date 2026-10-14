@@ -2,15 +2,17 @@ import { terminalText, type ClaudeEvent } from '@arianna/executors';
 import { isAtMost, type KnownSecrets, type Label } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
-import type { Sql } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
 import { noticePieces } from './live-edit.ts';
 
 /**
  * The terminal of a run (D-095, tappa 1): the commands the Coder runs with
  * Bash and what they print, already cut by @arianna/executors, shown in the
  * "Computer" panel of the chat, read only. Like the live changes of D-117 they
- * go to the web chat only, through `pg_notify`, and are never stored (the
- * user's choice of 2026-10-14): once the page is reloaded they are gone.
+ * go to the web chat through `pg_notify`; they are also saved with their
+ * delegation in `task_terminal` (migration 0062, the user's choice of
+ * 2026-10-14 during the test), never for an incognito conversation, so that
+ * the panel shows them once the run ended or the page was reloaded.
  *
  * Only for projects at most L1, with the label of the project (or of the
  * brief, when higher), and only when the task's clearance, which is within the
@@ -173,4 +175,50 @@ export function terminalFailure(error: unknown): string {
   const name = error instanceof Error ? error.name : typeof error;
   const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
   return `terminal not sent: ${name}${code === '' ? '' : ` (${code})`}`;
+}
+
+/** Rows saved per delegation: the cap of task_terminal_guard (migration 0062), change both together. */
+export const MAX_SAVED_TERMINAL = 400;
+
+/**
+ * Saves a terminal entry with its delegation (migration 0062). The trigger
+ * refuses a purged or incognito conversation, a label above its clearance and
+ * a delegation already at the cap: the caller logs and the run goes on.
+ */
+export async function saveTerminal(sql: Queryable, delegationId: string, entry: TerminalEntry): Promise<void> {
+  await sql`
+    INSERT INTO task_terminal (delegation_id, call_id, part, label, text, truncated, hidden, refused, error)
+    VALUES (${delegationId}::bigint, ${entry.callId}, ${entry.part}, ${entry.label}::privacy_label, ${entry.text},
+            ${entry.truncated}, ${entry.hidden}, ${entry.refused === true}, ${entry.error === true})`;
+}
+
+/** A saved command or output, as GET /api/tasks/:id/terminal gives it. */
+export interface SavedTerminal {
+  callId: string;
+  /** The orchestrator step of the delegation. */
+  step: number;
+  part: TerminalPart;
+  text: string;
+  truncated: boolean;
+  hidden: number;
+  refused: boolean;
+  error: boolean;
+}
+
+/**
+ * The saved terminal of a task, oldest first, read as its activity lines are:
+ * nothing for a task without a live conversation, and only rows within the
+ * clearance of the conversation.
+ */
+export async function listTaskTerminal(sql: Queryable, taskId: string): Promise<SavedTerminal[] | undefined> {
+  const [task] = await sql<{ clearance: Label }[]>`
+    SELECT c.clearance FROM tasks t JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.id = ${taskId}::uuid AND c.purged_at IS NULL`;
+  if (task === undefined) return undefined;
+  const rows = await sql<SavedTerminal[]>`
+    SELECT x.call_id AS "callId", d.step, x.part, x.text, x.truncated, x.hidden, x.refused, x.error
+    FROM task_terminal x JOIN task_delegations d ON d.id = x.delegation_id
+    WHERE d.task_id = ${taskId}::uuid AND x.label <= ${task.clearance}::privacy_label
+    ORDER BY x.id`;
+  return [...rows];
 }

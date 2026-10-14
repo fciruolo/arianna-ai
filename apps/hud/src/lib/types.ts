@@ -264,6 +264,18 @@ export interface SavedActivity {
   at: string;
 }
 
+/** A command of the Coder or its output, saved with the run (D-095, migration 0062). */
+export interface SavedTerminal {
+  callId: string;
+  step: number;
+  part: 'command' | 'output';
+  text: string;
+  truncated: boolean;
+  hidden: number;
+  refused: boolean;
+  error: boolean;
+}
+
 /** What an agent is doing, from GET /api/status (apps/core/src/status.ts). */
 export type AgentState = 'idle' | 'thinking' | 'working' | 'waiting';
 

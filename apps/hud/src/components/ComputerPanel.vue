@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { listActivities, loadDelegationFile } from '../lib/api.ts';
-import { activityLines, type ChatState, type TerminalText } from '../lib/chat-state.ts';
-import { atWork, COMPUTER_TABS, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, terminalCalls, type ComputerTab } from '../lib/computer.ts';
+import { listActivities, listTerminal, loadDelegationFile } from '../lib/api.ts';
+import { activityLines, type ChatState, type TerminalCall, type TerminalText } from '../lib/chat-state.ts';
+import { atWork, COMPUTER_TABS, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, savedCalls, terminalCalls, type ComputerTab } from '../lib/computer.ts';
 import { codeFence } from '../lib/delegations.ts';
 import { activityText, CHANGE_TEXT, errorText, previewErrorText } from '../lib/italian.ts';
 import { STATUS_TEXT } from '../lib/labels.ts';
@@ -16,8 +16,8 @@ import MarkdownText from './MarkdownText.vue';
  * the conversation with three tabs: Terminale, File, Attività. Read only:
  * nothing here writes to the run, which stays non interactive (D-049). While
  * the run works everything comes from the WebSocket; once it ended the files
- * and the steps are read again from the core. The terminal is never stored:
- * after a reload of the page it is gone.
+ * and the steps are read again from the core, and so is the terminal, saved
+ * with the delegation (migration 0062).
  */
 const props = defineProps<{
   chat: ChatState;
@@ -35,7 +35,7 @@ const CAGE_LINES = [
   'Ambiente pulito: niente tue variabili né segreti; dopo il lavoro Arianna controlla che la configurazione di git non sia cambiata.',
   'Questo pannello è in sola lettura: tu guardi, il Coder non ti vede e non può usarlo.',
 ];
-const cageFolder = computed(() => (props.workspace === null ? 'la cartella del progetto' : props.workspace.split('/').filter((part) => part !== '').slice(-2).join('/')));
+const cageFolder = computed(() => (props.workspace === null ? 'la cartella del progetto' : (props.workspace.split(/[:/]/).filter((part) => part !== '').at(-1) ?? props.workspace)));
 const cageOpen = ref(false);
 const emit = defineEmits<{ close: [] }>();
 
@@ -47,8 +47,40 @@ const status = computed(() => (taskId.value === undefined ? undefined : props.ta
 const working = computed(() => atWork(status.value));
 const credit = computed(() => (taskId.value === undefined ? undefined : delegationCredit(props.chat, props.credits, taskId.value)));
 
-// Terminale
-const calls = computed(() => (taskId.value === undefined ? [] : terminalCalls(props.chat, taskId.value)));
+// Terminale: live while the run works; once it ended, as saved with the delegation (migration 0062).
+const liveCalls = computed(() => (taskId.value === undefined ? [] : terminalCalls(props.chat, taskId.value)));
+const savedTerminal = ref<TerminalCall[] | null>(null);
+const terminalLoading = ref(false);
+const terminalProblem = ref<string | null>(null);
+const calls = computed(() => (working.value || savedTerminal.value === null || savedTerminal.value.length < liveCalls.value.length ? liveCalls.value : savedTerminal.value));
+/** Each read has its number: only the answer of the latest one counts, so a change during a read is never lost. */
+let terminalRead = 0;
+async function readTerminal(): Promise<void> {
+  const read = ++terminalRead;
+  const id = taskId.value;
+  if (id === undefined || working.value) {
+    terminalLoading.value = false;
+    return;
+  }
+  terminalLoading.value = true;
+  terminalProblem.value = null;
+  try {
+    const rows = await listTerminal(id);
+    if (read === terminalRead) savedTerminal.value = savedCalls(rows);
+  } catch (cause) {
+    if (read === terminalRead) terminalProblem.value = errorText(cause);
+  } finally {
+    if (read === terminalRead) terminalLoading.value = false;
+  }
+}
+watch(
+  [taskId, working],
+  () => {
+    savedTerminal.value = null;
+    void readTerminal();
+  },
+  { immediate: true },
+);
 const screen = ref<HTMLElement | null>(null);
 /** Follows the newest command while the user stays at the bottom. */
 const following = ref(true);
@@ -189,11 +221,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       </button>
     </div>
 
-    <!-- Terminale: commands and outputs of Bash, live only -->
+    <!-- Terminale: commands and outputs of Bash, live while the run works, then as saved -->
     <section v-if="tab === 'terminal'" class="flex min-h-0 flex-1 flex-col" role="tabpanel" aria-label="Terminale">
       <div ref="screen" class="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-4 py-3 font-mono text-[12.5px] leading-[1.55]" @scroll.passive="onScreenScroll">
-        <p v-if="calls.length === 0" class="font-sans text-[13px] text-muted">
-          {{ working ? 'Nessun comando ancora: appena il Coder ne lancia uno, compare qui.' : 'Nessun comando da mostrare.' }}
+        <p v-if="terminalProblem !== null && calls.length === 0" class="font-sans text-[13px] text-warn">{{ terminalProblem }}</p>
+        <p v-else-if="terminalLoading && calls.length === 0" class="font-sans text-[13px] text-muted">Carico i comandi…</p>
+        <p v-else-if="calls.length === 0" class="font-sans text-[13px] text-muted">
+          {{ working ? 'Nessun comando ancora: appena il Coder ne lancia uno, compare qui.' : 'Il Coder non ha lanciato comandi in questo lavoro.' }}
         </p>
         <div v-for="call in calls" :key="call.callId" class="mb-3 last:mb-0">
           <template v-if="call.command !== undefined && call.command.text !== undefined">
@@ -212,7 +246,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         </div>
       </div>
       <p class="border-t border-line px-4 py-2 text-[12px] text-muted">
-        Comandi e uscite si vedono solo in diretta e non vengono salvati: dopo una ricarica della pagina non ci sono più. Arianna nasconde i valori del vault, non le password scritte nei file del progetto (come un <code>.env</code>).
+        Comandi e uscite restano salvati con la conversazione (mai in incognito) e si cancellano con lei. Arianna nasconde i valori del vault, non le password scritte nei file del progetto (come un <code>.env</code>).
       </p>
     </section>
 

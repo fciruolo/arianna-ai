@@ -29,7 +29,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -880,6 +880,11 @@ export async function listCredits(conversationId: string): Promise<MessageCredit
 /** The activity lines a task saved (D-083), oldest first. */
 export async function listActivities(taskId: string): Promise<SavedActivity[]> {
   return (await call<{ activities: SavedActivity[] }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/activities`)).activities;
+}
+
+/** The terminal a task's runs of the Coder saved (D-095), oldest first. */
+export async function listTerminal(taskId: string): Promise<SavedTerminal[]> {
+  return (await call<{ terminal: SavedTerminal[] }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/terminal`)).terminal;
 }
 
 /** How many lines each task of a conversation saved (D-083). */

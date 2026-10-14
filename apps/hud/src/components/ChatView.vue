@@ -631,7 +631,8 @@ onBeforeUnmount(() => clearInterval(clock));
 </script>
 
 <template>
-  <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
+  <!-- On a wide screen the computer of the Coder stands beside the chat instead of over it (D-095). -->
+  <section class="flex flex-col" :class="computerOpen ? 'xl:pr-[560px]' : ''" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
       <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5 short:gap-3.5 short:pt-4 short:pb-5">
         <!-- Persona header with the HUD ring -->
@@ -868,7 +869,6 @@ onBeforeUnmount(() => clearInterval(clock));
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
-              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
@@ -876,7 +876,11 @@ onBeforeUnmount(() => clearInterval(clock));
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
             <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
-            <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
+            <!-- The computer of the run sits at the foot of the report, beside who did the work (D-095). -->
+            <div v-if="credits.get(message.id) !== undefined || showsComputer(message)" class="flex flex-wrap items-start gap-2 border-t border-line px-[15px] py-2">
+              <CreditLine v-if="credits.get(message.id) !== undefined" class="min-w-0 flex-1" :credit="credits.get(message.id)!" />
+              <ComputerButton v-if="showsComputer(message)" class="ml-auto" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
+            </div>
           </article>
 
           <!-- Arianna (or a system note) -->
