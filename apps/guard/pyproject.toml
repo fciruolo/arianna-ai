@@ -1,4 +1,4 @@
-# apps/guard (D-113, D-202): the second scanner of personal data, Rizzo-PII on
+# apps/guard (D-113, D-203): the second scanner of personal data, Rizzo-PII on
 # the Mac, isolated from apps/voice so that the voice can be turned off without
 # stopping the cloud. Exact versions only; the indirect ones are fixed by
 # uv.lock. Update: change a version, then `pnpm guard:lock` and `pnpm guard:sync`;
