@@ -918,7 +918,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
                   v-for="item in group.items"
                   :key="item.value"
                   type="button"
-                  class="flex w-[76px] flex-col items-center gap-1 rounded-[10px] border px-1.5 pt-2 pb-1.5 text-[12px]"
+                  class="flex w-[104px] flex-col items-center gap-1 rounded-[10px] border px-1.5 pt-2 pb-1.5 text-[12px]"
                   :class="chosen(current.id) === item.value ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:border-line-strong'"
                   :aria-pressed="chosen(current.id) === item.value"
                   :title="`${item.character.name} (${item.pack.name})`"
