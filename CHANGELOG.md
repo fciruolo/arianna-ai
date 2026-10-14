@@ -2,7 +2,7 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
-## [Non rilasciato]
+## [0.104.0] - 2026-10-14
 
 ### Aggiunto
 
@@ -11,9 +11,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Il pezzo del profilo conta nell'etichetta del passo (D-114b): una risposta o un brief scritto dopo aver letto un fatto «Solo in casa» è L2, e verso il cloud passa solo col declassamento; il core non aggiunge fatti ai brief per Claude e Codex né alle chiamate (un fatto «Condivisibile» letto da Arianna in una conversazione di lavoro può finire in un suo brief L1, come ogni dato L1).
-# Registro delle versioni
-
-Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
 ## [0.103.0] - 2026-10-14
 
