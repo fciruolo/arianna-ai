@@ -721,13 +721,16 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
           <button
             type="button"
-            class="grid size-9 shrink-0 place-items-center self-start rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
-            :class="[computerOpen ? 'bg-surface-2 text-ink' : '', 'ml-auto sm:ml-0']"
+            class="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-line px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-surface-2"
+            :class="[computerOpen ? 'bg-surface-2' : '', 'ml-auto sm:ml-0']"
             :aria-pressed="computerOpen"
             aria-label="Computer del Coder"
             title="Computer del Coder: terminale, file e attività del lavoro, in sola lettura"
             @click="computerOpen = !computerOpen"
-          ><Icon name="computer" :size="18" /></button>
+          >
+            <Icon name="computer" :size="16" />Computer
+            <span v-if="coderRun !== null" class="size-2 animate-pulse rounded-full bg-ok" aria-hidden="true"></span>
+          </button>
         </section>
 
         <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
@@ -1064,7 +1067,7 @@ onBeforeUnmount(() => clearInterval(clock));
         </span>
       </p>
     </div>
-    <ComputerPanel v-if="computerOpen" :chat="chat" :tasks="tasks" :credits="credits" :activity-counts="activityCounts" @close="computerOpen = false" />
+    <ComputerPanel v-if="computerOpen" :chat="chat" :tasks="tasks" :credits="credits" :activity-counts="activityCounts" :workspace="conversation.workspace" @close="computerOpen = false" />
   </section>
 </template>
 

@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { listActivities, loadDelegationFile } from '../lib/api.ts';
 import { activityLines, type ChatState, type TerminalText } from '../lib/chat-state.ts';
-import { atWork, COMPUTER_TABS, computerTask, delegationCredit, filesView, mayReadFile, terminalCalls, type ComputerTab } from '../lib/computer.ts';
+import { atWork, COMPUTER_TABS, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, terminalCalls, type ComputerTab } from '../lib/computer.ts';
 import { codeFence } from '../lib/delegations.ts';
 import { activityText, CHANGE_TEXT, errorText, previewErrorText } from '../lib/italian.ts';
 import { STATUS_TEXT } from '../lib/labels.ts';
@@ -24,7 +24,19 @@ const props = defineProps<{
   tasks: Record<string, Task>;
   credits: Map<string, MessageCredit>;
   activityCounts: Record<string, number>;
+  /** The project folder of the conversation, the only one the Coder's cage opens. */
+  workspace: string | null;
 }>();
+
+/** Why the Coder is isolated, in plain words (D-095): the sandbox of the executors, PRIVACY-POLICY-SPEC. */
+const CAGE_LINES = [
+  'Cartella: legge e scrive solo nella cartella del progetto; ogni lettura fuori (la tua home, le note, i dati di Arianna) la nega il sistema operativo.',
+  'Rete: spenta. Un download, un curl o un npm install falliscono.',
+  'Ambiente pulito: niente tue variabili né segreti; dopo il lavoro Arianna controlla che la configurazione di git non sia cambiata.',
+  'Questo pannello è in sola lettura: tu guardi, il Coder non ti vede e non può usarlo.',
+];
+const cageFolder = computed(() => (props.workspace === null ? 'la cartella del progetto' : props.workspace.split('/').filter((part) => part !== '').slice(-2).join('/')));
+const cageOpen = ref(false);
 const emit = defineEmits<{ close: [] }>();
 
 const TAB_TEXT: Record<ComputerTab, string> = { terminal: 'Terminale', files: 'File', activity: 'Attività' };
@@ -144,6 +156,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           <template v-else-if="working">Al lavoro adesso. Puoi solo guardare: da qui non si scrive nulla al Coder.</template>
           <template v-else>Lavoro finito · {{ status === undefined ? '' : STATUS_TEXT[status] }}</template>
         </p>
+        <button
+          type="button"
+          class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink hover:bg-surface-2"
+          :aria-expanded="cageOpen"
+          @click="cageOpen = !cageOpen"
+        >
+          <Icon name="private" :size="12" />Isolato · solo {{ cageFolder }} · rete spenta · tu guardi soltanto
+        </button>
+        <ul v-if="cageOpen" class="mt-2 flex list-disc flex-col gap-1 pl-5 text-[12px] text-muted">
+          <li v-for="line in CAGE_LINES" :key="line">{{ line }}</li>
+          <li>Per vederlo coi tuoi occhi: chiedi al Coder di leggere un file della tua home o di scaricare una pagina; nel Terminale il tentativo compare con «Bloccato dall'isolamento».</li>
+        </ul>
       </div>
       <button ref="closeButton" type="button" class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi il computer del Coder" @click="emit('close')">
         <Icon name="close" :size="16" />
@@ -179,6 +203,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           <template v-if="call.output !== undefined && call.output.text !== undefined">
             <pre v-if="call.output.text !== ''" class="mt-1 break-words whitespace-pre-wrap" :class="call.output.error ? 'text-danger' : 'text-muted'">{{ call.output.text }}</pre>
             <p v-else-if="!call.output.refused" class="mt-1 font-sans text-[12px] text-muted">(nessuna uscita)</p>
+            <p v-if="sandboxRefusal(call.output.text)" class="mt-1 inline-flex items-center gap-1 rounded-md bg-danger/15 px-1.5 py-0.5 font-sans text-[12px] font-medium text-danger">
+              <Icon name="private" :size="12" />Bloccato dall'isolamento
+            </p>
             <p v-for="note in notes(call.output)" :key="note" class="font-sans text-[12px] text-warn">{{ note }}</p>
           </template>
           <p v-else-if="working" class="mt-1 font-sans text-[12px] text-muted">In corso…</p>

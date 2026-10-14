@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { applyEdit, applyTerminal, emptyChat, mergeMessages } from '../src/lib/chat-state.ts';
-import { atWork, computerTask, delegationCredit, filesView, mayReadFile } from '../src/lib/computer.ts';
+import { atWork, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal } from '../src/lib/computer.ts';
 import { parseServerMessage } from '../src/lib/protocol.ts';
 import type { EditPiece, Message, MessageCredit, Task, TerminalPiece } from '../src/lib/types.ts';
 
@@ -98,6 +98,22 @@ describe('the File tab', () => {
     // Arianna at work on her own is not a run of the Coder, and an unknown status is not "at work".
     assert.equal(atWork(task('running').t1?.status), true);
     assert.equal(atWork(undefined), false);
+  });
+});
+
+describe('sandboxRefusal', () => {
+  it('marks the refusals of the cage: a read outside the folder, the network', () => {
+    assert.equal(sandboxRefusal('cat: .zshrc: Operation not permitted'), true);
+    assert.equal(sandboxRefusal('curl: (6) Could not resolve host: example.com'), true);
+    assert.equal(sandboxRefusal('curl: (56) CONNECT tunnel failed, response 403'), true);
+    assert.equal(sandboxRefusal('npm error getaddrinfo ENOTFOUND registry.npmjs.org'), true);
+  });
+
+  it('does not mark an ordinary error or output', () => {
+    assert.equal(sandboxRefusal('ls: missing.txt: No such file or directory'), false);
+    assert.equal(sandboxRefusal('fatal: not a git repository'), false);
+    assert.equal(sandboxRefusal(''), false);
+    assert.equal(sandboxRefusal(undefined), false);
   });
 });
 

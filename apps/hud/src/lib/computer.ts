@@ -78,3 +78,16 @@ export function mayReadFile(view: FilesView, index: number): view is Extract<Fil
 export function terminalCalls(chat: ChatState, taskId: string): TerminalCall[] {
   return chat.terminal[taskId] ?? [];
 }
+
+/**
+ * Messages that the cage of the run prints when it refuses something: a read
+ * or a write outside the project folder refused by the sandbox, or the network
+ * (no domain is allowed). The panel marks these outputs; an ordinary error is
+ * not one.
+ */
+const SANDBOX_REFUSAL = /Operation not permitted|Could not resolve host|CONNECT tunnel failed|getaddrinfo (?:ENOTFOUND|EAI_AGAIN)|Network is unreachable|blocked by (?:the )?sandbox/i;
+
+/** Whether an output of the terminal shows the cage refusing something. */
+export function sandboxRefusal(text: string | undefined): boolean {
+  return text !== undefined && SANDBOX_REFUSAL.test(text);
+}
