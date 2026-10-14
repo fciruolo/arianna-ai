@@ -13,6 +13,9 @@ import { forgetBlocked, hubErrorText, lockedRoles, promoteLines } from '../lib/h
 import { ROLE_NAME, type LocalModelView } from '../lib/models-page.ts';
 import { MODEL_ROLES, type ModelRole } from '../lib/settings.ts';
 
+// The pii role (D-113) is only for the curated model of the second scanner.
+const HUB_ROLES = MODEL_ROLES.filter((role) => role !== 'pii');
+
 /** `assigned`: the roles `[roles]` gives the model as saved (they cannot be taken away here). */
 const props = defineProps<{ view: LocalModelView; assigned: ModelRole[] }>();
 /** `changed`: the catalog was written; `forgotten`: the model is no longer in it. */
@@ -89,7 +92,7 @@ async function forget(): Promise<void> {
     <p v-else class="text-xs text-muted">Promosso: può avere {{ view.suitedRoles.map((role) => ROLE_NAME[role]).join(', ') }}. Resta sperimentale finché non passa le prove.</p>
     <div class="flex flex-wrap gap-1.5" role="group" aria-label="Ruoli che può avere">
       <button
-        v-for="role in MODEL_ROLES"
+        v-for="role in HUB_ROLES"
         :key="role"
         type="button"
         class="rounded-full border px-2.5 py-0.5 text-xs"

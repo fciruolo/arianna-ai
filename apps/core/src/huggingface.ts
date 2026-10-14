@@ -427,6 +427,8 @@ export function createHuggingFace(options: HuggingFaceOptions): HuggingFace {
       if (!Array.isArray(rolesValue) || rolesValue.length === 0 || rolesValue.some((role) => !(MODEL_ROLES as readonly unknown[]).includes(role))) {
         throw new HubError('invalid', `roles must be one or more of ${MODEL_ROLES.join(', ')}`);
       }
+      // The second scanner of personal data (D-113) uses only the curated model, never one added here.
+      if ((rolesValue as unknown[]).includes('pii')) throw new HubError('invalid', 'the pii role is only for the curated catalog');
       const roles = MODEL_ROLES.filter((role) => (rolesValue as unknown[]).includes(role));
       // A role [roles] gives the model now cannot go: arianna.toml would no longer load.
       const assigned = Object.entries(options.roles()).filter(([, id]) => id === entry.id).map(([role]) => role as ModelRole);

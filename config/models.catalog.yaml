@@ -482,3 +482,39 @@ models:
         url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/voice_embedding/it_male.safetensors
         size_bytes: 1032280
         sha256: "05e313648254a57e4ca7e503b416590a4c832a106f7201efd4dea02ecce79035"
+  # Second scanner of personal data (D-113), run by apps/guard with transformers,
+  # not by oMLX: a token classifier, never a model that writes text. Weights in
+  # float32 (0.3B parameters); only the files that load the model are downloaded.
+  - id: rizzo-pii-0.3b
+    family: rizzo-pii
+    runtime: transformers
+    ram_min_gib: 2
+    roles: [pii]
+    status: experimental
+    provider: "Simone Rizzo (Rizzo AI Academy), su mmBERT-base di JHU CLSP"
+    context_tokens: 8192
+    strengths: ["22 tipi di dati personali italiani: nomi, indirizzi, telefoni, email, IBAN, codice fiscale, partita IVA, catasto", "Classificatore di token: trova e indica, non scrive testo"]
+    license: "MIT"
+    notes: "Addestrato su frasi italiane sintetiche fino a 768 token. Solo per fermare un'uscita o alzare un'etichetta, mai per abbassarla (D-113)."
+    source: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B
+    files:
+      - path: config.json
+        url: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B/resolve/d4f989333bcda1fcb188785a12937b0f52b52580/config.json
+        size_bytes: 3137
+        sha256: "6b9d5bdd4a194d40fb40c53fdc302e225514cd7940d97f657c4082454ee7e91b"
+      - path: model.safetensors
+        url: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B/resolve/d4f989333bcda1fcb188785a12937b0f52b52580/model.safetensors
+        size_bytes: 1230273700
+        sha256: "b1e046e3aec52c3cd74eaf166b034644a4dac0c91128bf06803e1478657fcd9f"
+      - path: special_tokens_map.json
+        url: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B/resolve/d4f989333bcda1fcb188785a12937b0f52b52580/special_tokens_map.json
+        size_bytes: 1051
+        sha256: "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903"
+      - path: tokenizer.json
+        url: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B/resolve/d4f989333bcda1fcb188785a12937b0f52b52580/tokenizer.json
+        size_bytes: 34363286
+        sha256: "a0ab5772a8c5450f45a66c95985d6df2205bf09449ba7ff7bb46de034eaa118a"
+      - path: tokenizer_config.json
+        url: https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B/resolve/d4f989333bcda1fcb188785a12937b0f52b52580/tokenizer_config.json
+        size_bytes: 46469
+        sha256: "3b66ca84514d9aacf4b90c65a61e561127c6c21d81bbf4e8ba9d46a4c15ac82d"

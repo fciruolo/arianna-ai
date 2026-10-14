@@ -1,0 +1,22 @@
+# apps/guard (D-113, D-202): the second scanner of personal data, Rizzo-PII on
+# the Mac, isolated from apps/voice so that the voice can be turned off without
+# stopping the cloud. Exact versions only; the indirect ones are fixed by
+# uv.lock. Update: change a version, then `pnpm guard:lock` and `pnpm guard:sync`;
+# exclude-newer keeps every release at least a day old, like apps/voice.
+[project]
+name = "arianna-guard"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # Loads ModernBertForTokenClassification and its tokenizer from data/models.
+  "transformers==5.19.0",
+  # The tensors under transformers, on the CPU or the GPU of Apple Silicon (MPS).
+  "torch==2.14.1",
+]
+
+[tool.uv]
+# Not installed as a package: the scripts run src/ with PYTHONPATH.
+package = false
+# Arianna runs on a Mac with Apple Silicon: no CUDA wheels in the lockfile.
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
+exclude-newer = "2026-10-13T00:00:00Z"

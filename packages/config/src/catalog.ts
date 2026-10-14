@@ -50,11 +50,13 @@ export function hubFileUrl(repo: string, revision: string, path: string): string
 /** Where a catalog entry comes from: the curated file, or Hugging Face through the "Modelli" page. */
 export type CatalogOrigin = 'catalog' | 'huggingface';
 
-// `voice` writes the replies of a call; `stt` and `tts` hear and speak (D-066).
-export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
+// `voice` writes the replies of a call; `stt` and `tts` hear and speak (D-066);
+// `pii` finds personal data for the second scanner of apps/guard (D-113).
+export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts', 'pii'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
-export const MODEL_RUNTIMES = ['mlx', 'llama.cpp', 'vllm'] as const;
+// `transformers`: loaded by a Python environment of Arianna (apps/guard), not served by oMLX.
+export const MODEL_RUNTIMES = ['mlx', 'llama.cpp', 'vllm', 'transformers'] as const;
 export type ModelRuntime = (typeof MODEL_RUNTIMES)[number];
 
 /** `verified` once the model has passed the router and extraction evals; `experimental` before. */
@@ -153,6 +155,15 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   // A model added from Hugging Face has no role until the user promotes it (I-10).
   if (roles.length === 0 && !user) throw new ConfigError(`${where}.roles: at least one role is required`);
   if (new Set(roles).size !== roles.length) throw new ConfigError(`${where}.roles: a role is listed twice`);
+  const runtime = asOneOf(entry.runtime, MODEL_RUNTIMES, `${where}.runtime`);
+  // The second scanner (D-113) loads only a token classifier of the curated catalog with
+  // transformers; such a model has no other role, and no other role runs under transformers.
+  if (roles.includes('pii') && (runtime !== 'transformers' || roles.length !== 1 || user)) {
+    throw new ConfigError(`${where}.roles: pii is only for a model of the curated catalog with runtime transformers and no other role`);
+  }
+  if (runtime === 'transformers' && roles.some((role) => role !== 'pii')) {
+    throw new ConfigError(`${where}.runtime: transformers is only for the pii role`);
+  }
   const files = asArray(entry.files, `${where}.files`).map((file, index) =>
     parseFile(file, `${where}.files[${String(index)}]`),
   );
@@ -163,7 +174,7 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   const parsed: CatalogEntry = {
     id,
     family: asString(entry.family, `${where}.family`),
-    runtime: asOneOf(entry.runtime, MODEL_RUNTIMES, `${where}.runtime`),
+    runtime,
     ramMinGib: asInteger(entry.ram_min_gib, `${where}.ram_min_gib`, 1, 4096),
     roles,
     status: asOneOf(entry.status, MODEL_STATUSES, `${where}.status`),

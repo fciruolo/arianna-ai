@@ -124,6 +124,7 @@ export {
   type ProjectSettings,
   type Settings,
 } from './settings.ts';
+export { guardPaths, type GuardPaths } from './guard.ts';
 export { DEFAULT_VOICE, parseVoice, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths, type VoicePaths, type OutgoingRules, type PushConfig, type VoiceConfig, type VoiceLimits } from './voice.ts';
 export { diffConfig, watchConfig, type ConfigChange, type ConfigWatcher } from './watch.ts';
 export { settingsFingerprint, StaleSettingsError, writeSettings, type WriteOptions } from './write.ts';

@@ -366,6 +366,9 @@ describe('add, promote, forget', () => {
     assert.throws(() => huggingface.promote('fake-model-4bit', []), code('invalid'));
     assert.throws(() => huggingface.promote('fake-model-4bit', ['boss']), code('invalid'));
     assert.throws(() => huggingface.promote('fake-model-4bit', 'orchestrator'), code('invalid'));
+    // The pii role is only for the curated model of the second scanner (D-113).
+    assert.throws(() => huggingface.promote('fake-model-4bit', ['pii']), code('invalid'));
+    assert.throws(() => huggingface.promote('fake-model-4bit', ['extractor', 'pii']), code('invalid'));
     // Only the models added from Hugging Face: the curated catalog is never written.
     assert.throws(() => huggingface.promote('curated-model', ['extractor']), code('not-found'));
     assert.deepEqual(huggingface.promote('fake-model-4bit', ['extractor', 'orchestrator', 'extractor']), { modelId: 'fake-model-4bit', roles: ['orchestrator', 'extractor'] });

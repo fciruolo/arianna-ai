@@ -1,0 +1,98 @@
+{
+  "about": "Frasi italiane inventate per la prova di Rizzo-PII (D-113, tappa 1). Nomi, indirizzi, numeri, email, IBAN e codici sono finti o d'esempio. group: personal (dati personali), code_personal (brief di codice con un dato personale), negative (frasi comuni senza dati personali), code (brief di codice senza dati personali: un riscontro qui e' un falso allarme che fermerebbe una delega). entities: tipo del modello e testo esatto nella frase.",
+  "cases": [
+    { "id": "p01", "group": "personal", "text": "Giulia Ferrandi abita in Via dei Glicini 14, 40127 Bologna.", "entities": [
+      { "kind": "FULLNAME", "value": "Giulia Ferrandi" }, { "kind": "STREET", "value": "Via dei Glicini" }, { "kind": "BUILDINGNUM", "value": "14" }, { "kind": "ZIPCODE", "value": "40127" }, { "kind": "CITY", "value": "Bologna" } ] },
+    { "id": "p02", "group": "personal", "text": "Puoi richiamare Marco Bellini al 347 555 0192 dopo pranzo?", "entities": [
+      { "kind": "FULLNAME", "value": "Marco Bellini" }, { "kind": "TELEPHONENUM", "value": "347 555 0192" } ] },
+    { "id": "p03", "group": "personal", "text": "Scrivi a elena.sartori@example.it per confermare la visita.", "entities": [
+      { "kind": "EMAIL", "value": "elena.sartori@example.it" } ] },
+    { "id": "p04", "group": "personal", "text": "Il bonifico va sull'IBAN IT60X0542811101000000123456 intestato a Paolo Ghidini.", "entities": [
+      { "kind": "IBAN", "value": "IT60X0542811101000000123456" }, { "kind": "FULLNAME", "value": "Paolo Ghidini" } ] },
+    { "id": "p05", "group": "personal", "text": "Il codice fiscale di Mario Rossi e' RSSMRA85T10A562S.", "entities": [
+      { "kind": "FULLNAME", "value": "Mario Rossi" }, { "kind": "CF", "value": "RSSMRA85T10A562S" } ] },
+    { "id": "p06", "group": "personal", "text": "La ditta Tessuti Lunari srl ha partita IVA 01234567897.", "entities": [
+      { "kind": "ORG", "value": "Tessuti Lunari srl" }, { "kind": "PIVA", "value": "01234567897" } ] },
+    { "id": "p07", "group": "personal", "text": "Ho prenotato dal dentista per Chiara Montanari, telefono +39 02 5550 1234.", "entities": [
+      { "kind": "FULLNAME", "value": "Chiara Montanari" }, { "kind": "TELEPHONENUM", "value": "+39 02 5550 1234" } ] },
+    { "id": "p08", "group": "personal", "text": "Spedisci il pacco a Luca Zanetti, Corso Vittorio Emanuele 88, 10121 Torino.", "entities": [
+      { "kind": "FULLNAME", "value": "Luca Zanetti" }, { "kind": "STREET", "value": "Corso Vittorio Emanuele" }, { "kind": "BUILDINGNUM", "value": "88" }, { "kind": "ZIPCODE", "value": "10121" }, { "kind": "CITY", "value": "Torino" } ] },
+    { "id": "p09", "group": "personal", "text": "La carta 4111 1111 1111 1111 di Sara Colombo scade a fine anno.", "entities": [
+      { "kind": "CREDITCARDNUMBER", "value": "4111 1111 1111 1111" }, { "kind": "FULLNAME", "value": "Sara Colombo" } ] },
+    { "id": "p10", "group": "personal", "text": "Ricordami che Davide Pellegrino compie 42 anni sabato.", "entities": [
+      { "kind": "FULLNAME", "value": "Davide Pellegrino" }, { "kind": "AGE", "value": "42" } ] },
+    { "id": "p11", "group": "personal", "text": "L'auto targata AB123CD di Federica Gallo e' dal meccanico.", "entities": [
+      { "kind": "TARGA", "value": "AB123CD" }, { "kind": "FULLNAME", "value": "Federica Gallo" } ] },
+    { "id": "p12", "group": "personal", "text": "Il notaio vuole la carta d'identita' numero CA12345BX di Andrea Fontana.", "entities": [
+      { "kind": "ID_DOC", "value": "CA12345BX" }, { "kind": "FULLNAME", "value": "Andrea Fontana" } ] },
+    { "id": "p13", "group": "personal", "text": "Ho fatto la fattura a Roberto Esposito per 1.250 euro.", "entities": [
+      { "kind": "FULLNAME", "value": "Roberto Esposito" }, { "kind": "AMOUNT", "value": "1.250 euro" } ] },
+    { "id": "p14", "group": "personal", "text": "Domani alle 15:30 vedo Francesca Rinaldi in Piazza Duomo 3 a Parma.", "entities": [
+      { "kind": "TIME", "value": "15:30" }, { "kind": "FULLNAME", "value": "Francesca Rinaldi" }, { "kind": "STREET", "value": "Piazza Duomo" }, { "kind": "BUILDINGNUM", "value": "3" }, { "kind": "CITY", "value": "Parma" } ] },
+    { "id": "p15", "group": "personal", "text": "La nuova mail di Stefano e' stefano.villa82@example.com, il cellulare 320 444 7788.", "entities": [
+      { "kind": "FULLNAME", "value": "Stefano" }, { "kind": "EMAIL", "value": "stefano.villa82@example.com" }, { "kind": "TELEPHONENUM", "value": "320 444 7788" } ] },
+    { "id": "p16", "group": "personal", "text": "Appartamento al foglio 12, particella 345, subalterno 6 del catasto di Lucca.", "entities": [
+      { "kind": "CATASTO", "value": "foglio 12, particella 345, subalterno 6" }, { "kind": "CITY", "value": "Lucca" } ] },
+    { "id": "p17", "group": "personal", "text": "Anna Ricci, nata il 3 marzo 1979 a Bari, chiede un preventivo.", "entities": [
+      { "kind": "FULLNAME", "value": "Anna Ricci" }, { "kind": "DATE", "value": "3 marzo 1979" }, { "kind": "CITY", "value": "Bari" } ] },
+    { "id": "p18", "group": "personal", "text": "mia sorella laura bianchi abita in via roma 7 a pisa", "entities": [
+      { "kind": "FULLNAME", "value": "laura bianchi" }, { "kind": "STREET", "value": "via roma" }, { "kind": "BUILDINGNUM", "value": "7" }, { "kind": "CITY", "value": "pisa" } ] },
+    { "id": "p19", "group": "personal", "text": "Il contratto con Giovanni De Luca e' stato firmato il 12/09/2026.", "entities": [
+      { "kind": "FULLNAME", "value": "Giovanni De Luca" }, { "kind": "DATE", "value": "12/09/2026" } ] },
+    { "id": "p20", "group": "personal", "text": "Per il rimborso usa IT02L1234512345123456789012, conto di Martina Conti.", "entities": [
+      { "kind": "IBAN", "value": "IT02L1234512345123456789012" }, { "kind": "FULLNAME", "value": "Martina Conti" } ] },
+    { "id": "p21", "group": "personal", "text": "Il medico di Simone Marchetti risponde allo 055 123456.", "entities": [
+      { "kind": "FULLNAME", "value": "Simone Marchetti" }, { "kind": "TELEPHONENUM", "value": "055 123456" } ] },
+    { "id": "p22", "group": "personal", "text": "Ho conosciuto Valentina alla festa: lavora alla Cartiera Monti di Verona.", "entities": [
+      { "kind": "FULLNAME", "value": "Valentina" }, { "kind": "ORG", "value": "Cartiera Monti" }, { "kind": "CITY", "value": "Verona" } ] },
+    { "id": "p23", "group": "personal", "text": "Fattura n. 2026/118 a Bottega Verdi snc, P.IVA 09876543210, via Mazzini 21, 37121 Verona.", "entities": [
+      { "kind": "DOCID", "value": "2026/118" }, { "kind": "ORG", "value": "Bottega Verdi snc" }, { "kind": "PIVA", "value": "09876543210" }, { "kind": "STREET", "value": "via Mazzini" }, { "kind": "BUILDINGNUM", "value": "21" }, { "kind": "ZIPCODE", "value": "37121" }, { "kind": "CITY", "value": "Verona" } ] },
+    { "id": "p24", "group": "personal", "text": "Il paziente, maschio di 67 anni, e' stato visitato da Giorgio Leone.", "entities": [
+      { "kind": "GENDER", "value": "maschio" }, { "kind": "AGE", "value": "67" }, { "kind": "FULLNAME", "value": "Giorgio Leone" } ] },
+    { "id": "p25", "group": "personal", "text": "Dopo la riunione manda il verbale a ilaria.moretti@example.org e a Pietro Sala.", "entities": [
+      { "kind": "EMAIL", "value": "ilaria.moretti@example.org" }, { "kind": "FULLNAME", "value": "Pietro Sala" } ] },
+    { "id": "p26", "group": "personal", "text": "Il codice fiscale BNCLRA90A41G702Q risulta nel modulo della scuola.", "entities": [
+      { "kind": "CF", "value": "BNCLRA90A41G702Q" } ] },
+    { "id": "p27", "group": "personal", "text": "Mia madre, Rosa Caruso, vive a Lecce in viale Gallipoli 45.", "entities": [
+      { "kind": "FULLNAME", "value": "Rosa Caruso" }, { "kind": "CITY", "value": "Lecce" }, { "kind": "STREET", "value": "viale Gallipoli" }, { "kind": "BUILDINGNUM", "value": "45" } ] },
+    { "id": "p28", "group": "personal", "text": "Chiama l'idraulico Bruno Ferri: 349.876.5432.", "entities": [
+      { "kind": "FULLNAME", "value": "Bruno Ferri" }, { "kind": "TELEPHONENUM", "value": "349.876.5432" } ] },
+
+    { "id": "c01", "group": "code_personal", "text": "Correggi il test di parseRoles e poi manda il diff a Marco Bellini per la revisione.", "entities": [
+      { "kind": "FULLNAME", "value": "Marco Bellini" } ] },
+    { "id": "c02", "group": "code_personal", "text": "Nel fixture di test sostituisci l'email vera giulia.ferrandi@example.it con un indirizzo finto.", "entities": [
+      { "kind": "EMAIL", "value": "giulia.ferrandi@example.it" } ] },
+    { "id": "c03", "group": "code_personal", "text": "Il bug lo ha segnalato Elena Sartori: il parser rifiuta l'IBAN IT60X0542811101000000123456.", "entities": [
+      { "kind": "FULLNAME", "value": "Elena Sartori" }, { "kind": "IBAN", "value": "IT60X0542811101000000123456" } ] },
+    { "id": "c04", "group": "code_personal", "text": "Aggiorna seed.ts: il cliente di prova deve abitare in Via Garibaldi 12, 20121 Milano.", "entities": [
+      { "kind": "STREET", "value": "Via Garibaldi" }, { "kind": "BUILDINGNUM", "value": "12" }, { "kind": "ZIPCODE", "value": "20121" }, { "kind": "CITY", "value": "Milano" } ] },
+
+    { "id": "n01", "group": "negative", "text": "Oggi piove e il treno e' in ritardo.", "entities": [] },
+    { "id": "n02", "group": "negative", "text": "Ricordami di comprare il pane e due litri di latte.", "entities": [] },
+    { "id": "n03", "group": "negative", "text": "La rosa dei venti indica i punti cardinali.", "entities": [] },
+    { "id": "n04", "group": "negative", "text": "Il libro parla di un leone che non sapeva ruggire.", "entities": [] },
+    { "id": "n05", "group": "negative", "text": "Riassumi i punti principali della riunione di ieri.", "entities": [] },
+    { "id": "n06", "group": "negative", "text": "Quante calorie ha una porzione di pasta al pomodoro?", "entities": [] },
+    { "id": "n07", "group": "negative", "text": "Fai una lista delle cose da mettere in valigia per la montagna.", "entities": [] },
+    { "id": "n08", "group": "negative", "text": "Spiegami la differenza fra un mutuo a tasso fisso e uno variabile.", "entities": [] },
+    { "id": "n09", "group": "negative", "text": "Il gatto dorme sul divano tutto il pomeriggio.", "entities": [] },
+    { "id": "n10", "group": "negative", "text": "Scrivi una poesia sull'autunno e sulle foglie che cadono.", "entities": [] },
+    { "id": "n11", "group": "negative", "text": "Che differenza c'e' fra il congiuntivo e il condizionale?", "entities": [] },
+    { "id": "n12", "group": "negative", "text": "Metti in ordine le note per argomento e togli i doppioni.", "entities": [] },
+
+    { "id": "k01", "group": "code", "text": "Aggiungi un test per parseRoles in packages/config che rifiuti un ruolo sconosciuto.", "entities": [] },
+    { "id": "k02", "group": "code", "text": "Rinomina la funzione gatewayCheck in checkGateway e aggiorna tutti gli import.", "entities": [] },
+    { "id": "k03", "group": "code", "text": "Il server di sviluppo gira su 127.0.0.1:5173 e inoltra /api al core sulla porta 7420.", "entities": [] },
+    { "id": "k04", "group": "code", "text": "In apps/hud/src/components/ModelsSettings.vue il menu dei ruoli non mostra il modello scelto.", "entities": [] },
+    { "id": "k05", "group": "code", "text": "Porta transformers alla 5.19.0 e torch alla 2.14.1 nel pyproject e rigenera uv.lock.", "entities": [] },
+    { "id": "k06", "group": "code", "text": "La migrazione 0060_model_evals_compare.sql deve aggiungere la colonna tokens_per_second.", "entities": [] },
+    { "id": "k07", "group": "code", "text": "Scrivi una funzione che calcoli lo sha256 di un file a pezzi da 64 KiB senza caricarlo tutto.", "entities": [] },
+    { "id": "k08", "group": "code", "text": "Il commit 9f29b31 ha rotto il lint: togli la variabile userId non usata in sessions.ts.", "entities": [] },
+    { "id": "k09", "group": "code", "text": "Usa const MAX_RETRIES = 3 e un'attesa di 250 ms fra un tentativo e l'altro.", "entities": [] },
+    { "id": "k10", "group": "code", "text": "Nel componente ChatHeader l'avatar di Arianna deve stare a sinistra del titolo.", "entities": [] },
+    { "id": "k11", "group": "code", "text": "Sposta la classe InvoiceParser in packages/finance e copri i casi di fattura senza data.", "entities": [] },
+    { "id": "k12", "group": "code", "text": "Aggiorna la regex che riconosce l'email nel validatore: oggi accetta indirizzi senza dominio.", "entities": [] },
+    { "id": "k13", "group": "code", "text": "Il test di Router.pick fallisce perche' il modello local-large manca nel catalogo.", "entities": [] },
+    { "id": "k14", "group": "code", "text": "Crea l'endpoint GET /api/model-comparison?role= che risponde 409 se le prove sono diverse.", "entities": [] }
+  ]
+}

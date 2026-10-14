@@ -75,6 +75,14 @@ test('unsupported versions, roles, runtimes and statuses are rejected', () => {
   assert.throws(() => parseCatalog(VALID.replace('experimental', 'trusted')), ConfigError);
 });
 
+test('the pii role and the transformers runtime go together, alone (D-113)', () => {
+  const pii = VALID.replace('runtime: mlx', 'runtime: transformers').replace('[orchestrator, extractor]', '[pii]');
+  assert.deepEqual(parseCatalog(pii).models[0]?.roles, ['pii']);
+  assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[pii]')), ConfigError);
+  assert.throws(() => parseCatalog(pii.replace('[pii]', '[pii, extractor]')), ConfigError);
+  assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: transformers')), ConfigError);
+});
+
 test('roles must be listed, once each; RAM must be a positive integer', () => {
   assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[]')), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[extractor, extractor]')), ConfigError);

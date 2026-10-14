@@ -176,8 +176,8 @@ export function voicePaths(home: string, data: string): VoicePaths {
   };
 }
 
-/** The variables that keep uv inside data/voice; merged into a clean environment. */
-export function uvEnvironment(paths: VoicePaths): Record<string, string> {
+/** The variables that keep uv inside data/voice (or data/guard, D-113); merged into a clean environment. */
+export function uvEnvironment(paths: Pick<VoicePaths, 'venv' | 'uvPython' | 'uvCache'>): Record<string, string> {
   return {
     UV_PROJECT_ENVIRONMENT: paths.venv,
     UV_PYTHON_INSTALL_DIR: paths.uvPython,
