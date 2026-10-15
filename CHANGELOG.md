@@ -2,6 +2,16 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- In Impostazioni → Agenti → Aspetto, per un agente che indossa un personaggio delle serie, la scheda «Personalità di …»: chi è e come parla, la scena, le battute e «Cosa riceve il modello» nella chat privata e in quella di lavoro; i testi si possono riscrivere (diventano tuoi, Interno) e «Ripristina il testo originale» torna a quelli del repository (D-223).
+
+### Cambiato
+
+- I personaggi delle serie recitano davvero nelle chat private: didascalie fra parentesi quadre, la voce narrante di J.D., gli altri personaggi della serie che intervengono, i luoghi; nelle chat di lavoro solo la voce, senza altri personaggi in scena. Le battute diventano esempi, non più una per ogni risposta; niente parolacce (D-223).
+
 ## [0.117.0] - 2026-10-15
 
 ### Cambiato

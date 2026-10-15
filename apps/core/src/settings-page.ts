@@ -3,8 +3,9 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { flatPersonaText, parsePersona, PersonaError, type Persona } from '@arianna/agents';
+import { flatPersonaText, otherSeriesNames, parsePersona, parseSeriesOverride, PersonaError, SeriesOverrideError, type Persona, type SeriesOverride } from '@arianna/agents';
 import {
+  CHARACTER_ID,
   checkAppearance,
   checkFetchSites,
   checkSecretary,
@@ -77,7 +78,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -120,6 +121,8 @@ export interface SettingsValues {
   characters: Record<string, string>;
   /** Agent → persona (D-107), as `[personas]` holds it; an agent without one has the defaults. */
   personas: Record<string, Persona>;
+  /** Character of the pack serie → what the user rewrote (D-223), as `[series]` holds it. */
+  series: Record<string, SeriesOverride>;
   /** `[project_rules]` (I-14, D-174): the common template (null when none) and the projects with their own rules. */
   projectRules: { template: string | null; projects: Record<string, string> };
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
@@ -535,6 +538,46 @@ function personasFromBody(value: unknown): NonNullable<Settings['personas']> {
 }
 
 /**
+ * `[series]` from the page (D-223): character → `{ traits?, scene?, quotes? }`
+ * (null or empty is none), checked by `parseSeriesOverride` as the file is. The
+ * user's text is L1 by declaration, as a persona's: a finding of the scanner or
+ * a value of the vault refuses it, naming the field and the kind, never the text.
+ */
+function seriesFromBody(value: unknown): NonNullable<Settings['series']> {
+  const table = record(value, 'series');
+  const series: NonNullable<Settings['series']> = {};
+  for (const [id, item] of Object.entries(table)) {
+    if (!CHARACTER_ID.test(id)) invalid('series: a character id is lowercase letters, digits, - and _');
+    const where = `series.${id}`;
+    const given = record(item, where);
+    only(given, ['traits', 'scene', 'quotes'], where);
+    const raw: Record<string, unknown> = {};
+    for (const field of ['traits', 'scene', 'quotes'] as const) {
+      const entry = given[field];
+      if (entry === undefined || entry === null || entry === '') continue;
+      const written = Array.isArray(entry) ? entry.filter((text): text is string => typeof text === 'string') : typeof entry === 'string' ? [entry] : [];
+      // Also as the prompt shows it, on one line: a value split over lines joins again there.
+      const texts = written.flatMap((text) => [text, text.replace(/[\r\n\t]+/g, ' ')]);
+      const kinds = [...new Set(texts.flatMap((text) => scanText(text).map((finding) => finding.kind)))];
+      if (kinds.length > 0) invalid(`${where}.${field} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
+      if (texts.some((text) => knownSecrets.find(text).length > 0)) invalid(`${where}.${field} holds a value of the vault: not saved`);
+      // Personality and catchphrases reach a brief to the cloud, where another character's name is a person (D-223): the scene only may name them.
+      if (field !== 'scene' && texts.some((text) => otherSeriesNames(id, text).length > 0)) invalid(`${where}.${field} names another character of the series: only the scene may`);
+      raw[field] = entry;
+    }
+    try {
+      const override = parseSeriesOverride(raw, where);
+      if (Object.keys(override).length > 0) series[id] = override;
+    } catch (error) {
+      // The message names the field, never the text.
+      if (error instanceof SeriesOverrideError) invalid(error.message);
+      throw error;
+    }
+  }
+  return series;
+}
+
+/**
  * `[project_rules]` from the page (I-14, D-174): `{ template, projects }`,
  * template null or empty for none; a project's line, empty text included,
  * stays its own. The user's text is L1 by declaration and reaches the cloud:
@@ -672,6 +715,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     cloudModels: cloudModelsOf(settings.cloud),
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
+    series: structuredClone(settings.series ?? {}),
     projectRules: projectRulesOf(settings),
     agents: agentsOf(settings),
     skills: skillsOf(settings),
@@ -719,6 +763,7 @@ function sectionOf(settings: Settings, section: Section): unknown {
     case 'roles':
     case 'characters':
     case 'personas':
+    case 'series':
     case 'voice':
     case 'telegram':
     case 'projects':
@@ -943,6 +988,11 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         const personas = personasFromBody(given.personas);
         if (Object.keys(personas).length === 0) delete next.personas;
         else next.personas = personas;
+      }
+      if (given.series !== undefined) {
+        const series = seriesFromBody(given.series);
+        if (Object.keys(series).length === 0) delete next.series;
+        else next.series = series;
       }
       if (given.projectRules !== undefined) {
         const rules = projectRulesFromBody(given.projectRules);

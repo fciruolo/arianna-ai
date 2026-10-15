@@ -11,6 +11,7 @@ import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, 
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
+import type { SeriesOverrides } from './series.ts';
 import type { ProjectRules } from './project-rules.ts';
 import type { ProjectFolder, ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
@@ -64,6 +65,8 @@ export interface Settings {
   characters: Record<string, string>;
   /** `[personas.<agent>]` (D-107); absent or empty, every agent has the defaults. */
   personas?: Personas;
+  /** `[series.<id>]` (D-223); absent or empty, the people of the series keep the repository's text. */
+  series?: SeriesOverrides;
   /** `[agents.<id>]` (D-116); absent or empty, the router chooses for every agent. */
   agents?: AgentsSettings;
   /** `[sprites] model` (D-123); absent, Claude Opus draws the characters (D-132). */
@@ -143,6 +146,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(config.projectRules.template === undefined && Object.keys(config.projectRules.projects).length === 0 ? {} : { projectRules: structuredClone(config.projectRules) }),
     characters: { ...config.characters },
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
+    ...(Object.keys(config.series).length === 0 ? {} : { series: structuredClone(config.series) }),
     // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
     ...(Object.keys(config.agents).length === 0 ? {} : { agents: structuredClone(config.agents) }),
     // Absent when the file has no [sprites]: the default is not written in.
@@ -240,6 +244,20 @@ function personasSection(personas: Personas | undefined): string[] {
     ...(persona.displayName === undefined ? [] : [`display_name = ${str(persona.displayName)}`]),
     ...(persona.traits === undefined ? [] : [`traits = ${str(persona.traits)}`]),
     ...(persona.specialization === undefined ? [] : [`specialization = ${str(persona.specialization)}`]),
+  ]);
+}
+
+/** `[series.<id>]`: only the fields the user rewrote (D-223). */
+function seriesSection(series: SeriesOverrides | undefined): string[] {
+  if (series === undefined || Object.keys(series).length === 0) {
+    return ['#', '# [series.cox]', '# traits = "Burbero ma paziente."', '# quotes = ["Che vuoi?", "Sbagliato!", "Ecco la risposta."]'];
+  }
+  return Object.entries(series).flatMap(([id, override], index) => [
+    ...(index === 0 ? [] : ['']),
+    `[series.${id}]`,
+    ...(override.traits === undefined ? [] : [`traits = ${str(override.traits)}`]),
+    ...(override.scene === undefined ? [] : [`scene = ${str(override.scene)}`]),
+    ...(override.quotes === undefined ? [] : [`quotes = [${override.quotes.map(str).join(', ')}]`]),
   ]);
 }
 
@@ -477,6 +495,15 @@ export function renderSettings(settings: Settings): string {
     '# the defaults: its prompt does not change. Applies without a restart; an',
     '# invalid file drops the text and keeps tone and address.',
     ...personasSection(settings.personas),
+    '',
+    '# The people of the series (D-223): what you rewrote of a character of the',
+    '# pack serie, by its id (jd, turk, elliot, carla, cox, michael, dwight, jim,',
+    '# pam). `traits` (who it is and how it speaks, at most 450 characters),',
+    '# `scene` (its world and its tics on stage, private chats only, at most 750)',
+    '# and `quotes` (3-5 lines of at most 60). Without a field the repository',
+    '# text stays. Your text is L1 by your declaration, as the personas: no',
+    '# personal data here. Applies without a restart.',
+    ...seriesSection(settings.series),
     '',
     '# Agents (D-116): `model` is the cloud model (sonnet, opus, fable, luna,',
     '# sol, astra) a new conversation with the agent starts with; the chat selector can change',

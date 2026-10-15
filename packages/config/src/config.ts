@@ -13,6 +13,7 @@ import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { parseNotifications, type NotificationsConfig } from './notifications.ts';
 import { parsePersonas, type Personas } from './personas.ts';
+import { parseSeries, type SeriesOverrides } from './series.ts';
 import { parseProjectRules, type ProjectRules } from './project-rules.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
@@ -77,6 +78,8 @@ export interface AriannaConfig {
   characters: CharacterChoices;
   /** Agent → persona (D-107); an agent without one has the defaults. Applied without a restart. */
   personas: Personas;
+  /** `[series.<id>]` (D-223): what the user rewrote of the people of the series. */
+  series: SeriesOverrides;
   /** Agent → its default model (D-116); applied without a restart. */
   agents: AgentsSettings;
   /** The model that draws a character (D-123); applied without a restart. */
@@ -119,7 +122,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'appearance', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'series', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'appearance', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -158,6 +161,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     projectRules: parseProjectRules(root.project_rules),
     characters: parseCharacters(root.characters),
     personas: parsePersonas(root.personas),
+    series: parseSeries(root.series),
     agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),
     sprites: parseSprites(root.sprites),
     participants: parseParticipants(root.participants),

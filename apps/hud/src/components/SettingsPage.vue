@@ -86,6 +86,7 @@ import {
   type AppearanceValues,
   type SecretaryValues,
   type Section,
+  type SeriesValues,
   type SettingsBody,
   type SettingsValues,
   type SettingsView,
@@ -162,6 +163,7 @@ interface Forms {
   cloudModels: CloudModelsForm;
   characters: Record<string, string>;
   personas: Record<string, PersonaForm>;
+  series: Record<string, SeriesValues>;
   projectRules: ProjectRulesForm;
   agents: AgentsForm;
   skills: SkillsForm;
@@ -184,6 +186,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     cloudModels: cloudModelsForm(values.cloudModels),
     characters: { ...values.characters },
     personas: personasForm(values.personas),
+    series: copy(values.series ?? {}),
     projectRules: projectRulesForm(values.projectRules),
     agents: agentsForm(values.agents, agentModels),
     skills: skillsForm(values.skills, agentSkills),
@@ -201,7 +204,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -332,6 +335,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('characters')) values.characters = charactersBody(current.characters);
   if (parts.includes('voice')) values.voice = voiceSent(voicePart, current.voice, read.voice);
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
+  // An older core has no rewrites of the people of the series (D-223): nothing to send.
+  if (parts.includes('series') && view.value?.values?.series !== undefined) values.series = copy(current.series);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   // An older core has no skills (D-161): nothing to send.
   if (parts.includes('skills') && view.value?.values?.skills !== undefined) values.skills = skillsBody(current.skills);
@@ -1032,6 +1037,9 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)"
                 :direct-agents="directAgents ?? []"
                 :save="() => save('agents', AGENT_PARTS)"
+                :save-series="view?.values?.series === undefined ? undefined : () => save('series', ['series'])"
+                :series-busy="busy === 'series'"
+                :series-error="errors.series"
                 @cancel="resetAgents"
                 @uploaded="onUploaded"
                 @packs="onPacks"

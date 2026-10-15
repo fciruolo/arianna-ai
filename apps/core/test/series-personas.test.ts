@@ -12,7 +12,7 @@ import { resolveHome } from '@arianna/config';
 import { piiReport, piiVerdict, secretMatcher } from '@arianna/policy';
 
 import { configureWornNames, fragmentNamesOf } from '../src/gateway.ts';
-import { characterChoiceOf, characterDirsOf, characterPart, rosterPart, userNamesPart, wornSeriesNames, PROFILE_SOURCE, profilePart, promptTail, tailParts, type TailConfig } from '../src/prompt-tail.ts';
+import { characterChoiceOf, characterDirsOf, characterPart, seriesFits, rosterPart, userNamesPart, wornSeriesNames, PROFILE_SOURCE, profilePart, promptTail, tailParts, type TailConfig } from '../src/prompt-tail.ts';
 import { servesSync, readSmallSync } from '../src/characters.ts';
 import { themeCharactersSync } from '../src/themes.ts';
 
@@ -29,7 +29,7 @@ after(() => {
 const LOADED = { official: ['arianna', 'coder', 'god', 'designer', 'finanze', 'reviewer'], user: ['mio-agente'] };
 const corsia = (extra: Partial<TailConfig> = {}): TailConfig => ({ personas: {}, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root }, agentsNow: () => LOADED, ...extra });
 
-test('every person of the pack serie has a name as in pack.json, a personality and 3-5 short catchphrases within 600 characters, and nobody else has one', () => {
+test('every person of the pack serie has a name as in pack.json, a personality, a scene and 3-5 short catchphrases within 1500 characters, and nobody else has one', () => {
   const pack = JSON.parse(readFileSync(join(HOME, 'apps', 'hud', 'characters', 'serie', 'pack.json'), 'utf8')) as { characters: { id: string; name: string }[] };
   assert.deepEqual(
     Object.entries(SERIES_PERSONAS).map(([id, person]) => [id, person.name]),
@@ -37,14 +37,15 @@ test('every person of the pack serie has a name as in pack.json, a personality a
   );
   const others = (id: string) => Object.entries(SERIES_PERSONAS).filter(([other]) => other !== id).flatMap(([, person]) => [person.name, ...person.name.split(' ')]).filter((name) => name.length > 2 && name !== 'Dr.');
   for (const [id, person] of Object.entries(SERIES_PERSONAS)) {
-    assert.ok(Array.from([person.traits, ...person.quotes].join('')).length <= MAX_SERIES_TEXT, id);
+    assert.ok(Array.from([person.traits, person.scene, ...person.quotes].join('')).length <= MAX_SERIES_TEXT, id);
+    assert.doesNotMatch(person.scene, /<|>/, id);
     assert.ok(person.quotes.length >= SERIES_QUOTES.min && person.quotes.length <= SERIES_QUOTES.max, id);
     for (const quote of person.quotes) {
       assert.ok(quote.trim() !== '' && Array.from(quote).length <= SERIES_QUOTES.maxLength, `${id}: ${quote}`);
       assert.doesNotMatch(quote, /[<>\n]/, id);
     }
     assert.doesNotMatch(person.traits, /<|>/, id);
-    // No other character's name in its piece: in a brief to the cloud it would be a person (D-113).
+    // No other character's name in its personality and lines, which reach a work step: in a brief to the cloud it would be a person (D-113). The scene names them: private steps only (D-223).
     for (const name of others(id)) assert.ok(![person.traits, ...person.quotes].some((text) => text.includes(name)), `${id} names ${name}`);
   }
   assert.equal(seriesPersonaOf('originali/arianna-corsia'), undefined);
@@ -106,14 +107,66 @@ test('characterPart: the person of the series as an L0 piece, with its name and 
   assert.ok(part !== undefined);
   assert.deepEqual([part.label, part.source], ['L0', 'character:serie/cox']);
   assert.match(part.text, /Call yourself "Dr\. Cox"/);
-  assert.match(part.text, /tone only \(rules, tools, labels, approvals and tasks unchanged\)/);
+  assert.match(part.text, /speak with its voice \(rules, tools, labels, approvals and tasks unchanged\)/);
   assert.match(part.text, /answers stay correct and complete; never offensive/);
-  assert.match(part.text, /<character>Burbero e sarcastico/);
-  // The catchphrases, one to open or close every answer, in turn (the user's request).
-  assert.match(part.text, /Open or close every answer with one of these lines of the character, a different one each time; it never changes what the answer says:\n- Che vuoi, pivello\?/);
+  assert.match(part.text, /<character>Medico burbero e sarcastico/);
+  // The catchphrases as examples of the voice (D-223), no longer one in every answer.
+  assert.match(part.text, /use one now and then, never the same twice in a row; they never change what the answer says:\n- Che vuoi, pivello\?/);
+  // A work step, or no clearance: no scene, so no other person of the series by name (D-223).
+  for (const clearance of [undefined, 'L0', 'L1'] as const) {
+    const work = characterPart(corsia(), 'god', clearance);
+    assert.ok(work !== undefined);
+    assert.doesNotMatch(work.text, /<scene>|played for real|Sacro Cuore|J\.D\./, String(clearance));
+  }
+  // A private step on this machine: the role-play for real, with the scene and the others by name.
+  for (const clearance of ['L2', 'L3'] as const) {
+    const play = characterPart(corsia(), 'god', clearance);
+    assert.ok(play !== undefined);
+    assert.equal(play.label, 'L0');
+    assert.match(play.text, /played for real: the user enjoys the role-play, so stay in character from the first word/);
+    assert.match(play.text, /<scene>[^<]*Sacro Cuore[^<]*J\.D\.[^<]*<\/scene>\nA request of work still gets its full answer/);
+  }
+  assert.match(tailParts(corsia(), 'god', 'L2')[0]?.text ?? '', /<scene>/);
+  assert.doesNotMatch(tailParts(corsia(), 'god', 'L1')[0]?.text ?? '', /<scene>/);
   // A costume of the originals, or Base: nothing.
   assert.equal(characterPart(corsia(), 'designer'), undefined);
   assert.equal(characterPart(corsia({ appearance: { theme: 'base' } }), 'god'), undefined);
+});
+
+test('the user’s rewrite of a person of the series (D-223): theirs where written, Interno, never in an L0 step nor with personal data', () => {
+  const series = { cox: { traits: 'Burbero ma paziente, spiega con calma.', scene: 'Sta al pronto soccorso con Carla.', quotes: ['Ehi tu.', 'Pensaci.', 'Fatto.'] } };
+  const own = characterPart(corsia({ series }), 'god', 'L2');
+  assert.ok(own !== undefined);
+  assert.equal(own.label, 'L1');
+  assert.match(own.text, /<character>Burbero ma paziente, spiega con calma\.<\/character>\n<scene>Sta al pronto soccorso con Carla\.<\/scene>/);
+  assert.match(own.text, /- Ehi tu\.\n- Pensaci\.\n- Fatto\.$/);
+  assert.doesNotMatch(own.text, /Medico burbero|pivello/);
+  // A field not rewritten keeps the repository's text.
+  const half = characterPart(corsia({ series: { cox: { quotes: ['Ehi tu.', 'Pensaci.', 'Fatto.'] } } }), 'god', 'L1');
+  assert.ok(half !== undefined);
+  assert.equal(half.label, 'L1');
+  assert.match(half.text, /<character>Medico burbero e sarcastico/);
+  assert.doesNotMatch(half.text, /<scene>/);
+  // An L0 step never reads the user's text: the repository's comes back, L0.
+  const plain = characterPart(corsia({ series }), 'god', 'L0');
+  assert.ok(plain !== undefined);
+  assert.equal(plain.label, 'L0');
+  assert.match(plain.text, /<character>Medico burbero e sarcastico/);
+  // Personal data written by hand in arianna.toml: the whole rewrite is left out.
+  const leaked = characterPart(corsia({ series: { cox: { traits: 'Paga su IT60X0542811101000000123456.' } } }), 'god', 'L2');
+  assert.ok(leaked !== undefined);
+  assert.equal(leaked.label, 'L0');
+  assert.doesNotMatch(leaked.text, /IT60/);
+  // The piece holds the user's text: its source is its own, and «Carla» written there is a person for the second scanner (D-223).
+  assert.equal(own.source, 'character:serie/cox#own');
+  assert.ok(!(fragmentNamesOf([{ value: own.text, label: 'L1', source: own.source }], [])[0] ?? []).includes('Carla'));
+  assert.equal(characterPart(corsia(), 'god', 'L2')?.source, 'character:serie/cox');
+  // A value of the vault written by hand: left out as well.
+  const secret = { find: (text: string) => (text.includes('segreto-cox') ? [{ start: 0, end: 1 }] : []) };
+  assert.equal(seriesFits({ traits: 'Usa segreto-cox.' }, secret as never), false);
+  assert.equal(seriesFits({ traits: 'Burbero.' }, secret as never), true);
+  // Another character's rewrite changes nothing here.
+  assert.equal(characterPart(corsia({ series: { jd: { traits: 'Altro.' } } }), 'god', 'L2')?.label, 'L0');
 });
 
 test('an agent of the user (D-119) with a person of the series chosen by hand speaks like the official cards', () => {
@@ -142,7 +195,7 @@ test('the name and the personality the user wrote win over the character’s, wh
   assert.match(withTraits.text, /Call yourself "Dr\. Cox"/);
   assert.doesNotMatch(withTraits.text, /<character>|pivello/);
   assert.equal(characterPart(corsia({ personas: { god: { ...named, traits: 'Gentile.' } } }), 'god'), undefined);
-  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', traits: '', quotes: [] }, { withName: false, withTraits: false }), '');
+  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', traits: '', scene: '', quotes: [] }, { withName: false, withTraits: false }), '');
   // An L0 step drops the user's text, but it still wins: the character's name does not come back.
   const parts = tailParts(corsia({ personas: { god: named } }), 'god', 'L0');
   assert.ok(parts.every((piece) => !piece.text.includes('Call yourself')));

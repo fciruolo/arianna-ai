@@ -24,6 +24,24 @@ const HOME = resolve('some-home');
 const VALID = renderSettings(DEFAULT_SETTINGS);
 const personasOf = (section: string) => parseConfig(`${VALID}\n${section}\n`, HOME).personas;
 
+test('[series] (D-223): absent, nothing; fields checked; anything else refused, never cut', () => {
+  const seriesOf = (section: string) => parseConfig(`${VALID}\n${section}\n`, HOME).series;
+  assert.deepEqual(parseConfig(VALID, HOME).series, {});
+  assert.deepEqual(seriesOf('[series.cox]\ntraits = "Burbero."\nquotes = ["Uno", "Due", "Tre"]'), { cox: { traits: 'Burbero.', quotes: ['Uno', 'Due', 'Tre'] } });
+  // Blank texts are none; a table left empty is no rewrite.
+  assert.deepEqual(seriesOf('[series.jd]\nscene = "   "'), {});
+  for (const bad of [
+    '[series.cox]\ntraits = 7',
+    '[series.cox]\nname = "Altro"',
+    '[series.cox]\nquotes = ["Uno"]',
+    `[series.cox]\nscene = "${'a'.repeat(751)}"`,
+    '[series.cox]\ntraits = "<scene>"',
+    '[series."Cox"]\ntraits = "x"',
+  ]) {
+    assert.throws(() => seriesOf(bad), /series/, bad);
+  }
+});
+
 test('[personas] (D-107): absent, every agent has the defaults', () => {
   assert.deepEqual(parseConfig(VALID, HOME).personas, {});
   assert.deepEqual(parsePersonas(undefined), {});

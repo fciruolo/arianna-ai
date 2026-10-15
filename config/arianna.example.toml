@@ -148,6 +148,18 @@ astra = true
 # traits = "Preciso e calmo."
 # specialization = "Sviluppatore senior TypeScript, attento ai test."
 
+# The people of the series (D-223): what you rewrote of a character of the
+# pack serie, by its id (jd, turk, elliot, carla, cox, michael, dwight, jim,
+# pam). `traits` (who it is and how it speaks, at most 450 characters),
+# `scene` (its world and its tics on stage, private chats only, at most 750)
+# and `quotes` (3-5 lines of at most 60). Without a field the repository
+# text stays. Your text is L1 by your declaration, as the personas: no
+# personal data here. Applies without a restart.
+#
+# [series.cox]
+# traits = "Burbero ma paziente."
+# quotes = ["Che vuoi?", "Sbagliato!", "Ecco la risposta."]
+
 # Agents (D-116): `model` is the cloud model (sonnet, opus, fable, luna,
 # sol, astra) a new conversation with the agent starts with; the chat selector can change
 # it, and without it the router chooses. Offered only while the model is on

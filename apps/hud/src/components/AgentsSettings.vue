@@ -32,7 +32,7 @@ import {
   TONE_TEXT,
   TONES,
 } from '../lib/persona.ts';
-import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
+import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SeriesValues, type SettingsView } from '../lib/settings.ts';
 import { useSkillTranslations } from '../lib/skill-translations.ts';
 import { activationAsk, redoSafetyReport, safetyDot, safetyPill, type SafetyView } from '../lib/safety-report.ts';
 import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, translationsNoteText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
@@ -73,6 +73,7 @@ import PixelAgent from './PixelAgent.vue';
 import SafetyReportCard from './SafetyReportCard.vue';
 import TranslatedText from './TranslatedText.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
+import SeriesPersonaCard from './SeriesPersonaCard.vue';
 import SheetPreview from './SheetPreview.vue';
 
 /**
@@ -80,7 +81,7 @@ import SheetPreview from './SheetPreview.vue';
  * `save`: writes them in one go; false when the core refused, the reason in `error`.
  */
 const props = defineProps<{
-  form: AgentParts & { participants: number };
+  form: AgentParts & { participants: number; series?: Record<string, SeriesValues> };
   base: AgentParts & { participants: number };
   view: SettingsView;
   characters: CharacterListing | null;
@@ -90,6 +91,10 @@ const props = defineProps<{
   invalid: string | undefined;
   directAgents: DirectAgent[];
   save: () => Promise<boolean>;
+  /** D-223: saves `[series]` alone, the card of a person of the series; absent with an older core. */
+  saveSeries?: (() => Promise<boolean>) | undefined;
+  seriesBusy?: boolean;
+  seriesError?: string | undefined;
 }>();
 /**
  * `cancel`: the settings parts back to what was read. `changed`: an agent changed state or card, the rest reads again.
@@ -922,6 +927,17 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             </div>
           </div>
           <SheetPreview v-if="animationsOpen && previewOf(current.id)" :src="sheetUrl(previewOf(current.id)!, sheetVersion)" :rows="previewOf(current.id)!.rows" />
+          <!-- D-223: the personality of the person of the series this agent wears, readable and editable -->
+          <SeriesPersonaCard
+            v-if="previewOf(current.id)?.pack === SERIES_PACK && form.series !== undefined && saveSeries !== undefined"
+            :key="`series-${previewOf(current.id)!.character}`"
+            :character="previewOf(current.id)!.character"
+            :form="form as { series: Record<string, SeriesValues> }"
+            :save="saveSeries"
+            :busy="seriesBusy === true"
+            :error="seriesError"
+            :own-traits="(form.personas[current.id]?.traits.trim() ?? '') !== ''"
+          />
           <div class="flex flex-col gap-3">
             <h3 class="text-[14px] font-medium">Galleria</h3>
             <p class="text-[12.5px] text-muted">Clicca un personaggio per darlo a {{ nameOf(current.id) }}; premi Salva nella barra in basso per tenerlo.</p>

@@ -50,6 +50,7 @@ export {
 export { LEGACY_DEFAULT_AGENT, MAX_AGENT_SKILLS, ORCHESTRATOR_AGENT, parseAgents, parseSkillIds, SKILL_ID, SKILLS_DELIVERY_BYTES, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, SERIES_PACK, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';
+export { parseSeries, type SeriesOverrides } from './series.ts';
 export { DEFAULT_SPRITE_MODEL, parseSprites, SPRITE_MODELS, type SpriteModel, type SpritesConfig } from './sprites.ts';
 export { DEFAULT_LEAVE_AFTER, isLeaveAfter, MAX_LEAVE_AFTER, parseParticipants, type ParticipantsConfig } from './participants.ts';
 export {

@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
-import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesRosterBlock, seriesSource, type PersonaParts, type SeriesPersona } from '@arianna/agents';
-import { ORIGINAL_PACK, type CharacterChoices, type Personas } from '@arianna/config';
+import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesOwnSource, seriesRosterBlock, seriesSource, withSeriesOverride, type PersonaParts, type SeriesOverride, type SeriesPersona } from '@arianna/agents';
+import { ORIGINAL_PACK, type CharacterChoices, type Personas, type SeriesOverrides } from '@arianna/config';
 import { isAtMost, PERSONA_LABEL, personaFits, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
@@ -69,6 +69,8 @@ export function withoutPersonal(parts: PersonaParts, secrets: KnownSecrets = kno
 /** What the tail reads of the settings: the personas, and what tells the character an agent wears. */
 export interface TailConfig {
   personas: Personas;
+  /** `[series.<id>]` (D-223): what the user rewrote of the people of the series. */
+  series?: SeriesOverrides;
   /** `[characters]`: a choice always wins over the theme. */
   characters?: CharacterChoices;
   /** `[appearance]`: the theme whose characters the agents wear without a choice. */
@@ -235,20 +237,35 @@ export function userNamesPart(config: TailConfig, agent: string, clearance: Labe
  * cloud too. The name and the personality the user wrote for the agent win:
  * each of them leaves the character's out, whatever the clearance of the step.
  * Source `character:serie/<id>`: the second scanner takes the character's name
- * for no person in this piece alone (`seriesNamesOfSource`).
+ * for no person in this piece alone (`seriesNamesOfSource`). With a private
+ * `clearance` (L2 or more, a step on this machine) the role-play for real
+ * (D-223); the default L0 is the plain voice.
  */
-export function characterPart(config: TailConfig, agent: string): TailPart | undefined {
+export function characterPart(config: TailConfig, agent: string, clearance: Label = 'L0'): TailPart | undefined {
   const choice = characterChoiceOf(config, agent);
   const person = seriesPersonaOf(choice);
   if (person === undefined || choice === undefined) return undefined;
   const own = Object.hasOwn(config.personas, agent) ? config.personas[agent] : undefined;
-  const text = seriesPersonaBlock(person, { withName: own?.displayName === undefined, withTraits: own?.traits === undefined });
-  return text === '' ? undefined : { text, label: 'L0', source: seriesSource(choice.split('/')[1] ?? '') };
+  // The scene with the other people of the series in a private step only (D-223): it never reaches a brief to the cloud.
+  const play = !isAtMost(clearance, 'L1');
+  const id = choice.split('/')[1] ?? '';
+  // What the user rewrote (D-223) is theirs, Interno (L1): only in a step that admits it, and never when it looks like personal data or a vault value now.
+  const override = config.series !== undefined && Object.hasOwn(config.series, id) ? config.series[id] : undefined;
+  const merged = personaFits(clearance) && override !== undefined && seriesFits(override) ? withSeriesOverride(person, override) : { persona: person, own: false };
+  const text = seriesPersonaBlock(merged.persona, { withName: own?.displayName === undefined, withTraits: own?.traits === undefined, play });
+  // The user's text has its own source: no exemption for the names of the series there (D-223).
+  return text === '' ? undefined : { text, label: merged.own ? PERSONA_LABEL : 'L0', source: merged.own ? seriesOwnSource(id) : seriesSource(id) };
+}
+
+/** No text of the user's rewrite looks like personal data or holds a value of the vault (D-223), as the persona's (D-107). */
+export function seriesFits(override: SeriesOverride, secrets: KnownSecrets = knownSecrets): boolean {
+  const texts = [override.traits, override.scene, ...(override.quotes ?? [])].filter((text): text is string => text !== undefined);
+  return texts.every((text) => scanText(text).length === 0 && secrets.find(text).length === 0);
 }
 
 /** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */
 export function tailParts(config: TailConfig, agent: string, clearance: Label): TailPart[] {
-  const pieces = [characterPart(config, agent), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
+  const pieces = [characterPart(config, agent, clearance), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
   return pieces.filter((piece): piece is TailPart => piece !== undefined);
 }
 

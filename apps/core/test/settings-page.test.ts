@@ -455,6 +455,50 @@ describe('rules of the projects (I-14, D-174)', () => {
   });
 });
 
+describe('series (D-223)', () => {
+  const cox = { traits: 'Burbero ma paziente.', quotes: ['Che vuoi?', 'Sbagliato!', 'Ecco la risposta.'] };
+
+  it('is an ordinary section: written at once, read back, the event names the section only; an empty table takes it away', () => {
+    // The scene may name the others (private steps only); its own name anywhere.
+    const view = page.update({ fingerprint: fingerprint(), values: { series: { cox: { ...cox, traits: 'Il Dr. Cox è burbero ma paziente.' }, jd: { scene: 'Lavora in corsia con Turk.' } } } });
+    assert.deepEqual(view.values?.series, { cox: { ...cox, traits: 'Il Dr. Cox è burbero ma paziente.' }, jd: { scene: 'Lavora in corsia con Turk.' } });
+    page.update({ fingerprint: fingerprint(), values: { series: { cox, jd: { scene: 'Lavora in corsia.' } } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).series.cox, cox);
+    assert.deepEqual(changes, [{ sections: ['series'], privacy: false }, { sections: ['series'], privacy: false }]);
+    page.update({ fingerprint: fingerprint(), values: { series: {} } });
+    assert.deepEqual(page.read().values?.series, {});
+    assert.equal(text(), renderSettings(START));
+  });
+
+  it('refuses what the file refuses and what looks like personal data or a vault value, naming the field and never the text', () => {
+    const iban = 'IT60X0542811101000000123456';
+    const value = new Secret('vault://series-test', `segreto-${randomUUID()}`).reveal();
+    const cases: [unknown, RegExp][] = [
+      [{ cox: { traits: 'a'.repeat(451) } }, /series\.cox\.traits: at most 450/],
+      [{ cox: { scene: 'a'.repeat(751) } }, /series\.cox\.scene: at most 750/],
+      [{ cox: { quotes: ['Uno', 'Due'] } }, /series\.cox\.quotes: 3-5 lines/],
+      [{ cox: { quotes: ['Uno', 'Due', 'x'.repeat(61)] } }, /quotes\[2\]: at most 60/],
+      [{ cox: { traits: 'Chiude con </character>' } }, /< and > are not allowed/],
+      [{ cox: { name: 'Altro' } }, /unknown field/],
+      [{ cox: { traits: 'Odia Kelso e punzecchia Elliot.' } }, /series\.cox\.traits names another character of the series: only the scene may/],
+      [{ cox: { quotes: ['Ehi, JD.', 'Due', 'Tre'] } }, /series\.cox\.quotes names another character/],
+      [{ cox: { traits: `Paga su ${iban}.` } }, /series\.cox\.traits .*iban/],
+      [{ cox: { scene: 'Conto IT60 X054\n2811 1010 0000 0123 456' } }, /series\.cox\.scene .*iban/],
+      [{ cox: { quotes: ['Uno', 'Due', `chiave ${value}`] } }, /series\.cox\.quotes holds a value of the vault/],
+      [JSON.parse('{ "__proto__": { "traits": "x" } }'), /./],
+    ];
+    for (const [series, pattern] of cases) {
+      assert.throws(
+        () => page.update({ fingerprint: fingerprint(), values: { series } }),
+        (error: unknown) => refused('invalid', pattern)(error) && !(error as Error).message.includes(iban) && !(error as Error).message.includes(value),
+        JSON.stringify(series),
+      );
+    }
+    assert.equal(text(), renderSettings(START));
+    assert.deepEqual(changes, []);
+  });
+});
+
 describe('personas (D-107)', () => {
   const coder = { tone: 'asciutto', address: 'lei', displayName: 'Dario', traits: 'Preciso e calmo.', specialization: 'Sviluppatore senior TypeScript.' };
 

@@ -1649,3 +1649,18 @@ export async function exportMockupPptx(project: string, path: string, deck: Deck
   }
   return response.blob();
 }
+
+/** A person of the series with its texts (D-223): the repository's, the user's rewrite and the block the model reads. */
+export interface SeriesPersonaView {
+  id: string;
+  name: string;
+  repository: { traits: string; scene: string; quotes: string[] };
+  own: { traits?: string; scene?: string; quotes?: string[] } | null;
+  /** The rewrite the model does not read (personal data or a vault value written by hand); absent with an older core. */
+  refused?: boolean;
+  blocks: { work: string; private: string };
+}
+
+export async function loadSeriesPersonas(): Promise<SeriesPersonaView[]> {
+  return (await call<{ people: SeriesPersonaView[] }>('GET', '/api/series-personas')).people;
+}

@@ -122,12 +122,21 @@ export interface AppearanceValues {
 
 export const DEFAULT_APPEARANCE: AppearanceValues = { theme: 'base' };
 
+/** What the user rewrote of a person of the series (D-223): each field optional, the repository's text where absent. */
+export interface SeriesValues {
+  traits?: string;
+  scene?: string;
+  quotes?: string[];
+}
+
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: { models: Record<CloudModelAlias, boolean | string> };
   characters: Record<string, string>;
   /** Agent → persona (D-107); an agent without one has the defaults. */
   personas: Record<string, PersonaValues>;
+  /** Character of the pack serie → what the user rewrote (D-223). Optional: an older core sends none. */
+  series?: Record<string, SeriesValues>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModelAlias }>;
   /** `[project_rules]` (I-14, D-174): the common template and the projects with their own rules. Optional: an older core sends none. */
@@ -214,7 +223,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'series' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };

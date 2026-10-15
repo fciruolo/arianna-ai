@@ -208,3 +208,20 @@ test('refresh reads the file at once, without waiting for the poll; nothing chan
     write(BASE);
   }
 });
+
+test('[series] (D-223) applies live, and an unreadable file drops it with the personas’ texts', () => {
+  const events: ConfigChange[] = [];
+  const watcher = watchConfig({ initial: loadConfig(ENV), intervalMs: 60_000, onChange: (change) => events.push(change), onError: () => undefined });
+  try {
+    write({ ...BASE, series: { cox: { traits: 'Burbero ma paziente.' } } });
+    watcher.refresh();
+    assert.deepEqual(watcher.current().series, { cox: { traits: 'Burbero ma paziente.' } });
+    assert.deepEqual(events.map((change) => change.applied), [['series']]);
+    write('[paths]\ndata = "/elsewhere"\n');
+    watcher.refresh();
+    assert.deepEqual(watcher.current().series, {});
+  } finally {
+    watcher.close();
+    write(BASE);
+  }
+});

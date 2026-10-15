@@ -6,12 +6,13 @@ import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
-import type { NewUserAgent } from '@arianna/agents';
-import type { CharacterChoices, Project } from '@arianna/config';
+import { SERIES_PERSONAS, seriesPersonaBlock, withSeriesOverride, type NewUserAgent } from '@arianna/agents';
+import type { CharacterChoices, Project, SeriesOverrides } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { listTaskTerminal } from '../live-terminal.ts';
+import { seriesFits } from '../prompt-tail.ts';
 import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -205,6 +206,8 @@ export interface ApiServerOptions {
     choices: () => CharacterChoices;
     themes?: { dir: string; chosen: () => string };
     names?: () => Record<string, string>;
+    /** `[series]` (D-223): what the user rewrote of the people of the series. */
+    series?: () => SeriesOverrides;
     downloadPixelAgents?: () => Promise<PixelAgentsResult>;
   };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
@@ -2213,6 +2216,30 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         themed = themes.find((theme) => theme.id === current)?.characters ?? {};
       }
       return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed), names: characters.names?.() ?? {} } };
+    }),
+    // The people of the series (D-223): the repository's text, the user's rewrite and the exact block the model
+    // reads in a work step and in a private one, for their card in the settings. Text of the repository (L0)
+    // and the user's own (L1), served to the local chat only.
+    route('GET', '/api/series-personas', () => {
+      const own = characters?.series?.() ?? {};
+      const people = Object.entries(SERIES_PERSONAS).map(([id, persona]) => {
+        const override = Object.hasOwn(own, id) ? own[id] : undefined;
+        // A rewrite the tail would leave out (personal data, a vault value written by hand): the card shows what the model reads.
+        const refused = override !== undefined && !seriesFits(override);
+        const merged = withSeriesOverride(persona, refused ? undefined : override).persona;
+        return {
+          id,
+          name: persona.name,
+          repository: { traits: persona.traits, scene: persona.scene, quotes: [...persona.quotes] },
+          own: override ?? null,
+          refused,
+          blocks: {
+            work: seriesPersonaBlock(merged, { withName: true, withTraits: true }),
+            private: seriesPersonaBlock(merged, { withName: true, withTraits: true, play: true }),
+          },
+        };
+      });
+      return Promise.resolve({ body: { people } });
     }),
     // The themes (D-103): only those that pass the closed schema, the refused folders with the reason,
     // the one chosen in [appearance] and the one in use (Base when the chosen one is missing or invalid).

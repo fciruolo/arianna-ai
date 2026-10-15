@@ -559,6 +559,8 @@ const calls = createCalls({
     voice: voiceSettings(),
     local: settings.current().local,
     personas: settings.current().personas,
+    // D-223: what the user rewrote of the people of the series.
+    series: settings.current().series,
     // D-214: the person of the series an agent wears speaks in the calls too.
     characters: settings.current().characters,
     appearance: settings.current().appearance,
@@ -1062,6 +1064,8 @@ const server = await startApiServer({
         Object.entries(settings.current().personas).flatMap(([agent, persona]) => (persona.displayName === undefined ? [] : [[agent, persona.displayName]])),
       ),
     themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
+    // D-223: what the user rewrote of the people of the series, for their card in the settings.
+    series: () => settings.current().series,
     downloadPixelAgents: () =>
       downloadPixelAgents({
         dirs: characterDirs,

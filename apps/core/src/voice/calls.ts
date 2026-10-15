@@ -343,9 +343,9 @@ export function createCalls(options: CallsOptions): Calls {
 
   /** The tail of the speaker's system prompt (D-107, tappa A3): its persona, read at each turn, within `clearance`. */
   const voiceTail = (agent: string, clearance: Label): TailPart[] => {
-    const { personas, characters, appearance, home, paths } = options.config();
+    const { personas, series, characters, appearance, home, paths } = options.config();
     return tailParts(
-      { personas: personas ?? {}, ...(characters === undefined ? {} : { characters }), ...(appearance === undefined ? {} : { appearance }), ...(home === undefined ? {} : { home }), ...(paths === undefined ? {} : { paths }) },
+      { personas: personas ?? {}, ...(series === undefined ? {} : { series }), ...(characters === undefined ? {} : { characters }), ...(appearance === undefined ? {} : { appearance }), ...(home === undefined ? {} : { home }), ...(paths === undefined ? {} : { paths }) },
       agent,
       clearance,
     );

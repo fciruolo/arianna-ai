@@ -87,6 +87,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('characters') ? ['characters'] : []),
       ...(changed('agents') ? ['agents'] : []),
       ...(changed('personas') ? ['personas'] : []),
+      ...(changed('series') ? ['series'] : []),
       ...(changed('sprites') ? ['sprites'] : []),
       ...(changed('notifications') ? ['notifications'] : []),
       ...(changed('secretary') ? ['secretary'] : []),
@@ -105,11 +106,12 @@ function empty(change: ConfigChange): boolean {
 /**
  * `config` with every exit closed: no project, no cloud executor, no Telegram,
  * and no text of a persona (L1, D-107): only tone and form of address, fixed
- * sentences of ours.
+ * sentences of ours; no rewrite of a person of the series (D-223).
  */
 function closeExits(config: AriannaConfig): AriannaConfig {
   const personas = Object.fromEntries(Object.entries(config.personas).map(([agent, persona]) => [agent, { tone: persona.tone, address: persona.address }]));
-  const closed: AriannaConfig = { ...config, projects: [], projectRules: { projects: {} }, cloud: { ...config.cloud, executors: [] }, personas };
+  // What the user rewrote of the people of the series is L1 too (D-223): the repository's text comes back.
+  const closed: AriannaConfig = { ...config, projects: [], projectRules: { projects: {} }, cloud: { ...config.cloud, executors: [] }, personas, series: {} };
   delete closed.telegram;
   return closed;
 }
