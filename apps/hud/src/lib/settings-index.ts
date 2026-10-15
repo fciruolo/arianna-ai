@@ -66,7 +66,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       // The people of the series (D-224, request of the user of 2026-10-16): their cards out of Agenti, which keeps only who wears whom.
       {
         id: 'series-characters',
-        slug: 'personaggi',
+        slug: 'personaggi-delle-serie',
         title: 'Personaggi',
         behaviour: 'now',
         lead: 'I personaggi delle serie che gli agenti possono indossare: chi sono, come parlano, la scena delle chat private, le battute e le citazioni vere. Chi indossa chi si sceglie in Agenti → Aspetto.',

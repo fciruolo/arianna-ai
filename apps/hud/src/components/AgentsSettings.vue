@@ -237,7 +237,7 @@ const HOLD_TEXT = 'Prima tieni o scarta il personaggio disegnato';
 /** The card of a person of the series is in Personaggi (D-224): opened on that character. */
 function openCharacter(character: string): void {
   seriesFocus.value = character;
-  emit('section', 'personaggi');
+  emit('section', 'personaggi-delle-serie');
 }
 
 function choose(id: string): void {
@@ -933,7 +933,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
           <!-- D-224: the personality and the real lines of the person of the series live in Personaggi; here only who wears whom -->
           <p v-if="previewOf(current.id)?.pack === SERIES_PACK" class="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[13px]">
             Personalità, battute e citazioni vere di questo personaggio:
-            <a href="/impostazioni/personaggi" class="text-accent hover:underline" @click.prevent="openCharacter(previewOf(current.id)!.character)">Impostazioni → Personaggi</a>.
+            <a href="/impostazioni/personaggi-delle-serie" class="text-accent hover:underline" @click.prevent="openCharacter(previewOf(current.id)!.character)">Impostazioni → Personaggi</a>.
             <span v-if="(form.personas[current.id]?.traits.trim() ?? '') !== ''" class="mt-1 block text-warn">Per questo agente hai scritto una Personalità tua (tab Personalità): vince su quella del personaggio.</span>
           </p>
           <div class="flex flex-col gap-3">
