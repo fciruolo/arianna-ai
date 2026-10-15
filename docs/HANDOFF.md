@@ -2,7 +2,9 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-15, notte.
+Aggiornato: 2026-10-15, pomeriggio tardi.
+
+**2026-10-15, pomeriggio tardi — stato.** Ramo `task/d220-finestra-specialisti` (commit `10e73193`), **da provare**: D-220, gli specialisti locali (Traduttore, Oroscopo) leggono la chat fino alla richiesta nelle conversazioni di lavoro, nota «Ha visto la chat e il brief»; migrazione `0068` già applicata al database di sviluppo. Cartella principale sul ramo, core riavviato. `pnpm check` e `pnpm test:db` (766) verdi, `reviewer` fatto e corretto. Con «Funziona»: fast-forward su `main`, versione 0.115.0, tag, ritorno su `main`. Con questo la B2 è chiusa (declassamento Interno → Pubblico e modello fisso esclusi dall'utente in D-219).
 
 **2026-10-15, pomeriggio — stato.** `main` è alla **0.114.0**: chat con più agenti, tappa B2 di D-107 (D-219: «@nome», «/giro», «/basta», tetti di 6 deleghe per messaggio e 2 per agente, nota «ha visto solo il brief», messaggio rifiutato che torna nel campo), provata dall'utente. Restano della B2: declassamento L1 → L0, finestra della chat per gli specialisti locali, modello fisso per partecipante. Nessun lavoro in corso. Push da fare dall'utente: `! git push origin main --follow-tags`. Pulizia a mano: worktree `.claude/worktrees/agent-a3e060a0654806236` e rami `task/test-rossi`, `worktree-agent-a3e060a0654806236`.
 
@@ -107,4 +109,4 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, mattina» in HANDOFF: main è alla 0.114.0, nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, pomeriggio tardi» in HANDOFF: D-220 sul ramo task/d220-finestra-specialisti, da provare o unire. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
