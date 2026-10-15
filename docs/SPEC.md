@@ -329,7 +329,7 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 
 **Regola fondamentale: la voce non pensa a lungo.** Un modello grande locale risponde troppo lentamente per una conversazione fluida. Il modello vocale risponde in meno di un secondo, e per tutto ciò che richiede lavoro ("controlla le fatture di settembre") delega a un agente con uno strumento dedicato, dice "ci lavoro e ti avviso" e porta il risultato quando è pronto.
 
-**Chiamate in uscita e in entrata.** Servono un numero e un collegamento SIP forniti da un operatore, quindi l'audio della telefonata passa dalla rete telefonica anche se riconoscimento e sintesi restano in casa. Per questo, sul canale telefonico:
+**Chiamate in uscita e in entrata.** Scelta dell'utente del 2026-10-15 (D-222): **niente numero né operatore**, Arianna chiama solo via internet (D-066); quanto segue resta come riferimento se un giorno si riapre la scelta. Servirebbero un numero e un collegamento SIP forniti da un operatore, quindi l'audio della telefonata passa dalla rete telefonica anche se riconoscimento e sintesi restano in casa. Per questo, sul canale telefonico:
 
 - Arianna non legge ad alta voce dati L2 (importi, IBAN, dati dei familiari): al telefono vero solo numeri e un rimando alla chat (regola 10 della policy; scelta del 2026-10-05, D-110). I dettagli passano dalla chiamata via internet, dal browser o dal telefono attraverso la VPN, che resta locale;
 - le approvazioni importanti richiedono un codice detto a voce o una conferma sulla chat, non un semplice "sì";
@@ -344,6 +344,8 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 L'agente Mentor segue le fonti che scegli, ti porta ogni giorno ciò che conta davvero per il tuo lavoro e trasforma le novità in studio, esercizi e piccoli progetti, invece che in un'altra coda di link da leggere.
 
 **Fonti.** Si parte da una lista che decidi tu, divisa in tre gruppi:
+
+**Lista di partenza** (proposta da Claude, approvata dall'utente il 2026-10-15; si rivede quando comincia la Fase 5): sviluppo e IA: Simon Willison (simonwillison.net), Andrej Karpathy («Neural Networks: Zero to Hero»), documentazione e articoli di ingegneria e ricerca di Anthropic, Martin Kleppmann («Designing Data-Intensive Applications»), Hunt e Thomas («The Pragmatic Programmer»), Kent Beck («Tidy First?»), documentazione ufficiale di Laravel e PHP, Julia Evans (jvns.ca) e Dan Luu (danluu.com); prodotto e lavoro: Paul Graham (paulgraham.com), Ryan Singer («Shape Up»), Cal Newport («Deep Work»); pensiero e decisioni: Daniel Kahneman («Pensieri lenti e veloci»), Nassim Taleb («Il cigno nero»); amministrazione: guide dell'Agenzia delle Entrate su partita IVA e fattura elettronica, documentazione di PostgreSQL.
 
 - **Primarie:** documentazione e note di rilascio dei prodotti che usi, release su GitHub delle tue dipendenze, paper su arXiv.
 - **Persone:** gli sviluppatori e i divulgatori americani che vuoi seguire (i nomi li scegli tu, e il sistema ti suggerisce candidati che poi accetti o scarti).
@@ -531,9 +533,9 @@ Otto scelte erano aperte, una è già presa (linguaggio del nucleo); nessuna blo
 | Dove gira il server | Mac Studio attuale, oppure macchina dedicata | Iniziare sul Mac Studio dietro un'interfaccia sostituibile |
 | Consumi non interattivi degli abbonamenti | Verifica nel tuo account | Controllare prima della Fase 1 come vengono conteggiati `claude -p` e `codex exec` |
 | Codice dei clienti con NDA | Locale o cloud | Locale (L2) finché non leggi i singoli contratti |
-| Fonti e persone per il Mentor | La tua lista | Scegli tu 10-15 nomi e fonti primarie per iniziare |
+| ~~Fonti e persone per il Mentor~~ | **Decisa (utente, 2026-10-15):** lista di 15 fonti proposta da Claude, in «Fonti» della sezione del Mentor | |
 | Sintesi e riconoscimento vocale in italiano | Due o tre candidati locali | Provarli con la tua voce all'inizio della Fase 4 |
-| Numero e operatore telefonico | Operatore SIP italiano o estero | Decidere in Fase 4, dopo aver verificato costi e qualità |
+| ~~Numero e operatore telefonico~~ | **Deciso (utente, 2026-10-15, D-222):** nessun numero, solo chiamate via internet | |
 | Editor della knowledge base | Obsidian oppure editor su misura | Obsidian all'inizio, editor su misura solo se serve |
 
 | Rischio | Mitigazione |

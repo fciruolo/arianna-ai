@@ -50,7 +50,7 @@ Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 137-208 ore (8
 
 **Computer dell'agente (P10, D-095), scelto dall'utente il 2026-10-14, fuori dall'ordine delle fasi (Fase 3, "flusso eventi → UI"):** tappa 1, terminale e file del lavoro in diretta, in sola lettura, comandi non salvati (1-2 giorni, applicata il 2026-10-14, da provare); tappa 2, browser Chromium in Docker per pagine pubbliche, con schermo in diretta (VNC protetto, noVNC nella chat) e presa di controllo (5-8 giorni, dopo P7); tappa 3, desktop, solo con un caso concreto.
 
-**Fase 4 (50-90):** servizio voce Pipecat 12-20 · valutazione STT/TTS italiani locali 8-15 · delega e latenza 8-14 · telefonia SIP 14-26 · policy chiamate in uscita 8-15.
+**Fase 4 (50-90):** servizio voce Pipecat 12-20 · valutazione STT/TTS italiani locali 8-15 · delega e latenza 8-14 · policy chiamate in uscita 8-15 (solo via internet: niente telefonia SIP, D-222).
 
 **Fase 5 (25-45):** ingestione fonti 8-14 · agente Mentor e curriculum 8-14 · ripasso FSRS 5-9 · brief giornaliero 4-8.
 
@@ -62,4 +62,4 @@ Se serve stringere ancora, queste parti non reggono altre parti e si possono rin
 | --- | --- | --- |
 | Wizard `init` (1.18) | 6-9 | Configurazione guidata; resta `arianna.toml` a mano con validazione (fatto, D-048) |
 | Ufficio pixel | 12-18 | La vista pixel-art; l'HUD mostra comunque gli agenti |
-| Telefonia SIP e chiamate in uscita | 22-41 | Le telefonate; resta la chiamata via internet dal browser e dall'app |
+| ~~Telefonia SIP e chiamate in uscita~~ | ~~22-41~~ | Tagliata dall'utente il 2026-10-15 (D-222): resta la chiamata via internet dal browser e dall'app |

@@ -2,7 +2,9 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-15, sera.
+Aggiornato: 2026-10-15, notte tardi.
+
+**2026-10-15, notte tardi — stato.** `main` è alla **0.118.0**: 0.116.1 tab «Su di te» nella pagina Sviluppo (D-114), 0.117.0 tab «Domande» rivista con riquadri cliccabili e superate nella lista (D-102), 0.118.0 personaggi delle serie che recitano nelle chat private e scheda modificabile in Impostazioni → Agenti → Aspetto (D-223); tutto provato dall'utente. Push da fare dall'utente: `! git push origin main --follow-tags`. Core acceso con il codice di D-223 caricato (uguale a `main`), chat in sviluppo su `main`. Domande aperte chiuse quasi tutte il 2026-10-15 (D-106 2-11, D-222 niente numero di telefono, lista del Mentor in SPEC, conferme); restano solo le due righe della prova insieme di incognito e D-058 (progetto `negozio-finto` nella cartella Sites dell'utente, già aggiunto; prima di cominciare `touch data/scratch/incognito-marker`). `pnpm test:guard` fallito per memoria piena (swap 9,6 GB su 10: il servizio del secondo controllo non risponde, «unavailable»): da rifare con meno carico, per verificare i testi nuovi dei personaggi. GOD non ha risposto stasera perché Codex è uscito con «codex: execution» dopo 6 secondi: probabile login o abbonamento ChatGPT Plus (rinnovo il 15 ottobre); l'utente controlla con `! codex login status`.
 
 **2026-10-15, sera — stato.** `main` è alla **0.116.0**: D-221, oMLX risponde solo ad Arianna (chiave in `data/omlx.key` passata in `OMLX_API_KEY`, server aperto non adottato, `--base-path data/omlx`, controlli del doctor), dopo la verifica del codice di oMLX v0.6.3rc2 (clone in `data/scratch/omlx-v0.6.3rc2`, fuori da git) e il secondo parere di Fable; provata dall'utente. Nel `config/arianna.toml` dell'utente il comando di oMLX ha ora `--log-level info --base-path data/omlx`. oMLX non dà `logprobs`: niente via veloce B1 di D-113. Codice installato confrontato dall'utente: `omlx` lancia `/Applications/oMLX.app`, i cui file Python sono identici al tag (solo kernel compilati e tre cartelle vuote in più). Facoltativa la prova con un sorvegliante di rete; il clone in `data/scratch/omlx-v0.6.3rc2` si può cancellare. Nessun lavoro in corso. Push da fare dall'utente: `! git push origin main --follow-tags`.
 
@@ -20,7 +22,7 @@ Aggiornato: 2026-10-15, sera.
 
 **Risposte dell'utente di stamattina** (già nei documenti): 18 idee decise una per una (D-204), Mentor alla Fase 5, operatore telefonico in Fase 4, permessi lasciati come sono (push all'utente), domanda di Rizzo chiusa.
 
-**Coda dei lavori, in ordine:** D-103 tappe seguenti (Base con i contrasti, feste, temi Cartoon giallo e Salotto animato); D-114 voce (nessun dato di «Su di te» nelle chiamate per ora); altre idee di OpenWork (D-093); D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie (D-204, idea 13) va prima del task memoria della Fase 2.
+**Coda dei lavori, in ordine:** D-224 archivio di citazioni vere per personaggio, pescate dal codice; personaggi nuovi delle serie (scelta del 2026-10-15 «Liberi + galleria»: Scrubs Kelso, l'Inserviente, Ted, Laverne; The Office Oscar, Andy, Kevin, Angela, Creed; col tema Scrubs Designer = Inserviente e chat locale = Kelso, con The Office Finanze = Oscar, Designer = Andy, chat locale = Kevin; gli altri in galleria; 12-18 h); «Su di te» anche per Codex (scelta del 2026-10-15: eccezione in sola lettura per `data/dev/UTENTE.md` nel profilo di `pnpm dev:codex`, riga in `AGENTS.md`, casella rinominata «Su di te, per chi sviluppa Arianna»; tocca `packages/executors`: eval e PRIVACY-POLICY-SPEC); messaggio chiaro quando Codex fallisce subito (oggi «codex: execution»: dire se è il login o l'abbonamento); messaggio in italiano quando un progetto ha un percorso assoluto, e un percorso della home trasformato da solo in `~/…` (visto nella prova di D-058: «write ~/<folder>…»); ufficio a stanze 2D e 3D (D-106 domande 2-11, three.js da scrivere in DECISIONS prima); campo «+» e bozze (prossima idea di OpenWork); D-103 tappe seguenti (Base con i contrasti, feste, temi Cartoon giallo e Salotto animato); D-114 voce (nessun dato di «Su di te» nelle chiamate per ora); altre idee di OpenWork (D-093); D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie (D-204, idea 13) va prima del task memoria della Fase 2.
 
 ## Dove siamo
 
@@ -54,11 +56,16 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 | Cosa | Note |
 | --- | --- |
-| Togliere a mano `data/scratch/review-d065/` | Sonde del `reviewer`, fuori da git |
 | Prova dal vivo di D-058 fuori da Arianna | Comandi nei "Prossimi passi" (progetto finto creato dall'utente, wizard al passo 4, landing page chiesta al Coder in chat: consuma chiamate vere) |
-| Su un'altra macchina: `pnpm arianna:init --reconfigure` | Un `config/arianna.toml` con `[cloud] allowlist` non vuota ora è rifiutato (D-058): va riscritto con i `[[project]]`. Su questa macchina l'ha convertito Claude |
-| Password vere del database | Solo per l'uso vero, dopo il criterio della Fase 1A: passi in `SECURITY.md`, sezione Servizi locali e database (`\password` di psql, poi `pnpm db:migrate` e `pnpm arianna:doctor`) |
-| Chiave age vera | D-042 confermata e binari provati. Per l'uso vero (solo dopo il criterio della Fase 1A) la chiave age la genera l'utente, con i passi in `SECURITY.md`, sezione Vault |
+
+## Prima dei dati veri
+
+Promemoria per la fine della Fase 1A, non domande aperte (scelta dell'utente del 2026-10-15): non compaiono nella pagina "Sviluppo di Arianna".
+
+- **Password vere del database:** passi in `SECURITY.md`, sezione Servizi locali e database (`\password` di psql, poi `pnpm db:migrate` e `pnpm arianna:doctor`).
+- **Chiave age vera:** la genera l'utente con i passi di `SECURITY.md`, sezione Vault, e la conserva anche fuori dal Mac (D-042).
+- **Backup cifrato** (D-096), ultimo lavoro prima dei dati veri.
+- **Verifica del profilo di Claude Code nelle incognite di lavoro** (D-136 tappa 3), se non è già stata fatta.
 
 ## Modo di lavorare concordato
 

@@ -17,9 +17,9 @@
 | ~~Remote git (GitHub privato, NAS, nessuno)~~ | **Deciso (utente, 2026-10-14):** GitHub privato, com'è oggi (`origin`); in git solo codice e documenti, mai `data/`, configurazione o vault | |
 | ~~`pgvector` al posto di Qdrant~~ | **Deciso (utente, 2026-10-14):** pgvector nel PostgreSQL di Arianna; Qdrant solo se Mem0 lo richiede davvero | |
 | ~~Editor della knowledge base~~ | **Deciso (utente, 2026-10-14):** Obsidian sulla cartella `kb/`, accanto alle pagine Pensieri e Conoscenza | |
-| Fonti e persone per il Mentor | Scegli 10-15 nomi e fonti primarie | Fase 5 |
+| ~~Fonti e persone per il Mentor~~ | **Deciso (utente, 2026-10-15):** lista di 15 fonti proposta da Claude e approvata, in `SPEC.md` (sezione del Mentor, «Fonti»); si rivede all'inizio della Fase 5 | |
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
-| Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
+| ~~Numero e operatore telefonico~~ | **Deciso (utente, 2026-10-15, D-222):** niente numero né operatore, Arianna chiama solo via internet (D-066) | |
 | ~~Rizzo-PII: dove tenere il modello~~ | **Deciso (utente, 2026-10-14):** cartella sua `data/guard/models`, indicata dal catalogo; oMLX non la vede (D-203, ramo `task/guard-rizzo`) | |
 | ~~Licenza degli sprite di pixel-agents (JIK-A-4, Metro City)~~ | **Chiusa (utente, 2026-10-14):** «li voglio tenere tanto arianna al momento è per uso personale»: gli sprite restano per uso personale, solo in `data/characters/`, mai in git; da togliere prima di condividere la cartella. Richiesta collegata: galleria dei personaggi con pulsante che scarica i PNG di pixel-agents (coda in `HANDOFF.md`) | |
 | ~~Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087)~~ | **Chiusa:** doppione delle conferme singole (`conf-D-077` … `conf-D-087b`), che restano aperte una per una | |
@@ -30,32 +30,7 @@
 
 ### Domande delle proposte della notte del 2026-10-05
 
-Testo, alternative e raccomandazioni in `docs/PROPOSTE.md`; qui solo l'elenco.
-
-| Proposta | Domanda | Stato |
-| --- | --- | --- |
-| D-078 Sviluppo da dentro Arianna | 1. Clone separato del repository sotto la home come progetto L1, con le modifiche portate solo con `git pull`? | Chiusa (D-127): sì, clone dal repository locale dentro `repos/arianna` come progetto `arianna` L1; i lavori tornano come rami che unisce l'utente |
-| D-078 | 2. Una sola memoria di sviluppo (tutto nel clone) o un file distinto per la scheda? | Chiusa (D-127): una sola memoria in git; il fascicolo è generato a ogni lavoro dai documenti del clone |
-| D-078 | 3. Scheda nuova `developer` o il `coder` con una regola in più? | Chiusa (D-127): scheda nuova `god` in sola lettura; i sottocompiti li fa il `coder` com'è |
-| D-078 | 4. Chi fa il commit nel clone? | Chiusa (D-127): nessun agente (D-174); «Prepara il ramo» fa il commit nel clone al clic dell'utente, l'unione la fa l'utente |
-| D-078 | 5. Una sola delega attiva sul progetto di sviluppo? | Chiusa (D-127): no, sottocompiti in parallelo secondo la quota, ciascuno nel suo clone, mai due sugli stessi file |
-| D-078 | 6. Quando cominciare? | Chiusa (D-127): adesso (2026-10-11) |
-| D-078 | 7. Chi lancia `pnpm check` completo dopo un run? | Chiusa (D-127): nella sandbox build, lint, eval e i test senza servizi; il `pnpm check` completo con l'hook di pre-commit quando l'utente unisce |
-| D-079 Catalogo "Agenzia" | 1. Catalogo come proposto (clone fissato, importatore, schede attive solo con approvazione)? | Chiusa: doppione della conferma `conf-D-079` |
-| D-079 | 2. Chi fa il clone e quando? | Chiusa (2026-10-13): «Catalogo agenti» con il motore delle skill di D-161 (sorgenti GitHub, Aggiorna in attesa, Usa/Scarta), nessun clone a mano |
-| D-079 | 3. Tetto delle schede adottate: L1 o L0? | Chiusa: L0 (D-119, T3b) |
-| D-079 | 4. Autonomia delle schede adottate: A0 o A1? | Chiusa: D-119 (T3b) e revisione di D-079 per T4 |
-| D-079 | 5. Schede approvate in `agents/` o fuori da git? | Chiusa: `data/agents/` (D-119) |
-| D-079 | 6. Quali divisioni servono? | Chiusa (2026-10-13): tutte, con filtro per divisione e ricerca |
-| D-079 | 7. Pagina "Agenzia" nelle Impostazioni o in chat? | Chiusa: modulo "+ Nuovo agente" della pagina Agenti (D-119, T4) |
-| D-080 Second brain | 1. Tutto nasce L2 in `kb/inbox/` e si abbassa solo con approvazione? | Chiusa: sì, confermata dall'utente il 2026-10-13 con `conf-D-080` |
-| D-080 | 2. L'Archivista propone e l'utente approva, o sposta da solo? | Chiusa (2026-10-13): propone, approva l'utente (A1) |
-| D-080 | 3. Primo ingresso da costruire? | Chiusa: pagina "Pensieri" come ingresso principale, con "/nota" (richiesta dell'utente in D-086, costruita in D-090) |
-| D-080 | 4. Declassificazione a L0 per singolo URL prima di scaricare un link? | Chiusa (2026-10-13): sì, ogni volta |
-| D-080 | 5. `pdfjs-dist` in un processo figlio per i PDF? | Chiusa (2026-10-13): sì |
-| D-080 | 6. Vocali e video: entrypoint in `apps/voice` o app Python a sé? | Chiusa (2026-10-13): entrypoint in `apps/voice` |
-| D-080 | 7. Video di piattaforme solo come link, titolo e riassunto? | Chiusa (2026-10-13): no, solo audio scaricato con approvazione per link, trascritto e cancellato (SPEC aggiornata) |
-| D-088 Pulsante "Aggiorna" | Come si porta il codice nuovo dallo sviluppo all'installazione? | Chiusa: accettata il 2026-10-13 con le risposte consigliate (riga D-088 di `DECISIONS.md`) |
+Tutte chiuse (D-078 con D-127; D-079 con D-119 e le scelte del 2026-10-13; D-080 con le conferme e le scelte del 2026-10-13; D-088 accettata il 2026-10-13). La tabella è stata tolta il 2026-10-15: le righe non barrate restavano aperte nella pagina "Sviluppo di Arianna". Testo e risposte in `docs/PROPOSTE.md` e `docs/DECISIONS.md`.
 
 ## Idee dalla ricerca — decise
 
@@ -90,22 +65,6 @@ Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (rig
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
 
-### oq-fonti-e-persone-per-il-mentor
-
-- Contesto: Il Mentor è l'agente della Fase 5 che ti aiuta a studiare e crescere partendo da autori e fonti di cui ti fidi. Per costruirlo servono 10-15 nomi di persone o fonti "primarie" (libri, corsi, siti originali, non riassunti fatti da altri). Non è urgente: serve in Fase 5.
-- Opzione consigliata: Lista quando arriva la Fase 5 — nessun lavoro ora; la domanda resta in elenco come promemoria.
-- Opzione: Scrivo ora qualche nome — Claude li annota nella proposta del Mentor, così sono pronti quando si comincia.
-- Opzione: Claude propone una lista da approvare — più rapido per te, ma fonti scelte da altri possono non rispecchiare i tuoi interessi.
-- Esempio: "i saggi di Paul Graham sul suo sito, il libro 'Pensieri lenti e veloci', un corso introduttivo di statistica". Il Mentor ti propone letture e domande di ripasso partendo da lì.
-
-### oq-numero-e-operatore-telefonico
-
-- Contesto: Nella Fase 4 Arianna potrà chiamarti su un telefono vero. Serve un numero e un operatore che permetta di collegarlo a un programma (telefonia via internet, VoIP o SIP). Oggi le chiamate funzionano già dentro la chat, via internet (D-066). La proposta è scegliere l'operatore solo dopo aver confrontato costi e qualità.
-- Opzione consigliata: Decidere dopo un confronto — Claude prepara una tabella di 2-3 operatori con prezzi e qualità; tu scegli in Fase 4.
-- Opzione: Solo chiamate via internet — niente numero; Arianna ti chiama dentro la sua app, come oggi: gratis, ma servono connessione e app.
-- Opzione: Scelgo subito un operatore — si può provare prima, ma si paga un numero che per ora non serve.
-- Esempio: Un operatore VoIP con un numero a 1 euro al mese e 2 centesimi al minuto; Arianna ti chiama ogni mattina alle 8 per un minuto di riepilogo: circa 60 centesimi al mese di chiamate.
-
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 
 - Contesto: Nelle incognite di lavoro Claude Code parte con l'opzione che non salva la sessione sul disco. Non è ancora verificato se scrive comunque altro nella cartella del suo profilo, sotto la tua cartella utente (copie dei file toccati, cronologie, file di debug). Per saperlo serve un lavoro vero e guardare quella cartella prima e dopo; sta fuori dal repository, quindi Claude non può farlo da solo.
@@ -114,39 +73,10 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Rimandiamo — le incognite di lavoro si usano solo con dati finti finché non è verificato.
 - Esempio: Prima di un'incognita di lavoro la cartella del profilo ha 1.204 file; dopo ne ha 1.207 (tre file di debug). La scheda di chiusura allora dirà "Claude Code ha lasciato 3 file di debug nel suo profilo".
 
-### ho-togliere-a-mano-data-scratch-review-d065
-
-- Contesto: La cartella data/scratch/review-d065/ contiene file di prova lasciati dal revisore automatico il 2026-10-04; è fuori da git, non serve più e c'è ancora. Claude non la cancella da solo perché le cancellazioni passano da te.
-- Opzione consigliata: La cancello io — basta rm -r data/scratch/review-d065 dalla cartella del progetto; poi la riga si toglie.
-- Opzione: Cancellala tu, Claude — Claude la toglie con la tua approvazione e chiude la riga.
-- Opzione: Lasciala — occupa poco spazio; la riga si toglie comunque.
-- Esempio: Dentro ci sono piccoli file di sonda usati per verificare un controllo di sicurezza, che nessun programma legge più.
-
 ### ho-prova-dal-vivo-di-d-058-fuori-da-arianna
 
 - Contesto: D-058 permette al Coder (Claude che scrive codice) di lavorare su un tuo progetto vero, in una cartella fuori da quella di Arianna. Finora è stato provato solo su progetti finti dentro la cartella di Arianna (repos/). Va provato dal vivo su un progetto finto fuori. Consuma chiamate vere dell'abbonamento.
 - Opzione consigliata: La faccio seguendo i passi — crei un progetto finto, lo aggiungi in Impostazioni → Progetti (o col wizard) e chiedi al Coder una pagina; se va bene la riga si chiude.
 - Opzione: Rinvio — la riga resta; il Coder fuori dalla cartella di Arianna resta non provato dal vivo.
 - Esempio: Crei la cartella vuota "negozio-finto" nella tua cartella utente, la registri come progetto e in chat scrivi "fammi una landing page per una pasticceria inventata".
-
-### ho-su-un-altra-macchina-pnpm-arianna-init-reconfigu
-
-- Contesto: È un promemoria per il futuro: se usi Arianna su un altro computer, la sua vecchia configurazione con l'elenco cloud "allowlist" viene rifiutata e va riscritta con il wizard (i progetti oggi sono blocchi [[project]]). Su questo Mac l'ha già convertita Claude.
-- Opzione consigliata: Non ho altre macchine, togli la riga — se un giorno ne aggiungi una, il messaggio di errore spiega comunque cosa fare.
-- Opzione: Ho un'altra macchina — su quella lanci pnpm arianna:init --reconfigure, poi la riga si chiude.
-- Esempio: Sul portatile Arianna non parte e dice che allowlist non è più accettata; lanci il wizard e i progetti diventano blocchi [[project]].
-
-### ho-password-vere-del-database
-
-- Contesto: Oggi il database usa password di sviluppo, note a tutti. Prima di metterci dati veri vanno cambiate, ma solo dopo il criterio di uscita della Fase 1A (il traguardo che chiude la fase in corso). Non è ancora il momento.
-- Opzione consigliata: Più avanti, a fine Fase 1A — la riga resta come promemoria; Claude te la ricorda quando la fase si chiude.
-- Opzione: Subito — segui i passi di SECURITY.md (password nuova con psql, poi pnpm db:migrate e pnpm arianna:doctor); lo sviluppo continua con le nuove.
-- Esempio: Con le password di sviluppo pnpm arianna:doctor resta rosso; dopo il cambio diventa verde su quel punto.
-
-### ho-chiave-age-vera
-
-- Contesto: Il vault è la cassaforte cifrata dei segreti di Arianna; si apre con una chiave "age", un file che solo tu tieni. Quella vera la generi tu, ma va fatta solo dopo il criterio di uscita della Fase 1A. Non è ancora il momento.
-- Opzione consigliata: Più avanti, a fine Fase 1A — la riga resta come promemoria.
-- Opzione: Subito, come eccezione — un'eccezione alla regola delle fasi: la generi con i passi di SECURITY.md (sezione Vault) e la conservi anche fuori dal Mac.
-- Esempio: Generi la chiave, lanci pnpm vault:init con la parte pubblica che inizia con "age1", e la parte privata la stampi e la metti in un cassetto.
 

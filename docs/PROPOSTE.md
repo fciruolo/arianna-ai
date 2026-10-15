@@ -391,7 +391,7 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 
 Conteggio: 10 già ci sono, 5 in coda, 11 nuove (domande 4-14), 5 righe fuori per regola.
 
-### Risposte dell'utente sulle idee da OpenWork (2026-10-14)
+### Scelte dell'utente sulle idee da OpenWork (2026-10-14)
 
 - **Implementiamo, in coda:** 4 «Ferma», coda dei messaggi e modifica mentre Arianna risponde (6-10 h); 6 «Cruscotto» personale con riquadri fissati dalla chat e aggiornati dalle routine (15-25 h, scelta diversa dalla consigliata); 7 vista affiancata con «Affianca» (6-10 h, scelta diversa dalla consigliata); 8 «Chiedi a lato» (5-8 h); 9 immagini e file incollati in chat, sempre Privati (L2) e letti solo dal modello locale (10-16 h più la scelta di un modello che legge le immagini; scelta diversa dalla consigliata); 10 pagina «Consumi» (6-10 h; costruita sul ramo `task/consumi`, D-210, in attesa della prova); 11 pagina «Cosa è cambiato» (5-8 h, scelta diversa dalla consigliata); 13 campo di scrittura con menu «+», tasti per i modelli preferiti e bozza per conversazione (4-6 h).
 - **Dopo D-110:** 5 calendario delle routine con creazione da un'ora libera (8-12 h); il Cruscotto (6) si aggiorna con le routine, quindi la parte di aggiornamento aspetta anch'essa D-110.
@@ -1441,59 +1441,19 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
 - **Tappa 1** (scelta dall'utente, in corso): motore puro e calcolo della posa con i test, pagina `/ufficio` che legge solo `/api/status`. Non tocca `packages/policy`, `packages/router` né `packages/executors`, non porta dipendenze né dati nuovi.
 - **Avatar "Tu".** Ridisegnato partendo dall'anteprima, con tutte le pose, coperto dal test dei PNG.
 
-### Domande per l'utente
-
-2. **Che aspetto ha il tuo personaggio nell'ufficio pixel?** Scelte possibili: il "Tu" ridisegnato dall'anteprima, un personaggio dai tuoi pacchetti in `data/characters/`, o scelta in Impostazioni con "Tu" come predefinito.
-   - Contesto: L'ufficio pixel è la pagina "Ufficio" della chat, dove gli agenti sono personaggi in pixel art (D-106). Nelle prossime tappe avrai anche un tuo personaggio (avatar) da muovere con le frecce per andare a parlare con gli agenti. Si decide che aspetto ha: quello originale "Tu", uno dei tuoi pacchetti di personaggi, o una scelta nelle Impostazioni.
-   - Opzione consigliata: Scelta in Impostazioni, "Tu" di base — parti con l'avatar originale ridisegnato dall'anteprima e puoi cambiarlo con un personaggio dei tuoi pacchetti.
-   - Opzione: Solo il "Tu" ridisegnato — un solo aspetto, meno lavoro.
-   - Opzione: Solo dai tuoi pacchetti — devi prepararne uno in data/characters/ prima di usare l'ufficio.
-   - Esempio: Apri l'ufficio e cammini col "Tu" in maglietta; in Impostazioni scegli invece un personaggio del tuo pacchetto "amici" e da quel momento cammini con lui.
-3. **I progetti nell'ufficio sono isole in un open space o stanze separate?** Scelte possibili: isole in un open space (come la mappa `base`) o stanze per progetto (muri e porte, come `corsia`).
-   - Contesto: Nell'ufficio ogni progetto ha un'"isola" di scrivanie. Oggi la mappa "base" della tappa 1 è un unico open space. Si decide se tenere questa forma come regola o passare a stanze separate con muri e porte.
-   - Opzione consigliata: Isole in un open space — tutto visibile a colpo d'occhio, percorsi brevi; le stanze restano per le mappe dei temi che le chiedono (come "corsia").
-   - Opzione: Stanze per progetto — più ordine e atmosfera, ma si cammina di più e si vede meno insieme.
-   - Esempio: Nell'open space vedi in un colpo solo il Coder che scrive all'isola "demo" e Arianna in "Privata"; con le stanze dovresti entrare in quella di "demo" per vederlo.
-6. **Gli agenti senza lavoro restano seduti o passeggiano per l'ufficio?** Il documento non raccomanda: l'opzione più semplice è restare seduti.
-   - Contesto: Quando un agente non ha lavoro può restare seduto alla sua scrivania o passeggiare per l'ufficio, come fanno i personaggi di pixel-agents (il progetto da cui viene l'idea). È una questione di gusto. Arianna, da libera, già vaga fra Privata e la zona relax (D-124).
-   - Opzione consigliata: Restano seduti — l'ufficio è calmo, distrae meno e consuma meno.
-   - Opzione: Passeggiano — più vivo e da "gioco", ma più movimento sullo schermo (fermo comunque con "riduci movimento").
-   - Opzione: Seduti, con un interruttore — scegli tu quando vuoi più vita.
-   - Esempio: Il Coder ha finito il suo lavoro; seduto, resta alla scrivania con lo schermo spento; se passeggia, va alla macchinetta del caffè e poi al divano.
-7. **Dove si apre l'ufficio?** Scelte possibili: pagina a sé nella barra sinistra, pannello dell'HUD in Fase 3, o entrambi.
-   - Contesto: Oggi l'ufficio è una pagina a sé, "Ufficio" nella barra di sinistra (tappa 1, D-106b). In Fase 3 la schermata principale (l'HUD) avrà dei pannelli, e l'ufficio potrebbe stare anche lì, sempre in vista. Si decide se restare alla pagina, passare al pannello o averli tutti e due.
-   - Opzione consigliata: Pagina a sé nella barra sinistra — com'è oggi; la apri quando vuoi, così non distrae dal lavoro.
-   - Opzione: Pannello della schermata principale — sempre in vista accanto alla chat, ma più piccolo e più distraente.
-   - Opzione: Entrambi — massima libertà, più lavoro da mantenere.
-   - Esempio: Clicchi "Ufficio" nella barra a sinistra e si apre la mappa; torni alla chat con un clic, e l'ufficio si ferma quando la pagina è nascosta.
-8. **Quali progetti hanno un'isola nell'ufficio?** Scelte possibili: quelli attivi negli ultimi 7 giorni, oppure quelli che fissi tu.
-   - Contesto: Le isole sono una per progetto, ma i posti sulla mappa sono pochi (5 nella mappa base). Oggi li prendono i progetti approvati nell'ordine delle Impostazioni, gli altri finiscono nell'angolo "Archivio". Si decide la regola definitiva.
-   - Opzione consigliata: I fissati, poi gli attivi da 7 giorni — prima i progetti che fissi tu, poi quelli su cui hai lavorato di recente; l'ordine resta stabile.
-   - Opzione: Solo quelli che fissi tu — controllo totale, ma da aggiornare a mano.
-   - Opzione: Solo gli attivi da 7 giorni — nulla da fare, ma un progetto importante fermo da una settimana sparisce.
-   - Esempio: Questa settimana hai lavorato su "demo" e "sito-vetrina": hanno un'isola ciascuno, mentre "vecchio-blog", fermo da un mese, è nell'Archivio.
-9. **Quali mappe dell'ufficio si disegnano per prime?** Proposta: `base`, poi `corsia` e `salotto` insieme ai temi di D-103 che le usano.
-   - Contesto: Le mappe dell'ufficio (pianta, arredi, posto delle isole) si disegnano una a una. Oggi c'è "base", l'open space. Si decide quali aggiungere e quando; alcune hanno senso solo insieme a un tema (D-103).
-   - Opzione consigliata: Base, poi corsia e salotto coi loro temi — "corsia" arriva col tema Corsia, "salotto" coi temi Cartoon giallo e Salotto animato.
-   - Opzione: Solo base per ora — meno lavoro; ogni tema usa la mappa base coi suoi colori.
-   - Opzione: Tutte e tre subito — più varietà presto, ma senza i temi pronti le mappe nuove resterebbero poco usate.
-   - Esempio: Oggi tutti vedono l'open space "base"; quando arriva il tema Corsia, l'ufficio diventa un reparto con corridoio e corrimano.
-10. **La mappa dell'ufficio la decide il tema o si sceglie a parte?** Proposta: la decide il tema ("l'ufficio segue il tema"), con un selettore separato solo se ti serve.
-   - Contesto: Avevi detto "l'ufficio segue il tema": scegliendo un tema cambiano anche colori e pianta dell'ufficio. Si decide se è sempre così o se vuoi anche poter scegliere la mappa a parte.
-   - Opzione consigliata: La decide il tema — scegli il tema e cambia anche l'ufficio; un selettore separato solo se un giorno ti serve.
-   - Opzione: Selettore separato — puoi combinare per esempio i colori di Natale con la mappa "corsia", ma è una scelta in più.
-   - Esempio: Scegli il tema "Corsia" e l'ufficio diventa il reparto d'ospedale; torni a "Base" e torna l'open space.
-11. **Vuoi un comando che controlla le mappe che prepari tu?** Le mappe ispirate a opere vere le prepari o procuri tu in `data/themes/`; proposta di un controllo da riga di comando, `pnpm arianna:themes check`.
-   - Contesto: Le mappe dei temi del repository (il Sacro Cuore e la Dunder Mifflin, D-216) le controlla già un test; le mappe che prepari tu nella cartella privata data/themes/ no. Si decide se vuoi un comando che ti dica se la tua mappa è valida prima di usarla.
-   - Opzione consigliata: Sì, un comando di controllo — ti dice cosa non va (per esempio "manca il posto delle decisioni") prima di aprire l'ufficio.
-   - Opzione: No, basta l'avviso in Impostazioni — una mappa non valida non blocca nulla: l'ufficio usa la mappa base e le Impostazioni mostrano il motivo.
-   - Esempio: Copi in data/themes/ospedale/ la tua mappa, lanci il comando e leggi "riga 4: tessera «x» non nella legenda"; la correggi e il tema funziona.
-
 ### Domande chiuse
 
 - 1. Chiusa: decisa dall'utente il 2026-10-05: tappa 1 anticipata (D-106b); le tappe 2-4 restano dopo la Fase 2, salvo nuova scelta.
-- 4. Chiusa: decisa nei fatti con D-106b: la tappa 1, anticipata dall'utente dopo l'anteprima, è costruita con il motore nostro su canvas (strada B), che sostituisce in parte D-011; la conferma della tappa resta nella domanda conf-D-106b.
+- 4. Chiusa: decisa nei fatti con D-106b: la tappa 1, anticipata dall'utente dopo l'anteprima, è costruita con il motore nostro su canvas (strada B), che sostituisce in parte D-011; tappa confermata dall'utente il 2026-10-15.
 - 5. Chiusa: decisa in D-124 (scelte dell'utente del 2026-10-05): Arianna siede all'isola del progetto su cui lavora; da libera vaga fra Privata e la zona relax.
+- 10. Chiusa: decisa nei fatti da D-216 (2026-10-14): la mappa dell'ufficio la decide il tema (Scrubs porta il Sacro Cuore, The Office la Dunder Mifflin), senza selettore separato.
+- 2. Chiusa (utente, 2026-10-15): il tuo personaggio si sceglie in Impostazioni, con il "Tu" originale di base; vale ogni personaggio dei pacchetti (originali, serie, pixel-agents).
+- 3. Chiusa (utente, 2026-10-15): **stanze per progetto**, non isole; e **due viste con un interruttore**: la pixel art 2D di oggi con le stanze (muri, porte, arredi per progetto, pianta che segue il tuo personaggio) e una **vista 3D da attraversare a piedi con three.js**, ispirata a un post su X (una casa 3D costruita da una pianta). Nel 3D i personaggi pixel sono sagome piatte (sprite). three.js è una dipendenza nuova: prima del lavoro serve la sua voce in `DECISIONS.md`. Metodo per disegnare le stanze, dallo stesso post: un costruttore e un critico separati, il critico confronta lo screenshot col riferimento e rimanda la differenza più grande. Stima 30-45 h in tutto.
+- 6. Chiusa (utente, 2026-10-15): gli agenti senza lavoro **passeggiano** (fermi con "riduci movimento"). Il movimento è un'animazione del browser: nessun token, solo un po' di processore mentre la pagina è visibile.
+- 7. Chiusa (utente, 2026-10-15): l'ufficio resta una **pagina a sé** nella barra sinistra.
+- 8. Chiusa (utente, 2026-10-15): hanno una stanza **prima i progetti fissati dall'utente, poi quelli attivi negli ultimi 7 giorni**; gli altri nell'Archivio.
+- 9. Chiusa (utente, 2026-10-15): le mappe di Cartoon giallo e Salotto animato si disegnano **insieme ai loro temi** (D-103).
+- 11. Chiusa (utente, 2026-10-15): **nessun comando di controllo**: «io non disegnerò mai mappe da solo... lo farai sempre tu»; le mappe stanno nel repository e le controlla il test.
 
 ### Cose non verificate (D-106)
 
