@@ -31,6 +31,8 @@ let origin: string;
 // What the configuration offers now (D-071): tests change it.
 let offered = ['sonnet', 'opus'];
 let defaultModel: string | undefined;
+// [agents.<id>] model of the direct agents (D-116): tests change it.
+const agentModel: Record<string, string> = {};
 // A built web chat, made up for the test, in data/ (never in git).
 const staticDir = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
 
@@ -48,7 +50,8 @@ before(async () => {
     staticDir,
     projects: () => [{ name: 'fake-site', path: 'repos/fake-site', label: 'L1' }],
     models: () => offered.map((model) => ({ executor: 'claude', model })),
-    defaultModel: () => defaultModel,
+    defaultModel: (agent) => (agent === undefined ? defaultModel : agentModel[agent]),
+    directAgents: () => [{ agent: 'god', description: 'GOD', cloud: true, executors: ['claude'], modes: ['work'], project: false }],
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -180,6 +183,28 @@ test('a new work conversation starts with the model of its agent while it is off
   } finally {
     offered = ['sonnet', 'opus'];
     defaultModel = undefined;
+  }
+});
+
+test('a conversation with an agent starts with the model chosen for that agent, never the work agent’s (D-116)', async () => {
+  const modelOfGod = async () => {
+    const created = await call('POST', '/api/conversations', { body: { mode: 'work', agent: 'god' } });
+    assert.equal(created.status, 201, created.text);
+    return field<{ model: string | null }>(created, 'conversation').model;
+  };
+  try {
+    // The Coder's default does not leak into a conversation with GOD: without its own, the router chooses.
+    defaultModel = 'sonnet';
+    assert.equal(await modelOfGod(), null);
+    agentModel.god = 'opus';
+    assert.equal(await modelOfGod(), 'opus');
+    // A model the installation no longer offers is not given.
+    offered = ['sonnet'];
+    assert.equal(await modelOfGod(), null);
+  } finally {
+    offered = ['sonnet', 'opus'];
+    defaultModel = undefined;
+    delete agentModel.god;
   }
 });
 

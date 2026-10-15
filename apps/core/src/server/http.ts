@@ -190,7 +190,7 @@ export interface ApiServerOptions {
   /** The cloud models a work conversation may choose (task 1.10), from the current configuration. */
   models?: () => readonly { executor: string; model: string }[];
   /** The model a new work conversation starts with (`[cloud.models] default`, D-071); undefined lets the router choose. */
-  defaultModel?: () => string | undefined;
+  defaultModel?: (agent?: string) => string | undefined;
   /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
   agents?: () => readonly string[];
   /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
@@ -509,7 +509,7 @@ interface RouteOptions {
   clients?: ApiServerOptions['clients'];
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
-  defaultModel: () => string | undefined;
+  defaultModel: (agent?: string) => string | undefined;
   agents: () => readonly string[];
   financeAgents: () => readonly string[];
   characters: ApiServerOptions['characters'];
@@ -2328,10 +2328,13 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       }
       const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
-      // this check, against what the selector offers, is the one that counts. The plain chat with Claude
-      // (D-111, tappa B) takes it only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT
-      // only when it is a model of Codex (else Sol answers, D-212).
-      const preferred = body.mode === 'work' ? defaultModel() : undefined;
+      // this check, against what the selector offers, is the one that counts. With an agent of its own
+      // (GOD, the Designer…) the model chosen for that agent in [agents.<id>] (D-116), else the router
+      // chooses; with Arianna the work agent's. The plain chat with Claude (D-111, tappa B) takes the work
+      // agent's only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT only when it is
+      // a model of Codex (else Sol answers, D-212).
+      const plain = policy === undefined || policy.agent === CLAUDE_CHAT_AGENT || policy.agent === CODEX_CHAT_AGENT;
+      const preferred = body.mode === 'work' ? defaultModel(plain ? undefined : policy.agent) : undefined;
       const model =
         policy?.agent === CLAUDE_CHAT_AGENT
           ? DIRECT_MODELS.find((entry) => entry === preferred)

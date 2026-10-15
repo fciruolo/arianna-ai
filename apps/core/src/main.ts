@@ -1024,7 +1024,8 @@ const server = await startApiServer({
   skillTranslations,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
-  defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),
+  // D-116: the model chosen for the agent the conversation is with; without one, the work agent's for Arianna.
+  defaultModel: (agent) => agentDefaultModel(settings.current(), agent ?? WORK_AGENT, agents.get(agent ?? WORK_AGENT)?.card, adapters),
   agents: () => [...agents.keys()],
   financeAgents: () => [...agents].filter(([, agent]) => isFinanceCard(agent.card)).map(([name]) => name),
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
