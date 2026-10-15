@@ -16,7 +16,7 @@ import type { StreamFailure } from '../claude/stream.ts';
 import { preparedNotes } from '../notes.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { codexArgs, codexEnv, userInstructionFiles, type CodexAccess, type CodexModel } from './profile.ts';
-import { CodexStream, type CodexEvent, type CodexUsage } from './stream.ts';
+import { codexRefusalOf, CodexStream, type CodexEvent, type CodexUsage } from './stream.ts';
 
 export const CODEX_EXECUTOR = 'codex';
 
@@ -30,6 +30,8 @@ export type CodexErrorKind =
   | 'cancelled'
   | 'exit' // the process ended without completing the turn
   | 'handler' // the caller's onEvent failed
+  | 'auth' // the binary said the login is missing or expired (`codex login`)
+  | 'plan' // the binary said the ChatGPT plan does not allow the model
   | StreamFailure;
 
 export class CodexError extends Error {
@@ -44,11 +46,13 @@ export class CodexError extends Error {
   readonly apiStatus: number | undefined;
   /** Profile: what did not hold (`session`, `item:<type>`). */
   readonly violations: readonly string[];
+  /** How long the process ran, for any failure after the spawn (undefined for a refusal before it): "stopped after 6 seconds" tells a refused login from a long run. */
+  readonly durationMs: number | undefined;
 
   constructor(
     kind: CodexErrorKind,
     message: string,
-    details: { sessionRef?: string; usage?: CodexUsage; exitCode?: number; apiStatus?: number; violations?: readonly string[]; cause?: unknown } = {},
+    details: { sessionRef?: string; usage?: CodexUsage; exitCode?: number; apiStatus?: number; violations?: readonly string[]; durationMs?: number; cause?: unknown } = {},
   ) {
     super(message, details.cause === undefined ? undefined : { cause: details.cause });
     this.kind = kind;
@@ -57,6 +61,7 @@ export class CodexError extends Error {
     this.exitCode = details.exitCode;
     this.apiStatus = details.apiStatus;
     this.violations = details.violations ?? [];
+    this.durationMs = details.durationMs;
   }
 }
 
@@ -218,6 +223,22 @@ const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_MAX_TURNS = 40;
 /** One line of the stream: a command's whole output comes in one. */
 const MAX_LINE_BYTES = 32 * 1024 * 1024;
+/** Stderr kept in memory for a failed run: the binary's refusals come first and are short. */
+const MAX_STDERR_BYTES = 64 * 1024;
+
+/**
+ * What stderr says about a run that ended without a turn (a binary that is
+ * not logged in exits before the thread): only the class, never the text.
+ */
+function stderrRefusal(text: string): CodexErrorKind | undefined {
+  // Only the binary's own error lines, and never quota: stderr can quote the brief, and a quota waits and runs again.
+  for (const line of text.split('\n')) {
+    if (!/^\s*error\b/i.test(line)) continue;
+    const refusal = codexRefusalOf(line, undefined);
+    if (refusal === 'auth' || refusal === 'plan') return refusal;
+  }
+  return undefined;
+}
 
 interface Checked {
   cwd: string;
@@ -332,6 +353,8 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
       let handlers: Promise<void> = Promise.resolve();
       let pending: Buffer[] = [];
       let pendingBytes = 0;
+      const stderr: Buffer[] = [];
+      let stderrBytes = 0;
       let killTimer: NodeJS.Timeout | undefined;
       let release: () => void = () => undefined;
       const deadline = new Promise<void>((done) => {
@@ -416,8 +439,14 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
           stop('bad-output');
         }
       });
-      // Read and dropped: it can quote the prompt, and a full pipe would block the binary.
-      child.stderr.on('data', () => undefined);
+      // Read, never stored nor logged: it can quote the prompt, and a full pipe would block the binary.
+      // Only its first lines stay in memory, so that a run that fails can tell a refused login or plan (D-064).
+      child.stderr.on('data', (chunk: Buffer) => {
+        if (stderrBytes >= MAX_STDERR_BYTES) return;
+        const part = chunk.subarray(0, MAX_STDERR_BYTES - stderrBytes);
+        stderr.push(part);
+        stderrBytes += part.length;
+      });
       child.stdin.on('error', () => undefined);
       child.stdin.end(job.prompt);
 
@@ -453,11 +482,21 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
             resolve({ sessionRef: stream.sessionRef, text: outcome.text ?? '', label: job.label, model: job.model, usage: stream.usage, durationMs: Date.now() - started });
             return;
           }
-          const kind: CodexErrorKind = stopped?.kind ?? (outcome?.ok === false ? (outcome.failure ?? 'bad-output') : 'exit');
+          const ended: CodexErrorKind = stopped?.kind ?? (outcome?.ok === false ? (outcome.failure ?? 'bad-output') : 'exit');
+          // An error the binary reported in the stream, or a failed exit before any thread (a binary not logged in
+          // stops there): its own words may say the login or the plan refused it.
+          const beforeThread = ended === 'exit' && stream.sessionRef === undefined && code !== null && code !== 0;
+          const kind: CodexErrorKind =
+            ended === 'execution'
+              ? (stream.refusal ?? ended)
+              : beforeThread
+                ? (stderrRefusal(Buffer.concat(stderr).toString('utf8')) ?? ended)
+                : ended;
           const violations = outcome?.violations;
           reject(
             new CodexError(kind, `codex: run ended with ${kind}${code === null ? '' : ` (exit ${String(code)})`}`, {
               ...details,
+              durationMs: Date.now() - started,
               ...(violations === undefined ? {} : { violations }),
               ...(stopped?.cause === undefined ? {} : { cause: stopped.cause }),
             }),

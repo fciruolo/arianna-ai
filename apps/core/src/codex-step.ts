@@ -12,6 +12,7 @@ import {
 import type { Context, Decision } from '@arianna/policy';
 
 import { sessionToResume, type BriefFragment } from './claude-step.ts';
+import { codexFailureText } from './codex-failure.ts';
 import type { Sql } from './db/client.ts';
 import type { StepContext } from './engine.ts';
 import { appendEvent } from './events.ts';
@@ -87,7 +88,8 @@ export async function runCodexStep(sql: Sql, executor: CodexExecutor, step: Step
         apiStatus: error.apiStatus ?? null,
       },
     });
-    return { kind: 'failed', reason: `codex: ${error.kind}`, usage: toUsage(error.usage), error };
+    // The reason is shown in the chat and written in the diary: what happened and what to do, in Italian (D-064).
+    return { kind: 'failed', reason: codexFailureText(error), usage: toUsage(error.usage), error };
   };
 
   const sessionRef = sessionToResume(step, input);

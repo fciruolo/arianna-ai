@@ -65,7 +65,7 @@ export {
   userConfigRefusals,
   type CodexDevLaunch,
 } from './codex/dev.ts';
-export { CODEX_FILE_CHANGE_KINDS, CodexStream, type CodexEvent, type CodexFileChangeKind, type CodexUsage } from './codex/stream.ts';
+export { CODEX_FILE_CHANGE_KINDS, codexRefusalOf, CodexStream, type CodexEvent, type CodexFileChangeKind, type CodexRefusal, type CodexUsage } from './codex/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
 export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';
 export { authorization, ensureLocalKey, localKeys, readLocalKey } from './local/key.ts';

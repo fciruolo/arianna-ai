@@ -2,6 +2,12 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Corretto
+
+- Quando Codex si ferma subito la chat dice cosa è successo e cosa fare, invece di «codex: execution»: «Codex non è collegato all'account ChatGPT…: lancia `codex login`», «L'abbonamento ChatGPT non permette questo modello di Codex…», oppure «Codex si è fermato subito (dopo N secondi) senza dire perché: prova `codex login status`»; il testo dell'errore di Codex non entra mai nella chat (D-064).
+
 ## [0.119.0] - 2026-10-16
 
 ### Cambiato

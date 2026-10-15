@@ -89,6 +89,38 @@ switch (scenario) {
     out(thread);
     process.exit(3);
     break;
+  case 'bad-request':
+    out(thread);
+    out(turn);
+    out({ type: 'turn.failed', error: { message: apiError(400, 'Invalid value for reasoning effort.') } });
+    process.exitCode = 1;
+    break;
+  case 'expired':
+    out(thread);
+    out(turn);
+    out({ type: 'error', message: apiError(401, 'Your session has expired.') });
+    out({ type: 'turn.failed', error: { message: apiError(401, 'Your session has expired.') } });
+    process.exitCode = 1;
+    break;
+  case 'not-logged-in':
+    // Before any thread: the words go to stderr only.
+    process.stderr.write('Error: Not logged in. Run `codex login` to sign in with ChatGPT.\n');
+    process.exitCode = 1;
+    break;
+  case 'stderr-quota':
+    process.stderr.write('Error: rate limit reached\n');
+    process.exitCode = 1;
+    break;
+  case 'stderr-after-thread':
+    // A thread had started: stderr may be the brief quoted back, it is not read.
+    out(thread);
+    process.stderr.write('Error: Not logged in. Run `codex login`.\n');
+    process.exitCode = 1;
+    break;
+  case 'stderr-noise':
+    process.stderr.write('Reading prompt from stdin...\nError: something broke in the brief: secret words\n');
+    process.exitCode = 1;
+    break;
   case 'garbage':
     out(thread);
     out('not json');

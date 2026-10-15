@@ -15,6 +15,7 @@ import {
   codexArgs,
   codexEnv,
   codexFilesystem,
+  codexRefusalOf,
   CodexStream,
   codexToolchain,
   createCodexExecutor,
@@ -249,6 +250,42 @@ describe('codex stream', () => {
     assert.deepEqual(feed([thread, { type: 'turn.failed' }]).stream.result, { ok: false, failure: 'execution' });
   });
 
+  it('a refused login or plan is noted as the refusal; other errors and a used-up plan are not', () => {
+    const thread = { type: 'thread.started', thread_id: THREAD };
+    const json = (status: number, message: string) => JSON.stringify({ type: 'error', status, error: { message } });
+    const refusal = (message: unknown) => feed([thread, { type: 'turn.failed', error: { message } }]).stream.refusal;
+    // auth: HTTP 401, or the binary's words for a missing or expired login.
+    assert.equal(refusal(json(401, 'secret words')), 'auth');
+    assert.equal(refusal('Your access token could not be refreshed. Please log out and sign in again.'), 'auth');
+    assert.equal(refusal('Not logged in. Run `codex login`.'), 'auth');
+    // plan: the ChatGPT plan does not allow the model.
+    assert.equal(refusal(json(400, 'The model is not supported when using Codex with a ChatGPT account.')), 'plan');
+    assert.equal(refusal('This model is not available on your plan.'), 'plan');
+    // Neither: another API error, a plain failure, a used-up plan (quota, which says "upgrade" too).
+    assert.equal(refusal(json(400, 'Invalid value for reasoning effort.')), undefined);
+    assert.equal(refusal(json(500, 'Internal error')), undefined);
+    assert.equal(refusal(undefined), undefined);
+    const used = feed([thread, { type: 'turn.failed', error: { message: "You've hit your usage limit. Upgrade to Pro." } }]).stream;
+    assert.deepEqual([used.result?.failure, used.refusal], ['quota', undefined]);
+    // The error just before the failed turn counts; an earlier one the binary got past, or one with another status, does not.
+    assert.equal(feed([thread, { type: 'error', message: json(401, 'x') }, { type: 'turn.failed', error: {} }]).stream.refusal, 'auth');
+    assert.equal(feed([thread, { type: 'error', message: json(401, 'x') }, { type: 'turn.failed', error: { message: json(500, 'x') } }]).stream.refusal, undefined);
+    assert.equal(
+      feed([thread, { type: 'error', message: 'unauthorized' }, { type: 'error', message: 'connection reset' }, { type: 'turn.failed', error: {} }]).stream.refusal,
+      undefined,
+    );
+    // The result keeps the closed kinds of the stream: the refusal is beside it, the text nowhere.
+    const expired = feed([thread, { type: 'turn.failed', error: { message: json(401, 'secret words') } }]).stream;
+    assert.deepEqual(expired.result, { ok: false, failure: 'execution', apiStatus: 401 });
+  });
+
+  it('codexRefusalOf: quota before login before plan', () => {
+    assert.equal(codexRefusalOf('rate limit reached, sign in again', undefined), 'quota');
+    assert.equal(codexRefusalOf('unauthorized on the free plan', undefined), 'auth');
+    assert.equal(codexRefusalOf('only on the free plan', undefined), 'plan');
+    assert.equal(codexRefusalOf('connection reset', 503), undefined);
+  });
+
   it('warnings, reasoning, plans and unknown events pass; odd file changes keep only valid entries', () => {
     const { stream, events } = feed([
       { type: 'thread.started', thread_id: THREAD },
@@ -336,8 +373,11 @@ describe('codex executor', () => {
     const limited = await failure((await start('http-429')).run.result);
     assert.deepEqual([limited.kind, limited.apiStatus], ['quota', 429]);
     const refused = await failure((await start('error')).run.result);
-    assert.deepEqual([refused.kind, refused.apiStatus, refused.sessionRef], ['execution', 400, THREAD]);
+    assert.deepEqual([refused.kind, refused.apiStatus, refused.sessionRef], ['plan', 400, THREAD]);
     assert.ok(!refused.message.includes('ChatGPT'), 'no text of the binary in the error');
+    assert.ok(refused.durationMs !== undefined && refused.durationMs >= 0, 'how long it ran');
+    const badRequest = await failure((await start('bad-request')).run.result);
+    assert.deepEqual([badRequest.kind, badRequest.apiStatus], ['execution', 400]);
     const crashed = await failure((await start('crash')).run.result);
     assert.deepEqual([crashed.kind, crashed.exitCode], ['exit', 3]);
     assert.equal((await failure((await start('garbage')).run.result)).kind, 'bad-output');
@@ -345,6 +385,22 @@ describe('codex executor', () => {
     assert.equal((await failure((await start('no-turn')).run.result)).kind, 'exit');
     const late = await failure((await start('exit-after-turn')).run.result);
     assert.deepEqual([late.kind, late.exitCode], ['exit', 2]);
+  });
+
+  it('a refused login is auth, from the stream or from stderr; other words on stderr stay an exit, never in the error', async () => {
+    const expired = await failure((await start('expired')).run.result);
+    assert.deepEqual([expired.kind, expired.apiStatus, expired.sessionRef], ['auth', 401, THREAD]);
+    const logged = await failure((await start('not-logged-in')).run.result);
+    assert.deepEqual([logged.kind, logged.exitCode, logged.sessionRef], ['auth', 1, undefined]);
+    assert.ok(!logged.message.includes('login'), 'no text of the binary in the error');
+    const noise = await failure((await start('stderr-noise')).run.result);
+    assert.deepEqual([noise.kind, noise.exitCode], ['exit', 1]);
+    assert.ok(!noise.message.includes('secret'));
+    assert.equal(noise.cause, undefined);
+    // Never quota from stderr (it would wait and run again), never anything once a thread started.
+    assert.equal((await failure((await start('stderr-quota')).run.result)).kind, 'exit');
+    const afterThread = await failure((await start('stderr-after-thread')).run.result);
+    assert.deepEqual([afterThread.kind, afterThread.sessionRef], ['exit', THREAD]);
   });
 
   it('stops a run that shows an MCP call, a web search or another session', async () => {

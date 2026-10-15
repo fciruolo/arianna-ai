@@ -58,6 +58,27 @@ function isQuota(message: unknown, status: number | undefined): boolean {
 }
 
 /**
+ * Why the account refused the run, when the binary says it (D-064):
+ * `auth` the login is missing or expired, `plan` the ChatGPT plan does not
+ * allow the model. Read from the error text, which is never kept: only the
+ * class leaves this function.
+ */
+export type CodexRefusal = 'auth' | 'plan';
+
+const AUTH_WORDS = /not logged in|codex login|log ?in again|sign in again|logged out|unauthori[sz]ed|(?:access|refresh|auth) token|token (?:has )?expired|re-?authenticate/i;
+const PLAN_WORDS =
+  /not supported when using codex with a chatgpt account|not (?:available|included|supported|allowed) (?:on|in|with|for) your (?:current )?(?:plan|subscription)|requires a (?:paid|plus|pro|team|business|enterprise) (?:plan|subscription|account)|free plan/i;
+
+/** The class of an error text and its HTTP status: quota first (a used-up plan says "upgrade" too), then login, then plan. */
+export function codexRefusalOf(message: unknown, status: number | undefined): 'quota' | CodexRefusal | undefined {
+  if (isQuota(message, status)) return 'quota';
+  const text = typeof message === 'string' ? message : '';
+  if (status === 401 || AUTH_WORDS.test(text)) return 'auth';
+  if (PLAN_WORDS.test(text)) return 'plan';
+  return undefined;
+}
+
+/**
  * The state of one run, fed line by line. `feed` returns the events to report
  * and stops at the first failure; `result` is set once the turn has completed,
  * or a failure was found.
@@ -73,6 +94,9 @@ export class CodexStream {
   #context: number | undefined;
   #apiStatus: number | undefined;
   #quota = false;
+  /** Set on a failed turn whose error says the login or the plan refused the run; `result.failure` stays `execution`. */
+  refusal: CodexRefusal | undefined;
+  #lastError: { status: number | undefined; refusal: CodexRefusal | undefined } | undefined;
 
   /** `sessionRef`: the session a resume asked for; the binary must continue that one, not start another. */
   constructor(expected: { sessionRef?: string } = {}) {
@@ -124,7 +148,10 @@ export class CodexStream {
   #note(message: unknown): void {
     const status = apiStatusOf(message);
     if (status !== undefined) this.#apiStatus = status;
-    if (isQuota(message, status)) this.#quota = true;
+    const refusal = codexRefusalOf(message, status);
+    if (refusal === 'quota') this.#quota = true;
+    // The last error only: an earlier one the binary got past says nothing about why the turn failed.
+    this.#lastError = { status, refusal: refusal === 'quota' ? undefined : refusal };
   }
 
   #thread(message: Record<string, unknown>): CodexEvent[] {
@@ -181,7 +208,11 @@ export class CodexStream {
   }
 
   #failed(message: unknown): CodexEvent[] {
+    const before = this.#lastError;
     this.#note(message);
+    const own = this.#lastError;
+    // The turn's own words first; without them, the error just before it, unless the turn names another status.
+    this.refusal = own?.refusal ?? (own?.status === undefined || own.status === before?.status ? before?.refusal : undefined);
     const extra = this.#apiStatus === undefined ? {} : { apiStatus: this.#apiStatus };
     return this.#fail(this.#quota ? 'quota' : 'execution', extra);
   }
