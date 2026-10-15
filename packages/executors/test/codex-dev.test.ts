@@ -12,6 +12,7 @@ import {
   CODEX_DISABLED_FEATURES,
   DEV_ALWAYS_DENIED,
   DEV_READ_ONLY,
+  DEV_USER_NOTE,
   codexDevLaunch,
   devArgs,
   devChangedGitignores,
@@ -67,6 +68,21 @@ test('the folders that can appear while Codex runs are denied even when git does
   for (const path of DEV_ALWAYS_DENIED) assert.equal(map.get(`${HOME}/${path}`), 'deny', path);
   for (const path of ['kb/progetti', 'kb/archivio', '.claude/worktrees', 'config/models.user-catalog.yaml']) assert.equal(map.get(`${HOME}/${path}`), 'deny', path);
   assert.equal(map.get(`${HOME}/kb`), undefined);
+});
+
+test('the note «Su di te» is the only thing of data/ Codex reads: read only, the rest of data/dev/ and data/ denied (D-226)', () => {
+  assert.equal(DEV_USER_NOTE, 'data/dev/UTENTE.md');
+  // Even when git lists the file itself among the ignored paths, it stays read only and is not listed twice.
+  for (const ignored of [[], ['data'], ['data/dev/UTENTE.md', 'data/dev/RISPOSTE.md']]) {
+    const map = rules(devFilesystem(HOME, [], ignored));
+    assert.equal(map.get(`${HOME}/data/dev/UTENTE.md`), 'read');
+    assert.equal(map.get(`${HOME}/data`), 'deny');
+    // No rule opens data/dev/ itself: the narrower read is on the file only, so RISPOSTE.md and the rest fall under the denied data/.
+    assert.equal(map.get(`${HOME}/data/dev`), undefined);
+    const open = [...map].filter(([path, value]) => path.startsWith(`${HOME}/data/`) && value !== 'deny').map(([path]) => path);
+    assert.deepEqual(open.sort(), [`${HOME}/data/dev/UTENTE.md`, `${HOME}/data/test-tmp`]);
+    if (ignored.includes('data/dev/RISPOSTE.md')) assert.equal(map.get(`${HOME}/data/dev/RISPOSTE.md`), 'deny');
+  }
 });
 
 test('keys with a space, an accent or a quote stay one TOML key', () => {

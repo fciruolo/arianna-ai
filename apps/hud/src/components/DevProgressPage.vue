@@ -54,7 +54,7 @@ import Icon from './Icon.vue';
  * data/dev/RISPOSTE.md and Claude Code applies them at the start of its next
  * session. Title, sentence and width are the settings page's; the news of
  * Open Design moved to «Skill e stili». Three tabs: «Domande» (all of the
- * above), «Progetti seguiti» (D-202) and «Su di te», the note for Claude Code
+ * above), «Progetti seguiti» (D-202) and «Su di te», the note for Claude Code and Codex
  * (D-114); the address remembers the open one.
  */
 const tab = ref<DevTab>(devTabFromSearch(window.location.search));
@@ -252,7 +252,7 @@ onMounted(refresh);
       <FollowedProjects />
     </div>
 
-    <!-- «Su di te, per Claude Code» (D-114): data/dev/UTENTE.md, through the gateway -->
+    <!-- «Su di te, per chi sviluppa Arianna» (D-114, D-226): data/dev/UTENTE.md, through the gateway -->
     <div v-else-if="tab === 'about'" id="dev-panel-about" role="tabpanel" aria-labelledby="dev-tab-about">
       <DevUserNote />
     </div>

@@ -67,6 +67,16 @@ export const DEV_ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.
 /** Inside the denied data/: the tests write their temporary files here. */
 const TEST_TMP = 'data/test-tmp';
 
+/**
+ * Inside the denied data/, read only and nothing else of data/dev/: the note
+ * «Su di te, per chi sviluppa Arianna» (D-114, D-226), which the core writes
+ * only with the text the gateway lets out towards the cloud (L1). A file, not
+ * a folder: the answers of RISPOSTE.md beside it stay denied. That the file
+ * rule wins over the denied folder was checked with `codex sandbox` 0.160.0:
+ * check it again when CODEX_DEV_VERSION changes.
+ */
+export const DEV_USER_NOTE = 'data/dev/UTENTE.md';
+
 /** Ignored by git but only build output: node_modules and the compiled chat stay open. */
 const BUILD_OUTPUT = /(^|\/)(node_modules|dist)\/?$/;
 
@@ -178,6 +188,7 @@ function checkFolder(path: string): string {
 export function devFilesystem(home: string, readable: readonly string[], ignored: readonly string[], readOnly: readonly string[] = []): string {
   checkFolder(home);
   const denied = new Set<string>([...DEV_ALWAYS_DENIED, ...ignored]);
+  denied.delete(DEV_USER_NOTE);
   const kept = [...new Set<string>([...DEV_READ_ONLY, ...readOnly])].filter((path) => !denied.has(path));
   const entries: [string, string][] = [
     [':minimal', 'read'],
@@ -186,6 +197,7 @@ export function devFilesystem(home: string, readable: readonly string[], ignored
     ...kept.map((path): [string, string] => [join(home, path), 'read']),
     ...[...denied].map((path): [string, string] => [join(home, path), 'deny']),
     [join(home, TEST_TMP), 'write'],
+    [join(home, DEV_USER_NOTE), 'read'],
   ];
   if (new Set(entries.map(([key]) => key)).size !== entries.length) throw new TypeError('codex-dev: a folder is listed twice');
   return `{${entries.map(([key, value]) => `${JSON.stringify(key)}=${JSON.stringify(value)}`).join(', ')}}`;

@@ -5,11 +5,11 @@ import { ApiError, loadDevUserNote, saveDevUserNote } from '../lib/api.ts';
 import Icon from './Icon.vue';
 
 /**
- * «Su di te, per Claude Code» (D-114): what the user wants Claude Code to
- * know about him while it develops Arianna. Saved in data/dev/UTENTE.md,
- * replaced at each save; the text passes the gateway towards Claude Code
- * (cloud) as an answer does, and a block refuses it. Not the profile of
- * «Su di te» in the settings, which stays at home.
+ * «Su di te, per chi sviluppa Arianna» (D-114, D-226): what the user wants
+ * Claude Code and Codex to know about him while they develop Arianna. Saved
+ * in data/dev/UTENTE.md, replaced at each save; the text passes the gateway
+ * towards the cloud as an answer does, and a block refuses it. Not the
+ * profile of «Su di te» in the settings, which stays at home.
  */
 const saved = ref<{ text: string; at: string | null } | null>(null);
 const draft = ref('');
@@ -56,13 +56,13 @@ async function save(): Promise<void> {
 
 <template>
   <section class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="dev-user-note">
-    <h2 id="dev-user-note" class="text-[16px] font-semibold">Su di te, per Claude Code</h2>
+    <h2 id="dev-user-note" class="text-[16px] font-semibold">Su di te, per chi sviluppa Arianna</h2>
     <p class="mt-1 max-w-[80ch] text-[14px] text-muted">
-      Quello che vuoi che Claude Code sappia di te mentre sviluppa Arianna: come lavori, cosa preferisci. Lo legge all’inizio di ogni sessione. Ogni salvataggio sostituisce il testo di prima; vuoto, lo cancella.
+      Quello che vuoi che Claude Code e Codex sappiano di te mentre sviluppano Arianna: come lavori, cosa preferisci. Lo leggono all’inizio di ogni sessione. Ogni salvataggio sostituisce il testo di prima; vuoto, lo cancella.
     </p>
     <p class="mt-2 flex max-w-[80ch] items-start gap-2 text-[13px] text-warn"><Icon name="gateway" :size="14" class="mt-0.5 shrink-0" />Va al cloud: niente dati personali. Il gateway ferma IBAN, codici fiscali, carte e chiavi.</p>
     <form class="mt-3 flex flex-col gap-2" @submit.prevent="save">
-      <label for="dev-user-note-text" class="sr-only">Su di te, per Claude Code</label>
+      <label for="dev-user-note-text" class="sr-only">Su di te, per chi sviluppa Arianna</label>
       <textarea
         id="dev-user-note-text"
         v-model="draft"

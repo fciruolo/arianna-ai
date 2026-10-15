@@ -3304,7 +3304,7 @@ export interface DevProgressApi {
   news?: () => NewsPair;
   /** Tests only: the event of a news sent, which otherwise uses the database of the core. */
   newsRecorded?: (key: string) => Promise<void>;
-  /** Tests only: the event of «Su di te, per Claude Code» saved (D-114), with the length only. */
+  /** Tests only: the event of «Su di te, per chi sviluppa Arianna» saved (D-114), with the length only. */
   userNoteRecorded?: (chars: number) => Promise<void>;
   /** The projects followed for ideas (D-202); without them the section is empty. */
   projects?: FollowedProjects;
@@ -3344,6 +3344,7 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
     if (projects === undefined) throw new HttpError(404, 'not found');
     return projects;
   };
+  // The destination logged is Claude Code; the user note is read by Codex too (D-226), under the same rules towards the cloud.
   const viaGateway: AnswerGate = async (answer, key) => {
     const decision = await passGateway(sql, [{ value: answer, label: 'L1', source: key === 'user-note' ? 'dev:user-note' : 'dev:answer' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, { summary: key });
     if (decision.decision !== 'allow') return { allow: false, reason: decision.rule };
@@ -3381,9 +3382,9 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       }
       return { status: 201, body: { key: saved.key, at: saved.at, ...(rewrite === true ? { rewrite: true, already: false } : {}), logged } };
     }),
-    // «Su di te, per Claude Code» (D-114): the text saved now, and its limit.
+    // «Su di te, per chi sviluppa Arianna» (D-114): the text saved now, and its limit.
     route('GET', '/api/dev/user-note', () => Promise.resolve({ body: { note: readUserNote(need().home), max: MAX_USER_NOTE_CHARS } })),
-    // Replaces data/dev/UTENTE.md, through the gateway towards Claude Code as an answer; empty text removes it.
+    // Replaces data/dev/UTENTE.md, through the gateway towards the cloud (Claude Code, Codex) as an answer; empty text removes it.
     route('POST', '/api/dev/user-note', async (request) => {
       const { home, gate = viaGateway, userNoteRecorded = async (chars: number) => {
         await appendEvent(sql, { kind: 'dev.user_note_saved', label: 'L0', payload: { chars } });

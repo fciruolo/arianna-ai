@@ -2,6 +2,16 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Cambiato
+
+- La casella «Su di te, per Claude Code» della pagina «Sviluppo di Arianna» si chiama «Su di te, per chi sviluppa Arianna»: il testo lo legge anche Codex lanciato con `pnpm dev:codex` (D-226).
+
+### Sicurezza
+
+- Il profilo di permessi di `pnpm dev:codex` apre in sola lettura il solo file `data/dev/UTENTE.md`; il resto di `data/dev/` e di `data/` resta negato (D-226).
+
 ## [0.118.1] - 2026-10-15
 
 ### Corretto

@@ -1098,7 +1098,7 @@ export async function sendOdNewsRedo(key: string): Promise<{ key: string; at: st
   return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/od-news', { key });
 }
 
-/** «Su di te, per Claude Code» (D-114): the text in data/dev/UTENTE.md and the longest the core takes. */
+/** «Su di te, per chi sviluppa Arianna» (D-114, D-226): the text in data/dev/UTENTE.md and the longest the core takes. */
 export async function loadDevUserNote(): Promise<{ note: { text: string; at: string | null }; max: number }> {
   return call<{ note: { text: string; at: string | null }; max: number }>('GET', '/api/dev/user-note');
 }

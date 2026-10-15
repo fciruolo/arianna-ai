@@ -1,8 +1,8 @@
 // «Su di te» (D-114, tappa A): the facts of the profile in user_facts, written
 // only by the Settings; the scanner and the vault on the topic and on an L1
 // text; lowering a fact (L2 → L1) prepared, confirmed, with its row in
-// label_changes; events without the text. And «Su di te, per Claude Code»
-// through the gateway towards Claude Code.
+// label_changes; events without the text. And «Su di te, per chi sviluppa Arianna»
+// through the gateway towards the cloud.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -242,8 +242,8 @@ describe('«Su di te» in the Settings (D-114)', () => {
   });
 });
 
-describe('«Su di te, per Claude Code» (D-114)', () => {
-  it('passes the gateway towards Claude Code and replaces data/dev/UTENTE.md; a block writes nothing', async (t) => {
+describe('«Su di te, per chi sviluppa Arianna» (D-114)', () => {
+  it('passes the gateway towards the cloud and replaces data/dev/UTENTE.md; a block writes nothing', async (t) => {
     const { sql } = db();
     const home = join(scratch, randomUUID());
     mkdirSync(join(home, 'data'), { recursive: true });

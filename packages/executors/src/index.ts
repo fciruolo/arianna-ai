@@ -46,6 +46,7 @@ export {
   CODEX_DEV_VERSION,
   DEV_ALWAYS_DENIED,
   DEV_READ_ONLY,
+  DEV_USER_NOTE,
   DEV_REFUSED_USER_KEYS,
   codexDevLaunch,
   devArgs,

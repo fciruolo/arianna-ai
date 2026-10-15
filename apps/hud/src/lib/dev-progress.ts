@@ -299,7 +299,7 @@ export function pendingBadge(count: number): string | null {
 
 /**
  * The tabs of the page: the questions with the progress, the projects followed
- * for ideas (D-202) and «Su di te», the note for Claude Code (D-114).
+ * for ideas (D-202) and «Su di te», the note for Claude Code and Codex (D-114, D-226).
  */
 export type DevTab = 'questions' | 'followed' | 'about';
 
