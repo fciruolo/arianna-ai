@@ -372,7 +372,7 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 | Pochi strumenti MCP generici | `search_capabilities`, `execute_capability`, `list_skills`, `get_skill` | Server MCP di Arianna | in coda: task 1.10 | — | nel 1.10 |
 | Automazioni programmate | Compiti ricorrenti con modello e luogo d'esecuzione | Routine | in coda: D-110 (tappe nelle loro fasi) | media | in D-110 |
 | Novità delle release seguite | — | Novità di OpenWork scelte una per una, come per Open Design | in coda: D-093, secondo lavoro (D-186 generalizzato) | bassa | a parte |
-| Ferma, coda e modifica mentre risponde | «Stop», messaggi in coda, modifica di un messaggio in coda | Solo «Ferma» nella pagina GOD | costruita: D-218 (ramo `task/ferma-coda`, da provare) | nessuno | 6-10 h |
+| Ferma, coda e modifica mentre risponde | «Stop», messaggi in coda, modifica di un messaggio in coda | Solo «Ferma» nella pagina GOD | fatta: D-218 (0.113.0) | nessuno | 6-10 h |
 | Calendario delle automazioni | Automazioni nel calendario, una nuova da uno spazio vuoto | Routine e impegni della segretaria in un calendario | nuova: domanda 5 | bassa | 8-12 h dopo D-110 |
 | Cruscotto personale di artefatti vivi | Riquadri con artefatti aggiornati dalle automazioni | Pagina «Cruscotto» con riquadri fissati dalla chat | nuova: domanda 6 | media | 15-25 h |
 | Vista affiancata | Due sessioni, anche di cartelle diverse, una accanto all'altra | Due conversazioni, o conversazione e progetto, affiancate | nuova: domanda 7 | nessuno | 6-10 h |
