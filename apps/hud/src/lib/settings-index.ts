@@ -12,7 +12,7 @@ export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action'
 
 /** The one pill under the title (D-192); null: the section shows none (read only, or each card says it). */
 export const BEHAVIOUR_TEXT: Record<SectionBehaviour, string | null> = {
-  now: 'Vale subito',
+  now: 'Vale appena salvi',
   restart: 'Al riavvio',
   confirm: 'Con conferma',
   read: null,
@@ -69,8 +69,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         slug: 'personaggi-delle-serie',
         title: 'Personaggi',
         behaviour: 'now',
-        lead: 'I personaggi delle serie che gli agenti possono indossare: chi sono, come parlano, la scena delle chat private, le battute e le citazioni vere. Chi indossa chi si sceglie in Agenti → Aspetto.',
-        example: 'apri Dr. Cox e premi «Genera 100 citazioni»: dal messaggio dopo, l’agente che lo indossa usa ogni tanto una sua frase vera della serie.',
+        lead: 'I personaggi delle serie che gli agenti possono indossare: come appaiono, chi sono, come parlano, la scena delle chat private e le loro battute vere. Chi indossa chi si sceglie in Agenti → Aspetto.',
+        example: 'apri Dr. Cox e premi «Genera 100 battute vere»: dal messaggio dopo, l’agente che lo indossa usa ogni tanto una sua frase vera della serie.',
       },
       // The user's profile (D-114, tappa A): facts one at a time, «Solo in casa» or «Condivisibile».
       {

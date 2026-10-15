@@ -41,7 +41,7 @@ test('every entry that lets data out has the lock and asks for confirmation; the
 });
 
 test('one pill per section: Vale subito, Al riavvio or Con conferma; none for what is only read', () => {
-  assert.equal(BEHAVIOUR_TEXT.now, 'Vale subito');
+  assert.equal(BEHAVIOUR_TEXT.now, 'Vale appena salvi');
   assert.equal(BEHAVIOUR_TEXT.restart, 'Al riavvio');
   assert.equal(BEHAVIOUR_TEXT.confirm, 'Con conferma');
   assert.equal(BEHAVIOUR_TEXT.read, null);

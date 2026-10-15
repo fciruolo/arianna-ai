@@ -118,7 +118,8 @@ test('generate: Claude collects in the background from the names alone; numbered
   const [part, ...rest] = asked[0]?.parts ?? [];
   assert.deepEqual(rest, [], 'nothing kept yet: only our instructions');
   assert.equal(part?.label, undefined, 'L0, ours');
-  assert.match(part?.text ?? '', /"Dr\. Cox" of the TV series "Scrubs"/);
+  assert.equal(part?.source, 'character:serie/cox');
+  assert.match(part.text, /"Dr\. Cox" of the TV series "Scrubs"/);
   assert.doesNotMatch(asked[0]?.purpose ?? '', /Cox|Scrubs/);
   let status = lines.status('cox');
   assert.deepEqual(
@@ -140,8 +141,12 @@ test('generate: Claude collects in the background from the names alone; numbered
   assert.deepEqual(status.lines.map((line) => line.n), [1, 2]);
   lines.generate('cox');
   await lines.idle();
-  // The lines kept leave apart, Interno: the file may hold lines written by hand.
-  assert.deepEqual(asked[1]?.parts.at(1), { text: '["Sbagliato! Riprova.","Ascolta bene, Newbie."]', source: 'series-lines:cox', label: 'L1' });
+  // The lines kept leave apart, Interno (the file may hold lines written by hand); one that names someone else stays home.
+  assert.deepEqual(asked[1]?.parts.at(1), { text: '["Sbagliato! Riprova."]', source: 'character:serie/cox#lines', label: 'L1' });
+  // Both under the sources of the character: «Dr. Cox» is no person for the second scanner there (seen in the trial).
+  assert.equal(asked.at(1)?.parts.at(0)?.source, 'character:serie/cox');
+  const names = fragmentNamesOf((asked.at(1)?.parts ?? []).map((item) => ({ value: item.text, label: item.label ?? 'L0', source: item.source })), []);
+  assert.ok(names.every((list) => list?.includes('Dr. Cox') === true));
   assert.deepEqual(
     lines.status('cox').lines.map((line) => [line.n, line.text]),
     [
@@ -209,6 +214,19 @@ test('the file written by hand: a line with personal data or a vault value, a ba
   // An unreadable file: no lines, never an error.
   writeFileSync(join(dir, SERIES_LINES_DIR, 'pam.json'), '{non json');
   assert.deepEqual(lines.status('pam').lines, []);
+});
+
+test('add: a line written by hand, numbered after the others and marked as the user’s; no line, a double or personal data refused', async () => {
+  const { lines } = archive([answerOf([{ text: 'Sbagliato! Riprova.' }])]);
+  lines.generate('cox');
+  await lines.idle();
+  const status = lines.add('cox', '  Ehi, questa me la sono inventata io.  ');
+  assert.deepEqual(status.lines.at(-1), { n: 2, text: 'Ehi, questa me la sono inventata io.', named: false, own: true });
+  assert.throws(() => lines.add('cox', 'Corta.'), /frase intera/);
+  assert.throws(() => lines.add('cox', 'sbagliato, riprova'), /c’è già/);
+  assert.throws(() => lines.add('cox', 'Paga su IT60X0542811101000000123456'), /dato personale/);
+  assert.throws(() => lines.add('nessuno', 'Una battuta qualunque.'), /nessun personaggio/);
+  assert.equal(lines.status('cox').lines.length, 2);
 });
 
 test('draw: a few at a time, not drawn lately in the same conversation; named lines only where admitted', () => {

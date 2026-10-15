@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { otherSeriesNames, SERIES_PERSONAS, seriesNamesOf } from '@arianna/agents';
+import { otherSeriesNames, SERIES_PERSONAS, seriesLinesSource, seriesNamesOf, seriesSource } from '@arianna/agents';
 import { scanText, type KnownSecrets } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
@@ -42,6 +42,8 @@ export interface SeriesLine {
   episode?: string;
   /** It names someone else (Claude's list or ours): private steps only. */
   named: boolean;
+  /** Written by the user in its card, not collected by Claude. */
+  own?: boolean;
 }
 
 export interface SeriesLinesStatus {
@@ -57,7 +59,7 @@ export interface SeriesLinesStatus {
 
 export class SeriesLinesError extends Error {
   override name = 'SeriesLinesError';
-  readonly code: 'unknown' | 'full' | 'missing';
+  readonly code: 'unknown' | 'full' | 'missing' | 'invalid' | 'double';
 
   constructor(code: SeriesLinesError['code'], message: string) {
     super(message);
@@ -71,6 +73,8 @@ export interface SeriesLines {
   generate(character: string): SeriesLinesStatus;
   /** Takes line `n` out for good. */
   remove(character: string, n: number): SeriesLinesStatus;
+  /** A line the user writes by hand, numbered after the others; refused when it is no line, a double or personal data. */
+  add(character: string, text: string): SeriesLinesStatus;
   /** Whether a draw would give anything for a step that admits named lines or not. */
   has(character: string, named: boolean): boolean;
   /** A few lines for one answer in `conversation`, not drawn there lately. */
@@ -219,7 +223,7 @@ export function createSeriesLines(options: {
         if (text === undefined || typeof n !== 'number' || !Number.isSafeInteger(n) || n < 1 || seen.has(n) || !clean(text)) return [];
         seen.add(n);
         const episode = typeof record.episode === 'string' && record.episode !== '' ? { episode: record.episode } : {};
-        return [{ n, text, ...episode, named: record.named === true || namesSomeone(character, text) }];
+        return [{ n, text, ...episode, named: record.named === true || namesSomeone(character, text), ...(record.own === true ? { own: true } : {}) }];
       });
       const highest = lines.reduce((top, line) => Math.max(top, line.n), 0);
       const next = typeof parsed.next === 'number' && Number.isSafeInteger(parsed.next) && parsed.next > highest ? parsed.next : highest + 1;
@@ -260,11 +264,16 @@ export function createSeriesLines(options: {
 
   async function collect(character: string): Promise<void> {
     const person = known(character);
-    const before = read(character);
+    const plain = read(character)
+      .lines.filter((line) => !line.named)
+      .map((line) => line.text);
     const answer = await options.ask({
+      // The sources of the character (D-214, D-224): its names and those of the series are no person for the second
+      // scanner there, which otherwise stops «Dr. Cox» as a full name (seen in the trial). A kept line that names
+      // someone else stays home: Claude may give it again, the doubles are dropped here.
       parts: [
-        { text: linesPrompt(person.name, person.show, before.lines.length), source: 'arianna:series-lines' },
-        ...(before.lines.length === 0 ? [] : [{ text: JSON.stringify(before.lines.map((line) => line.text)), source: `series-lines:${character}`, label: 'L1' as const }]),
+        { text: linesPrompt(person.name, person.show, plain.length), source: seriesSource(character) },
+        ...(plain.length === 0 ? [] : [{ text: JSON.stringify(plain), source: seriesLinesSource(character), label: 'L1' as const }]),
       ],
       purpose: `citazioni vere di un personaggio delle serie (${character})`,
       timeoutMs: 8 * 60_000,
@@ -335,6 +344,17 @@ export function createSeriesLines(options: {
       const stored = read(character);
       if (!stored.lines.some((line) => line.n === n)) throw new SeriesLinesError('missing', `nessuna citazione numero ${String(n)}`);
       save(character, { lines: stored.lines.filter((line) => line.n !== n), next: stored.next });
+      return status(character);
+    },
+    add(character, value) {
+      known(character);
+      const text = lineText(value);
+      if (text === undefined) throw new SeriesLinesError('invalid', `una battuta è una frase intera di almeno ${String(MIN_LINE_LENGTH)} caratteri, al massimo ${String(MAX_LINE_LENGTH)}, senza < e >`);
+      if (!clean(text)) throw new SeriesLinesError('invalid', 'la battuta sembra contenere un dato personale o un valore del vault');
+      const stored = read(character);
+      if (stored.lines.length >= MAX_SERIES_LINES) throw new SeriesLinesError('full', `l'archivio ha già ${String(MAX_SERIES_LINES)} battute: togline qualcuna prima`);
+      if (stored.lines.some((line) => lineKey(line.text) === lineKey(text))) throw new SeriesLinesError('double', 'questa battuta c’è già');
+      save(character, { lines: [...stored.lines, { n: stored.next, text, named: namesSomeone(character, text), own: true }], next: stored.next + 1 });
       return status(character);
     },
     has(character, named) {

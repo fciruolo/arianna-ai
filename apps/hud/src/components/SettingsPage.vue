@@ -1055,6 +1055,9 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 :save="() => save('series', ['series'])"
                 :busy="busy === 'series'"
                 :error="errors.series"
+                :characters="characters"
+                :sheet-version="sheetVersion"
+                :agent-name="(agent: string) => agent"
               />
 
               <!-- Voce e chiamate -->

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * The card of a person of the series (D-223), in Impostazioni → Agenti →
- * Aspetto: who it is and how it speaks, its scene (private chats only), its
- * catchphrases and the exact block the model reads. The user may rewrite the
+ * Aspetto, then in Personaggi (D-224): who it is and how it speaks, its scene
+ * (private chats only), its lines (`SeriesLinesPanel`) and the exact block the
+ * model reads. The user may rewrite the
  * texts: they become theirs (Interno), saved in `[series.<id>]` with their own
  * Salva; «Ripristina» goes back to the repository's text.
  */
@@ -106,11 +107,6 @@ const count = (text: string): number => Array.from(text.replace(/\s+/g, ' ').tri
         <textarea v-model="draft.scene" rows="4" class="field block w-full resize-y px-3 py-2 text-[13.5px] leading-relaxed" />
         <span class="text-[12px] text-muted">Solo nelle chat private, che restano sul Mac: luoghi, gli altri personaggi, i tic in scena (didascalie fra parentesi quadre, voce narrante…).</span>
       </label>
-      <label class="flex flex-col gap-1 text-[13px]">
-        <span class="font-medium">Battute, una per riga ({{ SERIES_LIMITS.quotes.min }}-{{ SERIES_LIMITS.quotes.max }}, al massimo {{ SERIES_LIMITS.quotes.length }} caratteri)</span>
-        <textarea v-model="draft.quotes" rows="4" class="field block w-full resize-y px-3 py-2 font-mono text-[13px] leading-relaxed" />
-        <span class="text-[12px] text-muted">Esempi della sua voce: il modello ne usa una ogni tanto, mai la stessa due volte di fila.</span>
-      </label>
 
       <div class="flex flex-wrap items-center gap-2">
         <p v-if="problem !== null" role="alert" class="min-w-0 flex-1 text-[13px] text-warn">{{ problem }}</p>
@@ -122,7 +118,7 @@ const count = (text: string): number => Array.from(text.replace(/\s+/g, ' ').tri
         <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="busy || !dirty || problem !== null" @click="store(rewrite)">{{ busy ? 'Salvo…' : 'Salva' }}</button>
       </div>
 
-      <SeriesLinesPanel :character="person.id" :name="person.name" :own-quotes="person.own?.quotes !== undefined" />
+      <SeriesLinesPanel :character="person.id" :name="person.name" :own-quotes="person.own?.quotes !== undefined" :fallback="person.own?.quotes ?? person.repository.quotes" />
 
       <details class="text-[13px]">
         <summary class="cursor-pointer select-none text-muted">Cosa riceve il modello</summary>

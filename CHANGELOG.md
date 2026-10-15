@@ -6,12 +6,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Voce nuova «Personaggi» nelle Impostazioni, dopo Agenti: tutti i personaggi delle serie divisi per serie (Scrubs, The Office), ognuno con la sua scheda (chi è e come parla, scena, battute, citazioni vere). In Agenti → Aspetto resta solo chi indossa chi, con un collegamento alla scheda (D-224, richiesta dell'utente del 2026-10-16).
-- Nella scheda di un personaggio la sezione «Citazioni vere»: «Genera altre 100» chiede a Claude frasi che il personaggio dice davvero nella serie, in italiano (doppiaggio quando lo conosce), con l'episodio quando lo sa; almeno una frase intera, mai un nome da solo; elenco numerato con «togli», fino a 1000 per personaggio, doppioni tolti. A Claude escono solo il nome del personaggio e della serie e le citazioni già raccolte (D-224).
+- Voce nuova «Personaggi» nelle Impostazioni, dopo Agenti (indirizzo `/impostazioni/personaggi-delle-serie`): tutti i personaggi delle serie divisi per serie (Scrubs, The Office), ognuno con il suo aspetto (pose, animazioni, PNG, chi lo indossa) e la sua scheda (chi è e come parla, scena, battute). In Agenti → Aspetto resta solo chi indossa chi, con un collegamento alla scheda (D-224, richiesta dell'utente del 2026-10-16).
+- Nella scheda di un personaggio la sezione «Battute»: un elenco numerato con «togli», fino a 1000, doppioni tolti, con le battute che scrivi tu («Aggiungi») e quelle raccolte da Claude («Genera altre 100»); finché è vuoto valgono le 4 fisse del repository (D-224).
 
 ### Cambiato
 
-- A ogni risposta di un agente che indossa un personaggio delle serie, Arianna pesca a caso 5 citazioni vere non usate di recente in quella chat e le mette in fondo all'ultimo messaggio, al posto delle 4 battute fisse: il modello ne usa al massimo una. Quelle che nominano altri personaggi solo nelle chat private; le battute riscritte da te vincono sull'archivio (D-224).
+- A ogni risposta di un agente che indossa un personaggio delle serie, Arianna pesca a caso 5 battute dell'elenco non usate di recente in quella chat e le mette in fondo all'ultimo messaggio, al posto delle 4 fisse: il modello ne usa al massimo una. Quelle che nominano altri personaggi solo nelle chat private; le battute fisse riscritte da te vincono sull'elenco (D-224).
+- La pillola delle sezioni delle Impostazioni dice «Vale appena salvi» invece di «Vale subito» (richiesta dell'utente del 2026-10-16).
 
 ## [0.119.1] - 2026-10-16
 

@@ -1673,6 +1673,8 @@ export interface SeriesLineView {
   text: string;
   episode?: string;
   named: boolean;
+  /** Written by the user, not collected by Claude. */
+  own?: boolean;
 }
 
 /** The archive of real lines of a person of the series (D-224). */
@@ -1692,6 +1694,11 @@ export async function loadSeriesLines(character: string): Promise<SeriesLinesSta
 /** «Genera altre 100»: Claude collects them in the background. */
 export async function generateSeriesLines(character: string): Promise<SeriesLinesStatus> {
   return call<SeriesLinesStatus>('POST', `/api/series-lines/${encodeURIComponent(character)}/generate`, {});
+}
+
+/** A line written by hand (D-224). */
+export async function addSeriesLine(character: string, text: string): Promise<SeriesLinesStatus> {
+  return call<SeriesLinesStatus>('POST', `/api/series-lines/${encodeURIComponent(character)}/add`, { text });
 }
 
 export async function removeSeriesLine(character: string, n: number): Promise<SeriesLinesStatus> {
