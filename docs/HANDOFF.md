@@ -118,4 +118,4 @@ Promemoria per la fine della Fase 1A, non domande aperte (scelta dell'utente del
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, sera» in HANDOFF: main è alla 0.116.0 (D-221, oMLX risponde solo ad Arianna, verifica del codice di oMLX chiusa), nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (tappe seguenti di D-103 sui temi, D-114 voce, idee di OpenWork, D-096 backup per ultimo). In italiano con esempi pratici.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, notte tardi» in HANDOFF: main è alla 0.118.0 (personaggi delle serie che recitano, D-223), nessun lavoro in corso. Prossimo lavoro dalla coda: D-224 archivio di citazioni vere per personaggio, pescate dal codice; poi i personaggi nuovi delle serie, «Su di te» anche per Codex, messaggio chiaro quando Codex fallisce. In italiano con esempi pratici.
