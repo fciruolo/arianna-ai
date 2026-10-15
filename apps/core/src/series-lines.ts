@@ -25,6 +25,8 @@ export const MAX_SERIES_LINES = 1000;
 export const SERIES_LINES_BATCH = 100;
 /** A line longer than this is not a line: refused. */
 export const MAX_LINE_LENGTH = 200;
+/** Nor is a name alone («Jordan.», «Bobbo.»), seen in the first trial: at least two words and this many characters. */
+export const MIN_LINE_LENGTH = 12;
 /** Drawn for an answer. */
 export const LINES_PER_ANSWER = 5;
 /** The lines drawn lately in a conversation, not drawn again while others are left. */
@@ -78,13 +80,17 @@ export interface SeriesLines {
 
 const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
-/** The text of a line as kept: one line, no fences of the prompt, within MAX_LINE_LENGTH; undefined otherwise. */
+/** The text of a line as kept: one line, no fences of the prompt, two words or more, within MIN/MAX_LINE_LENGTH; undefined otherwise. */
 export function lineText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const text = value.replace(/\s+/g, ' ').trim();
-  if (text === '' || HIDDEN.test(text) || /[<>]/.test(text) || Array.from(text).length > MAX_LINE_LENGTH) return undefined;
+  const length = Array.from(text).length;
+  if (HIDDEN.test(text) || /[<>]/.test(text) || length < MIN_LINE_LENGTH || length > MAX_LINE_LENGTH || text.split(' ').length < 2) return undefined;
   return text;
 }
+
+/** Words that open a line with a comma without being a name («Ciao, novellino»): not marked. */
+const OPENERS = new Set(['ciao', 'senti', 'ascolta', 'ascoltami', 'guarda', 'allora', 'bene', 'ecco', 'okay', 'ehi', 'bravo', 'brava', 'dai', 'aspetta', 'scusa', 'scusate', 'grazie', 'insomma', 'beh', 'sai', 'certo', 'perfetto', 'sentite', 'ragazzi', 'gente', 'amico', 'bello', 'tesoro', 'pivello', 'novellino']);
 
 /** The same line written a little differently: case, accents, punctuation and spaces aside. */
 export function lineKey(text: string): string {
@@ -110,8 +116,10 @@ export function namesSomeone(character: string, text: string): boolean {
     const raw = sentence.split(/\s+/);
     const words = raw.map((word) => word.replace(/^[^\p{L}]+|[^\p{L}.]+$/gu, ''));
     if (words.slice(1).some(other)) return true;
-    // A first word called out with a comma is a name more often than not («Kelso, …»): marked too.
-    if (/^[^\p{L}]*\p{Lu}\p{L}*,$/u.test(raw[0] ?? '') && other(words[0] ?? '')) return true;
+    // A first word called out with a comma is often a name («Kelso, …»): marked, unless a word of the language
+    // that opens a line (OPENERS) or one of three letters or fewer («No, no, no!»).
+    const first = words[0] ?? '';
+    if (/^[^\p{L}]*\p{Lu}\p{L}*,$/u.test(raw[0] ?? '') && Array.from(first).length > 3 && !OPENERS.has(first.toLowerCase()) && other(first)) return true;
   }
   return false;
 }
@@ -124,7 +132,9 @@ export function namesSomeone(character: string, text: string): boolean {
 export function linesPrompt(name: string, show: string, known: number): string {
   return [
     `Collect real lines of the character "${name}" of the TV series "${show}", for a personal role-play.`,
-    `Give up to ${String(SERIES_LINES_BATCH)} lines the character really says in the series: famous quotes, catchphrases, recurring exclamations, short bits of its dialogue. Only lines you are confident are in the series: when unsure, leave the line out; fewer real lines are better than invented ones.`,
+    `Give ${String(SERIES_LINES_BATCH)} lines the character really says in the series, as many as you can up to that: its famous quotes (widely quoted online), catchphrases and running gags, the openings of its rants, the way it answers or teases the others, short bits of its dialogue from the episodes you remember. Short quotations for a personal role-play.`,
+    'They must be real lines of the series, not invented in its style: leave out a line only when you do not remember it being said.',
+    'Each line is at least one whole sentence of the character: never a name or a nickname alone, never a single word.',
     'Write them in Italian: the words of the Italian dub when you know them, else a faithful translation.',
     `Each line at most ${String(MAX_LINE_LENGTH - 40)} characters, the character's words only (no stage directions, no speaker names before the line)${known > 0 ? `; none of the ${String(known)} lines already collected, in the JSON array of the next part` : ''}.`,
     'Answer with only a JSON array of objects {"text": "...", "episode": "1x04" or "" when unsure, "names": ["other characters the line mentions"]}.',

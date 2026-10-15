@@ -73,8 +73,8 @@ import PixelAgent from './PixelAgent.vue';
 import SafetyReportCard from './SafetyReportCard.vue';
 import TranslatedText from './TranslatedText.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
-import SeriesPersonaCard from './SeriesPersonaCard.vue';
 import SheetPreview from './SheetPreview.vue';
+import { seriesFocus } from '../lib/series-focus.ts';
 
 /**
  * `form`/`base`: look, persona and model of every agent, edited and as read (the settings page owns them).
@@ -92,9 +92,6 @@ const props = defineProps<{
   directAgents: DirectAgent[];
   save: () => Promise<boolean>;
   /** D-223: saves `[series]` alone, the card of a person of the series; absent with an older core. */
-  saveSeries?: (() => Promise<boolean>) | undefined;
-  seriesBusy?: boolean;
-  seriesError?: string | undefined;
 }>();
 /**
  * `cancel`: the settings parts back to what was read. `changed`: an agent changed state or card, the rest reads again.
@@ -237,6 +234,12 @@ const tabs = computed(() => (current.value === undefined ? [] : tabsOf(current.v
 /** "Genera personaggio" drawing, or a drawing not kept: agent and tab stay, or the drawing would be lost. */
 const generating = ref(false);
 const HOLD_TEXT = 'Prima tieni o scarta il personaggio disegnato';
+/** The card of a person of the series is in Personaggi (D-224): opened on that character. */
+function openCharacter(character: string): void {
+  seriesFocus.value = character;
+  emit('section', 'personaggi');
+}
+
 function choose(id: string): void {
   if (generating.value) return;
   selected.value = id;
@@ -927,17 +930,12 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
             </div>
           </div>
           <SheetPreview v-if="animationsOpen && previewOf(current.id)" :src="sheetUrl(previewOf(current.id)!, sheetVersion)" :rows="previewOf(current.id)!.rows" />
-          <!-- D-223: the personality of the person of the series this agent wears, readable and editable -->
-          <SeriesPersonaCard
-            v-if="previewOf(current.id)?.pack === SERIES_PACK && form.series !== undefined && saveSeries !== undefined"
-            :key="`series-${previewOf(current.id)!.character}`"
-            :character="previewOf(current.id)!.character"
-            :form="form as { series: Record<string, SeriesValues> }"
-            :save="saveSeries"
-            :busy="seriesBusy === true"
-            :error="seriesError"
-            :own-traits="(form.personas[current.id]?.traits.trim() ?? '') !== ''"
-          />
+          <!-- D-224: the personality and the real lines of the person of the series live in Personaggi; here only who wears whom -->
+          <p v-if="previewOf(current.id)?.pack === SERIES_PACK" class="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[13px]">
+            Personalità, battute e citazioni vere di questo personaggio:
+            <a href="/impostazioni/personaggi" class="text-accent hover:underline" @click.prevent="openCharacter(previewOf(current.id)!.character)">Impostazioni → Personaggi</a>.
+            <span v-if="(form.personas[current.id]?.traits.trim() ?? '') !== ''" class="mt-1 block text-warn">Per questo agente hai scritto una Personalità tua (tab Personalità): vince su quella del personaggio.</span>
+          </p>
           <div class="flex flex-col gap-3">
             <h3 class="text-[14px] font-medium">Galleria</h3>
             <p class="text-[12.5px] text-muted">Clicca un personaggio per darlo a {{ nameOf(current.id) }}; premi Salva nella barra in basso per tenerlo.</p>

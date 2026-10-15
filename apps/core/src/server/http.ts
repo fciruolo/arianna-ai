@@ -2275,6 +2275,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         return {
           id,
           name: persona.name,
+          show: persona.show,
           repository: { traits: persona.traits, scene: persona.scene, quotes: [...persona.quotes] },
           own: override ?? null,
           refused,

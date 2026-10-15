@@ -1654,6 +1654,8 @@ export async function exportMockupPptx(project: string, path: string, deck: Deck
 export interface SeriesPersonaView {
   id: string;
   name: string;
+  /** The series it comes from (D-224); absent with an older core. */
+  show?: string;
   repository: { traits: string; scene: string; quotes: string[] };
   own: { traits?: string; scene?: string; quotes?: string[] } | null;
   /** The rewrite the model does not read (personal data or a vault value written by hand); absent with an older core. */

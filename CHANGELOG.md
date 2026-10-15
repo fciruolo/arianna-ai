@@ -6,7 +6,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Nella scheda di un personaggio delle serie (Impostazioni → Agenti → Aspetto) la sezione «Citazioni vere»: «Genera altre 100» chiede a Claude frasi che il personaggio dice davvero nella serie, in italiano (doppiaggio quando lo conosce), con l'episodio quando lo sa; elenco numerato con «togli», fino a 1000 per personaggio, doppioni tolti. A Claude escono solo il nome del personaggio e della serie (D-224).
+- Voce nuova «Personaggi» nelle Impostazioni, dopo Agenti: tutti i personaggi delle serie divisi per serie (Scrubs, The Office), ognuno con la sua scheda (chi è e come parla, scena, battute, citazioni vere). In Agenti → Aspetto resta solo chi indossa chi, con un collegamento alla scheda (D-224, richiesta dell'utente del 2026-10-16).
+- Nella scheda di un personaggio la sezione «Citazioni vere»: «Genera altre 100» chiede a Claude frasi che il personaggio dice davvero nella serie, in italiano (doppiaggio quando lo conosce), con l'episodio quando lo sa; almeno una frase intera, mai un nome da solo; elenco numerato con «togli», fino a 1000 per personaggio, doppioni tolti. A Claude escono solo il nome del personaggio e della serie e le citazioni già raccolte (D-224).
 
 ### Cambiato
 

@@ -48,6 +48,10 @@ function archive(answers: (string | Error)[], dir = join(root, randomUUID())) {
 test('lineText and lineKey: one line within the limit, no fences; the same line written a little differently is one', () => {
   assert.equal(lineText('  Che vuoi,\n pivello?  '), 'Che vuoi, pivello?');
   assert.equal(lineText(''), undefined);
+  // A name alone, or a word alone, is not a line (seen in the first trial: «Jordan.», «Bobbo.»).
+  assert.equal(lineText('Jordan.'), undefined);
+  assert.equal(lineText('Straordinariamente!'), undefined);
+  assert.equal(lineText('Ciao, novellino.'), 'Ciao, novellino.');
   assert.equal(lineText('a <b> c'), undefined);
   assert.equal(lineText('x'.repeat(201)), undefined);
   assert.equal(lineText(42), undefined);
@@ -68,13 +72,17 @@ test('namesSomeone: another person of the series, or a capital word inside a sen
   // A first word called out with a comma: a name; the own name or an exclamation is not.
   assert.equal(namesSomeone('cox', 'Toby, vattene.'), true);
   assert.equal(namesSomeone('cox', 'Cox, ti prego.'), false);
+  assert.equal(namesSomeone('cox', 'Ciao, novellino.'), false);
+  assert.equal(namesSomeone('cox', 'No, no, no, no, no!'), false);
+  assert.equal(namesSomeone('cox', 'Ciao, Barbie.'), true);
   assert.equal(namesSomeone('cox', 'Sbagliato! Riprova.'), false);
 });
 
 test('linesPrompt: only the names of the character and of the series, and the lines already kept', () => {
   const prompt = linesPrompt('Dr. Cox', 'Scrubs', 1);
   assert.match(prompt, /character "Dr\. Cox" of the TV series "Scrubs"/);
-  assert.match(prompt, /Only lines you are confident are in the series: when unsure, leave the line out/);
+  assert.match(prompt, /They must be real lines of the series, not invented in its style/);
+  assert.match(prompt, /never a name or a nickname alone, never a single word/);
   assert.match(prompt, /Italian dub when you know them, else a faithful translation/);
   assert.match(prompt, /none of the 1 lines already collected, in the JSON array of the next part/);
   assert.doesNotMatch(linesPrompt('Dr. Cox', 'Scrubs', 0), /already collected/);
@@ -84,11 +92,11 @@ test('parseLines: a JSON array of objects anywhere in the answer; what is not a 
   assert.deepEqual(parseLines('nessun elenco'), undefined);
   assert.deepEqual(parseLines('[{"text": "a",'), undefined);
   assert.deepEqual(parseLines('{"text": "a"}'), undefined);
-  assert.deepEqual(parseLines('Ecco [{"text":"Sbagliato!","episode":"1x01","names":[]},{"text":""},{"x":1},"testo",{"text":"Kelso!","names":["Kelso"],"episode":""}]'), [
-    { text: 'Sbagliato!', episode: '1x01', names: [] },
-    { text: 'Kelso!', names: ['Kelso'] },
+  assert.deepEqual(parseLines('Ecco [{"text":"Sbagliato! Riprova.","episode":"1x01","names":[]},{"text":""},{"text":"Bobbo."},{"x":1},"testo",{"text":"Kelso, vieni qui!","names":["Kelso"],"episode":""}]'), [
+    { text: 'Sbagliato! Riprova.', episode: '1x01', names: [] },
+    { text: 'Kelso, vieni qui!', names: ['Kelso'] },
   ]);
-  assert.deepEqual(parseLines('[{"text":"Va bene.","episode":"<b>"}]'), [{ text: 'Va bene.', names: [] }]);
+  assert.deepEqual(parseLines('[{"text":"Va bene, va bene.","episode":"<b>"}]'), [{ text: 'Va bene, va bene.', names: [] }]);
 });
 
 test('generate: Claude collects in the background from the names alone; numbered, doubles out, named lines marked, kept in data/characters/serie-lines', async () => {
@@ -163,9 +171,9 @@ test('generate: an unreadable answer or a Claude without quota stops it with a r
 test('generate: never past MAX_SERIES_LINES; a full archive refuses another batch', async () => {
   const dir = join(root, randomUUID());
   mkdirSync(join(dir, SERIES_LINES_DIR), { recursive: true });
-  const kept = Array.from({ length: MAX_SERIES_LINES - 1 }, (_, index) => ({ n: index + 1, text: `Battuta ${String(index + 1)}.`, named: false }));
+  const kept = Array.from({ length: MAX_SERIES_LINES - 1 }, (_, index) => ({ n: index + 1, text: `Questa è la battuta ${String(index + 1)}.`, named: false }));
   writeFileSync(join(dir, SERIES_LINES_DIR, 'pam.json'), JSON.stringify({ next: MAX_SERIES_LINES, lines: kept }));
-  const { lines } = archive([answerOf([{ text: 'Una.' }, { text: 'Due.' }])], dir);
+  const { lines } = archive([answerOf([{ text: 'Questa è la prima.' }, { text: 'Questa è la seconda.' }])], dir);
   lines.generate('pam');
   await lines.idle();
   assert.equal(lines.status('pam').lines.length, MAX_SERIES_LINES);
@@ -180,12 +188,13 @@ test('the file written by hand: a line with personal data or a vault value, a ba
     join(dir, SERIES_LINES_DIR, 'dwight.json'),
     JSON.stringify({
       lines: [
-        { n: 1, text: 'Fatto.' },
+        { n: 1, text: 'Fatto: ho ragione io.' },
         { n: 2, text: 'Paga su IT60X0542811101000000123456' },
         { n: 3, text: 'La parola è barbabietola-segreta-42.' },
-        { n: 1, text: 'Doppio.' },
-        { n: 0, text: 'Zero.' },
-        { n: 7, text: 'Domanda: perché?', episode: '2x03' },
+        { n: 1, text: 'Questa ha un numero doppio.' },
+        { n: 0, text: 'Questa ha il numero zero.' },
+        { n: 8, text: 'Corta.' },
+        { n: 7, text: 'Domanda: perché me lo chiedi?', episode: '2x03' },
       ],
     }),
   );
@@ -193,8 +202,8 @@ test('the file written by hand: a line with personal data or a vault value, a ba
   assert.deepEqual(
     lines.status('dwight').lines.map((line) => [line.n, line.text, line.episode ?? '']),
     [
-      [1, 'Fatto.', ''],
-      [7, 'Domanda: perché?', '2x03'],
+      [1, 'Fatto: ho ragione io.', ''],
+      [7, 'Domanda: perché me lo chiedi?', '2x03'],
     ],
   );
   // An unreadable file: no lines, never an error.
@@ -205,7 +214,7 @@ test('the file written by hand: a line with personal data or a vault value, a ba
 test('draw: a few at a time, not drawn lately in the same conversation; named lines only where admitted', () => {
   const dir = join(root, randomUUID());
   mkdirSync(join(dir, SERIES_LINES_DIR), { recursive: true });
-  const kept = Array.from({ length: 12 }, (_, index) => ({ n: index + 1, text: `Battuta ${String(index + 1)}.`, named: index >= 10 }));
+  const kept = Array.from({ length: 12 }, (_, index) => ({ n: index + 1, text: `Questa è la battuta ${String(index + 1)}.`, named: index >= 10 }));
   writeFileSync(join(dir, SERIES_LINES_DIR, 'cox.json'), JSON.stringify({ next: 13, lines: kept }));
   let seed = 0;
   const lines = createSeriesLines({ dir, ask: () => Promise.reject(new Error('no')), secrets: noSecrets, random: () => ((seed = (seed * 9301 + 49297) % 233280) / 233280) });
@@ -214,13 +223,13 @@ test('draw: a few at a time, not drawn lately in the same conversation; named li
   assert.equal(first.length, 5);
   assert.equal(second.length, 5);
   assert.equal(new Set([...first, ...second]).size, 10, 'none of the first five again while others are left');
-  assert.ok([...first, ...second].every((line) => !/Battuta 1[12]\./.test(line)), 'named lines out of a work step');
+  assert.ok([...first, ...second].every((line) => !/battuta 1[12]\./.test(line)), 'named lines out of a work step');
   // Past the fresh ones the others come back, never fewer than asked.
   assert.equal(lines.draw('cox', { conversation: 'a', named: false }).length, 5);
   // Another conversation remembers nothing of this one; a private step may draw the named ones.
   const everything = new Set<string>();
   for (let round = 0; round < 5; round += 1) for (const line of lines.draw('cox', { conversation: 'b', named: true })) everything.add(line);
-  assert.ok(everything.has('Battuta 11.') && everything.has('Battuta 12.'));
+  assert.ok(everything.has('Questa è la battuta 11.') && everything.has('Questa è la battuta 12.'));
   assert.deepEqual([lines.has('cox', false), lines.has('jim', true), lines.has('constructor', true)], [true, false, false]);
   assert.deepEqual(lines.draw('jim', { conversation: 'a', named: true }), []);
 });

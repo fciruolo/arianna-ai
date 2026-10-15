@@ -96,6 +96,7 @@ import {
 } from '../lib/settings.ts';
 import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
+import SeriesCharactersPage from './SeriesCharactersPage.vue';
 import ChangelogPage from './ChangelogPage.vue';
 import DesignCatalog from './DesignCatalog.vue';
 import DevProgressPage from './DevProgressPage.vue';
@@ -1037,9 +1038,6 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)"
                 :direct-agents="directAgents ?? []"
                 :save="() => save('agents', AGENT_PARTS)"
-                :save-series="view?.values?.series === undefined ? undefined : () => save('series', ['series'])"
-                :series-busy="busy === 'series'"
-                :series-error="errors.series"
                 @cancel="resetAgents"
                 @uploaded="onUploaded"
                 @packs="onPacks"
@@ -1048,6 +1046,15 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 @section="openSection"
                 @chat="openChat"
                 @dirty="agentTextsDirty = $event"
+              />
+
+              <!-- Personaggi (D-224): the cards of the people of the series, with their real lines -->
+              <SeriesCharactersPage
+                v-if="active === 'series-characters' && forms.series !== undefined && view?.values?.series !== undefined"
+                :form="forms as { series: Record<string, SeriesValues> }"
+                :save="() => save('series', ['series'])"
+                :busy="busy === 'series'"
+                :error="errors.series"
               />
 
               <!-- Voce e chiamate -->

@@ -63,6 +63,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Chi lavora con Arianna: come si chiama, come parla, che aspetto ha, con quale modello lavora e cosa può fare.',
         example: 'dai al Coder un tono «diretto»: da ora le sue risposte in chat sono più asciutte.',
       },
+      // The people of the series (D-224, request of the user of 2026-10-16): their cards out of Agenti, which keeps only who wears whom.
+      {
+        id: 'series-characters',
+        slug: 'personaggi',
+        title: 'Personaggi',
+        behaviour: 'now',
+        lead: 'I personaggi delle serie che gli agenti possono indossare: chi sono, come parlano, la scena delle chat private, le battute e le citazioni vere. Chi indossa chi si sceglie in Agenti → Aspetto.',
+        example: 'apri Dr. Cox e premi «Genera 100 citazioni»: dal messaggio dopo, l’agente che lo indossa usa ogni tanto una sua frase vera della serie.',
+      },
       // The user's profile (D-114, tappa A): facts one at a time, «Solo in casa» or «Condivisibile».
       {
         id: 'about-you',
