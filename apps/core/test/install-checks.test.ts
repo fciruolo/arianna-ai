@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { parseCatalog, resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, guardDirChecks, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
+import { DATA_LAYOUT, ensureLayout, guardDirChecks, layoutCheck, omlxLogChecks, omlxSettingsChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 
@@ -128,6 +128,71 @@ test('omlxLogChecks refuses the oMLX levels that log the prompts, and only for o
   assert.match(checks[1]?.detail ?? '', /data\/b\.log/);
   assert.match(checks[3]?.detail ?? '', /add --log-level info/);
   assert.match(checks[7]?.detail ?? '', /without a value/);
+});
+
+test('omlxSettingsChecks: oMLX settings inside data/, no key or MCP on the command line, nothing that reopens it (D-221)', () => {
+  const home = join(HOME, 'omlx-settings');
+  const data = join(home, 'data');
+  const serve = (...extra: string[]): string[] => ['omlx', 'serve', '--model-dir', 'data/models', ...extra];
+  const settings = (dir: string, content: unknown): void => {
+    mkdirSync(join(data, dir), { recursive: true });
+    writeFileSync(join(data, dir, 'settings.json'), typeof content === 'string' ? content : JSON.stringify(content));
+  };
+  settings('clean', { auth: { api_key: 'x', skip_api_key_verification: false, sub_keys: [] }, network: { http_proxy: '', https_proxy: '', no_proxy: '' }, mcp: { config_path: null }, server: { distributed_inference_enabled: false } });
+  settings('open', { auth: { skip_api_key_verification: true, sub_keys: [{ name: 'x' }] }, network: { https_proxy: 'http://proxy.example:3128', no_proxy: '*' }, mcp: { config_path: '/x/mcp.json' }, server: { distributed_inference_enabled: true } });
+  settings('broken', '{not json');
+  // A link inside data/ that leads outside it.
+  mkdirSync(join(home, 'outside'), { recursive: true });
+  symlinkSync(join(home, 'outside'), join(data, 'linked'));
+  const checks = omlxSettingsChecks(home, data, [
+    { id: 'a', command: serve('--base-path', 'data/clean') },
+    { id: 'b', command: serve('--base-path', 'data/open') },
+    { id: 'c', command: serve('--base-path', 'data/broken') },
+    // Not started yet: no settings.json.
+    { id: 'd', command: serve('--base-path=data/omlx') },
+    { id: 'e', command: serve() },
+    { id: 'f', command: serve('--base-path', 'elsewhere') },
+    { id: 'g', command: serve('--base-path', 'data') },
+    { id: 'h', command: serve('--base-path', 'data/omlx', '--api-key', 'k', '--mcp-config=m.json') },
+    { id: 'k', command: serve('--base-path', 'data/linked') },
+    { id: 'i', command: ['llama-server', '--api-key', 'k'] },
+    { id: 'j' },
+  ]);
+  assert.deepEqual(
+    checks.map((check) => [check.id, check.ok]),
+    [
+      ['local.a.flags', true],
+      ['local.a.base-path', true],
+      ['local.a.settings', true],
+      ['local.b.flags', true],
+      ['local.b.base-path', true],
+      ['local.b.settings', false],
+      ['local.c.flags', true],
+      ['local.c.base-path', true],
+      ['local.c.settings', false],
+      ['local.d.flags', true],
+      ['local.d.base-path', true],
+      ['local.d.settings', true],
+      ['local.e.flags', true],
+      ['local.e.base-path', false],
+      ['local.f.flags', true],
+      ['local.f.base-path', false],
+      ['local.g.flags', true],
+      ['local.g.base-path', false],
+      ['local.h.flags', false],
+      ['local.h.base-path', true],
+      ['local.h.settings', true],
+      ['local.k.flags', true],
+      ['local.k.base-path', false],
+    ],
+  );
+  const detail = (id: string): string => checks.find((check) => check.id === id)?.detail ?? '';
+  assert.equal(detail('local.b.settings'), 'settings.json sets auth.skip_api_key_verification, auth.sub_keys, network.https_proxy, network.no_proxy, mcp.config_path, server.distributed_inference_enabled: reset in data/open/settings.json');
+  assert.match(detail('local.c.settings'), /cannot be read/);
+  assert.match(detail('local.e.base-path'), /add --base-path data\/omlx/);
+  assert.equal(detail('local.h.flags'), 'remove --api-key, --mcp-config: the key comes from data/h.key');
+  // The value of a key never goes in a detail.
+  assert.ok(!checks.some((check) => check.detail.includes("'k'")));
 });
 
 test('a model of data/guard/models left in data/models fails the doctor: oMLX would list it (D-203)', () => {

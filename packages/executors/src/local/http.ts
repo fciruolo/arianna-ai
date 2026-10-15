@@ -91,7 +91,7 @@ export function localRequestBytes(
  */
 export function localRequestStream(
   url: string,
-  options: { body: string; signal: AbortSignal; maxBytes?: number },
+  options: { body: string; signal: AbortSignal; maxBytes?: number; headers?: Record<string, string> },
   onData: (chunk: Buffer) => void,
 ): Promise<{ status: number }> {
   const parsed = new URL(url);
@@ -101,7 +101,7 @@ export function localRequestStream(
   return new Promise((resolve, reject) => {
     const req = client.request(
       parsed,
-      { method: 'POST', agent, signal: options.signal, headers: { 'content-type': 'application/json', accept: 'text/event-stream' } },
+      { method: 'POST', agent, signal: options.signal, headers: { ...options.headers, 'content-type': 'application/json', accept: 'text/event-stream' } },
       (res) => {
         const status = res.statusCode ?? 0;
         const ok = status >= 200 && status <= 299;

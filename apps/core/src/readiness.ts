@@ -20,7 +20,7 @@ import { verifyEventChain } from './events.ts';
 import { installationChecks, type Runner } from './install-checks.ts';
 
 /** The groups the page names, in the order it shows them; `other` holds an id this list does not know (it still counts). */
-export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'programs', 'voice', 'projects', 'other'] as const;
+export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
 export type ReadinessId = (typeof READINESS_IDS)[number];
 
 /** Groups that must be there: one missing (a check that did not run) is a failure, never a silent pass. */
@@ -58,6 +58,7 @@ function groupOf(id: string): ReadinessId {
   if (id === 'models' || id === 'models.guard-dir') return 'models';
   if (id === 'models.ram') return 'memory';
   if (/^local\..+\.log-level$/.test(id)) return 'model-log';
+  if (/^local\..+\.(flags|base-path|settings)$/.test(id)) return 'model-server';
   if (id.startsWith('system.')) return 'programs';
   if (id === 'voice.env') return 'voice';
   if (id === 'projects' || id.startsWith('projects.')) return 'projects';

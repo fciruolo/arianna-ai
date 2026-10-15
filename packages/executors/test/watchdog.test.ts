@@ -1,5 +1,6 @@
 // The watchdog against the fake server run as a real process.
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
@@ -264,6 +265,93 @@ describe('Watchdog', { timeout: 60_000 }, () => {
     await restarted(watchdog);
     assert.ok(events.some((event) => event.type === 'restart' && event.reason === 'unhealthy'));
     assert.ok(events.some((event) => event.type === 'spawn'));
+  });
+
+  it('with refuseOpen, does not adopt a server that answers without the health headers (D-221)', async () => {
+    const port = await freePort();
+    const external = await startFakeServer(port);
+    try {
+      const { watchdog, events } = await supervise(port, { healthHeaders: { authorization: 'Bearer key' }, refuseOpen: true });
+      assert.equal(watchdog.state, 'failed');
+      assert.ok(events.some((event) => event.type === 'open'));
+      assert.ok(!events.some((event) => event.type === 'adopt' || event.type === 'spawn'));
+      assert.equal(watchdog.isAvailable(), false);
+      await watchdog.stop();
+      // Not ours: still running.
+      assert.equal((await fetch(`${external.url}/models`)).status, 200);
+    } finally {
+      await external.close();
+    }
+  });
+
+  it('with refuseOpen, a check without headers that fails in another way than 401 or 403 counts as open (default-deny)', async () => {
+    const port = await freePort();
+    const odd = createServer((request, response) => {
+      response.writeHead(request.headers.authorization === 'Bearer key' ? 200 : 500).end('{"object":"list","data":[]}');
+    });
+    await new Promise<void>((resolve) => odd.listen(port, '127.0.0.1', resolve));
+    try {
+      const { watchdog, events } = await supervise(port, { healthHeaders: { authorization: 'Bearer key' }, refuseOpen: true });
+      assert.equal(watchdog.state, 'failed');
+      assert.ok(events.some((event) => event.type === 'open'));
+    } finally {
+      await new Promise<void>((resolve) => odd.close(() => { resolve(); }));
+    }
+  });
+
+  it('with refuseOpen, an open server that shows up while its own child starts is refused, and the child stopped', async () => {
+    const port = await freePort();
+    const events: WatchdogEvent[] = [];
+    const watchdog = new Watchdog({
+      id: 'fake',
+      url: `http://127.0.0.1:${String(port)}/v1`,
+      // A child that never listens, like oMLX still loading.
+      command: [process.execPath, '-e', 'setInterval(() => undefined, 1000)'],
+      healthHeaders: { authorization: 'Bearer key' },
+      refuseOpen: true,
+      intervalMs: 50,
+      healthTimeoutMs: 500,
+      startupTimeoutMs: 5_000,
+      stopGraceMs: 500,
+      onEvent: (event) => events.push(event),
+    });
+    running.push(watchdog);
+    const starting = watchdog.start();
+    await watchdog.waitForState(['starting']);
+    const external = await startFakeServer(port);
+    try {
+      await starting;
+      assert.equal(watchdog.state, 'failed');
+      assert.ok(events.some((event) => event.type === 'open'));
+      const child = pidOf(events);
+      assert.ok(events.some((event) => event.type === 'exit' && event.pid === child && event.expected));
+    } finally {
+      await external.close();
+    }
+  });
+
+  it('with refuseOpen, adopts a server that asks for the health headers; without refuseOpen, an open one too', async () => {
+    const port = await freePort();
+    const keyed = createServer((request, response) => {
+      response.writeHead(request.headers.authorization === 'Bearer key' ? 200 : 401).end('{"object":"list","data":[]}');
+    });
+    await new Promise<void>((resolve) => keyed.listen(port, '127.0.0.1', resolve));
+    try {
+      const { watchdog, events } = await supervise(port, { healthHeaders: { authorization: 'Bearer key' }, refuseOpen: true });
+      assert.equal(watchdog.state, 'up');
+      assert.ok(events.some((event) => event.type === 'adopt'));
+      assert.ok(!events.some((event) => event.type === 'open'));
+      await watchdog.stop();
+    } finally {
+      await new Promise<void>((resolve) => keyed.close(() => { resolve(); }));
+    }
+    const external = await startFakeServer(port);
+    try {
+      const { events } = await supervise(port, { healthHeaders: { authorization: 'Bearer key' } });
+      assert.ok(events.some((event) => event.type === 'adopt'));
+    } finally {
+      await external.close();
+    }
   });
 
   it('only monitors when it has no command', async () => {

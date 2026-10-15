@@ -65,6 +65,8 @@ const OMLX_PORT = 7001;
 const OMLX_CACHE = ['--paged-ssd-cache-dir', 'data/omlx-cache', '--paged-ssd-cache-max-size', '10GB'];
 /** Written out, so a new default of oMLX never brings the prompts into data/<id>.log (`trace` does; D-136, stage 0). */
 const OMLX_LOG = ['--log-level', 'info'];
+/** Settings, logs and admin password of oMLX in data/omlx, not in its home folder, where another oMLX or its macOS app could change them (D-221). */
+const OMLX_BASE = ['--base-path', 'data/omlx'];
 
 function gib(bytes: number): string {
   return `${(bytes / 2 ** 30).toFixed(1)} GiB`;
@@ -158,7 +160,7 @@ async function stepModels(io: Prompter, context: WizardContext, settings: Settin
           id: 'omlx',
           url: `http://127.0.0.1:${String(OMLX_PORT)}/v1`,
           // The prefix cache in data/, bounded (D-075): without the flag oMLX uses its own settings, outside ARIANNA_HOME.
-          command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', String(OMLX_PORT), ...OMLX_LOG, ...OMLX_CACHE],
+          command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', String(OMLX_PORT), ...OMLX_LOG, ...OMLX_BASE, ...OMLX_CACHE],
         },
       ];
     }

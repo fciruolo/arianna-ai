@@ -22,6 +22,8 @@ export type WatchdogState = 'idle' | 'starting' | 'up' | 'down' | 'restarting' |
 export type WatchdogEvent =
   | { type: 'state'; endpoint: string; state: WatchdogState; previous: WatchdogState }
   | { type: 'adopt'; endpoint: string }
+  /** A server already on the port answers without the key of `healthHeaders` (D-221): not adopted, state `failed`. */
+  | { type: 'open'; endpoint: string }
   | { type: 'spawn'; endpoint: string; pid: number }
   /** The command could not be started; `code` is the system error code, e.g. ENOENT. */
   | { type: 'spawn-error'; endpoint: string; code: string }
@@ -52,6 +54,13 @@ export interface WatchdogOptions {
   healthPath?: string;
   /** Headers of the health check (apps/voice wants its service token, D-066). */
   healthHeaders?: Record<string, string>;
+  /**
+   * With `healthHeaders` and a command: a server already answering at start
+   * is adopted only if it refuses a check without them (D-221). One that
+   * answers anybody was started by someone else without the key, and
+   * anybody on loopback could read what the core sends it.
+   */
+  refuseOpen?: boolean;
   /** File that receives the server's stdout and stderr; discarded otherwise. Logs may contain prompts: keep it in data/. */
   logFile?: string;
   intervalMs?: number;
@@ -75,8 +84,8 @@ const STARTUP_POLL_MS = 250;
 export class Watchdog {
   readonly id: string;
   readonly #url: string;
-  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders'>> &
-    Pick<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders'>;
+  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen'>> &
+    Pick<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen'>;
 
   #state: WatchdogState = 'idle';
   #running = false;
@@ -132,6 +141,12 @@ export class Watchdog {
     const settled = this.waitForState(['up', 'down', 'failed', 'stopped']);
     const healthy = await this.#healthy();
     if (!this.#isRunning()) return; // stop() was called meanwhile
+    if (healthy && this.#options.command !== undefined && (await this.#open())) {
+      if (!this.#isRunning()) return;
+      await this.#refuse();
+      await settled;
+      return;
+    }
     if (healthy) {
       if (this.#options.command !== undefined) {
         this.#emit({ type: 'adopt', endpoint: this.id });
@@ -288,6 +303,11 @@ export class Watchdog {
       if (this.#childExited()) break;
       // Answering while our child is gone means someone else holds the port.
       if ((await this.#healthy()) && !this.#childExited()) {
+        // Before its own child binds the port, an open server of someone else may answer (D-221).
+        if (await this.#open()) {
+          if (this.#isRunning()) await this.#refuse();
+          return;
+        }
         this.#setState('up');
         return;
       }
@@ -321,6 +341,32 @@ export class Watchdog {
     await exited;
     // Workers that outlived the main process would keep the port and the memory.
     killGroup(pid, 'SIGKILL');
+  }
+
+  /**
+   * With `refuseOpen`: true unless the server refuses a check without the
+   * headers (401 or 403). Default-deny: a timeout, an error or any other
+   * status counts as open, since only a refusal proves it asks for the key.
+   */
+  async #open(): Promise<boolean> {
+    if (this.#options.refuseOpen !== true || this.#options.healthHeaders === undefined) return false;
+    try {
+      const response = await localRequest(`${this.#url}${this.#options.healthPath}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(this.#options.healthTimeoutMs),
+      });
+      return response.status !== 401 && response.status !== 403;
+    } catch {
+      return true;
+    }
+  }
+
+  /** An open server holds the port: no supervision, its own child (if any) stopped, state `failed`. */
+  async #refuse(): Promise<void> {
+    this.#running = false;
+    this.#emit({ type: 'open', endpoint: this.id });
+    await this.#killChild();
+    this.#setState('failed');
   }
 
   async #healthy(): Promise<boolean> {

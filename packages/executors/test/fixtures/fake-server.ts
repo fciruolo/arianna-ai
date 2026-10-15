@@ -24,12 +24,15 @@ export interface FakeServer {
   requests: unknown[];
   /** Names asked to unload, in order. */
   unloads: string[];
+  /** The `authorization` header of every request but the test routes, in order (D-221). */
+  authorizations: (string | undefined)[];
   close(): Promise<void>;
 }
 
 export async function startFakeServer(port = 0): Promise<FakeServer> {
   const requests: unknown[] = [];
   const unloads: string[] = [];
+  const authorizations: (string | undefined)[] = [];
   let loaded = true;
   let hanging = false;
 
@@ -48,6 +51,7 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
       sendJson(res, 200, requests.at(-1) ?? null);
       return;
     }
+    authorizations.push(req.headers.authorization);
     if (hanging) return; // never answers
     if (req.method === 'GET' && req.url === '/v1/models') {
       sendJson(res, 200, { object: 'list', data: [{ id: 'fake-large', object: 'model' }] });
@@ -83,6 +87,7 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
     port: actual,
     requests,
     unloads,
+    authorizations,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

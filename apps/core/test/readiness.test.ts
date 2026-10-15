@@ -49,6 +49,9 @@ test('checks go under closed groups: a group passes only when all its checks do;
     check('models', true),
     check('models.ram', false),
     check('local.omlx.log-level', true),
+    check('local.omlx.flags', true),
+    check('local.omlx.base-path', false),
+    check('local.omlx.settings', true),
     check('projects.sito', true),
     check('projects.sito.link', true),
     check('database.passwords', false),
@@ -63,6 +66,7 @@ test('checks go under closed groups: a group passes only when all its checks do;
     { id: 'models', ok: true },
     { id: 'memory', ok: false },
     { id: 'model-log', ok: true },
+    { id: 'model-server', ok: false },
     { id: 'programs', ok: false },
     { id: 'projects', ok: true },
   ]);

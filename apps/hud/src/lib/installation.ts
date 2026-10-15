@@ -46,7 +46,7 @@ export function parseInstallation(value: unknown): InstallationInfo | undefined 
  * answers closed ids and outcomes, never a detail; the names and what to do
  * are written here, for a person who does not read code.
  */
-export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'programs', 'voice', 'projects', 'other'] as const;
+export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
 export type ReadinessId = (typeof READINESS_IDS)[number];
 
 export interface ReadinessCheck {
@@ -132,6 +132,11 @@ export const READINESS_TEXT: Record<ReadinessId, { title: string; ok: string; fi
     title: 'Il server dei modelli non scrive i tuoi testi nel suo registro',
     ok: 'Livello di registro senza testi.',
     fix: 'Il comando del server dei modelli non dice --log-level info, quindi potrebbe scrivere nel suo registro quello che chiedi. Aggiungilo in Server dei modelli, Avanzate.',
+  },
+  'model-server': {
+    title: 'Il server dei modelli risponde solo ad Arianna',
+    ok: 'Chiave di Arianna, impostazioni nella cartella dei dati.',
+    fix: 'Il comando del server dei modelli non dice --base-path data/omlx, contiene --api-key o --mcp-config, oppure le sue impostazioni saltano la chiave, usano un proxy, server MCP o il cluster. Correggilo in Server dei modelli, Avanzate; pnpm arianna:doctor dice cosa.',
   },
   programs: {
     title: 'Programmi necessari',

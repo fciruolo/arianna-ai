@@ -67,6 +67,7 @@ export {
 export { CODEX_FILE_CHANGE_KINDS, CodexStream, type CodexEvent, type CodexFileChangeKind, type CodexUsage } from './codex/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
 export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';
+export { authorization, ensureLocalKey, localKeys, readLocalKey } from './local/key.ts';
 export {
   createLocalModel,
   LocalModelError,

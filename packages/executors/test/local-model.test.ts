@@ -364,3 +364,38 @@ describe('unloading a model (D-074)', () => {
     assert.equal(server.unloads.at(-1), 'other');
   });
 });
+
+describe('key of the server (D-221)', () => {
+  let server: FakeServer;
+
+  before(async () => {
+    server = await startFakeServer();
+  });
+  after(() => server.close());
+
+  it('sends the key of the endpoint on chat, stream and unload', async () => {
+    const asked: string[] = [];
+    const model = createLocalModel({
+      endpoints: [endpoint('fake', server.url)],
+      apiKey: (id) => {
+        asked.push(id);
+        return 'k'.repeat(43);
+      },
+    });
+    const start = server.authorizations.length;
+    await model.chat({ model: 'local-large', messages: USER('say hello') });
+    await model.chat({ model: 'local-large', messages: USER('say hello'), onText: () => undefined });
+    await model.unload?.('local-large');
+    assert.deepEqual(server.authorizations.slice(start), Array.from({ length: 3 }, () => `Bearer ${'k'.repeat(43)}`));
+    assert.deepEqual(asked, ['fake', 'fake', 'fake']);
+  });
+
+  it('sends no authorization header without a key', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('fake', server.url)], apiKey: () => undefined });
+    const start = server.authorizations.length;
+    await model.chat({ model: 'local-large', messages: USER('say hello') });
+    const plain = createLocalModel({ endpoints: [endpoint('fake', server.url)] });
+    await plain.chat({ model: 'local-large', messages: USER('say hello'), onText: () => undefined });
+    assert.deepEqual(server.authorizations.slice(start), [undefined, undefined]);
+  });
+});

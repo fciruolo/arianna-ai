@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CONFIG_FILE, DATA_DIR, loadCatalog, loadConfig, resolveHome } from '@arianna/config';
-import { createLocalModel } from '@arianna/executors';
+import { createLocalModel, localKeys } from '@arianna/executors';
 
 import { loadCases } from './cases.ts';
 import { createFinanceGroup } from './finance-group.ts';
@@ -49,7 +49,8 @@ if (modelId !== undefined) {
     console.error('no [[local.endpoints]] in config/arianna.toml');
     process.exit(2);
   }
-  const model = createLocalModel({ endpoints });
+  // The key of a server the core started (D-221).
+  const model = createLocalModel({ endpoints, apiKey: localKeys(config.paths.data, (id) => config.local.endpoints.some((endpoint) => endpoint.id === id && endpoint.command !== undefined)) });
   const candidates = new Map([
     ['orchestrator', createOrchestratorGroup({ model })],
     ['finance', createFinanceGroup({ model: () => model })],

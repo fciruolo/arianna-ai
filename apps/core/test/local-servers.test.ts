@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { after, afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { DATA_DIR, resolveHome, type LocalEndpointConfig } from '@arianna/config';
+import { ensureLocalKey, readLocalKey } from '@arianna/executors';
 
 import { createLocalServers, localServerEnv, loggedEvent, logTail, type LocalServerEvent, type LocalServers } from '../src/local-servers.ts';
 
@@ -34,10 +35,11 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
+/** Whether a server listens on `port`: a 401 of a server with a key (D-221) counts. */
 async function answers(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${String(port)}/v1/models`, { signal: AbortSignal.timeout(500) });
-    return response.ok;
+    return response.ok || response.status === 401;
   } catch {
     return false;
   }
@@ -118,15 +120,24 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     assert.match(log, /^env /);
     assert.doesNotMatch(log, /SOPS_AGE_KEY|ARIANNA_DB_PASSWORD/);
     assert.ok(!log.includes('proxy.example'));
+    // D-221: the key of data/omlx.key reaches the server in its environment, never on its command line.
+    assert.match(log, /OMLX_API_KEY/);
+    assert.ok(readLocalKey(tmpRoot, 'omlx') !== undefined);
+    assert.equal(statSync(join(tmpRoot, 'omlx.key')).mode & 0o777, 0o600);
+    const open = await fetch(`http://127.0.0.1:${String(port)}/v1/models`, { signal: AbortSignal.timeout(500) });
+    assert.equal(open.status, 401);
     await servers.stop();
     assert.equal(await answers(port), false);
     assert.deepEqual(servers.status(), []);
   });
 
-  it('adopts a server already answering on the port and leaves it running on stop', async () => {
+  it('adopts a server already answering on the port with the key of data/<id>.key, and leaves it running on stop', async () => {
     const port = await freePort();
+    // A server a previous core started: it asks for the key the core keeps in data/omlx.key.
+    const key = ensureLocalKey(tmpRoot, 'omlx');
     const running: Server = createHttpServer((request, response) => {
-      response.writeHead(request.url === '/v1/models' ? 200 : 404).end('{}');
+      if (request.headers.authorization !== `Bearer ${key}`) response.writeHead(401).end();
+      else response.writeHead(request.url === '/v1/models' ? 200 : 404).end('{}');
     });
     await new Promise<void>((resolve) => running.listen(port, '127.0.0.1', resolve));
     try {
@@ -140,6 +151,40 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     } finally {
       await new Promise<void>((resolve) => running.close(() => { resolve(); }));
     }
+  });
+
+  it('does not adopt a server that answers without the key: state failed, event open, left running (D-221)', async () => {
+    const port = await freePort();
+    const running: Server = createHttpServer((request, response) => {
+      response.writeHead(request.url === '/v1/models' ? 200 : 404).end('{}');
+    });
+    await new Promise<void>((resolve) => running.listen(port, '127.0.0.1', resolve));
+    try {
+      create();
+      await servers.sync([endpoint('omlx', port)]);
+      assert.deepEqual(servers.status().map(({ state, adopted }) => [state, adopted]), [['failed', false]]);
+      assert.ok(events.some((event) => event.type === 'open'));
+      assert.ok(!events.some((event) => event.type === 'adopt'));
+      assert.equal(loggedEvent({ type: 'open', endpoint: 'omlx' }), true);
+      assert.deepEqual(spawns(), []);
+      assert.equal(servers.isAvailable('omlx'), false);
+      await servers.stop();
+      assert.equal(await answers(port), true);
+    } finally {
+      await new Promise<void>((resolve) => running.close(() => { resolve(); }));
+    }
+  });
+
+  it('a key that cannot be written fails the sync before any server starts (D-221)', async () => {
+    const port = await freePort();
+    events = [];
+    servers = createLocalServers({ home: HOME, dataDir: join(tmpRoot, 'missing', 'data'), onEvent: (event) => events.push(event) });
+    await assert.rejects(servers.sync([endpoint('omlx', port)]), /ENOENT/);
+    assert.deepEqual(servers.status(), []);
+    assert.deepEqual(spawns(), []);
+    // An endpoint only watched needs no key.
+    await servers.sync([endpoint('spare', port, false)]);
+    assert.deepEqual(servers.status().map(({ id }) => id), ['spare']);
   });
 
   it('only watches an endpoint without a command: down when nothing answers, and the model tries it last', async () => {

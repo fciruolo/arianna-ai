@@ -2,6 +2,7 @@ import { localEndpoint, LocalEndpointError, type LocalEndpoint } from './endpoin
 import { StringDecoder } from 'node:string_decoder';
 
 import { HttpBodyTooLarge, localRequest, localRequestStream } from './http.ts';
+import { authorization } from './key.ts';
 
 /**
  * The local model as the rest of Arianna sees it. The implementation talks to
@@ -118,7 +119,7 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const UNLOAD_TIMEOUT_MS = 30_000;
 
 /** One call to one endpoint. */
-async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<ChatResult> {
+async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: Record<string, string>): Promise<ChatResult> {
   const model = endpoint.models[request.model];
   if (model === undefined) {
     throw new LocalModelError('no-endpoint', `${endpoint.id} does not serve ${request.model}`, { endpoint: endpoint.id });
@@ -155,7 +156,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
     };
     let result: Pick<ChatResult, 'text' | 'finishReason' | 'usage'>;
     try {
-      result = await streamCompletion(endpoint, body, signal, onText, onToken);
+      result = await streamCompletion(endpoint, body, signal, headers, onText, onToken);
     } catch (error) {
       throw toModelError(error, endpoint.id, request.signal, timeout);
     }
@@ -176,6 +177,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
     const response = await localRequest(`${endpoint.url}/chat/completions`, {
       method: 'POST',
       body: JSON.stringify(body),
+      headers,
       signal,
     });
     // Redirects are not followed: a 3xx is an error like any other non-2xx.
@@ -199,6 +201,7 @@ async function streamCompletion(
   endpoint: LocalEndpoint,
   body: Record<string, unknown>,
   signal: AbortSignal,
+  headers: Record<string, string>,
   onText: (piece: string) => void,
   onToken: () => void = () => undefined,
 ): Promise<Pick<ChatResult, 'text' | 'finishReason' | 'usage'>> {
@@ -244,7 +247,7 @@ async function streamCompletion(
     }
   };
 
-  const response = await localRequestStream(`${endpoint.url}/chat/completions`, { body: JSON.stringify(body), signal }, (chunk) => {
+  const response = await localRequestStream(`${endpoint.url}/chat/completions`, { body: JSON.stringify(body), signal, headers }, (chunk) => {
     pending += decoder.write(chunk);
     const lines = pending.split('\n');
     pending = lines.pop() ?? '';
@@ -315,6 +318,11 @@ export interface LocalModelOptions {
   isAvailable?: (endpointId: string) => boolean;
   /** Told when an endpoint is unreachable or stuck, so its watchdog can act sooner. */
   onFailure?: (endpointId: string, error: LocalModelError) => void;
+  /**
+   * The key each endpoint asks for (D-221, `localKeys`), sent as
+   * `Authorization: Bearer`; none for an endpoint without one.
+   */
+  apiKey?: (endpointId: string) => string | undefined;
 }
 
 /**
@@ -356,7 +364,7 @@ export function createLocalModel(options: LocalModelOptions): LocalModel {
       const attempts: LocalModelError[] = [];
       for (const endpoint of ordered) {
         try {
-          return await chatOnce(endpoint, tracked);
+          return await chatOnce(endpoint, tracked, authorization(options.apiKey?.(endpoint.id)));
         } catch (error) {
           if (!(error instanceof LocalModelError)) throw error;
           if (error.kind === 'unavailable' || error.kind === 'timeout') options.onFailure?.(endpoint.id, error);
@@ -385,6 +393,7 @@ export function createLocalModel(options: LocalModelOptions): LocalModel {
           const response = await localRequest(`${endpoint.url}/models/${encodeURIComponent(name)}/unload`, {
             method: 'POST',
             signal: AbortSignal.timeout(UNLOAD_TIMEOUT_MS),
+            headers: authorization(options.apiKey?.(endpoint.id)),
           });
           if (response.status === 200) unloaded = true;
         } catch {

@@ -4,7 +4,7 @@
 // except ensureLayout, which only install calls. The core runs the same
 // checks for «Pronta per i dati veri» (D-192, readiness.ts): one copy, here.
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, statfsSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { arch, platform, totalmem } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
@@ -145,6 +145,96 @@ export function omlxLogChecks(endpoints: readonly { id: string; command?: readon
     });
 }
 
+/** The value of `flag` in a command, as logLevelOf reads `--log-level`. */
+function flagValue(command: readonly string[], flag: string): string | null | undefined {
+  let value: string | null | undefined;
+  for (const [index, arg] of command.entries()) {
+    if (arg === flag) {
+      const next = command[index + 1];
+      value = next === undefined || next.startsWith('-') ? null : next;
+    } else if (arg.startsWith(`${flag}=`)) {
+      const given = arg.slice(flag.length + 1);
+      value = given === '' ? null : given;
+    }
+  }
+  return value;
+}
+
+/**
+ * Flags of `omlx serve` that the core must not meet (D-221): `--api-key`
+ * shows the key to `ps` and replaces the one of data/<id>.key, so the core's
+ * requests would be refused; `--mcp-config` lets oMLX start MCP servers.
+ */
+const OMLX_REFUSED_FLAGS = ['--api-key', '--mcp-config'];
+
+/** What in oMLX's settings.json would open it again or send its traffic elsewhere (D-221). */
+function omlxSettingsProblems(file: string): string[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  } catch {
+    return ['settings.json cannot be read'];
+  }
+  const section = (name: string): Record<string, unknown> => {
+    const value = (data as Record<string, unknown> | null)?.[name];
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  };
+  const set = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && value !== false;
+  const problems: string[] = [];
+  if (section('auth').skip_api_key_verification === true) problems.push('auth.skip_api_key_verification');
+  // oMLX accepts every sub-key as well as the key: one made in its panel opens it to whoever holds it.
+  const subKeys = section('auth').sub_keys;
+  if (Array.isArray(subKeys) && subKeys.length > 0) problems.push('auth.sub_keys');
+  for (const key of ['http_proxy', 'https_proxy', 'no_proxy']) if (set(section('network')[key])) problems.push(`network.${key}`);
+  if (set(section('mcp').config_path)) problems.push('mcp.config_path');
+  if (section('server').distributed_inference_enabled === true) problems.push('server.distributed_inference_enabled');
+  return problems;
+}
+
+/**
+ * Where every local oMLX keeps its settings, and what they say (D-221): a
+ * `--base-path` inside data/ (without it oMLX uses its home folder, which
+ * another oMLX or its macOS app may share or redirect), no flag of
+ * OMLX_REFUSED_FLAGS, and a settings.json there that does not skip the key,
+ * set a proxy, start MCP servers or the cluster. A settings.json not written
+ * yet (oMLX never started there) passes.
+ */
+export function omlxSettingsChecks(home: string, data: string, endpoints: readonly { id: string; command?: readonly string[] }[]): DoctorCheck[] {
+  return endpoints
+    .filter((endpoint) => endpoint.command !== undefined && startsOmlx(endpoint.command))
+    .flatMap((endpoint) => {
+      const command = endpoint.command ?? [];
+      const refused = OMLX_REFUSED_FLAGS.filter((flag) => command.some((arg) => arg === flag || arg.startsWith(`${flag}=`)));
+      const flags: DoctorCheck = {
+        id: `local.${endpoint.id}.flags`,
+        ok: refused.length === 0,
+        detail: refused.length === 0 ? 'no --api-key, no --mcp-config' : `remove ${refused.join(', ')}: the key comes from data/${endpoint.id}.key`,
+      };
+      const base = flagValue(command, '--base-path');
+      const id = `local.${endpoint.id}.base-path`;
+      if (base === undefined || base === null) {
+        return [flags, { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
+      }
+      // Through links too: data/omlx pointing at the home folder of oMLX is not inside data/.
+      const path = existsSync(resolve(home, base)) ? realpathSync(resolve(home, base)) : resolve(home, base);
+      const inside = relative(existsSync(data) ? realpathSync(data) : resolve(data), path);
+      if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+        return [flags, { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
+      }
+      const settingsFile = join(path, 'settings.json');
+      const problems = existsSync(settingsFile) ? omlxSettingsProblems(settingsFile) : [];
+      return [
+        flags,
+        { id, ok: true, detail: `--base-path ${base}` },
+        {
+          id: `local.${endpoint.id}.settings`,
+          ok: problems.length === 0,
+          detail: problems.length === 0 ? 'settings.json without skipped key, proxy, MCP or cluster' : `settings.json sets ${problems.join(', ')}: reset in ${base}/settings.json`,
+        },
+      ];
+    });
+}
+
 /**
  * Creates data/ and its subfolders. data/ and the vault are readable by this
  * user only: an existing one that is looser is tightened, and reported.
@@ -250,6 +340,7 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...layoutCheck(config.home, config.paths.data),
     ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
     ...omlxLogChecks(config.local.endpoints),
+    ...omlxSettingsChecks(config.home, config.paths.data, config.local.endpoints),
     ...(await modelsChecks(config)),
     ...guardDirChecks(loadCatalog(config.home), config.paths.data),
     ...projectChecks(config.home, config.projects),

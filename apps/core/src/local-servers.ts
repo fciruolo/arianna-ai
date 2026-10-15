@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { LocalEndpointConfig } from '@arianna/config';
-import { Watchdog, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
+import { authorization, ensureLocalKey, Watchdog, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
 import { cleanChildEnv } from './child-env.ts';
 
@@ -18,6 +18,11 @@ import { cleanChildEnv } from './child-env.ts';
  * The server gets an environment built from nothing, like apps/voice: no
  * database password, no age key of sops, no proxy, Hugging Face offline. Its
  * log may hold prompts (L2): it stays in data/, one file per endpoint.
+ *
+ * Every server the core starts gets the key of data/<id>.key (D-221) in
+ * OMLX_API_KEY, and the health checks carry it. A server already on the port
+ * that answers without the key is not adopted (event `open`, state `failed`):
+ * someone started it without one, and anybody on loopback could use it.
  *
  * oMLX does not exit when its standard input closes, so a core that dies
  * without stopping it (crash, SIGKILL) leaves it running, possibly still
@@ -93,6 +98,7 @@ export function loggedEvent(event: LocalServerEvent): boolean {
   switch (event.type) {
     case 'state':
     case 'adopt':
+    case 'open':
     case 'orphan':
     case 'gave-up':
     case 'spawn-error':
@@ -231,14 +237,25 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
     if (!isClosed()) await watchdog.start();
   }
 
-  function watchdogOf(endpoint: Supervised['endpoint']): Watchdog {
+  /**
+   * The key of a server the core starts; none for one it only watches, which
+   * is not its own. Asked before any watchdog changes: a key that cannot be
+   * written (full disk, data/ not writable) fails the sync or the restart
+   * and leaves the servers as they were.
+   */
+  function keyOf(endpoint: Supervised['endpoint']): string | undefined {
+    return endpoint.command === undefined ? undefined : ensureLocalKey(options.dataDir, endpoint.id);
+  }
+
+  function watchdogOf(endpoint: Supervised['endpoint'], key: string | undefined): Watchdog {
     const timing = options.timing ?? {};
     return new Watchdog({
       id: endpoint.id,
       url: endpoint.url,
       ...(endpoint.command === undefined ? {} : { command: endpoint.command }),
       cwd: options.home,
-      env,
+      env: key === undefined ? env : { ...env, OMLX_API_KEY: key },
+      ...(key === undefined ? {} : { healthHeaders: authorization(key), refuseOpen: true }),
       logFile: join(options.dataDir, `${endpoint.id}.log`),
       // The first load of a large model from disk takes a while.
       startupTimeoutMs: timing.startupTimeoutMs ?? 180_000,
@@ -252,6 +269,7 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
   async function apply(endpoints: readonly LocalEndpointConfig[]): Promise<void> {
     if (closed) return;
     const wanted = new Map(endpoints.map((endpoint) => [endpoint.id, processOf(endpoint)]));
+    const keys = new Map([...wanted.values()].map((endpoint) => [endpoint.id, keyOf(endpoint)]));
     const stale = [...supervised.values()].filter(({ endpoint }) => !isDeepStrictEqual(wanted.get(endpoint.id), endpoint));
     for (const { endpoint } of stale) supervised.delete(endpoint.id);
     await Promise.all(stale.map(({ watchdog }) => watchdog.stop()));
@@ -261,7 +279,7 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
     const started: Promise<void>[] = [];
     for (const endpoint of wanted.values()) {
       if (supervised.has(endpoint.id)) continue;
-      const watchdog = watchdogOf(endpoint);
+      const watchdog = watchdogOf(endpoint, keys.get(endpoint.id));
       supervised.set(endpoint.id, { endpoint, watchdog, adopted: false });
       started.push(startWatchdog(endpoint, watchdog));
     }
@@ -302,13 +320,14 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       const next = queue.then(async () => {
         const entry = supervised.get(id);
         if (entry === undefined || isClosed()) return false;
+        const key = keyOf(entry.endpoint);
         // Listed while it stops, as not available: the model does not send it requests.
         let starting: Promise<void> | undefined;
         try {
           await entry.watchdog.stop();
         } finally {
           if (!isClosed() && supervised.get(id) === entry) {
-            const watchdog = watchdogOf(entry.endpoint);
+            const watchdog = watchdogOf(entry.endpoint, key);
             supervised.set(id, { endpoint: entry.endpoint, watchdog, adopted: false });
             starting = startWatchdog(entry.endpoint, watchdog);
           }

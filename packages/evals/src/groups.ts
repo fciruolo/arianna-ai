@@ -1,5 +1,5 @@
 import { loadConfig } from '@arianna/config';
-import { createLocalModel, type LocalModel } from '@arianna/executors';
+import { createLocalModel, localKeys, type LocalModel } from '@arianna/executors';
 
 import { createAnonymizeGroup } from './anonymize-group.ts';
 import { canary, matchesCanary } from './canary.ts';
@@ -20,11 +20,12 @@ let model: LocalModel | undefined;
 /** The configured local model, created at the first case of a group that needs it. */
 const configuredModel = (): LocalModel => {
   if (model === undefined) {
-    const { local } = configured();
+    const { local, paths } = configured();
     if (local.endpoints.length === 0) {
       throw new Error('no [[local.endpoints]] in config/arianna.toml: install oMLX and configure it (task 1.4)');
     }
-    model = createLocalModel({ endpoints: local.endpoints });
+    // The key of a server the core started (D-221).
+    model = createLocalModel({ endpoints: local.endpoints, apiKey: localKeys(paths.data, (id) => local.endpoints.some((endpoint) => endpoint.id === id && endpoint.command !== undefined)) });
   }
   return model;
 };

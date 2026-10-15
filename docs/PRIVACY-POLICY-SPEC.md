@@ -67,7 +67,7 @@ Un'incognita è una conversazione privata o di lavoro con un segno fissato alla 
 | Ciò che il fornitore cloud ha ricevuto (solo incognite di lavoro) | Resta presso il fornitore, secondo l'abbonamento |
 | File cambiati dal Coder nel progetto | Restano: elencati nella scheda di chiusura |
 | Byte cancellati nelle pagine del database, nel WAL e nella coda di `pg_notify` | Restano illeggibili ad Arianna fino alla sovrascrittura; li protegge la cifratura del disco |
-| Log di oMLX | Senza testi al livello `info`, che il wizard scrive e il doctor pretende; la cache su SSD (se accesa) tiene blocchi derivati dai prompt fino allo sfratto |
+| Log di oMLX | Senza testi al livello `info`, che il wizard scrive e il doctor pretende, in `data/omlx/logs` con `--base-path data/omlx` (D-221); la cache su SSD (se accesa) tiene blocchi derivati dai prompt fino allo sfratto |
 
 L'utente vede questo elenco prima del primo messaggio e di nuovo alla chiusura, con i numeri veri di quella conversazione. Una memoria a lungo termine (Fase 2) dovrà escludere le incognite.
 

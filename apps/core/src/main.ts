@@ -25,7 +25,7 @@ import {
   workParts,
   type TelegramConfig,
 } from '@arianna/config';
-import { createClaudeExecutor, createCodexExecutor, createLocalModel, removeConversationWorkspace, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
+import { createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, removeConversationWorkspace, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
@@ -340,6 +340,8 @@ const settings = watchConfig({
 // with the core, restarted when it fails and stopped with it; one already
 // answering is adopted. Started in the background: loading a large model can
 // take minutes, and the chat must not wait for it.
+// The key of each server the core starts (D-221), read again at every request.
+const localKey = localKeys(config.paths.data, (id) => settings.current().local.endpoints.some((endpoint) => endpoint.id === id && endpoint.command !== undefined));
 const localServers = createLocalServers({
   home: config.home,
   dataDir: config.paths.data,
@@ -348,7 +350,11 @@ const localServers = createLocalServers({
     if (event.type === 'spawn' || event.type === 'exit') memory.serverReset(event.endpoint);
     if (!loggedEvent(event)) return;
     // Codes only: `error` carries a system code or a class name, never data.
-    const detail = event.type === 'state' ? event.state : event.type === 'error' ? `error ${event.message}` : event.type;
+    const detail =
+      event.type === 'state' ? event.state
+      : event.type === 'error' ? `error ${event.message}`
+      : event.type === 'open' ? 'open: a server started without the key (D-221) answers on its port; stop it, then "Riavvia oMLX"'
+      : event.type;
     console.log(`local ${event.endpoint}: ${detail}`);
     appendEvent(sql, { kind: 'local.server', label: 'L0', payload: { ...event } }).catch(report);
   },
@@ -365,7 +371,7 @@ const memory = createModelMemory({
   catalog: () => loadCatalog(config.home),
   endpoints: () => settings.current().local.endpoints,
   isAvailable: (id) => localServers.isAvailable(id),
-  unload: (endpoint, name) => unloadModel(endpoint, name, (id) => localServers.isAvailable(id)),
+  unload: (endpoint, name) => unloadModel(endpoint, name, (id) => localServers.isAvailable(id), localKey),
   pinned: (endpoint, name) => callActive() && settings.current().local.endpoints.find(({ id }) => id === endpoint)?.models[VOICE_ALIAS] === name,
   onEvent: (event) => {
     if (event.type === 'swap') console.log(`memory: swap ${event.level} (${String(event.usedGib)} GiB used)`);
@@ -383,6 +389,7 @@ const localModel = () => {
       endpoints,
       isAvailable: (id) => localServers.isAvailable(id),
       onFailure: (id) => { localServers.onFailure(id); },
+      apiKey: localKey,
     }),
     endpoints,
   );
@@ -507,7 +514,7 @@ const orchestrator = createOrchestrator({
   trialModel: (modelId) => {
     const endpoints = trialEndpoints(settings.current().local.endpoints, modelId);
     return memory.wrap(
-      createLocalModel({ endpoints, isAvailable: (id) => localServers.isAvailable(id), onFailure: (id) => { localServers.onFailure(id); } }),
+      createLocalModel({ endpoints, isAvailable: (id) => localServers.isAvailable(id), onFailure: (id) => { localServers.onFailure(id); }, apiKey: localKey }),
       endpoints,
     );
   },
@@ -621,6 +628,7 @@ const modelEvals = createModelEvals({
         endpoints,
         isAvailable: (id) => localServers.isAvailable(id),
         onFailure: (id) => { localServers.onFailure(id); },
+        apiKey: localKey,
       }),
       endpoints,
     ),

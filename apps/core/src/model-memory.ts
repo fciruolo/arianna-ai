@@ -593,7 +593,12 @@ const UNLOAD_ALIAS = 'memory-unload';
  * route of D-074 (`POST /v1/models/<name>/unload`), for a name that no alias
  * of the configuration points at any more.
  */
-export function unloadModel(endpoint: LocalEndpointConfig, name: string, isAvailable: (id: string) => boolean): Promise<boolean> {
-  const model = createLocalModel({ endpoints: [{ id: endpoint.id, url: endpoint.url, models: { [UNLOAD_ALIAS]: name } }], isAvailable });
+export function unloadModel(
+  endpoint: LocalEndpointConfig,
+  name: string,
+  isAvailable: (id: string) => boolean,
+  apiKey?: (id: string) => string | undefined,
+): Promise<boolean> {
+  const model = createLocalModel({ endpoints: [{ id: endpoint.id, url: endpoint.url, models: { [UNLOAD_ALIAS]: name } }], isAvailable, ...(apiKey === undefined ? {} : { apiKey }) });
   return model.unload?.(UNLOAD_ALIAS) ?? Promise.resolve(false);
 }
