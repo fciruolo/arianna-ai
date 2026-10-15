@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { COMMANDS, completion, filterCommands, findCommand, goesToArianna, menuQuery, moveSelection, resolveDraft, usage } from '../src/lib/commands.ts';
+import { COMMANDS, completion, filterCommands, filterMentions, findCommand, goesToArianna, mentionQuery, menuQuery, moveSelection, resolveDraft, usage } from '../src/lib/commands.ts';
 
 const names = (list: readonly { name: string }[]) => list.map((command) => command.name);
 
@@ -12,7 +12,7 @@ test('the registry: unique lowercase names and aliases, an Italian description e
     assert.match(command.name, /^\p{Ll}+$/u);
     assert.ok(command.description.length > 0);
   }
-  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'nuova', 'impostazioni', 'cerca', 'aiuto']);
+  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'nuova', 'impostazioni', 'cerca', 'giro', 'basta', 'aiuto']);
 });
 
 test('the menu opens on a slash and one word, and closes at the first space', () => {
@@ -31,7 +31,8 @@ test('the filter: all for an empty query, then exact, prefix, inside the name, i
   assert.deepEqual(names(filterCommands('pen')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('PEN')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('grafo')), ['conoscenza']);
-  assert.deepEqual(names(filterCommands('g')), ['conoscenza']);
+  // The alias of «conoscenza» first, then «giro», which starts with it.
+  assert.deepEqual(names(filterCommands('g')), ['conoscenza', 'giro']);
   assert.deepEqual(names(filterCommands('el')), []);
   assert.deepEqual(names(filterCommands('elenco')), ['aiuto']);
   assert.deepEqual(filterCommands('xyz'), []);
@@ -102,4 +103,23 @@ test('goesToArianna: messages yes, every command or refused command no', () => {
   for (const draft of ['/PENSIERI', '/Nuova', '\t/aiuto', '/p', '​/pensieri', ' /conoscenza', '/pensieri.', '/nota x', '/boh']) {
     assert.equal(goesToArianna(draft), false, JSON.stringify(draft));
   }
+});
+
+test('«/giro testo» reaches the core as a message; «/basta» is carried out by the page, as «Ferma» (D-107, tappa B2)', () => {
+  assert.equal(goesToArianna('/giro cosa ne pensate?'), true);
+  const round = resolveDraft('/giro cosa ne pensate?');
+  assert.ok(round.kind === 'command' && round.command.action.kind === 'round' && round.argument === 'cosa ne pensate?');
+  assert.equal(goesToArianna('/basta'), false);
+  const stop = resolveDraft('/basta');
+  assert.ok(stop.kind === 'command' && stop.command.action.kind === 'stop');
+  assert.equal(resolveDraft('/basta ora').kind, 'error');
+});
+
+test('«@» and a name open the menu of the agents, those starting with it first; a space or other text closes it', () => {
+  assert.equal(mentionQuery('@'), '');
+  assert.equal(mentionQuery('@des'), 'des');
+  for (const draft of ['@designer ', 'ciao @des', '@Des', '']) assert.equal(mentionQuery(draft), undefined, draft);
+  assert.deepEqual(filterMentions('', ['coder', 'designer']), ['coder', 'designer']);
+  assert.deepEqual(filterMentions('de', ['coder', 'designer']), ['designer', 'coder']);
+  assert.deepEqual(filterMentions('x', ['coder', 'designer']), []);
 });

@@ -162,6 +162,8 @@ Il Coder lavora codice L2 solo con il modello locale. Tabella completa con il la
 
 **Freni.** Ogni task ha un tetto di passi, di tempo e di costo; se l'agente gira in tondo o sfora, si ferma e ti chiede cosa fare, invece di continuare a consumare.
 
+**Chat con più agenti** (D-107, D-125, D-219). Arianna chiama gli agenti nella conversazione quando servono: entrano con una riga e un saluto e rispondono con un rapporto. L'utente può anche scrivere a uno di loro con «@nome testo», o chiedere un parere a tutti i presenti con «/giro testo»: in quel caso il modello di Arianna non lavora, il core scrive lui le deleghe con le stesse regole di quelle di Arianna e il task finisce con i rapporti. Per ogni messaggio dell'utente lavorano al massimo 6 agenti e 2 volte lo stesso; «Ferma» o «/basta» interrompono. Sotto ogni rapporto «Ha visto solo il brief» mostra il testo della richiesta che l'agente ha ricevuto da quella chat.
+
 ## Orchestrazione locale
 
 L'orchestrazione si divide in tre livelli e solo uno dipende dal modello: il controllo è codice deterministico, il giudizio spetta a un modello locale con strumenti vincolati, il lavoro di coding è affidato ai processi Claude Code e Codex.

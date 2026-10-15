@@ -7,7 +7,8 @@ import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
 import { createDelegation } from './orchestrator/delegations.ts';
-import { leaveIdle, type LeaveRule } from './participants.ts';
+import { MAX_INTERVENTIONS, parseAddressed } from './addressed.ts';
+import { activeParticipants, leaveIdle, type LeaveRule } from './participants.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 import { closeSupersededWaits } from './waiting.ts';
 
@@ -550,6 +551,11 @@ export interface MessageOptions {
   leave?: LeaveRule;
   /** The style and skills chosen in the Studio (I-19, D-184), already checked against the catalogs. */
   design?: { style: string | null; skills: readonly string[] };
+  /**
+   * The agents «@name» may call in a conversation with Arianna (D-107, tappa B2): those Arianna may delegate to.
+   * Without it a message starting with «@» or «/giro» is an ordinary message.
+   */
+  mentionable?: readonly string[];
 }
 
 /** What a user message is checked against: the conversation, locked for the transaction. */
@@ -562,6 +568,7 @@ export interface MessageTarget {
   workspace: string | null;
   incognito: boolean;
   finance: boolean;
+  secretary: boolean;
 }
 
 /** Locks the conversation a user message goes to; refuses one that does not exist or is purged. */
@@ -569,7 +576,7 @@ export async function lockForMessage(tx: Queryable, conversationId: string): Pro
   const conversation = isUuid(conversationId)
     ? (
         await tx<MessageTarget[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance FROM conversations
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance, secretary FROM conversations
         WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
       )[0]
     : undefined;
@@ -597,6 +604,35 @@ export function checkUserMessage(conversation: MessageTarget, body: string, opti
   if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
     throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
   }
+}
+
+/**
+ * The agents a message addresses (D-107, tappa B2): «@name …» one agent
+ * Arianna may delegate to, «/giro …» every agent in the conversation, in the
+ * order they joined (at most MAX_INTERVENTIONS). Only in a conversation with
+ * Arianna, never the secretary's; anything else is an ordinary message.
+ * Also when a message enters the queue (D-218): refused there, never later.
+ */
+export async function addressedOf(
+  tx: Queryable,
+  conversationId: string,
+  conversation: MessageTarget,
+  body: string,
+  options: MessageOptions,
+): Promise<{ kind: 'mention' | 'round'; agents: readonly string[] } | undefined> {
+  if (options.mentionable === undefined || conversation.agent !== null || conversation.secretary) return undefined;
+  const parsed = parseAddressed(body);
+  if (parsed === undefined) return undefined;
+  if (parsed.kind === 'mention') {
+    // «@ciao» or an agent Arianna cannot call: an ordinary message.
+    if (!options.mentionable.includes(parsed.agent)) return undefined;
+    if (parsed.brief === '') throw new ChatError('invalid', `write what you ask ${parsed.agent} after its name`);
+    return { kind: 'mention', agents: [parsed.agent] };
+  }
+  if (parsed.brief === '') throw new ChatError('invalid', 'write what you ask the agents after /giro');
+  const present = (await activeParticipants(tx, conversationId)).map((participant) => participant.agent).filter((agent) => options.mentionable?.includes(agent));
+  if (present.length === 0) throw new ChatError('invalid', 'no agent is in this conversation yet: /giro asks those already here');
+  return { kind: 'round', agents: present.slice(0, MAX_INTERVENTIONS) };
 }
 
 /**
@@ -636,6 +672,9 @@ export async function writeUserMessage(
     throw new ChatError('busy', `${who} is still working on the previous message: wait for the answer, or stop it`);
   }
 
+  // «@designer …» or «/giro …» (D-107, tappa B2): the agents answer, not Arianna.
+  const addressed = await addressedOf(tx, conversationId, conversation, body, options);
+
   // The user went on: the waits of this conversation without a pending approval close (D-109).
   await closeSupersededWaits(tx, conversationId);
 
@@ -650,6 +689,9 @@ export async function writeUserMessage(
     assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
+  if (addressed !== undefined) {
+    await tx`UPDATE tasks SET addressed = ${addressed.kind}, addressed_agents = ${[...addressed.agents]}::text[] WHERE id = ${task.id}`;
+  }
   // Names of public text (D-184): the task's label stays what it is; the Designer reads them as a card's (D-163).
   if (options.design !== undefined) {
     await tx`UPDATE tasks SET design_style = ${options.design.style}, design_skills = ${[...options.design.skills]}::text[] WHERE id = ${task.id}`;
@@ -686,7 +728,7 @@ export async function writeUserMessage(
     payload: { conversationId, messageId: row.id, role: 'user' },
   });
   // The agents with nothing to do here for a while say goodbye (I-8), after the message that made them idle; a direct chat has none.
-  if (options.leave !== undefined && conversation.agent === null) await leaveIdle(tx, conversationId, task.id, options.leave);
+  if (options.leave !== undefined && conversation.agent === null) await leaveIdle(tx, conversationId, task.id, options.leave, addressed?.agents ?? []);
   const message = await loadMessage(tx, row.id);
   if (message === undefined) throw new Error('the new message is missing');
   return { message, task };

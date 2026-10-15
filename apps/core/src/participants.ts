@@ -225,13 +225,14 @@ export const STAYS = 'coder';
  * in or since its last delegation here leaves, with a goodbye line on the
  * task of that message and the event `participant.removed` (reason `idle`).
  * Run it in the transaction that writes the message. It comes back at the
- * next delegation, with the lines of D-125. The agents that left.
+ * next delegation, with the lines of D-125. The agents that left. `keep`:
+ * those the message itself calls (D-107, tappa B2), who never leave with it.
  */
-export async function leaveIdle(tx: Queryable, conversationId: string, taskId: string, rule: LeaveRule): Promise<string[]> {
+export async function leaveIdle(tx: Queryable, conversationId: string, taskId: string, rule: LeaveRule, keep: readonly string[] = []): Promise<string[]> {
   if (rule.after <= 0) return [];
   const idle = await tx<{ id: string; agent: string; taskId: string | null }[]>`
     SELECT p.id::text, p.agent, p.task_id::text AS "taskId" FROM conversation_participants p
-    WHERE p.conversation_id = ${conversationId} AND p.removed_at IS NULL AND p.agent <> ${STAYS}
+    WHERE p.conversation_id = ${conversationId} AND p.removed_at IS NULL AND p.agent <> ${STAYS} AND NOT (p.agent = ANY (${[...keep]}::text[]))
       AND (
         SELECT count(*) FROM messages m
         WHERE m.conversation_id = p.conversation_id AND m.role = 'user'

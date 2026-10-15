@@ -35,7 +35,7 @@ import { loadDevPending, loadInstallation } from './lib/api.ts';
 import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, calleeOf, conversationCallee, draftCallee, type Callee } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
-import type { CommandAction } from './lib/commands.ts';
+import type { PageCommandAction } from './lib/commands.ts';
 import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
 import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitApprovals, withoutIncognito, type IncognitoEntry } from './lib/incognito.ts';
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
@@ -79,7 +79,7 @@ import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, mentionable, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -530,7 +530,7 @@ function openCardwall(): void {
 }
 
 /** A "/" command of the chat (D-090). */
-function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): void {
+function runCommand(action: PageCommandAction): void {
   if (action.kind === 'search') {
     openSearch();
     return;
@@ -1047,6 +1047,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :calls="calls"
             :participants="participants"
             :queue="queue"
+            :mentionable="mentionable"
             :characters="characters?.agents"
             :direct-agents="directAgents"
             @send="(body) => store.send(body, messageDesign(studioDesign))"
@@ -1122,6 +1123,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :calls="calls"
         :participants="participants"
         :queue="queue"
+        :mentionable="mentionable"
         :characters="characters?.agents"
         :direct-agents="directAgents"
         @send="store.send"

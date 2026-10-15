@@ -5,7 +5,7 @@ import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
 import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
-import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
+import { completion, filterCommands, filterMentions, mentionQuery, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type PageCommandAction } from '../lib/commands.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { computerTask } from '../lib/computer.ts';
@@ -60,6 +60,7 @@ import ParticipantStack from './ParticipantStack.vue';
 import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
 import QueuedMessages from './QueuedMessages.vue';
+import BriefNote from './BriefNote.vue';
 import { isWorking, stoppedTasks } from '../lib/queue.ts';
 import SessionLine from './SessionLine.vue';
 import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
@@ -94,6 +95,8 @@ const props = defineProps<{
   studioFile?: string | undefined;
   /** The messages waiting for the answer at work (D-218). */
   queue?: QueueView | undefined;
+  /** The agents «@» may call here (D-107, tappa B2): only in a conversation with Arianna. */
+  mentionable?: readonly string[] | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -125,7 +128,7 @@ const emit = defineEmits<{
   /** The user takes an agent out of the conversation (D-125). */
   removeParticipant: [agent: string];
   /** A "/" command the page carries out (D-090): open a page, a new conversation. */
-  command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
+  command: [action: PageCommandAction];
   /** "Apri nella Conoscenza" after "Salva in inbox": the note selected in the graph of kb/. */
   openKnowledge: [nodeId: string];
   /** The cruscotto of GOD (D-127), from the card of an approved plan. */
@@ -460,7 +463,11 @@ const menuDismissed = ref<string | null>(null);
 const activeCommand = ref(0);
 const commandHint = ref<string | null>(null);
 const commandQuery = computed(() => menuQuery(draft.value));
-const menuItems = computed(() => (commandQuery.value === undefined ? [] : filterCommands(commandQuery.value)));
+/** A conversation with Arianna, where «@name» and «/giro» reach the agents (D-107, tappa B2): not a direct chat, the secretary's or a trial. */
+const ariannaChat = computed(() => direct.value === null && props.conversation.secretary !== true && (props.conversation.trialModel ?? null) === null);
+const menuItems = computed(() =>
+  commandQuery.value === undefined ? [] : filterCommands(commandQuery.value).filter((command) => command.action.kind !== 'round' || ariannaChat.value),
+);
 const menuOpen = computed(() => commandQuery.value !== undefined && draft.value !== menuDismissed.value);
 const activeId = computed(() => {
   const command = menuOpen.value ? menuItems.value[activeCommand.value] : undefined;
@@ -469,6 +476,21 @@ const activeId = computed(() => {
 watch(commandQuery, () => {
   activeCommand.value = 0;
 });
+
+// The «@» menu (D-107, tappa B2): while the draft is «@» and a name, the agents of Arianna that match.
+const activeMention = ref(0);
+const mentionItems = computed(() => {
+  const query = mentionQuery(draft.value);
+  if (query === undefined || !ariannaChat.value || props.mentionable === undefined) return undefined;
+  return filterMentions(query, props.mentionable);
+});
+const mentionOpen = computed(() => mentionItems.value !== undefined && mentionItems.value.length > 0 && draft.value !== menuDismissed.value);
+watch(mentionItems, () => {
+  activeMention.value = 0;
+});
+function chooseMention(agent: string): void {
+  setDraft(`@${agent} `);
+}
 
 function setDraft(text: string): void {
   draft.value = text;
@@ -490,6 +512,13 @@ function run(command: ChatCommand): void {
       return;
     case 'help':
       setDraft('/');
+      return;
+    case 'round':
+      setDraft('/giro ');
+      return;
+    case 'stop':
+      setDraft('');
+      emit('stop');
       return;
     default:
       setDraft('');
@@ -516,7 +545,12 @@ function submit(confirmed = false): void {
   if (body.trim() === '' || props.sending) return;
   commandHint.value = null;
   const meaning = resolveDraft(body);
-  if (meaning.kind === 'command' && meaning.command.action.kind !== 'note') {
+  // «/giro» only where Arianna directs (D-107, tappa B2): elsewhere it would reach one agent as it is.
+  if (meaning.kind === 'command' && meaning.command.action.kind === 'round' && !ariannaChat.value) {
+    commandHint.value = '/giro vale solo in una conversazione con Arianna.';
+    return;
+  }
+  if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && meaning.command.action.kind !== 'round') {
     run(meaning.command);
     return;
   }
@@ -542,6 +576,25 @@ function submit(confirmed = false): void {
 
 function onKey(event: KeyboardEvent): void {
   if (event.isComposing) return;
+  const mentions = mentionOpen.value ? (mentionItems.value ?? []) : [];
+  if (mentions.length > 0) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      activeMention.value = moveSelection(activeMention.value, event.key === 'ArrowDown' ? 1 : -1, mentions.length);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      menuDismissed.value = draft.value;
+      return;
+    }
+    const agent = mentions[activeMention.value];
+    if (agent !== undefined && (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey))) {
+      event.preventDefault();
+      chooseMention(agent);
+      return;
+    }
+  }
   if (menuOpen.value) {
     const count = menuItems.value.length;
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) {
@@ -937,6 +990,8 @@ onBeforeUnmount(() => clearInterval(clock));
             <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
             <div v-if="credits.get(message.id) !== undefined" class="flex flex-wrap items-start gap-2 border-t border-line px-[15px] py-2">
               <CreditLine class="min-w-0 flex-1" :credit="credits.get(message.id)!" />
+              <!-- D-107, tappa B2: what the agent read of this chat -->
+              <BriefNote v-if="ariannaChat && credits.get(message.id)!.delegationId !== null" :conversation-id="conversation.id" :delegation-id="credits.get(message.id)!.delegationId!" />
             </div>
           </article>
 
@@ -1051,6 +1106,27 @@ onBeforeUnmount(() => clearInterval(clock));
     </div>
     <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5 short:pt-2 short:pb-2.5">
       <div class="relative mx-auto max-w-[780px]">
+        <!-- The «@» menu (D-107, tappa B2): who the message goes to instead of Arianna -->
+        <div v-if="mentionOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
+          <p class="hud-title px-3.5 pt-1 pb-1.5">Scrivi a un agente, senza passare da Arianna</p>
+          <ul id="mention-menu" role="listbox" aria-label="Agenti" class="max-h-72 overflow-y-auto">
+            <li
+              v-for="(agent, index) in mentionItems"
+              :key="agent"
+              role="option"
+              :aria-selected="index === activeMention"
+              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[14px]"
+              :class="index === activeMention ? 'bg-surface-2 text-ink' : 'text-muted'"
+              @mousedown.prevent
+              @mouseenter="activeMention = index"
+              @click="chooseMention(agent)"
+            >
+              <span class="w-36 shrink-0 font-mono sm:w-40" :class="index === activeMention ? 'text-accent' : 'text-ink'">@{{ agent }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ agentShortName(agent) }}</span>
+            </li>
+          </ul>
+          <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere · /giro per chiedere a tutti</p>
+        </div>
         <!-- The "/" menu (D-090) -->
         <div v-if="menuOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
           <p class="hud-title px-3.5 pt-1 pb-1.5">Comandi</p>

@@ -81,7 +81,7 @@ import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
-import { delegationRoute, localAgentModel } from './orchestrator/delegate.ts';
+import { delegationRoute, localAgentModel, mentionableAgents } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
@@ -1020,6 +1020,8 @@ const server = await startApiServer({
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule,
+  // «@name» and «/giro» (D-107, tappa B2): the agents Arianna may delegate to.
+  mentionable: () => mentionableAgents(agents),
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, config.paths.data, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
@@ -1114,7 +1116,7 @@ const server = await startApiServer({
 });
 await worker.start();
 // D-218: the messages written while an answer was at work leave when it ends, one at a time.
-const queueDispatcher = createQueueDispatcher({ sql, leave: leaveRule, onError: report });
+const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents) }), onError: report });
 queueDispatcher.start();
 // D-136: 10 minutes without a page on an incognito conversation close it; the pages hear it a minute before.
 const incognitoWatch = createIncognitoWatch({

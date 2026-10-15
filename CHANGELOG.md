@@ -2,6 +2,18 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- «@nome» nella chat con Arianna (D-219): «@designer fammi tre colori» va dritto a quell'agente, che risponde col suo rapporto senza passare dal ragionamento di Arianna; un menu propone gli agenti mentre scrivi «@».
+- «/giro» (D-219): ogni agente già presente nella chat risponde una volta, uno alla volta; «/basta» o «Ferma» fermano il giro.
+- «Ha visto solo il brief» sotto il rapporto di un agente (D-219): un clic mostra il testo esatto che gli è arrivato.
+
+### Cambiato
+
+- Per ogni tuo messaggio al massimo 6 interventi di agenti e 2 dello stesso agente, anche quando li chiama Arianna (D-219).
+
 ## [0.113.2] - 2026-10-15
 
 ### Corretto

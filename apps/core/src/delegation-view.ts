@@ -5,10 +5,13 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { Project } from '@arianna/config';
 import { committedFiles, type CommittedFile, type FileChange } from '@arianna/executors';
-import { isAtMost, isLabel } from '@arianna/policy';
+import { isAtMost, isLabel, type Label } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
-import type { Queryable } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
+import { contextOf } from './finance-mark.ts';
+import { passGateway } from './gateway.ts';
+import { loadTask } from './tasks.ts';
 import { diffLines, MAX_CELLS, splitLines, type LineDiff } from './line-diff.ts';
 
 /**
@@ -578,4 +581,24 @@ export async function readDelegationDiff(sql: Queryable, projects: readonly Proj
     }
   }
   return { repo: row.repo, baseCommit: row.baseCommit, files };
+}
+
+/**
+ * «Ha visto solo il brief» (D-107, tappa B2): the text of the request a
+ * delegation of this conversation carried, for the page of this conversation
+ * only. A conversation with Arianna, not deleted; the brief within the
+ * conversation's clearance and allowed by the gateway towards the web chat,
+ * which logs it as every text the chat shows. Undefined otherwise.
+ */
+export async function chatBrief(sql: Sql, conversationId: string, delegationId: string): Promise<{ agent: string; brief: string; label: Label } | undefined> {
+  const [row] = await sql<{ agent: string; brief: string; label: string; taskId: string; clearance: string }[]>`
+    SELECT d.agent, d.brief, d.label, t.id::text AS "taskId", c.clearance
+    FROM task_delegations d JOIN tasks t ON t.id = d.task_id JOIN conversations c ON c.id = t.conversation_id
+    WHERE d.id = ${delegationId}::bigint AND c.id = ${conversationId} AND c.purged_at IS NULL AND c.agent IS NULL`;
+  if (row === undefined || !isLabel(row.label) || !isLabel(row.clearance) || !isAtMost(row.label, row.clearance)) return undefined;
+  const task = await loadTask(sql, row.taskId);
+  if (task === undefined) return undefined;
+  const decision = await passGateway(sql, [{ value: row.brief, label: row.label, source: `task:${task.id}` }], contextOf(task, row.label), { kind: 'channel', id: 'web' }, { taskId: task.id });
+  const text = decision.decision === 'allow' ? decision.texts[0] : undefined;
+  return text === undefined ? undefined : { agent: row.agent, brief: text, label: row.label };
 }

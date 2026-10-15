@@ -9,6 +9,7 @@
 import { labelForUserMessage, createContext, type Label } from '@arianna/policy';
 import type { Queryable, Sql } from './db/client.ts';
 import {
+  addressedOf,
   ChatError,
   checkUserMessage,
   conversationBusy,
@@ -19,7 +20,6 @@ import {
 } from './conversations.ts';
 import { pauseQueue } from './chat-stop.ts';
 import { appendEvent } from './events.ts';
-import type { LeaveRule } from './participants.ts';
 import type { Task } from './tasks.ts';
 
 /** At most this many messages wait in one conversation. */
@@ -83,6 +83,8 @@ export async function postOrQueue(sql: Sql, conversationId: string, body: string
   return sql.begin(async (tx) => {
     const conversation = await lockForMessage(tx, conversationId);
     checkUserMessage(conversation, body, options);
+    // «@name» without a text or «/giro» with nobody here (D-107, tappa B2): refused now, not when it would leave.
+    await addressedOf(tx, conversationId, conversation, body, options);
     const waiting = await queuedCount(tx, conversationId);
     if (!(await conversationBusy(tx, conversationId)) && (waiting === 0 || (await isPaused(tx, conversationId)))) {
       return { sent: await writeUserMessage(tx, conversationId, body, options) };
@@ -147,23 +149,26 @@ export async function removeQueued(sql: Sql, id: string): Promise<void> {
   });
 }
 
+/** What the core adds to a message it sends: who leaves (I-8) and who «@name» may call (D-107, tappa B2). */
+export type SendOptions = Pick<MessageOptions, 'leave' | 'mentionable'>;
+
 /** Sends a queued message: it leaves the queue and becomes the user's message, in one transaction. */
-async function sendRow(tx: Queryable, row: Row, leave: LeaveRule | undefined): Promise<{ message: Message; task: Task }> {
+async function sendRow(tx: Queryable, row: Row, extra: SendOptions): Promise<{ message: Message; task: Task }> {
   // arianna_app holds no DELETE (doctor): the function of migration 0066 removes it.
   await tx`SELECT queued_message_delete(${row.id}::bigint)`;
   const design = designOf(row);
-  const sent = await writeUserMessage(tx, row.conversationId, row.body, { ...(leave === undefined ? {} : { leave }), ...(design === undefined ? {} : { design }) });
+  const sent = await writeUserMessage(tx, row.conversationId, row.body, { ...extra, ...(design === undefined ? {} : { design }) });
   await unpauseWhenEmpty(tx, row.conversationId);
   await announce(tx, row.conversationId);
   return sent;
 }
 
 /** "Invia ora": a queued message leaves at once, also from a paused queue; refused while an answer is at work. */
-export async function sendQueuedNow(sql: Sql, id: string, leave?: LeaveRule): Promise<{ message: Message; task: Task }> {
+export async function sendQueuedNow(sql: Sql, id: string, extra: SendOptions = {}): Promise<{ message: Message; task: Task }> {
   return sql.begin(async (tx) => {
     const row = await lockQueued(tx, id);
     if (await conversationBusy(tx, row.conversationId)) throw new ChatError('busy', 'an answer is still at work: wait for it, or stop it');
-    return sendRow(tx, row, leave);
+    return sendRow(tx, row, extra);
   });
 }
 
@@ -183,7 +188,7 @@ export async function resumeQueue(sql: Sql, conversationId: string): Promise<voi
  * instead of looping; the other conversations go on.
  * Returns how many left.
  */
-export async function dispatchQueues(sql: Sql, leave?: () => LeaveRule | undefined, onError?: (error: unknown) => void): Promise<number> {
+export async function dispatchQueues(sql: Sql, extra?: () => SendOptions, onError?: (error: unknown) => void): Promise<number> {
   const ready = await sql<{ conversationId: string }[]>`
     SELECT DISTINCT q.conversation_id::text AS "conversationId" FROM queued_messages q
     JOIN conversations c ON c.id = q.conversation_id
@@ -202,7 +207,7 @@ export async function dispatchQueues(sql: Sql, leave?: () => LeaveRule | undefin
           [conversationId],
         );
         if (row === undefined) return false;
-        await sendRow(tx, row, leave?.());
+        await sendRow(tx, row, extra?.() ?? {});
         return true;
       });
       if (done) sent += 1;
@@ -232,11 +237,11 @@ export interface QueueDispatcher {
 }
 
 /** Looks at the queues every `intervalMs` (default 1 s): a queued message leaves at most that long after its answer. */
-export function createQueueDispatcher(options: { sql: Sql; intervalMs?: number; leave?: () => LeaveRule | undefined; onError?: (error: unknown) => void }): QueueDispatcher {
+export function createQueueDispatcher(options: { sql: Sql; intervalMs?: number; send?: () => SendOptions; onError?: (error: unknown) => void }): QueueDispatcher {
   let timer: NodeJS.Timeout | undefined;
   let running: Promise<void> | undefined;
   function tick(): Promise<void> {
-    running ??= dispatchQueues(options.sql, options.leave, options.onError)
+    running ??= dispatchQueues(options.sql, options.send, options.onError)
       .then(() => undefined, (error: unknown) => options.onError?.(error))
       .finally(() => {
         running = undefined;

@@ -97,6 +97,7 @@ import {
 } from './card-run.ts';
 import { isSecretaryConversation } from '../commitments.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
+import { ADDRESSED_REASON, addressedBrief, addressedTask, MAX_INTERVENTIONS, MAX_PER_AGENT, type AddressedTask } from '../addressed.ts';
 
 /**
  * The local orchestrator (task 1.10, D-053): one model call per engine step.
@@ -578,6 +579,44 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   }
 
   /**
+   * One step of a message the user addressed to the agents (D-107, tappa B2):
+   * the core writes the delegation to the next agent of the list as Arianna's
+   * model would (delegateCall: gateway, caps, declassification, the user's
+   * choice of the executor, the entrance in the chat), the next step runs it.
+   * When every agent was asked the task answers with the last report; with
+   * none, it waits for the user with why.
+   */
+  async function addressedStep(ctx: StepContext, addressed: AddressedTask, turns: readonly Turn[], delegations: readonly Delegation[]): Promise<StepOutcome> {
+    const { task, step, runId } = ctx;
+    const [message] = await sql<{ body: string }[]>`
+      SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'user' ORDER BY id LIMIT 1`;
+    const brief = message === undefined ? undefined : addressedBrief(message.body);
+    if (brief === undefined || brief === '') return { kind: 'wait-user', reason: 'the message for the agents has no text' };
+    const asked = turns.filter((turn) => turn.answer.action === 'call' && turn.answer.tool === DELEGATE).length;
+    const next = addressed.agents[asked];
+    if (next !== undefined) {
+      const args = { agent: next, brief, reason: ADDRESSED_REASON[addressed.kind] };
+      const answer: Answer = { action: 'call', tool: DELEGATE, arguments: args };
+      const targets = delegateTargets(env, task.assignee);
+      // An agent the user may name whose executor does not run now: the user reads why, not "does not take delegated steps".
+      if (!targets.some((target) => target.name === next)) {
+        const error = `${next} cannot work now: its executor is off (Claude or Codex disabled in the settings, or no local model)`;
+        await recordTurn(sql, { taskId: task.id, step, runId, answer, label: task.effectiveLabel, result: `error: ${DELEGATE}: ${error}` });
+        await show(task, step, 'error', error);
+        return { kind: 'continue', usage: { steps: 0 } };
+      }
+      // The brief is the user's own text: the label of the message, as the task holds it.
+      return delegateCall(ctx, { taskId: task.id, step, runId, answer }, task.effectiveLabel, args, { steps: 0, tokensIn: 0, tokensOut: 0 }, targets);
+    }
+    const answered = delegations.filter((delegation) => delegation.status === 'ok' && delegation.messageId !== null).at(-1);
+    if (answered?.messageId != null) return { kind: 'answered', messageId: answered.messageId };
+    // Only an error says why: a report is the agent's text, never a reason to show.
+    const error = [...delegations.map((delegation) => delegation.result), ...turns.map((turn) => turn.result)].findLast((result) => result?.startsWith('error: ') === true);
+    const why = (error ?? 'error: nobody answered').replace(/^error: (?:[^:]+: )?/, '');
+    return { kind: 'wait-user', reason: `${addressed.agents.join(', ')} could not answer: ${why}` };
+  }
+
+  /**
    * The model called `task.delegate`: the turn and the delegation are
    * written together. A brief above what the agent may read (L1 for the
    * cloud, the agent's clearance on the local model) asks the user's
@@ -604,8 +643,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     // An agent that asks (D-159): the user chooses among the ways allowed for this work, a card's own rules.
     const asks = target?.card.executorChoice === 'ask' && !isAgentCard(task);
     const ways = asks ? waysFor(env, target.card, label, approvedRepo(env, repo)) : undefined;
+    // The caps of one message of the user (D-107, tappa B2): agents never bounce on each other's work without end.
+    const before = await loadDelegations(sql, task.id);
     let error: string | undefined;
-    if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
+    if (before.length >= MAX_INTERVENTIONS) error = `${String(MAX_INTERVENTIONS)} agents already worked for this message of the user: answer with what you have`;
+    else if (before.filter((item) => item.agent === agentName).length >= MAX_PER_AGENT) {
+      error = `${agentName} already worked ${String(MAX_PER_AGENT)} times for this message of the user: answer with what you have, or ask another agent`;
+    } else if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';
     else if (reason === '') error = 'the reason is empty: say in one short line why you bring this agent in';
     else if (ways !== undefined && ways.options.length === 0) error = noWayReason(agentName, target.card, ways.excluded, 'work');
@@ -669,6 +713,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // Nothing left to run in the direct chat: the step only closes the task (directChatEnd). Its run row says
       // local and no model, as for a delegation closed without running: no model is called.
       if (planned === undefined && directChat) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
+      // «@name» or «/giro» (D-107, tappa B2): the core writes the next delegation, or closes the task; no model is called.
+      if (planned === undefined && (await addressedTask(sql, task.id)) !== undefined) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
       if (planned === undefined) {
         const direct = await directFor(task);
         directs.set(key, direct?.target ?? null);
@@ -785,7 +831,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (ctx.approval?.kind === 'fact') return proposeDecisionAnswer(sql, ctx);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
-      const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.target : (plannedDirect ?? undefined);
+      // An addressed message (D-107, tappa B2) is never answered by Claude in a system chat: the agents named answer it.
+      const addressedNow = planned === undefined ? await addressedTask(sql, task.id) : undefined;
+      const direct =
+        planned !== undefined || addressedNow !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.target : (plannedDirect ?? undefined);
       if (direct !== undefined) {
         const history = await historyOf(sql, options.agents, task, [], []);
         if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
@@ -810,6 +859,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         };
         return replay(task, done, delegations, turns, ceilingOf);
       }
+
+      // «@name» or «/giro» (D-107, tappa B2): the agents answer, one after the other; Arianna's model is never called.
+      const addressed = await addressedTask(sql, task.id);
+      if (addressed !== undefined) return addressedStep(ctx, addressed, turns, delegations);
 
       // The anchor jumped (D-077): at the first step of the task the local
       // model summarizes what it left behind, before the answer; the later

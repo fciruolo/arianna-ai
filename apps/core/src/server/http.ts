@@ -46,6 +46,7 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import { editQueued, listQueue, postOrQueue, removeQueued, resumeQueue, sendQueuedNow } from '../message-queue.ts';
+import { chatBrief } from '../delegation-view.ts';
 import type { Sql } from '../db/client.ts';
 import {
   createOpenLinks,
@@ -325,6 +326,8 @@ export interface ApiServerOptions {
   trialRefusal?: (modelId: string) => string | undefined;
   /** When an idle agent leaves a conversation (I-8, D-130), read at each message; undefined, none leaves. */
   leaveRule?: () => LeaveRule | undefined;
+  /** The agents «@name» and «/giro» may call (D-107, tappa B2); without it every message goes to Arianna. */
+  mentionable?: () => readonly string[];
   /** "Ferma" in the chat (D-218): stops the answers at work in a conversation; without it the route answers 404. */
   stopChat?: (conversationId: string) => Promise<{ stopped: number }>;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
@@ -530,6 +533,7 @@ interface RouteOptions {
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   stopChat?: ApiServerOptions['stopChat'];
+  mentionable?: ApiServerOptions['mentionable'];
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
   designCatalog?: DesignCatalog | undefined;
@@ -1514,6 +1518,15 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
       if (!/^\d{1,4}$/.test(index)) throw new HttpError(404, 'not found');
       return { body: { file: await readDelegationFile(sql, approvedProjects(), id, Number(index)) } };
     }),
+    // «Ha visto solo il brief» (D-107, tappa B2): the text of the request an agent received from this chat.
+    route('GET', '/api/conversations/:id/delegations/:delegation/brief', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const delegation = params.delegation ?? '';
+      if (!/^\d{1,19}$/.test(delegation)) throw new HttpError(404, 'not found');
+      const brief = await chatBrief(sql, id, delegation);
+      if (brief === undefined) throw new HttpError(404, 'not found');
+      return { body: brief };
+    }),
     // D-117: what the run changed in each file, from the commit its files were listed against.
     route('GET', '/api/delegations/:id/diff', async (_request, _url, params) => {
       const id = delegationId(params);
@@ -2138,7 +2151,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatFolderGone, trialRefusal, leaveRule, stopChat, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2442,7 +2455,12 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       }
       const leave = leaveRule?.();
       // While an answer is at work the message waits in the queue (D-218): 202 with it, instead of the message and its task.
-      const posted = await postOrQueue(sql, id, body.body, { ...(leave === undefined ? {} : { leave }), ...(design === undefined ? {} : { design }) });
+      const named = mentionable?.();
+      const posted = await postOrQueue(sql, id, body.body, {
+        ...(leave === undefined ? {} : { leave }),
+        ...(named === undefined ? {} : { mentionable: named }),
+        ...(design === undefined ? {} : { design }),
+      });
       if ('queued' in posted) return { status: 202, body: { queued: posted.queued } };
       return { status: 201, body: posted.sent };
     }),
@@ -2472,8 +2490,11 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('POST', '/api/queued-messages/:id/send', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       const leave = leaveRule?.();
-      return { status: 201, body: await sendQueuedNow(sql, queuedId(params), leave) };
+      const named = mentionable?.();
+      return { status: 201, body: await sendQueuedNow(sql, queuedId(params), { ...(leave === undefined ? {} : { leave }), ...(named === undefined ? {} : { mentionable: named }) }) };
     }),
+    // Who «@» may call in a conversation with Arianna (D-107, tappa B2): names of agents, L0.
+    route('GET', '/api/chat/mentionable', () => Promise.resolve({ body: { agents: mentionable?.() ?? [] } })),
     // "Ferma" (D-218): the answers at work in the conversation stop, its queue pauses.
     route('POST', '/api/conversations/:id/stop', async (request, _url, params) => {
       const id = idParam(params, 'id');
@@ -3953,6 +3974,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     services: options.services,
     leaveRule: options.leaveRule,
     stopChat: options.stopChat,
+    mentionable: options.mentionable,
     incognito: options.incognito,
     erase: options.erase,
     designCatalog: options.designCatalog,

@@ -403,6 +403,16 @@ export async function sendQueuedNow(id: string): Promise<{ message: Message; tas
   return call('POST', `/api/queued-messages/${encodeURIComponent(id)}/send`, {});
 }
 
+/** Who «@» may call in a conversation with Arianna (D-107, tappa B2). */
+export async function loadMentionable(): Promise<string[]> {
+  return (await call<{ agents: string[] }>('GET', '/api/chat/mentionable')).agents;
+}
+
+/** «Ha visto solo il brief» (D-107, tappa B2): the text of the request a delegated agent received from this conversation. */
+export async function loadBrief(conversationId: string, delegationId: string): Promise<{ agent: string; brief: string; label: Label }> {
+  return call('GET', `/api/conversations/${encodeURIComponent(conversationId)}/delegations/${encodeURIComponent(delegationId)}/brief`);
+}
+
 /** "Ferma" (D-218): the answers at work in the conversation stop, its queue pauses. */
 export async function stopConversation(conversationId: string): Promise<{ stopped: number }> {
   return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/stop`, {});

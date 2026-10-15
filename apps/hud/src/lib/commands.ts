@@ -10,7 +10,14 @@ export type CommandAction =
   | { kind: 'open'; page: 'thoughts' | 'knowledge' | 'settings' }
   | { kind: 'new-conversation' }
   | { kind: 'search' }
-  | { kind: 'help' };
+  | { kind: 'help' }
+  /** «/giro testo» (D-107, tappa B2): sent to the core as it is, every agent of the chat answers once. */
+  | { kind: 'round' }
+  /** «/basta»: the same as «Ferma» (D-218), the answer or the round at work stops. */
+  | { kind: 'stop' };
+
+/** The command actions the page carries out itself: «/nota» goes to the capture, «/giro» to the core, «/aiuto» opens the menu. */
+export type PageCommandAction = Exclude<CommandAction, { kind: 'note' | 'help' | 'round' | 'stop' }>;
 
 export interface ChatCommand {
   /** Without the slash, lowercase, letters only. */
@@ -32,6 +39,8 @@ export const COMMANDS: readonly ChatCommand[] = [
   { name: 'nuova', description: 'Apre una nuova conversazione dello stesso tipo', takesArgument: false, action: { kind: 'new-conversation' } },
   { name: 'impostazioni', alias: 'i', description: 'Apre le impostazioni', takesArgument: false, action: { kind: 'open', page: 'settings' } },
   { name: 'cerca', description: 'Cerca in conversazioni, messaggi, pensieri e pagine', takesArgument: false, action: { kind: 'search' } },
+  { name: 'giro', description: 'Chiede a ogni agente della chat una risposta, uno alla volta', takesArgument: true, argumentHint: 'domanda', action: { kind: 'round' } },
+  { name: 'basta', description: 'Ferma la risposta o il giro in corso, come «Ferma»', takesArgument: false, action: { kind: 'stop' } },
   { name: 'aiuto', alias: 'a', description: 'Mostra l’elenco dei comandi', takesArgument: false, action: { kind: 'help' } },
 ];
 
@@ -140,5 +149,18 @@ export function resolveDraft(draft: string, commands: readonly ChatCommand[] = C
  * for a refused one.
  */
 export function goesToArianna(draft: string): boolean {
-  return resolveDraft(draft).kind === 'message';
+  const meaning = resolveDraft(draft);
+  // «/giro» reaches the core as a message: the agents of the chat answer it (D-107, tappa B2).
+  return meaning.kind === 'message' || (meaning.kind === 'command' && meaning.command.action.kind === 'round');
+}
+
+/** «@na»: the start of a mention being typed (D-107, tappa B2), the menu of the agents shows; undefined otherwise. */
+export function mentionQuery(draft: string): string | undefined {
+  return /^@([a-z0-9-]*)$/.exec(draft)?.[1];
+}
+
+/** The agents a mention being typed may still name, those starting with what is typed first. */
+export function filterMentions(query: string, agents: readonly string[]): string[] {
+  const starts = agents.filter((agent) => agent.startsWith(query));
+  return [...starts, ...agents.filter((agent) => !agent.startsWith(query) && agent.includes(query))];
 }

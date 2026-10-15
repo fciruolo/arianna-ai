@@ -178,6 +178,24 @@ export function isCloudRoute(route: DelegationRoute | undefined): route is Cloud
 }
 
 /**
+ * An agent `assignee` may ever hand a work: never itself, nor GOD, which
+ * answers only in its own chat (D-127), nor the agent of the Finances (D-183),
+ * nor the local model of «Con chi parli» (D-111, tappa B), which only chats.
+ */
+function delegable(name: string, agent: LoadedAgent, assignee: string): boolean {
+  return name !== assignee && name !== GOD_AGENT && name !== LOCAL_CHAT_AGENT && !isFinanceCard(agent.card) && delegationRoute(agent.card) !== undefined;
+}
+
+/**
+ * The agents the user may call with «@name» in a conversation with Arianna
+ * (D-107, tappa B2): those Arianna may delegate to, whether their executor
+ * runs now or not (the orchestrator says why one cannot, as for Arianna).
+ */
+export function mentionableAgents(agents: ReadonlyMap<string, LoadedAgent>): string[] {
+  return [...agents].filter(([name, agent]) => delegable(name, agent, ORCHESTRATOR_AGENT)).map(([name]) => name).sort();
+}
+
+/**
  * The agents `assignee` may delegate to now: the Coder and the user's active
  * agents whose executor can run (Claude enabled, a local model there). The
  * Coder first, then by name, so that the prompt stays the same between steps.
@@ -185,9 +203,7 @@ export function isCloudRoute(route: DelegationRoute | undefined): route is Cloud
 export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTarget[] {
   const targets: DelegateTarget[] = [];
   for (const [name, agent] of env.agents) {
-    // GOD answers only in its own chat (D-127): Arianna never hands it a work. Nor the agent of the Finances (D-183),
-    // nor the local model of «Con chi parli» (D-111, tappa B), which only chats.
-    if (name === assignee || name === GOD_AGENT || name === LOCAL_CHAT_AGENT || isFinanceCard(agent.card)) continue;
+    if (!delegable(name, agent, assignee)) continue;
     const where = delegationRoute(agent.card);
     if (isCloudRoute(where) ? cloudReady(env, agent.card) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
   }

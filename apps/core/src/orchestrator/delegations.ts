@@ -143,3 +143,4 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
   if (row === undefined) throw new Error(`delegation ${id} does not exist`);
   return row;
 }
+
