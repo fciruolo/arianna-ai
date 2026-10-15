@@ -4,7 +4,7 @@ Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo 
 
 Aggiornato: 2026-10-15, pomeriggio tardi.
 
-**2026-10-15, pomeriggio tardi — stato.** Ramo `task/d220-finestra-specialisti` (commit `10e73193`), **da provare**: D-220, gli specialisti locali (Traduttore, Oroscopo) leggono la chat fino alla richiesta nelle conversazioni di lavoro, nota «Ha visto la chat e il brief»; migrazione `0068` già applicata al database di sviluppo. Cartella principale sul ramo, core riavviato. `pnpm check` e `pnpm test:db` (766) verdi, `reviewer` fatto e corretto. Con «Funziona»: fast-forward su `main`, versione 0.115.0, tag, ritorno su `main`. Con questo la B2 è chiusa (declassamento Interno → Pubblico e modello fisso esclusi dall'utente in D-219).
+**2026-10-15, pomeriggio tardi — stato.** `main` è alla **0.115.0**: D-220, gli specialisti locali (Traduttore, Oroscopo) leggono la chat fino alla richiesta nelle conversazioni di lavoro (nota «Ha visto la chat e il brief», migrazione `0068`), provata dall'utente. Con questo la B2 di D-107 è chiusa (declassamento Interno → Pubblico e modello fisso esclusi dall'utente in D-219). Nessun lavoro in corso. Push da fare dall'utente: `! git push origin main --follow-tags`. Pulizia a mano: ramo `task/d220-finestra-specialisti` se resta.
 
 **2026-10-15, pomeriggio — stato.** `main` è alla **0.114.0**: chat con più agenti, tappa B2 di D-107 (D-219: «@nome», «/giro», «/basta», tetti di 6 deleghe per messaggio e 2 per agente, nota «ha visto solo il brief», messaggio rifiutato che torna nel campo), provata dall'utente. Restano della B2: declassamento L1 → L0, finestra della chat per gli specialisti locali, modello fisso per partecipante. Nessun lavoro in corso. Push da fare dall'utente: `! git push origin main --follow-tags`. Pulizia a mano: worktree `.claude/worktrees/agent-a3e060a0654806236` e rami `task/test-rossi`, `worktree-agent-a3e060a0654806236`.
 
@@ -23,7 +23,7 @@ Aggiornato: 2026-10-15, pomeriggio tardi.
 ## Dove siamo
 
 - **Fase 0 chiusa** (2026-10-02). **Fase 1A in corso**: il criterio di uscita di `docs/ROADMAP.md` non è ancora stato superato dall'utente. Quasi tutti i task di 1A e molti di 1B sono su `main`; per lo stato dei singoli task vale `docs/PHASE-0-1-TASKS.md`, per le scelte `docs/DECISIONS.md`, per la storia `docs/HANDOFF-STORIA.md`.
-- `main` è alla 0.112.0. Versioni e novità in `CHANGELOG.md`.
+- `main` è alla 0.115.0. Versioni e novità in `CHANGELOG.md`.
 - `pnpm check` passa. `pnpm test:db` il 13 sera: 657 test, l'unico fallito `telegram.test.ts` per timeout sotto carico (passa da solo).
 - Macchina di lavoro: Mac Studio con 32 GB; oMLX lo avvia il core (D-071), orchestratore `qwen3.8-35b-a3b-distill-mlx-4bit` dal 2026-10-14 (D-201; prima il 9B). Disco: 21 GiB liberi il 14 notte (tolti dal disco l'uncensored e il 27B, che restano nel catalogo e nel Confronto; cache SSD di oMLX abbassata da 10 a 4 GB in `arianna.toml`, scelta dell'utente). **Memoria:** col 35B caricato lo swap è arrivato a 9 GB su 10 (sul Mac girano anche una ventina di container Docker di altri progetti): da guardare la pressione della memoria; se resta alta, valutare con l'utente il 9B per la voce o meno servizi accesi.
 
@@ -109,4 +109,4 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, pomeriggio tardi» in HANDOFF: D-220 sul ramo task/d220-finestra-specialisti, da provare o unire. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, pomeriggio tardi» in HANDOFF: main è alla 0.115.0, nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
