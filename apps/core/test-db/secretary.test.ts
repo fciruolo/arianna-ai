@@ -194,17 +194,18 @@ test('commitment.done with words that match several: the model reads the open on
 
 test('"sposta la banca a venerdì" (D-148): found by its words, moved after the confirmation, the clock kept', async () => {
   const secretary = await openSecretary(db().sql);
-  const tomorrow = parseDay('domani', localDay())?.day ?? '';
   const friday = parseDay('venerdì', localDay())?.day ?? '';
-  const [row] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day, at_time) VALUES ('Firmare la fideiussione in filiale', ${tomorrow}::date, '15:00') RETURNING id::text`;
+  // From a Saturday, never the Friday itself: from "domani" the test failed every Thursday (already on that day).
+  const saturday = parseDay('sabato', localDay())?.day ?? '';
+  const [row] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day, at_time) VALUES ('Firmare la fideiussione in filiale', ${saturday}::date, '15:00') RETURNING id::text`;
   const { task } = await postUserMessage(db().sql, secretary.id, 'Sposta la firma in filiale a venerdì');
   const model = scripted([{ action: 'call', tool: 'commitment.move', arguments: { which: 'firmare in filiale', day: 'venerdì' } }]);
   assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
   const approval = await pendingOf(task.id);
   assert.deepEqual([approval.kind, approval.action, approval.label], ['commitment', 'commitment.move', 'L2']);
-  assert.deepEqual([approval.detail.op, approval.detail.commitmentId, approval.detail.day, approval.detail.time, approval.detail.fromDay], ['move', row?.id, friday, '15:00', tomorrow]);
+  assert.deepEqual([approval.detail.op, approval.detail.commitmentId, approval.detail.day, approval.detail.time, approval.detail.fromDay], ['move', row?.id, friday, '15:00', saturday]);
   // Nothing moves before the confirmation.
-  assert.equal((await loadCommitment(db().sql, row?.id ?? ''))?.day, tomorrow);
+  assert.equal((await loadCommitment(db().sql, row?.id ?? ''))?.day, saturday);
   await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'telegram'), /approvals_commitment_via_web/);
   await recordDecision(db().sql, approval.id, 'approved', 'web');
   const moved = await loadCommitment(db().sql, row?.id ?? '');

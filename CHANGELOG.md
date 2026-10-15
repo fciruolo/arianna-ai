@@ -2,6 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Corretto
+
+- Test col database del prompt con la persona: non leggono più tema, personaggi e personas dell'`arianna.toml` dell'utente, che con un tema di serie aggiungevano il blocco del personaggio e lo facevano fallire (test rossi, D-107, D-214, D-217).
+- Test col database di «sposta la banca a venerdì»: l'impegno parte da sabato e non da domani, che di giovedì era già venerdì e faceva fallire il test (test rossi, D-148).
+
 ## [0.113.1] - 2026-10-15
 
 ### Cambiato

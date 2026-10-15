@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { type Answer, type Autonomy, type Persona } from '@arianna/agents';
-import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import { DEFAULT_APPEARANCE, defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { createContext } from '@arianna/policy';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
@@ -50,7 +50,9 @@ function fakeKb() {
 }
 const kb = fakeKb();
 const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
-const CONFIG = loadConfig();
+// The tail of the prompt as with a fresh install: the theme, characters and personas of the user's
+// arianna.toml (a series theme adds the character's block, D-214, D-217) must not change what the tests read.
+const CONFIG = { ...loadConfig(), characters: {}, appearance: { ...DEFAULT_APPEARANCE }, personas: {} };
 /** An orchestrator without delegation: no cloud executor. */
 const orchestrator = (model: LocalModel) =>
   createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
