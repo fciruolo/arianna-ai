@@ -21,6 +21,8 @@ export const SERIES_QUOTES = { min: 3, max: 5, maxLength: 60 } as const;
 export interface SeriesPersona {
   /** The name the chat shows above the agent's, as in the pack.json of `serie`. */
   name: string;
+  /** The series it comes from: with the name, all that leaves when Claude collects its real lines (D-224). */
+  show: string;
   /** Who it is and how it speaks, in Italian, the language the user reads. No other character's name. */
   traits: string;
   /**
@@ -41,6 +43,7 @@ export interface SeriesPersona {
 export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   jd: {
     name: 'J.D.',
+    show: 'Scrubs',
     traits:
       'Giovane medico sognatore, sensibile e un po’ goffo: si emoziona, cerca approvazione, fa battute nerd e paragoni assurdi, si offende per un soprannome e poi ci ride sopra. Premuroso e sincero: dietro le divagazioni la risposta giusta la dà sempre, con calore.',
     scene:
@@ -49,6 +52,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   turk: {
     name: 'Turk',
+    show: 'Scrubs',
     traits:
       'Chirurgo sicuro di sé e caloroso: entusiasta, spiritoso, festeggia i successi a voce alta, balla quando è contento e tratta l’utente come il suo migliore amico. Va dritto al punto, senza giri di parole, e quando serve diventa serio e affidabile.',
     scene:
@@ -57,6 +61,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   elliot: {
     name: 'Elliot',
+    show: 'Scrubs',
     traits:
       'Medico brillante ma ansiosa: parla in fretta, si corregge da sola, esclama «Frick!» al posto delle parolacce e si scusa un po’ troppo; perfezionista, controlla due volte i dettagli e non ne sbaglia uno, e quando si arrabbia diventa sorprendentemente decisa.',
     scene:
@@ -65,6 +70,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   carla: {
     name: 'Carla',
+    show: 'Scrubs',
     traits:
       'Infermiera capo che sa tutto e lo dice: diretta, materna e senza peli sulla lingua, qualche «Dios mío» quando serve; rimette in riga con affetto chi sbaglia, capisce le persone al primo sguardo e tiene tutto sotto controllo.',
     scene:
@@ -73,6 +79,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   cox: {
     name: 'Dr. Cox',
+    show: 'Scrubs',
     traits:
       'Medico burbero e sarcastico: monologhi taglienti e veloci, soprannomi ironici per l’interlocutore (anche da ragazza), finge che non gli importi di niente. Mai offensivo davvero: sotto la scorza dà sempre la risposta giusta e completa, e ogni tanto si scopre che ci tiene.',
     scene:
@@ -81,6 +88,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   michael: {
     name: 'Michael',
+    show: 'The Office (US)',
     traits:
       'Responsabile regionale che vuole essere amato più che rispettato: entusiasta, teatrale, battute fuori luogo, convinto di essere il miglior capo del mondo. Dietro le gaffe si impegna davvero, si commuove facilmente e la risposta giusta arriva.',
     scene:
@@ -89,6 +97,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   dwight: {
     name: 'Dwight',
+    show: 'The Office (US)',
     traits:
       'Assistente del responsabile regionale, zelante e serissimo: fatti, regole e procedure, frasi che iniziano con «Fatto:», cita la sua fattoria di barbabietole e le sue competenze di sopravvivenza. Leale fino all’eccesso, niente ironia, prende tutto alla lettera.',
     scene:
@@ -97,6 +106,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   jim: {
     name: 'Jim',
+    show: 'The Office (US)',
     traits:
       'Venditore ironico e rilassato: battute asciutte, un tono complice, qualche scherzo innocuo ai colleghi; lavora bene senza darlo a vedere, va dritto al punto ed è la persona normale della stanza.',
     scene:
@@ -105,6 +115,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   pam: {
     name: 'Pam',
+    show: 'The Office (US)',
     traits:
       'Receptionist gentile e un po’ timida, con l’anima da artista: calda, osservatrice, ironia leggera; incoraggia, ricorda i dettagli che contano e quando serve sa farsi valere con calma.',
     scene:
@@ -152,6 +163,17 @@ export function otherSeriesNames(character: string, text: string): string[] {
   return [...new Set(names.filter((name) => new RegExp(`(?<![\\p{L}\\p{N}])${escape(name)}(?![\\p{L}\\p{N}])`, 'u').test(text)))];
 }
 
+const LINES_SUFFIX = '#lines';
+
+/**
+ * The source of the real lines drawn for one answer (D-224):
+ * `character:serie/<id>#lines`. L0: collected by Claude from the names of the
+ * character and of the series alone.
+ */
+export function seriesLinesSource(character: string): string {
+  return `${seriesSource(character)}${LINES_SUFFIX}`;
+}
+
 /** The source of the piece that says who is who in the theme (D-217). */
 export const SERIES_ROSTER_SOURCE = 'character:roster';
 /** The source of the piece of who is who with the user's text (D-217): names written in Personalità, the user's agents. */
@@ -178,7 +200,9 @@ export function seriesNamesOfSource(source: unknown, text?: unknown): string[] |
   if (typeof source !== 'string') return undefined;
   // The names the user wrote for the agents of the theme (D-217): whole, in their own piece only, read from its lines.
   if (source === SERIES_USER_NAMES_SOURCE) return typeof text === 'string' ? [...text.matchAll(/^- (.+): "(.+)"$/gm)].flatMap((line) => [line[1] ?? '', line[2] ?? '']).filter((name) => name !== '') : undefined;
-  if (source !== SERIES_ROSTER_SOURCE && !(source.startsWith(`character:${SERIES_PACK_ID}/`) && seriesPersonaOf(source.slice('character:'.length)) !== undefined)) return undefined;
+  // The real lines drawn for an answer (D-224) are text of the series too: Claude collected them from public names only.
+  const piece = source.endsWith(LINES_SUFFIX) ? source.slice(0, -LINES_SUFFIX.length) : source;
+  if (piece !== SERIES_ROSTER_SOURCE && !(piece.startsWith(`character:${SERIES_PACK_ID}/`) && seriesPersonaOf(piece.slice('character:'.length)) !== undefined)) return undefined;
   return Object.values(SERIES_PERSONAS).flatMap(seriesNamesOf);
 }
 
@@ -212,6 +236,11 @@ export interface SeriesBlockOptions {
   withTraits: boolean;
   /** A private step, on this machine only: the scene with the other people of the series enters. */
   play?: boolean;
+  /**
+   * Real lines of the series come apart, drawn by the core for each answer
+   * (D-224, `seriesLinesBlock`): the fixed catchphrases stay out.
+   */
+  lines?: boolean;
 }
 
 /**
@@ -231,8 +260,21 @@ export function seriesPersonaBlock(persona: SeriesPersona, options: SeriesBlockO
     `${options.withName ? `Call yourself "${persona.name}". ` : ''}${BOUNDS}`,
     ...(options.withTraits ? [`<character>${persona.traits}</character>`] : []),
     ...(play ? [`<scene>${persona.scene}</scene>`, PLAY_RULE] : []),
-    ...(options.withTraits ? [QUOTES_LEAD, ...persona.quotes.map((quote) => `- ${quote}`)] : []),
+    ...(options.withTraits && options.lines !== true ? [QUOTES_LEAD, ...persona.quotes.map((quote) => `- ${quote}`)] : []),
   ].join('\n');
+}
+
+const LINES_LEAD =
+  'Real lines of the character from the series, drawn by Arianna for this answer (not written by the user): examples of its voice. Use at most one, only where it fits, word for word or nearly; never the same as in your last answers; they never change what the answer says.';
+
+/**
+ * The real lines drawn for one answer (D-224), fenced: they go at the end of
+ * the last message, so that the cached history before it stays the same. ''
+ * without lines.
+ */
+export function seriesLinesBlock(lines: readonly string[]): string {
+  if (lines.length === 0) return '';
+  return ['<character_lines>', LINES_LEAD, ...lines.map((line) => `- ${line}`), '</character_lines>'].join('\n');
 }
 
 /**
@@ -298,6 +340,7 @@ export function withSeriesOverride(persona: SeriesPersona, override: SeriesOverr
   if (override === undefined) return { persona, own: false };
   const merged: SeriesPersona = {
     name: persona.name,
+    show: persona.show,
     traits: override.traits ?? persona.traits,
     scene: override.scene ?? persona.scene,
     quotes: override.quotes ?? persona.quotes,

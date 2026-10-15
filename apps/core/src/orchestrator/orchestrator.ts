@@ -23,7 +23,7 @@ import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversati
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
-import { minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
+import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
@@ -389,6 +389,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     delegates: readonly DelegateTarget[],
     planner: Planner,
     tail: string,
+    trailer = '',
   ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
@@ -396,7 +397,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const call = async (thought: boolean) => {
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
-        messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner),
+        messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner, trailer),
         schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates, planner) },
         temperature: 0,
         maxTokens: options.maxTokens ?? 2048,
@@ -901,7 +902,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // A private fact says how to ask for it when profile.share is offered at this step (D-213).
       const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, incognito, secretary, false, shareTargets.size > 0).includes(PROFILE_SHARE);
       const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
-      const tail = [...tailParts(env.settings(), task.assignee, tailClearance), ...(profile === undefined ? [] : [profile])];
+      const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true }), ...(profile === undefined ? [] : [profile])];
+      // Real lines of the character drawn by the core for this answer (D-224), L0, after the history.
+      const lines = linesPart(env.settings(), task.assignee, tailClearance, task.conversationId ?? `task:${task.id}`);
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
       let context: Context = contextOf(task, label);
@@ -915,6 +918,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           ...history.map((part) => ({ value: part.value.content, label: part.label, source: part.source })),
           ...(skills === undefined ? [] : [{ value: skills.text, label: skills.label, source: skills.source }]),
           ...tail.map((part) => ({ value: part.text, label: part.label, source: part.source })),
+          ...(lines === undefined ? [] : [{ value: lines.text, label: lines.label, source: lines.source }]),
         ],
         context,
         { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
@@ -922,9 +926,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
       const skillsCount = skills === undefined ? 0 : 1;
-      if (decision.texts.length !== history.length + skillsCount + tail.length) throw new Error('the gateway allowed a different number of texts');
+      const linesCount = lines === undefined ? 0 : 1;
+      if (decision.texts.length !== history.length + skillsCount + tail.length + linesCount) throw new Error('the gateway allowed a different number of texts');
       const allowedSkills = skills === undefined ? undefined : decision.texts[history.length];
-      const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount));
+      const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount, history.length + skillsCount + tail.length));
+      const allowedLines = lines === undefined ? '' : (decision.texts.at(-1) ?? '');
       const prompt = allowedSkills === undefined || allowedSkills === '' ? agent.prompt : `${agent.prompt}\n\n${allowedSkills}`;
       // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
       const allowed = joinSameRole(history.map((part, index) => ({ ...part, value: { role: part.value.role, content: decision.texts[index] ?? '' } }))).map(
@@ -948,7 +954,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

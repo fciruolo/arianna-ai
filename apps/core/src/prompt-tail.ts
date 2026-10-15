@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesOwnSource, seriesRosterBlock, seriesSource, withSeriesOverride, type PersonaParts, type SeriesOverride, type SeriesPersona } from '@arianna/agents';
+import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesLinesBlock, seriesLinesSource, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesOwnSource, seriesRosterBlock, seriesSource, withSeriesOverride, type PersonaParts, type SeriesOverride, type SeriesPersona } from '@arianna/agents';
 import { ORIGINAL_PACK, type CharacterChoices, type Personas, type SeriesOverrides } from '@arianna/config';
 import { isAtMost, PERSONA_LABEL, personaFits, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
@@ -85,6 +85,22 @@ export interface TailConfig {
   serves?: (pack: string, character: string) => boolean;
   /** The agents loaded now, by origin (D-217); `configureTailAgents` when not given (tests give it). */
   agentsNow?: () => TailAgents;
+  /** The archive of real lines (D-224); `configureSeriesLines` when not given (tests give it). */
+  lines?: LinesSource;
+}
+
+/** What the tail reads of the archive of real lines (D-224): `SeriesLines` of series-lines.ts. */
+export interface LinesSource {
+  has(character: string, named: boolean): boolean;
+  draw(character: string, options: { conversation: string; named: boolean }): string[];
+}
+
+// Set by main.ts; none until then, so the fixed catchphrases stay.
+let seriesLines: LinesSource | undefined;
+
+/** What gives the tail the real lines of the people of the series (D-224). */
+export function configureSeriesLines(source: LinesSource | undefined): void {
+  seriesLines = source;
 }
 
 /** The agents loaded now: the cards of agents/ (in git, their names L0) and the user's (D-119, their names L1). */
@@ -241,7 +257,26 @@ export function userNamesPart(config: TailConfig, agent: string, clearance: Labe
  * `clearance` (L2 or more, a step on this machine) the role-play for real
  * (D-223); the default L0 is the plain voice.
  */
-export function characterPart(config: TailConfig, agent: string, clearance: Label = 'L0'): TailPart | undefined {
+export function characterPart(config: TailConfig, agent: string, clearance: Label = 'L0', lines = false): TailPart | undefined {
+  const worn = wornPerson(config, agent, clearance);
+  if (worn === undefined) return undefined;
+  const { id, merged, own, play } = worn;
+  // With real lines drawn apart for each answer (D-224) the fixed catchphrases stay out.
+  const text = seriesPersonaBlock(merged.persona, { withName: own?.displayName === undefined, withTraits: own?.traits === undefined, play, lines: lines && drawsLines(config, worn, clearance) });
+  // The user's text has its own source: no exemption for the names of the series there (D-223).
+  return text === '' ? undefined : { text, label: merged.own ? PERSONA_LABEL : 'L0', source: merged.own ? seriesOwnSource(id) : seriesSource(id) };
+}
+
+interface WornPerson {
+  id: string;
+  merged: { persona: SeriesPersona; own: boolean };
+  own: Personas[string] | undefined;
+  play: boolean;
+  /** The user rewrote the catchphrases (D-223): theirs win over the archive. */
+  ownQuotes: boolean;
+}
+
+function wornPerson(config: TailConfig, agent: string, clearance: Label): WornPerson | undefined {
   const choice = characterChoiceOf(config, agent);
   const person = seriesPersonaOf(choice);
   if (person === undefined || choice === undefined) return undefined;
@@ -251,10 +286,34 @@ export function characterPart(config: TailConfig, agent: string, clearance: Labe
   const id = choice.split('/')[1] ?? '';
   // What the user rewrote (D-223) is theirs, Interno (L1): only in a step that admits it, and never when it looks like personal data or a vault value now.
   const override = config.series !== undefined && Object.hasOwn(config.series, id) ? config.series[id] : undefined;
-  const merged = personaFits(clearance) && override !== undefined && seriesFits(override) ? withSeriesOverride(person, override) : { persona: person, own: false };
-  const text = seriesPersonaBlock(merged.persona, { withName: own?.displayName === undefined, withTraits: own?.traits === undefined, play });
-  // The user's text has its own source: no exemption for the names of the series there (D-223).
-  return text === '' ? undefined : { text, label: merged.own ? PERSONA_LABEL : 'L0', source: merged.own ? seriesOwnSource(id) : seriesSource(id) };
+  const fits = personaFits(clearance) && override !== undefined && seriesFits(override);
+  const merged = fits ? withSeriesOverride(person, override) : { persona: person, own: false };
+  return { id, merged, own, play, ownQuotes: fits && override.quotes !== undefined };
+}
+
+/** Real lines go with the character's own personality only, and not over the catchphrases the user wrote (D-224). */
+function drawsLines(config: TailConfig, worn: WornPerson, clearance: Label): boolean {
+  const source = config.lines ?? seriesLines;
+  // The archive is a file of data/ the user may write by hand: Interno (L1), never in an L0 step.
+  return source !== undefined && personaFits(clearance) && worn.own?.traits === undefined && !worn.ownQuotes && source.has(worn.id, worn.play);
+}
+
+/**
+ * The real lines of the person of the series `agent` wears, drawn by the core
+ * for one answer in `conversation` (D-224), as one piece, Interno (L1: the
+ * file may hold lines written by hand), never in an L0 step: the caller puts
+ * it at the end of the last message, after the history, so that the cached
+ * prefix stays the same from one answer to the next. A line that names
+ * someone else in a private step only (as the scene, D-223). None when the
+ * agent wears no person of the series, the user's personality or catchphrases
+ * win, or the archive is empty; then `characterPart` keeps the fixed ones.
+ */
+export function linesPart(config: TailConfig, agent: string, clearance: Label, conversation: string): TailPart | undefined {
+  const worn = wornPerson(config, agent, clearance);
+  const source = config.lines ?? seriesLines;
+  if (worn === undefined || source === undefined || !drawsLines(config, worn, clearance)) return undefined;
+  const text = seriesLinesBlock(source.draw(worn.id, { conversation, named: worn.play }));
+  return text === '' ? undefined : { text, label: PERSONA_LABEL, source: seriesLinesSource(worn.id) };
 }
 
 /** No text of the user's rewrite looks like personal data or holds a value of the vault (D-223), as the persona's (D-107). */
@@ -264,8 +323,9 @@ export function seriesFits(override: SeriesOverride, secrets: KnownSecrets = kno
 }
 
 /** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */
-export function tailParts(config: TailConfig, agent: string, clearance: Label): TailPart[] {
-  const pieces = [characterPart(config, agent, clearance), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
+export function tailParts(config: TailConfig, agent: string, clearance: Label, options: { lines?: boolean } = {}): TailPart[] {
+  // `lines`: the caller adds `linesPart` at the end of the last message, so the fixed catchphrases stay out (D-224).
+  const pieces = [characterPart(config, agent, clearance, options.lines === true), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
   return pieces.filter((piece): piece is TailPart => piece !== undefined);
 }
 

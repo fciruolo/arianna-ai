@@ -195,7 +195,7 @@ test('the name and the personality the user wrote win over the character’s, wh
   assert.match(withTraits.text, /Call yourself "Dr\. Cox"/);
   assert.doesNotMatch(withTraits.text, /<character>|pivello/);
   assert.equal(characterPart(corsia({ personas: { god: { ...named, traits: 'Gentile.' } } }), 'god'), undefined);
-  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', traits: '', scene: '', quotes: [] }, { withName: false, withTraits: false }), '');
+  assert.equal(seriesPersonaBlock(SERIES_PERSONAS.cox ?? { name: '', show: '', traits: '', scene: '', quotes: [] }, { withName: false, withTraits: false }), '');
   // An L0 step drops the user's text, but it still wins: the character's name does not come back.
   const parts = tailParts(corsia({ personas: { god: named } }), 'god', 'L0');
   assert.ok(parts.every((piece) => !piece.text.includes('Call yourself')));

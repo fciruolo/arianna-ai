@@ -12,6 +12,7 @@ import { loadSeriesPersonas, type SeriesPersonaView } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
 import { nameForms, SERIES_LIMITS, seriesForm, seriesProblem, seriesRewrite, withRewrite, type SeriesForm } from '../lib/series-persona.ts';
 import type { SeriesValues } from '../lib/settings.ts';
+import SeriesLinesPanel from './SeriesLinesPanel.vue';
 
 const props = defineProps<{
   /** The id of the character in the pack serie: jd, cox… */
@@ -120,6 +121,8 @@ const count = (text: string): number => Array.from(text.replace(/\s+/g, ' ').tri
         <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busy || !dirty" @click="fill">Annulla</button>
         <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="busy || !dirty || problem !== null" @click="store(rewrite)">{{ busy ? 'Salvo…' : 'Salva' }}</button>
       </div>
+
+      <SeriesLinesPanel :character="person.id" :name="person.name" :own-quotes="person.own?.quotes !== undefined" />
 
       <details class="text-[13px]">
         <summary class="cursor-pointer select-none text-muted">Cosa riceve il modello</summary>

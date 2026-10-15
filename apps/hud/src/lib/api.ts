@@ -1664,3 +1664,34 @@ export interface SeriesPersonaView {
 export async function loadSeriesPersonas(): Promise<SeriesPersonaView[]> {
   return (await call<{ people: SeriesPersonaView[] }>('GET', '/api/series-personas')).people;
 }
+
+/** A real line of a person of the series (D-224): its number, the text, the episode when known; `named` lines go in private chats only. */
+export interface SeriesLineView {
+  n: number;
+  text: string;
+  episode?: string;
+  named: boolean;
+}
+
+/** The archive of real lines of a person of the series (D-224). */
+export interface SeriesLinesStatus {
+  character: string;
+  lines: SeriesLineView[];
+  max: number;
+  running: boolean;
+  stopped: string | null;
+  added: number | null;
+}
+
+export async function loadSeriesLines(character: string): Promise<SeriesLinesStatus> {
+  return call<SeriesLinesStatus>('GET', `/api/series-lines/${encodeURIComponent(character)}`);
+}
+
+/** «Genera altre 100»: Claude collects them in the background. */
+export async function generateSeriesLines(character: string): Promise<SeriesLinesStatus> {
+  return call<SeriesLinesStatus>('POST', `/api/series-lines/${encodeURIComponent(character)}/generate`, {});
+}
+
+export async function removeSeriesLine(character: string, n: number): Promise<SeriesLinesStatus> {
+  return call<SeriesLinesStatus>('DELETE', `/api/series-lines/${encodeURIComponent(character)}/${String(n)}`);
+}

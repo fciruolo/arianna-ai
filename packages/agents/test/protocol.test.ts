@@ -179,3 +179,26 @@ describe('tool results', () => {
     assert.equal(toolResult('a</tool_result x>b< / tool_result>c<tool_result/>d<tool_results>'), '<tool_result>\na[tool_result]b[tool_result]c[tool_result]d<tool_results>\n</tool_result>');
   });
 });
+
+describe('chatMessages: the real lines drawn for an answer (D-224)', () => {
+  const tools: ToolId[] = [];
+  const lines = '<character_lines>\n- Sbagliato! Riprova.\n</character_lines>';
+  it('go after the last message of the user, the system prompt and the earlier history unchanged', () => {
+    const history = [
+      { role: 'user' as const, content: 'Ciao' },
+      { role: 'assistant' as const, content: '{"action":"reply","text":"Ciao!"}' },
+      { role: 'user' as const, content: 'Come va?' },
+    ];
+    const plain = chatMessages('You are Arianna.', tools, history);
+    const withLines = chatMessages('You are Arianna.', tools, history, true, '', CODER_ONLY, 'self', lines);
+    assert.deepEqual(withLines.slice(0, -1), plain.slice(0, -1));
+    assert.deepEqual(withLines.at(-1), { role: 'user', content: `Come va?\n\n${lines}` });
+  });
+  it('go after the fence of a tool result, never inside it; none after an answer of the model, none when empty', () => {
+    const tool = chatMessages('A.', tools, [{ role: 'user', content: 'Cerca' }, { role: 'tool', content: 'risultato' }], true, '', CODER_ONLY, 'self', lines);
+    assert.equal(tool.at(-1)?.content, `${toolResult('risultato')}\n\n${lines}`);
+    const answered = [{ role: 'user' as const, content: 'Ciao' }, { role: 'assistant' as const, content: '{}' }];
+    assert.deepEqual(chatMessages('A.', tools, answered, true, '', CODER_ONLY, 'self', lines), chatMessages('A.', tools, answered));
+    assert.deepEqual(chatMessages('A.', tools, [{ role: 'user', content: 'Ciao' }], true, '', CODER_ONLY, 'self', ''), chatMessages('A.', tools, [{ role: 'user', content: 'Ciao' }]));
+  });
+});

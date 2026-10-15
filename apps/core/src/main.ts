@@ -40,7 +40,8 @@ import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
-import { characterDirsOf, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
+import { characterDirsOf, configureSeriesLines, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
+import { createSeriesLines } from './series-lines.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -793,6 +794,10 @@ const styleExamples = createStyleExamples({
   onEvent: catalogEvent,
 });
 const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
+// The real lines of the people of the series (D-224): Sonnet, from the name of the character and of the series alone
+// (L0), a hundred at a time on the user's click; the core draws a few for each answer of an agent that wears one.
+const seriesLines = createSeriesLines({ dir: join(config.paths.data, 'characters'), ask: askCloudText, onEvent: catalogEvent });
+configureSeriesLines(seriesLines);
 // The descriptions of the roles of the catalog of agents in Italian (request of the user of 2026-10-13), as the skills:
 // Sonnet, public text (L0), a batch at a time, once per description; the name of a role stays as it is.
 const roleTranslations = createSkillTranslations({
@@ -1022,6 +1027,7 @@ const server = await startApiServer({
   agentsCatalog: agentsCatalogApi,
   styleExamples,
   skillTranslations,
+  seriesLines,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
   // D-116: the model chosen for the agent the conversation is with; without one, the work agent's for Arianna.
@@ -1067,6 +1073,7 @@ const server = await startApiServer({
     themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
     // D-223: what the user rewrote of the people of the series, for their card in the settings.
     series: () => settings.current().series,
+    lines: seriesLines,
     downloadPixelAgents: () =>
       downloadPixelAgents({
         dirs: characterDirs,

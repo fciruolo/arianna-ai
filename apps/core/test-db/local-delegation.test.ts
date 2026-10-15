@@ -9,7 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { loadAgent, personaBlock, personaParts, userCard, userPresets, type Answer, type LoadedAgent, type Persona } from '@arianna/agents';
+import { loadAgent, personaBlock, personaParts, seriesLinesBlock, userCard, userPresets, type Answer, type LoadedAgent, type Persona } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 import { Secret } from '@arianna/vault';
@@ -25,6 +25,7 @@ import { listCredits } from '../src/delegation-view.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { configureSeriesLines } from '../src/prompt-tail.ts';
 import { loadTask, type Task } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
@@ -78,12 +79,14 @@ function scripted(answers: Answer[], reports: unknown[]): LocalModel & { request
   };
 }
 
-function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => AgentSkills, personas: Record<string, Persona> = {}): StepExecutor {
+function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => AgentSkills, personas: Record<string, Persona> = {}, characters?: Record<string, string>): StepExecutor {
   const agents = new Map<string, LoadedAgent>(loaded);
   for (const agent of extra) agents.set(agent.card.name, agent);
   const settings = () => ({
     ...BASE,
-    home: HOME,
+    ...(characters === undefined ? {} : { characters }),
+    // The packs of the characters are in git (D-224 test): the real home only when a character is worn.
+    home: characters === undefined ? HOME : ROOT,
     paths: { data: join(HOME, 'data') },
     // Claude off: the agents that only answer work without it.
     cloud: { executors: [], models: defaultCloudModels() },
@@ -413,6 +416,30 @@ test('the persona of the agent closes its system message, with the label of the 
   assert.deepEqual([delegation?.status, delegation?.resultLabel], ['ok', 'L1']);
   // Arianna's own steps read hers, in the tail of her prompt.
   assert.match(model.requests[0]?.messages[0]?.content ?? '', /Tone: serious/);
+});
+
+test('real lines of the character the agent wears (D-224): after the brief in its message, never in its system message', async () => {
+  const drawn: { conversation: string; named: boolean }[] = [];
+  configureSeriesLines({
+    has: (character) => character === 'jim',
+    draw: (_character, options) => {
+      drawn.push(options);
+      return ['Bella domanda. Davvero.'];
+    },
+  });
+  try {
+    const { task } = await ask('Traduci: buongiorno a tutti.');
+    const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+    assert.deepEqual(await drain(task.id, orchestrator(model, [translator()], undefined, {}, { traduttore: 'serie/jim' })), ['continued', 'continued', 'answered']);
+    const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+    assert.match(call?.messages[0]?.content ?? '', /Call yourself "Jim"/);
+    assert.doesNotMatch(call?.messages[0]?.content ?? '', /character_lines|Ok, questo è stato strano\./);
+    assert.equal(call?.messages.at(-1)?.content, `${WORK_TURN}\n\n${seriesLinesBlock(['Bella domanda. Davvero.'])}`);
+    // A work conversation: no line that names someone else.
+    assert.deepEqual(drawn, [{ conversation: task.conversationId, named: false }]);
+  } finally {
+    configureSeriesLines(undefined);
+  }
 });
 
 test('the profile «Su di te» closes the system message of the agent, within its clearance (D-114, tappa B)', async () => {

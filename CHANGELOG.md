@@ -2,6 +2,16 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Nella scheda di un personaggio delle serie (Impostazioni → Agenti → Aspetto) la sezione «Citazioni vere»: «Genera altre 100» chiede a Claude frasi che il personaggio dice davvero nella serie, in italiano (doppiaggio quando lo conosce), con l'episodio quando lo sa; elenco numerato con «togli», fino a 1000 per personaggio, doppioni tolti. A Claude escono solo il nome del personaggio e della serie (D-224).
+
+### Cambiato
+
+- A ogni risposta di un agente che indossa un personaggio delle serie, Arianna pesca a caso 5 citazioni vere non usate di recente in quella chat e le mette in fondo all'ultimo messaggio, al posto delle 4 battute fisse: il modello ne usa al massimo una. Quelle che nominano altri personaggi solo nelle chat private; le battute riscritte da te vincono sull'archivio (D-224).
+
 ## [0.119.1] - 2026-10-16
 
 ### Corretto

@@ -377,7 +377,12 @@ Replies: in the user's language, short and concrete: what was done, what is wait
 const THOUGHT_RULE =
   'Every answer starts with "thought": your reasoning in plain prose, a few sentences. Never put double quotes, braces or JSON inside it (to quote a word or a query, use single quotes): write the answer itself only after it.';
 
-/** The request messages: the system prompt, then the history. */
+/**
+ * The request messages: the system prompt, then the history. `trailer` (the
+ * real lines of a character drawn for this answer, D-224) goes after the last
+ * message of the user or of a tool, outside its fence: what changes at each
+ * answer stays past the cached prefix.
+ */
 export function chatMessages(
   agentPrompt: string,
   tools: readonly ToolId[],
@@ -386,15 +391,16 @@ export function chatMessages(
   persona = '',
   delegates: readonly DelegateTarget[] = CODER_ONLY,
   planner: Planner = 'self',
+  trailer = '',
 ): ModelMessage[] {
-  return [
-    { role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona, delegates, planner) },
-    ...history.map(
-      (message): ModelMessage =>
-        // The local model has no tool role: results arrive fenced, as data.
-        message.role === 'tool' ? { role: 'user', content: toolResult(message.content) } : { role: message.role, content: message.content },
-    ),
-  ];
+  const messages = history.map(
+    (message): ModelMessage =>
+      // The local model has no tool role: results arrive fenced, as data.
+      message.role === 'tool' ? { role: 'user', content: toolResult(message.content) } : { role: message.role, content: message.content },
+  );
+  const last = messages.at(-1);
+  if (trailer !== '' && last?.role === 'user') messages[messages.length - 1] = { role: 'user', content: `${last.content}\n\n${trailer}` };
+  return [{ role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona, delegates, planner) }, ...messages];
 }
 
 /** Fences a tool result; a tag inside it (a page could hold one) cannot end the fence. */

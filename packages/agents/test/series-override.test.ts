@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { otherSeriesNames, parseSeriesOverride, SERIES_PERSONAS, SeriesOverrideError, seriesNamesOfSource, seriesOwnSource, seriesSource, withSeriesOverride } from '../src/index.ts';
 
-const cox = SERIES_PERSONAS.cox ?? { name: '', traits: '', scene: '', quotes: [] };
+const cox = SERIES_PERSONAS.cox ?? { name: '', show: '', traits: '', scene: '', quotes: [] };
 
 test('parseSeriesOverride: optional fields, line breaks become spaces, blank is none; anything else refused, never cut', () => {
   assert.deepEqual(parseSeriesOverride({}), {});

@@ -45,7 +45,7 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
-import { minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
+import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, terminalFor } from '../live-terminal.ts';
@@ -1441,7 +1441,9 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // Then the profile «Su di te» (D-114, tappa B) within the same clearance, on this machine only: the agent answers
   // without tools, so past its limit it reads the topics alone. It counts in the label of what it reads and reports.
   const profile = profilePart(await listUserFacts(sql), stepClearance);
-  const tail = [...tailParts(env.settings(), delegation.agent, stepClearance), ...(profile === undefined ? [] : [profile])];
+  const tail = [...tailParts(env.settings(), delegation.agent, stepClearance, { lines: true }), ...(profile === undefined ? [] : [profile])];
+  // Real lines of the character drawn by the core for this answer (D-224), L0: after the brief, in the agent's message.
+  const lines = linesPart(env.settings(), delegation.agent, stepClearance, task.conversationId ?? `task:${task.id}`);
   const partsWith = (window: readonly BriefFragment[]): BriefFragment[] => [
     prompt,
     ...(skills === undefined ? [] : [skills]),
@@ -1450,6 +1452,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     ...window,
     ...tail,
     { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) },
+    ...(lines === undefined ? [] : [lines]),
   ];
   const gate = async (list: readonly BriefFragment[]): Promise<{ read: Label; decision: Awaited<ReturnType<typeof passGateway>> }> => {
     const top = list.reduce<Label>((high, part) => maxLabel(high, part.label), prompt.label);
@@ -1471,9 +1474,12 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   }
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
   if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
-  const brief = decision.texts.at(-1) ?? '';
-  const allowedTail = promptTail(decision.texts.slice(-1 - tail.length, -1));
-  const between = decision.texts.slice(1, -1 - tail.length);
+  // The lines, when drawn, come last (D-224): the brief and the tail before them.
+  const texts = lines === undefined ? decision.texts : decision.texts.slice(0, -1);
+  const allowedLines = lines === undefined ? '' : (decision.texts.at(-1) ?? '');
+  const brief = texts.at(-1) ?? '';
+  const allowedTail = promptTail(texts.slice(-1 - tail.length, -1));
+  const between = texts.slice(1, -1 - tail.length);
   const allowedSkills = skills === undefined ? undefined : between.shift();
   const instructions = `${decision.texts[0] ?? ''}${allowedSkills === undefined ? '' : `\n\n${allowedSkills}`}`;
   const middle = between;
@@ -1499,7 +1505,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
           content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}${chat === '' ? '' : `\n\n${CHAT_WINDOW_RULE}`}${allowedTail === '' ? '' : `\n\n${allowedTail}`}`,
         },
         ...turns,
-        { role: 'user', content: chat === '' ? brief : `${chat}\n\n${BRIEF_MARK}\n${brief}` },
+        { role: 'user', content: `${chat === '' ? brief : `${chat}\n\n${BRIEF_MARK}\n${brief}`}${allowedLines === '' ? '' : `\n\n${allowedLines}`}` },
       ],
       schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },
       temperature: 0,

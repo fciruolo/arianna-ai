@@ -20,6 +20,7 @@ import { createOrchestrator, SYSTEM_MESSAGE_MARK } from '../src/orchestrator/orc
 import { openFailureChat } from '../src/system-chats.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { openReply } from '../src/reply.ts';
+import { configureSeriesLines } from '../src/prompt-tail.ts';
 import { loadTask, moveTask, type Task } from '../src/tasks.ts';
 import { listWaitingTasks } from '../src/waiting.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -690,6 +691,40 @@ test('persona: in a private conversation its block goes after the examples and b
   assert.ok(!without.includes('Persona set by the user'));
   assert.equal(system.slice(0, block), without.slice(0, block));
   assert.equal((await assistantMessages(task.id))[0]?.label, 'L2');
+});
+
+test('real lines of the character (D-224): drawn by the core for each answer, after the last message; the system prompt the same from one answer to the next', async () => {
+  const drawn: { conversation: string; named: boolean }[] = [];
+  let round = 0;
+  configureSeriesLines({
+    has: (character) => character === 'cox',
+    draw: (_character, options) => {
+      drawn.push(options);
+      round += 1;
+      return [`Battuta vera ${String(round)}.`];
+    },
+  });
+  try {
+    const coxed = (model: LocalModel) =>
+      createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
+    const { task } = await ask('private', 'Ciao!');
+    const model = scripted([{ action: 'reply', text: 'Che vuoi?' }]);
+    assert.deepEqual(await drain(task.id, model, coxed(model)), ['answered']);
+    const first = model.requests[0];
+    assert.match(systemOf(first), /Call yourself "Dr\. Cox"/);
+    assert.doesNotMatch(systemOf(first), /Che vuoi, pivello\?|character_lines/, 'the fixed catchphrases out, the lines not in the system prompt');
+    assert.match(first?.messages.at(-1)?.content ?? '', /Ciao!\n\n<character_lines>\n[^\n]*\n- Battuta vera 1\.\n<\/character_lines>$/);
+    assert.deepEqual(drawn, [{ conversation: task.conversationId, named: true }]);
+    // A work conversation: the lines without names of others, a new draw; the system prompt before the tail unchanged.
+    const { task: work } = await ask('work', 'Ciao!');
+    const other = scripted([{ action: 'reply', text: 'Che vuoi?' }]);
+    await drain(work.id, other, coxed(other));
+    assert.deepEqual(drawn.at(-1), { conversation: work.conversationId, named: false });
+    assert.match(other.requests[0]?.messages.at(-1)?.content ?? '', /- Battuta vera 2\./);
+    assert.equal(systemOf(other.requests[0]).split('Character of the chat theme')[0], systemOf(first).split('Character of the chat theme')[0]);
+  } finally {
+    configureSeriesLines(undefined);
+  }
 });
 
 test('persona: in a work conversation the text enters (L1 by declaration) and the reply stays L1', async () => {

@@ -118,6 +118,7 @@ import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
 import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
 import type { SkillTranslations } from '../skill-translations.ts';
+import { SeriesLinesError, type SeriesLines } from '../series-lines.ts';
 import { roleSafetyText, skillSafetyText, type SafetyReports, type SafetyView } from '../safety-reports.ts';
 import { openMockup, startDesignerSession } from '../designer-session.ts';
 import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
@@ -208,6 +209,8 @@ export interface ApiServerOptions {
     names?: () => Record<string, string>;
     /** `[series]` (D-223): what the user rewrote of the people of the series. */
     series?: () => SeriesOverrides;
+    /** The archive of real lines (D-224): with lines, the block leaves the fixed catchphrases out. */
+    lines?: Pick<SeriesLines, 'has'>;
     downloadPixelAgents?: () => Promise<PixelAgentsResult>;
   };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
@@ -262,6 +265,8 @@ export interface ApiServerOptions {
   styleExamples?: StyleExamples;
   /** The Italian descriptions of the skills written by Sonnet (I-20, D-185); without it the routes answer 404. */
   skillTranslations?: SkillTranslations;
+  /** The archive of real lines of the people of the series (D-224). */
+  seriesLines?: SeriesLines;
   /** The Italian descriptions of the roles of the catalog of agents (D-185); without it the routes answer 404 and the English stays. */
   roleTranslations?: SkillTranslations;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
@@ -1223,6 +1228,44 @@ function exampleRoutes(examples: StyleExamples | undefined, translations: SkillT
     route('POST', '/api/skills-catalog/translations', async (request) => {
       onlyFields(await readJson(request), []);
       return { status: 202, body: needTranslations().translateMissing() };
+    }),
+  ];
+}
+
+/**
+ * The archive of real lines of a person of the series (D-224): the numbered
+ * list, «Genera altre 100» (Sonnet in the background, through the gateway,
+ * from the names alone) and «togli». Text of the series (L0), served to the
+ * local chat only.
+ */
+/** The preview of the block says where the lines go (D-224): they are drawn anew at each answer. */
+function withLinesNote(block: string, lines: boolean): string {
+  return lines ? `${block}\n\n(+ 5 citazioni vere pescate a ogni risposta, in fondo all'ultimo messaggio)` : block;
+}
+
+function seriesLinesRoutes(lines: SeriesLines | undefined): Route[] {
+  const need = (): SeriesLines => {
+    if (lines === undefined) throw new HttpError(404, 'not found');
+    return lines;
+  };
+  const guarded = <T>(work: () => T): T => {
+    try {
+      return work();
+    } catch (error) {
+      if (error instanceof SeriesLinesError) throw new HttpError(error.code === 'full' ? 409 : 404, error.message);
+      throw error;
+    }
+  };
+  return [
+    route('GET', '/api/series-lines/:character', (_request, _url, params) => Promise.resolve({ body: guarded(() => need().status(params.character ?? '')) })),
+    route('POST', '/api/series-lines/:character/generate', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: guarded(() => need().generate(params.character ?? '')) };
+    }),
+    route('DELETE', '/api/series-lines/:character/:n', (_request, _url, params) => {
+      const n = Number(params.n);
+      if (!Number.isSafeInteger(n) || n < 1) throw new HttpError(400, 'bad line number');
+      return Promise.resolve({ body: guarded(() => need().remove(params.character ?? '', n)) });
     }),
   ];
 }
@@ -2227,6 +2270,8 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         // A rewrite the tail would leave out (personal data, a vault value written by hand): the card shows what the model reads.
         const refused = override !== undefined && !seriesFits(override);
         const merged = withSeriesOverride(persona, refused ? undefined : override).persona;
+        // As the tail (D-224): real lines drawn apart unless the user rewrote the catchphrases.
+        const drawn = (named: boolean): boolean => (refused || override?.quotes === undefined) && characters?.lines?.has(id, named) === true;
         return {
           id,
           name: persona.name,
@@ -2234,8 +2279,8 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
           own: override ?? null,
           refused,
           blocks: {
-            work: seriesPersonaBlock(merged, { withName: true, withTraits: true }),
-            private: seriesPersonaBlock(merged, { withName: true, withTraits: true, play: true }),
+            work: withLinesNote(seriesPersonaBlock(merged, { withName: true, withTraits: true, lines: drawn(false) }), drawn(false)),
+            private: withLinesNote(seriesPersonaBlock(merged, { withName: true, withTraits: true, play: true, lines: drawn(true) }), drawn(true)),
           },
         };
       });
@@ -4069,6 +4114,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   );
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
+  table.push(...seriesLinesRoutes(options.seriesLines));
   table.push(...skillsCatalogRoutes(options.skillsCatalog, options.safetyReports));
   table.push(...agentsCatalogRoutes(options.agentsCatalog, options.safetyReports, options.roleTranslations));
   table.push(...godRoutes(options.god));
