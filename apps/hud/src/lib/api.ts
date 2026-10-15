@@ -1675,6 +1675,8 @@ export interface SeriesLineView {
   named: boolean;
   /** Written by the user, not collected by Claude. */
   own?: boolean;
+  /** Taken from the page of the series on it.wikiquote.org. */
+  origin?: 'wikiquote';
 }
 
 /** The archive of real lines of a person of the series (D-224). */
@@ -1683,6 +1685,10 @@ export interface SeriesLinesStatus {
   lines: SeriesLineView[];
   max: number;
   running: boolean;
+  /** Who collects now, or collected last. */
+  job: 'claude' | 'wikiquote' | null;
+  /** The pages of the series on Wikiquote (null when it has none) and whether the user already said yes to the download. */
+  wikiquote: { page: string | null; host: string; consent: boolean };
   stopped: string | null;
   added: number | null;
 }
@@ -1694,6 +1700,11 @@ export async function loadSeriesLines(character: string): Promise<SeriesLinesSta
 /** «Genera altre 100»: Claude collects them in the background. */
 export async function generateSeriesLines(character: string): Promise<SeriesLinesStatus> {
   return call<SeriesLinesStatus>('POST', `/api/series-lines/${encodeURIComponent(character)}/generate`, {});
+}
+
+/** «Prendi da Wikiquote» (D-224): `consent` is the user's yes in the dialog, asked once. */
+export async function importWikiquoteLines(character: string, consent: boolean): Promise<SeriesLinesStatus> {
+  return call<SeriesLinesStatus>('POST', `/api/series-lines/${encodeURIComponent(character)}/wikiquote`, consent ? { consent: true } : {});
 }
 
 /** A line written by hand (D-224). */

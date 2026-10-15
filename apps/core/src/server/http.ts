@@ -1252,7 +1252,7 @@ function seriesLinesRoutes(lines: SeriesLines | undefined): Route[] {
     try {
       return work();
     } catch (error) {
-      if (error instanceof SeriesLinesError) throw new HttpError(error.code === 'full' || error.code === 'double' ? 409 : error.code === 'invalid' ? 400 : 404, error.message);
+      if (error instanceof SeriesLinesError) throw new HttpError(['full', 'double', 'consent', 'unavailable'].includes(error.code) ? 409 : error.code === 'invalid' ? 400 : 404, error.message);
       throw error;
     }
   };
@@ -1261,6 +1261,12 @@ function seriesLinesRoutes(lines: SeriesLines | undefined): Route[] {
     route('POST', '/api/series-lines/:character/generate', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return { status: 202, body: guarded(() => need().generate(params.character ?? '')) };
+    }),
+    // «Prendi da Wikiquote» (D-224): the page of the series from it.wikiquote.org, after the user's yes (`consent`), asked once.
+    route('POST', '/api/series-lines/:character/wikiquote', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['consent']);
+      return { status: 202, body: guarded(() => need().importWikiquote(params.character ?? '', body.consent === true)) };
     }),
     // A line the user writes by hand (D-224): Interno like the archive, refused with personal data.
     route('POST', '/api/series-lines/:character/add', async (request, _url, params) => {

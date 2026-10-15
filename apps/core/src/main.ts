@@ -42,6 +42,7 @@ import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
 import { characterDirsOf, configureSeriesLines, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
 import { createSeriesLines } from './series-lines.ts';
+import { createWikiquoteClient } from './wikiquote.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
@@ -796,7 +797,7 @@ const styleExamples = createStyleExamples({
 const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
 // The real lines of the people of the series (D-224): Sonnet, from the name of the character and of the series alone
 // (L0), a hundred at a time on the user's click; the core draws a few for each answer of an agent that wears one.
-const seriesLines = createSeriesLines({ dir: join(config.paths.data, 'characters'), ask: askCloudText, onEvent: catalogEvent });
+const seriesLines = createSeriesLines({ dir: join(config.paths.data, 'characters'), ask: askCloudText, onEvent: catalogEvent, wikiquote: createWikiquoteClient() });
 configureSeriesLines(seriesLines);
 // The descriptions of the roles of the catalog of agents in Italian (request of the user of 2026-10-13), as the skills:
 // Sonnet, public text (L0), a batch at a time, once per description; the name of a role stays as it is.

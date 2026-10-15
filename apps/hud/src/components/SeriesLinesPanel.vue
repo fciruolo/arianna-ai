@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
  * The lines of a person of the series (D-224), in its card: one list, the
- * real lines Claude collects with «Genera altre 100» (only the name of the
- * character and of the series leave, with the lines already kept) and those
- * the user writes by hand, numbered, each with «togli». At each answer
+ * real lines taken from Italian Wikiquote with «Prendi da Wikiquote» (only
+ * the name of the page leaves, after a yes asked once in a dialog), those
+ * Claude collects with «Chiedi a Claude» (only the name of the character and
+ * of the series leave, with the lines already kept) and those the user writes
+ * by hand, numbered, each with «togli». At each answer
  * Arianna draws a few of them as examples of the voice; while the list is
  * empty the fixed ones of the repository stand in.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { addSeriesLine, generateSeriesLines, loadSeriesLines, removeSeriesLine, type SeriesLinesStatus } from '../lib/api.ts';
+import { addSeriesLine, generateSeriesLines, importWikiquoteLines, loadSeriesLines, removeSeriesLine, type SeriesLinesStatus } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
+
+import ConfirmDialog from './ConfirmDialog.vue';
 
 const props = defineProps<{
   character: string;
@@ -25,6 +29,8 @@ const status = ref<SeriesLinesStatus | null>(null);
 const error = ref<string | null>(null);
 const busy = ref(false);
 const draft = ref('');
+/** The dialog that says what leaves, before the first download from Wikiquote. */
+const asking = ref(false);
 let timer: number | undefined;
 let mounted = false;
 
@@ -61,6 +67,15 @@ async function act(work: () => Promise<SeriesLinesStatus>): Promise<boolean> {
   }
 }
 
+function fromWikiquote(): void {
+  if (status.value?.wikiquote.consent === true) void act(() => importWikiquoteLines(props.character, false));
+  else asking.value = true;
+}
+
+async function confirmWikiquote(): Promise<void> {
+  if (await act(() => importWikiquoteLines(props.character, true))) asking.value = false;
+}
+
 async function add(): Promise<void> {
   if (await act(() => addSeriesLine(props.character, draft.value))) draft.value = '';
 }
@@ -88,18 +103,30 @@ watch(
       <h4 class="mr-auto font-medium">
         Battute <span class="font-normal text-muted tabular-nums">{{ lines.length }}/{{ status?.max ?? 1000 }}</span>
       </h4>
-      <button type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busy || status === null || status.running || full" @click="act(() => generateSeriesLines(character))">
-        {{ status?.running ? 'Claude le sta cercando…' : lines.length === 0 ? 'Genera 100 battute vere' : 'Genera altre 100' }}
+      <button
+        v-if="status?.wikiquote.page"
+        type="button"
+        class="btn btn-primary px-2.5 py-1 text-[13px]"
+        :disabled="busy || status.running || full"
+        @click="fromWikiquote"
+      >
+        {{ status.running && status.job === 'wikiquote' ? 'Leggo Wikiquote…' : 'Prendi da Wikiquote' }}
+      </button>
+      <button type="button" class="rounded-md px-2 py-1 text-[12.5px] text-muted hover:text-ink disabled:opacity-50" :disabled="busy || status === null || status.running || full" @click="act(() => generateSeriesLines(character))">
+        {{ status?.running && status.job === 'claude' ? 'Claude le sta cercando…' : 'Chiedi a Claude' }}
       </button>
     </div>
     <p class="text-[12px] text-muted">
-      Frasi che {{ name }} dice davvero nella serie, raccolte da Claude (escono solo il nome del personaggio e della serie e le battute già in elenco), più quelle che scrivi tu. A ogni risposta Arianna ne pesca 5 a caso, non usate di recente in quella chat: il modello ne usa al massimo una. Quelle segnate «nomina altri» solo nelle chat private.
+      Frasi che {{ name }} dice davvero nella serie, prese dal doppiaggio italiano su Wikiquote (esce solo il nome della pagina) o chieste a Claude (escono il nome del personaggio e della serie e le battute già in elenco), più quelle che scrivi tu. A ogni risposta Arianna ne pesca 5 a caso, non usate di recente in quella chat: il modello ne usa al massimo una. Quelle segnate «nomina altri» solo nelle chat private.
     </p>
+    <p v-if="status !== null && !status.wikiquote.page" class="text-[12.5px] text-muted">Wikiquote italiano non ha una pagina di questa serie: puoi chiedere a Claude o scriverle tu.</p>
     <p v-if="ownQuotes" class="text-[12.5px] text-warn">Tempo fa avevi riscritto le battute fisse: valgono ancora le tue, e l'elenco resta da parte finché non premi «Ripristina il testo originale».</p>
-    <p v-if="status?.running" role="status" class="text-[12.5px] text-muted">Di solito ci vogliono uno o due minuti; puoi chiudere la pagina, la raccolta continua.</p>
+    <p v-if="status?.running" role="status" class="text-[12.5px] text-muted">
+      {{ status.job === 'wikiquote' ? 'Leggo le pagine della serie una alla volta, con una pausa fra l’una e l’altra: meno di un minuto.' : 'Di solito ci vogliono uno o due minuti' }}; puoi chiudere la pagina, la raccolta continua.
+    </p>
     <p v-else-if="status?.stopped" role="alert" class="text-[12.5px] text-warn">Raccolta fermata: {{ status.stopped }}</p>
     <p v-else-if="status?.added !== null && status?.added !== undefined" role="status" class="text-[12.5px] text-ok">
-      {{ status.added === 0 ? 'Nessuna battuta nuova: Claude non ne conosce altre.' : `Aggiunte ${String(status.added)} battute.` }}
+      {{ status.added === 0 ? (status.job === 'wikiquote' ? 'Nessuna battuta nuova: quelle di Wikiquote sono già tutte in elenco.' : 'Nessuna battuta nuova: Claude non ne conosce altre.') : `Aggiunte ${String(status.added)} battute${status.job === 'wikiquote' ? ' da Wikiquote' : ''}.` }}
     </p>
     <p v-if="error" role="alert" class="text-[12.5px] text-danger">{{ error }}</p>
 
@@ -123,6 +150,7 @@ watch(
           <span class="min-w-0 flex-1">
             {{ line.text }}
             <span v-if="line.episode" class="text-[12px] text-muted"> · {{ line.episode }}</span>
+            <span v-if="line.origin === 'wikiquote'" class="pill ml-1 border-line-strong text-[11px] text-muted">Wikiquote</span>
             <span v-if="line.own" class="pill ml-1 border-line-strong text-[11px] text-muted">tua</span>
             <span v-if="line.named" class="pill ml-1 border-line-strong text-[11px] text-muted">nomina altri</span>
           </span>
@@ -130,5 +158,18 @@ watch(
         </li>
       </ol>
     </details>
+
+    <ConfirmDialog
+      v-if="asking && status?.wikiquote.page"
+      title="Prendere le battute da Wikiquote?"
+      confirm-text="Scarica"
+      :busy="busy"
+      :problem="error"
+      @confirm="confirmWikiquote"
+      @cancel="asking = false"
+    >
+      <p>Arianna scarica da {{ status.wikiquote.host }} la pagina della serie: esce solo il nome della pagina (per esempio «{{ status.wikiquote.page }}»).</p>
+      <p class="text-[13px] text-muted">Prende le battute di {{ name }} dal doppiaggio italiano, con l'episodio, e le aggiunge all'elenco senza doppioni. Te lo chiedo solo questa volta: le prossime volte il pulsante scarica subito.</p>
+    </ConfirmDialog>
   </section>
 </template>

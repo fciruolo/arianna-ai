@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Voce nuova «Personaggi» nelle Impostazioni, dopo Agenti (indirizzo `/impostazioni/personaggi-delle-serie`): tutti i personaggi delle serie divisi per serie (Scrubs, The Office), ognuno con il suo aspetto (pose, animazioni, PNG, chi lo indossa) e la sua scheda (chi è e come parla, scena, battute). In Agenti → Aspetto resta solo chi indossa chi, con un collegamento alla scheda (D-224, richiesta dell'utente del 2026-10-16).
 - Nella scheda di un personaggio la sezione «Battute»: un elenco numerato con «togli», fino a 1000, doppioni tolti, con le battute che scrivi tu («Aggiungi») e quelle raccolte da Claude («Genera altre 100»); finché è vuoto valgono le 4 fisse del repository (D-224).
+- Pulsante «Prendi da Wikiquote» nella sezione Battute: il core scarica da it.wikiquote.org le pagine della serie (Scrubs, una per stagione; The Office, una sola) e prende le battute del personaggio dal doppiaggio italiano, con l'episodio e il segno «Wikiquote»; esce solo il nome della pagina, chiesto con un dialogo la prima volta. «Genera altre 100» diventa «Chiedi a Claude», secondario (D-224).
 
 ### Cambiato
 

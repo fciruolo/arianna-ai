@@ -1,0 +1,21 @@
+{{FictionTV
+|titoloitaliano= Ufficio inventato
+|attori=
+*[[Attore Finto]]: Michael Scott
+}}
+'''''Ufficio inventato''''', estratto inventato per i test (D-224).
+
+==Stagione 1==
+===[[Incipit]]===
+'''Michael Scott''': Un incipit senza elenco, che il parser lascia stare.
+
+===Episodio 1, ''Un capo di prova''===
+*Il mio lavoro consiste nel parlare di carta per fotocopie, tutto il giorno. ('''Jim''')
+*'''Michael Scott''': Me non volere sentire questo, perché i test rossi sono una brutta cosa.<br />'''Pam''': Dici sul serio? Sono solo test.
+
+==Stagione 6==
+===Episodio 4-5, Cascate===
+*'''Pam''': Non è così che funziona, lo sai benissimo.
+
+==Citazioni su ''Ufficio inventato''==
+*Una serie che fa ridere anche i critici più severi. ('''Pam''')
