@@ -5,6 +5,7 @@ import { addressedBrief, parseAddressed } from '../src/addressed.ts';
 import { mentionableAgents } from '../src/orchestrator/delegate.ts';
 import { resolveHome } from '@arianna/config';
 import { committedAgents } from './support/committed-agents.ts';
+import { roundText } from '../src/participants.ts';
 
 test('«@name text» addresses one agent; the brief is the rest of the message (D-107, tappa B2)', () => {
   assert.deepEqual(parseAddressed('@designer fammi tre colori per la landing'), { kind: 'mention', agent: 'designer', brief: 'fammi tre colori per la landing' });
@@ -40,4 +41,10 @@ test('«@» may call the agents Arianna may delegate to: never Arianna, GOD, the
   for (const name of ['coder', 'designer', 'reviewer']) assert.ok(names.includes(name), name);
   for (const name of ['arianna', 'god', 'finanze', 'local-chat']) assert.ok(!names.includes(name), name);
   assert.deepEqual(names, [...names].sort());
+});
+
+test('the line of a round says who answers, and with one agent alone how to hear others', () => {
+  assert.equal(roundText(['traduttore']), "Nel giro c'è solo traduttore: per sentire anche altri agenti chiamali prima con @nome.");
+  assert.equal(roundText(['coder', 'traduttore']), 'Giro con Coder e traduttore, uno alla volta.');
+  assert.equal(roundText(['critico', 'oroscopo', 'traduttore']), 'Giro con critico, oroscopo e traduttore, uno alla volta.');
 });

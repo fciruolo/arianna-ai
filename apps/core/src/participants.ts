@@ -47,6 +47,22 @@ export function addingLine(agent: string, reason: string | undefined): string {
   return reason === undefined || reason.trim() === '' ? `Arianna aggiunge ${participantName(agent)}` : `Arianna aggiunge ${participantName(agent)}: ${reason.trim()}`;
 }
 
+/**
+ * Who answers a «/giro» (D-219), under the message: the agents of the chat in
+ * the order they speak; with one alone, how to hear others too (user's choice
+ * of 2026-10-15, after a round with one agent only).
+ */
+export function roundText(agents: readonly string[]): string {
+  const names = agents.map(participantName);
+  if (names.length === 1) return `Nel giro c'è solo ${names[0] ?? ''}: per sentire anche altri agenti chiamali prima con @nome.`;
+  return `Giro con ${names.slice(0, -1).join(', ')} e ${names.at(-1) ?? ''}, uno alla volta.`;
+}
+
+/** The line of a «/giro» under its message; agents' names are L1, as in the other lines of the participants. */
+export async function roundLine(tx: Queryable, conversationId: string, taskId: string, agents: readonly string[]): Promise<void> {
+  await systemLine(tx, conversationId, taskId, 'L1', roundText(agents));
+}
+
 /** The line of an agent the user called with «@nome» or «/giro» (D-219): the user brought it in, not Arianna. */
 export function calledLine(agent: string): string {
   return `Hai chiamato ${participantName(agent)}`;

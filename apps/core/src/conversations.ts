@@ -8,7 +8,7 @@ import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
 import { createDelegation } from './orchestrator/delegations.ts';
 import { MAX_INTERVENTIONS, parseAddressed } from './addressed.ts';
-import { activeParticipants, leaveIdle, type LeaveRule } from './participants.ts';
+import { activeParticipants, leaveIdle, roundLine, type LeaveRule } from './participants.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 import { closeSupersededWaits } from './waiting.ts';
 
@@ -717,6 +717,8 @@ export async function writeUserMessage(
     VALUES (${conversationId}, 'user', ${options.channel ?? 'web'}, ${label}::privacy_label, ${body}, ${task.id})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+  // Who answers a «/giro» (D-219): a line under the message, before the answers.
+  if (addressed?.kind === 'round') await roundLine(tx, conversationId, task.id, addressed.agents);
   // The first message names the conversation, as in the chat apps (D-057).
   if (conversation.title === null && !conversation.incognito) {
     await tx`UPDATE conversations SET title = ${task.title.replace(/\s+/g, ' ')} WHERE id = ${conversationId}`;

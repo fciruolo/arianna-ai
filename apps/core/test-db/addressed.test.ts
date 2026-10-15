@@ -177,6 +177,9 @@ test('«/giro …» asks every agent of the conversation once, in the order they
     ['traduttore', 'Nice title.'],
   ]);
   assert.ok(model.requests.every((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME));
+  // Under the message, who is in the round.
+  const [line] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'system' ORDER BY id LIMIT 1`;
+  assert.equal(line?.body, 'Giro con critico e traduttore, uno alla volta.');
   assert.deepEqual(
     (await loadDelegations(db().sql, task.id)).map((delegation) => [delegation.agent, delegation.brief]),
     [

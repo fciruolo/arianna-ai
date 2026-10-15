@@ -7,7 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - «@nome» nella chat con Arianna (D-219): «@designer fammi tre colori» va dritto a quell'agente, che risponde col suo rapporto senza passare dal ragionamento di Arianna; un menu propone gli agenti mentre scrivi «@».
-- «/giro» (D-219): ogni agente già presente nella chat risponde una volta, uno alla volta; «/basta» o «Ferma» fermano il giro.
+- «/giro» (D-219): ogni agente già presente nella chat risponde una volta, uno alla volta, e una riga sotto il messaggio dice chi c'è nel giro; «/basta» o «Ferma» fermano il giro.
 - «Ha visto solo il brief» sotto il rapporto di un agente (D-219): un clic mostra il testo esatto che gli è arrivato.
 
 ### Cambiato
