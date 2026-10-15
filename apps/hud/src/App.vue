@@ -1029,6 +1029,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :arianna="characters?.agents.arianna"
             :characters="characters?.agents"
             :agents="directAgents"
+            :mentionable="mentionable"
           />
           <ChatView
             v-else-if="chat !== null && current !== undefined && studioChatOpen"
@@ -1104,6 +1105,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :arianna="characters?.agents.arianna"
         :characters="characters?.agents"
         :agents="directAgents"
+        :mentionable="mentionable"
       />
       <template v-else-if="chat !== null && current !== undefined">
       <!-- The secretary's conversation (D-144): the mini cardwall of its commitments above it (D-156). -->

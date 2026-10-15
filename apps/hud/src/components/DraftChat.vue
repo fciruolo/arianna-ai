@@ -10,6 +10,8 @@ import type { CharacterChoice, DirectAgent } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import IncognitoNotice from './IncognitoNotice.vue';
 import PixelAgent from './PixelAgent.vue';
+import MentionMenu from './MentionMenu.vue';
+import { useMentionMenu } from '../lib/mention-menu.ts';
 
 /**
  * A new conversation before its first message (D-108): an empty chat and the
@@ -27,6 +29,8 @@ const props = defineProps<{
   characters?: Record<string, CharacterChoice> | undefined;
   /** Who the user may talk with directly, as their cards allow. */
   agents?: DirectAgent[] | undefined;
+  /** Who «@» may call in a conversation with Arianna (D-219): the first message may be one. */
+  mentionable?: readonly string[] | undefined;
 }>();
 
 /** The card of the agent of this draft; undefined while the list is unknown, or when it cannot answer now. */
@@ -74,7 +78,19 @@ async function submit(confirmed = false): Promise<void> {
   }
 }
 
+// The «@» menu (D-219): only in a draft of a conversation with Arianna, never of a direct chat or a trial.
+const mention = useMentionMenu(
+  text,
+  () => props.draft.agent === undefined && props.draft.trialModel === undefined,
+  () => props.mentionable,
+  (agent) => {
+    text.value = `@${agent} `;
+    void nextTick(() => field.value?.focus());
+  },
+);
+
 function onKey(event: KeyboardEvent): void {
+  if (!event.isComposing && mention.onKey(event)) return;
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     // A held key never sends again.
@@ -139,6 +155,14 @@ onMounted(() => field.value?.focus());
         <button ref="confirmButton" type="button" class="btn px-2.5 py-1 text-xs" @click="submit(true)">Invia comunque</button>
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
       </div>
+      <div class="relative">
+      <MentionMenu
+        v-if="mention.open.value"
+        :items="mention.items.value"
+        :active="mention.active.value"
+        @choose="mention.choose"
+        @hover="(index) => (mention.active.value = index)"
+      />
       <form :aria-busy="sending" class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4" @submit.prevent="submit()">
         <label for="composer" class="sr-only">Primo messaggio</label>
         <textarea
@@ -161,6 +185,7 @@ onMounted(() => field.value?.focus());
           <Icon name="send" />
         </button>
       </form>
+      </div>
     </div>
   </div>
 </template>
