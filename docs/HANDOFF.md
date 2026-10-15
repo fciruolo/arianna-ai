@@ -111,4 +111,4 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, pomeriggio tardi» in HANDOFF: main è alla 0.115.0, nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (verifica di oMLX, tappe seguenti di D-103, D-107 parte B, idee di OpenWork, D-096 per ultimo). In italiano con esempi pratici.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core). Riprendi da «2026-10-15, sera» in HANDOFF: main è alla 0.116.0 (D-221, oMLX risponde solo ad Arianna, verifica del codice di oMLX chiusa), nessun lavoro in corso. Scegli con me il prossimo lavoro dalla coda di HANDOFF (tappe seguenti di D-103 sui temi, D-114 voce, idee di OpenWork, D-096 backup per ultimo). In italiano con esempi pratici.
