@@ -37,6 +37,7 @@ const credit: MessageCredit = {
   durationMs: 1000,
   cost: null,
   repo: 'demo',
+  readChat: false,
   files: [
     { path: 'src/a.ts', change: 'modified' },
     { path: 'old.ts', change: 'deleted' },

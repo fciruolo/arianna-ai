@@ -383,6 +383,8 @@ export interface MessageCredit {
   cost: number | null;
   repo: string | null;
   files: DelegationFile[] | null;
+  /** The agent read the chat besides the brief (D-220). */
+  readChat: boolean;
 }
 
 /** A row of "Deleghe recenti": metadata only. */

@@ -17,6 +17,7 @@ const CODER: MessageCredit = {
   durationMs: 125_000,
   cost: null,
   repo: 'site',
+  readChat: false,
   files: [
     { path: 'README.md', change: 'modified' },
     { path: 'old.txt', change: 'deleted' },

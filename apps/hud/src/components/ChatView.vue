@@ -980,7 +980,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <div v-if="credits.get(message.id) !== undefined" class="flex flex-wrap items-start gap-2 border-t border-line px-[15px] py-2">
               <CreditLine class="min-w-0 flex-1" :credit="credits.get(message.id)!" />
               <!-- D-107, tappa B2: what the agent read of this chat -->
-              <BriefNote v-if="ariannaChat && credits.get(message.id)!.delegationId !== null" :conversation-id="conversation.id" :delegation-id="credits.get(message.id)!.delegationId!" />
+              <BriefNote v-if="ariannaChat && credits.get(message.id)!.delegationId !== null" :conversation-id="conversation.id" :delegation-id="credits.get(message.id)!.delegationId!" :read-chat="credits.get(message.id)!.readChat === true" />
             </div>
           </article>
 

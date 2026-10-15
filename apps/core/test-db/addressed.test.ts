@@ -23,6 +23,7 @@ import { listQueue, postOrQueue } from '../src/message-queue.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask } from '../src/tasks.ts';
+import { BRIEF_MARK, CHAT_WINDOW_MARK, windowLine } from '../src/orchestrator/chat-window.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 
@@ -123,7 +124,8 @@ test('«@traduttore …» goes to that agent with the text after its name; the t
   const [call] = model.requests;
   assert.ok(call !== undefined);
   assert.equal(call.schema?.name, LOCAL_REPORT_SCHEMA_NAME);
-  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'buongiorno a tutti' }]);
+  // In a work conversation it reads the chat up to the message too (D-220), then the text after its name.
+  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: `${CHAT_WINDOW_MARK}\n${windowLine('Utente', '@traduttore buongiorno a tutti')}\n\n${BRIEF_MARK}\nbuongiorno a tutti` }]);
   assert.deepEqual(await reports(task.id), [['traduttore', 'Good morning everyone.']]);
   assert.equal((await loadTask(db().sql, task.id))?.status, 'done');
   // It joined the chat called by the user, not by Arianna.
@@ -177,7 +179,13 @@ test('«/giro …» asks every agent of the conversation once, in the order they
     ['traduttore', 'Nice title.'],
   ]);
   assert.ok(model.requests.every((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME));
-  // Under the message, who is in the round.
+  // Each reads the chat up to the message (D-220), never the reports of the same round: the second one does not see the first.
+  const heard = model.requests.map((request) => request.messages.at(-1)?.content ?? '');
+  assert.equal(heard.length, 2);
+  for (const content of heard) {
+    assert.ok(content.includes(windowLine('Utente', '/giro cosa ne pensate del titolo «Arianna»?')));
+    assert.doesNotMatch(content, /Mi piace/);
+  }
   const [line] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'system' ORDER BY id LIMIT 1`;
   assert.equal(line?.body, 'Giro con critico e traduttore, uno alla volta.');
   assert.deepEqual(

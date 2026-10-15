@@ -57,6 +57,7 @@ import type { Task } from '../tasks.ts';
 import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { writeWeekSummary } from '../work-diary-week.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
+import { BRIEF_MARK, CHAT_WINDOW_RULE, chatWindowParts, readsChat } from './chat-window.ts';
 import type { Advise } from './advisor.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-share.ts';
@@ -1427,32 +1428,47 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // Never an earlier exchange above what the card may read now: a card lowered after the conversation began reads less.
   const ceiling = briefCeiling(agent.card);
   const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation, { voice: true })).filter((part) => isAtMost(part.label, ceiling)) : [];
+  // What the agent reads in this step: within its clearance and the task's. In a conversation with Arianna that
+  // covers the whole chat, it reads the chat as she does (D-220).
+  const stepClearance = minLabel(task.clearance, agent.card.maxLabel);
+  const conversation = direct || task.conversationId === null ? undefined : await loadConversation(sql, task.conversationId);
+  const chatWindow = conversation !== undefined && readsChat(conversation, stepClearance) ? await chatWindowParts(sql, conversation.id, task.id, stepClearance) : [];
   // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
   // The skills of the agent join its instructions (D-161), as data within a smaller limit.
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local);
   // The tail of its prompt (D-107, tappa A3): its persona within its clearance and the task's, at the end of the system message.
-  const tailClearance = minLabel(task.clearance, agent.card.maxLabel);
   // Then the profile «Su di te» (D-114, tappa B) within the same clearance, on this machine only: the agent answers
   // without tools, so past its limit it reads the topics alone. It counts in the label of what it reads and reports.
-  const profile = profilePart(await listUserFacts(sql), tailClearance);
-  const tail = [...tailParts(env.settings(), delegation.agent, tailClearance), ...(profile === undefined ? [] : [profile])];
-  const parts = [
+  const profile = profilePart(await listUserFacts(sql), stepClearance);
+  const tail = [...tailParts(env.settings(), delegation.agent, stepClearance), ...(profile === undefined ? [] : [profile])];
+  const partsWith = (window: readonly BriefFragment[]): BriefFragment[] => [
     prompt,
     ...(skills === undefined ? [] : [skills]),
     ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     ...history,
+    ...window,
     ...tail,
     { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) },
   ];
-  const read = parts.reduce<Label>((top, part) => maxLabel(top, part.label), prompt.label);
-  const decision = await passGateway(
-    sql,
-    parts.map((part) => ({ value: part.text, label: part.label, source: part.source })),
-    contextOf(task, read),
-    { kind: 'executor', id: 'local', locality: 'local' },
-    { taskId: task.id, runId },
-  );
+  const gate = async (list: readonly BriefFragment[]): Promise<{ read: Label; decision: Awaited<ReturnType<typeof passGateway>> }> => {
+    const top = list.reduce<Label>((high, part) => maxLabel(high, part.label), prompt.label);
+    const verdict = await passGateway(
+      sql,
+      list.map((part) => ({ value: part.text, label: part.label, source: part.source })),
+      contextOf(task, top),
+      { kind: 'executor', id: 'local', locality: 'local' },
+      { taskId: task.id, runId },
+    );
+    return { read: top, decision: verdict };
+  };
+  let parts = partsWith(chatWindow);
+  let { read, decision } = await gate(parts);
+  // A message of the chat the gateway refuses never costs the agent its brief: it reads the brief alone (D-220).
+  if (decision.decision === 'block' && chatWindow.length > 0) {
+    parts = partsWith([]);
+    ({ read, decision } = await gate(parts));
+  }
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
   if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
   const brief = decision.texts.at(-1) ?? '';
@@ -1463,7 +1479,9 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const middle = between;
   // The fixed text of the direct chat joins the instructions; each earlier exchange is a turn of the chat.
   const system = direct ? `${instructions}\n\n${middle[0] ?? ''}` : instructions;
-  const turns = (direct ? middle.slice(1) : middle).map((text, index) => {
+  // The window is data in the agent's message, before the brief; never turns of its own.
+  const chat = direct ? '' : middle.join('\n');
+  const turns = (direct ? middle.slice(1) : []).map((text, index) => {
     const role = roles[index] ?? 'user';
     const opening = role === 'assistant' ? EARLIER_ANSWER : EARLIER_MESSAGE;
     return { role, content: text.startsWith(opening) ? text.slice(opening.length) : text };
@@ -1476,9 +1494,12 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}${allowedTail === '' ? '' : `\n\n${allowedTail}`}` },
+        {
+          role: 'system',
+          content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}${chat === '' ? '' : `\n\n${CHAT_WINDOW_RULE}`}${allowedTail === '' ? '' : `\n\n${allowedTail}`}`,
+        },
         ...turns,
-        { role: 'user', content: brief },
+        { role: 'user', content: chat === '' ? brief : `${chat}\n\n${BRIEF_MARK}\n${brief}` },
       ],
       schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },
       temperature: 0,
@@ -1510,6 +1531,6 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     }
     messageId = saved.message.id;
   }
-  await updateDelegation(sql, delegation.id, { status: 'ok', result: report, resultLabel: read, ...(messageId === undefined ? {} : { messageId }) });
+  await updateDelegation(sql, delegation.id, { status: 'ok', result: report, resultLabel: read, ...(messageId === undefined ? {} : { messageId }), ...(chat === '' ? {} : { readChat: true }) });
   return { kind: 'continue', usage };
 }

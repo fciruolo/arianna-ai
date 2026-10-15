@@ -1418,7 +1418,7 @@ test('Claude answering directly is credited from the run of its message', async 
   await db().sql`UPDATE runs SET status = 'ok', ended_at = started_at + interval '2 seconds', cost_estimate = 0.25 WHERE id = ${run.id}`;
   const credits = await listCredits(db().sql, conversation.id);
   assert.deepEqual(credits, [
-    { messageId: saved.message.id, delegationId: null, agent: null, executor: 'claude', alias: 'opus', model: 'claude-opus-fake-1', durationMs: 2000, cost: 0.25, repo: null, files: null },
+    { messageId: saved.message.id, delegationId: null, agent: null, executor: 'claude', alias: 'opus', model: 'claude-opus-fake-1', durationMs: 2000, cost: 0.25, repo: null, files: null, readChat: false },
   ]);
 });
 

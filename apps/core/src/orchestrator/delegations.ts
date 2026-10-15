@@ -40,6 +40,8 @@ export interface Delegation {
   baseCommit: string | null;
   /** Tokens in the agent's session after the run (D-111, migration 0028); null when not said. */
   contextTokens: number | null;
+  /** The agent read the chat besides the brief (D-220, migration 0068): a local run within its clearance. */
+  readChat: boolean;
 }
 
 export interface NewDelegation {
@@ -69,12 +71,14 @@ export interface DelegationPatch {
   baseCommit?: string;
   /** How full the agent's session is after the run (D-111): a count of tokens. */
   contextTokens?: number;
+  /** Only for a local run (database guard): it read the chat of the conversation (D-220). */
+  readChat?: boolean;
 }
 
 const COLUMNS = `id::text, task_id::text AS "taskId", step, agent, brief, label, repo, status, executor, model,
   run_id::text AS "runId", workspace_run::text AS "workspaceRun", session_ref AS "sessionRef", result,
   result_label AS "resultLabel", message_id::text AS "messageId", files, base_commit AS "baseCommit",
-  context_tokens AS "contextTokens"`;
+  context_tokens AS "contextTokens", read_chat AS "readChat"`;
 
 export async function createDelegation(sql: Queryable, delegation: NewDelegation): Promise<Delegation> {
   const [row] = await sql.unsafe<Delegation[]>(
@@ -119,6 +123,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
        files = coalesce($13::text::jsonb, files),
        base_commit = coalesce($14, base_commit),
        context_tokens = coalesce($15::integer, context_tokens),
+       read_chat = coalesce($16::boolean, read_chat),
        ended_at = CASE WHEN $12 THEN now() ELSE ended_at END
      WHERE id = $1::bigint
      RETURNING ${COLUMNS}`,
@@ -138,6 +143,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
       patch.files === undefined ? null : JSON.stringify(patch.files),
       patch.baseCommit ?? null,
       patch.contextTokens ?? null,
+      patch.readChat ?? null,
     ],
   );
   if (row === undefined) throw new Error(`delegation ${id} does not exist`);

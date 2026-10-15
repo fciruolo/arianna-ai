@@ -42,6 +42,8 @@ export interface MessageCredit {
   repo: string | null;
   /** Null when not recorded. */
   files: FileChange[] | null;
+  /** The agent read the chat besides the brief (D-220); false for every other message. */
+  readChat: boolean;
 }
 
 interface CreditRow extends Omit<MessageCredit, 'durationMs' | 'cost'> {
@@ -81,7 +83,8 @@ export async function listCredits(sql: Queryable, conversationId: string): Promi
        coalesce(d.model, r.model, w.model) AS alias,
        ${RUN_FIELDS},
        CASE WHEN ${AT_MOST_L1} THEN d.repo END AS repo,
-       CASE WHEN ${AT_MOST_L1} THEN d.files END AS files
+       CASE WHEN ${AT_MOST_L1} THEN d.files END AS files,
+       coalesce(d.read_chat, false) AS "readChat"
      FROM written w
      LEFT JOIN task_delegations d ON d.message_id = w.id
      LEFT JOIN LATERAL (
