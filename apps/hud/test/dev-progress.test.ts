@@ -227,8 +227,10 @@ test('a rewrite asked is shown, keeps the question open and hides the button (D-
   assert.equal(pendingCount(answered), 1);
 });
 
-test('devTabFromSearch: «Progetti seguiti» only with scheda=progetti, the questions otherwise', () => {
+test('devTabFromSearch: «Progetti seguiti» only with scheda=progetti, «Su di te» only with scheda=su-di-te, the questions otherwise', () => {
   assert.equal(devTabFromSearch('?scheda=progetti'), 'followed');
+  assert.equal(devTabFromSearch('?scheda=su-di-te'), 'about');
+  assert.equal(devTabFromSearch('?scheda=Su-di-te'), 'questions');
   assert.equal(devTabFromSearch('?a=1&scheda=progetti'), 'followed');
   assert.equal(devTabFromSearch(''), 'questions');
   assert.equal(devTabFromSearch('?scheda=altro'), 'questions');
@@ -241,4 +243,7 @@ test('devTabSearch: sets or drops scheda, other parameters kept', () => {
   assert.equal(devTabSearch('?a=1&scheda=progetti', 'questions'), '?a=1');
   assert.equal(devTabSearch('?a=1', 'followed'), '?a=1&scheda=progetti');
   assert.equal(devTabFromSearch(devTabSearch('', 'followed')), 'followed');
+  assert.equal(devTabSearch('?a=1&scheda=progetti', 'about'), '?a=1&scheda=su-di-te');
+  assert.equal(devTabSearch('?scheda=su-di-te', 'questions'), '');
+  assert.equal(devTabFromSearch(devTabSearch('', 'about')), 'about');
 });

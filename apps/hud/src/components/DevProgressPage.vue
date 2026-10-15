@@ -52,8 +52,9 @@ import Icon from './Icon.vue';
  * answer as in the chat with Claude; the list, filterable. The answers go to
  * data/dev/RISPOSTE.md and Claude Code applies them at the start of its next
  * session. Title, sentence and width are the settings page's; the news of
- * Open Design moved to «Skill e stili». Two tabs: «Domande» (all of the
- * above) and «Progetti seguiti» (D-202); the address remembers the open one.
+ * Open Design moved to «Skill e stili». Three tabs: «Domande» (all of the
+ * above), «Progetti seguiti» (D-202) and «Su di te», the note for Claude Code
+ * (D-114); the address remembers the open one.
  */
 const tab = ref<DevTab>(devTabFromSearch(window.location.search));
 function openTab(next: DevTab): void {
@@ -208,7 +209,7 @@ onMounted(refresh);
         >
           {{ item.text }}
           <span
-            v-if="item.id === 'questions' && tab === 'followed' && pendingDot !== null"
+            v-if="item.id === 'questions' && tab !== 'questions' && pendingDot !== null"
             class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[12px] leading-5 font-semibold text-accent-ink"
             :title="pendingLabel ?? undefined"
             :aria-label="pendingLabel ?? undefined"
@@ -225,6 +226,11 @@ onMounted(refresh);
     <!-- «Progetti seguiti» (D-202) -->
     <div v-if="tab === 'followed'" id="dev-panel-followed" role="tabpanel" aria-labelledby="dev-tab-followed">
       <FollowedProjects />
+    </div>
+
+    <!-- «Su di te, per Claude Code» (D-114): data/dev/UTENTE.md, through the gateway -->
+    <div v-else-if="tab === 'about'" id="dev-panel-about" role="tabpanel" aria-labelledby="dev-tab-about">
+      <DevUserNote />
     </div>
 
     <div v-else id="dev-panel-questions" role="tabpanel" aria-labelledby="dev-tab-questions" class="flex flex-col gap-4">
@@ -413,8 +419,6 @@ onMounted(refresh);
       </div>
     </section>
 
-    <!-- «Su di te, per Claude Code» (D-114): data/dev/UTENTE.md, through the gateway -->
-    <DevUserNote />
     </div>
   </div>
 </template>

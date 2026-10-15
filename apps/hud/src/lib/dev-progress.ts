@@ -292,27 +292,34 @@ export function pendingBadge(count: number): string | null {
   return count > 99 ? '99+' : String(count);
 }
 
-/** The two tabs of the page: the questions with the progress, and the projects followed for ideas (D-202). */
-export type DevTab = 'questions' | 'followed';
+/**
+ * The tabs of the page: the questions with the progress, the projects followed
+ * for ideas (D-202) and «Su di te», the note for Claude Code (D-114).
+ */
+export type DevTab = 'questions' | 'followed' | 'about';
 
 export const DEV_TABS: readonly { id: DevTab; text: string }[] = [
   { id: 'questions', text: 'Domande' },
   { id: 'followed', text: 'Progetti seguiti' },
+  { id: 'about', text: 'Su di te' },
 ];
 
-/** The address remembers the tab: `?scheda=progetti`; anything else is the questions. */
+/** The address remembers the tab: `?scheda=progetti`, `?scheda=su-di-te`; anything else is the questions. */
 const TAB_PARAM = 'scheda';
-const FOLLOWED_VALUE = 'progetti';
+const TAB_VALUES: Readonly<Record<Exclude<DevTab, 'questions'>, string>> = { followed: 'progetti', about: 'su-di-te' };
 
 export function devTabFromSearch(search: string): DevTab {
-  return new URLSearchParams(search).get(TAB_PARAM) === FOLLOWED_VALUE ? 'followed' : 'questions';
+  const value = new URLSearchParams(search).get(TAB_PARAM);
+  if (value === TAB_VALUES.followed) return 'followed';
+  if (value === TAB_VALUES.about) return 'about';
+  return 'questions';
 }
 
 /** The query of the address for a tab, the other parameters kept: '' for the questions alone. */
 export function devTabSearch(search: string, tab: DevTab): string {
   const params = new URLSearchParams(search);
-  if (tab === 'followed') params.set(TAB_PARAM, FOLLOWED_VALUE);
-  else params.delete(TAB_PARAM);
+  if (tab === 'questions') params.delete(TAB_PARAM);
+  else params.set(TAB_PARAM, TAB_VALUES[tab]);
   const query = params.toString();
   return query === '' ? '' : `?${query}`;
 }
