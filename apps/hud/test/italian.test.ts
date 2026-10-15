@@ -142,3 +142,13 @@ test('uploadErrorText: the reasons of a refused sheet in Italian, never as the c
   }
   assert.equal(uploadErrorText(new TypeError('fetch failed')), errorText(new TypeError('fetch failed')));
 });
+
+test('the refusals of «@nome», «/giro» and the queue read in Italian (D-218, D-219)', () => {
+  const said = (message: string) => errorText(new ApiError(400, message, {}));
+  assert.equal(said('write what you ask traduttore after its name'), 'Scrivi dopo @traduttore cosa gli chiedi.');
+  assert.match(said('no agent is in this conversation yet: /giro asks those already here'), /nessun agente/);
+  assert.equal(said('write what you ask the agents after /giro'), 'Scrivi dopo /giro la domanda per gli agenti.');
+  assert.equal(said('the queue already holds 20 messages: wait for the answers'), 'La coda ha già 20 messaggi: aspetta le risposte.');
+  // A name that is not an agent's never reaches the text.
+  assert.equal(said('write what you ask Mario Rossi after its name'), 'Richiesta non valida.');
+});

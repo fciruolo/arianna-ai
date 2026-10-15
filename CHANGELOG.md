@@ -14,6 +14,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Per ogni tuo messaggio al massimo 6 interventi di agenti e 2 dello stesso agente, anche quando li chiama Arianna (D-219).
 
+### Corretto
+
+- Un messaggio che Arianna rifiuta (per esempio «/giro» senza agenti nella chat) torna nel campo di scrittura invece di sparire (D-219).
+
 ## [0.113.2] - 2026-10-15
 
 ### Corretto

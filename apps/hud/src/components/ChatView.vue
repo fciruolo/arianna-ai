@@ -97,6 +97,8 @@ const props = defineProps<{
   queue?: QueueView | undefined;
   /** The agents «@» may call here (D-107, tappa B2): only in a conversation with Arianna. */
   mentionable?: readonly string[] | undefined;
+  /** A message the core refused: back in the field when the field is empty (D-219). */
+  refusedDraft?: { conversationId: string; body: string; at: number } | null | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -491,6 +493,14 @@ watch(mentionItems, () => {
 function chooseMention(agent: string): void {
   setDraft(`@${agent} `);
 }
+
+// A message the core refused (a «/giro» with nobody here, a scanner hit…) comes back to be corrected, never lost.
+watch(
+  () => props.refusedDraft,
+  (refused) => {
+    if (refused !== null && refused !== undefined && refused.conversationId === props.chat.conversationId && draft.value.trim() === '') setDraft(refused.body);
+  },
+);
 
 function setDraft(text: string): void {
   draft.value = text;

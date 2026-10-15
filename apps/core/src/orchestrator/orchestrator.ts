@@ -606,7 +606,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         return { kind: 'continue', usage: { steps: 0 } };
       }
       // The brief is the user's own text: the label of the message, as the task holds it.
-      return delegateCall(ctx, { taskId: task.id, step, runId, answer }, task.effectiveLabel, args, { steps: 0, tokensIn: 0, tokensOut: 0 }, targets);
+      return delegateCall(ctx, { taskId: task.id, step, runId, answer }, task.effectiveLabel, args, { steps: 0, tokensIn: 0, tokensOut: 0 }, targets, true);
     }
     const answered = delegations.filter((delegation) => delegation.status === 'ok' && delegation.messageId !== null).at(-1);
     if (answered?.messageId != null) return { kind: 'answered', messageId: answered.messageId };
@@ -630,6 +630,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     args: Record<string, unknown>,
     usage: { steps: number; tokensIn: number; tokensOut: number },
     delegates: readonly DelegateTarget[],
+    byUser = false,
   ): Promise<StepOutcome> {
     const { task, step } = ctx;
     const agentName = String(args.agent);
@@ -663,7 +664,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     // The agent joins the conversation with its first delegation there (D-125): the reason reaches the
     // chat as the model wrote it, through the gateway towards the web chat like an answer.
     const conversationId = task.conversationId;
-    const shown = conversationId !== null && !(await isParticipant(sql, conversationId, agentName)) ? await reasonForChat(task, reason, label, ctx.runId) : undefined;
+    // Called by the user (D-219): the line says so, with no reason to pass the gateway.
+    const shown = byUser || conversationId === null || (await isParticipant(sql, conversationId, agentName)) ? undefined : await reasonForChat(task, reason, label, ctx.runId);
     const asked = await sql.begin(async (tx) => {
       await recordTurn(tx, { ...turn, label });
       const delegation = await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, ...(repo === undefined ? {} : { repo }) });
@@ -680,6 +682,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         reason: shown,
         reasonLabel: label,
         nameLabel: nameLabelOf(target),
+        byUser,
       });
       return approvalId;
     });

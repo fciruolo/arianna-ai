@@ -126,9 +126,11 @@ test('«@traduttore …» goes to that agent with the text after its name; the t
   assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'buongiorno a tutti' }]);
   assert.deepEqual(await reports(task.id), [['traduttore', 'Good morning everyone.']]);
   assert.equal((await loadTask(db().sql, task.id))?.status, 'done');
-  // It joined the chat with the fixed reason: the user called it.
+  // It joined the chat called by the user, not by Arianna.
   const lines = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${id} AND role = 'system' ORDER BY id`;
-  assert.ok(lines.some((line) => line.body.includes('lo chiedi tu')), JSON.stringify(lines));
+  assert.deepEqual(lines.map((line) => line.body), ['Hai chiamato traduttore', 'traduttore è stato aggiunto']);
+  const [joined] = await db().sql<{ by: string }[]>`SELECT added_by AS by FROM conversation_participants WHERE conversation_id = ${id} AND agent = 'traduttore'`;
+  assert.equal(joined?.by, 'user');
   // «Ha visto solo il brief»: the text of the request, for the page of this conversation only.
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.deepEqual(await chatBrief(db().sql, id, delegation?.id ?? ''), { agent: 'traduttore', brief: 'buongiorno a tutti', label: 'L1' });

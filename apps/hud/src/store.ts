@@ -57,6 +57,8 @@ export function createChatStore() {
   const cardsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
+  /** A message the core refused: the page puts it back in the field, never lost (D-219). */
+  const refusedDraft = ref<{ conversationId: string; body: string; at: number } | null>(null);
   /** Who «@» may call in a conversation with Arianna (D-107, tappa B2), read with the projects. */
   const mentionable = ref<string[]>([]);
   /** The messages of the open conversation waiting for the answer at work (D-218). */
@@ -894,6 +896,7 @@ export function createChatStore() {
       return true;
     } catch (cause) {
       fail(cause);
+      refusedDraft.value = { conversationId: state.conversationId, body, at: Date.now() };
       return false;
     } finally {
       sending.value = false;
@@ -1268,7 +1271,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

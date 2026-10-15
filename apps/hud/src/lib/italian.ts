@@ -101,6 +101,12 @@ export function reasonText(reason: string | null): string | undefined {
 
 const ERRORS: Record<string, string> = {
   'the message is empty': 'Il messaggio è vuoto.',
+  // «@nome» and «/giro» (D-107, tappa B2, D-219).
+  'write what you ask the agents after /giro': 'Scrivi dopo /giro la domanda per gli agenti.',
+  'no agent is in this conversation yet: /giro asks those already here': 'In questa chat non c’è ancora nessun agente: /giro chiede a chi è già entrato. Chiamane uno con @nome.',
+  // The queue and «Ferma» (D-218).
+  'this message is no longer in the queue': 'Questo messaggio non è più in coda.',
+  'an answer is still at work: wait for it, or stop it': 'Una risposta è ancora in corso: aspetta che finisca, o premi Ferma.',
   // Incognito (D-136): the saves are off, "Termina" only for an incognito conversation.
   incognito: 'In una conversazione incognita non si salva niente in Arianna.',
   'not incognito': 'Questa conversazione non è incognita: non si termina.',
@@ -177,6 +183,10 @@ export function errorText(cause: unknown): string {
     const kinds = title[1].split(', ').map((kind) => SCANNER_KIND_TEXT[kind] ?? 'dati riservati');
     return `Il titolo di una conversazione di lavoro non può contenere ${[...new Set(kinds)].join(', ')}.`;
   }
+  const mention = /^write what you ask ([a-z][a-z0-9-]*) after its name$/.exec(cause.message);
+  if (mention?.[1] !== undefined) return `Scrivi dopo @${mention[1]} cosa gli chiedi.`;
+  const queueFull = /^the queue already holds (\d+) messages/.exec(cause.message);
+  if (queueFull?.[1] !== undefined) return `La coda ha già ${queueFull[1]} messaggi: aspetta le risposte.`;
   const length = /^the message is longer than (\d+) characters$/.exec(cause.message);
   if (length?.[1] !== undefined) return `Il messaggio supera ${length[1]} caratteri.`;
   if (/^the approval is already/.test(cause.message)) return 'Questa richiesta è già stata decisa.';

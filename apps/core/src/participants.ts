@@ -47,6 +47,11 @@ export function addingLine(agent: string, reason: string | undefined): string {
   return reason === undefined || reason.trim() === '' ? `Arianna aggiunge ${participantName(agent)}` : `Arianna aggiunge ${participantName(agent)}: ${reason.trim()}`;
 }
 
+/** The line of an agent the user called with «@nome» or «/giro» (D-219): the user brought it in, not Arianna. */
+export function calledLine(agent: string): string {
+  return `Hai chiamato ${participantName(agent)}`;
+}
+
 export function addedLine(agent: string): string {
   return `${participantName(agent)} è stato aggiunto`;
 }
@@ -106,6 +111,8 @@ export interface Entry {
   reasonLabel: Label;
   /** The label of the agent's name (nameLabelOf). */
   nameLabel: Label;
+  /** Called by the user with «@nome» or «/giro» (D-219): `added_by` user and the line «Hai chiamato …». */
+  byUser?: boolean;
 }
 
 async function systemLine(tx: Queryable, conversationId: string, taskId: string, label: Label, body: string): Promise<string> {
@@ -128,7 +135,7 @@ async function systemLine(tx: Queryable, conversationId: string, taskId: string,
 export async function enterOnDelegation(tx: Queryable, entry: Entry): Promise<boolean> {
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO conversation_participants (conversation_id, agent, added_by, task_id, delegation_id)
-    VALUES (${entry.conversationId}, ${entry.agent}, 'arianna', ${entry.taskId}, ${entry.delegationId}::bigint)
+    VALUES (${entry.conversationId}, ${entry.agent}, ${entry.byUser === true ? 'user' : 'arianna'}, ${entry.taskId}, ${entry.delegationId}::bigint)
     ON CONFLICT (conversation_id, agent) WHERE removed_at IS NULL DO NOTHING
     RETURNING id::text`;
   if (row === undefined) return false;
@@ -140,7 +147,8 @@ export async function enterOnDelegation(tx: Queryable, entry: Entry): Promise<bo
   });
   // Without the reason the line holds only the name: the name's label.
   const label = entry.reason === undefined ? entry.nameLabel : maxLabel(entry.reasonLabel, entry.nameLabel);
-  await systemLine(tx, entry.conversationId, entry.taskId, label, addingLine(entry.agent, entry.reason));
+  if (entry.byUser === true) await systemLine(tx, entry.conversationId, entry.taskId, entry.nameLabel, calledLine(entry.agent));
+  else await systemLine(tx, entry.conversationId, entry.taskId, label, addingLine(entry.agent, entry.reason));
   await systemLine(tx, entry.conversationId, entry.taskId, entry.nameLabel, addedLine(entry.agent));
   return true;
 }
