@@ -50,6 +50,15 @@ export function agentLabelText(agent: string, names: Readonly<Record<string, str
   return label.sub === null ? label.main : `${label.main} (${label.sub})`;
 }
 
+/**
+ * The name inside the messages of a chat (user's request, 2026-10-15): the
+ * character's alone, «Carla» and not «Carla (Arianna)»; the header above
+ * keeps both. Without a character, the agent's.
+ */
+export function agentShortNameOf(agent: string, names: Readonly<Record<string, string>>): string {
+  return agentLabelOf(agent, names).main;
+}
+
 /** The names of the characters in use, set by the store at each read of /api/characters. */
 export const characterNames = shallowRef<Record<string, string>>({});
 
@@ -64,4 +73,9 @@ export function agentLabel(agent: string): AgentLabel {
 
 export function agentLabelLine(agent: string): string {
   return agentLabelText(agent, characterNames.value);
+}
+
+/** agentShortNameOf with the names in use (reactive in a template). */
+export function agentShortName(agent: string): string {
+  return agentShortNameOf(agent, characterNames.value);
 }

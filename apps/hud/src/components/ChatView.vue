@@ -17,7 +17,7 @@ import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
-import { agentLabelLine } from '../lib/character-names.ts';
+import { agentLabelLine, agentShortName } from '../lib/character-names.ts';
 import AgentName from './AgentName.vue';
 import {
   inboxNodeId,
@@ -229,12 +229,14 @@ const targetName = computed(() => shortTarget(targets.value));
 const trial = computed(() => props.conversation.trialModel ?? null);
 // D-214: with a person of the series, its name first («Dr. Cox (GOD)» on one line, two lines in the header).
 const directAgent = computed(() => direct.value ?? 'arianna');
-/** «Rapporto del Coder» as always; with a name above the agent's, «Rapporto di Dr. Cox (GOD)». */
+/** «Rapporto del Coder» as always; with a character, «Rapporto di Dr. Cox»: inside the messages its name alone. */
 function reportLabel(agent: string): string {
-  const line = agentLabelLine(agent);
+  const line = agentShortName(agent);
   return line === agentName(agent) ? `Rapporto del ${line}` : `Rapporto di ${line}`;
 }
 const directName = computed(() => trial.value ?? agentLabelLine(directAgent.value));
+/** The same inside the messages (user's request, 2026-10-15): «Carla», not «Carla (Arianna)»; the header keeps both. */
+const directShort = computed(() => trial.value ?? agentShortName(directAgent.value));
 /** The model of the agent's latest answer here, from its credit line (D-141). */
 const lastAlias = computed(() => {
   const agent = direct.value;
@@ -921,7 +923,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <!-- A report of the agent Arianna delegated to -->
           <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="reportLabel(message.agent)">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase"><AgentName :agent="message.agent" /></span>
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentShortName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto</span>
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
@@ -942,7 +944,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <div v-else :id="messageAnchor(message.id)" class="msg-row max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
-                {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
+                {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : agentShortName('arianna') }}
               </span>
               <span v-if="message.model !== null" class="font-mono text-[12px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
@@ -968,9 +970,9 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
 
           <!-- What the task is doing, as a HUD card of steps -->
-          <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directName}`">
+          <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directShort}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-              <span class="flex-1 font-medium">{{ directName }} al lavoro</span>
+              <span class="flex-1 font-medium">{{ directShort }} al lavoro</span>
               <ComputerButton v-if="showsComputer(message)" :open="computerOpen" working @toggle="computerOpen = !computerOpen" />
               <span v-else class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
@@ -1015,7 +1017,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
-          <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
+          <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directShort }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
 
@@ -1026,7 +1028,7 @@ onBeforeUnmount(() => clearInterval(clock));
           :context-tokens="conversation.contextTokens"
           :last-role="chat.messages.filter((message) => message.role !== 'system').at(-1)?.role"
           :sending="sending || chat.streaming.length > 0"
-          :name="directName"
+          :name="directShort"
           :open="studioFile"
           @restarted="(id) => emit('restarted', id)"
         />
@@ -1037,7 +1039,7 @@ onBeforeUnmount(() => clearInterval(clock));
           :conversation-id="conversation.id"
           :messages="chat.messages"
           :sending="sending || chat.streaming.length > 0"
-          :name="directName"
+          :name="directShort"
           @open="(id) => emit('open', id)"
         />
       </div>

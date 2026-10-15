@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { agentLabelOf, agentLabelText, characterNames, rememberCharacterNames, seriesNames } from '../src/lib/character-names.ts';
+import { agentLabelOf, agentLabelText, agentShortNameOf, characterNames, rememberCharacterNames, seriesNames } from '../src/lib/character-names.ts';
 import type { CharacterListing } from '../src/lib/types.ts';
 
 const pack = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'characters', 'serie', 'pack.json'), 'utf8')) as { name: string; characters: { id: string; name: string }[] };
@@ -57,4 +57,13 @@ test('the name the user wrote for an agent wins over its character’s, in the c
   assert.equal(agentLabelOf('coder', names).sub, null);
   assert.equal(agentLabelOf('reviewer', names).sub, null);
   assert.deepEqual(agentLabelOf('arianna', names), { main: 'Carla', sub: 'Arianna' });
+});
+
+test('inside the messages an agent with a character has its name alone; without one, the agent\'s (user\'s request, 2026-10-15)', () => {
+  const names = { arianna: 'Carla', god: 'Dr. Cox' };
+  assert.equal(agentShortNameOf('arianna', names), 'Carla');
+  assert.equal(agentShortNameOf('god', names), 'Dr. Cox');
+  // The header keeps both.
+  assert.equal(agentLabelText('arianna', names), 'Carla (Arianna)');
+  assert.equal(agentShortNameOf('coder', names), 'Coder');
 });
