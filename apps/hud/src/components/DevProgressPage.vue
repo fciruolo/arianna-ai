@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { askDevRewrite, loadDevProgress, sendDevAnswer } from '../lib/api.ts';
 import {
@@ -31,11 +31,12 @@ import {
   skippedText,
   STATE_HINT,
   STATE_TEXT,
-  STATES,
+  LIST_STATES,
   KIND_TEXT,
   type DevTab,
   type ItemKind,
   type ItemState,
+  type ListState,
   type OpenQuestion,
   type Progress,
   type QuestionFilter,
@@ -67,7 +68,7 @@ const maxAnswer = ref(4000);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 
-const stateFilter = ref<ItemState | 'all'>('all');
+const stateFilter = ref<ListState | 'all'>('all');
 const phaseFilter = ref('all');
 const kindFilter = ref<ItemKind | 'all'>('all');
 const query = ref('');
@@ -88,7 +89,8 @@ const rewriteUnlogged = ref<Record<string, boolean>>({});
 
 const segments = computed(() => (progress.value === null ? [] : barSegments(progress.value.counts)));
 const done = computed(() => (progress.value === null ? 0 : percentDone(progress.value.counts)));
-const total = computed(() => progress.value?.items.length ?? 0);
+/** The entries in the bar, from the same counts as the bar: the superseded ones are listed, not counted. */
+const total = computed(() => (progress.value === null ? 0 : progress.value.counts.done + progress.value.counts.doing + progress.value.counts.todo));
 const allPhases = computed(() => phases(progress.value?.items ?? []));
 /** The list before the state filter: the buttons count what each state would show. */
 const beforeState = computed(() => filterItems(progress.value?.items ?? [], { state: 'all', phase: phaseFilter.value, kind: kindFilter.value, query: query.value }));
@@ -112,8 +114,30 @@ watch(pending, (count) => {
 });
 
 const BAR_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent', todo: 'bg-line-strong' };
-const DOT_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent shadow-[0_0_6px_var(--accent)]', todo: 'bg-line-strong' };
-const TEXT_CLASS: Record<ItemState, string> = { done: 'text-ink', doing: 'text-ink', todo: 'text-muted' };
+const DOT_CLASS: Record<ListState, string> = {
+  done: 'bg-ok',
+  doing: 'bg-accent shadow-[0_0_6px_var(--accent)]',
+  todo: 'bg-line-strong',
+  dropped: 'border border-muted bg-transparent',
+};
+const TEXT_CLASS: Record<ListState, string> = { done: 'text-ink', doing: 'text-ink', todo: 'text-muted', dropped: 'text-muted' };
+const STATE_CHOICES: readonly (ListState | 'all')[] = ['all', ...LIST_STATES];
+/** The tiles of the summary count the whole list, whatever its other filters. */
+const tileCounts = computed(() => countStates(progress.value?.items ?? []));
+
+/** «Tutte le voci»: a tile of the summary filters it by its state and brings it into view; the same tile again shows them all. */
+const listSection = ref<HTMLElement | null>(null);
+async function showState(state: ListState): Promise<void> {
+  stateFilter.value = stateFilter.value === state ? 'all' : state;
+  if (stateFilter.value === 'all') return;
+  phaseFilter.value = 'all';
+  kindFilter.value = 'all';
+  query.value = '';
+  await nextTick();
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  listSection.value?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  listSection.value?.focus({ preventScroll: true });
+}
 const KINDS: (ItemKind | 'all')[] = ['all', 'decision', 'task', 'epic', 'idea', 'request'];
 
 async function refresh(): Promise<void> {
@@ -261,16 +285,28 @@ onMounted(refresh);
           :title="`${STATE_TEXT[segment.state]}: ${segment.count}`"
         />
       </div>
-      <ul class="flex flex-wrap gap-x-4 gap-y-1 text-[13.5px]">
-        <li v-for="segment in segments" :key="segment.state" class="flex items-center gap-1.5" :title="STATE_HINT[segment.state]">
-          <span class="size-[9px] rounded-full" :class="DOT_CLASS[segment.state]" />
-          <span :class="TEXT_CLASS[segment.state]">{{ STATE_TEXT[segment.state] }}</span>
-          <span>{{ segment.count }}</span>
-        </li>
-        <li v-if="progress.dropped > 0" class="text-muted" title="Decisioni sostituite o rifiutate: fuori dalla barra">{{ progress.dropped }} superate</li>
-      </ul>
-      <p v-if="progress.missing.length > 0" class="mt-2 text-[13px] text-warn">Documenti che non trovo: {{ progress.missing.join(', ') }}.</p>
-      <p v-if="skipped !== null" class="mt-1 text-[13px] text-muted">{{ skipped }}</p>
+      <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Apri la lista per stato">
+        <button
+          v-for="state in LIST_STATES"
+          :key="state"
+          type="button"
+          class="flex flex-col items-start gap-1 rounded-[10px] border bg-surface px-3 py-2.5 text-left transition-colors"
+          :class="stateFilter === state ? 'border-accent shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line hover:border-line-strong'"
+          :aria-pressed="stateFilter === state"
+          :title="`${STATE_HINT[state]}. ${stateFilter === state ? 'Clic: mostra di nuovo tutte le voci' : 'Clic: mostrale nella lista qui sotto (toglie ricerca, tipo e fase)'}`"
+          @click="showState(state)"
+        >
+          <span class="flex items-center gap-1.5 text-[13px] text-muted">
+            <span class="size-[9px] rounded-full" :class="DOT_CLASS[state]" />{{ STATE_TEXT[state] }}
+          </span>
+          <span class="text-[22px] leading-none font-semibold tabular-nums" :class="state === 'dropped' ? 'text-muted' : 'text-ink'">{{ tileCounts[state] }}</span>
+        </button>
+      </div>
+      <p v-if="progress.missing.length > 0" class="mt-3 text-[13px] text-warn">Documenti che non trovo: {{ progress.missing.join(', ') }}.</p>
+      <details v-if="skipped !== null" class="mt-3 text-[13px] text-muted">
+        <summary class="cursor-pointer select-none">Righe dei documenti che la pagina non sa leggere</summary>
+        <p class="mt-1 leading-relaxed">{{ skipped }} Non cambiano le tue domande: servono a Claude Code per tenere i documenti in ordine.</p>
+      </details>
     </section>
 
     <!-- Open questions -->
@@ -384,14 +420,16 @@ onMounted(refresh);
     </section>
 
     <!-- The list -->
-    <section v-if="progress !== null" class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="dev-list">
+    <section
+      v-if="progress !== null"
+      ref="listSection"
+      tabindex="-1"
+      class="scroll-mt-4 rounded-xl border border-line bg-surface-2 p-4 outline-none"
+      aria-labelledby="dev-list"
+    >
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <h2 id="dev-list" class="mr-auto text-[16px] font-semibold">Tutte le voci</h2>
-        <input v-model="query" type="search" class="field w-[200px] px-2.5 py-1 text-[14px]" placeholder="Cerca per id o testo" aria-label="Cerca fra le voci" />
-        <select v-model="stateFilter" class="field w-auto px-2 py-1 text-[14px]" aria-label="Stato">
-          <option value="all">Ogni stato · {{ stateCounts.all }}</option>
-          <option v-for="state in STATES" :key="state" :value="state">{{ STATE_TEXT[state] }} · {{ stateCounts[state] }}</option>
-        </select>
+        <input v-model="query" type="search" class="field w-full px-2.5 py-1 text-[14px] sm:w-[200px]" placeholder="Cerca per id o testo" aria-label="Cerca fra le voci" />
         <select v-model="kindFilter" class="field w-auto px-2 py-1 text-[14px]" aria-label="Tipo">
           <option v-for="kind in KINDS" :key="kind" :value="kind">{{ kind === 'all' ? 'Ogni tipo' : KIND_TEXT[kind] }}</option>
         </select>
@@ -401,6 +439,21 @@ onMounted(refresh);
           <option value="none">Senza fase</option>
         </select>
       </div>
+      <div class="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Stato">
+        <button
+          v-for="state in STATE_CHOICES"
+          :key="state"
+          type="button"
+          :aria-pressed="stateFilter === state"
+          class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13.5px]"
+          :class="stateFilter === state ? 'border-accent bg-surface font-semibold text-ink' : 'border-line-strong text-muted hover:text-ink'"
+          @click="stateFilter = state"
+        >
+          <span v-if="state !== 'all'" class="size-[8px] rounded-full" :class="DOT_CLASS[state]" />
+          {{ state === 'all' ? 'Tutte' : STATE_TEXT[state] }}
+          <span class="tabular-nums" :class="stateFilter === state ? 'text-ink' : 'text-muted'">{{ stateCounts[state] }}</span>
+        </button>
+      </div>
       <p v-if="shown.length === 0" class="text-[14px] text-muted">Nessuna voce con questi filtri.</p>
       <div v-for="group in groups" :key="group.kind" class="mt-3 first:mt-0">
         <h3 class="mb-1 text-[13.5px] font-semibold text-muted">{{ group.title }} · {{ group.items.length }}</h3>
@@ -408,7 +461,7 @@ onMounted(refresh);
           <li v-for="item in group.items" :key="`${item.kind}:${item.id}`" class="flex items-start gap-3 border-t border-line py-2 first:border-t-0">
             <span class="mt-[7px] size-[8px] shrink-0 rounded-full" :class="DOT_CLASS[item.state]" :title="STATE_TEXT[item.state]" />
             <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="text-[14.5px] leading-snug break-words">{{ item.title }}</span>
+              <span class="text-[14.5px] leading-snug break-words" :class="item.state === 'dropped' ? 'text-muted line-through decoration-line-strong' : ''">{{ item.title }}</span>
               <span class="text-[13px] break-words text-muted">
                 <span :class="TEXT_CLASS[item.state]">{{ STATE_TEXT[item.state] }}</span> · {{ item.status }}<template v-if="item.phase !== null"> · {{ phaseText(item.phase) }}</template>
               </span>

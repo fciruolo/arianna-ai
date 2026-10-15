@@ -21,6 +21,8 @@ import type { Queryable } from './db/client.ts';
  */
 
 export type ItemState = 'done' | 'doing' | 'todo';
+/** The state of an entry in the list: a superseded or rejected decision is listed too, out of the bar. */
+export type ListState = ItemState | 'dropped';
 export type ItemKind = 'decision' | 'task' | 'epic' | 'idea' | 'request';
 export type DocName = 'DECISIONS.md' | 'PROPOSTE.md' | 'ROADMAP.md' | 'PHASE-0-1-TASKS.md' | 'OPEN-QUESTIONS.md' | 'HANDOFF.md';
 export type QuestionKind = 'proposal' | 'confirm' | 'open' | 'waiting';
@@ -47,7 +49,7 @@ export interface ProgressItem {
   id: string;
   kind: ItemKind;
   title: string;
-  state: ItemState;
+  state: ListState;
   /** The state as the document writes it, shortened. */
   status: string;
   /** 0, 1A, 1B, 2-5; null when the document does not say. */
@@ -102,7 +104,7 @@ export interface Progress {
   items: ProgressItem[];
   questions: OpenQuestion[];
   counts: Record<ItemState, number>;
-  /** Decisions superseded or rejected: not in the bar. */
+  /** Decisions superseded or rejected: in the list with state `dropped`, not in the bar. */
   dropped: number;
   /** Lines a parser did not understand, per document. */
   skipped: Partial<Record<DocName, number>>;
@@ -789,10 +791,7 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
   const known = new Set<string>();
   for (const row of decisions.values) {
     known.add(row.id);
-    if (row.state === 'dropped') {
-      dropped += 1;
-      continue;
-    }
+    if (row.state === 'dropped') dropped += 1;
     items.push({ id: row.id, kind: 'decision', title: proposals.titles.get(row.id) ?? row.title, state: row.state, status: row.status, phase: null, source: 'DECISIONS.md' });
   }
   // A proposal written in PROPOSTE.md and not yet in the register: still to do.
@@ -857,7 +856,7 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
   count('OPEN-QUESTIONS.md', [...explained.explanations.keys()].filter((key) => !keys.has(key)).length);
 
   const counts: Record<ItemState, number> = { done: 0, doing: 0, todo: 0 };
-  for (const item of items) counts[item.state] += 1;
+  for (const item of items) if (item.state !== 'dropped') counts[item.state] += 1;
   return { items, questions: withAnswers, counts, dropped, skipped, missing, answersFile: ANSWERS_FILE };
 }
 

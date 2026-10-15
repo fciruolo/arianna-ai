@@ -588,7 +588,8 @@ describe('the page', () => {
     assert.equal(progress.items.find((item) => item.id === 'D-096')?.source, 'PROPOSTE.md');
     assert.equal(progress.items.find((item) => item.id === 'D-096')?.state, 'todo');
     const total = progress.counts.done + progress.counts.doing + progress.counts.todo;
-    assert.equal(total, progress.items.length);
+    assert.equal(total + progress.dropped, progress.items.length);
+    assert.equal(progress.items.filter((item) => item.state === 'dropped').length, progress.dropped);
     assert.deepEqual(progress.skipped, { 'DECISIONS.md': 2, 'PHASE-0-1-TASKS.md': 1, 'OPEN-QUESTIONS.md': 2 });
     // Questions: proposals, confirmations of what waits for the user, open rows, waiting rows.
     assert.deepEqual(

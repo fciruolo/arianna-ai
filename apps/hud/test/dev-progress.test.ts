@@ -40,6 +40,7 @@ const ITEMS: ProgressItem[] = [
   { id: '0.1', kind: 'task', title: 'Monorepo pnpm', state: 'done', status: 'Ore reali: 0,1', phase: '0', source: 'PHASE-0-1-TASKS.md' },
   { id: 'F2.3', kind: 'epic', title: 'Archivio e ingestione', state: 'doing', status: 'in parte anticipati', phase: '2', source: 'ROADMAP.md' },
   { id: 'Idea 3', kind: 'idea', title: 'DBOS per esecuzione durevole', state: 'todo', status: 'Da scegliere', phase: null, source: 'OPEN-QUESTIONS.md' },
+  { id: 'D-011', kind: 'decision', title: 'Ufficio con pixel-agents', state: 'dropped', status: 'Superata da D-106b', phase: null, source: 'DECISIONS.md' },
 ];
 
 function question(key: string, overrides: Partial<OpenQuestion> = {}): OpenQuestion {
@@ -72,23 +73,24 @@ test('items filter by state, kind, phase and text without accents', () => {
   const ids = (filter: Parameters<typeof filterItems>[1]) => filterItems(ITEMS, filter).map((item) => item.id);
   assert.deepEqual(ids({ state: 'all', phase: 'all', kind: 'all', query: '' }).length, ITEMS.length);
   assert.deepEqual(ids({ state: 'doing', phase: 'all', kind: 'all', query: '' }), ['D-081', 'F2.3']);
+  assert.deepEqual(ids({ state: 'dropped', phase: 'all', kind: 'all', query: '' }), ['D-011']);
   assert.deepEqual(ids({ state: 'all', phase: 'all', kind: 'task', query: '' }), ['1.16', '0.1']);
   assert.deepEqual(ids({ state: 'all', phase: '1B', kind: 'all', query: '' }), ['1.16']);
-  assert.deepEqual(ids({ state: 'all', phase: 'none', kind: 'all', query: '' }), ['D-001', 'D-081', 'Idea 3']);
+  assert.deepEqual(ids({ state: 'all', phase: 'none', kind: 'all', query: '' }), ['D-001', 'D-081', 'Idea 3', 'D-011']);
   assert.deepEqual(ids({ state: 'all', phase: 'all', kind: 'all', query: 'esecuzione DURÉVOLE' }), ['Idea 3']);
   assert.deepEqual(ids({ state: 'done', phase: 'all', kind: 'all', query: 'codex' }), []);
 });
 
 test('phases come in roadmap order and counts per state', () => {
   assert.deepEqual(phases(ITEMS), ['0', '1B', '2']);
-  assert.deepEqual(countStates(ITEMS), { all: 6, done: 2, doing: 2, todo: 2 });
+  assert.deepEqual(countStates(ITEMS), { all: 7, done: 2, doing: 2, todo: 2, dropped: 1 });
 });
 
 test('items are grouped by kind, empty groups left out', () => {
   assert.deepEqual(
     groupItems(ITEMS.filter((item) => item.kind !== 'idea')).map((group) => [group.kind, group.items.length]),
     [
-      ['decision', 2],
+      ['decision', 3],
       ['task', 2],
       ['epic', 1],
     ],
@@ -107,9 +109,9 @@ test('questions group by proposal and by kind, and filter by answer', () => {
     groupQuestions(questions).map((group) => [group.title, group.questions.map((item) => item.key)]),
     [
       ['D-078 — Arianna sviluppata da dentro Arianna', ['D-078#1', 'D-078#2']],
-      ['Decisioni applicate da confermare', ['conf-D-081']],
+      ['Da confermare', ['conf-D-081']],
       ['D-096', ['D-096#1']],
-      ['In attesa dell’utente (HANDOFF.md)', ['ho-chiave-age-vera']],
+      ['Cose che aspettano te', ['ho-chiave-age-vera']],
     ],
   );
   assert.deepEqual(

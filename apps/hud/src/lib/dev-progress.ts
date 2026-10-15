@@ -3,6 +3,8 @@
  * core reads from the documents. Pure: the page fetches, this decides.
  */
 export type ItemState = 'done' | 'doing' | 'todo';
+/** A superseded or rejected decision is in the list too, out of the bar. */
+export type ListState = ItemState | 'dropped';
 export type ItemKind = 'decision' | 'task' | 'epic' | 'idea' | 'request';
 export type QuestionKind = 'proposal' | 'confirm' | 'open' | 'waiting';
 
@@ -10,7 +12,7 @@ export interface ProgressItem {
   id: string;
   kind: ItemKind;
   title: string;
-  state: ItemState;
+  state: ListState;
   status: string;
   phase: string | null;
   source: string;
@@ -54,13 +56,16 @@ export interface Progress {
 }
 
 export const STATES: readonly ItemState[] = ['done', 'doing', 'todo'];
+/** The states of the list, in the order of the tiles and of the filter. */
+export const LIST_STATES: readonly ListState[] = ['done', 'doing', 'todo', 'dropped'];
 
-export const STATE_TEXT: Record<ItemState, string> = { done: 'Fatto', doing: 'In corso', todo: 'Da fare' };
+export const STATE_TEXT: Record<ListState, string> = { done: 'Fatto', doing: 'In corso', todo: 'Da fare', dropped: 'Superato' };
 
-export const STATE_HINT: Record<ItemState, string> = {
+export const STATE_HINT: Record<ListState, string> = {
   done: 'Decisioni accettate o applicate, task chiusi',
   doing: 'Applicate in parte, in prova o in attesa della tua conferma; task aperti',
   todo: 'Proposte non applicate, task e epic non cominciati, idee da scegliere',
+  dropped: 'Decisioni sostituite da altre o rifiutate: fuori dalla barra',
 };
 
 const KIND_ORDER: readonly ItemKind[] = ['decision', 'task', 'epic', 'idea', 'request'];
@@ -98,7 +103,7 @@ export function percentDone(counts: Record<ItemState, number>): number {
 }
 
 export interface ItemFilter {
-  state: ItemState | 'all';
+  state: ListState | 'all';
   /** A phase, `all`, or `none` for items without one. */
   phase: string;
   kind: ItemKind | 'all';
@@ -138,8 +143,8 @@ export function phaseText(phase: string): string {
 }
 
 /** Counts per state of a list (for the filter buttons). */
-export function countStates(items: readonly ProgressItem[]): Record<ItemState | 'all', number> {
-  const counts = { all: items.length, done: 0, doing: 0, todo: 0 };
+export function countStates(items: readonly ProgressItem[]): Record<ListState | 'all', number> {
+  const counts = { all: items.length, done: 0, doing: 0, todo: 0, dropped: 0 };
   for (const item of items) counts[item.state] += 1;
   return counts;
 }
@@ -174,9 +179,9 @@ export interface QuestionGroup {
 }
 
 const KIND_GROUP: Record<Exclude<QuestionKind, 'proposal'>, string> = {
-  confirm: 'Decisioni applicate da confermare',
-  open: 'Decisioni aperte (OPEN-QUESTIONS.md)',
-  waiting: 'In attesa dell’utente (HANDOFF.md)',
+  confirm: 'Da confermare',
+  open: 'Decisioni aperte',
+  waiting: 'Cose che aspettano te',
 };
 
 /** Questions of a proposal together under its title; the other kinds one group each, in the order they come. */

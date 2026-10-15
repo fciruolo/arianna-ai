@@ -2,6 +2,14 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Cambiato
+
+- Nella tab «Domande» il riepilogo ha quattro riquadri cliccabili (Fatto, In corso, Da fare, Superato): un clic porta a «Tutte le voci» già filtrata per quello stato, un secondo clic toglie il filtro; sopra la lista lo stato si sceglie con bottoni invece che con una select (D-102, richiesta dell'utente del 2026-10-15).
+- Le decisioni superate ora sono anche nella lista, barrate, fuori dalla barra e dalla percentuale (D-102).
+- Titoli dei gruppi di domande senza nomi di file («Decisioni aperte», «Da confermare», «Cose che aspettano te»); la nota sulle righe dei documenti non lette è chiusa in un «dettagli».
+
 ## [0.116.1] - 2026-10-15
 
 ### Cambiato
