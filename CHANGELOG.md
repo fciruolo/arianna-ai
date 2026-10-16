@@ -51,6 +51,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
+- I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
 - Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, in un riquadro suo con logo, versione e copie di lavoro, senza IM né incassi perché è un progetto interno (richiesta dell'utente del 2026-10-16, D-127).
 
 ### Aggiunto

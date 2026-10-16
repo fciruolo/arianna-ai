@@ -20,10 +20,10 @@ export const ORIGINALS: readonly CharacterArt[] = [ARIANNA, CODER, GOD];
  * covers them as the originals.
  */
 export const COSTUMED: readonly { art: CharacterArt; name: string }[] = [
-  { art: dress(ARIANNA, ARIANNA_CORSIA), name: 'Arianna · Corsia' },
-  { art: dress(CODER, CODER_CORSIA), name: 'Coder · Corsia' },
-  { art: dress(ARIANNA, ARIANNA_UFFICIO), name: 'Arianna · Ufficio' },
-  { art: dress(CODER, CODER_UFFICIO), name: 'Coder · Ufficio' },
+  { art: dress(ARIANNA, ARIANNA_CORSIA), name: 'Arianna · Scrubs' },
+  { art: dress(CODER, CODER_CORSIA), name: 'Coder · Scrubs' },
+  { art: dress(ARIANNA, ARIANNA_UFFICIO), name: 'Arianna · The Office' },
+  { art: dress(CODER, CODER_UFFICIO), name: 'Coder · The Office' },
 ];
 
 /** Every sheet of the pack `originali`, as pack.json lists them. */

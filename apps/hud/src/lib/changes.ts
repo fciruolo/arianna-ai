@@ -89,6 +89,13 @@ const AREA_GROUP: Record<ChangeArea, ChangeGroup> = {
 /** The section of a few areas is not the one of their group. */
 const AREA_SECTION: Partial<Record<ChangeArea, { slug: string; link: string }>> = { 'agents-catalog': { slug: 'catalogo-agenti', link: 'Apri Catalogo agenti' } };
 
+/** The themes by the name the user sees, not their id in the code (D-103, D-211: `corsia` is Scrubs, `ufficio` is The Office). */
+const THEME_NAME: Readonly<Record<string, string>> = { base: 'Base', corsia: 'Scrubs', ufficio: 'The Office' };
+
+export function themeName(id: string): string {
+  return THEME_NAME[id] ?? id;
+}
+
 export function groupOf(area: ChangeArea): GroupInfo {
   const id = AREA_GROUP[area];
   const found = CHANGE_GROUPS.find((group) => group.id === id);
@@ -167,7 +174,7 @@ export function changeText(change: Change): { title: string; detail: string | nu
       if (removed) return { title: `Progetto tolto: ${id}`, detail: null };
       return { title: `Progetto ${id}: etichetta cambiata`, detail: `${labelName(from)} → ${labelName(to)}` };
     case 'theme':
-      return { title: `Tema cambiato: ${to ?? 'Base'}`, detail: from === null ? null : `prima ${from}` };
+      return { title: `Tema cambiato: ${themeName(to ?? 'base')}`, detail: from === null ? null : `prima ${themeName(from)}` };
     case 'character':
       if (removed) return { title: `${id}: torna all’aspetto predefinito`, detail: `prima ${from ?? ''}` };
       return { title: `${id} indossa ${to}`, detail: added ? null : `prima ${from}` };

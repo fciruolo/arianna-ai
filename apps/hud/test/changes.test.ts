@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CHANGE_GROUPS, changeDays, changeText, dayTitle, groupCounts, groupOf, sectionOfArea, sinceText, type Change, type ChangeArea, type ChangesReport } from '../src/lib/changes.ts';
+import { CHANGE_GROUPS, changeDays, changeText, dayTitle, groupCounts, groupOf, sectionOfArea, sinceText, themeName, type Change, type ChangeArea, type ChangesReport } from '../src/lib/changes.ts';
 import { resolveSection } from '../src/lib/settings-index.ts';
 
 const NOW = new Date(2026, 9, 16, 18, 0, 0);
@@ -80,4 +80,13 @@ test('the days and «Osservo da»', () => {
   assert.equal(dayTitle(new Date(2025, 11, 31, 10), NOW), 'mercoledì 31 dicembre 2025');
   assert.equal(sinceText(report([]), NOW), 'Osservo i cambiamenti da giovedì 1 ottobre, alle 09:05.');
   assert.match(sinceText({ since: null, entries: [], truncated: false }, NOW), /non ha ancora/);
+});
+
+test('a theme by the name the user sees, never its id in the code', () => {
+  assert.equal(themeName('corsia'), 'Scrubs');
+  assert.equal(themeName('ufficio'), 'The Office');
+  assert.equal(themeName('base'), 'Base');
+  assert.equal(themeName('halloween'), 'halloween');
+  assert.deepEqual(changeText({ area: 'theme', id: 'theme', from: 'base', to: 'corsia' }), { title: 'Tema cambiato: Scrubs', detail: 'prima Base' });
+  assert.deepEqual(changeText({ area: 'theme', id: 'theme', from: 'corsia', to: 'ufficio' }), { title: 'Tema cambiato: The Office', detail: 'prima Scrubs' });
 });
