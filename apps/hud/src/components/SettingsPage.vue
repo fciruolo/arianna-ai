@@ -1229,13 +1229,16 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                     v-for="{ project, index } in ariannaFirst(forms.projects)"
                     :key="project.name"
                     class="flex flex-wrap items-center gap-3 border-t border-line py-2.5 first:border-t-0 first:pt-0"
-                    :class="isAriannaProject(project.name) ? 'mb-1 rounded-[10px] border border-accent bg-accent/10 px-3 first:pt-2.5' : ''"
+                    :class="isAriannaProject(project.name) ? 'mb-1.5 rounded-xl border border-accent/45 bg-surface-2 px-3.5 shadow-[inset_3px_0_0_var(--accent)] first:pt-2.5' : ''"
                   >
-                    <span class="min-w-[160px] flex-1">
+                    <span class="flex min-w-[160px] flex-1 items-center gap-3">
+                      <img v-if="isAriannaProject(project.name)" src="/logo.svg" alt="" class="size-9 shrink-0 rounded-[10px]" />
+                      <span class="min-w-0">
                       <b class="flex items-center gap-2 font-semibold"
-                        >{{ project.name }}<span v-if="isAriannaProject(project.name)" class="rounded-full border border-accent/50 px-2 py-px text-[12px] font-semibold text-accent">Arianna stessa</span></b
+                        >{{ project.name }}<span v-if="isAriannaProject(project.name)" class="text-[12.5px] font-normal text-muted">· il codice di Arianna, per GOD</span></b
                       >
                       <span class="block truncate font-mono text-[12.5px] text-muted" :title="project.path">{{ project.path }}</span>
+                      </span>
                     </span>
                     <select v-model="project.label" class="field w-[150px] px-2 py-1.5 text-[14px]" :aria-label="`Riservatezza di ${project.name}`">
                       <option value="L0">Pubblico</option>

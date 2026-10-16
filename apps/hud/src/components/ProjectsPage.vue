@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { clientOfProject, deleteProjectPath, listBrowsableProjects, listClients, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readImOverview, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
+import { clientOfProject, deleteProjectPath, listBrowsableProjects, listClients, loadChangelog, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readImOverview, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import { calendarText, todayInput, type ImOverview } from '../lib/im-billing.ts';
 import { imDayText } from '../lib/im.ts';
@@ -539,8 +539,10 @@ const cardIm = ref(new Map<string, ProjectCardIm>());
 const cardFailed = ref(new Set<string>());
 const cardClients = ref(new Map<string, { id: string; displayName: string; logo: ClientLogo | null }>());
 let cardsRead = 0;
-async function loadCards(list: readonly BrowsableContainer[]): Promise<void> {
+async function loadCards(all: readonly BrowsableContainer[]): Promise<void> {
   const request = ++cardsRead;
+  // The project of Arianna is internal: no client, no IM, no money (its own card above the grid).
+  const list = all.filter((item) => !isAriannaProject(item.name));
   const today = todayInput();
   void listClients()
     .then((found) => {
@@ -569,7 +571,26 @@ async function loadCards(list: readonly BrowsableContainer[]): Promise<void> {
     }),
   );
 }
-const cards = computed(() => sortProjectCards(containers.value ?? [], new Map([...cardIm.value].map(([name, im]) => [name, im.money?.overdue ?? 0]))));
+const cards = computed(() =>
+  sortProjectCards(
+    (containers.value ?? []).filter((item) => !isAriannaProject(item.name)),
+    new Map([...cardIm.value].map(([name, im]) => [name, im.money?.overdue ?? 0])),
+  ),
+);
+/** The project of Arianna herself (D-127), first and on a card of its own (request of the user of 2026-10-16). */
+const ariannaCard = computed(() => (containers.value ?? []).find((item) => isAriannaProject(item.name)) ?? null);
+/** The folder as Arianna names it (`repos/arianna`), the full path in the tooltip. */
+function insideArianna(absolute: string): string {
+  const at = absolute.lastIndexOf('/repos/');
+  return at < 0 ? absolute : absolute.slice(at + 1);
+}
+/** The version of Arianna on its card, from the changelog; none when it cannot be read. */
+const ariannaVersion = ref<string | null>(null);
+void loadChangelog()
+  .then((changelog) => {
+    ariannaVersion.value = changelog.current;
+  })
+  .catch(() => undefined);
 
 // The client of the container (D-168): name and logo in the header, a link to its page.
 const client = ref<{ id: string; displayName: string; logo: ClientLogo | null } | null>(null);
@@ -685,24 +706,45 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
     <!-- THE GRID (D-191, as the clients of D-190): each approved project a card -->
     <template v-else-if="chosenContainer === null">
       <p class="text-[13px] text-muted">{{ containers.length === 1 ? '1 progetto' : `${String(containers.length)} progetti` }} · numeri del {{ thisYear }}</p>
+      <button
+        v-if="ariannaCard"
+        type="button"
+        class="group flex w-full flex-wrap items-center gap-x-6 gap-y-4 rounded-2xl border border-accent/45 bg-surface-2 p-5 text-left shadow-[inset_4px_0_0_var(--accent)] transition-colors hover:border-accent"
+        @click="go(ariannaCard.name)"
+      >
+        <span class="flex min-w-[260px] flex-1 items-center gap-4">
+          <img src="/logo.svg" alt="" class="size-14 shrink-0 rounded-2xl" />
+          <span class="min-w-0">
+            <span class="flex items-center gap-2.5">
+              <b class="text-[18px] leading-snug font-semibold">Arianna</b>
+              <span class="rounded-md bg-accent/15 px-1.5 py-0.5 text-[11.5px] font-semibold tracking-wide text-accent uppercase">Interno</span>
+            </span>
+            <span class="mt-0.5 block text-[13.5px] text-muted">Il codice di questa installazione. Ci lavora GOD, sempre su una copia, mai sulla cartella in uso.</span>
+          </span>
+        </span>
+        <span class="grid grid-cols-[auto_auto] gap-x-8 gap-y-1 text-[13px] sm:grid-cols-[auto_auto_auto]">
+          <span class="flex flex-col"><span class="text-xs text-muted">Versione</span><b class="font-mono text-[14px] font-semibold tabular-nums">{{ ariannaVersion ?? '—' }}</b></span>
+          <span class="flex flex-col"
+            ><span class="text-xs text-muted">Copie di lavoro</span
+            ><b class="text-[14px] font-semibold tabular-nums">{{ ariannaCard.single ? 1 : ariannaCard.parts.length }}</b></span
+          >
+          <span class="flex flex-col"><span class="text-xs text-muted">Cartella</span><span class="font-mono text-[13px]" :title="ariannaCard.absolute">{{ insideArianna(ariannaCard.absolute) }}</span></span>
+        </span>
+        <span class="ml-auto inline-flex items-center gap-1 text-[13.5px] font-semibold text-accent">Apri<Icon name="expand" :size="15" /></span>
+      </button>
       <ul class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
-        <li v-for="item in cards" :key="item.name" class="flex" :class="isAriannaProject(item.name) ? 'col-span-full' : ''">
+        <li v-for="item in cards" :key="item.name" class="flex">
           <button
             type="button"
-            class="flex w-full flex-col gap-3 rounded-2xl border p-4 text-left transition-colors hover:border-accent"
-            :class="[
-              isAriannaProject(item.name) ? 'border-accent bg-accent/10' : 'border-line bg-surface-2',
-              (cardIm.get(item.name)?.money?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : '',
-            ]"
+            class="flex w-full flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 text-left transition-colors hover:border-accent"
+            :class="(cardIm.get(item.name)?.money?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : ''"
             @click="go(item.name)"
           >
             <span v-for="owner in [cardClients.get(item.name) ?? null]" :key="owner?.id ?? 'none'" class="flex items-center gap-3">
               <img v-if="owner && logoUrl(owner.id, owner.logo)" :src="logoUrl(owner.id, owner.logo) ?? undefined" alt="" class="size-[52px] shrink-0 rounded-xl border border-line bg-white object-contain p-0.5" />
               <span v-else class="grid size-[52px] shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-[17px] font-semibold text-accent" aria-hidden="true">{{ projectInitials(item.name) }}</span>
               <span class="min-w-0">
-                <b class="flex items-center gap-2 truncate text-[16px] leading-snug font-semibold"
-                  >{{ item.name }}<span v-if="isAriannaProject(item.name)" class="rounded-full border border-accent/50 px-2 py-px text-[12px] font-semibold text-accent">Arianna stessa</span></b
-                >
+                <b class="block truncate text-[16px] leading-snug font-semibold">{{ item.name }}</b>
                 <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
                   <template v-if="owner">{{ owner.displayName }}</template><template v-else>Nessun cliente</template>
                   <template v-if="partsText(item)"> · {{ partsText(item) }}</template>
