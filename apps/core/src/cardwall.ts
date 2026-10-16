@@ -90,6 +90,8 @@ export interface Card {
    * one to start. Null when it is not waiting for its turn.
    */
   turn: number | null;
+  /** Its step is in the queue, not yet taken by a worker (D-235): "Ferma" stops it there. */
+  queued: boolean;
   /** A body or criteria are written. */
   hasBody: boolean;
   links: number;
@@ -241,6 +243,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       planned: task.planned,
       started: task.started,
       turn: turns.get(task.id) ?? null,
+      queued: task.queuedJob !== null,
       hasBody: task.hasBody,
       links: task.links,
       files: task.files,
@@ -270,6 +273,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       planned: null,
       started: false,
       turn: null,
+      queued: false,
       hasBody: false,
       links: 0,
       files: 0,
@@ -678,7 +682,11 @@ export async function stopCard(sql: Sql, id: string, options: CardStopOptions): 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const state = await sql.begin(async (tx): Promise<'idle' | 'stopped' | 'running'> => {
       const card = await loadCard(tx, id, true);
-      if (card.status !== 'ready' && card.status !== 'running') return 'idle';
+      if (card.status !== 'ready' && card.status !== 'running') {
+        // Stopped by its worker meanwhile: the history says so, as for a step stopped in the queue.
+        if (atWork) await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { stopped: true } });
+        return 'idle';
+      }
       const [job] = await tx<{ id: string }[]>`
         UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'user'
         WHERE key = ${`task:${id}`} AND status = 'queued' RETURNING id::text`;

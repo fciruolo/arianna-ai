@@ -10,8 +10,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Chiave `planner = "opus" | "sonnet" | "local"` nel `[[project]]` di `arianna.toml` e in Impostazioni → Progetti: chi scrive le card dei piani del progetto; in una conversazione privata pianifica sempre il modello locale (D-235).
 - Il piano si modifica nella sua scheda prima di decidere: titolo, obiettivo, chi la fa, «bloccata da», criterio di completamento e complessità; righe aggiunte ed eliminate, ricontrollate dal core (D-235).
 - «Avvia subito» per ogni card di un agente nella scheda del piano, selezionata sulle righe che non aspettano altre card (D-235).
+- Decisa la scheda del piano, Arianna lo dice anche nella conversazione: quali card ha creato in Inbox, o che non ne ha creata nessuna (D-235).
+- Nel menu «/» il comando «/progetta» resta visibile anche dove non vale, grigio e con il motivo (per esempio una conversazione di lavoro senza progetto), invece di sparire (D-235).
 - Trascinare una card di un agente in «In corso» la fa partire, come «Avvia», «Riprendi» o «Riprova»; trascinarla di nuovo lì non fa partire niente di più (D-235).
-- «Ferma» nel dettaglio di una card al lavoro o in coda, e lo stesso trascinandola fuori da «In corso»: il lavoro si interrompe, la card va fra le fallite con «Fermata da te» e riparte con «Riprova» (D-235).
+- «Ferma» nel dettaglio di una card al lavoro o in coda (anche prima che il worker la prenda), e lo stesso trascinandola fuori da «In corso»: il lavoro si interrompe, la card va fra le fallite con «Fermata da te» e riparte con «Riprova» (D-235).
 - «Passi» nel dettaglio della card di un agente: cosa cerca, legge, scrive o delega mentre lavora, aggiornati ogni pochi secondi finché la card è in corso, con la privacy della card (D-235).
 - «Rimanda» nel dettaglio di una card in «Da verificare»: una nota obbligatoria, con la sua privacy (Privato di base: la card resta sul modello locale; Interno: può tornare a Claude o ChatGPT); l'agente riparte dal suo rapporto, dai file che ha toccato e dalla nota, e le note restano nella card (D-235).
 

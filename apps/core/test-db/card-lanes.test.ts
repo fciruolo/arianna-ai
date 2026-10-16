@@ -69,6 +69,7 @@ test('one card at work per project: the second waits for its turn, another proje
   const wall = await listCards(sql);
   assert.equal(wall.find((card) => card.id === second)?.turn, 1);
   assert.equal(wall.find((card) => card.id === first)?.turn, null);
+  assert.equal(wall.find((card) => card.id === second)?.queued, true);
   assert.equal(taskOf(await claimStep(sql, STEP_QUEUE, 'cards-1', 'cards')), first);
   assert.equal(await claimStep(sql, STEP_QUEUE, 'cards-2', 'cards'), undefined);
 
@@ -125,6 +126,9 @@ test('"Ferma" of a card: a queued step fails with it; one at work stops through 
   assert.deepEqual(await stopCard(sql, busy, { stopTask, pollMs: 20 }), { stopped: true, left: false });
   assert.equal(asked >= 1, true);
   assert.equal((await loadTask(sql, busy))?.status, 'failed');
+  // The history says «Fermata da te» also when its worker stopped it.
+  const stopped = await sql`SELECT 1 FROM events WHERE task_id = ${busy} AND kind = 'card.changed' AND payload ->> 'stopped' = 'true'`;
+  assert.equal(stopped.length, 1);
 
   const idle = await createCard(sql, { title: 'Mai partita', assignee: 'coder' }, NAMES);
   assert.deepEqual(await stopCard(sql, idle.id, { stopTask: () => false }), { stopped: false, left: false });

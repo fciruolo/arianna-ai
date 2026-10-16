@@ -475,9 +475,21 @@ function placeOf(approval: Approval): string | null {
   return approval.chatTaskId ?? approval.taskId;
 }
 
-/** The approvals a user message's task waits for. */
+/** Tasks whose answer of Arianna is on this page: a plan of «/progetta» shows under that answer (D-235). */
+const answeredTasks = computed(() => new Set(props.chat.messages.filter((message) => message.role === 'assistant' && message.taskId !== null).map((message) => message.taskId)));
+
+/**
+ * The approvals under a message: under the user's, those its task waits for;
+ * a plan of «/progetta» under Arianna's answer «Ho messo la pianificazione…»
+ * instead, which comes before it (D-235).
+ */
 function approvalsOf(message: Message): Approval[] {
-  return message.role === 'user' && message.taskId !== null ? props.approvals.filter((approval) => placeOf(approval) === message.taskId) : [];
+  if (message.taskId === null) return [];
+  const here = props.approvals.filter((approval) => placeOf(approval) === message.taskId);
+  const afterAnswer = (approval: Approval): boolean => approval.kind === 'plan' && approval.taskId !== placeOf(approval) && answeredTasks.value.has(placeOf(approval));
+  if (message.role === 'user') return here.filter((approval) => !afterAnswer(approval));
+  if (message.role === 'assistant') return here.filter(afterAnswer);
+  return [];
 }
 
 /** Approvals whose message is not on this page (older history): shown at the end. */
@@ -540,9 +552,14 @@ const menuItems = computed(() =>
   commandQuery.value === undefined
     ? []
     : filterCommands(commandQuery.value).filter(
-        (command) => (command.action.kind !== 'round' || ariannaChat.value) && (command.action.kind !== 'plan' || planProblem.value === undefined),
+        // «/progetta» stays in the menu where it does not work, grey with the reason (D-235): hidden, it looked missing.
+        (command) => command.action.kind !== 'round' || ariannaChat.value,
       ),
 );
+/** Why a command of the menu does not work here (D-235), shown in its place; undefined when it does. */
+function commandProblem(command: ChatCommand): string | undefined {
+  return command.action.kind === 'plan' ? planProblem.value : undefined;
+}
 const menuOpen = computed(() => commandQuery.value !== undefined && draft.value !== menuDismissed.value);
 const activeId = computed(() => {
   const command = menuOpen.value ? menuItems.value[activeCommand.value] : undefined;
@@ -609,6 +626,11 @@ function run(command: ChatCommand): void {
 
 /** A row of the menu chosen: Tab completes; Invio and the mouse run it, or complete one that takes a text. */
 function choose(command: ChatCommand, how: 'enter' | 'tab'): void {
+  const problem = commandProblem(command);
+  if (problem !== undefined) {
+    commandHint.value = problem;
+    return;
+  }
   commandHint.value = null;
   if (how === 'tab' || command.takesArgument) setDraft(completion(command));
   else run(command);
@@ -1316,13 +1338,14 @@ onBeforeUnmount(() => clearInterval(clock));
               role="option"
               :aria-selected="index === activeCommand"
               class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[14px]"
-              :class="index === activeCommand ? 'bg-surface-2 text-ink' : 'text-muted'"
+              :aria-disabled="commandProblem(command) !== undefined"
+              :class="[index === activeCommand ? 'bg-surface-2 text-ink' : 'text-muted', commandProblem(command) !== undefined ? 'opacity-60' : '']"
               @mousedown.prevent
               @mouseenter="activeCommand = index"
               @click="choose(command, 'enter')"
             >
-              <span class="w-36 shrink-0 font-mono sm:w-40" :class="index === activeCommand ? 'text-accent' : 'text-ink'">{{ usage(command) }}</span>
-              <span class="min-w-0 flex-1 truncate">{{ command.description }}</span>
+              <span class="w-36 shrink-0 font-mono sm:w-40" :class="commandProblem(command) !== undefined ? 'text-muted' : index === activeCommand ? 'text-accent' : 'text-ink'">{{ usage(command) }}</span>
+              <span class="min-w-0 flex-1 truncate" :title="commandProblem(command)">{{ commandProblem(command) ?? command.description }}</span>
               <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[12px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
             </li>
           </ul>

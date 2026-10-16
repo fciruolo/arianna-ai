@@ -32,7 +32,7 @@ import {
   type WallState,
   ALL_FILTERS,
 } from '../lib/cardwall.ts';
-import { agentName } from '../lib/italian.ts';
+import { agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import CardDetail from './CardDetail.vue';
@@ -432,7 +432,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
                 <span v-for="mark in cardMarks(card)" :key="mark.icon" class="inline-flex items-center gap-1" :title="mark.title"><Icon :name="mark.icon" :size="12" />{{ mark.text }}<span class="sr-only">{{ mark.title }}</span></span>
               </span>
               <span v-if="blockedText(card) !== undefined" class="truncate text-[13px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
-              <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="card.waitingReason">{{ card.waitingReason }}</span>
+              <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="reasonText(card.waitingReason) ?? card.waitingReason">{{ reasonText(card.waitingReason) ?? card.waitingReason }}</span>
               <span v-if="turnText(card) !== undefined" class="truncate text-[13px] text-muted">{{ turnText(card) }}</span>
             </button>
           </li>

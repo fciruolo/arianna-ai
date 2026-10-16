@@ -217,6 +217,11 @@ test('«/progetta» in a private conversation: Arianna answers without a model, 
   const closed = await loadTask(db().sql, card.id);
   assert.deepEqual([closed?.status, closed?.evidence, closed?.note], ['done', [{ kind: 'approval', ref: approval.id }], 'Piano approvato: 2 card create in Inbox.']);
   assert.deepEqual(await drain([card.id], executor), [], 'nothing more runs for the card «Piano»');
+  // Arianna says it in the conversation, written by the code, at the plan's label (D-235).
+  const [said] = await db().sql<{ body: string; label: string; role: string }[]>`
+    SELECT body, label, role FROM messages WHERE conversation_id = ${conversation.id} ORDER BY id DESC LIMIT 1`;
+  assert.deepEqual([said?.role, said?.label], ['assistant', 'L2']);
+  assert.match(said?.body ?? '', /^Ho creato 2 card per «.+», tutte in Inbox sul cardwall:/);
 });
 
 test('«/progetta» in a work conversation: Claude writes the plan as the project says, the plan is edited and checked, only the rows «Avvia subito» start (D-235)', async () => {
@@ -302,6 +307,8 @@ test('«/progetta» with `planner = "local"`: a work conversation plans on the l
   assert.deepEqual(await cardsOf(task.id), []);
   const closed = await loadTask(db().sql, card.id);
   assert.deepEqual([closed?.status, closed?.note], ['done', 'Piano non approvato: nessuna card creata.']);
+  const [said] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${conversation.id} ORDER BY id DESC LIMIT 1`;
+  assert.equal(said?.body, 'Va bene, non ho creato nessuna card.');
 });
 
 test('«/progetta» is refused without text, in a work conversation without a project, in incognito; without the web chat it is an ordinary message (D-235)', async () => {

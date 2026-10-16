@@ -326,6 +326,19 @@ export async function closePlanningCard(tx: Queryable, approval: StoredApproval,
   await moveTask(tx, approval.taskId, 'done', { evidence: [{ kind: 'approval', ref: approval.id }], cause: 'approval' });
   await tx`UPDATE tasks SET note = ${note} WHERE id = ${approval.taskId}`;
   await appendEvent(tx, { kind: 'card.changed', taskId: approval.taskId, label: 'L0', payload: { plan: approval.id, state: approval.state } });
+  // Arianna says it in the conversation of «/progetta» too, written by the code (D-235): the cards created, or none.
+  const plan = planOf(approval);
+  const [origin] = await tx<{ conversationId: string }[]>`
+    SELECT c.id::text AS "conversationId" FROM tasks card JOIN tasks request ON request.id = card.parent_id JOIN conversations c ON c.id = request.conversation_id
+    WHERE card.id = ${approval.taskId} AND c.purged_at IS NULL AND c.archived_at IS NULL`;
+  if (plan !== undefined && origin !== undefined) {
+    const [line] = await tx<{ id: string }[]>`
+      INSERT INTO messages (conversation_id, role, channel, label, body)
+      VALUES (${origin.conversationId}, 'assistant', 'web', ${approval.label}::privacy_label, ${planAnswerText(plan, approval.state)})
+      RETURNING id::text`;
+    if (line === undefined) throw new Error('INSERT INTO messages returned no row');
+    await appendEvent(tx, { kind: 'message.created', label: 'L0', payload: { conversationId: origin.conversationId, messageId: line.id, role: 'assistant' } });
+  }
   return true;
 }
 

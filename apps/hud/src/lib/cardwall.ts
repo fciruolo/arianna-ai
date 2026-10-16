@@ -57,6 +57,8 @@ export interface Card {
   started: boolean;
   /** In line behind another card of its project at work (D-235): 1 is the next one. */
   turn: number | null;
+  /** Its step is in the queue, not yet taken (D-235); absent from an older core. */
+  queued?: boolean;
   hasBody: boolean;
   links: number;
   files: number;
@@ -273,11 +275,11 @@ export type CardAction = 'start' | 'resume' | 'retry' | 'stop';
 
 export const CARD_ACTION_TEXT: Record<CardAction, string> = { start: 'Avvia', resume: 'Riprendi', retry: 'Riprova', stop: 'Ferma' };
 
-type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { waitingApprovalId?: string | null; turn?: number | null };
+type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { waitingApprovalId?: string | null; turn?: number | null; queued?: boolean };
 
-/** At work, or queued for its turn (D-235): "Ferma" and a drag out of "In corso" stop it. */
-export function atWork(card: Pick<Card, 'kind' | 'status'> & { turn?: number | null }): boolean {
-  return card.kind === 'task' && (card.status === 'running' || (card.turn ?? null) !== null);
+/** At work, or its step in the queue (D-235): "Ferma" and a drag out of "In corso" stop it. */
+export function atWork(card: Pick<Card, 'kind' | 'status'> & { turn?: number | null; queued?: boolean }): boolean {
+  return card.kind === 'task' && (card.status === 'running' || (card.turn ?? null) !== null || (card.status === 'ready' && card.queued === true));
 }
 
 /**
@@ -401,7 +403,7 @@ export const RUN_CLOSED_TEXT = 'La card è chiusa: non riparte.';
 export const COMMITMENT_MOVE_TEXT = 'Un impegno si chiude solo con «Fatto»: per rinviarlo o dire perché non è fatto, scrivilo alla Segretaria.';
 
 export function dropAction(
-  card: Pick<Card, 'kind' | 'status' | 'column' | 'assignee' | 'started'> & { turn?: number | null },
+  card: Pick<Card, 'kind' | 'status' | 'column' | 'assignee' | 'started'> & { turn?: number | null; queued?: boolean },
   column: Pick<WallColumn, 'drop' | 'holds'>,
 ): DropAction {
   const to = column.drop;

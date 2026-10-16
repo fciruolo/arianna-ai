@@ -211,6 +211,7 @@ test('"Avvia", "Riprendi" and "Riprova": only where the core allows them (D-159)
   // At work, or in line for its turn: Ferma (D-235).
   assert.deepEqual(cardActions(card({ status: 'running', assignee: 'coder', started: true }), false), ['stop']);
   assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true, turn: 2 }), false), ['stop']);
+  assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true, queued: true }), false), ['stop']);
   assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true }), false), []);
   assert.deepEqual(cardActions(card({ kind: 'commitment', status: 'open' }), false), []);
 });
