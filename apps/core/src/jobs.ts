@@ -113,6 +113,51 @@ export function createJobQueue(sql: Sql): JobQueue {
   };
 }
 
+/**
+ * Which step jobs a worker takes (D-235): `chat` the steps of tasks with a
+ * conversation (and any job without a task), `cards` the steps of cards, `all`
+ * both. So a card at work for 45 minutes never holds an answer of the chat.
+ */
+export type StepLane = 'all' | 'chat' | 'cards';
+
+/** The agent whose cards only plan (D-235): its steps touch no folder, so they never wait for a project. */
+const PLANNER_ASSIGNEE = 'arianna';
+
+/**
+ * Claims the next step job of `lane`. On the `cards` lane a project has one
+ * card at work at a time (its cards share the project folder, D-235): a card
+ * whose project has another card running, or another card's step taken by a
+ * worker, waits in the queue. Claims of cards take turns on an advisory lock,
+ * so two workers never start two cards of a project together.
+ */
+export async function claimStep(sql: Sql, queue: string, worker: string, lane: StepLane): Promise<Job | undefined> {
+  if (lane === 'all') return createJobQueue(sql).claim(queue, worker);
+  return sql.begin(async (tx) => {
+    if (lane === 'cards') await tx`SELECT pg_advisory_xact_lock(hashtext('arianna.card-claim'))`;
+    const filter =
+      lane === 'chat'
+        ? tx`(t.id IS NULL OR t.conversation_id IS NOT NULL)`
+        : tx`t.conversation_id IS NULL AND (t.assignee = ${PLANNER_ASSIGNEE} OR NOT EXISTS (
+            SELECT FROM tasks o
+            WHERE o.conversation_id IS NULL AND o.id <> t.id AND o.assignee <> ${PLANNER_ASSIGNEE}
+              AND o.project IS NOT DISTINCT FROM t.project
+              AND (o.status = 'running' OR EXISTS (
+                SELECT FROM jobs r WHERE r.queue = ${queue} AND r.status = 'running' AND r.key = 'task:' || o.id::text))))`;
+    const [job] = await tx<Job[]>`
+      UPDATE jobs SET status = 'running', locked_at = now(), locked_by = ${worker}, attempts = attempts + 1
+      WHERE id = (
+        SELECT j.id FROM jobs j
+        LEFT JOIN tasks t ON j.key = 'task:' || t.id::text
+        WHERE j.queue = ${queue} AND j.status = 'queued' AND j.run_at <= now() AND ${filter}
+        ORDER BY j.run_at, j.id
+        FOR UPDATE OF j SKIP LOCKED
+        LIMIT 1
+      )
+      RETURNING id::text, queue, key, payload, attempts, max_attempts AS "maxAttempts"`;
+    return job;
+  });
+}
+
 /** `enqueue` inside a caller's transaction. */
 export async function enqueueJob(
   sql: Queryable,

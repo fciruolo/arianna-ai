@@ -199,8 +199,11 @@ export async function moveCard(id: string, to: MoveTarget): Promise<void> {
   await call('POST', `/api/cards/${encodeURIComponent(id)}/move`, { to });
 }
 
-/** "Avvia", "Riprendi" and "Riprova" of a card (D-159); the core refuses (409) what it does not allow. */
-export async function cardAction(id: string, action: 'start' | 'resume' | 'retry'): Promise<void> {
+/**
+ * "Avvia", "Riprendi" and "Riprova" of a card (D-159); `run`, a drag into "In
+ * corso", and `stop`, "Ferma" (D-235). The core refuses (409) what it does not allow.
+ */
+export async function cardAction(id: string, action: 'start' | 'resume' | 'retry' | 'run' | 'stop'): Promise<void> {
   await call('POST', `/api/cards/${encodeURIComponent(id)}/${action}`, {});
 }
 

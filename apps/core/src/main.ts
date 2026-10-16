@@ -47,7 +47,9 @@ import { createSeriesLines } from './series-lines.ts';
 import { createWikiquoteClient } from './wikiquote.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
-import { createWorker } from './engine.ts';
+import { CARD_WORKERS, createWorker, type StopCause } from './engine.ts';
+import type { Task } from './tasks.ts';
+import { stopCard } from './cardwall.ts';
 import { eraseConversation } from './erase.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
@@ -535,15 +537,25 @@ console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : c
 
 // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself; also for a queued message (D-218).
 const leaveRule = (): LeaveRule => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) });
-const worker = createWorker({
+const workerOptions = {
   sql,
   executor: orchestrator,
-  allowedActions: (task) => agents.get(task.assignee)?.card.approvals ?? [],
+  allowedActions: (task: Task) => agents.get(task.assignee)?.card.approvals ?? [],
   // No card, no caps: the engine then runs no step and the task waits for the user.
-  agentLimits: (task) => assigneeLimits(agents, task.assignee),
-  endpointPort: (id) => endpointPort(settings.current().local.endpoints.find((endpoint) => endpoint.id === id)?.url),
+  agentLimits: (task: Task) => assigneeLimits(agents, task.assignee),
+  endpointPort: (id: string) => endpointPort(settings.current().local.endpoints.find((endpoint) => endpoint.id === id)?.url),
   onError: report,
-});
+};
+// D-235: the chat has its own worker, the cards theirs, so a card at work never holds an answer;
+// CARD_WORKERS cards of different projects at once, one per project (jobs.ts, claimStep).
+const workers = [
+  createWorker({ ...workerOptions, lane: 'chat' }),
+  ...Array.from({ length: CARD_WORKERS }, () => createWorker({ ...workerOptions, lane: 'cards' })),
+];
+/** Stops the step of a task on the worker that runs it now; false when none does. */
+const worker = {
+  stopTask: (taskId: string, cause: StopCause): boolean => workers.some((one) => one.stopTask(taskId, cause)),
+};
 /** Closes an incognito conversation, stopping the step the worker runs for it (D-136). */
 const endIncognito = (conversationId: string, cause: IncognitoCause) =>
   closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito'), onError: report });
@@ -1199,11 +1211,13 @@ const server = await startApiServer({
   // "Elimina" (D-157): the steps of the worker stop first, as for an incognito.
   // "Ferma" in the chat (D-218): the steps of the worker stop as for GOD's, and the queue pauses.
   stopChat: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
+  // D-235: "Ferma" of a card, as "Ferma" in the chat.
+  stopCard: (cardId) => stopCard(sql, cardId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
   erase: (conversationId) => eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report }),
   incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
   onError: report,
 });
-await worker.start();
+for (const one of workers) await one.start();
 // D-218: the messages written while an answer was at work leave when it ends, one at a time.
 const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents) }), onError: report });
 queueDispatcher.start();
@@ -1334,7 +1348,7 @@ async function shutdown(): Promise<void> {
   await modelActions.stop();
   localReload.stop();
   await organizer.stop();
-  await worker.stop();
+  await Promise.all(workers.map((one) => one.stop()));
   memory.stop();
   await localServers.stop();
   await live.close();

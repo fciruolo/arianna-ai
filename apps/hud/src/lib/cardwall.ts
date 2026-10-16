@@ -55,6 +55,8 @@ export interface Card {
   planned: string | null;
   /** The engine has had it: it keeps who does it and does not go back to Da fare by hand. */
   started: boolean;
+  /** In line behind another card of its project at work (D-235): 1 is the next one. */
+  turn: number | null;
   hasBody: boolean;
   links: number;
   files: number;
@@ -168,8 +170,8 @@ export interface WallColumn {
   title: string;
   /** The precise columns of the cards it holds. */
   holds: CardColumn[];
-  /** Where a card dropped here goes; null: no drop. */
-  drop: MoveTarget | null;
+  /** Where a card dropped here goes; `run`: it starts (D-235); null: no drop. */
+  drop: MoveTarget | 'run' | null;
 }
 
 export interface WallPrefs {
@@ -186,7 +188,8 @@ export function wallColumns(prefs: Pick<WallPrefs, 'splitInbox' | 'splitFailed'>
   // A card enters the inbox only at birth: nothing is dropped there.
   if (prefs.splitInbox) columns.push({ id: 'inbox', title: 'Inbox', holds: ['inbox'], drop: null });
   columns.push({ id: 'todo', title: 'Da fare', holds: prefs.splitInbox ? ['ready'] : ['inbox', 'ready'], drop: 'ready' });
-  columns.push({ id: 'running', title: 'In corso', holds: ['running'], drop: null });
+  // D-235: dropped here a card of an agent starts, as "Avvia", "Riprendi" or "Riprova".
+  columns.push({ id: 'running', title: 'In corso', holds: ['running'], drop: 'run' });
   columns.push({ id: 'waiting', title: 'Aspetta', holds: prefs.splitFailed ? ['waiting'] : ['waiting', 'failed'], drop: 'waiting_user' });
   if (prefs.splitFailed) columns.push({ id: 'failed', title: 'Falliti', holds: ['failed'], drop: 'failed' });
   columns.push({ id: 'to_verify', title: 'Da verificare', holds: ['to_verify'], drop: null });
@@ -264,11 +267,16 @@ export function moveRefusal(card: Movable, to: MoveTarget): string | undefined {
 }
 
 /** The buttons of the detail that set a card going (D-159). */
-export type CardAction = 'start' | 'resume' | 'retry';
+export type CardAction = 'start' | 'resume' | 'retry' | 'stop';
 
-export const CARD_ACTION_TEXT: Record<CardAction, string> = { start: 'Avvia', resume: 'Riprendi', retry: 'Riprova' };
+export const CARD_ACTION_TEXT: Record<CardAction, string> = { start: 'Avvia', resume: 'Riprendi', retry: 'Riprova', stop: 'Ferma' };
 
-type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { waitingApprovalId?: string | null };
+type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { waitingApprovalId?: string | null; turn?: number | null };
+
+/** At work, or queued for its turn (D-235): "Ferma" and a drag out of "In corso" stop it. */
+export function atWork(card: Pick<Card, 'kind' | 'status'> & { turn?: number | null }): boolean {
+  return card.kind === 'task' && (card.status === 'running' || (card.turn ?? null) !== null);
+}
 
 /**
  * What the detail offers to set a card going, as the core allows it (D-159):
@@ -279,6 +287,7 @@ type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { wai
 export function cardActions(card: Actionable, waitsForDecision: boolean): CardAction[] {
   if (card.kind !== 'task') return [];
   const status = card.status as TaskStatus;
+  if (atWork(card)) return ['stop'];
   if (!card.started) return card.assignee !== 'user' && (status === 'inbox' || status === 'ready') ? ['start'] : [];
   if (status === 'waiting_user' && !waitsForDecision) return ['resume'];
   if (status === 'failed') return ['retry'];
@@ -372,11 +381,27 @@ export function groupCards(cards: readonly Card[], columns: readonly WallColumn[
 }
 
 /** What a drop of `card` on `column` does. */
-export type DropAction = { kind: 'none' } | { kind: 'noop' } | { kind: 'move'; to: MoveTarget } | { kind: 'commitment-done' } | { kind: 'refuse'; message: string };
+export type DropAction =
+  | { kind: 'none' }
+  | { kind: 'noop' }
+  | { kind: 'move'; to: MoveTarget }
+  | { kind: 'commitment-done' }
+  | { kind: 'refuse'; message: string }
+  /** Into "In corso": the card starts, resumes or retries (D-235). */
+  | { kind: 'run' }
+  /** Out of "In corso": the card at work stops (D-235). */
+  | { kind: 'stop' };
+
+export const RUN_USER_TEXT = 'In corso vanno solo le card di un agente: le tue le fai tu.';
+export const RUN_VERIFY_TEXT = 'La card è da verificare: rimandala indietro con una nota, dal dettaglio.';
+export const RUN_CLOSED_TEXT = 'La card è chiusa: non riparte.';
 
 export const COMMITMENT_MOVE_TEXT = 'Un impegno si chiude solo con «Fatto»: per rinviarlo o dire perché non è fatto, scrivilo alla Segretaria.';
 
-export function dropAction(card: Pick<Card, 'kind' | 'status' | 'column' | 'assignee' | 'started'>, column: Pick<WallColumn, 'drop' | 'holds'>): DropAction {
+export function dropAction(
+  card: Pick<Card, 'kind' | 'status' | 'column' | 'assignee' | 'started'> & { turn?: number | null },
+  column: Pick<WallColumn, 'drop' | 'holds'>,
+): DropAction {
   const to = column.drop;
   if (to === null) return { kind: 'none' };
   if (column.holds.includes(card.column)) return { kind: 'noop' };
@@ -384,6 +409,14 @@ export function dropAction(card: Pick<Card, 'kind' | 'status' | 'column' | 'assi
     if (to !== 'done') return { kind: 'refuse', message: COMMITMENT_MOVE_TEXT };
     return card.status === 'open' ? { kind: 'commitment-done' } : { kind: 'noop' };
   }
+  if (to === 'run') {
+    if (atWork(card)) return { kind: 'noop' };
+    if (card.assignee === 'user') return { kind: 'refuse', message: RUN_USER_TEXT };
+    if (card.status === 'to_verify') return { kind: 'refuse', message: RUN_VERIFY_TEXT };
+    if (card.status === 'done') return { kind: 'refuse', message: RUN_CLOSED_TEXT };
+    return { kind: 'run' };
+  }
+  if (atWork(card)) return { kind: 'stop' };
   if (card.status === to) return { kind: 'noop' };
   const refusal = moveRefusal(card, to);
   return refusal === undefined ? { kind: 'move', to } : { kind: 'refuse', message: refusal };
@@ -545,6 +578,11 @@ export function saveState(storage: StorageLike | undefined, state: WallState): v
 // What a card says.
 
 /** "aspetta: <title>", "+N" for the others; undefined when it waits for no card. */
+/** "In coda, 1ª" (D-235): the card waits for another card of its project at work. */
+export function turnText(card: Pick<Card, 'turn'>): string | undefined {
+  return card.turn === null ? undefined : `In coda, ${String(card.turn)}ª: un'altra card del progetto è al lavoro`;
+}
+
 export function blockedText(card: Pick<Card, 'column' | 'blockedBy'>): string | undefined {
   const [first, ...rest] = card.blockedBy;
   if (card.column !== 'waiting' || first === undefined) return undefined;
@@ -761,6 +799,10 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^the card has already started/, 'La card è già partita: riprendila o riprovala.'],
   [/^only a card in Aspetta resumes/, 'Si riprende solo una card in Aspetta.'],
   [/^the card never started/, 'La card non è mai partita: avviala, o spostala in Da fare.'],
+  // A drag into "In corso" (D-235).
+  [/^the card is to verify/, RUN_VERIFY_TEXT],
+  [/^the card is closed/, RUN_CLOSED_TEXT],
+  [/^Arianna does not work on cards from the wall/, 'Arianna non lavora sulle card dal cardwall: assegna la card a un agente.'],
   [/^the card waits for another card/, 'La card aspetta un’altra card: riparte da sola quando quella è fatta.'],
   [/^only a failed card is retried/, 'Si riprova solo una card fallita.'],
   [/^the two cards would wait for each other/, 'Le due card si aspetterebbero a vicenda.'],

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { createCard, loadCards, markCommitmentDone, moveCard } from '../lib/api.ts';
+import { cardAction, createCard, loadCards, markCommitmentDone, moveCard } from '../lib/api.ts';
 import {
   assigneeText,
   blockedText,
+  turnText,
   type Card,
   cardErrorText,
   cardMarks,
@@ -262,6 +263,7 @@ async function onDrop(event: DragEvent, column: WallColumn): Promise<void> {
   problem.value = null;
   try {
     if (action.kind === 'commitment-done') await markCommitmentDone(card.id);
+    else if (action.kind === 'run' || action.kind === 'stop') await cardAction(card.id, action.kind);
     else await moveCard(card.id, action.to);
   } catch (cause) {
     problem.value = cardErrorText(cause);
@@ -428,6 +430,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
               </span>
               <span v-if="blockedText(card) !== undefined" class="truncate text-[13px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
               <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="card.waitingReason">{{ card.waitingReason }}</span>
+              <span v-if="turnText(card) !== undefined" class="truncate text-[13px] text-muted">{{ turnText(card) }}</span>
             </button>
           </li>
         </ul>

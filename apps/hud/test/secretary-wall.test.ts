@@ -28,6 +28,7 @@ function card(id: string, extra: Partial<Card> = {}): Card {
     priority: 0,
     planned: null,
     started: false,
+    turn: null,
     hasBody: false,
     links: 0,
     files: 0,

@@ -10,7 +10,7 @@ import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { contextOf, outputSource } from './finance-mark.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
-import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue } from './jobs.ts';
+import { claimStep, completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue, type StepLane } from './jobs.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
 import {
   checkUsage,
@@ -42,6 +42,8 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 export { STEP_QUEUE };
 /** Longest text a declassification may cover: the user reads all of it on the card. */
 export const MAX_DECLASSIFY_LENGTH = 20_000;
+/** Workers of the cards (D-235): this many cards of different projects at work at once. */
+export const CARD_WORKERS = 2;
 /** A `retry` outcome waits at least this long: an executor that just refused is not asked again at once. */
 export const MIN_RETRY_MS = 60_000;
 
@@ -619,6 +621,8 @@ export interface WorkerOptions extends EngineOptions {
   retryAfterMs?: number;
   /** How long `stop()` waits for the current step before giving up on it. Default 10 s. */
   stopGraceMs?: number;
+  /** Which steps it takes (D-235): default `all`; the core runs one `chat` worker and the `cards` ones. */
+  lane?: StepLane;
   /** The port of a local endpoint id, for the readable error of a failed task (D-064). */
   endpointPort?: (endpoint: string) => number | undefined;
   onError?: (error: unknown) => void;
@@ -738,7 +742,7 @@ export function createWorker(options: WorkerOptions): Worker {
     while (!controller.signal.aborted) {
       try {
         if (Date.now() - lastSweep >= lockTimeoutMs) await sweep();
-        const job = await queue.claim(STEP_QUEUE, worker);
+        const job = await claimStep(sql, STEP_QUEUE, worker, options.lane ?? 'all');
         if (job === undefined) {
           await sleep(pollMs, controller.signal);
           continue;

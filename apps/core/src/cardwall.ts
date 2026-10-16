@@ -6,6 +6,7 @@ import type { CommitmentStatus } from './commitments.ts';
 import { CHAT_AGENT } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
+import { stopTaskByUser } from './chat-stop.ts';
 import { appendEvent } from './events.ts';
 import { SLUG } from './git-catalog.ts';
 import { createTask, isHeld, loadTask, moveTask, releaseIfFree, TaskError, type Task } from './tasks.ts';
@@ -83,6 +84,11 @@ export interface Card {
   planned: string | null;
   /** The engine has had it (a run, a step job, a step held back): it keeps who does it, and goes back to do with "Riprendi" or "Riprova" (D-159). */
   started: boolean;
+  /**
+   * In line behind another card of its project at work (D-235): 1 is the next
+   * one to start. Null when it is not waiting for its turn.
+   */
+  turn: number | null;
   /** A body or criteria are written. */
   hasBody: boolean;
   links: number;
@@ -147,6 +153,7 @@ interface TaskRow {
   priority: number;
   planned: string | null;
   started: boolean;
+  queuedJob: string | null;
   hasBody: boolean;
   links: number;
   files: number;
@@ -182,6 +189,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
   const tasks = await sql<TaskRow[]>`
     SELECT t.id::text, t.title, t.status, t.project, t.assignee, t.due_at AS "dueAt", t.label, t.waiting_reason AS "waitingReason", t.note,
       t.priority, t.planned_on::text AS planned, ${startedSql(sql)} AS started,
+      (SELECT j.id::text FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedJob",
       (t.goal IS NOT NULL OR t.done_criteria IS NOT NULL) AS "hasBody",
       (SELECT count(*)::int FROM card_links l WHERE l.task_id = t.id AND l.removed_at IS NULL) AS links,
       (SELECT count(*)::int FROM card_files f WHERE f.task_id = t.id AND f.removed_at IS NULL) AS files,
@@ -204,6 +212,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
     WHERE status = 'open' OR (status <> 'cancelled' AND day >= ${since}::date)
     ORDER BY day, at_time NULLS LAST, created_at, id`;
 
+  const turns = cardTurns(tasks, dependencies);
   const cards: Card[] = tasks.map((task) => {
     const dependsOn = dependencies.filter((row) => row.taskId === task.id).map(({ id, title, status }) => ({ id, title, status }));
     const blockedBy = dependsOn.filter((ref) => ref.status !== 'done');
@@ -228,6 +237,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       priority: task.priority,
       planned: task.planned,
       started: task.started,
+      turn: turns.get(task.id) ?? null,
       hasBody: task.hasBody,
       links: task.links,
       files: task.files,
@@ -256,6 +266,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       priority: 0,
       planned: null,
       started: false,
+      turn: null,
       hasBody: false,
       links: 0,
       files: 0,
@@ -264,6 +275,27 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
     });
   }
   return cards;
+}
+
+/**
+ * The cards waiting for their turn (D-235): a queued step of an agent's card,
+ * free of dependencies, in a project where another card is at work. Numbered
+ * in the order the workers take them (the job's id, as claimStep).
+ */
+function cardTurns(tasks: readonly TaskRow[], dependencies: readonly DependencyRow[]): Map<string, number> {
+  const busy = new Set(tasks.filter((task) => task.status === 'running' && task.assignee !== CHAT_AGENT).map((task) => task.project ?? ''));
+  const open = new Set(dependencies.filter((row) => row.status !== 'done').map((row) => row.taskId));
+  const waiting = tasks
+    .filter((task) => task.status === 'ready' && task.queuedJob !== null && task.assignee !== CHAT_AGENT && !open.has(task.id) && busy.has(task.project ?? ''))
+    .sort((a, b) => Number(BigInt(a.queuedJob ?? '0') - BigInt(b.queuedJob ?? '0')));
+  const turns = new Map<string, number>();
+  const counts = new Map<string, number>();
+  for (const task of waiting) {
+    const next = (counts.get(task.project ?? '') ?? 0) + 1;
+    counts.set(task.project ?? '', next);
+    turns.set(task.id, next);
+  }
+  return turns;
 }
 
 /** What the wall may name: the projects of arianna.toml and the agents of the registry. */
@@ -532,18 +564,90 @@ async function goOn(tx: Queryable, card: Task): Promise<Task> {
  * the engine until that one is done (D-152).
  */
 export async function startCard(sql: Sql, id: string, agents?: readonly string[]): Promise<Task> {
+  return sql.begin(async (tx) => startIn(tx, await loadCard(tx, id, true), agents));
+}
+
+/** `startCard` on a card the caller has locked. */
+async function startIn(tx: Queryable, card: Task, agents?: readonly string[]): Promise<Task> {
+  const id = card.id;
+  if (card.assignee === 'user') throw new CardError('conflict', 'only the card of an agent starts: your own you do yourself');
+  if (card.assignee === CHAT_AGENT) throw new CardError('conflict', 'Arianna does not work on cards from the wall: assign the card to an agent');
+  if (agents !== undefined && !agents.includes(card.assignee)) throw new CardError('conflict', `the agent ${card.assignee} no longer exists: assign the card to another one`);
+  if (card.status !== 'inbox' && card.status !== 'ready') throw new CardError('conflict', 'only a card still to do starts');
+  if (await engineHad(tx, id)) throw new CardError('conflict', 'the card has already started: resume it or retry it');
+  const started = card.status === 'ready' ? card : await moveTask(tx, id, 'ready', { cause: 'user' });
+  if (!(await scheduleTask(tx, id))) throw new CardError('conflict', 'the card is already at work');
+  await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { started: true } });
+  return started;
+}
+
+/**
+ * A drag into "In corso" (D-235): the same as "Avvia" for a card never
+ * started, "Riprendi" or "Riprova" for one the engine stopped. A card already
+ * at work, or with its step queued or held back, is left as it is: dragging
+ * it there twice starts nothing more.
+ */
+export async function runCard(sql: Sql, id: string, agents?: readonly string[]): Promise<Task> {
   return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
     const card = await loadCard(tx, id, true);
-    if (card.assignee === 'user') throw new CardError('conflict', 'only the card of an agent starts: your own you do yourself');
-    if (card.assignee === CHAT_AGENT) throw new CardError('conflict', 'Arianna does not work on cards from the wall: assign the card to an agent');
-    if (agents !== undefined && !agents.includes(card.assignee)) throw new CardError('conflict', `the agent ${card.assignee} no longer exists: assign the card to another one`);
-    if (card.status !== 'inbox' && card.status !== 'ready') throw new CardError('conflict', 'only a card still to do starts');
-    if (await engineHad(tx, id)) throw new CardError('conflict', 'the card has already started: resume it or retry it');
-    const started = card.status === 'ready' ? card : await moveTask(tx, id, 'ready', { cause: 'user' });
-    if (!(await scheduleTask(tx, id))) throw new CardError('conflict', 'the card is already at work');
-    await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { started: true } });
-    return started;
+    const busy = await tx`SELECT 1 FROM jobs WHERE key = ${`task:${id}`} AND status IN ('queued', 'running')`;
+    if (card.status === 'running' || busy.length > 0) return card;
+    if (card.waitingApprovalId !== null) throw new CardError('conflict', 'the card waits for a decision: decide it first');
+    if (!(await engineHad(tx, id))) {
+      if (card.status !== 'inbox' && card.status !== 'ready') throw new CardError('conflict', 'only a card still to do starts');
+      return startIn(tx, card, agents);
+    }
+    if (await isHeld(tx, id)) {
+      if (card.status === 'ready') return card;
+      throw new CardError('conflict', 'the card waits for another card: it goes on when that one is done');
+    }
+    if (card.status === 'failed' || card.status === 'waiting_user') return goOn(tx, card);
+    throw new CardError('conflict', card.status === 'to_verify' ? 'the card is to verify: send it back with a note' : 'the card is closed');
   });
+}
+
+export interface CardStopOptions {
+  /** Stops the step of the card a worker is running now (Worker.stopTask, cause `user`); false when none runs it. */
+  stopTask: (taskId: string) => boolean;
+  pollMs?: number;
+  attempts?: number;
+}
+
+/**
+ * "Ferma" of a card, or a drag out of "In corso" (D-235): its step stops as
+ * "Ferma" stops an answer in the chat (D-218). A step still in the queue fails
+ * here with its job; one at work stops through its worker, which fails it the
+ * same way. The card fails with `engine.user-stopped` and goes on with
+ * "Riprova". Returns whether it was at work, and whether it still is.
+ */
+export async function stopCard(sql: Sql, id: string, options: CardStopOptions): Promise<{ stopped: boolean; left: boolean }> {
+  const pollMs = options.pollMs ?? 200;
+  const attempts = options.attempts ?? 10;
+  let atWork = false;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const state = await sql.begin(async (tx): Promise<'idle' | 'stopped' | 'running'> => {
+      const card = await loadCard(tx, id, true);
+      if (card.status !== 'ready' && card.status !== 'running') return 'idle';
+      const [job] = await tx<{ id: string }[]>`
+        UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'user'
+        WHERE key = ${`task:${id}`} AND status = 'queued' RETURNING id::text`;
+      if (job !== undefined) {
+        await stopTaskByUser(tx, id);
+        await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { stopped: true } });
+        return 'stopped';
+      }
+      const [running] = await tx`SELECT 1 FROM jobs WHERE key = ${`task:${id}`} AND status = 'running'`;
+      // Ready with nothing queued: never started, nothing to stop.
+      return running === undefined ? 'idle' : 'running';
+    });
+    if (state === 'stopped') return { stopped: true, left: false };
+    if (state === 'idle') return { stopped: atWork, left: false };
+    atWork = true;
+    options.stopTask(id);
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return { stopped: atWork, left: true };
 }
 
 /** "Riprendi" (D-159): a card the engine had, waiting in "Aspetta", goes on; not one that waits for a decision. */

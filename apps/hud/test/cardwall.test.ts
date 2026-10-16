@@ -26,6 +26,9 @@ import {
   plannedText,
   priorityText,
   progressPercent,
+  RUN_CLOSED_TEXT,
+  RUN_USER_TEXT,
+  RUN_VERIFY_TEXT,
   RUNNING_TEXT,
   sortCards,
   stateText,
@@ -68,6 +71,7 @@ function card(fields: Partial<Card>): Card {
     priority: 0,
     planned: null,
     started: false,
+    turn: null,
     hasBody: false,
     links: 0,
     files: 0,
@@ -148,11 +152,20 @@ test('a drop: where a task goes, what does nothing, what is refused', () => {
   assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed' }), waiting), { kind: 'noop' });
   assert.deepEqual(dropAction(card({ status: 'to_verify', column: 'to_verify' }), done), { kind: 'move', to: 'done' });
   assert.deepEqual(dropAction(card({ status: 'ready' }), failed), { kind: 'move', to: 'failed' });
-  assert.deepEqual(dropAction(card({ status: 'ready' }), running), { kind: 'none' });
+  // Into "In corso" (D-235): an agent's card starts, resumes or retries; the user's own, one to verify or closed never.
+  assert.deepEqual(dropAction(card({ status: 'ready' }), running), { kind: 'refuse', message: RUN_USER_TEXT });
+  assert.deepEqual(dropAction(card({ status: 'inbox', column: 'inbox', assignee: 'coder' }), running), { kind: 'run' });
+  assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed', assignee: 'coder', started: true }), running), { kind: 'run' });
+  assert.deepEqual(dropAction(card({ status: 'to_verify', column: 'to_verify', assignee: 'coder' }), running), { kind: 'refuse', message: RUN_VERIFY_TEXT });
+  assert.deepEqual(dropAction(card({ status: 'done', column: 'done', assignee: 'coder' }), running), { kind: 'refuse', message: RUN_CLOSED_TEXT });
+  // In line for its turn, it is already at work: dropping it there again does nothing; out of there it stops.
+  assert.deepEqual(dropAction(card({ status: 'ready', assignee: 'coder', started: true, turn: 1 }), running), { kind: 'noop' });
+  assert.deepEqual(dropAction(card({ status: 'ready', assignee: 'coder', started: true, turn: 1 }), waiting), { kind: 'stop' });
   assert.deepEqual(dropAction(card({ status: 'ready' }), toVerify), { kind: 'none' });
   // What the core refuses is refused here, with its reason.
   assert.deepEqual(dropAction(card({ status: 'to_verify', column: 'to_verify' }), todo), { kind: 'refuse', message: NOT_BY_HAND_TEXT });
-  assert.deepEqual(dropAction(card({ status: 'running', column: 'running' }), done), { kind: 'refuse', message: RUNNING_TEXT });
+  // Out of "In corso" (D-235): the card at work stops.
+  assert.deepEqual(dropAction(card({ status: 'running', column: 'running' }), done), { kind: 'stop' });
   assert.deepEqual(dropAction(card({ status: 'ready', assignee: 'coder' }), done), { kind: 'refuse', message: AGENT_DONE_TEXT });
   // A card the engine stopped, dragged to Da fare: the core resumes or retries it (D-159).
   assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed', started: true }), todo), { kind: 'move', to: 'ready' });
@@ -162,7 +175,7 @@ test('a drop: where a task goes, what does nothing, what is refused', () => {
   assert.deepEqual(dropAction(open, done), { kind: 'commitment-done' });
   assert.deepEqual(dropAction(card({ kind: 'commitment', status: 'done', column: 'done' }), done), { kind: 'noop' });
   assert.deepEqual(dropAction(open, waiting), { kind: 'refuse', message: COMMITMENT_MOVE_TEXT });
-  assert.deepEqual(dropAction(open, running), { kind: 'none' });
+  assert.deepEqual(dropAction(open, running), { kind: 'refuse', message: COMMITMENT_MOVE_TEXT });
 });
 
 test('the moves by hand are those of the core (userMovesInto)', () => {
@@ -194,7 +207,9 @@ test('"Avvia", "Riprendi" and "Riprova": only where the core allows them (D-159)
   assert.deepEqual(cardActions(card({ status: 'waiting_user', assignee: 'designer', started: true }), false), ['resume']);
   assert.deepEqual(cardActions(card({ status: 'waiting_user', assignee: 'designer', started: true }), true), []);
   assert.deepEqual(cardActions(card({ status: 'failed', assignee: 'coder', started: true }), false), ['retry']);
-  assert.deepEqual(cardActions(card({ status: 'running', assignee: 'coder', started: true }), false), []);
+  // At work, or in line for its turn: Ferma (D-235).
+  assert.deepEqual(cardActions(card({ status: 'running', assignee: 'coder', started: true }), false), ['stop']);
+  assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true, turn: 2 }), false), ['stop']);
   assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true }), false), []);
   assert.deepEqual(cardActions(card({ kind: 'commitment', status: 'open' }), false), []);
 });

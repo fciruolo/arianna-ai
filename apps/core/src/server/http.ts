@@ -23,7 +23,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { currentTheme, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
@@ -346,6 +346,8 @@ export interface ApiServerOptions {
   mentionable?: () => readonly string[];
   /** "Ferma" in the chat (D-218): stops the answers at work in a conversation; without it the route answers 404. */
   stopChat?: (conversationId: string) => Promise<{ stopped: number }>;
+  /** "Ferma" of a card, or a drag out of "In corso" (D-235); without it the route answers 404. */
+  stopCard?: (cardId: string) => Promise<{ stopped: boolean; left: boolean }>;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
   /** "Scrivi il report" of an IM (D-167, P4c); without it the routes answer 404. */
@@ -551,6 +553,7 @@ interface RouteOptions {
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   stopChat?: ApiServerOptions['stopChat'];
+  stopCard?: ApiServerOptions['stopCard'];
   mentionable?: ApiServerOptions['mentionable'];
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
@@ -2235,7 +2238,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2252,7 +2255,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
-    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards, stopCard),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
@@ -3255,7 +3258,7 @@ function cardCatalog(design: DesignCatalog | undefined, skills: SkillsCatalog | 
  * their column, and what the user changes on a card by hand. Cards only
  * (tasks without a conversation): a task of a chat is the engine's.
  */
-function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOptions['cards']): Route[] {
+function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOptions['cards'], stopCard: ApiServerOptions['stopCard']): Route[] {
   const filesDir = (): string => {
     if (cards === undefined) throw new HttpError(404, 'not found');
     return cards.dir;
@@ -3379,6 +3382,19 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       return guard(async () => ({ body: { card: { id, status: (await startCard(sql, id, known().agents)).status } } }));
+    }),
+    // D-235: a drag into "In corso" starts, resumes or retries the card; nothing more when it is already at work.
+    route('POST', '/api/cards/:id/run', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await runCard(sql, id, known().agents)).status } } }));
+    }),
+    // D-235: "Ferma" of a card, or a drag out of "In corso".
+    route('POST', '/api/cards/:id/stop', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if (stopCard === undefined) throw new HttpError(404, 'not found');
+      return guard(async () => ({ body: await stopCard(id) }));
     }),
     route('POST', '/api/cards/:id/resume', async (request, _url, params) => {
       const id = idParam(params, 'id');
@@ -4127,6 +4143,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     services: options.services,
     leaveRule: options.leaveRule,
     stopChat: options.stopChat,
+    stopCard: options.stopCard,
     mentionable: options.mentionable,
     incognito: options.incognito,
     erase: options.erase,
