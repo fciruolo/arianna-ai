@@ -16,7 +16,7 @@ import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
-import { listImClosings } from '../lib/api.ts';
+import { listImClosings, loadPinned } from '../lib/api.ts';
 import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
@@ -61,6 +61,8 @@ import GodPlanCard from './GodPlanCard.vue';
 import { GOD_AGENT } from '../lib/god.ts';
 import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
 import MessageActions from './MessageActions.vue';
+import PinDialog from './PinDialog.vue';
+import { canPin, type DashboardTile } from '../lib/dashboard.ts';
 import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PrivateNoteAttach from './PrivateNoteAttach.vue';
@@ -152,7 +154,36 @@ const emit = defineEmits<{
   godDashboard: [];
   /** «Chiedi a lato» (D-232) on an answer: the page opens the panel of its side thread. */
   side: [message: Message];
+  /** «Fissato · Apri nel Cruscotto» (D-248). */
+  dashboard: [];
 }>();
+
+// Cruscotto (D-248): the answers of this conversation already pinned, and the one being pinned.
+const pinned = ref<Set<string>>(new Set());
+const pinning = ref<Message | null>(null);
+watch(
+  () => props.chat.conversationId,
+  async (conversationId) => {
+    pinned.value = new Set();
+    pinning.value = null;
+    try {
+      const list = await loadPinned(conversationId);
+      if (conversationId === props.chat.conversationId) pinned.value = new Set(list.map((item) => item.messageId));
+    } catch {
+      // Without the list the answers offer «Fissa»: the core refuses a second pin.
+    }
+  },
+  { immediate: true },
+);
+/** «Fissa al Cruscotto» on this message (D-248): on answers where the conversation allows it, «Fissato» once pinned. */
+function pinOf(message: Message): 'pin' | 'pinned' | undefined {
+  if (!canPin(props.conversation, message)) return undefined;
+  return pinned.value.has(message.id) ? 'pinned' : 'pin';
+}
+function onPinned(tile: DashboardTile): void {
+  pinned.value = new Set([...pinned.value, tile.sourceMessageId]);
+  pinning.value = null;
+}
 
 /** «Chiedi a lato» on this message (D-232): offered on answers where the conversation allows it, `reopen` when it has a side thread. */
 function sideOf(message: Message): 'ask' | 'reopen' | undefined {
@@ -1194,7 +1225,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <!-- The computer of the run sits at the end of the header, where the live card had it: the body never moves it (D-095). -->
               <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <!-- Copy and save float on the card's bottom edge, at the end of a long report, while the pointer is on it: hidden, they leave no hole in the header. -->
-              <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" :side="sideOf(message)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" @side="emit('side', message)" />
+              <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" :side="sideOf(message)" :pin="pinOf(message)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" @side="emit('side', message)" @pin="pinning = message" @open-dashboard="emit('dashboard')" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
@@ -1227,9 +1258,12 @@ onBeforeUnmount(() => clearInterval(clock));
                 :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
                 :can-save="!incognito && message.role !== 'system' && canSaveToInbox(message.label)"
                 :side="sideOf(message)"
+                :pin="pinOf(message)"
                 @saved="markSaved"
                 @open-knowledge="emit('openKnowledge', $event)"
                 @side="emit('side', message)"
+                @pin="pinning = message"
+                @open-dashboard="emit('dashboard')"
               />
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
@@ -1427,6 +1461,7 @@ onBeforeUnmount(() => clearInterval(clock));
       </p>
     </div>
     <ComputerPanel v-if="computerOpen" :chat="chat" :tasks="tasks" :credits="credits" :activity-counts="activityCounts" :workspace="conversation.workspace" @close="computerOpen = false" />
+    <PinDialog v-if="pinning !== null" :key="pinning.id" :message-id="pinning.id" :label="pinning.label" @pinned="onPinned" @cancel="pinning = null" />
   </section>
 </template>
 

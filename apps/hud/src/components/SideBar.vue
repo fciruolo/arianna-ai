@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -41,6 +41,8 @@ const emit = defineEmits<{
   secretary: [];
   god: [];
   thoughts: [];
+  /** The Cruscotto (D-248). */
+  dashboard: [];
   knowledge: [];
   projects: [];
   clients: [];
@@ -64,6 +66,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 const shortcut = isMac ? '⌘K' : 'Ctrl K';
 
 const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> = {
+  // The Cruscotto (D-248): the answers pinned from the chat, refreshed on the local model.
+  dashboard: { label: 'Cruscotto', icon: 'dashboard', title: 'Le risposte fissate dalla chat, da aggiornare col modello locale' },
   secretary: { label: 'Segretaria', icon: 'secretary', title: 'Di’ ad Arianna le cose da fare: le segna con il giorno' },
   projects: { label: 'Progetti', icon: 'project' },
   clients: { label: 'Clienti', icon: 'clients' },
@@ -107,6 +111,7 @@ function fold(group: NavGroupId): void {
 
 function go(area: NavArea): void {
   switch (area) {
+    case 'dashboard': emit('dashboard'); break;
     case 'secretary': emit('secretary'); break;
     case 'projects': emit('projects'); break;
     case 'clients': emit('clients'); break;

@@ -111,6 +111,8 @@ export interface Conversation {
    */
   sideOf?: string | null;
   sideMessageId?: string | null;
+  /** Cruscotto (D-248): the conversation a refresh of a tile is for; the page never opens one. */
+  dashboardOf?: string | null;
 }
 
 /** A side thread of a conversation (D-232): the answer it is about and its own conversation. */

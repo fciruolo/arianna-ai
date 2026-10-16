@@ -29,6 +29,7 @@ import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
+import DashboardPage from './components/DashboardPage.vue';
 import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
@@ -60,6 +61,8 @@ import {
   isSettingsPath,
   isGodPath,
   isThoughtsPath,
+  isDashboardPath,
+  DASHBOARD_PATH,
   isVoiceTrialPath,
   knowledgeFocus,
   knowledgePathFor,
@@ -419,9 +422,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -491,6 +494,11 @@ function openGod(): void {
 /** A new conversation with GOD on a part of the container of Arianna's clones (D-127). */
 function openGodChat(workspace: string): void {
   openDraft({ mode: 'work', project: workspace, agent: GOD_AGENT });
+}
+
+/** The Cruscotto (D-248): the answers pinned from the chat. */
+function openDashboard(): void {
+  openPage('dashboard', DASHBOARD_PATH, 'Cruscotto');
 }
 
 /** The thoughts (D-090). */
@@ -687,6 +695,10 @@ function followMain(): void {
   }
   if (isThoughtsPath(window.location.pathname)) {
     openThoughts();
+    return;
+  }
+  if (isDashboardPath(window.location.pathname)) {
+    openDashboard();
     return;
   }
   if (isGodPath(window.location.pathname)) {
@@ -1012,6 +1024,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @create="openNew"
       @secretary="openSecretary"
       @thoughts="openThoughts"
+      @dashboard="openDashboard"
       @god="openGod"
       @knowledge="openKnowledge()"
       @office="openOffice"
@@ -1073,6 +1086,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
+          <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Cruscotto</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
@@ -1191,6 +1205,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
+      <DashboardPage v-else-if="page === 'dashboard'" @open="openConversation" @chat="openChat()" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />
@@ -1263,6 +1278,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
             @legend="showLegend = true"
             @open-knowledge="openKnowledge"
             @god-dashboard="openGod"
+            @dashboard="openDashboard"
           />
           <p v-else class="p-4 text-sm text-muted">Apro la conversazione col Designer…</p>
         </template>
@@ -1369,6 +1385,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         @legend="showLegend = true"
         @open-knowledge="openKnowledge"
         @god-dashboard="openGod"
+        @dashboard="openDashboard"
         studio-link
         @studio="openStudioOf"
         @restarted="(id) => store.reloadConversation(id)"
@@ -1438,6 +1455,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           @legend="showLegend = true"
           @open-knowledge="openKnowledge"
           @god-dashboard="openGod"
+          @dashboard="openDashboard"
           studio-link
           @studio="openStudioOf"
           @restarted="(id) => beside.reloadConversation(id)"

@@ -15,6 +15,7 @@ import {
   saveMessage,
 } from '../lib/message-actions.ts';
 import { SIDE_ACTION_TEXT, SIDE_HINT, SIDE_REOPEN_TEXT } from '../lib/side-chat.ts';
+import { PIN_HINT, PIN_TEXT, PINNED_TEXT } from '../lib/dashboard.ts';
 import type { Message } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
@@ -41,6 +42,8 @@ const props = defineProps<{
   canSave: boolean;
   /** «Chiedi a lato» (D-232): `ask` on an answer, `reopen` when it has a side thread already; absent where it is not offered. */
   side?: 'ask' | 'reopen' | undefined;
+  /** «Fissa al Cruscotto» (D-248): `pin` on an answer, `pinned` when it is in the Cruscotto already; absent where it is not offered. */
+  pin?: 'pin' | 'pinned' | undefined;
 }>();
 const emit = defineEmits<{
   saved: [messageId: string, note: string | null];
@@ -48,6 +51,10 @@ const emit = defineEmits<{
   openKnowledge: [nodeId: string];
   /** «Chiedi a lato» (D-232): the panel of the side thread on this answer. */
   side: [messageId: string];
+  /** «Fissa al Cruscotto» (D-248): the dialog to pin this answer. */
+  pin: [messageId: string];
+  /** «Fissato · Apri nel Cruscotto». */
+  openDashboard: [];
 }>();
 
 /** How long the reason of a failed save stays next to the button. */
@@ -123,6 +130,12 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
     </button>
     <button v-if="side !== undefined" type="button" class="action" :title="SIDE_HINT" @click="emit('side', message.id)">
       <Icon name="panel" :size="12" />{{ side === 'reopen' ? SIDE_REOPEN_TEXT : SIDE_ACTION_TEXT }}
+    </button>
+    <button v-if="pin === 'pin'" type="button" class="action" :title="PIN_HINT" @click="emit('pin', message.id)">
+      <Icon name="pin" :size="12" />{{ PIN_TEXT }}
+    </button>
+    <button v-else-if="pin === 'pinned'" type="button" class="action text-ok" @click="emit('openDashboard')">
+      <Icon name="dashboard" :size="12" />{{ PINNED_TEXT }}
     </button>
     <span v-if="error !== null" class="text-warn">{{ error }}</span>
     <span role="status" class="sr-only">{{ announcement }}</span>

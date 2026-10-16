@@ -1,12 +1,13 @@
 /**
  * The areas of the left bar in three groups that fold (readability pass of
- * 2026-10-12): with eleven areas above the conversations, finding a chat meant
+ * 2026-10-12): with eleven areas (twelve with the Cruscotto, D-248) above the conversations, finding a chat meant
  * scrolling past the menu. The group of the page in view is always open.
  */
 
 export type NavGroupId = 'work' | 'personal' | 'system';
 
 export type NavArea =
+  | 'dashboard'
   | 'secretary'
   | 'projects'
   | 'clients'
@@ -26,7 +27,7 @@ export interface NavGroup {
 }
 
 export const NAV_GROUPS: readonly NavGroup[] = [
-  { id: 'work', title: 'Lavoro', areas: ['secretary', 'projects', 'clients', 'cardwall', 'studio'] },
+  { id: 'work', title: 'Lavoro', areas: ['dashboard', 'secretary', 'projects', 'clients', 'cardwall', 'studio'] },
   { id: 'personal', title: 'Personale', areas: ['thoughts', 'knowledge', 'finance'] },
   { id: 'system', title: 'Sistema', areas: ['god', 'office', 'settings'] },
 ];
