@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { flatPersonaText, personaBlock, personaParts, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesLinesBlock, seriesLinesSource, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesOwnSource, seriesRosterBlock, seriesSource, withSeriesOverride, type PersonaParts, type SeriesOverride, type SeriesPersona } from '@arianna/agents';
+import { flatPersonaText, personaBlock, personaParts, SERIES_PACK_ID, SERIES_ROSTER_SOURCE, SERIES_USER_NAMES_SOURCE, seriesLinesBlock, seriesLinesSource, seriesNamesOf, seriesPersonaBlock, seriesPersonaOf, seriesOwnSource, seriesRosterBlock, seriesSource, withSeriesOverride, type PersonaParts, type SeriesOverride, type SeriesPersona } from '@arianna/agents';
 import { ORIGINAL_PACK, type CharacterChoices, type Personas, type SeriesOverrides } from '@arianna/config';
 import { isAtMost, PERSONA_LABEL, personaFits, profileBlock, scanText, type KnownSecrets, type Label, type ProfileFact } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
@@ -278,12 +278,16 @@ interface WornPerson {
 
 function wornPerson(config: TailConfig, agent: string, clearance: Label): WornPerson | undefined {
   const choice = characterChoiceOf(config, agent);
-  const person = seriesPersonaOf(choice);
-  if (person === undefined || choice === undefined) return undefined;
+  if (seriesPersonaOf(choice) === undefined || choice === undefined) return undefined;
   const own = Object.hasOwn(config.personas, agent) ? config.personas[agent] : undefined;
   // The scene with the other people of the series in a private step only (D-223): it never reaches a brief to the cloud.
-  const play = !isAtMost(clearance, 'L1');
-  const id = choice.split('/')[1] ?? '';
+  return seriesWorn(config, choice.split('/')[1] ?? '', own, clearance, !isAtMost(clearance, 'L1'));
+}
+
+/** The person of the series `id` for a step with `clearance`, with the persona `own` of the agent that wears it (none in a chat with the character, D-225). */
+function seriesWorn(config: TailConfig, id: string, own: Personas[string] | undefined, clearance: Label, play: boolean): WornPerson | undefined {
+  const person = seriesPersonaOf(`${SERIES_PACK_ID}/${id}`);
+  if (person === undefined) return undefined;
   // What the user rewrote (D-223) is theirs, Interno (L1): only in a step that admits it, and never when it looks like personal data or a vault value now.
   const override = config.series !== undefined && Object.hasOwn(config.series, id) ? config.series[id] : undefined;
   const fits = personaFits(clearance) && override !== undefined && seriesFits(override);
@@ -316,6 +320,39 @@ export function linesPart(config: TailConfig, agent: string, clearance: Label, c
   const source = config.lines ?? seriesLines;
   if (worn === undefined || source === undefined || !drawsLines(config, worn, clearance)) return undefined;
   const text = seriesLinesBlock(source.draw(worn.id, { conversation, named: worn.play }));
+  return text === '' ? undefined : { text, label: PERSONA_LABEL, source: seriesLinesSource(worn.id) };
+}
+
+/**
+ * The block of the person of the series `character` in a chat with that
+ * character on Claude (D-225, tappa B), one piece: the role-play for real
+ * (`play`), scene and other people of the series included, since in that chat
+ * every name of the series is no person for the second scanner
+ * (`seriesShowNames`). The repository's text (L0, `character:serie/<id>`) or
+ * the user's rewrite (L1, `#own`) as in `characterPart`; no agent, so no
+ * persona of an agent wins. `lines`: real lines come apart with each message
+ * (`chatLinesPart`), the fixed catchphrases stay out. None for an id that is
+ * not a person of the series.
+ */
+export function chatCharacterPart(config: TailConfig, character: string, clearance: Label = 'L1', lines = false): TailPart | undefined {
+  const worn = seriesWorn(config, character, undefined, clearance, true);
+  if (worn === undefined) return undefined;
+  const { id, merged } = worn;
+  const text = seriesPersonaBlock(merged.persona, { withName: true, withTraits: true, play: true, lines: lines && drawsLines(config, worn, clearance) });
+  return text === '' ? undefined : { text, label: merged.own ? PERSONA_LABEL : 'L0', source: merged.own ? seriesOwnSource(id) : seriesSource(id) };
+}
+
+/**
+ * The real lines of `character` drawn for one message of a chat with that
+ * character (D-225, tappa B), as `linesPart` draws them for an agent: Interno
+ * (L1), lines that name the others of the series too. The caller puts them
+ * after the user's message, at every message, also when the session resumes.
+ */
+export function chatLinesPart(config: TailConfig, character: string, clearance: Label, conversation: string): TailPart | undefined {
+  const worn = seriesWorn(config, character, undefined, clearance, true);
+  const source = config.lines ?? seriesLines;
+  if (worn === undefined || source === undefined || !drawsLines(config, worn, clearance)) return undefined;
+  const text = seriesLinesBlock(source.draw(worn.id, { conversation, named: true }));
   return text === '' ? undefined : { text, label: PERSONA_LABEL, source: seriesLinesSource(worn.id) };
 }
 

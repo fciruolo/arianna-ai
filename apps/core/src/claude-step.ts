@@ -42,6 +42,8 @@ export interface ClaudeStepInput {
   timeoutMs?: number;
   /** For gateway_log: what leaves, in a few words, without content. */
   summary?: string;
+  /** Names that are no person in this brief alone, for the second scanner (D-225, tappa B: the names of the series of the character). */
+  names?: readonly string[];
   /**
    * Text the model writes, the tools it calls, the changes to files they
    * make (D-117) and the commands of Bash with their output (D-095), as they come (task 1.10): for the chat. Awaited in order; a
@@ -144,7 +146,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     input.brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source })),
     input.context,
     { kind: 'executor', id: 'claude', locality: 'cloud' },
-    { ...ids, ...(input.summary === undefined ? {} : { summary: input.summary }) },
+    { ...ids, ...(input.summary === undefined ? {} : { summary: input.summary }), ...(input.names === undefined ? {} : { names: input.names }) },
   );
   if (decision.decision === 'block') return { kind: 'blocked', decision };
 

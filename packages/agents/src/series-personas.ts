@@ -278,6 +278,18 @@ export function seriesNamesOf(person: SeriesPersona): string[] {
 }
 
 /**
+ * The names, with their forms, of every person of the series of `character`
+ * (D-225, tappa B): in a chat with that character the user and Claude name the
+ * others of the same series («Turk», «Dr. Cox»), and no other. Empty for an id
+ * that is not a person of the series. Own keys only.
+ */
+export function seriesShowNames(character: string): string[] {
+  const self = Object.hasOwn(SERIES_PERSONAS, character) ? SERIES_PERSONAS[character] : undefined;
+  if (self === undefined) return [];
+  return [...new Set(Object.values(SERIES_PERSONAS).filter((person) => person.show === self.show).flatMap(seriesNamesOf))];
+}
+
+/**
  * The names that are not persons in the piece with `source`, for the second
  * scanner: in a piece of a character (D-214) and in the piece that says who is
  * who (D-217) every name of the series, with its forms, since those pieces are

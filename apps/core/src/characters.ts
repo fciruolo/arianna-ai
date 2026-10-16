@@ -179,25 +179,29 @@ async function packDir(dirs: CharacterDirs, id: string): Promise<string> {
  * character an agent wears, as `assignCharacters` does for the chat.
  */
 export function servesSync(dirs: CharacterDirs, pack: string, character: string): boolean {
-  if (!CHARACTER_ID.test(pack) || !CHARACTER_ID.test(character)) return false;
+  return servedRowsSync(dirs, pack, character) !== undefined;
+}
+
+/** `servesSync` with the rows of the sheet (D-225: the avatars of «Nuova conversazione»); undefined when not served. */
+export function servedRowsSync(dirs: CharacterDirs, pack: string, character: string): 3 | 4 | undefined {
+  if (!CHARACTER_ID.test(pack) || !CHARACTER_ID.test(character)) return undefined;
   try {
     let dir: string;
     if (pack === ORIGINAL_PACK) dir = realpathSync(dirs.original);
     else if (pack === SERIES_PACK) {
-      if (dirs.series === undefined) return false;
+      if (dirs.series === undefined) return undefined;
       dir = realpathSync(dirs.series);
     } else {
       const folder = join(dirs.data, pack);
-      if (!lstatSync(folder).isDirectory()) return false;
+      if (!lstatSync(folder).isDirectory()) return undefined;
       dir = realpathSync(folder);
-      if (dir !== join(realpathSync(dirs.data), pack)) return false;
+      if (dir !== join(realpathSync(dirs.data), pack)) return undefined;
     }
     const entry = parseManifest(readSmallSync(join(dir, 'pack.json'), MAX_MANIFEST_BYTES)).characters.find((item) => item.id === character);
-    if (entry === undefined) return false;
-    sheetRows(readSmallSync(join(dir, entry.file), MAX_SHEET_BYTES));
-    return true;
+    if (entry === undefined) return undefined;
+    return sheetRows(readSmallSync(join(dir, entry.file), MAX_SHEET_BYTES));
   } catch {
-    return false;
+    return undefined;
   }
 }
 

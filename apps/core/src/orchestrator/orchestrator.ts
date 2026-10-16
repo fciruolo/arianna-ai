@@ -155,6 +155,8 @@ export interface OrchestratorOptions {
   chatPrompt?: string;
   /** What ChatGPT reads first in its plain chat with the user (claude-direct.ts, D-212); for tests. */
   codexChatPrompt?: string;
+  /** What Claude reads first in a chat with a person of the series (character-chat.ts, D-225); for tests. */
+  characterChatPrompt?: string;
   /** What Claude reads first when it writes the cards of a plan (claude-plan.ts); for tests. */
   plannerPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
@@ -384,6 +386,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
     ...(options.chatPrompt === undefined ? {} : { chatPrompt: options.chatPrompt }),
     ...(options.codexChatPrompt === undefined ? {} : { codexChatPrompt: options.codexChatPrompt }),
+    ...(options.characterChatPrompt === undefined ? {} : { characterChatPrompt: options.characterChatPrompt }),
     ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.advise === undefined ? {} : { advise: options.advise }),

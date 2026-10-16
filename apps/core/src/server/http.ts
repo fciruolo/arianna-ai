@@ -146,6 +146,7 @@ import type { Readiness } from '../readiness.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import { projectFits, type DirectPolicy, type OffInterlocutor } from '../direct-chat.ts';
+import type { ChatCharacter } from '../character-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
@@ -325,6 +326,8 @@ export interface ApiServerOptions {
   directAgents?: () => readonly DirectPolicy[];
   /** The interlocutors of «Con chi parli» that cannot answer now, with why (D-111, tappa B); shown off in "+ Nuovo". */
   offInterlocutors?: () => readonly OffInterlocutor[];
+  /** The people of the series the user may chat with on Claude (D-225, tappa B); undefined, none. */
+  chatCharacters?: () => readonly ChatCharacter[];
   /** Removes the empty folder of a plain chat with Claude (D-111, tappa B) once its conversation is purged or erased; never fails the request. */
   chatFolderGone?: (conversationId: string) => Promise<void>;
   /**
@@ -537,6 +540,7 @@ interface RouteOptions {
   readiness?: Readiness | undefined;
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   offInterlocutors?: (() => readonly OffInterlocutor[]) | undefined;
+  chatCharacters?: (() => readonly ChatCharacter[]) | undefined;
   chatFolderGone?: ((conversationId: string) => Promise<void>) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
   services?: ServiceManager | undefined;
@@ -2210,7 +2214,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2360,10 +2364,11 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     }),
 
     // The agents the user may talk with directly now (D-111d), with what each one allows: no prompt, no permission.
-    route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [], off: offInterlocutors?.() ?? [] } })),
+    // The people of the series (D-225, tappa B): who Claude may play; off with Claude, as the plain chat with Claude.
+    route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [], off: offInterlocutors?.() ?? [], characters: chatCharacters?.() ?? [] } })),
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'project', 'agent', 'incognito', 'trialModel']);
+      onlyFields(body, ['mode', 'project', 'agent', 'incognito', 'trialModel', 'character']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
       if (body.incognito !== undefined && typeof body.incognito !== 'boolean') throw new HttpError(400, 'incognito must be true or false');
       // An incognito conversation is answered by Arianna (D-136): a direct chat keeps its agent's session.
@@ -2386,6 +2391,12 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         throw new HttpError(400, `${policy.agent} works only on the project ${policy.container ?? ''}`);
       }
       const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
+      // A chat with a person of the series (D-225, tappa B): the plain chat with Claude, with a character served now.
+      const character = body.character;
+      if (character !== undefined) {
+        if (typeof character !== 'string' || !(chatCharacters?.() ?? []).some((entry) => entry.id === character)) throw new HttpError(400, 'character is not one the user may chat with now');
+        if (policy?.agent !== CLAUDE_CHAT_AGENT || body.mode !== 'work' || body.project !== undefined) throw new HttpError(400, 'a character chats only in the plain chat with Claude, a work conversation without a project');
+      }
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts. With an agent of its own
       // (GOD, the Designer…) the model chosen for that agent in [agents.<id>] (D-116), else the router
@@ -2393,7 +2404,8 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       // agent's only when it is Sonnet or Opus (else Sonnet answers); the one with ChatGPT only when it is
       // a model of Codex (else Sol answers, D-212).
       const plain = policy === undefined || policy.agent === CLAUDE_CHAT_AGENT || policy.agent === CODEX_CHAT_AGENT;
-      const preferred = body.mode === 'work' ? defaultModel(plain ? undefined : policy.agent) : undefined;
+      // With a character Sonnet answers unless the user chooses Opus in the chat (D-225): not the default of the work agent.
+      const preferred = body.mode === 'work' && character === undefined ? defaultModel(plain ? undefined : policy.agent) : undefined;
       const model =
         policy?.agent === CLAUDE_CHAT_AGENT
           ? DIRECT_MODELS.find((entry) => entry === preferred)
@@ -2406,6 +2418,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         ...(agent === undefined ? {} : { agent }),
         ...(body.incognito === true ? { incognito: true } : {}),
         ...(typeof trialModel === 'string' ? { trialModel } : {}),
+        ...(typeof character === 'string' ? { seriesCharacter: character } : {}),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
@@ -4068,6 +4081,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
     offInterlocutors: options.offInterlocutors,
+    chatCharacters: options.chatCharacters,
     chatFolderGone: options.chatFolderGone,
     trialRefusal: options.trialRefusal,
     services: options.services,

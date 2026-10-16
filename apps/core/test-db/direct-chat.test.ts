@@ -552,7 +552,7 @@ test('the routes (D-111d): the list of who answers, and a conversation only with
   try {
     const listed = await fetch(`http://127.0.0.1:${String(server.port)}/api/direct-agents`);
     // Without the off list of the server (Codex without a project, D-111 tappa B) none is off.
-    assert.deepEqual(await listed.json(), { agents, off: [] });
+    assert.deepEqual(await listed.json(), { agents, off: [], characters: [] });
     const made = await post({ mode: 'work', agent: 'traduttore' });
     assert.equal(made.status, 201);
     assert.equal(((await made.json()) as { conversation: { agent: string } }).conversation.agent, 'traduttore');

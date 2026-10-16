@@ -29,6 +29,13 @@ export interface GatewayMeta {
   runId?: string;
   /** Short description of what leaves; stored only for allowed payloads up to L1. */
   summary?: string;
+  /**
+   * Names that are no person in every fragment of this payload alone, only
+   * whole, besides the names worn now (D-225, tappa B): in a chat with a person
+   * of the series the names of that series. Never global: the next payload
+   * without them is checked as before.
+   */
+  names?: readonly string[];
 }
 
 /** Text forms of a payload; undefined when a fragment has none. */
@@ -73,6 +80,12 @@ export function configureWornNames(read: () => readonly string[]): void {
   wornNames = read;
 }
 
+/** The names worn now, with the names of this payload alone (`meta.names`, D-225). */
+export function namesFor(meta: Pick<GatewayMeta, 'names'>, worn: readonly string[] = wornNames()): readonly string[] {
+  const extra = (meta.names ?? []).filter((name) => typeof name === 'string' && name.trim() !== '');
+  return extra.length === 0 ? worn : [...new Set([...worn, ...extra])];
+}
+
 /** Bytes and sha256 of the texts. */
 function measure(texts: readonly string[]): { bytes: number; sha256: string } {
   return {
@@ -101,7 +114,7 @@ export async function passGateway(
   let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'));
   if (decision.decision === 'block' && decision.rule === 'pii-unavailable') {
     const texts = textsOf(payload);
-    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts, fragmentNamesOf(payload)));
+    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts, fragmentNamesOf(payload, namesFor(meta))));
   }
   if (!isTarget(target)) return decision;
 

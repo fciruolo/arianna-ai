@@ -40,6 +40,8 @@ import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
+import { chatCharacters } from './character-chat.ts';
+import { servedRowsSync } from './characters.ts';
 import { characterDirsOf, configureSeriesLines, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
 import { createSeriesLines } from './series-lines.ts';
 import { createWikiquoteClient } from './wikiquote.ts';
@@ -1047,6 +1049,8 @@ const server = await startApiServer({
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
   directAgents,
   // D-111, tappa B: who of «Con chi parli» cannot answer now (ChatGPT without a project), and the folder of a plain chat with Claude.
+  // D-225, tappa B: the people of the series Claude may play, those the pack `serie` serves now.
+  chatCharacters: () => chatCharacters((pack, character) => servedRowsSync(characterDirs, pack, character)),
   offInterlocutors: () => offInterlocutors({ claude: adapters.claude && settings.current().cloud.executors.includes('claude'), codex: adapters.codex && settings.current().cloud.executors.includes('codex') }),
   chatFolderGone: (conversationId) => removeConversationWorkspace({ data: config.paths.data, conversationId }).catch(report),
   // GOD (D-127): the clone of Arianna's code and GOD's conversations.

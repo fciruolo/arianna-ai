@@ -53,6 +53,12 @@ export interface Conversation {
    * keeps the character's block and its lines out of every prompt of it.
    */
   character: boolean;
+  /**
+   * The person of the series this conversation chats with (D-225, tappa B,
+   * migration 0070): only in the plain chat with Claude, where Claude plays
+   * it; null elsewhere. Chosen at creation, never changed. Only the id.
+   */
+  seriesCharacter: string | null;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
   /**
@@ -177,7 +183,7 @@ export class ChatError extends Error {
 }
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.finance, c.workspace, c.model, c.agent,
-  c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt", c.character_on AS "character",
+  c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt", c.character_on AS "character", c.series_character AS "seriesCharacter",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt", c.direct_session_at AS "directSessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
@@ -220,6 +226,11 @@ export interface NewConversation {
   incognito?: boolean;
   /** The local model under trial (D-142), already checked by the caller against the catalog: incognito and private only. */
   trialModel?: string;
+  /**
+   * The person of the series Claude plays (D-225, tappa B), already checked by
+   * the caller against the characters served: only in the plain chat with Claude.
+   */
+  seriesCharacter?: string;
 }
 
 /**
@@ -265,19 +276,26 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
   if (incognito && options.agent !== undefined) throw new ChatError('invalid', 'an incognito conversation is answered by Arianna');
   // The trial chat of a local model (D-142) leaves nothing behind: incognito, private, nobody else answers.
   if (options.trialModel !== undefined && (!incognito || options.mode !== 'private')) throw new ChatError('invalid', 'a trial chat is an incognito private conversation');
+  // A chat with a person of the series (D-225, tappa B): the plain chat with Claude only, as the database checks it too (0070).
+  if (options.seriesCharacter !== undefined) {
+    if (!SERIES_CHARACTER_ID.test(options.seriesCharacter)) throw new ChatError('invalid', 'character is not an id of a character');
+    if (options.agent?.name !== CLAUDE_CHAT_AGENT || options.mode !== 'work' || options.project !== undefined || incognito) {
+      throw new ChatError('invalid', 'a character chats only in the plain chat with Claude, a work conversation without a project');
+    }
+  }
   // The agent of the Finances (D-183): private only, and marked from birth: it has read finance data (L2).
   const finance = options.agent?.finance === true;
   if (finance && options.mode !== 'private') throw new ChatError('invalid', `${options.agent?.name ?? ''} answers only a private conversation`);
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model, finance, effective_label)
+    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model, finance, effective_label, series_character)
     VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null},
-      ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label)
+      ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label, ${options.seriesCharacter ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
     kind: 'conversation.created',
     label: 'L0',
-    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }), ...(incognito ? { incognito } : {}), ...(options.trialModel === undefined ? {} : { trialModel: options.trialModel }) },
+    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }), ...(incognito ? { incognito } : {}), ...(options.trialModel === undefined ? {} : { trialModel: options.trialModel }), ...(options.seriesCharacter === undefined ? {} : { character: options.seriesCharacter }) },
   });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');
@@ -438,6 +456,15 @@ export async function setConversationCharacter(sql: Sql, id: string, on: boolean
     }
     return reload(tx, id);
   });
+}
+
+/** The id of a person of the series, as conversations.series_character holds it (0070) and as the ids of the packs (D-060). */
+export const SERIES_CHARACTER_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** The person of the series a conversation chats with (D-225, tappa B); undefined for every other conversation. */
+export async function seriesCharacterOf(sql: Queryable, conversationId: string): Promise<string | undefined> {
+  const [row] = await sql<{ id: string | null }[]>`SELECT series_character AS id FROM conversations WHERE id = ${conversationId}`;
+  return row?.id ?? undefined;
 }
 
 /** The switch «Personaggio» of a conversation (D-225); true without a conversation, or for one that is not there. */

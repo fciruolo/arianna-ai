@@ -2,12 +2,14 @@ import type { TurnMessage } from '@arianna/agents';
 import { openConversationWorkspace, prepareEmptyWorkspace, removeWorkspace, type ClaudeModel, type CodexModel, type PreparedWorkspace } from '@arianna/executors';
 import { isAtMost, maxLabel, type Label, type Labeled } from '@arianna/policy';
 
+import { CHARACTER_CHAT_PROMPT, CHARACTER_CHAT_PROMPT_SOURCE, characterChatNames } from '../character-chat.ts';
 import { contextOf } from '../finance-mark.ts';
 import { runClaudeStep, type BriefFragment, type ClaudeStepResult } from '../claude-step.ts';
 import { runCodexStep, type CodexStepResult } from '../codex-step.ts';
-import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, CODEX_CHAT_MODELS, DIRECT_MODELS, type CodexChatModel, type Conversation, type DirectModel } from '../conversations.ts';
+import { CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, CODEX_CHAT_MODELS, DIRECT_MODELS, seriesCharacterOf, type CodexChatModel, type Conversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
+import { chatCharacterPart, chatLinesPart, type TailPart } from '../prompt-tail.ts';
 import { setRunContext, type RunUsage } from '../runs.ts';
 import { describeFailure } from '../failures.ts';
 import { openReply, postActivity } from '../reply.ts';
@@ -217,11 +219,33 @@ export function canAnswerDirectly(env: DelegateEnv, executor: DirectTarget['exec
 const ROLE_NAME: Record<TurnMessage['role'], string> = { user: 'User', assistant: 'Assistant', tool: 'Tool' };
 
 /** The brief: the prompt, then each message of the conversation with who wrote it and its own label. */
-export function directBrief(history: readonly Labeled<TurnMessage>[], prompt: string = DIRECT_PROMPT): BriefFragment[] {
+export function directBrief(history: readonly Labeled<TurnMessage>[], prompt: string = DIRECT_PROMPT, source = 'prompt:claude-direct'): BriefFragment[] {
   return [
-    { text: prompt, label: 'L0', source: 'prompt:claude-direct' },
+    { text: prompt, label: 'L0', source },
     ...history.map((part) => ({ text: `${ROLE_NAME[part.value.role]}:\n${part.value.content}`, label: part.label, source: part.source })),
   ];
+}
+
+/** What a chat with a person of the series adds to the brief (D-225, tappa B). */
+export interface CharacterBrief {
+  /** The block of the character, after the prompt: only in a new start of the session. */
+  role: TailPart;
+  /** The real lines drawn for this message, after it: in a new start and in a resumed session alike. */
+  lines: TailPart | undefined;
+}
+
+/**
+ * The brief of a chat with a person of the series (D-225, tappa B): a new
+ * start reads the prompt, the block of the character, the exchanges and the
+ * lines; a resumed session only the new message and the lines, since the
+ * prompt and the block are already in it.
+ */
+export function characterBrief(fragments: readonly BriefFragment[], character: CharacterBrief, resumed: boolean): BriefFragment[] {
+  const lines = character.lines === undefined ? [] : [{ text: character.lines.text, label: character.lines.label, source: character.lines.source }];
+  if (resumed) return [...fragments, ...lines];
+  const [prompt, ...rest] = fragments;
+  const role = { text: character.role.text, label: character.role.label, source: character.role.source };
+  return [...(prompt === undefined ? [] : [prompt]), role, ...rest, ...lines];
 }
 
 /**
@@ -273,11 +297,24 @@ export async function runDirect(
   // The plain chat keeps one folder for the whole conversation: Claude Code finds its sessions per folder.
   // Codex runs only inside a repository: the folder is an empty one of its own (D-212).
   const workspace: PreparedWorkspace = plain ? await openConversationWorkspace({ data, conversationId, repository: executor === 'codex' }) : await prepareEmptyWorkspace(folder);
-  const prompt = executor === 'codex' ? (env.codexChatPrompt ?? CODEX_CHAT_PROMPT) : plain ? (env.chatPrompt ?? CHAT_PROMPT) : env.directPrompt;
+  // A chat with a person of the series (D-225, tappa B): the plain chat with Claude, played by that character.
+  const seriesCharacter = plain && executor === 'claude' ? await seriesCharacterOf(sql, conversationId) : undefined;
+  let character: CharacterBrief | undefined;
+  if (seriesCharacter !== undefined) {
+    const role = chatCharacterPart(env.settings(), seriesCharacter, task.clearance, true);
+    if (role === undefined) return { kind: 'wait-user', reason: 'the character of this conversation is no longer one of the people of the series' };
+    character = { role, lines: chatLinesPart(env.settings(), seriesCharacter, task.clearance, conversationId) };
+  }
+  const prompt = executor === 'codex' ? (env.codexChatPrompt ?? CODEX_CHAT_PROMPT) : character !== undefined ? (env.characterChatPrompt ?? CHARACTER_CHAT_PROMPT) : plain ? (env.chatPrompt ?? CHAT_PROMPT) : env.directPrompt;
   const session = plain ? await plainChatSession(sql, conversationId, task.id, executor) : undefined;
   const message = session === undefined ? undefined : await messageOf(sql, task.id);
   // A new start of the plain chat reads only the exchanges Claude answered (plainChatHistory); a system chat the whole chat.
-  const opening = async (): Promise<BriefFragment[]> => directBrief(plain ? await plainChatHistory(sql, conversationId, task.id) : history, prompt);
+  const opening = async (): Promise<BriefFragment[]> => {
+    const brief = directBrief(plain ? await plainChatHistory(sql, conversationId, task.id) : history, prompt, character === undefined ? undefined : CHARACTER_CHAT_PROMPT_SOURCE);
+    return character === undefined ? brief : characterBrief(brief, character, false);
+  };
+  // In this brief alone the names of the series of the character are no person for the second scanner (D-225).
+  const names = seriesCharacter === undefined ? undefined : characterChatNames(seriesCharacter);
   /** What the failed resume used: it counts even when the new start is blocked. */
   let lost: RunUsage | undefined;
   try {
@@ -313,14 +350,16 @@ export async function runDirect(
         model: model as DirectModel satisfies ClaudeModel,
         tools: [],
         maxTurns: MAX_TURNS,
-        summary: plain ? `plain chat answered by claude/${model}` : `system chat answered by claude/${model}`,
+        ...(names === undefined ? {} : { names }),
+        summary: character !== undefined ? `character chat answered by claude/${model}` : plain ? `plain chat answered by claude/${model}` : `system chat answered by claude/${model}`,
         onEvent: async (event) => {
           if (event.type === 'text') await onText(event.text);
         },
       });
     };
     // Resumed: only the new message of the user leaves; the prompt and what came before are already in the session.
-    let result: ClaudeStepResult | CodexStepResult = session !== undefined && message !== undefined ? await attempt([message], session) : await attempt(await opening(), null);
+    const resumed = message === undefined ? [] : character === undefined ? [message] : characterBrief([message], character, true);
+    let result: ClaudeStepResult | CodexStepResult = session !== undefined && message !== undefined ? await attempt(resumed, session) : await attempt(await opening(), null);
     // The session is gone (another machine, expired, refused): one new start with the exchanges answered so far.
     if (session !== undefined && result.kind === 'failed' && sessionLost(result.error)) {
       lost = result.usage;
