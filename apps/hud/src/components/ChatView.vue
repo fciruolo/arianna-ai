@@ -19,6 +19,7 @@ import { listImClosings } from '../lib/api.ts';
 import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
+import { canAskAside } from '../lib/side-chat.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { agentLabelLine, agentShortName } from '../lib/character-names.ts';
 import { castLook, conversationCharacter } from '../lib/character-chat.ts';
@@ -105,6 +106,8 @@ const props = defineProps<{
   mentionable?: readonly string[] | undefined;
   /** A message the core refused: back in the field when the field is empty (D-219). */
   refusedDraft?: { conversationId: string; body: string; at: number } | null | undefined;
+  /** «Chiedi a lato» (D-232): the side threads of this conversation by answer; without it the action is not offered. */
+  sides?: ReadonlyMap<string, string> | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -143,7 +146,15 @@ const emit = defineEmits<{
   openKnowledge: [nodeId: string];
   /** The cruscotto of GOD (D-127), from the card of an approved plan. */
   godDashboard: [];
+  /** «Chiedi a lato» (D-232) on an answer: the page opens the panel of its side thread. */
+  side: [message: Message];
 }>();
+
+/** «Chiedi a lato» on this message (D-232): offered on answers where the conversation allows it, `reopen` when it has a side thread. */
+function sideOf(message: Message): 'ask' | 'reopen' | undefined {
+  if (props.sides === undefined || !canAskAside(props.conversation, message)) return undefined;
+  return props.sides.has(message.id) ? 'reopen' : 'ask';
+}
 
 /** An answer of GOD with a plan block (D-127, G2): the card of the plan under it. */
 function godPlanIn(message: { agent: string | null; body: string }): boolean {
@@ -1122,7 +1133,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <!-- The computer of the run sits at the end of the header, where the live card had it: the body never moves it (D-095). -->
               <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
               <!-- Copy and save float on the card's bottom edge, at the end of a long report, while the pointer is on it: hidden, they leave no hole in the header. -->
-              <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" :side="sideOf(message)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" @side="emit('side', message)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
@@ -1154,8 +1165,10 @@ onBeforeUnmount(() => clearInterval(clock));
                 :message="message"
                 :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
                 :can-save="!incognito && message.role !== 'system' && canSaveToInbox(message.label)"
+                :side="sideOf(message)"
                 @saved="markSaved"
                 @open-knowledge="emit('openKnowledge', $event)"
+                @side="emit('side', message)"
               />
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>

@@ -98,6 +98,13 @@ export interface Conversation {
   questionAttached: boolean;
   /** The status of the source task now: the chat offers "Riprova" only while it is failed. */
   sourceTaskStatus: TaskStatus | null;
+  /**
+   * «Chiedi a lato» (D-232, migration 0071): the conversation this side thread
+   * was born from, and the answer it is about; null for every other one.
+   * Chosen at creation, never changed. A side thread is never listed.
+   */
+  sideOf: string | null;
+  sideMessageId: string | null;
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
@@ -189,6 +196,7 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
+  c.side_of::text AS "sideOf", c.side_message_id::text AS "sideMessageId",
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
   CASE WHEN c.agent IS NULL THEN NULL
@@ -311,6 +319,8 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
   const conversation = await loadConversation(sql, id);
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
   if (conversation.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
+  // A side thread (D-232) keeps the model of its mother at its birth: the same answers it.
+  if (conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread keeps the model of its conversation');
   if (model !== null && !selectable.includes(model)) throw new ChatError('invalid', 'the model is not one of the cloud models of this installation');
   // In a system chat the model answers directly (D-064): Sonnet or Opus, never one behind a budget approval.
   if (model !== null && conversation.origin === 'system' && !(DIRECT_MODELS as readonly string[]).includes(model)) {
@@ -354,7 +364,7 @@ export async function listConversations(
   const rows = await sql.unsafe<Conversation[]>(
     `SELECT * FROM (
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
-       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND NOT c.secretary AND ($2 OR c.origin = $3)
+       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND NOT c.secretary AND c.side_of IS NULL AND ($2 OR c.origin = $3)
      ) listed
      ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
@@ -414,6 +424,8 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     if (archived && conversation.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be archived');
     // The secretary's conversation goes on in time (D-144): its button opens it, the list never shows it.
     if (archived && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary cannot be archived');
+    // A side thread (D-232) follows its mother: archived with her, never on its own.
+    if (conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread follows its conversation: archive that one');
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
@@ -434,6 +446,8 @@ export async function pinConversation(sql: Sql, id: string, pinned: boolean): Pr
     if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (pinned && conversation.archivedAt !== null) throw new ChatError('archived', 'the conversation is archived: restore it to pin it');
     if (pinned && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary has its own button');
+    // A side thread (D-232) is never in the list: nothing to pin.
+    if (pinned && conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread is never pinned');
     if ((conversation.pinnedAt !== null) !== pinned) {
       await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.pinned', label: 'L0', payload: { conversationId: id, pinned } });
@@ -496,17 +510,23 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
   const conversation = await loadConversation(sql, id);
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
   if (conversation.archivedAt === null) throw new ChatError('invalid', 'only an archived conversation can be deleted');
-  const [busy] = await sql<{ busy: boolean; system: boolean }[]>`
+  const [busy] = await sql<{ busy: boolean; system: boolean; side: boolean }[]>`
     SELECT
       EXISTS (SELECT FROM tasks WHERE conversation_id = ${id} AND status IN ('ready', 'running')) AS busy,
       EXISTS (
         SELECT FROM conversations s JOIN tasks t ON t.conversation_id = s.id
         WHERE s.origin = 'system' AND s.purged_at IS NULL AND t.status IN ('ready', 'running')
           AND s.source_task_id IN (SELECT id FROM tasks WHERE conversation_id = ${id})
-      ) AS system`;
+      ) AS system,
+      EXISTS (
+        SELECT FROM conversations s JOIN tasks t ON t.conversation_id = s.id
+        WHERE s.side_of = ${id} AND s.purged_at IS NULL AND t.status IN ('ready', 'running')
+      ) AS side`;
   if (busy?.busy === true) throw new ChatError('busy', 'a task of the conversation is still at work: wait for it to finish');
   // purge_conversation deletes the system chats about its tasks too (D-064).
   if (busy?.system === true) throw new ChatError('busy', 'a system chat about this conversation is still at work: wait for it to finish');
+  // Its side threads go with it (D-232, migration 0071).
+  if (busy?.side === true) throw new ChatError('busy', 'a side thread of this conversation is still at work: wait for it to finish');
   try {
     await sql.begin(async (tx) => {
       const [row] = await tx<{ purged: PurgeResult }[]>`SELECT purge_conversation(${id}::uuid) AS purged`;
@@ -632,7 +652,11 @@ export async function lockForMessage(tx: Queryable, conversationId: string): Pro
   const conversation = isUuid(conversationId)
     ? (
         await tx<MessageTarget[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance, secretary FROM conversations
+        SELECT mode, clearance, title, agent, workspace, incognito, finance, secretary,
+          -- A side thread (D-232) takes no message while its mother is archived, as the mother does not.
+          (archived_at IS NOT NULL OR (side_of IS NOT NULL AND EXISTS (
+            SELECT FROM conversations m WHERE m.id = conversations.side_of AND (m.archived_at IS NOT NULL OR m.purged_at IS NOT NULL)))) AS archived
+        FROM conversations
         WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
       )[0]
     : undefined;

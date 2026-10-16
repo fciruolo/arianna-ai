@@ -97,6 +97,7 @@ import {
   waysFor,
 } from './card-run.ts';
 import { isSecretaryConversation } from '../commitments.ts';
+import { sideContext } from '../side-threads.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 import { ADDRESSED_REASON, addressedBrief, addressedTask, MAX_INTERVENTIONS, MAX_PER_AGENT, type AddressedTask } from '../addressed.ts';
 
@@ -261,6 +262,9 @@ async function historyOf(
     // D-064) reach the model as the user's, marked: chat templates take one
     // system prompt, at the start.
     const view = computed ?? (await conversationView(sql, task.conversationId, task.id, MAX_TEXT));
+    // A side thread (D-232) reads the answer it is about, and the messages of its mother before it, first.
+    const side = view.messages.length === 0 ? undefined : await sideContext(sql, task.conversationId);
+    if (side !== undefined) history.push(side);
     const summary = summaryMessage(view.pieces);
     if (summary !== undefined) history.push(summary);
     for (const row of view.messages) {

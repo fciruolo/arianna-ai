@@ -97,7 +97,7 @@ function privateNote(env: ReleaseEnv, project: string, path: string): { body: st
 export async function releaseTargets(sql: Queryable, project: string, conversationId?: string): Promise<ReleaseTarget[]> {
   const rows = await sql<ReleaseTarget[]>`
     SELECT c.id::text, c.title, c.workspace, c.agent FROM conversations c
-    WHERE c.mode = 'work' AND c.purged_at IS NULL AND c.archived_at IS NULL AND NOT c.finance AND NOT c.incognito
+    WHERE c.mode = 'work' AND c.purged_at IS NULL AND c.archived_at IS NULL AND NOT c.finance AND NOT c.incognito AND c.side_of IS NULL
       AND c.workspace IS NOT NULL AND (c.workspace = ${project} OR left(c.workspace, ${project.length + 1}) = ${`${project}:`})
       ${conversationId === undefined ? sql`` : sql`AND c.id = ${conversationId}::uuid`}
     ORDER BY (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) DESC NULLS LAST, c.created_at DESC

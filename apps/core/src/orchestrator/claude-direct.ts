@@ -13,6 +13,7 @@ import { chatCharacterPart, chatLinesPart, type TailPart } from '../prompt-tail.
 import { setRunContext, type RunUsage } from '../runs.ts';
 import { describeFailure } from '../failures.ts';
 import { openReply, postActivity } from '../reply.ts';
+import { sideContext } from '../side-threads.ts';
 import { addUsage, availableCloud, sessionLost, type DelegateEnv } from './delegate.ts';
 import { budgetOf } from './routing.ts';
 
@@ -201,7 +202,9 @@ export async function plainChatHistory(sql: Sql, conversationId: string, taskId:
   }
   const current = await messageOf(sql, taskId);
   const now: Labeled<TurnMessage>[] = current === undefined ? [] : [{ value: { role: 'user', content: current.text }, label: current.label, source: current.source }];
-  return [...kept.reverse().flat(), ...now];
+  // A side thread (D-232) starts with the answer it is about, at every new start of its session.
+  const side = await sideContext(sql, conversationId);
+  return [...(side === undefined ? [] : [side]), ...kept.reverse().flat(), ...now];
 }
 
 /** The user's message of the task: the only text that leaves when the session is resumed. */

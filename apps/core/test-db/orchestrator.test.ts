@@ -20,6 +20,7 @@ import { createOrchestrator, LIVELY_TEMPERATURE, SYSTEM_MESSAGE_MARK } from '../
 import { openFailureChat } from '../src/system-chats.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { openReply } from '../src/reply.ts';
+import { openSideThread, SIDE_MARK } from '../src/side-threads.ts';
 import { configureSeriesLines } from '../src/prompt-tail.ts';
 import { loadTask, moveTask, type Task } from '../src/tasks.ts';
 import { listWaitingTasks } from '../src/waiting.ts';
@@ -850,4 +851,31 @@ test('persona: only the assignee’s own persona, and none with the defaults', a
   const model = scripted([{ action: 'reply', text: 'Ciao!' }]);
   await drain(task.id, model, withPersonas(model, { coder: PLAYFUL, arianna: { tone: 'equilibrato', address: 'tu' } }));
   assert.doesNotMatch(systemOf(model.requests[0]), /Persona set by the user|metafore/);
+});
+
+test('a side thread (D-232): Arianna reads the answer first, and the conversation never reads the side thread', async () => {
+  const { sql } = db();
+  const { task } = await ask('private', 'Spiegami la fattura finta FT-2026-001');
+  const model = scripted([{ action: 'reply', text: 'Imponibile 1.000 euro, IVA 220 euro.' }]);
+  await drain(task.id, model);
+  const [answer] = await assistantMessages(task.id);
+  const mother = task.conversationId ?? '';
+  const side = await openSideThread(sql, mother, answer?.id ?? '');
+  const asked = await postUserMessage(sql, side.conversation.id, 'Cosa vuol dire imponibile?');
+  const aside = scripted([{ action: 'reply', text: 'È la base su cui si calcola l’IVA.' }]);
+  assert.deepEqual(await drain(asked.task.id, aside), ['answered']);
+  const read = aside.requests[0]?.messages ?? [];
+  const context = read.find((item) => item.role === 'user' && item.content.includes(SIDE_MARK));
+  assert.ok(context !== undefined);
+  assert.match(context.content, /Imponibile 1\.000 euro/);
+  assert.equal(read.at(-1)?.content.endsWith('Cosa vuol dire imponibile?'), true);
+  const [reply] = await assistantMessages(asked.task.id);
+  assert.deepEqual([reply?.label, (await loadTask(sql, asked.task.id))?.effectiveLabel], ['L2', 'L2']);
+
+  // Back in the conversation, the next question reads neither the question aside nor its answer.
+  const next = await postUserMessage(sql, mother, 'Grazie, e il totale?');
+  const again = scripted([{ action: 'reply', text: 'Il totale è 1.220 euro.' }]);
+  await drain(next.task.id, again);
+  const seen = (again.requests[0]?.messages ?? []).map((item) => item.content).join('\n');
+  assert.doesNotMatch(seen, /imponibile\?|base su cui|Domanda a lato/);
 });

@@ -1055,7 +1055,20 @@ export function createChatStore() {
     ]);
   }
 
+  /** Other parts of the page that read the live feed too: the panel of «Chiedi a lato» (D-232). */
+  const liveListeners = new Set<(message: ServerMessage) => void>();
+  function listenLive(listener: (message: ServerMessage) => void): () => void {
+    liveListeners.add(listener);
+    return () => liveListeners.delete(listener);
+  }
+  /** A conversation the page shows besides the open one (the side thread in its panel, D-232): its notices stay quiet. */
+  let alsoSeen: () => string | null = () => null;
+  function seeAlso(seen: () => string | null): void {
+    alsoSeen = seen;
+  }
+
   function onLive(message: ServerMessage): void {
+    for (const listener of liveListeners) listener(message);
     if (message.type === 'ready') {
       tellVisibility();
       // At every connection, also after a restart of the core, which keeps it in memory (D-128).
@@ -1071,6 +1084,8 @@ export function createChatStore() {
       return;
     }
     if (message.type === 'notice') {
+      // The side thread open in its panel is being read (D-232): no notice for its answer while the page is in front.
+      if (message.conversationId !== null && message.conversationId === alsoSeen() && pageInView() && document.hasFocus()) return;
       // One place only: the helper of the Mac, else a system notification (fixed sentence and link), else a toast; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
       const where = noticeWhere(message.conversationId, view, message.helper === true);
@@ -1298,7 +1313,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { listenLive, seeAlso, reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

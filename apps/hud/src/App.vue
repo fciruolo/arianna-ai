@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
+import SidePanel from './components/SidePanel.vue';
 import SecretaryPanel from './components/SecretaryPanel.vue';
 import IncognitoClosed from './components/IncognitoClosed.vue';
 import IncognitoEndDialog from './components/IncognitoEndDialog.vue';
@@ -31,7 +32,8 @@ import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
-import { loadDevPending, loadInstallation } from './lib/api.ts';
+import { listMessages, listSides, loadConversation, loadDevPending, loadInstallation, loadQueue, loadTask, openSide, sendMessage } from './lib/api.ts';
+import { createSideChat } from './lib/side-store.ts';
 import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, calleeOf, conversationCallee, draftCallee, type Callee } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
@@ -75,13 +77,50 @@ import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import { activeTheme, applyTheme } from './lib/themes.ts';
-import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
+import type { Activity, Approval, CharacterChoice, Message } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
 const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, mentionable, refusedDraft, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
+
+/**
+ * «Chiedi a lato» (D-232): the panel of a side thread next to the chat. It
+ * reads the live feed of the page; its answer is no notice while it is open.
+ */
+const side = createSideChat({ listSides, openSide, loadConversation, listMessages, sendMessage, loadTask, loadQueue });
+const { panel: sidePanel, tasks: sideTasks, sides, sending: sideSending, queued: sideQueued, error: sideError } = side;
+const stopSideLive = store.listenLive(side.onLive);
+onBeforeUnmount(stopSideLive);
+store.seeAlso(side.openId);
+// Another conversation open: the panel was for the one before; the answers of this one with a side thread are read.
+watch(
+  () => chat.value?.conversationId ?? null,
+  (id) => {
+    if (sidePanel.value !== null && sidePanel.value.motherId !== id) side.close();
+    void side.loadSides(id);
+    // Not in a list: it may be a side thread reached by its address (a notice, a link).
+    if (id !== null && current.value === undefined) void openSideAddress(id);
+  },
+  { immediate: true },
+);
+/** «Chiedi a lato» on an answer of the open conversation. */
+function openSideOn(message: Message): void {
+  const id = chat.value?.conversationId;
+  if (id !== undefined) void side.open(id, message);
+}
+/** A side thread reached by its address (a notice, a link): its conversation opens, with the panel on the answer. */
+async function openSideAddress(id: string): Promise<void> {
+  const conversation = await loadConversation(id).catch(() => undefined);
+  const mother = conversation?.sideOf ?? null;
+  const answer = conversation?.sideMessageId ?? null;
+  if (mother === null || answer === null || chat.value?.conversationId !== id) return;
+  await openConversation(mother);
+  await side.loadSides(mother);
+  const message = chat.value?.messages.find((item) => item.id === answer);
+  if (message !== undefined && chat.value?.conversationId === mother) await side.open(mother, message);
+}
 
 /** The open conversation is incognito (D-136): dark header, "Termina", the address `/incognito`. */
 const incognitoOpen = computed(() => current.value?.incognito === true);
@@ -1154,6 +1193,19 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         studio-link
         @studio="openStudioOf"
         @restarted="(id) => store.reloadConversation(id)"
+        :sides="sides"
+        @side="openSideOn"
+      />
+      <SidePanel
+        v-if="sidePanel !== null && sidePanel.motherId === current.id"
+        :panel="sidePanel"
+        :tasks="sideTasks"
+        :sending="sideSending"
+        :queued="sideQueued"
+        :error="sideError"
+        :agent="current.agent"
+        :send="side.send"
+        @close="side.close"
       />
       </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">

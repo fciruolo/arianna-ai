@@ -14,6 +14,7 @@ import {
   SAVING_TEXT,
   saveMessage,
 } from '../lib/message-actions.ts';
+import { SIDE_ACTION_TEXT, SIDE_HINT, SIDE_REOPEN_TEXT } from '../lib/side-chat.ts';
 import type { Message } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
@@ -38,11 +39,15 @@ const props = defineProps<{
   note: string | null;
   /** Whether "Salva in inbox" is offered: not for system lines nor above L2. */
   canSave: boolean;
+  /** «Chiedi a lato» (D-232): `ask` on an answer, `reopen` when it has a side thread already; absent where it is not offered. */
+  side?: 'ask' | 'reopen' | undefined;
 }>();
 const emit = defineEmits<{
   saved: [messageId: string, note: string | null];
   /** "Apri nella Conoscenza": the node of the saved note in the graph of kb/. */
   openKnowledge: [nodeId: string];
+  /** «Chiedi a lato» (D-232): the panel of the side thread on this answer. */
+  side: [messageId: string];
 }>();
 
 /** How long the reason of a failed save stays next to the button. */
@@ -115,6 +120,9 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
     </button>
     <button v-if="canSave && saved && note !== null" type="button" class="action" :title="`${OPEN_IN_KNOWLEDGE_HINT}: ${note}`" @click="emit('openKnowledge', inboxNodeId(note))">
       <Icon name="knowledge" :size="12" />{{ OPEN_IN_KNOWLEDGE_TEXT }}
+    </button>
+    <button v-if="side !== undefined" type="button" class="action" :title="SIDE_HINT" @click="emit('side', message.id)">
+      <Icon name="panel" :size="12" />{{ side === 'reopen' ? SIDE_REOPEN_TEXT : SIDE_ACTION_TEXT }}
     </button>
     <span v-if="error !== null" class="text-warn">{{ error }}</span>
     <span role="status" class="sr-only">{{ announcement }}</span>

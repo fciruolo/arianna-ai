@@ -48,6 +48,7 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import { editQueued, listQueue, postOrQueue, removeQueued, resumeQueue, sendQueuedNow } from '../message-queue.ts';
+import { listSideThreads, openSideThread, sideThreadIds } from '../side-threads.ts';
 import { chatBrief } from '../delegation-view.ts';
 import type { Sql } from '../db/client.ts';
 import {
@@ -2496,8 +2497,10 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('POST', '/api/conversations/:id/purge', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
+      // Its side threads go with it (D-232): their empty folders of the plain chats too.
+      const sides = await sideThreadIds(sql, id);
       await purgeConversation(sql, id);
-      await chatFolderGone?.(id).catch(() => undefined);
+      for (const side of [id, ...sides]) await chatFolderGone?.(side).catch(() => undefined);
       return { body: { purged: id } };
     }),
 
@@ -2505,8 +2508,9 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('POST', '/api/conversations/:id/erase', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
+      const sides = await sideThreadIds(sql, id);
       const erased = erase === undefined ? await eraseConversation(sql, id) : await erase(id);
-      await chatFolderGone?.(id).catch(() => undefined);
+      for (const side of [id, ...sides]) await chatFolderGone?.(side).catch(() => undefined);
       return { body: { erased: true, cards: erased.cards } };
     }),
 
@@ -2540,6 +2544,20 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       return { status: 201, body: { message: await attachQuestion(sql, id) } };
+    }),
+
+    // «Chiedi a lato» (D-232): the side threads of a conversation (answer and thread, ids only), and one opened on an answer.
+    route('GET', '/api/conversations/:id/sides', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      return { body: { sides: await listSideThreads(sql, id) } };
+    }),
+    route('POST', '/api/conversations/:id/sides', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['messageId']);
+      const opened = await openSideThread(sql, id, body.messageId);
+      return { status: opened.created ? 201 : 200, body: { conversation: opened.conversation } };
     }),
 
     route('GET', '/api/conversations/:id/messages', async (_request, url, params) => {

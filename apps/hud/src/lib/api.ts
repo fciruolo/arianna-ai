@@ -32,7 +32,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -386,6 +386,16 @@ export async function sendMessage(
   design?: { style?: string; skills?: string[] },
 ): Promise<{ message: Message; task: Task } | { queued: QueuedMessage }> {
   return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
+}
+
+/** «Chiedi a lato» (D-232): the side threads of a conversation, by the answer they are about. */
+export async function listSides(conversationId: string): Promise<SideThread[]> {
+  return (await call<{ sides: SideThread[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/sides`)).sides;
+}
+
+/** The side thread of an answer, created the first time and found again after (D-232). */
+export async function openSide(conversationId: string, messageId: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/sides`, { messageId })).conversation;
 }
 
 /** The messages waiting for the answer at work (D-218), and whether "Ferma" paused them. */

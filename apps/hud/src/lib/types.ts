@@ -105,6 +105,18 @@ export interface Conversation {
   secretarySessionAt?: string | null;
   /** «Nuova sessione» of a direct chat with the Designer (I-20, D-185): the agent reads only from here on. */
   directSessionAt?: string | null;
+  /**
+   * «Chiedi a lato» (D-232): the conversation this side thread was born from,
+   * and the answer it is about; null elsewhere. Optional: a core without it sends none.
+   */
+  sideOf?: string | null;
+  sideMessageId?: string | null;
+}
+
+/** A side thread of a conversation (D-232): the answer it is about and its own conversation. */
+export interface SideThread {
+  messageId: string;
+  conversationId: string;
 }
 
 /** A commitment of the secretary (D-144): private (L2), shown only in this local page. */

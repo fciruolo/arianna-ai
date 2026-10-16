@@ -56,13 +56,14 @@ async function target(sql: Queryable, id: string): Promise<Target> {
   return row;
 }
 
-/** The tasks of the conversation and of the system chats about them, at any depth: those erase_conversation takes. */
+/** The tasks of the conversation, of the system chats about them and of its side threads (D-232), at any depth: those erase_conversation takes. */
 async function tasksOf(sql: Queryable, id: string): Promise<string[]> {
   const rows = await sql<{ id: string }[]>`
     WITH RECURSIVE tree (id) AS (
       SELECT ${id}::uuid
       UNION
-      SELECT s.id FROM conversations s JOIN tasks t ON t.id = s.source_task_id JOIN tree ON t.conversation_id = tree.id
+      SELECT s.id FROM tree LEFT JOIN tasks t ON t.conversation_id = tree.id
+        JOIN conversations s ON s.source_task_id = t.id OR s.side_of = tree.id
     )
     SELECT t.id::text FROM tasks t JOIN tree ON t.conversation_id = tree.id`;
   return rows.map((row) => row.id);
