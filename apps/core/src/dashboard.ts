@@ -19,7 +19,7 @@ import { createTask, TaskError } from './tasks.ts';
  *
  * «Aggiorna» asks the tile's question again on the local model only, without
  * the rest of the conversation: a conversation of its own is born for that one
- * refresh (`dashboard_of`, migration 0075), private (L2: the gateway lets
+ * refresh (`dashboard_of`, migration 0074), private (L2: the gateway lets
  * nothing of it go to the cloud), hidden from the list and the search,
  * answered by the local model of «Con chi parli» (two tools, the knowledge
  * base read only, no delegation) or, for a tile of the Finances, by the agent

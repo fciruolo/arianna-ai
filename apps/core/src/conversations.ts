@@ -106,7 +106,7 @@ export interface Conversation {
   sideOf: string | null;
   sideMessageId: string | null;
   /**
-   * Cruscotto (D-248, migration 0075): the conversation a refresh of a tile
+   * Cruscotto (D-248, migration 0074): the conversation a refresh of a tile
    * asks its question again for; null for every other one. A refresh
    * conversation is private, never listed nor searched, and takes no message
    * of the user: dashboard.ts writes its one question and purges it after.
