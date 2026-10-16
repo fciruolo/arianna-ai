@@ -7,8 +7,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
-- In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
-- A ogni messaggio della chat con un personaggio il core pesca le sue battute vere (D-224) e le mette dopo il messaggio, anche quando la sessione di Claude riprende (D-225, tappa B).
 - Nel campo di scrittura della chat un pulsante «+» con un menu solo per comandi «/», «@» a un agente, «Allega nota privata», «Nuova sessione» del Designer, «Salva in inbox» e il modello della conversazione; si usa anche da tastiera (frecce, Invio, Esc) (D-231).
 - Tasti per il modello della conversazione: sul Mac ⌃1…⌃9 scelgono i modelli del selettore nel suo ordine e ⌃0 la scelta automatica (altrove Alt+Maiusc con la cifra), solo fra quelli che quella conversazione ammette; li mostra il menu «+» (D-231).
 - Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; solo nelle conversazioni di lavoro, mai nelle Private né nelle incognite (D-231).
@@ -28,6 +26,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
+
+## [0.124.0] - 2026-10-16
+
+### Aggiunto
+
+- In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
+- A ogni messaggio della chat con un personaggio il core pesca le sue battute vere (D-224) e le mette dopo il messaggio, anche quando la sessione di Claude riprende (D-225, tappa B).
 
 ### Sicurezza
 
