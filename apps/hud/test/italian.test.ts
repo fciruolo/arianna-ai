@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { ApiError, SpriteApiError } from '../src/lib/api.ts';
-import { activityText, errorText, reasonText, spriteErrorText, uploadErrorText } from '../src/lib/italian.ts';
+import { activityText, errorText, reasonText, spriteErrorText, thoughtLineText, uploadErrorText } from '../src/lib/italian.ts';
 
 test('spriteErrorText: why a character was not drawn, in Italian, never the core words (D-123)', () => {
   const text = (code: string, message: string, resetsAt: string | null = null) => spriteErrorText(new SpriteApiError(400, message, code, resetsAt));
@@ -154,4 +154,13 @@ test('the refusals of «@nome», «/giro» and the queue read in Italian (D-218,
   assert.equal(said('the queue already holds 20 messages: wait for the answers'), 'La coda ha già 20 messaggi: aspetta le risposte.');
   // A name that is not an agent's never reaches the text.
   assert.equal(said('write what you ask Mario Rossi after its name'), 'Richiesta non valida.');
+});
+
+test('the line of the thinking reads as Claude Code writes it (D-249)', () => {
+  assert.equal(thoughtLineText(12_300, false), 'Ha ragionato per 12 s');
+  assert.equal(thoughtLineText(65_000, false), 'Ha ragionato per 1 min 5 s');
+  assert.equal(thoughtLineText(200, false), 'Ha ragionato per 1 s');
+  assert.equal(thoughtLineText(null, false), 'Ha ragionato');
+  assert.equal(thoughtLineText(7_000, true), 'Sta pensando… 7 s');
+  assert.equal(thoughtLineText(undefined, true), 'Sta pensando…');
 });

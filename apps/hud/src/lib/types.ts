@@ -182,6 +182,10 @@ export interface Message {
   model: string | null;
   /** The images and files the user attached (D-247); absent from an older core. */
   attachments?: AttachmentInfo[];
+  /** The thinking before the answer (D-249): '' when the model thought without showing it; null or absent when none was kept. */
+  thought?: string | null;
+  /** How long the model thought, in ms (D-249). */
+  thoughtMs?: number | null;
 }
 
 /** An image or a file attached in a private chat (D-247): what the chat shows, never what the model read of it. */
@@ -261,6 +265,8 @@ export interface Delta {
   taskId: string;
   seq: number;
   text: string;
+  /** A piece of the thinking (D-249), not of the answer. */
+  part?: 'thought';
 }
 
 export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error' | 'stop' | 'delegate' | 'tool' | 'wait';

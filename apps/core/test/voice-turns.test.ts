@@ -17,6 +17,8 @@ const message = (role: Message['role'], body: string, label: Message['label'] = 
   agent: null,
   model: null,
   attachments: [],
+  thought: null,
+  thoughtMs: null,
 });
 
 test('voicePrompt: the system prompt, then the latest user and assistant messages, cut; the label is their highest', () => {

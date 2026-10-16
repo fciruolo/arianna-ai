@@ -16,7 +16,7 @@ import {
   type TurnMessage,
 } from '@arianna/agents';
 import { enabledCloudModels, ORCHESTRATOR_AGENT, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig } from '@arianna/config';
-import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
+import { JsonFieldStream, LocalModelError, type ChatRequest, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
 import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
@@ -27,7 +27,7 @@ import { passGateway } from '../gateway.ts';
 import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
-import { openReply, postActivity, postCardActivity, type ActivityKind } from '../reply.ts';
+import { openReply, postActivity, postCardActivity, type ActivityKind, type ChatReply } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
 import { canAnswerDirectly, directTargetOf, runDirect, type DirectTarget } from './claude-direct.ts';
@@ -410,6 +410,21 @@ export function livelierReply(first: ReadAnswer, second: ReadAnswer | undefined)
   return second?.answer.action === 'reply' && second.answer.text.trim() !== '' ? second : first;
 }
 
+/**
+ * The thinking stored with an answer of the local orchestrator (D-249): the
+ * thoughts of the steps since the task's last answer and this step's, one
+ * paragraph each, with their times added up. Nothing when no step thought:
+ * the reply then keeps what came live (the reasoning a server sends apart).
+ */
+export function answerThought(turns: readonly Pick<Turn, 'thought' | 'thoughtMs' | 'messageId'>[], thought: string | undefined, thoughtMs: number | undefined): { thought?: string; thoughtMs?: number } {
+  const lastAnswer = turns.findLastIndex((turn) => turn.messageId !== null);
+  const steps = [...turns.slice(lastAnswer + 1).map((turn) => ({ thought: turn.thought ?? undefined, thoughtMs: turn.thoughtMs ?? undefined })), { thought, thoughtMs }];
+  const texts = steps.flatMap((step) => (step.thought === undefined || step.thought.trim() === '' ? [] : [step.thought.trim()]));
+  if (texts.length === 0) return {};
+  const times = steps.flatMap((step) => (step.thoughtMs === undefined ? [] : [step.thoughtMs]));
+  return { thought: texts.join('\n\n'), ...(times.length === 0 ? {} : { thoughtMs: times.reduce((sum, ms) => sum + ms, 0) }) };
+}
+
 /** The orchestrator, and who may do a card of a plan now (D-235): the user and the agents the planner may choose. */
 export type Orchestrator = StepExecutor & { planAssignees(): string[] };
 
@@ -458,11 +473,41 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     tail: string,
     trailer = '',
     lively = false,
-  ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
+    live?: ChatReply,
+  ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number; thoughtMs?: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
     let tokensOut = 0;
-    const call = async (thought: boolean, temperature = 0) => {
+    // The thinking of the first call, live in the chat (D-249): the `thought` field as the JSON arrives,
+    // and the reasoning a server sends apart; the reply's text too, unless a livelier one may replace it.
+    let thoughtMs: number | undefined;
+    let shown: Promise<void> = Promise.resolve();
+    const queue = (send: () => Promise<void>): void => {
+      // In order, one at a time; a piece refused (a vault secret) or a failed notice is dropped, the step goes on.
+      shown = shown.then(send).catch(() => undefined);
+    };
+    const watching = (): Pick<ChatRequest, 'onText' | 'onReasoning'> & { ended: () => number | undefined } => {
+      if (live === undefined) return { ended: () => undefined };
+      const fields = new JsonFieldStream();
+      const started = performance.now();
+      let ended: number | undefined;
+      return {
+        onText: (piece) => {
+          for (const field of fields.feed(piece)) {
+            if (field.key === 'thought') queue(() => live.thought(field.text));
+            else if (field.key === 'text' && !lively && fields.values.get('action') === 'reply') queue(() => live.delta(field.text));
+          }
+          // The thought is over once the next field starts.
+          if (ended === undefined && fields.values.has('thought') && fields.values.size > 1) ended = performance.now() - started;
+        },
+        onReasoning: (piece) => {
+          queue(() => live.thought(piece));
+        },
+        ended: () => ended,
+      };
+    };
+    const call = async (thought: boolean, temperature = 0, watch = false) => {
+      const watched = watch ? watching() : undefined;
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
         messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner, trailer),
@@ -470,7 +515,13 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         temperature,
         maxTokens: options.maxTokens ?? 2048,
         signal,
+        // Streamed, the token counts come only when asked for (D-199).
+        ...(watched?.onText === undefined ? {} : { onText: watched.onText, streamUsage: true }),
+        ...(watched?.onReasoning === undefined ? {} : { onReasoning: watched.onReasoning }),
       });
+      await shown;
+      const ended = watched?.ended();
+      if (ended !== undefined) thoughtMs = Math.round(ended);
       tokensIn += result.usage?.promptTokens ?? 0;
       tokensOut += result.usage?.completionTokens ?? 0;
       return readAnswer(result.value, tools, thought, delegates, planner);
@@ -478,13 +529,14 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     let read: ReadAnswer | undefined;
     let thought = true;
     try {
-      read = await call(true);
+      read = await call(true, 0, true);
     } catch (error) {
       if (!(error instanceof LocalModelError) || error.kind !== 'bad-response') throw error;
     }
     // Not JSON, or outside the schema: once more without the thought (D-052).
     if (read === undefined) {
       thought = false;
+      thoughtMs = undefined;
       read = await call(false);
     }
     // A chat reply of a character (D-225, tappa A): the same request once more at LIVELY_TEMPERATURE,
@@ -498,7 +550,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         if (signal.aborted || !(error instanceof LocalModelError)) throw error;
       }
     }
-    return { read, tokensIn, tokensOut };
+    return { read, tokensIn, tokensOut, ...(thoughtMs === undefined || read?.thought === undefined ? {} : { thoughtMs }) };
   }
 
   /**
@@ -1078,10 +1130,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const tools = plannerModel !== undefined && turns.some(failedPlan) ? offered.filter((tool) => tool !== PLAN) : offered;
       const planner: Planner = plannerModel === undefined ? 'self' : 'claude';
       await show(task, step, 'thinking');
+      // The reply of this step, opened before the model writes (D-249): its thinking and text go live; it is stored only if the step answers.
+      const live = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId });
       let asked;
       try {
         // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, options.livelyReplies === true && playing && turns.length === 0);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, options.livelyReplies === true && playing && turns.length === 0, live);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };
@@ -1095,7 +1149,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const usage = { steps: 1, tokensIn: asked.tokensIn + (summarized?.tokensIn ?? 0), tokensOut: asked.tokensOut + (summarized?.tokensOut ?? 0) };
       if (asked.read === undefined) return { kind: 'wait-user', reason: INVALID_ANSWER, usage };
       const { answer, thought } = asked.read;
-      const turn = { taskId: task.id, step, runId, answer, ...(thought === undefined ? {} : { thought }) };
+      const turn = { taskId: task.id, step, runId, answer, ...(thought === undefined ? {} : { thought, ...(asked.thoughtMs === undefined ? {} : { thoughtMs: asked.thoughtMs }) }) };
 
       const text = chatText(answer);
       if (text !== undefined) {
@@ -1104,8 +1158,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           await recordTurn(sql, { ...turn, label, result: NO_CONVERSATION });
           return { kind: 'done', evidence: [{ kind: 'turn', ref: String(step) }], usage };
         }
-        const reply = await openReply(sql, task.id, { runId });
-        const result = await reply.finish(text, label);
+        const reply = live ?? (await openReply(sql, task.id, { runId }));
+        // The thinking of every step since the task's last answer, this one included (D-249): each was read within `label`.
+        // Written again without the thought (D-052): what came live belonged to the discarded call, and is not kept.
+        const kept = answerThought(turns, thought, asked.thoughtMs);
+        const result = await reply.finish(text, label, thought === undefined && kept.thought === undefined ? { thought: '' } : kept);
         if (!result.stored) {
           await recordTurn(sql, { ...turn, label, result: `${UNDELIVERED} (${result.reason})` });
           return { kind: 'wait-user', reason: undelivered(result.reason), usage };

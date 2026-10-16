@@ -661,3 +661,14 @@ export function spriteErrorText(cause: unknown): string {
   // Fields or types the page never sends: a generic message, never the core's words.
   return 'La richiesta del disegno non è valida: ricarica la pagina e riprova.';
 }
+
+/**
+ * The line of the thinking before an answer (D-249), as Claude Code writes
+ * it: "Sta pensando… 7 s" while it thinks, then "Ha ragionato per 12 s".
+ */
+export function thoughtLineText(ms: number | null | undefined, live: boolean): string {
+  // Never "0 s": a thought shorter than a second still took one.
+  const shown = ms === null || ms === undefined ? undefined : durationText(Math.max(1000, ms));
+  if (live) return shown === undefined ? 'Sta pensando…' : `Sta pensando… ${shown}`;
+  return shown === undefined ? 'Ha ragionato' : `Ha ragionato per ${shown}`;
+}

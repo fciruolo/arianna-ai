@@ -15,6 +15,8 @@ export interface Turn {
   label: Label;
   answer: Answer;
   thought: string | null;
+  /** How long the model thought in that step, in ms (D-249); null before 0076 or without a thought. */
+  thoughtMs: number | null;
   /** Tool result or error, as the model reads it at the next step. */
   result: string | null;
   messageId: string | null;
@@ -28,23 +30,24 @@ export interface NewTurn {
   label: Label;
   answer: Answer;
   thought?: string;
+  thoughtMs?: number;
   result?: string;
   messageId?: string;
 }
 
 export async function loadTurns(sql: Queryable, taskId: string): Promise<Turn[]> {
   const rows = await sql<Turn[]>`
-    SELECT step, run_id::text AS "runId", label, answer, thought, result, message_id::text AS "messageId"
+    SELECT step, run_id::text AS "runId", label, answer, thought, thought_ms AS "thoughtMs", result, message_id::text AS "messageId"
     FROM task_turns WHERE task_id = ${taskId} ORDER BY step`;
   return [...rows];
 }
 
 export async function recordTurn(sql: Queryable, turn: NewTurn): Promise<void> {
   await sql`
-    INSERT INTO task_turns (task_id, step, run_id, label, answer, thought, result, message_id)
+    INSERT INTO task_turns (task_id, step, run_id, label, answer, thought, thought_ms, result, message_id)
     VALUES (
       ${turn.taskId}, ${turn.step}, ${turn.runId}, ${turn.label}::privacy_label,
       ${sql.json(turn.answer as unknown as Parameters<typeof sql.json>[0])},
-      ${turn.thought ?? null}, ${turn.result ?? null}, ${turn.messageId ?? null}::bigint
+      ${turn.thought ?? null}, ${turn.thought === undefined ? null : (turn.thoughtMs ?? null)}, ${turn.result ?? null}, ${turn.messageId ?? null}::bigint
     )`;
 }

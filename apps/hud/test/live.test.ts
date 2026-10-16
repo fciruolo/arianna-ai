@@ -7,7 +7,12 @@ import { laterId, parseServerMessage, type ServerMessage } from '../src/lib/prot
 test('frames are parsed, and malformed ones dropped', () => {
   assert.deepEqual(parseServerMessage('{"type":"ready"}'), { type: 'ready' });
   const delta = parseServerMessage('{"type":"delta","replyId":"r","conversationId":"c","taskId":"t","seq":0,"text":"x"}');
-  assert.equal(delta?.type, 'delta');
+  assert.ok(delta?.type === 'delta');
+  assert.equal(delta.part, undefined);
+  // A piece of the thinking (D-249).
+  const thought = parseServerMessage('{"type":"delta","replyId":"r","conversationId":"c","taskId":"t","seq":1,"text":"penso","part":"thought"}');
+  assert.equal(thought?.type === 'delta' ? thought.part : undefined, 'thought');
+  assert.equal(parseServerMessage('{"type":"delta","replyId":"r","conversationId":"c","taskId":"t","seq":1,"text":"x","part":"other"}'), undefined);
   const event = parseServerMessage('{"type":"event","event":{"id":"12","kind":"task.status","label":"L0","payload":{"to":"done"}}}');
   assert.deepEqual(event?.type === 'event' ? [event.event.id, event.event.label, event.event.payload] : undefined, ['12', 'L0', { to: 'done' }]);
   for (const raw of [

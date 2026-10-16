@@ -108,6 +108,15 @@ test('a vault secret is used by the code and never reaches a prompt, the chat, g
     assert.ok(!result.stored && result.reason === 'blocked');
     assert.equal(result.decision.rule, 'secret');
 
+    // The thinking too (D-249): live, split over pieces, and never stored with the answer.
+    const thinking = await openReply(sql, task.id);
+    await assert.rejects(thinking.thought(`penso a ${value}`), /vault:\/\/service-token/);
+    await thinking.thought(`penso a ${value.slice(0, 6)}`);
+    await assert.rejects(thinking.thought(value.slice(6)), /vault:\/\/service-token/);
+    const kept = await thinking.finish('Risposta pulita', 'L2', { thought: `il token è ${value}` });
+    assert.ok(kept.stored);
+    assert.equal(kept.message.thought, null);
+
     // The reference is harmless anywhere.
     const harmless = await openReply(sql, task.id);
     assert.equal((await harmless.finish(`Uso ${String(secret)}`, 'L2')).stored, true);

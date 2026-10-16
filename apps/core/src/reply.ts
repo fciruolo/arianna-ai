@@ -25,10 +25,18 @@ export interface ChatReply {
   /** Appends a fragment of the answer being written; rejects one with a vault secret in it. */
   delta(text: string): Promise<void>;
   /**
-   * Stores the answer. `label` is what the executor read to write it; the
-   * stored label is never below what the task has read.
+   * Appends a piece of the thinking before the answer (D-249), live as the
+   * fragments, under the same vault check; '' says the model thinks without
+   * showing it. Kept to be stored with the answer, never in an incognito.
    */
-  finish(body: string, label: Label): Promise<ReplyResult>;
+  thought(text: string): Promise<void>;
+  /**
+   * Stores the answer. `label` is what the executor read to write it; the
+   * stored label is never below what the task has read. `thought` replaces
+   * the thinking gathered live (the local orchestrator's own, D-249), and
+   * `thoughtMs` the time measured here.
+   */
+  finish(body: string, label: Label, extra?: { thought?: string; thoughtMs?: number }): Promise<ReplyResult>;
 }
 
 export type ReplyResult =
@@ -50,6 +58,8 @@ export interface DeltaNotice {
   /** Position of the fragment in the reply, from 0. */
   seq: number;
   text: string;
+  /** A piece of the thinking (D-249), not of the answer. */
+  part?: 'thought';
 }
 
 // pg_notify payloads stay under 8000 bytes. Pieces start at 1500 code points
@@ -61,6 +71,21 @@ const CHUNK = 1_500;
 // any secret the vault is meant for (a PEM key is about 3 KB).
 const STREAMED_TAIL = 16_384;
 export const MAX_NOTICE_BYTES = 7_000;
+/** One live piece of thinking is cut here (D-249): a summary of Codex or a long block of Claude. */
+export const MAX_THOUGHT_PIECE = 4_000;
+/** The thinking stored with a message (D-249), as the column allows (0076). */
+export const MAX_THOUGHT = 32_000;
+
+/** Cut to `max` code points, with an ellipsis. */
+function cut(text: string, max: number): string {
+  const points = Array.from(text);
+  return points.length > max ? `${points.slice(0, max - 1).join('')}…` : text;
+}
+
+/** The thinking as stored (D-249): trimmed and cut; empty stays empty. */
+export function storedThought(text: string): string {
+  return cut(text.trim(), MAX_THOUGHT);
+}
 
 /** The JSON notices for a fragment, each under the pg_notify limit. */
 export function notices(text: string, base: Omit<DeltaNotice, 'seq' | 'text'>, firstSeq: number): string[] {
@@ -103,10 +128,35 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
   // The agent of a direct chat answers in its own conversation (D-111): its reply notifies as Arianna's does (D-126).
   const [owner] = options.agent === undefined ? [] : await sql<{ agent: string | null }[]>`SELECT agent FROM conversations WHERE id = ${conversationId}`;
   const direct = options.agent !== undefined && owner?.agent === options.agent;
+  // An incognito keeps nothing it does not need (D-136): the thinking is shown live, never stored (D-249).
+  const [kind] = await sql<{ incognito: boolean }[]>`SELECT incognito FROM conversations WHERE id = ${conversationId}`;
+  const incognito = kind?.incognito !== false;
   const id = randomUUID();
   let seq = 0;
   let finished = false;
   let streamed = '';
+  let thoughtTail = '';
+  let thinking = '';
+  let thinkingMs = 0;
+  let thoughtSeen = false;
+  let blockBreak = false;
+  // The thinking runs from the end of what the model last wrote (or the opening) to its next text (D-249).
+  let lastWritten = performance.now();
+  let thinkingSince: number | undefined;
+  const closeThinking = (): void => {
+    if (thinkingSince === undefined) return;
+    thinkingMs += performance.now() - thinkingSince;
+    thinkingSince = undefined;
+  };
+  const send = async (text: string, part?: 'thought'): Promise<void> => {
+    const base = { replyId: id, conversationId, taskId, ...(part === undefined ? {} : { part }) };
+    const pieces = text === '' ? [JSON.stringify({ ...base, seq, text: '' })] : notices(text, base, seq);
+    for (const notice of pieces) {
+      seq += 1;
+      // Same channel the live feed listens on: deltaChannel(current_schema()).
+      await sql`SELECT pg_notify(${deltaChannel('')} || current_schema(), ${notice})`;
+    }
+  };
 
   return {
     id,
@@ -118,16 +168,47 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       const refs = knownSecrets.find(joined);
       if (refs.length > 0) throw new Error(`the fragment contains the value of ${refs.join(', ')}`);
       streamed = joined.slice(-STREAMED_TAIL);
-      for (const notice of notices(text, { replyId: id, conversationId, taskId }, seq)) {
-        seq += 1;
-        // Same channel the live feed listens on: deltaChannel(current_schema()).
-        await sql`SELECT pg_notify(${deltaChannel('')} || current_schema(), ${notice})`;
-      }
+      closeThinking();
+      lastWritten = performance.now();
+      await send(text);
     },
-    async finish(body, label) {
+    async thought(raw) {
+      if (finished) throw new Error('the reply is finished');
+      // Past what is stored, the thinking is not shown either: the page holds no more than the message will.
+      if (thinking.length >= MAX_THOUGHT) return;
+      let text = cut(raw, MAX_THOUGHT_PIECE);
+      const opening = thinkingSince === undefined;
+      if (opening) {
+        thinkingSince = lastWritten;
+        thoughtSeen = true;
+        if (thinking !== '') blockBreak = true;
+      }
+      if (text === '') {
+        // A new block of thinking: the next piece starts a paragraph of its own.
+        if (thinking !== '') blockBreak = true;
+        if (!opening) return; // Already shown as thinking.
+      } else if (blockBreak) {
+        text = `\n\n${text}`;
+        blockBreak = false;
+      }
+      // The same check as the fragments, on the thinking's own tail.
+      const joined = thoughtTail + text;
+      const refs = knownSecrets.find(joined);
+      if (refs.length > 0) throw new Error(`the thought contains the value of ${refs.join(', ')}`);
+      thoughtTail = joined.slice(-STREAMED_TAIL);
+      thinking += text;
+      await send(text, 'thought');
+    },
+    async finish(body, label, extra = {}) {
       if (finished) throw new Error('the reply is finished');
       if (typeof body !== 'string' || body === '') throw new Error('the reply is empty');
       finished = true;
+      closeThinking();
+      const thoughtText = storedThought(extra.thought ?? thinking);
+      const thoughtMs = Math.max(0, Math.round(extra.thoughtMs ?? thinkingMs));
+      // Kept when the model thought, even without showing it: the line «Ha ragionato per…» (D-249).
+      // A value revealed by the vault drops it, as it drops a fragment; never in an incognito.
+      const keepThought = !incognito && (thoughtText !== '' || (thoughtSeen && extra.thought === undefined)) && knownSecrets.find(thoughtText).length === 0;
       // The task may have read more since it started: read its label again.
       const current: Task | undefined = await loadTask(sql, taskId);
       if (current === undefined) throw new Error(`task ${taskId} does not exist`);
@@ -146,8 +227,9 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
 
       const messageId = await sql.begin(async (tx) => {
         const [row] = await tx<{ id: string }[]>`
-          INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent, model)
-          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null}, ${options.model ?? null})
+          INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent, model, thought, thought_ms)
+          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null}, ${options.model ?? null},
+            ${keepThought ? thoughtText : null}, ${keepThought ? thoughtMs : null})
           RETURNING id::text`;
         if (row === undefined) throw new Error('INSERT INTO messages returned no row');
         await appendEvent(tx, {
@@ -162,6 +244,58 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       const message = await loadMessage(sql, messageId);
       if (message === undefined) throw new Error('the new message is missing');
       return { stored: true, message };
+    },
+  };
+}
+
+/**
+ * The text and the thinking of a cloud run into a reply (D-249): whole text
+ * blocks (as before) and live pieces (`--include-partial-messages` of Claude,
+ * the reasoning of Codex), one paragraph per block. A block whose text
+ * already came in pieces is not sent again. Without a reply (a card) nothing
+ * is shown.
+ */
+export interface ReplyStream {
+  /** A whole text block; `streamed`: its pieces were already sent. */
+  block(text: string, streamed?: boolean): Promise<void>;
+  /** A live piece: of the thinking, or of the text being written. */
+  live(piece: { kind: 'thought' | 'text'; text: string }): Promise<void>;
+  /** A new start of the run (a lost session): the next block opens the reply again. */
+  restart(): void;
+}
+
+export function replyStream(reply: ChatReply | undefined): ReplyStream {
+  let blocks = 0;
+  let open = false;
+  // A piece of text the reply refused (a value of the vault): the whole block then fails as it did before D-249, and the run stops.
+  let refused: unknown;
+  return {
+    async block(text, streamed) {
+      open = false;
+      if (refused !== undefined) {
+        const error = refused;
+        refused = undefined;
+        throw error instanceof Error ? error : new Error('a piece of the answer was refused');
+      }
+      if (streamed !== true) await reply?.delta(`${blocks === 0 ? '' : '\n\n'}${text}`);
+      blocks += 1;
+    },
+    async live(piece) {
+      if (piece.kind === 'thought') {
+        await reply?.thought(piece.text);
+        return;
+      }
+      const prefix = !open && blocks > 0 ? '\n\n' : '';
+      open = true;
+      try {
+        await reply?.delta(`${prefix}${piece.text}`);
+      } catch (error) {
+        refused ??= error;
+      }
+    },
+    restart() {
+      blocks = 0;
+      open = false;
     },
   };
 }

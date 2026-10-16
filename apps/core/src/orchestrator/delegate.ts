@@ -52,7 +52,7 @@ import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, termin
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
 import { coderNotes, KnowledgeError, privateKnowledge, type CoderNotes } from '../project-knowledge.ts';
-import { openReply, postActivity, postCardActivity, type ActivityKind } from '../reply.ts';
+import { openReply, postActivity, postCardActivity, replyStream, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { writeWeekSummary } from '../work-diary-week.ts';
@@ -1165,12 +1165,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
   const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation, executor) : undefined;
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
-  let streamed = 0;
-  const onText = async (text: string): Promise<void> => {
-    // One block per model message: separated, so that the chat reads them as paragraphs.
-    await reply?.delta(`${streamed === 0 ? '' : '\n\n'}${text}`);
-    streamed += 1;
-  };
+  // One block per model message: separated, so that the chat reads them as paragraphs; the thinking and the text live too (D-249).
+  const stream = replyStream(reply);
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
@@ -1194,9 +1190,10 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         model: plan.model,
         access: codexAccessOf(agent.card.tools),
         onEvent: async (event) => {
-          if (event.type === 'text') await onText(event.text);
+          if (event.type === 'text') await stream.block(event.text);
           else await show(sql, task, step, 'tool', event.name);
         },
+        onLive: (piece) => stream.live(piece),
       });
     }
     const claude = env.claude;
@@ -1205,9 +1202,10 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       ...common,
       model: plan.model,
       tools: claudeToolsOf(agent.card.tools),
+      onLive: (piece) => stream.live(piece),
       onEvent: async (event) => {
         if (event.type === 'text') {
-          await onText(event.text);
+          await stream.block(event.text, event.streamed);
         } else if (event.type === 'edit') {
           // A change to a file, as a small diff in the activity card (D-117): live only, never stored.
           const edit = path === '' ? undefined : liveEditOf(event, { root: path, label: editLabel });

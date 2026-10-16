@@ -140,6 +140,14 @@ export interface Message {
   model: string | null;
   /** The images and files the user attached to this message (D-247), oldest first; never their reading. */
   attachments: AttachmentInfo[];
+  /**
+   * The thinking before an answer (D-249), with the answer's label; '' when
+   * the model thought without showing it; null when none was kept. Only for
+   * the chat's «Ha ragionato per»: never in a brief nor in a model's history.
+   */
+  thought: string | null;
+  /** How long the model thought, in ms; null with `thought`. */
+  thoughtMs: number | null;
 }
 
 /** The Claude models that can answer a system chat directly (D-064, second part). */
@@ -220,7 +228,8 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
   task_id::text AS "taskId", agent, model,
   (SELECT coalesce(json_agg(json_build_object('id', a.id::text, 'kind', a.kind, 'name', a.name, 'mediaType', a.media_type, 'size', a.size_bytes)
-     ORDER BY a.created_at, a.id), '[]'::json) FROM message_attachments a WHERE a.message_id = messages.id) AS attachments`;
+     ORDER BY a.created_at, a.id), '[]'::json) FROM message_attachments a WHERE a.message_id = messages.id) AS attachments,
+  thought, thought_ms AS "thoughtMs"`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -11,7 +11,7 @@ import {
 } from '@arianna/executors';
 import type { Context, Decision } from '@arianna/policy';
 
-import { sessionToResume, type BriefFragment } from './claude-step.ts';
+import { live, sessionToResume, type BriefFragment, type LivePiece } from './claude-step.ts';
 import { codexFailureText } from './codex-failure.ts';
 import type { Sql } from './db/client.ts';
 import type { StepContext } from './engine.ts';
@@ -42,6 +42,13 @@ export interface CodexStepInput {
    * stops the run.
    */
   onEvent?: (event: Extract<CodexEvent, { type: 'text' | 'tool' }>) => void | Promise<void>;
+  /**
+   * The thinking and the answer as they are written (D-249), for the chat:
+   * `thought` pieces ('' when the model thinks without showing it) and, for
+   * Claude, `text` pieces (a `text` event then says `streamed`). Awaited in
+   * order; a failure is dropped and never stops the run.
+   */
+  onLive?: (piece: LivePiece) => void | Promise<void>;
   /** As for `runClaudeStep`: a string resumes that session, null starts a new one. */
   sessionRef?: string | null;
   /** False: `--ephemeral`, nothing of the session is saved (D-136, incognito). Default true. */
@@ -130,6 +137,7 @@ export async function runCodexStep(sql: Sql, executor: CodexExecutor, step: Step
         await appendEvent(sql, { ...ids, kind: 'executor.model', label: 'L0', payload: { executor: 'codex', alias: input.model, model: null } });
       }
       if (event.type === 'text' || event.type === 'tool') await input.onEvent?.(event);
+      if (event.type === 'thinking') await live(input, { kind: 'thought', text: event.text });
     },
   };
   const run = sessionRef === undefined ? executor.start(options) : executor.resume({ ...options, sessionRef });

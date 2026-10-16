@@ -24,6 +24,8 @@ import type { Task } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 import MarkdownText from './MarkdownText.vue';
+import ThoughtBlock from './ThoughtBlock.vue';
+import { shownStreaming } from '../lib/chat-state.ts';
 
 /**
  * «Chiedi a lato» (D-232): the side thread of one answer, in a panel at the
@@ -50,7 +52,7 @@ const list = ref<HTMLElement | null>(null);
 const root = ref<HTMLElement | null>(null);
 
 const messages = computed(() => sideMessages(props.panel.chat));
-const streaming = computed(() => props.panel.chat?.streaming ?? []);
+const streaming = computed(() => (props.panel.chat == null ? [] : shownStreaming(props.panel.chat, (taskId) => props.tasks[taskId]?.status)));
 const status = computed(() => sideStatus(props.panel.chat, props.tasks));
 /** The latest task waits for an approval (a pending decision) rather than for a reason of the core. */
 const waitsDecision = computed(() => {
@@ -89,7 +91,7 @@ async function toBottom(): Promise<void> {
   await nextTick();
   if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
 }
-watch(() => [messages.value.length, streaming.value.map((reply) => reply.text.length).join(',')], () => void toBottom());
+watch(() => [messages.value.length, streaming.value.map((reply) => reply.text.length + reply.thought.length).join(',')], () => void toBottom());
 // Another answer opened in the same panel: the field starts empty.
 watch(
   () => props.panel.origin.id,
@@ -132,11 +134,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink">{{ message.body }}</div>
         </div>
         <div v-else class="max-w-full">
+          <ThoughtBlock v-if="message.thought != null" :text="message.thought" :live="false" :ms="message.thoughtMs ?? null" />
           <MarkdownText :source="message.body" />
         </div>
       </template>
       <div v-for="reply in streaming" :key="reply.replyId" class="max-w-full">
-        <MarkdownText :source="reply.text" />
+        <ThoughtBlock v-if="reply.thinking" :text="reply.thought" :live="reply.text === ''" :ms="reply.thoughtMs ?? null" :started-at="reply.thoughtAt" />
+        <MarkdownText v-if="reply.text !== '' || !reply.thinking" :source="reply.text" />
       </div>
       <p v-if="status === 'working' && streaming.length === 0" class="text-sm text-muted">{{ SIDE_WORKING_TEXT }}</p>
       <p v-else-if="status === 'failed'" class="text-sm text-warn">{{ SIDE_FAILED_TEXT }}</p>

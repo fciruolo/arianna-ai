@@ -121,7 +121,8 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
       ) {
         return undefined;
       }
-      return { type: 'delta', replyId, conversationId, taskId, seq, text };
+      if (value.part !== undefined && value.part !== 'thought') return undefined;
+      return { type: 'delta', replyId, conversationId, taskId, seq, text, ...(value.part === 'thought' ? { part: 'thought' as const } : {}) };
     }
     case 'activity': {
       const { conversationId, taskId, step, kind, detail } = value;

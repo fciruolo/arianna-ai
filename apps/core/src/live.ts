@@ -62,9 +62,13 @@ function parseDelta(payload: string): DeltaNotice | undefined {
       typeof value.conversationId === 'string' &&
       typeof value.taskId === 'string' &&
       typeof value.seq === 'number' &&
-      typeof value.text === 'string'
+      typeof value.text === 'string' &&
+      [undefined, 'thought'].includes(value.part)
     ) {
-      return { replyId: value.replyId, conversationId: value.conversationId, taskId: value.taskId, seq: value.seq, text: value.text };
+      const notice: DeltaNotice = { replyId: value.replyId, conversationId: value.conversationId, taskId: value.taskId, seq: value.seq, text: value.text };
+      // A piece of the thinking (D-249): live to the web chat, as the fragments.
+      if (value.part !== undefined) notice.part = value.part;
+      return notice;
     }
   } catch {
     // Not ours: ignored.

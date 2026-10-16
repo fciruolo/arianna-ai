@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { activityLines, applyActivity, applyDelta, applyEdit, emptyChat, liveEditRows, liveEdits, mergeMessages, restoreActivity, settleReply, taskIds } from '../src/lib/chat-state.ts';
+import { activityLines, applyActivity, applyDelta, applyEdit, emptyChat, liveEditRows, liveEdits, mergeMessages, restoreActivity, settleReply, shownStreaming, taskIds } from '../src/lib/chat-state.ts';
 import { activityText } from '../src/lib/italian.ts';
 import type { Activity, Delta, EditPiece, Message, SavedActivity } from '../src/lib/types.ts';
 
@@ -167,4 +167,57 @@ test('at most ten live changes per task are kept, the latest', () => {
     liveEdits(state, 't1', 'running').map((edit) => edit.editId),
     ['e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8', 'e9', 'e10', 'e11'],
   );
+});
+
+/** The first reply being written, which the test expects. */
+function first(state: ReturnType<typeof emptyChat>) {
+  const [reply] = state.streaming;
+  assert.ok(reply !== undefined);
+  return reply;
+}
+
+test('the thinking comes before the answer, timed until the answer starts (D-249)', () => {
+  let state = applyDelta(emptyChat(CONVERSATION), delta(0, '', { part: 'thought' }), 1000);
+  assert.equal(first(state).thinking, true);
+  assert.equal(first(state).thoughtAt, 1000);
+  // Out of order: the answer's piece waits for the thinking before it.
+  state = applyDelta(state, delta(2, 'Ecco.'), 5000);
+  assert.equal(first(state).text, '');
+  state = applyDelta(state, delta(1, 'Ci penso', { part: 'thought' }), 6000);
+  const reply = first(state);
+  assert.equal(reply.thought, 'Ci penso');
+  assert.equal(reply.text, 'Ecco.');
+  assert.equal(reply.thoughtMs, 5000);
+  // An answer without thinking has none.
+  const plain = applyDelta(emptyChat(CONVERSATION), delta(0, 'Ciao'));
+  assert.equal(first(plain).thinking, false);
+  assert.equal(first(plain).thoughtMs, undefined);
+});
+
+test('a new reply of a task folds in the steps that only thought; the stored message settles them all (D-249)', () => {
+  let state = applyDelta(emptyChat(CONVERSATION), delta(0, 'Cerco.', { part: 'thought', replyId: 'a' }), 1000);
+  state = applyDelta(state, delta(0, 'Rispondo.', { part: 'thought', replyId: 'b' }), 3000);
+  assert.equal(state.streaming.length, 1);
+  assert.equal(first(state).replyId, 'b');
+  assert.equal(first(state).thought, 'Cerco.\n\nRispondo.');
+  assert.equal(first(state).thoughtAt, 1000);
+  // Negative: another task's reply is not folded.
+  state = applyDelta(state, delta(0, 'Altro', { replyId: 'c', taskId: 't2' }));
+  assert.equal(state.streaming.length, 2);
+  // A thinking-only step left behind goes with the stored answer of its task.
+  state = applyDelta(state, delta(0, 'x', { part: 'thought', replyId: 'd', taskId: 't3' }));
+  state = { ...state, streaming: [...state.streaming, { replyId: 'e', taskId: 't3', text: 'ok', nextSeq: 1, ahead: {}, thought: '', thinking: false }] };
+  state = settleReply(state, 'e');
+  assert.deepEqual(state.streaming.map((reply) => reply.replyId).sort(), ['b', 'c']);
+});
+
+test('a reply that only thinks is shown while its task works, never after (D-249)', () => {
+  let state = applyDelta(emptyChat(CONVERSATION), delta(0, 'Penso', { part: 'thought' }));
+  state = applyDelta(state, delta(0, 'Testo', { replyId: 'r2', taskId: 't2' }));
+  const shown = (status: string | undefined) => shownStreaming(state, (taskId) => (taskId === 't1' ? status : 'done')).map((reply) => reply.replyId);
+  assert.deepEqual(shown('running'), ['r1', 'r2']);
+  assert.deepEqual(shown('ready'), ['r1', 'r2']);
+  assert.deepEqual(shown(undefined), ['r1', 'r2']);
+  assert.deepEqual(shown('failed'), ['r2']);
+  assert.deepEqual(shown('waiting_user'), ['r2']);
 });

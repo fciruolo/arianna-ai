@@ -12,7 +12,7 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import { chatCharacterPart, chatLinesPart, type TailPart } from '../prompt-tail.ts';
 import { setRunContext, type RunUsage } from '../runs.ts';
 import { describeFailure } from '../failures.ts';
-import { openReply, postActivity } from '../reply.ts';
+import { openReply, postActivity, replyStream } from '../reply.ts';
 import { sideContext } from '../side-threads.ts';
 import { addUsage, availableCloud, sessionLost, type DelegateEnv } from './delegate.ts';
 import { budgetOf } from './routing.ts';
@@ -323,14 +323,10 @@ export async function runDirect(
   try {
     await postActivity(sql, { conversationId: task.conversationId, taskId: task.id, step, kind: 'thinking', detail: `${executor}/${model}` }).catch(() => undefined);
     const reply = await openReply(sql, task.id, { runId, model });
-    let streamed = 0;
+    const stream = replyStream(reply);
     // A system chat never resumes: the folder of an interrupted run is gone, and the brief carries the whole conversation.
     // The plain chat resumes the session of its latest answer only, by name: never the one of an interrupted run.
     const fresh: StepContext = { task, step, runId, signal: ctx.signal, setSessionRef: (ref) => ctx.setSessionRef(ref), ...(ctx.approval === undefined ? {} : { approval: ctx.approval }) };
-    const onText = async (text: string): Promise<void> => {
-      await reply.delta(`${streamed === 0 ? '' : '\n\n'}${text}`);
-      streamed += 1;
-    };
     const attempt = (brief: readonly BriefFragment[], sessionRef: string | null): Promise<ClaudeStepResult | CodexStepResult> => {
       // A resumed session holds what the conversation held before: within L1 too, checked above.
       const common = { context: contextOf(task, label), brief, workspace, timeoutMs: TIMEOUT_MS, sessionRef };
@@ -343,8 +339,9 @@ export async function runDirect(
           maxTurns: CODEX_CHAT_COMMANDS,
           summary: `plain chat answered by codex/${model}`,
           onEvent: async (event) => {
-            if (event.type === 'text') await onText(event.text);
+            if (event.type === 'text') await stream.block(event.text);
           },
+          onLive: (piece) => stream.live(piece),
         });
       }
       if (claude === undefined) throw new Error('claude is not available');
@@ -356,8 +353,9 @@ export async function runDirect(
         ...(names === undefined ? {} : { names }),
         summary: character !== undefined ? `character chat answered by claude/${model}` : plain ? `plain chat answered by claude/${model}` : `system chat answered by claude/${model}`,
         onEvent: async (event) => {
-          if (event.type === 'text') await onText(event.text);
+          if (event.type === 'text') await stream.block(event.text, event.streamed);
         },
+        onLive: (piece) => stream.live(piece),
       });
     };
     // Resumed: only the new message of the user leaves; the prompt and what came before are already in the session.
@@ -366,7 +364,7 @@ export async function runDirect(
     // The session is gone (another machine, expired, refused): one new start with the exchanges answered so far.
     if (session !== undefined && result.kind === 'failed' && sessionLost(result.error)) {
       lost = result.usage;
-      streamed = 0;
+      stream.restart();
       result = await attempt(await opening(), null);
       if (result.kind !== 'blocked') result = { ...result, usage: addUsage(lost, result.usage) };
     }

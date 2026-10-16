@@ -17,6 +17,21 @@ import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import type { RunUsage } from './runs.ts';
 
+/** A piece of a run shown live in the chat (D-249). */
+export interface LivePiece {
+  kind: 'thought' | 'text';
+  text: string;
+}
+
+/** Hands a live piece to the caller; a failure is dropped: the run goes on (D-249). */
+export async function live(input: { onLive?: (piece: LivePiece) => void | Promise<void> }, piece: LivePiece): Promise<void> {
+  try {
+    await input.onLive?.(piece);
+  } catch {
+    // Live only: the stored answer is what counts.
+  }
+}
+
 /** A piece of the brief, with its label and where it comes from (`task:<id>`, `file:<path>`). */
 export interface BriefFragment {
   text: string;
@@ -50,6 +65,13 @@ export interface ClaudeStepInput {
    * rejection stops the run.
    */
   onEvent?: (event: Extract<ClaudeEvent, { type: 'text' | 'tool' | 'edit' | 'command' | 'command-output' }>) => void | Promise<void>;
+  /**
+   * The thinking and the answer as they are written (D-249), for the chat:
+   * `thought` pieces ('' when the model thinks without showing it) and, for
+   * Claude, `text` pieces (a `text` event then says `streamed`). Awaited in
+   * order; a failure is dropped and never stops the run.
+   */
+  onLive?: (piece: LivePiece) => void | Promise<void>;
   /**
    * The session to continue (D-111, the direct chat): a string resumes it,
    * null starts a new one even after a crash. The interrupted run's session,
@@ -168,6 +190,8 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
         });
       }
       if (event.type === 'text' || event.type === 'tool' || event.type === 'edit' || event.type === 'command' || event.type === 'command-output') await input.onEvent?.(event);
+      if (event.type === 'thinking') await live(input, { kind: 'thought', text: event.text });
+      if (event.type === 'text-delta') await live(input, { kind: 'text', text: event.text });
       if (event.type === 'rate-limit') {
         await appendEvent(sql, {
           ...ids,

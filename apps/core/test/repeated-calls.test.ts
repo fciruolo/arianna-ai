@@ -7,7 +7,7 @@ import { earlierCall, stoppedRepeats } from '../src/orchestrator/orchestrator.ts
 import type { Turn } from '../src/orchestrator/turns.ts';
 
 function turn(step: number, answer: Answer, result = 'ok'): Turn {
-  return { step, runId: 'run', label: 'L0', answer, thought: null, result, messageId: null };
+  return { step, runId: 'run', label: 'L0', answer, thought: null, thoughtMs: null, result, messageId: null };
 }
 
 const turns = [

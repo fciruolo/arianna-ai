@@ -11,7 +11,20 @@ export interface StreamingReply {
   text: string;
   nextSeq: number;
   /** Fragments that arrived ahead of a missing one, by sequence number. */
-  ahead: Record<number, string>;
+  ahead: Record<number, AheadPiece>;
+  /** The thinking so far (D-249); '' while the model thinks without showing it. */
+  thought: string;
+  /** The model thought (a piece of thinking came, even an empty one). */
+  thinking: boolean;
+  /** When the first piece of thinking arrived (ms since the epoch, this browser's clock). */
+  thoughtAt?: number;
+  /** How long it thought: set when the answer starts. */
+  thoughtMs?: number;
+}
+
+export interface AheadPiece {
+  text: string;
+  thought?: true;
 }
 
 export interface ChatState {
@@ -217,34 +230,80 @@ export function mergeMessages(state: ChatState, incoming: readonly Message[]): C
   return { ...state, messages };
 }
 
-/** Appends a fragment of an answer being written in this conversation. */
-export function applyDelta(state: ChatState, delta: Delta): ChatState {
+/**
+ * Appends a fragment of an answer being written in this conversation, or of
+ * its thinking (D-249). A new reply of a task folds in the earlier ones of
+ * the same task that only thought (steps that called a tool): the thinking
+ * reads as one, from its first piece.
+ */
+export function applyDelta(state: ChatState, delta: Delta, now: number = Date.now()): ChatState {
   if (delta.conversationId !== state.conversationId) return state;
-  const current = state.streaming.find((reply) => reply.replyId === delta.replyId) ?? {
-    replyId: delta.replyId,
-    taskId: delta.taskId,
-    text: '',
-    nextSeq: 0,
-    ahead: {},
-  };
+  let current = state.streaming.find((reply) => reply.replyId === delta.replyId);
+  let others = state.streaming.filter((reply) => reply.replyId !== delta.replyId);
+  if (current === undefined) {
+    const earlier = others.filter((reply) => reply.taskId === delta.taskId && reply.text === '' && reply.thinking);
+    others = others.filter((reply) => !earlier.includes(reply));
+    const thought = earlier.map((reply) => reply.thought.trim()).filter((text) => text !== '').join('\n\n');
+    const thoughtAt = earlier.find((reply) => reply.thoughtAt !== undefined)?.thoughtAt;
+    current = {
+      replyId: delta.replyId,
+      taskId: delta.taskId,
+      text: '',
+      nextSeq: 0,
+      ahead: {},
+      thought: thought === '' ? '' : `${thought}\n\n`,
+      thinking: earlier.length > 0,
+      ...(thoughtAt === undefined ? {} : { thoughtAt }),
+    };
+  }
   if (delta.seq < current.nextSeq) return state;
-  const ahead = { ...current.ahead, [delta.seq]: delta.text };
-  let { text, nextSeq } = current;
+  const ahead: Record<number, AheadPiece> = { ...current.ahead, [delta.seq]: delta.part === 'thought' ? { text: delta.text, thought: true } : { text: delta.text } };
+  let { text, nextSeq, thought, thinking, thoughtAt, thoughtMs } = current;
   for (let piece = ahead[nextSeq]; piece !== undefined; piece = ahead[nextSeq]) {
-    text += piece;
+    if (piece.thought === true) {
+      thought += piece.text;
+      thinking = true;
+      thoughtAt ??= now;
+    } else {
+      text += piece.text;
+      if (thinking && thoughtMs === undefined && thoughtAt !== undefined) thoughtMs = Math.max(0, now - thoughtAt);
+    }
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- a plain record of pending fragments
     delete ahead[nextSeq];
     nextSeq += 1;
   }
-  const next: StreamingReply = { ...current, text, nextSeq, ahead };
-  const others = state.streaming.filter((reply) => reply.replyId !== delta.replyId);
+  const next: StreamingReply = {
+    replyId: current.replyId,
+    taskId: current.taskId,
+    text,
+    nextSeq,
+    ahead,
+    thought,
+    thinking,
+    ...(thoughtAt === undefined ? {} : { thoughtAt }),
+    ...(thoughtMs === undefined ? {} : { thoughtMs }),
+  };
   return { ...state, streaming: [...others, next] };
 }
 
-/** The stored message replaced the answer being written. */
+/** The stored message replaced the answer being written, and the steps of its task that only thought. */
 export function settleReply(state: ChatState, replyId: string): ChatState {
-  if (!state.streaming.some((reply) => reply.replyId === replyId)) return state;
-  return { ...state, streaming: state.streaming.filter((reply) => reply.replyId !== replyId) };
+  const settled = state.streaming.find((reply) => reply.replyId === replyId);
+  if (settled === undefined) return state;
+  return { ...state, streaming: state.streaming.filter((reply) => reply.replyId !== replyId && !(reply.taskId === settled.taskId && reply.text === '')) };
+}
+
+/**
+ * The replies being written that the page shows (D-249): a reply with text,
+ * or one that only thinks while its task still works. A task that stopped
+ * leaves no thinking hanging; `status` undefined: the task is not known yet.
+ */
+export function shownStreaming(state: ChatState, statusOf: (taskId: string) => string | undefined): StreamingReply[] {
+  return state.streaming.filter((reply) => {
+    if (reply.text !== '') return true;
+    const status = statusOf(reply.taskId);
+    return status === undefined || status === 'ready' || status === 'running';
+  });
 }
 
 /** Ids of the tasks started or answered in the conversation, newest last. */

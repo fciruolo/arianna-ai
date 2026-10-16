@@ -1,5 +1,5 @@
 import type { CatalogEntry, ModelCatalog, ModelRole } from '@arianna/config';
-import { LocalModelError, type ChatMessage, type LocalModel } from '@arianna/executors';
+import { LocalModelError, ThinkSplitter, type ChatMessage, type LocalModel } from '@arianna/executors';
 import { TRIAL_ALIAS } from '@arianna/evals/library';
 import { maxLabel, type Label } from '@arianna/policy';
 
@@ -94,6 +94,7 @@ export async function runTrialChat(sql: Sql, ctx: StepContext, modelId: string, 
   // messages.model names a cloud model only (0014): the conversation's trial_model says who answered.
   const reply = await openReply(sql, task.id, { runId });
   let pending = Promise.resolve();
+  const split = new ThinkSplitter();
   let result;
   try {
     result = await model.chat({
@@ -104,7 +105,12 @@ export async function runTrialChat(sql: Sql, ctx: StepContext, modelId: string, 
       signal: ctx.signal,
       onText: (piece) => {
         // In order, one at a time: a fragment refused (a vault secret) is not shown, the answer still is checked at the end.
-        pending = pending.then(() => reply.delta(piece)).catch(() => undefined);
+        // A `<think>` block in the answer is the thinking (D-249): live apart, stored apart.
+        for (const part of split.feed(piece)) pending = pending.then(() => (part.part === 'thought' ? reply.thought(part.text) : reply.delta(part.text))).catch(() => undefined);
+      },
+      // The reasoning a server sends apart (D-249).
+      onReasoning: (piece) => {
+        pending = pending.then(() => reply.thought(piece)).catch(() => undefined);
       },
     });
   } catch (error) {
@@ -117,11 +123,17 @@ export async function runTrialChat(sql: Sql, ctx: StepContext, modelId: string, 
     // Down, stuck, refused for memory or cancelled: the engine retries the step, or stops it.
     throw error;
   }
+  for (const part of split.end()) pending = pending.then(() => (part.part === 'thought' ? reply.thought(part.text) : reply.delta(part.text))).catch(() => undefined);
   await pending;
   const usage = { steps: 1, tokensIn: result.usage?.promptTokens ?? 0, tokensOut: result.usage?.completionTokens ?? 0 };
-  const text = result.text.trim();
+  // The answer without its `<think>` block, kept with it as the thinking (D-249).
+  // Read again from the whole answer: what came in pieces is only what was shown.
+  const whole = new ThinkSplitter();
+  whole.feed(result.text);
+  whole.end();
+  const text = whole.text.trim();
   if (text === '') return { kind: 'wait-user', reason: `${modelId} gave no answer`, usage };
-  const saved = await reply.finish(text, label);
+  const saved = await reply.finish(text, label, whole.thought.trim() === '' ? {} : { thought: whole.thought });
   if (!saved.stored) {
     const why = saved.reason === 'blocked' ? 'the gateway blocked the answer' : 'the answer is above what the conversation may hold';
     return { kind: 'wait-user', reason: why, usage };

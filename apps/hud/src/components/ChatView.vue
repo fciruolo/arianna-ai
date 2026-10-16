@@ -10,7 +10,7 @@ import { completion, filterCommands, menuQuery, moveSelection, reachesCore, reso
 import { planCommandProblem } from '../lib/plan-approval.ts';
 import { useMentionMenu } from '../lib/mention-menu.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
-import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
+import { activityLines, liveEdits, shownStreaming, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { computerTask } from '../lib/computer.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
@@ -64,6 +64,7 @@ import MessageActions from './MessageActions.vue';
 import PinDialog from './PinDialog.vue';
 import { canPin, type DashboardTile } from '../lib/dashboard.ts';
 import MessageTime from './MessageTime.vue';
+import ThoughtBlock from './ThoughtBlock.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
@@ -243,6 +244,8 @@ async function newDesignerSession(): Promise<void> {
 
 /** An answer of this conversation is at work (D-218): "Ferma" shows, a new message waits in the queue. */
 const working = computed(() => isWorking(props.tasks));
+/** The answers being written, with their thinking (D-249); a step that only thought is dropped once its task stops. */
+const liveReplies = computed(() => shownStreaming(props.chat, (taskId) => props.tasks[taskId]?.status));
 /** A request above waits for the user's decision: the queue waits for it too. */
 const waitingDecision = computed(() => props.approvals.length > 0);
 /** The tasks the user stopped with "Ferma": a failed one reads "fermato", with "Riprova". */
@@ -958,7 +961,7 @@ watch(
   // (a hidden tab); GOD's proposal (G4) then stayed below the bottom.
   () => [
     props.chat.messages.length,
-    props.chat.streaming.map((reply) => reply.text.length).join(),
+    props.chat.streaming.map((reply) => reply.text.length + reply.thought.length).join(),
     props.approvals.length,
     props.credits.size,
     steps.value.size,
@@ -1309,6 +1312,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <!-- Copy and save float on the card's bottom edge, at the end of a long report, while the pointer is on it: hidden, they leave no hole in the header. -->
               <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" :side="sideOf(message)" :pin="pinOf(message)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" @side="emit('side', message)" @pin="pinning = message" @open-dashboard="emit('dashboard')" />
             </header>
+            <ThoughtBlock v-if="message.thought != null" class="px-[15px] pt-3" :text="message.thought" :live="false" :ms="message.thoughtMs ?? null" />
             <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
             <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
             <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
@@ -1349,7 +1353,11 @@ onBeforeUnmount(() => clearInterval(clock));
               />
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
-            <MarkdownText v-else :source="message.body" />
+            <template v-else>
+              <!-- «Ha ragionato per…» (D-249): the thinking kept with the answer, opened on a click. -->
+              <ThoughtBlock v-if="message.thought != null" :text="message.thought" :live="false" :ms="message.thoughtMs ?? null" />
+              <MarkdownText :source="message.body" />
+            </template>
             <CreditLine v-if="message.model !== null && credits.get(message.id) !== undefined" class="mt-1.5" :credit="credits.get(message.id)!" />
           </div>
 
@@ -1400,9 +1408,11 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
-        <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
+        <div v-for="reply in liveReplies" :key="reply.replyId" class="max-w-[92%]">
           <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directShort }}</div>
-          <MarkdownText :source="reply.text" cursor />
+          <!-- The thinking before the answer (D-249): live in grey, folded once the answer starts. -->
+          <ThoughtBlock v-if="reply.thinking" :text="reply.thought" :live="reply.text === ''" :ms="reply.thoughtMs ?? null" :started-at="reply.thoughtAt" />
+          <MarkdownText v-if="reply.text !== '' || !reply.thinking" :source="reply.text" cursor />
         </div>
 
         <!-- The Designer (I-20, D-185): with a heavy context it proposes to restart from a summary. -->
