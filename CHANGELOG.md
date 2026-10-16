@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Tema «Base» in Impostazioni → Aspetto, il tema predefinito: la chat com'è, con i sette colori che si leggevano male (testo delle bolle nello scuro, accento, verde, verde acqua e ambra nel chiaro) corretti per il contrasto AA (D-246).
+- Feste automatiche: a Natale (8 dicembre - 6 gennaio), San Patrizio (15-17 marzo), Halloween (25 ottobre - 1° novembre), Carnevale (dal giovedì al martedì grasso), Estate (agosto) e Pasqua (dalle Palme a Pasquetta) Base lascia il posto al tema della festa; un tema scelto a mano non viene mai sostituito (D-246).
+- Interruttore «Feste automatiche» in Impostazioni → Aspetto, acceso di base, che vale subito su tutti i dispositivi (D-246).
+- Costumi delle sei feste per Arianna e il Coder in tutte le pose: berretto di Natale, cilindro verde, cappello da strega e zucca, maschera di Carnevale e cappellino a cono, cappello di paglia e occhiali da sole, orecchie da coniglio e uovo dipinto (D-246).
+
+### Cambiato
+
+- Impostazioni → Aspetto mostra le feste in un gruppo a parte, e dice quale festa è in uso oggi al posto di Base (D-246).
+
 ## [0.136.1] - 2026-10-16
 
 ### Corretto
