@@ -102,7 +102,7 @@ export interface ToolResult {
 export const MAX_READ = 6_000;
 
 // Fixed text: whether pages above the clearance matched is never said.
-const SKIPPED_NOTE = 'Private pages were not searched: this conversation may not read them. For private documents, the user can open a private conversation.';
+export const SKIPPED_NOTE = 'Private pages were not searched: this conversation may not read them. For private documents, the user can open a private conversation.';
 
 export async function runTool(tool: LocalTool, args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
   try {

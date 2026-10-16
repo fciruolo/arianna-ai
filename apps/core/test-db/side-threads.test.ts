@@ -121,6 +121,20 @@ test('the side thread reads the answer and what came before it as data, the moth
   assert.ok(!mother.some((row) => row.body.includes('imponibile?')));
 });
 
+test('the side thread finds its answer when the ids of the messages gain a digit (D-241)', async () => {
+  const { sql, owner } = db();
+  // The question takes 9999 and the answer 10000: in the order of their text, «10000» came first.
+  const [{ max } = { max: null }] = await owner<{ max: string | null }[]>`SELECT max(id)::text AS max FROM messages`;
+  assert.ok(Number(max ?? 0) < 9998, 'the test database is still small');
+  await owner`SELECT setval(pg_get_serial_sequence('messages', 'id'), 9998)`;
+  const { conversationId, answerId, questionId } = await answered('private');
+  assert.deepEqual([questionId, answerId], ['9999', '10000']);
+  const side = await openSideThread(sql, conversationId, answerId);
+  const lines = (await sideContext(sql, side.conversation.id))?.value.content.split('\n') ?? [];
+  assert.equal(lines[2], SIDE_ANSWER_MARK);
+  assert.deepEqual(JSON.parse(lines[1] ?? '{}'), { da: 'Utente', testo: 'Spiegami la fattura finta FT-2026-001' });
+});
+
 test('a plain chat with Claude starts its side thread with the answer, within its clearance', async () => {
   const { sql } = db();
   const { conversationId, answerId } = await answered('work', { name: 'claude', modes: ['work'], project: false });

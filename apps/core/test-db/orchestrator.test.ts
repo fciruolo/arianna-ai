@@ -263,6 +263,44 @@ test('at the third repeated call the task waits for the user; resumed, it goes o
   assert.match(resumed.requests[1]?.messages.at(-1)?.content ?? '', /not run again: its result is above\. Take a different step/);
 });
 
+test('a search that left private pages out, asked again, gets the answer that they are read in a private conversation (D-241)', async () => {
+  const { task } = await ask('work', 'Quanto è la caparra?');
+  const search = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } } as const;
+  const model = scripted([search, search, search]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'answered']);
+  const turns = await loadTurns(db().sql, task.id);
+  assert.match(turns[0]?.result ?? '', /Private pages were not searched/);
+  // The first time the model is told what to say; the second time the core says it.
+  assert.match(turns[1]?.result ?? '', /not run again: its result is above\. If what the user asks for is not in the results above, it may be in the private pages/);
+  const [reply] = await assistantMessages(task.id);
+  assert.match(reply?.body ?? '', /^Non trovo altro nelle note che questa conversazione può leggere\. Se cerchi un documento privato/);
+  assert.equal(turns[2]?.messageId, reply?.id);
+  assert.equal(model.requests.length, 3);
+  assert.equal((await loadTask(db().sql, task.id))?.status, 'done');
+});
+
+test('only the stops of the same search count for the answer of the core (D-241)', async () => {
+  const { task } = await ask('work', 'Quanto è la caparra?');
+  const read = { action: 'call', tool: 'kb.read', arguments: { path: 'kb/work/rossi.md' } } as const;
+  const search = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } } as const;
+  const model = scripted([read, read, search, search, { action: 'reply', text: 'Non lo trovo.' }]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'continued', 'continued', 'answered']);
+  const turns = await loadTurns(db().sql, task.id);
+  assert.match(turns[3]?.result ?? '', /If what the user asks for is not in the results above/);
+  assert.deepEqual((await assistantMessages(task.id)).map((message) => message.body), ['Non lo trovo.']);
+});
+
+test('in a private conversation, where nothing was left out, a repeated search gets no answer of the core (D-241)', async () => {
+  const { task } = await ask('private', 'Quanto è la caparra?');
+  const search = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } } as const;
+  const model = scripted([search, search, search, { action: 'reply', text: 'Tre mensilità.' }]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'continued', 'answered']);
+  const turns = await loadTurns(db().sql, task.id);
+  assert.doesNotMatch(turns[0]?.result ?? '', /Private pages were not searched/);
+  assert.match(turns[1]?.result ?? '', /not run again: its result is above\. Take a different step/);
+  assert.deepEqual((await assistantMessages(task.id)).map((message) => message.body), ['Tre mensilità.']);
+});
+
 test('the same card asked twice is created once (D-076)', async () => {
   const { task } = await ask('private', 'Ricordami di rinnovare il passaporto');
   const card = { action: 'call', tool: 'task.create', arguments: { title: 'Rinnovare il passaporto' } } as const;

@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- In una conversazione di lavoro, quando il modello locale rifà la stessa ricerca e le pagine private erano escluse, Arianna risponde che i documenti privati (fatture, spese, note personali) si leggono in una conversazione privata, invece di fermarsi con «il modello locale ripete la stessa chiamata» (D-241).
+- «Chiedi a lato» non perde più la risposta e il contesto quando gli id dei messaggi passano a una cifra in più (per esempio da 9999 a 10000) (D-241, D-232).
+
 ## [0.130.1] - 2026-10-16
 
 ### Corretto

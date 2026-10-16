@@ -179,7 +179,7 @@ export async function sideContext(sql: Queryable, conversationId: string): Promi
         AND (NOT ${plain}::boolean OR (task_id IS NOT NULL AND (role = 'user' OR (role = 'assistant' AND model IS NOT NULL))
           AND EXISTS (SELECT FROM messages a WHERE a.task_id = messages.task_id AND a.role = 'assistant' AND a.model IS NOT NULL)))
       ORDER BY id DESC LIMIT ${SIDE_LIMITS.before + 1}
-    ) last ORDER BY id`;
+    ) last ORDER BY last.id`;
   const answer = rows.at(-1);
   if (answer?.id !== thread.messageId || answer.role !== 'assistant') return undefined;
   const line = (row: MotherRow, max: number): string => JSON.stringify({ da: sideSpeaker(row.role, row.agent, thread.motherAgent), testo: clip(row.body, max) });

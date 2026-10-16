@@ -69,7 +69,7 @@ import {
   WAITING_SHARE,
 } from './profile-share.ts';
 import type { ImToolEnv } from './im-tool.ts';
-import { isLocalTool, runTool, type LocalTool } from './tools.ts';
+import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -1136,8 +1136,25 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // after the user resumes it the count starts again.
       const earlier = earlierCall(turns, tool, answer.arguments);
       if (earlier !== undefined) {
-        const waits = (stoppedRepeats(turns).length + 1) % MAX_REPEATS === 0;
-        await recordTurn(sql, { ...turn, label, result: repeatedResult(tool, earlier, waits) });
+        const stopped = stoppedRepeats(turns).length;
+        // A search that said private pages were left out, asked again (D-241): what the user wants may
+        // be there. The model is told to say so; at the second time the core says it, instead of waiting.
+        const privateLeftOut = tool === 'kb.search' && turns.find((past) => past.step === earlier)?.result?.endsWith(SKIPPED_NOTE) === true;
+        // Only the stops of this same call count, not those of other calls of the task.
+        const sameStopped = turns.filter((past) => past.result?.startsWith(`error: ${tool}: the same call as step ${String(earlier)}, `) === true).length;
+        if (privateLeftOut && sameStopped >= 1 && task.conversationId !== null) {
+          const reply = await openReply(sql, task.id, { runId });
+          const result = await reply.finish(PRIVATE_ONLY_REPLY, label);
+          if (!result.stored) {
+            await recordTurn(sql, { ...turn, label, result: `${UNDELIVERED} (${result.reason})` });
+            return { kind: 'wait-user', reason: undelivered(result.reason), usage };
+          }
+          await recordTurn(sql, { ...turn, label, result: repeatedResult(tool, earlier, false), messageId: result.message.id });
+          await show(task, step, 'error', `the same call as step ${String(earlier)}, not run again`);
+          return { kind: 'answered', messageId: result.message.id, usage };
+        }
+        const waits = (stopped + 1) % MAX_REPEATS === 0;
+        await recordTurn(sql, { ...turn, label, result: repeatedResult(tool, earlier, waits, privateLeftOut) });
         await show(task, step, 'error', `the same call as step ${String(earlier)}, not run again`);
         return waits ? { kind: 'wait-user', reason: REPEATING, usage } : { kind: 'continue', usage };
       }
@@ -1221,8 +1238,16 @@ const REPEATING = 'the local model keeps repeating the same call';
 /** Every this many repeated calls stopped in a task, it waits for the user (D-076). */
 const MAX_REPEATS = 3;
 
-function repeatedResult(tool: ToolId, step: number, waits: boolean): string {
-  const next = waits ? 'The task now waits for the user.' : 'Take a different step, or reply with what you have.';
+/** What the user reads when the local model keeps searching for what only a private conversation may read (D-241). */
+export const PRIVATE_ONLY_REPLY =
+  'Non trovo altro nelle note che questa conversazione può leggere. Se cerchi un documento privato, come una fattura, una spesa o una nota personale, aprilo in una conversazione privata, dove lo legge solo il modello locale.';
+
+function repeatedResult(tool: ToolId, step: number, waits: boolean, privateLeftOut = false): string {
+  const next = waits
+    ? 'The task now waits for the user.'
+    : privateLeftOut
+      ? 'If what the user asks for is not in the results above, it may be in the private pages this conversation may not read: reply now with what you have, and tell the user to open a private conversation for a private document.'
+      : 'Take a different step, or reply with what you have.';
   return `error: ${tool}: the same call as step ${String(step)}, not run again: its result is above. ${next}`;
 }
 
