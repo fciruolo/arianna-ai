@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Impostazioni → Personaggi: la barra laterale ha il campo «Cerca un personaggio» (nome o serie, Invio apre il primo trovato) e ogni serie si apre e si chiude dal suo titolo, con «Apri tutte / Chiudi tutte»; di base è aperta la serie del personaggio scelto e il browser ricorda le altre (D-224).
+
 ### Aggiunto
 
 - Tema «Futurama» (la sede della Planet Express, fan art per uso personale): verde della Planet Express, viola e un cielo di stelle; Leela è Arianna, Bender il Coder, il Prof. Farnsworth GOD, Amy la revisora, Hermes le finanze, Zoidberg il designer e Fry il modello locale, in pixel art con personalità, battute e pagina di Wikiquote, e l'ufficio pixel, in 2D e in 3D, con oblò, il logo della ditta, il tavolo delle riunioni, i tubi di trasporto, le casse delle consegne e l'astronave parcheggiata nell'atrio (D-242).

@@ -5,13 +5,15 @@
  * how it speaks, the scene, the catchphrases and the real lines. Which agent
  * wears whom is chosen in Agenti → Aspetto; here only the character.
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { loadSeriesPersonas, sheetUrl, type SeriesPersonaView } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
 import { seriesFocus } from '../lib/series-focus.ts';
+import { isSeriesOpen, parseOpenSeries, searchGroups, SERIES_SIDEBAR_KEY, toggleSeries, withSeries } from '../lib/series-sidebar.ts';
 import type { SeriesValues } from '../lib/settings.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
+import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
 import SeriesPersonaCard from './SeriesPersonaCard.vue';
 import SheetPreview from './SheetPreview.vue';
@@ -63,6 +65,42 @@ const groups = computed(() => {
   return [...byShow.entries()].map(([show, members]) => ({ show: show === '' ? 'Altri' : show, members }));
 });
 
+// The bar folds by series and searches (request of the user of 2026-10-16).
+const query = ref('');
+const searching = computed(() => query.value.trim() !== '');
+const shown = computed(() => searchGroups(groups.value, query.value));
+const chosenShow = computed(() => groups.value.find((group) => group.members.some((person) => person.id === chosen.value))?.show ?? null);
+const opened = ref<string[]>(readOpened());
+const allOpen = computed(() => groups.value.every((group) => opened.value.includes(group.show)));
+// The series of the person in view opens by itself (also one picked from a search); then it folds like the others.
+watch(chosenShow, (show) => {
+  if (show !== null && !opened.value.includes(show)) opened.value = withSeries(opened.value, show);
+});
+
+function readOpened(): string[] {
+  try {
+    return parseOpenSeries(localStorage.getItem(SERIES_SIDEBAR_KEY));
+  } catch {
+    return [];
+  }
+}
+watch(opened, (value) => {
+  try {
+    localStorage.setItem(SERIES_SIDEBAR_KEY, JSON.stringify(value));
+  } catch {
+    // Private window or blocked storage: the bar works the same, it just forgets.
+  }
+});
+
+function toggleAll(): void {
+  opened.value = allOpen.value ? [] : groups.value.map((group) => group.show);
+}
+/** Enter in the search opens the first person found. */
+function pickFirst(): void {
+  const first = shown.value[0]?.members[0];
+  if (first !== undefined) chosen.value = first.id;
+}
+
 onMounted(async () => {
   try {
     people.value = await loadSeriesPersonas();
@@ -76,10 +114,39 @@ onMounted(async () => {
 <template>
   <div class="flex flex-col gap-3.5 lg:flex-row lg:items-start">
     <p v-if="loadError" role="alert" class="text-[13px] text-danger">{{ loadError }}</p>
-    <nav class="flex shrink-0 flex-col gap-3 lg:w-[200px]" aria-label="Personaggi delle serie">
-      <div v-for="group in groups" :key="group.show" class="flex flex-col gap-0.5">
-        <h3 class="mx-2 mb-0.5 text-[12.5px] font-semibold text-muted">{{ group.show }}</h3>
-        <div class="flex flex-wrap gap-1 lg:flex-col lg:gap-0.5">
+    <nav class="flex shrink-0 flex-col gap-2 lg:sticky lg:top-0 lg:max-h-[80vh] lg:w-[220px] lg:overflow-y-auto" aria-label="Personaggi delle serie">
+      <div class="flex items-center gap-1.5">
+        <input
+          v-model="query"
+          type="search"
+          class="field min-w-0 flex-1 px-2.5 py-1 text-[14px]"
+          placeholder="Cerca un personaggio"
+          aria-label="Cerca un personaggio o una serie"
+          @keydown.enter.prevent="pickFirst"
+        />
+        <button
+          v-if="!searching && groups.length > 0"
+          type="button"
+          class="shrink-0 rounded-lg px-1.5 py-1 text-[12.5px] text-muted hover:bg-surface-2 hover:text-ink"
+          @click="toggleAll"
+        >
+          {{ allOpen ? 'Chiudi tutte' : 'Apri tutte' }}
+        </button>
+      </div>
+      <p v-if="searching && shown.length === 0" class="mx-2 text-[13px] text-muted">Nessun personaggio con «{{ query.trim() }}».</p>
+      <div v-for="group in shown" :key="group.show" class="flex flex-col gap-0.5">
+        <button
+          type="button"
+          class="mx-0.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-left text-[12.5px] font-semibold text-muted hover:bg-surface-2 hover:text-ink disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted"
+          :aria-expanded="isSeriesOpen(group.show, opened, searching)"
+          :disabled="searching"
+          @click="opened = toggleSeries(opened, group.show)"
+        >
+          <Icon name="expand" :size="12" class="transition-transform" :class="isSeriesOpen(group.show, opened, searching) ? 'rotate-90' : ''" />
+          <span class="mr-auto">{{ group.show }}</span>
+          <span class="text-[11.5px] font-normal">{{ group.members.length }}</span>
+        </button>
+        <div v-if="isSeriesOpen(group.show, opened, searching)" class="flex flex-wrap gap-1 lg:flex-col lg:gap-0.5 lg:pl-3">
           <button
             v-for="person in group.members"
             :key="person.id"
