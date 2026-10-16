@@ -4,6 +4,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Il pensiero degli agenti dal vivo in chat, come in Claude Code: scorre in grigio mentre l'agente ragiona («Sta pensando… 7 s»), poi si richiude in «Ha ragionato per 12 s» che si riapre con un clic, e la risposta si scrive pezzo per pezzo; vale per il modello locale (campo `thought` e ragionamento del server), Claude (`--include-partial-messages`) e Codex (riassunti per passo) (D-249).
+- Il pensiero si salva con la risposta, con la sua etichetta, e sparisce con la conversazione eliminata; mai nelle incognite (D-249).
+
+### Cambiato
+
+- Il pensiero dell'orchestratore non è più solo nel log del run: si vede in chat, ma non entra mai in un brief, nel contesto mandato al cloud né negli eval (D-249, cambia D-051).
+
+### Sicurezza
+
+- Il profilo di confinamento di `claude` aggiunge solo `--include-partial-messages`; i pezzi del pensiero passano dallo stesso controllo dei valori del vault dei frammenti della risposta (D-249).
+
 ## [0.139.1] - 2026-10-17
 
 ### Corretto
