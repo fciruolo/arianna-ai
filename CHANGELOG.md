@@ -4,68 +4,44 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
-### Corretto
-
-- Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
-- I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
-
 ### Aggiunto
 
 - Nove personaggi nuovi delle serie, con foglio pixel, pose, scheda (chi è, come parla, mondo, battute di riserva) e nomi per Wikiquote: di Scrubs il Dr. Kelso, l'Inserviente, Ted e Laverne; di The Office Oscar, Andy, Kevin, Angela e Creed (D-227).
-
-### Cambiato
-
-- Col tema Scrubs il Designer è l'Inserviente e il Modello locale è il Dr. Kelso; col tema The Office Finanze è Oscar, il Designer Andy e il Modello locale Kevin. Ted, Laverne, Angela e Creed sono liberi: si scelgono per qualsiasi agente in Impostazioni → Agenti → Aspetto (D-227).
-
-### Sicurezza
-
-- Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
-
-### Aggiunto
-
 - L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
 - Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
 - Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
 - La pianta dell'ufficio segue il tuo personaggio: più grande, si sposta mentre cammini e si ferma ai bordi (D-229).
 - L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
-
-### Cambiato
-
-- Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
-- Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
-
-### Aggiunto
-
 - In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
 - A ogni messaggio della chat con un personaggio il core pesca le sue battute vere (D-224) e le mette dopo il messaggio, anche quando la sessione di Claude riprende (D-225, tappa B).
-
-### Sicurezza
-
-- La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
-### Aggiunto
-
 - Nel campo di scrittura della chat un pulsante «+» con un menu solo per comandi «/», «@» a un agente, «Allega nota privata», «Nuova sessione» del Designer, «Salva in inbox» e il modello della conversazione; si usa anche da tastiera (frecce, Invio, Esc) (D-231).
 - Tasti per il modello della conversazione: sul Mac ⌃1…⌃9 scelgono i modelli del selettore nel suo ordine e ⌃0 la scelta automatica (altrove Alt+Maiusc con la cifra), solo fra quelli che quella conversazione ammette; li mostra il menu «+» (D-231).
 - Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; solo nelle conversazioni di lavoro, mai nelle Private né nelle incognite (D-231).
+- «Chiedi a lato» fra le azioni di una risposta (accanto a Copia e Salva in inbox): apre a destra un pannello dove fai domande a parte su quella risposta, a cui risponde chi risponde nella conversazione (Arianna, il modello locale, Claude o ChatGPT) con le stesse regole di privacy; domande e risposte restano nel pannello e la conversazione non le rilegge. Esc chiude il pannello, la stessa risposta lo riapre sullo stesso filo («Riprendi a lato»); sullo schermo stretto il pannello prende tutta la pagina; il filo si cancella con la conversazione (D-232).
+- «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
+- Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
+- Pagina «Cosa è cambiato» nelle Impostazioni, gruppo Informazioni dopo Novità (`/impostazioni/cosa-e-cambiato`): i cambiamenti di questa installazione dal più recente, per giorno, con un'icona e un filtro per tipo (modelli, Claude e Codex, skill e stili, agenti, progetti, aspetto, versione di Arianna) e il collegamento alla sezione dove si cambia quella cosa. Il core fotografa solo nomi, versioni e stati all'avvio, a ogni cambio di `arianna.toml`, ogni 10 minuti e quando apri la pagina, e scrive la differenza nel registro degli eventi; mai il contenuto di chat o note (D-233, idea 11 delle idee di OpenWork).
+- La versione di Claude Code detta dal binario all'inizio di ogni lavoro entra nell'evento del modello usato, così «Cosa è cambiato» vede quando si aggiorna; Codex non la dice e resta fuori (D-233).
 
 ### Cambiato
 
+- Col tema Scrubs il Designer è l'Inserviente e il Modello locale è il Dr. Kelso; col tema The Office Finanze è Oscar, il Designer Andy e il Modello locale Kevin. Ted, Laverne, Angela e Creed sono liberi: si scelgono per qualsiasi agente in Impostazioni → Agenti → Aspetto (D-227).
+- Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
+- Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 - Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
 - I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
 - Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, in un riquadro suo con logo, versione e copie di lavoro, senza IM né incassi perché è un progetto interno (richiesta dell'utente del 2026-10-16, D-127).
 
-### Aggiunto
-
-- «Chiedi a lato» fra le azioni di una risposta (accanto a Copia e Salva in inbox): apre a destra un pannello dove fai domande a parte su quella risposta, a cui risponde chi risponde nella conversazione (Arianna, il modello locale, Claude o ChatGPT) con le stesse regole di privacy; domande e risposte restano nel pannello e la conversazione non le rilegge. Esc chiude il pannello, la stessa risposta lo riapre sullo stesso filo («Riprendi a lato»); sullo schermo stretto il pannello prende tutta la pagina; il filo si cancella con la conversazione (D-232).
-
-### Aggiunto
-
-- «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
-- Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
-
 ### Corretto
 
+- Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
+- I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
 - All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
+
+### Sicurezza
+
+- Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
+- La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
 
 ## [0.121.0] - 2026-10-16
 
@@ -77,10 +53,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Un personaggio delle serie si presenta come tale e mai come «Arianna» (che è solo il nome del sistema); nelle chat private, se gli chiedi chi è, da dove viene o della sua vita, risponde con quello che racconta la serie (D-225, richiesta dell'utente del 2026-10-16).
 - Le risposte di sola chiacchiera di un personaggio sul modello locale sono più vive: quando Arianna risponde subito, senza strumenti, la stessa richiesta viene riscritta una seconda volta a temperatura 0,7 e si tiene quella, se è ancora una risposta; gli strumenti restano decisi a temperatura 0 (D-225).
-### Aggiunto
-
-- Pagina «Cosa è cambiato» nelle Impostazioni, gruppo Informazioni dopo Novità (`/impostazioni/cosa-e-cambiato`): i cambiamenti di questa installazione dal più recente, per giorno, con un'icona e un filtro per tipo (modelli, Claude e Codex, skill e stili, agenti, progetti, aspetto, versione di Arianna) e il collegamento alla sezione dove si cambia quella cosa. Il core fotografa solo nomi, versioni e stati all'avvio, a ogni cambio di `arianna.toml`, ogni 10 minuti e quando apri la pagina, e scrive la differenza nel registro degli eventi; mai il contenuto di chat o note (D-233, idea 11 delle idee di OpenWork).
-- La versione di Claude Code detta dal binario all'inizio di ogni lavoro entra nell'evento del modello usato, così «Cosa è cambiato» vede quando si aggiorna; Codex non la dice e resta fuori (D-233).
 
 ## [0.120.0] - 2026-10-16
 
