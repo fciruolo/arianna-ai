@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
 - I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
+
 ### Aggiunto
 
 - Nove personaggi nuovi delle serie, con foglio pixel, pose, scheda (chi è, come parla, mondo, battute di riserva) e nomi per Wikiquote: di Scrubs il Dr. Kelso, l'Inserviente, Ted e Laverne; di The Office Oscar, Andy, Kevin, Angela e Creed (D-227).
@@ -19,6 +20,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
+
 ### Aggiunto
 
 - L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
@@ -29,6 +31,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
+
 ### Aggiunto
 
 - In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
