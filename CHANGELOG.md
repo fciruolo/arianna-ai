@@ -19,6 +19,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
+### Aggiunto
+
+- L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
+- Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
+- Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
+- La pianta dell'ufficio segue il tuo personaggio: più grande, si sposta mentre cammini e si ferma ai bordi (D-229).
+
+### Cambiato
+
+- Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
 
 ## [0.121.0] - 2026-10-16
 
