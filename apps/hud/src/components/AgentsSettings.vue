@@ -10,7 +10,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { downloadPixelAgents, listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
+import { downloadPixelAgents, listSkills, loadSeriesPersonas, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
 import { dayText } from '../lib/design-catalog.ts';
 import { agentEntries, catalogStateText, changedAgents, diffRows, filterEntries, lengthText, needsUpdate, permissionWords, tabLabel, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName, officialDescriptionIt } from '../lib/italian.ts';
@@ -323,11 +323,36 @@ const animationsOpen = ref(false);
 // The gallery (D-206): every character served, by group; a click picks it, Salva keeps it.
 const PIXEL_AGENTS_PACK = 'pixel-agents';
 const SERIES_PACK = 'serie';
+/** The series of each person of the pack serie (D-224), read once: the gallery groups them by it. */
+const seriesShows = ref<Record<string, string>>({});
+onMounted(async () => {
+  try {
+    seriesShows.value = Object.fromEntries((await loadSeriesPersonas()).flatMap((person) => (person.show === undefined ? [] : [[person.id, person.show]])));
+  } catch {
+    // Without it the people of the series stay in one group, as before.
+  }
+});
+/**
+ * The people of the series in the gallery (request of the user of 2026-10-16): with a theme of a series only
+ * that series, so they are not mixed up; with a theme without one (Base) every series in a group of its own.
+ */
+const seriesGroups = computed(() => {
+  const items = characterOptions.value.filter((option) => option.pack.id === SERIES_PACK);
+  const showOf = (id: string): string => seriesShows.value[id] ?? '';
+  const themed = new Set(
+    Object.values(props.characters?.agents ?? {})
+      .filter((choice) => choice.from === 'theme' && choice.pack === SERIES_PACK)
+      .map((choice) => showOf(choice.character))
+      .filter((show) => show !== ''),
+  );
+  const shows = [...new Set(items.map((option) => showOf(option.character.id)))].filter((show) => themed.size === 0 || themed.has(show));
+  return shows.map((show) => ({ id: `${SERIES_PACK}:${show}`, title: show === '' ? 'Serie (fan art)' : `Serie (fan art) · ${show}`, items: items.filter((option) => showOf(option.character.id) === show) }));
+});
 const gallery = computed(() => {
   const groups = [
     { id: 'originali', title: 'Originali', items: characterOptions.value.filter((option) => option.pack.original) },
-    // D-211: the people of the series of the themes, fan art for personal use.
-    { id: SERIES_PACK, title: 'Serie (fan art)', items: characterOptions.value.filter((option) => option.pack.id === SERIES_PACK) },
+    // D-211: the people of the series of the themes, fan art for personal use; by series (D-224).
+    ...seriesGroups.value,
     { id: 'tuoi', title: 'Tuoi', items: characterOptions.value.filter((option) => !option.pack.original && option.pack.id !== PIXEL_AGENTS_PACK && option.pack.id !== SERIES_PACK) },
     { id: PIXEL_AGENTS_PACK, title: 'pixel-agents', items: characterOptions.value.filter((option) => option.pack.id === PIXEL_AGENTS_PACK) },
   ];

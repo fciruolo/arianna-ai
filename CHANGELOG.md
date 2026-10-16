@@ -13,6 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - A ogni risposta di un agente che indossa un personaggio delle serie, Arianna pesca a caso 5 battute dell'elenco non usate di recente in quella chat e le mette in fondo all'ultimo messaggio, al posto delle 4 fisse: il modello ne usa al massimo una. Quelle che nominano altri personaggi solo nelle chat private; le battute fisse riscritte da te vincono sull'elenco (D-224).
+- In Agenti → Aspetto la galleria mostra fra i personaggi delle serie solo quelli della serie del tema in uso; col tema senza serie li divide per serie, «Serie (fan art) · Scrubs» e «· The Office (US)» (D-224, richiesta dell'utente del 2026-10-16).
 - La pillola delle sezioni delle Impostazioni dice «Vale appena salvi» invece di «Vale subito» (richiesta dell'utente del 2026-10-16).
 
 ## [0.119.1] - 2026-10-16
