@@ -2,6 +2,7 @@ import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point
 import { langleyCabinet, langleyCabinetItem, langleyCounter, langleyFloor, langleyFridge, langleyRun, langleyShelf } from './langley.ts';
 import { foxRiverCounter, foxRiverFloor, foxRiverItem, foxRiverRun, foxRiverWall } from './fox-river.ts';
 import { planetExpressCounter, planetExpressFloor, planetExpressItem, planetExpressRun, planetExpressWall } from './planet-express.ts';
+import { pasadenaCounter, pasadenaFloor, pasadenaItem, pasadenaRun, pasadenaWall } from './pasadena.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
 import { quahogBar, quahogCouch, quahogFloor, quahogItem, quahogSign, quahogWainscot } from './quahog.ts';
@@ -96,6 +97,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   } else if (skin === 'planet-express') {
     // The metal plates of the Planet Express (D-242).
     planetExpressFloor(rect, C, map);
+  } else if (skin === 'pasadena') {
+    // The wooden planks of the flat of Pasadena (D-243).
+    pasadenaFloor(rect, C, map);
   } else if (skin === 'corsia') {
     for (let r = 0; r < map.height; r++) {
       for (let c = 0; c < map.width; c++) {
@@ -229,6 +233,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       if (skin === 'fox-river' && foxRiverWall(rect, C, kind, x, y, r)) continue;
       // The purple stripe, the portholes and the logo of the Planet Express (D-242).
       if (skin === 'planet-express' && planetExpressWall(rect, C, kind, x, y)) continue;
+      // The windows with their blinds and the whiteboard with the equations of Pasadena (D-243).
+      if (skin === 'pasadena' && pasadenaWall(rect, C, kind, x, y)) continue;
       // The wooden wainscot of the Griffin house (D-238).
       if (skin === 'quahog') quahogWainscot(rect, C, x, y, TILE);
       // The hazard stripe of the power plant (D-237), under the windows and the signs.
@@ -345,6 +351,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       } else if (skin === 'planet-express') {
         // The meeting table of the Planet Express (D-242).
         planetExpressCounter(rect, C, x, y, w);
+      } else if (skin === 'pasadena') {
+        // The kitchen island with the takeaway of Pasadena (D-243).
+        pasadenaCounter(rect, C, x, y, w);
       } else if (skin === 'ufficio') {
         // The reception: the jar of sweets and the telephone.
         rect(C.outline, x + 3, y - 8, 6, 7);
@@ -383,6 +392,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     } else if (skin === 'planet-express') {
       // The transport tubes, the crates and the ship of the Planet Express (D-242).
       planetExpressItem(rect, C, kind, x, y, map);
+    } else if (skin === 'pasadena') {
+      // The broken lift and the bookcases of comics of Pasadena (D-243).
+      pasadenaItem(rect, C, kind, x, y);
     } else if (skin === 'corsia' && kind === 'coffee') {
       rect(C.outline, x + 1, y - 10, 14, 24);
       rect(I.metalDark, x + 2, y - 9, 12, 22);
@@ -427,6 +439,10 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     }
     if (skin === 'planet-express') {
       planetExpressRun(rect, C, x, y, w, tiles);
+      return;
+    }
+    if (skin === 'pasadena') {
+      pasadenaRun(rect, C, x, y, w, tiles);
       return;
     }
     if (skin === 'langley') {

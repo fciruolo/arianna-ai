@@ -55,6 +55,13 @@
     { "id": "amy", "name": "Amy", "file": "amy.png" },
     { "id": "hermes", "name": "Hermes", "file": "hermes.png" },
     { "id": "zoidberg", "name": "Zoidberg", "file": "zoidberg.png" },
-    { "id": "fry", "name": "Fry", "file": "fry.png" }
+    { "id": "fry", "name": "Fry", "file": "fry.png" },
+    { "id": "penny", "name": "Penny", "file": "penny.png" },
+    { "id": "howard", "name": "Howard", "file": "howard.png" },
+    { "id": "sheldon", "name": "Sheldon", "file": "sheldon.png" },
+    { "id": "leonard", "name": "Leonard", "file": "leonard.png" },
+    { "id": "bernadette", "name": "Bernadette", "file": "bernadette.png" },
+    { "id": "raj", "name": "Raj", "file": "raj.png" },
+    { "id": "fowler", "name": "Amy", "file": "fowler.png" }
   ]
 }

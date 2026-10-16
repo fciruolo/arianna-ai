@@ -52,6 +52,8 @@ export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>>
   'Prison Break': [{ title: 'Prison Break' }],
   // D-242: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
   Futurama: [{ title: 'Futurama' }],
+  // D-243: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
+  'The Big Bang Theory': [{ title: 'The Big Bang Theory' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -123,6 +125,14 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   hermes: ['Hermes', 'Hermes Conrad'],
   zoidberg: ['Zoidberg', 'Dottor Zoidberg', 'Dr. Zoidberg'],
   fry: ['Fry', 'Philip J. Fry'],
+  // The Big Bang Theory (D-243): the names of the Italian dub, the same as the original; not verified on the page (no network while building).
+  penny: ['Penny'],
+  howard: ['Howard', 'Howard Wolowitz'],
+  sheldon: ['Sheldon', 'Sheldon Cooper'],
+  leonard: ['Leonard', 'Leonard Hofstadter'],
+  bernadette: ['Bernadette', 'Bernadette Rostenkowski'],
+  raj: ['Raj', 'Rajesh', 'Rajesh Koothrappali'],
+  fowler: ['Amy', 'Amy Farrah Fowler'],
 };
 
 export interface WikiquoteLine {

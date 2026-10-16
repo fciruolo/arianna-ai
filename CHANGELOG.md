@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Tema «The Big Bang Theory» (l'appartamento di Pasadena, fan art per uso personale): pareti ocra, arancio e una bolla blu petrolio su carta millimetrata; Penny è Arianna, Howard il Coder, Sheldon GOD, Leonard il revisore, Bernadette le finanze, Raj il designer e Amy il modello locale, in pixel art con personalità, battute e pagina di Wikiquote, e l'ufficio pixel, in 2D e in 3D, con il parquet, le tende alle finestre, la lavagna con le equazioni, l'isola della cucina col cibo da asporto, l'ascensore guasto col nastro giallo, le librerie di fumetti e il divano col posto di Sheldon (D-243).
+
 ### Cambiato
 
 - I pacchetti di personaggi del repository (originali e serie) non hanno più un numero massimo di personaggi; quelli caricati o scaricati in data/ ne tengono fino a 200 (prima 64) (D-244).

@@ -43,7 +43,7 @@ test('the core and the page apply the same list of tokens (D-103)', () => {
 test('the themes of the repository pass the schema (D-103)', async () => {
   const listing = await listThemes(REPO_THEMES);
   assert.deepEqual(listing.refused, []);
-  assert.deepEqual(listing.themes.map((theme) => theme.id), ['corsia', 'fox-river', 'langley', 'planet-express', 'quahog', 'springfield', 'ufficio']);
+  assert.deepEqual(listing.themes.map((theme) => theme.id), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
   for (const theme of listing.themes) assert.equal(theme.kind, 'serie');
 });
 
@@ -166,7 +166,7 @@ test('GET /api/themes serves the checked themes and the characters of the chosen
   try {
     const origin = `http://127.0.0.1:${String(server.port)}`;
     const themes = (await (await fetch(`${origin}/api/themes`)).json()) as { themes: { id: string }[]; chosen: string; current: string };
-    assert.deepEqual(themes.themes.map(({ id }) => id), ['corsia', 'fox-river', 'langley', 'planet-express', 'quahog', 'springfield', 'ufficio']);
+    assert.deepEqual(themes.themes.map(({ id }) => id), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
     assert.equal(themes.current, 'corsia');
     const characters = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { pack: string; character: string; from: string }>; names: Record<string, string> };
     // The name the user wrote wins in the chat (D-214).

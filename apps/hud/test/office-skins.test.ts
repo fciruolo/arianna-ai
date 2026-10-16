@@ -11,6 +11,7 @@ import { COLOR_TOKENS, THEME_TOKENS, type Scene } from '../src/lib/office/draw.t
 import { boardPoint, decisionsPoint, archivePoint, tilesNear, DESK_WALK_REACH, WALK_REACH, type OfficeMap } from '../src/lib/office/map.ts';
 import { findPath } from '../src/lib/office/path.ts';
 import { planetExpressCabinet } from '../src/lib/office/planet-express.ts';
+import { PASADENA_INK } from '../src/lib/office/pasadena.ts';
 import { OFFICE_SKINS, officeMapOf, officeView, SKIN_INK, skinColors, skinOfTheme, type OfficeSkin } from '../src/lib/office/skins.ts';
 import { colorsOf, rasterize } from './support/office-raster.ts';
 
@@ -53,6 +54,8 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   assert.equal(skinOfTheme('fox-river'), 'fox-river');
   assert.equal(skinOfTheme('planet-express'), 'planet-express');
   for (const other of ['Planet-Express', 'planet', 'futurama']) assert.equal(skinOfTheme(other), 'base', other);
+  assert.equal(skinOfTheme('pasadena'), 'pasadena');
+  for (const other of ['Pasadena', 'big-bang', 'caltech']) assert.equal(skinOfTheme(other), 'base', other);
   for (const other of [undefined, 'base', 'natale', 'Corsia', 'Fox-River', 'fox', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 
@@ -201,5 +204,33 @@ test('the Planet Express (D-242): its own colours over the page, the theme token
   assert.equal(hasHull('planet-express'), true);
   assert.equal(hasHull('base'), false);
   const broken = officeMapOf('planet-express', { ...TEXTS, 'planet-express': '{}' });
+  assert.deepEqual([broken.fallback, broken.map?.id], [true, 'base']);
+});
+
+test('Pasadena (D-243): its own colours over the page, the theme tokens kept; two broken lifts and a couch more in the hall, Sheldon\'s spot on every couch', () => {
+  const light = colorsOf(css, 'light', COLOR_TOKENS, THEME_TOKENS);
+  const dark = colorsOf(css, 'dark', COLOR_TOKENS, THEME_TOKENS);
+  const flat = skinColors(light, 'pasadena');
+  assert.notEqual(flat.floor, light.floor);
+  assert.notEqual(skinColors(dark, 'pasadena').floor, flat.floor);
+  for (const token of THEME_TOKENS) assert.equal(flat[token], light[token], token);
+  const map = mapOf('pasadena');
+  assert.equal(map.id, 'pasadena');
+  const count = (m: OfficeMap, kind: string): number => m.tiles.filter((tile) => tile === kind).length;
+  assert.equal(count(map, 'coffee'), count(mapOf('base'), 'coffee') + 2);
+  // The couch in the hall takes three tiles.
+  assert.equal(count(map, 'sofa'), count(mapOf('base'), 'sofa') + 3);
+  // Sheldon's spot and the yellow tape of the lift are in the drawing of Pasadena, never in Base.
+  const has = (skin: OfficeSkin, hex: string): boolean => {
+    const [r, g, b] = [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+    const { rgba } = rasterize(scene(skin, 'light'));
+    for (let at = 0; at < rgba.length; at += 4) if (rgba[at] === r && rgba[at + 1] === g && rgba[at + 2] === b) return true;
+    return false;
+  };
+  for (const ink of [PASADENA_INK.spot, PASADENA_INK.tape]) {
+    assert.equal(has('pasadena', ink), true, ink);
+    assert.equal(has('base', ink), false, ink);
+  }
+  const broken = officeMapOf('pasadena', { ...TEXTS, pasadena: '{}' });
   assert.deepEqual([broken.fallback, broken.map?.id], [true, 'base']);
 });

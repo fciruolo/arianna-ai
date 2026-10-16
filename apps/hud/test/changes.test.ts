@@ -90,6 +90,7 @@ test('a theme by the name the user sees, never its id in the code', () => {
   assert.equal(themeName('langley'), 'American Dad');
   assert.equal(themeName('fox-river'), 'Prison Break');
   assert.equal(themeName('planet-express'), 'Futurama');
+  assert.equal(themeName('pasadena'), 'The Big Bang Theory');
   assert.equal(themeName('base'), 'Base');
   assert.equal(themeName('halloween'), 'halloween');
   assert.deepEqual(changeText({ area: 'theme', id: 'theme', from: 'base', to: 'corsia' }), { title: 'Tema cambiato: Scrubs', detail: 'prima Base' });

@@ -11,6 +11,7 @@ import { GRIFFIN_PERSONAS } from './series-griffin.ts';
 import { AMERICAN_DAD_PERSONAS } from './series-american-dad.ts';
 import { PRISON_BREAK_PERSONAS } from './series-personas-prison-break.ts';
 import { FUTURAMA_PERSONAS } from './series-futurama.ts';
+import { BIG_BANG_PERSONAS } from './series-big-bang.ts';
 
 /** The pack of the people of the series, as `SERIES_PACK` in `@arianna/config` (which imports this package, never the other way). */
 export const SERIES_PACK_ID = 'serie';
@@ -225,6 +226,8 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   ...PRISON_BREAK_PERSONAS,
   // The crew of the Planet Express of Futurama (D-242), in a file of its own.
   ...FUTURAMA_PERSONAS,
+  // The friends of Pasadena of The Big Bang Theory (D-243), in a file of its own.
+  ...BIG_BANG_PERSONAS,
 };
 
 /** The person of the series behind `<pack>/<character>`; undefined for any other character. Own keys only. */

@@ -23,7 +23,7 @@ const BASE = { dark: cssTokens(':root {'), light: cssTokens(':root[data-theme="l
 const repoThemes: ChatTheme[] = readdirSync(THEMES_DIR).map((folder) => JSON.parse(readFileSync(join(THEMES_DIR, folder, 'theme.json'), 'utf8')) as ChatTheme);
 
 test('the repository has the themes of the series, each in its folder (D-103)', () => {
-  assert.deepEqual(repoThemes.map((theme) => theme.id).sort(), ['corsia', 'fox-river', 'langley', 'planet-express', 'quahog', 'springfield', 'ufficio']);
+  assert.deepEqual(repoThemes.map((theme) => theme.id).sort(), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
   for (const folder of readdirSync(THEMES_DIR)) assert.deepEqual(readdirSync(join(THEMES_DIR, folder)), ['theme.json'], folder);
   // The names of the series (D-214), the ids unchanged so that a saved choice still works.
   assert.deepEqual(
@@ -32,6 +32,7 @@ test('the repository has the themes of the series, each in its folder (D-103)', 
       ['corsia', 'Scrubs'],
       ['fox-river', 'Prison Break'],
       ['langley', 'American Dad'],
+      ['pasadena', 'The Big Bang Theory'],
       ['planet-express', 'Futurama'],
       ['quahog', 'I Griffin'],
       ['springfield', 'I Simpson'],
@@ -81,7 +82,7 @@ test('the characters a theme names are costumes of the originals or people of th
       if (packId === 'originali') assert.ok(character.endsWith(`-${theme.id}`), `${theme.id}.${agent}: ${choice}`);
     }
     // In every theme of the series Arianna, the Coder and GOD wear someone of the series (D-211, D-237, D-238).
-    if (!['corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river', 'planet-express'].includes(theme.id)) continue;
+    if (!['corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river', 'planet-express', 'pasadena'].includes(theme.id)) continue;
     for (const agent of ['arianna', 'coder', 'god']) assert.equal(theme.characters[agent]?.split('/')[0], 'serie', `${theme.id}.${agent}`);
   }
 });

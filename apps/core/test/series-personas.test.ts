@@ -546,3 +546,59 @@ test('the theme Planet Express (D-242): who wears whom, who is who, and the whol
   const names = seriesNamesOfSource('character:serie/bender') ?? [];
   for (const name of ['Philip J. Fry', 'Turanga Leela', 'Hubert J. Farnsworth', 'Dr. Zoidberg', 'Dr. Cox']) assert.ok(names.includes(name), name);
 });
+
+test('the theme Pasadena (D-243): who wears whom, who is who, and the whole names as aliases, worn ones only', () => {
+  const friends = corsia({ appearance: { theme: 'pasadena' } });
+  const roles = { arianna: 'penny', coder: 'howard', god: 'sheldon', reviewer: 'leonard', finanze: 'bernadette', designer: 'raj', 'local-chat': 'fowler' };
+  for (const [agent, id] of Object.entries(roles)) {
+    assert.equal(characterChoiceOf(friends, agent), `serie/${id}`, agent);
+    assert.equal(characterPart(friends, agent)?.source, `character:serie/${id}`, agent);
+  }
+  assert.match(characterPart(friends, 'god')?.text ?? '', /Call yourself "Sheldon"\. You are Sheldon of The Big Bang Theory, never Arianna/);
+  // Every one of the friends wears an agent of the theme: nobody is left free in the gallery.
+  assert.deepEqual(Object.values(themeCharactersSync(THEMES, 'pasadena')).sort(), Object.values(roles).map((id) => `serie/${id}`).sort());
+  assert.equal(characterChoiceOf(friends, 'mio-agente'), 'originali/coder');
+  const roster = rosterPart(friends, 'coder')?.text ?? '';
+  assert.match(roster, /- Arianna: "Penny"/);
+  assert.match(roster, /- GOD: "Sheldon"/);
+  assert.match(roster, /- Reviewer: "Leonard"/);
+  assert.doesNotMatch(roster, /Cooper|Hofstadter|Koothrappali|Wolowitz|Fowler/);
+  // The names worn now with their whole forms (the aliases, as «Bob Kelso» of D-227); the local model, Amy, is not loaded here.
+  assert.deepEqual(wornSeriesNames(friends).sort(), [
+    'Bernadette',
+    'Bernadette Rostenkowski',
+    'Bernadette Rostenkowski-Wolowitz',
+    'Bernadette Wolowitz',
+    'Howard',
+    'Howard Wolowitz',
+    'Leonard',
+    'Leonard Hofstadter',
+    'Penny',
+    'Penny Hofstadter',
+    'Raj',
+    'Raj Koothrappali',
+    'Rajesh Koothrappali',
+    'Rajesh Ramayan Koothrappali',
+    'Sheldon',
+    'Sheldon Cooper',
+    'Sheldon Lee Cooper',
+  ]);
+  const only = (names: string[]) => {
+    const text = names.join(' e ');
+    const entities = names.map((name) => ({ kind: 'FULLNAME', start: text.indexOf(name), end: text.indexOf(name) + name.length, score: 0.9 }));
+    return piiVerdict(piiReport([text], [entities], [], fragmentNamesOf([{ value: text, label: 'L1', source: 'message:1' }], wornSeriesNames(friends))), [text]);
+  };
+  assert.deepEqual(only(['Sheldon Cooper', 'Leonard Hofstadter', 'Howard Wolowitz', 'Rajesh Koothrappali', 'Bernadette Rostenkowski', 'Penny']), { verdict: 'clean' });
+  // Negative: a wider span is a person, and so is a name nobody wears (Amy without the local model), and the friends under another theme.
+  assert.equal(only(['Penny Bianchi']).verdict, 'found');
+  assert.equal(only(['Leonard Rossi']).verdict, 'found');
+  assert.equal(only(['Amy Farrah Fowler']).verdict, 'found');
+  assert.ok(!wornSeriesNames(corsia()).includes('Sheldon Cooper'));
+  // With the local model loaded, Amy is worn too, with her whole name; Amy of Futurama, not worn, stays a person.
+  const amy = wornSeriesNames(corsia({ appearance: { theme: 'pasadena' }, agentsNow: () => ({ official: [...LOADED.official, 'local-chat'], user: [] }) }));
+  for (const name of ['Amy', 'Amy Farrah Fowler', 'Amy Fowler']) assert.ok(amy.includes(name), name);
+  assert.ok(!amy.includes('Amy Wong'));
+  // In the piece of a character every name of the series counts, aliases included (D-214, D-217).
+  const names = seriesNamesOfSource('character:serie/sheldon') ?? [];
+  for (const name of ['Amy Farrah Fowler', 'Rajesh Koothrappali', 'Bernadette Rostenkowski', 'Penny Hofstadter', 'Dr. Cox']) assert.ok(names.includes(name), name);
+});

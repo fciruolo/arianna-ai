@@ -143,6 +143,19 @@ test('the places of the themes: checked floor and no handrail for Base, a handra
   const tubes = express.blocks.filter((block) => block.color === 'window-light' && block.h > 1);
   assert.equal(tubes.length, tilesOf(expressMap, (kind) => kind === 'coffee').length);
   assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'window-light' && block.h > 1).length, 0);
+  // Pasadena (D-243): one-colour floor, no handrail, a tall lift with the yellow tape for each coffee tile, a bookcase of comics for each cabinet.
+  const flatMap = mapOf('pasadena');
+  const flat = buildWorld(flatMap, 'pasadena');
+  assert.equal(rails(flat).length, 0);
+  assert.ok(flat.floors.every((tile) => !tile.alt));
+  const lifts = flat.blocks.filter((block) => block.color === 'monitor' && block.h > 1.2);
+  assert.equal(lifts.length, tilesOf(flatMap, (kind) => kind === 'coffee').length);
+  for (const lift of lifts) assert.ok(flat.blocks.some((block) => block.color === 'warn' && covers(block, Math.floor(lift.x), Math.floor(lift.z))), `the tape of the lift at ${String(lift.x)},${String(lift.z)}`);
+  const spines = flat.blocks.filter((block) => block.color === 'info' && tilesOf(flatMap, (kind) => kind === 'cabinet').some(([c, r]) => covers(block, c, r)));
+  assert.equal(spines.length, tilesOf(flatMap, (kind) => kind === 'cabinet').length);
+  // Negative: no lift and no spines in Base.
+  assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'monitor' && block.h > 1.2).length, 0);
+  assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'info' && tilesOf(BASE, (kind) => kind === 'cabinet').some(([c, r]) => covers(block, c, r))).length, 0);
 });
 
 test('a screen on the desk of every room with a desk, keyed by its seat; the bell over the Decisioni desk', () => {
