@@ -6,7 +6,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Pagina «Cruscotto»: «Fissa al Cruscotto» su una risposta della chat la tiene in un riquadro con titolo, etichetta, data e conversazione d'origine; la domanda per gli aggiornamenti la riscrive il modello locale e tu la correggi; «Aggiorna» la rifà solo al modello locale, anche per le risposte di Claude o ChatGPT, e l'etichetta del riquadro può solo salire; riquadri stretti o larghi, da riordinare e togliere (D-248).
+- Pagina «Dashboard»: «Fissa alla Dashboard» su una risposta della chat la tiene in un riquadro con titolo, etichetta, data e conversazione d'origine; la domanda per gli aggiornamenti la riscrive il modello locale e tu la correggi; «Aggiorna» la rifà solo al modello locale, anche per le risposte di Claude o ChatGPT, e l'etichetta del riquadro può solo salire; riquadri stretti o larghi, da riordinare e togliere; la domanda si modifica dalla Dashboard («Salva e aggiorna»); un riquadro può essere un grafico a barre, linee o torta, coi dati scritti dal modello locale e controllati, con la tabella dei dati a richiesta (D-248).
 - Immagini e file nella chat privata: incolla con ⌘V, trascina sul campo o «Allega file» nel menu «+»; PNG, JPEG, WebP e GIF fino a 10 MB, testi .txt, .md, .csv e .json fino a 256 KiB, al massimo 4 per messaggio, con l'anteprima piccola nella bolla (D-247).
 - Ruolo «Guarda le immagini allegate» (`vision`) in Impostazioni → Modelli: Qwen3.5 9B legge le immagini sul Mac e passa ad Arianna la sua lettura; si carica solo quando c'è un'immagine da leggere e si scarica subito dopo (D-247).
 
