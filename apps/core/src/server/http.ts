@@ -167,7 +167,7 @@ import { projectFits, type DirectPolicy, type OffInterlocutor } from '../direct-
 import type { ChatCharacter } from '../character-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
-import { attachmentIds, AttachmentError, discardAttachment, MAX_IMAGE_BYTES, readAttachment, saveAttachment } from '../attachments.ts';
+import { attachmentFilesOf, attachmentIds, AttachmentError, discardAttachment, removeAttachmentFiles, MAX_IMAGE_BYTES, readAttachment, saveAttachment } from '../attachments.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
@@ -589,6 +589,7 @@ interface RouteOptions {
   planAssignees?: ApiServerOptions['planAssignees'];
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
+  attachments?: ApiServerOptions['attachments'];
   designCatalog?: DesignCatalog | undefined;
   skillsCatalog?: SkillsCatalog | undefined;
   onError: (error: unknown) => void;
@@ -2327,7 +2328,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2615,7 +2616,10 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       onlyFields(await readJson(request), []);
       // Its side threads go with it (D-232): their empty folders of the plain chats too.
       const sides = await sideThreadIds(sql, id);
+      // Its attachments (D-247): the rows go with the purge, the files right after it.
+      const attached = attachments === undefined ? [] : await attachmentFilesOf(sql, id);
       await purgeConversation(sql, id);
+      if (attachments !== undefined) await removeAttachmentFiles(sql, attachments.dir, attached).catch(onError);
       for (const side of [id, ...sides]) await chatFolderGone?.(side).catch(() => undefined);
       return { body: { purged: id } };
     }),
@@ -3149,12 +3153,6 @@ function financeRoutes(sql: Sql): Route[] {
   ];
 }
 
-/**
- * The clients (I-16, D-168, tappa C1): the registry, the contacts, the
- * projects and the logo. Private (L2): only the web chat reads and writes
- * them, nothing goes out. A field that does not pass answers 400 with
- * `issues` (field and why), which the chat shows next to the field.
- */
 /** An attachment comes as JSON with its bytes in base64: a third more than the largest image, and some room. */
 const MAX_ATTACHMENT_BODY = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 16 * 1024;
 
@@ -3200,6 +3198,12 @@ function attachmentRoutes(sql: Sql, attachments: ApiServerOptions['attachments']
   ];
 }
 
+/**
+ * The clients (I-16, D-168, tappa C1): the registry, the contacts, the
+ * projects and the logo. Private (L2): only the web chat reads and writes
+ * them, nothing goes out. A field that does not pass answers 400 with
+ * `issues` (field and why), which the chat shows next to the field.
+ */
 function clientRoutes(sql: Sql, names: () => ClientNames, clients: ApiServerOptions['clients']): Route[] {
   const logosDir = (): string => {
     if (clients === undefined) throw new HttpError(404, 'not found');
@@ -4317,6 +4321,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     planAssignees: options.planAssignees,
     incognito: options.incognito,
     erase: options.erase,
+    attachments: options.attachments,
     designCatalog: options.designCatalog,
     skillsCatalog: options.skillsCatalog,
   });

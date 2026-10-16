@@ -124,6 +124,12 @@ test('a work conversation, an incognito one or a chat with Claude refuses the at
   const [message] = await owner<{ id: string }[]>`
     INSERT INTO messages (conversation_id, role, label, body) VALUES (${work.id}, 'user', 'L1', 'Ciao') RETURNING id::text`;
   await assert.rejects(owner`UPDATE message_attachments SET message_id = ${message?.id ?? ''}::bigint, conversation_id = ${work.id} WHERE id = ${image.id}`, /only in a private conversation/);
+  // A private direct chat with an agent neither, in the database too.
+  const direct = await createConversation(sql, { mode: 'private', agent: { name: 'traduttore', modes: ['private'], project: false } });
+  await assert.rejects(postUserMessage(sql, direct.id, 'Guarda', { attachments: [image.id] }), (error: unknown) => error instanceof ChatError && error.code === 'invalid');
+  const [directMessage] = await owner<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, label, body) VALUES (${direct.id}, 'user', 'L2', 'Ciao') RETURNING id::text`;
+  await assert.rejects(owner`UPDATE message_attachments SET message_id = ${directMessage?.id ?? ''}::bigint, conversation_id = ${direct.id} WHERE id = ${image.id}`, /only with Arianna or the local model/);
   // A private conversation still takes it.
   const conversation = await createConversation(sql, { mode: 'private' });
   assert.ok('sent' in (await postOrQueue(sql, conversation.id, 'Ecco', { attachments: [image.id] })));
@@ -409,6 +415,23 @@ test('the routes: upload, the image shown sandboxed, «×», and the message ref
     // «×» removes it.
     assert.equal((await call(origin, 'DELETE', `/api/attachments/${attachment.id}`, {})).status, 204);
     assert.equal((await call(origin, 'GET', `/api/attachments/${attachment.id}`)).status, 404);
+
+    // A text file is only downloaded, its name kept safe in the header.
+    const note = JSON.parse((await call(origin, 'POST', '/api/attachments', text('perché "sì".md', '# Nota finta'))).text) as { attachment: { id: string } };
+    const downloaded = await call(origin, 'GET', `/api/attachments/${note.attachment.id}`);
+    assert.equal(downloaded.headers['content-type'], 'text/markdown; charset=utf-8');
+    assert.equal(downloaded.headers['content-disposition'], `attachment; filename="perch_ _s__.md"; filename*=UTF-8''perch%C3%A9%20%22s%C3%AC%22.md`);
+    assert.equal(downloaded.text, '# Nota finta');
+
+    // «Cancella definitivamente» (D-057) takes the files too, not only the rows.
+    const conversation = await createConversation(sql, { mode: 'private' });
+    const posted = await postUserMessage(sql, conversation.id, 'Guarda', { attachments: [note.attachment.id] });
+    await db().owner`UPDATE jobs SET status = 'done' WHERE key = ${`task:${posted.task.id}`}`;
+    await db().owner`UPDATE tasks SET status = 'done', assignee = 'user' WHERE id = ${posted.task.id}`;
+    assert.equal((await call(origin, 'POST', `/api/conversations/${conversation.id}/archive`, { archived: true })).status, 200);
+    assert.equal((await call(origin, 'POST', `/api/conversations/${conversation.id}/purge`, {})).status, 200);
+    assert.equal(await attachmentRow(note.attachment.id), undefined);
+    assert.equal(files().includes(`${note.attachment.id}.md`), false);
   } finally {
     await server.close();
     await live.close();

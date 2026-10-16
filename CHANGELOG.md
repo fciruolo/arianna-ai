@@ -7,6 +7,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Pagina «Cruscotto»: «Fissa al Cruscotto» su una risposta della chat la tiene in un riquadro con titolo, etichetta, data e conversazione d'origine; la domanda per gli aggiornamenti la riscrive il modello locale e tu la correggi; «Aggiorna» la rifà solo al modello locale, anche per le risposte di Claude o ChatGPT, e l'etichetta del riquadro può solo salire; riquadri stretti o larghi, da riordinare e togliere (D-248).
+- Immagini e file nella chat privata: incolla con ⌘V, trascina sul campo o «Allega file» nel menu «+»; PNG, JPEG, WebP e GIF fino a 10 MB, testi .txt, .md, .csv e .json fino a 256 KiB, al massimo 4 per messaggio, con l'anteprima piccola nella bolla (D-247).
+- Ruolo «Guarda le immagini allegate» (`vision`) in Impostazioni → Modelli: Qwen3.5 9B legge le immagini sul Mac e passa ad Arianna la sua lettura; si carica solo quando c'è un'immagine da leggere e si scarica subito dopo (D-247).
+
+### Sicurezza
+
+- Ogni allegato è Privato (L2) e va solo in una conversazione privata con Arianna o con il modello locale: in una conversazione di lavoro, con Claude o ChatGPT, in incognito o nella coda dei messaggi è rifiutato prima dell'invio, con il testo che resta nel campo; il database lo rifiuta anche lui (migrazione 0074) (D-247).
+- Gli allegati stanno in `data/attachments` (0600, fuori da git), mai SVG, serviti con sandbox e nosniff; «Elimina» li cancella con la conversazione, quelli incollati e mai mandati spariscono dopo un giorno (D-247).
 
 ## [0.137.1] - 2026-10-17
 

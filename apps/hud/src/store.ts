@@ -957,7 +957,11 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
         return true;
       }
       // Whatever is left must be a message: a command never reaches Arianna.
-      if (!goesToArianna(body)) return false;
+      if (!goesToArianna(body)) {
+        // The attachments were taken from the field: back there, never lost (D-247).
+        if (attachments.length > 0) refusedDraft.value = { conversationId: state.conversationId, body, at: Date.now(), attachments: [...attachments] };
+        return false;
+      }
       const posted = await api.sendMessage(
         state.conversationId,
         body,

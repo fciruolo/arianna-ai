@@ -580,7 +580,7 @@ const activeCommand = ref(0);
 const commandHint = ref<string | null>(null);
 const commandQuery = computed(() => menuQuery(draft.value));
 
-// Images and files (D-247): pasted, dropped or chosen with «Allega file»; only where the answer is written on the Mac.
+// Images and files (D-247): pasted, dropped anywhere on the chat (never opened by the browser in place of it) or chosen with «Allega file»; only where the answer is written on the Mac.
 const attachProblem = computed(() => attachmentPlaceProblem(props.conversation));
 const {
   items: attachmentItems,
@@ -1040,7 +1040,13 @@ onBeforeUnmount(() => clearInterval(clock));
 
 <template>
   <!-- On a wide screen the computer of the Coder stands beside the chat instead of over it (D-095). -->
-  <section class="flex flex-col" :class="computerOpen && pane === undefined ? 'xl:pr-[560px]' : ''" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
+  <section
+    class="flex flex-col"
+    :class="computerOpen && pane === undefined ? 'xl:pr-[560px]' : ''"
+    :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`"
+    @dragover="onDragOver"
+    @drop="onDrop"
+  >
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
       <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5 short:gap-3.5 short:pt-4 short:pb-5">
         <!-- Persona header with the HUD ring -->
@@ -1476,8 +1482,6 @@ onBeforeUnmount(() => clearInterval(clock));
         <form
           class="flex items-end gap-2 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-2"
           @submit.prevent="submit()"
-          @dragover="onDragOver"
-          @drop="onDrop"
         >
           <input
             ref="fileInput"

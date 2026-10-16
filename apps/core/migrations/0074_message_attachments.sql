@@ -45,8 +45,10 @@ CREATE TABLE message_attachments (
 CREATE INDEX message_attachments_message_idx ON message_attachments (message_id) WHERE message_id IS NOT NULL;
 CREATE INDEX message_attachments_pending_idx ON message_attachments (created_at) WHERE message_id IS NULL;
 
--- Bound once, to a user message of a private conversation that is not
--- incognito, the same conversation as the message's; after that only the
+-- Bound once, to a user message of a private conversation of the user that
+-- is not incognito, answered by Arianna or the local model (never the
+-- secretary's, a side thread, a system chat, a direct chat with an agent or
+-- the Finances), the same conversation as the message's; after that only the
 -- reading changes (pending to done or failed, once). What a file is never
 -- changes.
 CREATE FUNCTION message_attachments_guard() RETURNS trigger
@@ -76,6 +78,9 @@ BEGIN
     SELECT * INTO c FROM conversations WHERE id = NEW.conversation_id;
     IF c.mode <> 'private' OR c.clearance <> 'L2' OR c.incognito OR c.purged_at IS NOT NULL THEN
       RAISE EXCEPTION 'message_attachments %: only in a private conversation, never incognito', OLD.id USING ERRCODE = 'check_violation';
+    END IF;
+    IF c.origin <> 'user' OR c.secretary OR c.side_of IS NOT NULL OR c.finance OR (c.agent IS NOT NULL AND c.agent <> 'local-chat') THEN
+      RAISE EXCEPTION 'message_attachments %: only with Arianna or the local model', OLD.id USING ERRCODE = 'check_violation';
     END IF;
   END IF;
   IF OLD.read_state <> 'pending' AND (NEW.read_state, NEW.reading) IS DISTINCT FROM (OLD.read_state, OLD.reading) THEN

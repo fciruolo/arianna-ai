@@ -54,7 +54,7 @@ import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
-import { attachmentHistory, attachmentsOf, readPendingImages } from './attachment-reading.ts';
+import { attachmentHistory, attachmentsOf, readPendingImages, withinBudget } from './attachment-reading.ts';
 import { imDecisionAnswer, imReplay, requestIm, WAITING_IM } from './im-step.ts';
 import {
   bindSharedFacts,
@@ -275,7 +275,8 @@ async function historyOf(
     const summary = summaryMessage(view.pieces);
     if (summary !== undefined) history.push(summary);
     // The images and files of the user's messages (D-247): after each message, each part L2.
-    const attached = await attachmentsOf(sql, view.messages.filter((row) => row.role === 'user').map((row) => row.id));
+    const userIds = view.messages.filter((row) => row.role === 'user').map((row) => row.id);
+    const attached = withinBudget(await attachmentsOf(sql, userIds), userIds);
     for (const row of view.messages) {
       const value: TurnMessage =
         row.role === 'system' ? { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${clip(row.body)}` } : { role: row.role, content: clip(row.body) };
