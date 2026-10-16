@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.137.0] - 2026-10-17
+
 ### Aggiunto
 
 - Tema «Base» in Impostazioni → Aspetto, il tema predefinito: la chat com'è, con i sette colori che si leggevano male (testo delle bolle nello scuro, accento, verde, verde acqua e ambra nel chiaro) corretti per il contrasto AA (D-246).
