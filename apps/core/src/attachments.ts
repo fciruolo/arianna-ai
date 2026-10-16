@@ -12,7 +12,7 @@ import { appendEvent } from './events.ts';
  * only into a private conversation answered on this Mac (Arianna or the
  * local model): never to Claude, Codex, the gateway towards the cloud or a
  * channel. The bytes live in data/attachments/<id>.<ext> (0600, out of git),
- * the row in message_attachments (migration 0074) says what the file is and
+ * the row in message_attachments (migration 0075) says what the file is and
  * what the local model may read of it: the text of a text file at once, the
  * reading of the `vision` model for an image (orchestrator/attachment-reading.ts).
  * Events carry ids only; the name and the reading are the user's data.
@@ -334,7 +334,7 @@ export function attachmentRefusal(target: AttachmentTarget): string | undefined 
  * Binds the attachments to the user message that carries them, in the
  * transaction that writes it. Each must be pending (pasted, not sent yet),
  * at most MAX_ATTACHMENTS, each once; the conversation was checked by the
- * caller (attachmentRefusal) and the database checks it again (0074).
+ * caller (attachmentRefusal) and the database checks it again (0075).
  */
 export async function bindAttachments(tx: Queryable, conversationId: string, messageId: string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
