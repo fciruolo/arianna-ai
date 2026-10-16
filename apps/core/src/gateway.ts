@@ -6,6 +6,8 @@ import {
   localityOf,
   markLogged,
   payloadText,
+  piiExemptions,
+  piiScanTexts,
   piiUnavailable,
   PolicyError,
   scanText,
@@ -114,7 +116,11 @@ export async function passGateway(
   let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'));
   if (decision.decision === 'block' && decision.rule === 'pii-unavailable') {
     const texts = textsOf(payload);
-    if (texts !== undefined) decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(texts, fragmentNamesOf(payload, namesFor(meta))));
+    // A text of the adopted catalogs marked by the catalog in its own fragment goes as empty (D-250): Rizzo never reads it.
+    if (texts !== undefined) {
+      const scanned = piiScanTexts(texts, piiExemptions(payload));
+      decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(scanned, fragmentNamesOf(payload, namesFor(meta))));
+    }
   }
   if (!isTarget(target)) return decision;
 

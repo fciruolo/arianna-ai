@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
 import { ORCHESTRATOR_AGENT, SKILL_ID, SKILLS_DELIVERY_BYTES } from '@arianna/config';
+import { CATALOG_SOURCE, markCatalogText } from '@arianna/policy';
 
 import { adoptedDesignIndex, DESIGN_LICENSE, DESIGN_REPOSITORY_PAGE, designStyleText, readDesignEntry, type DesignStyleText } from './design-catalog.ts';
 import {
@@ -562,6 +563,9 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
       return { texts: [], block: undefined, skipped: [], refused, ...(style === undefined ? {} : { styleSkipped: { slug: cleanLine(style, 64), reason: refused } }) };
     }
     const delivery = texts(asked, maxBytes, style);
+    // The block is ours, from the adopted files only: its exact text, in the fragment of this agent's skills,
+    // is not read by the second check of personal data (D-250). One character changed and it is read again.
+    if (delivery.block !== undefined && CATALOG_SOURCE.test(`skills:${agentId}`)) markCatalogText(`skills:${agentId}`, delivery.block);
     reportSkipped(agentId, delivery.skipped);
     if (delivery.styleSkipped !== undefined) reportStyleSkipped(agentId, delivery.styleSkipped);
     return delivery;

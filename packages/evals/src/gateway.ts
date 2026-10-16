@@ -9,7 +9,9 @@ import {
   derive,
   deriveSource,
   fakePiiCheck,
+  forgetCatalogTexts,
   gatewayCheck as gatewayCheckWithPii,
+  markCatalogText,
   payloadText,
   piiUnavailable,
   secretMatcher,
@@ -81,6 +83,12 @@ interface GatewayInput {
    * `unavailable` with its reason. Absent: nothing found.
    */
   pii?: { found: { kind: string; value: string }[][] } | { unavailable: PiiUnavailableReason; development?: boolean };
+  /**
+   * Texts the core marked as composed from the adopted catalogs (D-250), as
+   * `markCatalogText(source, value)`: the second scanner does not read a
+   * fragment with exactly that source and text. Forgotten after the case.
+   */
+  catalog?: { source: string; value: string }[];
 }
 
 /** The fake recognizer of a case: each value is found where it first appears in its fragment. */
@@ -235,7 +243,14 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
 
   const denied = deniedReads === 0 ? {} : { deniedReads };
   const secrets = secretMatcher(input.secrets ?? []);
-  const decision = gatewayCheckWithPii(payload, context, input.target, secrets, piiOf(payload, input.pii));
+  forgetCatalogTexts();
+  for (const marked of input.catalog ?? []) markCatalogText(marked.source, marked.value);
+  let decision;
+  try {
+    decision = gatewayCheckWithPii(payload, context, input.target, secrets, piiOf(payload, input.pii));
+  } finally {
+    forgetCatalogTexts();
+  }
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule, ...denied };
   if (decision.pii !== undefined) return { decision: 'block', rule: decision.rule, next: decision.next, findings: [...new Set(decision.pii.map((finding) => finding.kind))], ...denied };
   const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };

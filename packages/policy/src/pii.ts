@@ -3,6 +3,7 @@
 // finding blocks the exit, nothing here lowers or decides a label. The model
 // runs in apps/guard; the core asks it and hands the answer to the gateway as
 // a `PiiCheck`, which only the functions of this file can make.
+import { piiExemptions, piiScanTexts } from './catalog-texts.ts';
 import { payloadText, sha256Hex } from './payload.ts';
 
 /** One personal datum found by the model: its kind and where it is, never its text. */
@@ -401,9 +402,19 @@ export function piiVerdict(check: unknown, texts: readonly string[]): PiiVerdict
 /**
  * A fake recognizer for tests and evals: the answer it gives for `payload` is
  * `entities` (one list per fragment), by default nothing found. The core never
- * uses it: a test of apps/core fails if its sources name it.
+ * uses it: a test of apps/core fails if its sources name it. As the core
+ * does, it reads a marked catalog text as empty (D-250): what `entities` says
+ * of that fragment is never seen, as the model never sees the text.
  */
 export function fakePiiCheck(payload: readonly { value: unknown }[], entities?: readonly (readonly PiiEntity[])[]): PiiCheck {
   const texts = Array.isArray(payload) ? payload.map((fragment) => payloadText((fragment as { value?: unknown } | null)?.value) ?? '') : [];
-  return piiReport(texts, entities ?? texts.map(() => []));
+  const exempt = piiExemptions(payload);
+  // A list of the wrong length stays as it is: the check is malformed, as before.
+  const answer: unknown =
+    entities === undefined
+      ? texts.map(() => [])
+      : !Array.isArray(entities) || entities.length !== texts.length
+        ? entities
+        : entities.map((found: readonly PiiEntity[], index) => (exempt[index] === true ? [] : found));
+  return piiReport(piiScanTexts(texts, exempt), answer);
 }

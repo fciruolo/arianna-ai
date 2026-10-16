@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 
-import { createContext, piiReport, piiUnavailable, type Labeled, type PiiCheck, type Target } from '@arianna/policy';
+import { createContext, forgetCatalogTexts, markCatalogText, piiReport, piiUnavailable, type Labeled, type PiiCheck, type Target } from '@arianna/policy';
 
 import { passGateway } from '../src/gateway.ts';
 import { configurePiiGuard, type PiiGuard } from '../src/pii-guard.ts';
@@ -90,4 +90,44 @@ test('the service is not asked when another rule decides', async () => {
   assert.equal((await passGateway(db().sql, [{ value: 'IBAN IT60X0542811101000000123456', label: 'L1', source: 'test' }], createContext('L1'), CLAUDE)).decision, 'block');
   assert.equal((await lastLog()).rule, 'scanner');
   assert.deepEqual(guard.asked, []);
+});
+
+/** A fake Rizzo-PII that reads «xAI» and «Mario Bianchi» as persons wherever they are, as the model read the style x-ai. */
+const findsPersons = (texts: readonly string[]) =>
+  piiReport(
+    texts,
+    texts.map((text) =>
+      ['xAI', 'Mario Bianchi'].flatMap((name) => [...text.matchAll(new RegExp(name, 'g'))].map((match) => ({ kind: 'FULLNAME', start: match.index, end: match.index + name.length, score: 0.97 }))),
+    ),
+  );
+
+const STYLE = '----- BEGIN STYLE x-ai [0123456789abcdef] -----\n# Design System Inspired by xAI\nInvented palette.\n----- END STYLE x-ai [0123456789abcdef] -----';
+
+test('the block of a catalog marked by the core is never read by the service; the brief beside it is (D-250)', async () => {
+  try {
+    markCatalogText('skills:designer', STYLE);
+    const guard = fakeGuard(findsPersons);
+    configurePiiGuard(guard);
+    const style: Labeled<string> = { value: STYLE, label: 'L0', source: 'skills:designer' };
+    const allowed = await passGateway(db().sql, [{ value: "fai un'altra versione", label: 'L1', source: 'task:x' }, style], createContext('L1'), CLAUDE);
+    assert.equal(allowed.decision, 'allow');
+    assert.deepEqual(guard.asked, [["fai un'altra versione", '']], 'the style went to the service as an empty text');
+    assert.match((await lastLog()).reason, /1 catalog text not read by the second check/);
+
+    const person = await passGateway(db().sql, [{ value: 'rifai la pagina per Mario Bianchi', label: 'L1', source: 'task:x' }, style], createContext('L1'), CLAUDE);
+    assert.equal(person.decision, 'block', 'a person in the brief still blocks beside the exempt style');
+    assert.equal((await lastLog()).rule, 'pii');
+
+    // The same text in another fragment, or changed by one character: read, and blocked as before.
+    for (const fragment of [
+      { value: STYLE, label: 'L0', source: 'task:x' },
+      { value: `${STYLE}.`, label: 'L0', source: 'skills:designer' },
+    ] as Labeled<string>[]) {
+      const blocked = await passGateway(db().sql, [fragment], createContext('L1'), CLAUDE);
+      assert.equal(blocked.decision, 'block', fragment.source);
+      assert.equal((await lastLog()).rule, 'pii');
+    }
+  } finally {
+    forgetCatalogTexts();
+  }
 });

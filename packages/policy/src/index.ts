@@ -101,6 +101,15 @@ export {
   type Target,
 } from './gateway.ts';
 export {
+  CATALOG_SOURCE,
+  forgetCatalogTexts,
+  isCatalogFragment,
+  markCatalogText,
+  MAX_CATALOG_TEXTS,
+  piiExemptions,
+  piiScanTexts,
+} from './catalog-texts.ts';
+export {
   ASSISTANT_NAMES,
   fakePiiCheck,
   PII_NON_BLOCKING,

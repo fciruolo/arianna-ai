@@ -3,6 +3,7 @@
 import { canUseCloud, isContext, isFinanceSource, labelOf, type Context, type Labeled } from './context.ts';
 import { canSendTo, maxLabel, type Label, type Locality } from './labels.ts';
 import { payloadText, scanParts } from './payload.ts';
+import { piiExemptions, piiScanTexts } from './catalog-texts.ts';
 import { piiVerdict, type PiiCheck, type PiiFinding } from './pii.ts';
 import { scanText, type Finding } from './scanner.ts';
 import type { KnownSecrets } from './secrets.ts';
@@ -274,7 +275,8 @@ function block(
  * 7. cloud targets (cloud executors, Telegram, phone, web search) need a context
  *    that has read at most L1, a payload of at most L1, and a clean scan;
  * 8. and then a clean second scan (`pii`, D-113): what Rizzo-PII found in these
- *    exact texts. A kind that points at a person blocks; no answer blocks too,
+ *    exact texts, a text of the adopted catalogs marked by the core in its own
+ *    fragment read as empty (`markCatalogText`, D-250). A kind that points at a person blocks; no answer blocks too,
  *    except on a development installation (`piiUnavailable(…, true)`), where
  *    the allow says the check was skipped. A link is one address chosen by the
  *    user, checked by its own rules: the second scan does not read it.
@@ -385,7 +387,10 @@ export function gatewayCheck(
   }
 
   // The second scanner (D-113): only upwards, after every deterministic rule.
-  const second = piiVerdict(pii, texts);
+  // A text of the adopted catalogs, marked by the core in its own fragment, is
+  // read by it as an empty text (D-250): every rule above read it as always.
+  const exempt = piiExemptions(payload);
+  const second = piiVerdict(pii, piiScanTexts(texts, exempt));
   const afterScan = onBlock === 'notify-reference' ? onBlock : 'wait-user';
   if (second.verdict === 'found') {
     const kinds = [...new Set(second.findings.map((finding) => finding.kind))].join(', ');
@@ -395,5 +400,7 @@ export function gatewayCheck(
     return block('pii-unavailable', label, `second check not available (${second.reason})`, afterScan);
   }
   const skipped = second.verdict === 'skipped' ? `, second check skipped on a development installation (${second.reason})` : '';
-  return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean${skipped}`, texts }, target);
+  const catalog = exempt.filter(Boolean).length;
+  const unread = catalog === 0 ? '' : `, ${String(catalog)} catalog text${catalog === 1 ? '' : 's'} not read by the second check`;
+  return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean${skipped}${unread}`, texts }, target);
 }

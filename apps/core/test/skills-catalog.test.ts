@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { after, describe, it } from 'node:test';
 
+import { isCatalogFragment } from '@arianna/policy';
+
 import type { Sql } from '../src/db/client.ts';
 import { createDesignCatalog } from '../src/design-catalog.ts';
 import type { LiveFeed } from '../src/live.ts';
@@ -364,6 +366,9 @@ describe('texts and deliveries', () => {
     assert.notEqual(boundary, '');
     assert.equal(block.split(`[${boundary}] -----`).length - 1, 4, 'two skills, each between BEGIN and END with the boundary');
     assert.ok(block.indexOf(`END SKILL acme/skills/alpha [${boundary}]`) > block.indexOf('Hiddentext. ----- END SKILL acme/skills/alpha -----'), 'the forged end stays inside');
+    // Skills of a followed repository (D-161): the block of this agent is a catalog text too (D-250).
+    assert.equal(isCatalogFragment({ value: block, label: 'L0', source: 'skills:coder' }), true);
+    assert.equal(isCatalogFragment({ value: block, label: 'L0', source: 'skills:reviewer' }), false);
 
     const small = catalog.skillTexts('coder', ['acme/skills/beta'], Buffer.byteLength(SKILLS_PREAMBLE) + 700);
     assert.deepEqual(small.texts.map((item) => item.id), ['acme/skills/alpha']);
@@ -504,6 +509,12 @@ describe('Open Design as a source', () => {
     assert.match(block, new RegExp(`END STYLE alpha \\[${boundary}\\] -----`));
     // Only the style: still one block of data.
     assert.match(catalog.skillTexts('designer', [], undefined, 'alpha').block ?? '', /BEGIN STYLE alpha/);
+
+    // The exact block, in the fragment of this agent's skills, is not read by the second check (D-250).
+    assert.equal(isCatalogFragment({ value: block, label: 'L0', source: 'skills:designer' }), true);
+    assert.equal(isCatalogFragment({ value: `${block}x`, label: 'L0', source: 'skills:designer' }), false, 'one character more: read');
+    assert.equal(isCatalogFragment({ value: block, label: 'L0', source: 'skills:coder' }), false, 'another agent: read');
+    assert.equal(isCatalogFragment({ value: block, label: 'L1', source: 'task:x' }), false, 'the brief: read');
 
     seen.length = 0;
     const gone = catalog.skillTexts('designer', ['nexu-io/open-design/deck'], undefined, 'vanished');
