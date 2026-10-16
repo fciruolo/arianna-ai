@@ -6,7 +6,7 @@ import { scanText, type KnownSecrets } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 import { CloudTextError, type AskCloudText } from './cloud-text.ts';
-import { cutAtSentence, parseWikiquote, WIKIQUOTE_HOST, WIKIQUOTE_PAGES, WIKIQUOTE_PAUSE_MS, WIKIQUOTE_SPEAKERS, WikiquoteError, wikiquoteName, type WikiquoteGet } from './wikiquote.ts';
+import { cutAtSentence, parseWikiquote, WIKIQUOTE_HOST, WIKIQUOTE_LIMITED_WAIT_MS, WIKIQUOTE_PAGES, WIKIQUOTE_PAUSE_MS, WIKIQUOTE_SPEAKERS, WikiquoteError, wikiquoteName, type WikiquoteGet } from './wikiquote.ts';
 
 /**
  * The archive of real lines of each person of the series (D-224): collected
@@ -211,6 +211,8 @@ export function createSeriesLines(options: {
   wikiquote?: WikiquoteGet;
   /** Between two pages of Wikiquote; WIKIQUOTE_PAUSE_MS by default (tests give 0). */
   pauseMs?: number;
+  /** After «too many requests», before asking the page once more; WIKIQUOTE_LIMITED_WAIT_MS by default (tests give 0). */
+  limitedWaitMs?: number;
 }): SeriesLines {
   const folder = join(options.dir, SERIES_LINES_DIR);
   const random = options.random ?? Math.random;
@@ -240,7 +242,16 @@ export function createSeriesLines(options: {
       const wait = lastDownload + (options.pauseMs ?? WIKIQUOTE_PAUSE_MS) - Date.now();
       if (lastDownload > 0 && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       try {
-        const text = await get(title);
+        let text: string;
+        try {
+          text = await get(title);
+        } catch (error) {
+          // «Too many requests»: one more time after a minute, then the import stops with what it read (D-245).
+          if (!(error instanceof WikiquoteError && error.code === 'limited')) throw error;
+          // unref: a wait does not keep the core alive when it stops.
+          await new Promise((resolve) => setTimeout(resolve, options.limitedWaitMs ?? WIKIQUOTE_LIMITED_WAIT_MS).unref());
+          text = await get(title);
+        }
         pageCache.set(title, { at: Date.now(), text });
         return text;
       } catch (error) {

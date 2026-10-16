@@ -19,8 +19,14 @@ import https from 'node:https';
 export const WIKIQUOTE_HOST = 'it.wikiquote.org';
 /** A page of a season is about 40 KB of wikitext; the JSON around it adds little. */
 export const WIKIQUOTE_MAX_BYTES = 1024 * 1024;
-/** Between two pages of the same import: Wikiquote answers «too many requests» to a quick burst (seen on 2026-10-16). */
-export const WIKIQUOTE_PAUSE_MS = 1500;
+/**
+ * Between two pages of the same import: Wikiquote answers «too many requests»
+ * after about ten pages a minute (seen on 2026-10-16 with pauses of 1.5 and 4
+ * seconds); the 34 pages of I Simpson take about four minutes (D-245).
+ */
+export const WIKIQUOTE_PAUSE_MS = 7000;
+/** After «too many requests» the same page is asked once more after this long, before giving up (D-245). */
+export const WIKIQUOTE_LIMITED_WAIT_MS = 60_000;
 /** Fixed: Wikimedia asks for one, and it must not say who the user is. */
 const USER_AGENT = 'arianna-series-lines/1.0 (personal assistant; Italian quotes of a TV series for personal use)';
 
@@ -38,28 +44,40 @@ export interface WikiquotePage {
  * series, with a few episodes per season.
  */
 const SCRUBS = 'Scrubs - Medici ai primi ferri';
-const SCRUBS_SEASONS = ['prima', 'seconda', 'terza', 'quarta', 'quinta', 'sesta', 'settima', 'ottava', 'nona'];
+/** The Italian ordinals of the titles of the pages of a season: «I Simpson (trentaquattresima stagione)». */
+const ORDINALS = [
+  'prima', 'seconda', 'terza', 'quarta', 'quinta', 'sesta', 'settima', 'ottava', 'nona', 'decima',
+  'undicesima', 'dodicesima', 'tredicesima', 'quattordicesima', 'quindicesima', 'sedicesima', 'diciassettesima', 'diciottesima', 'diciannovesima', 'ventesima',
+  'ventunesima', 'ventiduesima', 'ventitreesima', 'ventiquattresima', 'venticinquesima', 'ventiseiesima', 'ventisettesima', 'ventottesima', 'ventinovesima', 'trentesima',
+  'trentunesima', 'trentaduesima', 'trentatreesima', 'trentaquattresima',
+];
+/** The pages of the seasons of a series, as Wikiquote names them: «<series> (prima stagione)», … */
+function seasonPages(series: string, count: number): WikiquotePage[] {
+  return ORDINALS.slice(0, count).map((ordinal, at) => ({ title: `${series} (${ordinal} stagione)`, season: at + 1 }));
+}
+/**
+ * Verified on it.wikiquote.org on 2026-10-16 (D-245): Scrubs, I Simpson (34),
+ * Futurama (8) and The Big Bang Theory (12) have a page for each season, the
+ * page of the series only lists them; The Office, I Griffin and Prison Break
+ * one page with «Stagione N»; American Dad! one page with «Frasi» and «Dialoghi».
+ */
 export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>> = {
-  Scrubs: SCRUBS_SEASONS.map((ordinal, at) => ({ title: `${SCRUBS} (${ordinal} stagione)`, season: at + 1 })),
+  Scrubs: seasonPages(SCRUBS, 9),
   'The Office (US)': [{ title: 'The Office' }],
-  // D-237: the page of the whole series, as for The Office; not verified with the network (the wiki resolves a renamed page itself, `redirects=1`).
-  'I Simpson': [{ title: 'I Simpson' }],
-  // I Griffin (D-238): one page for the whole series, as The Office; title and «==Stagione N==» headings not verified (no network while building).
+  'I Simpson': seasonPages('I Simpson', 34),
   'Family Guy': [{ title: 'I Griffin' }],
-  // D-239: one page for the whole series, as The Office (title not verified on the site: no network while building).
   'American Dad!': [{ title: 'American Dad!' }],
-  // D-240: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
   'Prison Break': [{ title: 'Prison Break' }],
-  // D-242: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
-  Futurama: [{ title: 'Futurama' }],
-  // D-243: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
-  'The Big Bang Theory': [{ title: 'The Big Bang Theory' }],
+  Futurama: seasonPages('Futurama', 8),
+  'The Big Bang Theory': seasonPages('The Big Bang Theory', 12),
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
 export function wikiquoteName(show: string): string | undefined {
   if (!Object.hasOwn(WIKIQUOTE_PAGES, show)) return undefined;
-  return show === 'Scrubs' ? SCRUBS : WIKIQUOTE_PAGES[show]?.[0]?.title;
+  const first = WIKIQUOTE_PAGES[show]?.[0];
+  if (first === undefined) return undefined;
+  return first.season === undefined ? first.title : first.title.replace(/ \([a-z]+ stagione\)$/, '');
 }
 
 /** How each character is written before its lines on Wikiquote, by the id of `SERIES_PERSONAS`. */
@@ -108,8 +126,8 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   bullock: ['Bullock', 'Avery Bullock', 'Vicedirettore Bullock'],
   steve: ['Steve', 'Steve Smith'],
   klaus: ['Klaus'],
-  // Prison Break (D-240): the names as the Italian dub writes them, not verified on the page.
-  sara: ['Sara', 'Sara Tancredi'],
+  // Prison Break (D-240): the page writes the whole names, «Dott.ssa Tancredi» for Sara (seen on 2026-10-16).
+  sara: ['Sara', 'Sara Tancredi', 'Dott.ssa Tancredi', 'Dottoressa Tancredi'],
   scofield: ['Michael', 'Michael Scofield', 'Scofield'],
   lincoln: ['Lincoln', 'Lincoln Burrows', 'Linc'],
   mahone: ['Mahone', 'Alexander Mahone', 'Alex Mahone'],
@@ -275,7 +293,30 @@ export function cutAtSentence(text: string, max: number): string | undefined {
   return kept === '' ? undefined : kept;
 }
 
-const SAID_AT_END = /^(.*)\(\s*'''([^']+?)'''\s*\)\s*$/s;
+/** Where a speaker in brackets may start: «('''». */
+const SPEAKER_OPEN = /\(\s*'''/g;
+/** The speaker in brackets, at the start of what follows the last «('''». */
+const SPEAKER_AT = /^\(\s*'''([^']+?)'''\s*\)/;
+/**
+ * The notes the pages write after the speaker: «(stagione 1: episodio 1)», «(S.3 Ep.13)»,
+ * «EPISODIO 1 STAGIONE 1», «'''[a Bart]'''». Each token is taken whole (no two ways to
+ * split a run of capitals), so the time is linear in the text, however it is written.
+ */
+const NOTES_AFTER = /^(?:\s+|\([^()]*\)|'''\[[^\]]*\]'''|[A-Z0-9.]+(?![A-Z0-9.]))*$/;
+/** An item longer than this is no quote (a line is cut at 200 characters anyway): not even read (D-245). */
+const MAX_ITEM = 4000;
+
+/** «… ('''Bender''')», maybe with notes after: the words and the speaker; undefined for anything else. */
+function saidAtEnd(item: string): [string, string] | undefined {
+  let at = -1;
+  for (const match of item.matchAll(SPEAKER_OPEN)) at = match.index;
+  if (at < 0) return undefined;
+  const speaker = SPEAKER_AT.exec(item.slice(at));
+  if (speaker === null || !NOTES_AFTER.test(item.slice(at + speaker[0].length))) return undefined;
+  return [item.slice(0, at), speaker[1] ?? ''];
+}
+/** Level-2 sections of the lines of a whole series without seasons (American Dad!, Prison Break). */
+const LINES_SECTION = /^(?:Frasi|Dialoghi|Frasi ricorrenti)$/i;
 const TURN = /^\s*'''([^']+?)'''\s*:\s*(.*)$/s;
 
 /**
@@ -294,6 +335,8 @@ export function parseWikiquote(wikitext: string, speakers: readonly string[], pa
   // A page of a season holds its episodes from the top; a page of the whole series only under «Stagione N».
   let inSeries = page.season !== undefined;
   let episode: string | undefined;
+  /** The level of the heading the episode comes from: a sub-heading under an episode of the first level keeps it. */
+  let episodeLevel = 0;
   const found: WikiquoteLine[] = [];
   const push = (raw: string): void => {
     const text = plainOf(raw).replace(/^[-–—:\s]+/, '');
@@ -307,20 +350,29 @@ export function parseWikiquote(wikitext: string, speakers: readonly string[], pa
       const title = plainOf(heading[2] ?? '');
       const seasonOf = /^Stagione\s+(\d+)/i.exec(title);
       const episodeOf = /^Episodio\s+(\d+)/i.exec(title);
-      if (level === 2) {
-        inSeries = seasonOf !== null;
+      if (level === 2 && episodeOf !== null && page.season !== undefined) {
+        // A page of a season with its episodes at the first level (The Big Bang Theory, I Simpson, Futurama).
+        inSeries = true;
+        episode = `${String(page.season)}x${String(Number(episodeOf[1])).padStart(2, '0')}`;
+        episodeLevel = 2;
+      } else if (level === 2) {
+        inSeries = seasonOf !== null || LINES_SECTION.test(title);
         if (seasonOf !== null) season = Number(seasonOf[1]);
+        else if (LINES_SECTION.test(title)) season = page.season;
         episode = undefined;
+        episodeLevel = 0;
       } else if (episodeOf !== null) {
         const number = String(Number(episodeOf[1])).padStart(2, '0');
         episode = season === undefined ? `ep. ${number}` : `${String(season)}x${number}`;
-      } else {
+        episodeLevel = level;
+      } else if (episodeLevel === 0 || level <= episodeLevel) {
         episode = undefined;
+        episodeLevel = 0;
       }
       continue;
     }
     // A quote is an item of the first level only; «**» and «:» are notes or continuations.
-    if (!inSeries || !/^\*[^*:#]/.test(line)) continue;
+    if (!inSeries || !/^\*[^*:#]/.test(line) || line.length > MAX_ITEM) continue;
     // Notes and templates out first ({{NDR|…}} the stage directions, {{Cfr}} after the speaker): the speaker is then at the end.
     let item = line.slice(1).replace(/<ref[^>]*\/>/gi, '').replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '');
     for (let round = 0; round < 5 && /\{\{[^{}]*\}\}/.test(item); round += 1) item = item.replace(/\{\{[^{}]*\}\}/g, '');
@@ -332,8 +384,8 @@ export function parseWikiquote(wikitext: string, speakers: readonly string[], pa
       }
       continue;
     }
-    const said = SAID_AT_END.exec(item);
-    if (said !== null && isSpeaker(said[2] ?? '')) push(said[1] ?? '');
+    const said = saidAtEnd(item);
+    if (said !== undefined && isSpeaker(said[1])) push(said[0]);
   }
   return found;
 }

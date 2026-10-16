@@ -108,6 +108,92 @@ describe('wikiquote parser', () => {
   });
 });
 
+describe('pages and forms of the series as Wikiquote writes them (D-245, seen on 2026-10-16)', () => {
+  it('the series with a page per season list all of them, with their Italian ordinal', () => {
+    const titles = (show: string) => (WIKIQUOTE_PAGES[show] ?? []).map((page) => page.title);
+    assert.equal(titles('I Simpson').length, 34);
+    assert.equal(titles('I Simpson')[33], 'I Simpson (trentaquattresima stagione)');
+    assert.equal(titles('I Simpson')[16], 'I Simpson (diciassettesima stagione)');
+    assert.deepEqual(titles('The Big Bang Theory').slice(10), ['The Big Bang Theory (undicesima stagione)', 'The Big Bang Theory (dodicesima stagione)']);
+    assert.equal(titles('Futurama').length, 8);
+    assert.deepEqual(WIKIQUOTE_PAGES['Futurama']?.[7], { title: 'Futurama (ottava stagione)', season: 8 });
+    assert.deepEqual(titles('American Dad!'), ['American Dad!']);
+    assert.equal(wikiquoteName('I Simpson'), 'I Simpson');
+    assert.equal(wikiquoteName('Scrubs'), 'Scrubs - Medici ai primi ferri');
+  });
+
+  it('a page of a season with its episodes at the first level: every episode read, the incipit and the notes not', () => {
+    const page = [
+      '==[[Incipit]]==',
+      "*Un incipit, non una battuta della serie. ('''Sheldon''')",
+      "==Episodio 1, ''Pilota''==",
+      "*Questa non è una casa qualunque, è un vortice di entropia di prova. ('''Sheldon''')",
+      "*'''Penny''': Senti, ce l'hai un secondo?<br />'''Sheldon''': Ce l'avevo, ma è già passato.",
+      "==Episodio 12, ''La città replicata''==",
+      "*{{NDR|Svegliandosi}} Big Boy di prova! ('''Sheldon''')",
+      '==Note==',
+      "*Una nota che cita ('''Sheldon''')",
+    ].join('\n');
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.sheldon ?? [], { season: 1 }), [
+      { text: 'Questa non è una casa qualunque, è un vortice di entropia di prova.', episode: '1x01' },
+      { text: 'Ce l’avevo, ma è già passato.'.replace('’', "'"), episode: '1x01' },
+      { text: 'Big Boy di prova!', episode: '1x12' },
+    ]);
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.penny ?? [], { season: 1 }).map((line) => line.text), ["Senti, ce l'hai un secondo?"]);
+    // The same headings on a page of the whole series are not episodes of a known season: nothing is read.
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.sheldon ?? []), []);
+  });
+
+  it('«Frasi» and «Dialoghi» of a page without seasons, and a note after the speaker', () => {
+    const page = [
+      '==Frasi==',
+      "*Il Messico, la zona cieca di prova! ('''Stan''')",
+      "* C'è una sola cosa di prova che faccio coi drink! ('''Roger''')(S.3 Ep.13)",
+      "*Ti tirerò fuori di qui, è una prova. ('''Michael Scofield''') EPISODIO 1 STAGIONE 1",
+      "*Per me l'uomo è un essere da aiutare, di prova. ('''Dott.ssa Tancredi''') STAGIONE 1",
+      "*Bacia il mio fondoschiena metallico di prova! ('''Bender''') (stagione 1: episodio 1, 13)",
+      "*Brutto bacarospo di prova! ('''Homer''') '''[a Bart]'''",
+      '==Dialoghi==',
+      "*'''Hayley''': Roger, che ti è successo di prova?<br />'''Roger''': Niente di prova.",
+      "==Citazioni su ''American Dad!''==",
+      "*Una serie di prova. ('''Stan''')",
+    ].join('\n');
+    const of = (id: string) => parseWikiquote(page, WIKIQUOTE_SPEAKERS[id] ?? []).map((line) => line.text);
+    assert.deepEqual(of('stan'), ['Il Messico, la zona cieca di prova!']);
+    assert.deepEqual(of('roger'), ["C'è una sola cosa di prova che faccio coi drink!", 'Niente di prova.']);
+    assert.deepEqual(of('scofield'), ['Ti tirerò fuori di qui, è una prova.']);
+    assert.deepEqual(of('sara'), ["Per me l'uomo è un essere da aiutare, di prova."]);
+    assert.deepEqual(of('bender'), ['Bacia il mio fondoschiena metallico di prova!']);
+    assert.deepEqual(of('homer'), ['Brutto bacarospo di prova!']);
+    assert.deepEqual(of('hayley'), ['Roger, che ti è successo di prova?']);
+    // Text after the speaker that is not a note: not a line of the speaker.
+    assert.deepEqual(parseWikiquote("==Frasi==\n*Una frase di prova. ('''Stan''') e poi altro testo", ['Stan']), []);
+  });
+
+  it('a sub-heading under an episode of the first level keeps the episode; a section that is no episode stops the reading', () => {
+    const page = [
+      "==Episodio 3, ''Il corollario del gatto''==",
+      '===Dialoghi===',
+      "*'''Sheldon''': Una battuta di prova sotto un sottotitolo.",
+      '==Altri progetti==',
+      "*Una voce che non è della serie. ('''Sheldon''')",
+    ].join('\n');
+    assert.deepEqual(parseWikiquote(page, ['Sheldon'], { season: 2 }), [{ text: 'Una battuta di prova sotto un sottotitolo.', episode: '2x03' }]);
+  });
+
+  it('text anyone can edit: a strange or long line costs little time and gives no line (D-245)', () => {
+    const lines = [
+      `*Frase ('''Stan''') ${'A '.repeat(1500)}!`,
+      `*${"('''A''') ".repeat(40_000)}z`,
+      `*${'A'.repeat(100_000)}!`,
+      `*Una battuta lunga ${'x'.repeat(5000)} ('''Stan''')`,
+    ];
+    const started = Date.now();
+    assert.deepEqual(parseWikiquote(`==Frasi==\n${lines.join('\n')}`, ['Stan', 'A']), []);
+    assert.ok(Date.now() - started < 1000, `${String(Date.now() - started)} ms`);
+  });
+});
+
 describe('import from wikiquote', () => {
   function archive(pages: Record<string, string | Error>) {
     const asked: string[] = [];
@@ -117,6 +203,7 @@ describe('import from wikiquote', () => {
       secrets: secretMatcher([]),
       random: () => 0.5,
       pauseMs: 0,
+      limitedWaitMs: 0,
       ask: () => Promise.reject(new CloudTextError('failed', 'Claude non serve qui')),
       wikiquote: (title) => {
         asked.push(title);
@@ -206,7 +293,35 @@ describe('import from wikiquote', () => {
     const status = lines.status('jd');
     assert.equal(status.lines.length, 3);
     assert.match(status.stopped ?? '', /rallentare.*pagine lette: 1 su 9; battute aggiunte: 3/);
-    assert.equal(asked.length, 2);
+    // The limited page is asked once more before giving up (D-245).
+    assert.deepEqual(asked, [first, second, second]);
+  });
+
+  it('asks a limited page once more after a wait, and goes on when Wikiquote answers (D-245)', async () => {
+    const asked: string[] = [];
+    let limitedOnce = false;
+    const lines = createSeriesLines({
+      dir: join(root, randomUUID()),
+      secrets: secretMatcher([]),
+      random: () => 0.5,
+      pauseMs: 0,
+      limitedWaitMs: 0,
+      ask: () => Promise.reject(new CloudTextError('failed', 'Claude non serve qui')),
+      wikiquote: (title) => {
+        asked.push(title);
+        if (title === first) return Promise.resolve(SEASON);
+        if (title === second && !limitedOnce) {
+          limitedOnce = true;
+          return Promise.reject(new WikiquoteError('limited', 'Wikiquote chiede di rallentare: riprova fra qualche minuto'));
+        }
+        return Promise.reject(new WikiquoteError('missing', 'la pagina non c’è su Wikiquote'));
+      },
+    });
+    lines.importWikiquote('jd', true);
+    await lines.idle();
+    assert.equal(lines.status('jd').stopped, null);
+    assert.equal(asked.filter((title) => title === second).length, 2);
+    assert.equal(asked.length, 10, 'the nine seasons, the second twice');
   });
 
   it('one queue and one download per page for all the people of a series', async () => {
