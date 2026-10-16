@@ -50,6 +50,8 @@ export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>>
   'American Dad!': [{ title: 'American Dad!' }],
   // D-240: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
   'Prison Break': [{ title: 'Prison Break' }],
+  // D-242: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
+  Futurama: [{ title: 'Futurama' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -113,6 +115,14 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   westmoreland: ['Westmoreland', 'Charles Westmoreland'],
   sucre: ['Sucre', 'Fernando Sucre'],
   tbag: ['T-Bag', 'Theodore Bagwell'],
+  // Futurama (D-242): the names of the Italian dub, not verified on the page (no network while building).
+  leela: ['Leela', 'Turanga Leela'],
+  bender: ['Bender', 'Bender Rodríguez', 'Bender Rodriguez'],
+  farnsworth: ['Professor Farnsworth', 'Prof. Farnsworth', 'Farnsworth', 'Hubert Farnsworth'],
+  amy: ['Amy', 'Amy Wong'],
+  hermes: ['Hermes', 'Hermes Conrad'],
+  zoidberg: ['Zoidberg', 'Dottor Zoidberg', 'Dr. Zoidberg'],
+  fry: ['Fry', 'Philip J. Fry'],
 };
 
 export interface WikiquoteLine {

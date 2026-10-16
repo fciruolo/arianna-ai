@@ -48,6 +48,13 @@
     { "id": "abruzzi", "name": "Abruzzi", "file": "abruzzi.png" },
     { "id": "westmoreland", "name": "Westmoreland", "file": "westmoreland.png" },
     { "id": "sucre", "name": "Sucre", "file": "sucre.png" },
-    { "id": "tbag", "name": "T-Bag", "file": "tbag.png" }
+    { "id": "tbag", "name": "T-Bag", "file": "tbag.png" },
+    { "id": "leela", "name": "Leela", "file": "leela.png" },
+    { "id": "bender", "name": "Bender", "file": "bender.png" },
+    { "id": "farnsworth", "name": "Prof. Farnsworth", "file": "farnsworth.png" },
+    { "id": "amy", "name": "Amy", "file": "amy.png" },
+    { "id": "hermes", "name": "Hermes", "file": "hermes.png" },
+    { "id": "zoidberg", "name": "Zoidberg", "file": "zoidberg.png" },
+    { "id": "fry", "name": "Fry", "file": "fry.png" }
   ]
 }

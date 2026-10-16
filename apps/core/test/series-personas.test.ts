@@ -485,3 +485,64 @@ test('the theme Fox River (D-240): who wears whom, who is who, and the whole nam
   const names = seriesNamesOfSource('character:serie/scofield') ?? [];
   for (const name of ['Michael Scofield', 'Theodore Bagwell', 'T-Bag', 'Fernando Sucre', 'Dr. Cox']) assert.ok(names.includes(name), name);
 });
+
+test('the theme Planet Express (D-242): who wears whom, who is who, and the whole names as aliases, worn ones only', () => {
+  const crew = corsia({ appearance: { theme: 'planet-express' } });
+  const roles = { arianna: 'leela', coder: 'bender', god: 'farnsworth', reviewer: 'amy', finanze: 'hermes', designer: 'zoidberg', 'local-chat': 'fry' };
+  for (const [agent, id] of Object.entries(roles)) {
+    assert.equal(characterChoiceOf(crew, agent), `serie/${id}`, agent);
+    assert.equal(characterPart(crew, agent)?.source, `character:serie/${id}`, agent);
+  }
+  assert.match(characterPart(crew, 'coder')?.text ?? '', /Call yourself "Bender"\. You are Bender of Futurama, never Arianna/);
+  // Every one of the crew wears an agent of the theme: nobody is left free in the gallery.
+  assert.deepEqual(Object.values(themeCharactersSync(THEMES, 'planet-express')).sort(), Object.values(roles).map((id) => `serie/${id}`).sort());
+  assert.equal(characterChoiceOf(crew, 'mio-agente'), 'originali/coder');
+  const roster = rosterPart(crew, 'god')?.text ?? '';
+  assert.match(roster, /- Arianna: "Leela"/);
+  assert.match(roster, /- Coder: "Bender"/);
+  assert.match(roster, /- Reviewer: "Amy"/);
+  assert.doesNotMatch(roster, /Turanga|Hubert|Rodr/);
+  // The names worn now with their whole forms (the aliases, as «Bob Kelso» of D-227); the local model is not loaded here.
+  assert.deepEqual(wornSeriesNames(crew).sort(), [
+    'Amy',
+    'Amy Wong',
+    'Bender',
+    'Bender Bending Rodríguez',
+    'Bender Rodriguez',
+    'Bender Rodríguez',
+    'Dottor Zoidberg',
+    'Dr. Zoidberg',
+    'Farnsworth',
+    'Hermes',
+    'Hermes Conrad',
+    'Hubert Farnsworth',
+    'Hubert J. Farnsworth',
+    'John A. Zoidberg',
+    'John Zoidberg',
+    'Leela',
+    'Prof Farnsworth',
+    'Prof. Farnsworth',
+    'Professor Farnsworth',
+    'Turanga Leela',
+    'Zoidberg',
+    'dottor Zoidberg',
+    'professor Farnsworth',
+  ]);
+  const only = (names: string[]) => {
+    const text = names.join(' e ');
+    const entities = names.map((name) => ({ kind: 'FULLNAME', start: text.indexOf(name), end: text.indexOf(name) + name.length, score: 0.9 }));
+    return piiVerdict(piiReport([text], [entities], [], fragmentNamesOf([{ value: text, label: 'L1', source: 'message:1' }], wornSeriesNames(crew))), [text]);
+  };
+  assert.deepEqual(only(['Turanga Leela', 'Bender', 'Hubert J. Farnsworth', 'Amy Wong', 'Hermes Conrad', 'Zoidberg']), { verdict: 'clean' });
+  // Negative: a wider span is a person, and so is a name nobody wears (Fry without the local model), and the crew under another theme.
+  assert.equal(only(['Amy Bianchi']).verdict, 'found');
+  assert.equal(only(['Hermes Rossi']).verdict, 'found');
+  assert.equal(only(['Philip J. Fry']).verdict, 'found');
+  assert.ok(!wornSeriesNames(corsia()).includes('Turanga Leela'));
+  // With the local model loaded, Fry is worn too, with his whole name.
+  const fry = wornSeriesNames(corsia({ appearance: { theme: 'planet-express' }, agentsNow: () => ({ official: [...LOADED.official, 'local-chat'], user: [] }) }));
+  for (const name of ['Fry', 'Philip J. Fry']) assert.ok(fry.includes(name), name);
+  // In the piece of a character every name of the series counts, aliases included (D-214, D-217).
+  const names = seriesNamesOfSource('character:serie/bender') ?? [];
+  for (const name of ['Philip J. Fry', 'Turanga Leela', 'Hubert J. Farnsworth', 'Dr. Zoidberg', 'Dr. Cox']) assert.ok(names.includes(name), name);
+});

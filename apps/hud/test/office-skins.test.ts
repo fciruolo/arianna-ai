@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { COLOR_TOKENS, THEME_TOKENS, type Scene } from '../src/lib/office/draw.ts';
 import { boardPoint, decisionsPoint, archivePoint, tilesNear, DESK_WALK_REACH, WALK_REACH, type OfficeMap } from '../src/lib/office/map.ts';
 import { findPath } from '../src/lib/office/path.ts';
+import { planetExpressCabinet } from '../src/lib/office/planet-express.ts';
 import { OFFICE_SKINS, officeMapOf, officeView, SKIN_INK, skinColors, skinOfTheme, type OfficeSkin } from '../src/lib/office/skins.ts';
 import { colorsOf, rasterize } from './support/office-raster.ts';
 
@@ -50,6 +51,8 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   assert.equal(skinOfTheme('langley'), 'langley');
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
   assert.equal(skinOfTheme('fox-river'), 'fox-river');
+  assert.equal(skinOfTheme('planet-express'), 'planet-express');
+  for (const other of ['Planet-Express', 'planet', 'futurama']) assert.equal(skinOfTheme(other), 'base', other);
   for (const other of [undefined, 'base', 'natale', 'Corsia', 'Fox-River', 'fox', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 
@@ -160,5 +163,43 @@ test('Fox River (D-240): its own colours over the page, light or dark as the pag
   const windows = (map: OfficeMap): number => map.tiles.filter((kind) => kind === 'window').length;
   assert.equal(windows(mapOf('fox-river')), windows(mapOf('base')) + 2);
   const broken = officeMapOf('fox-river', { ...TEXTS, 'fox-river': '{}' });
+  assert.deepEqual([broken.fallback, broken.map?.id], [true, 'base']);
+});
+
+test('the Planet Express (D-242): its own colours over the page, the theme tokens kept; the ship parked in the hall, the crates elsewhere, two transport tubes more', () => {
+  const light = colorsOf(css, 'light', COLOR_TOKENS, THEME_TOKENS);
+  const dark = colorsOf(css, 'dark', COLOR_TOKENS, THEME_TOKENS);
+  const express = skinColors(light, 'planet-express');
+  assert.notEqual(express.floor, light.floor);
+  assert.notEqual(skinColors(dark, 'planet-express').floor, express.floor);
+  for (const token of THEME_TOKENS) assert.equal(express[token], light[token], token);
+  const map = mapOf('planet-express');
+  assert.equal(map.id, 'planet-express');
+  // The ship: one run of three cabinets in the hall, tail, body and nose; the archive's cabinet stays a crate, the engine walks to it.
+  const pieces = new Map<string, string[]>();
+  for (let r = 0; r < map.height; r++) {
+    for (let c = 0; c < map.width; c++) {
+      if (map.tiles[r * map.width + c] !== 'cabinet') continue;
+      const piece = planetExpressCabinet(map, c, r);
+      pieces.set(piece, [...(pieces.get(piece) ?? []), `${String(c)},${String(r)}`]);
+    }
+  }
+  assert.deepEqual([pieces.get('ship-tail'), pieces.get('ship-body'), pieces.get('ship-nose')], [['27,9'], ['28,9'], ['29,9']]);
+  const [ac, ar] = map.anchors.archive.seat;
+  assert.equal(planetExpressCabinet(map, ac, ar - 1), 'crate');
+  // Negative: a run of two is crates, a tile that is not a cabinet is no ship.
+  assert.equal(planetExpressCabinet(mapOf('base'), 24, 15), 'crate');
+  assert.equal(planetExpressCabinet(map, 26, 9), 'crate');
+  const coffee = (m: OfficeMap): number => m.tiles.filter((kind) => kind === 'coffee').length;
+  assert.equal(coffee(map), coffee(mapOf('base')) + 2);
+  // The green of the ship is in the drawing of the Planet Express, never in Base.
+  const hasHull = (skin: OfficeSkin): boolean => {
+    const { rgba } = rasterize(scene(skin, 'light'));
+    for (let at = 0; at < rgba.length; at += 4) if (rgba[at] === 0x5f && rgba[at + 1] === 0xae && rgba[at + 2] === 0x7c) return true;
+    return false;
+  };
+  assert.equal(hasHull('planet-express'), true);
+  assert.equal(hasHull('base'), false);
+  const broken = officeMapOf('planet-express', { ...TEXTS, 'planet-express': '{}' });
   assert.deepEqual([broken.fallback, broken.map?.id], [true, 'base']);
 });

@@ -9,6 +9,7 @@ import { GRIFFIN } from './art/serie/griffin.ts';
 import { BULLOCK, FRANCINE, HAYLEY, KLAUS, ROGER, STAN, STEVE } from './art/serie/american-dad.ts';
 import { ANDY, ANGELA, CREED, DWIGHT, JIM, KEVIN, MICHAEL, OSCAR, PAM } from './art/serie/office.ts';
 import { PRISON_BREAK } from './art/serie/prison-break.ts';
+import { FUTURAMA } from './art/serie/futurama.ts';
 import { CARLA, COX, ELLIOT, JANITOR, JD, KELSO, LAVERNE, TED, TURK } from './art/serie/scrubs.ts';
 import { BART, BOE, BURNS, HOMER, LISA, MARGE, SMITHERS } from './art/serie/simpsons.ts';
 import { dress, renderSheet, type CharacterArt } from './compose.ts';
@@ -75,6 +76,7 @@ export const SERIES: readonly { art: CharacterArt; name: string }[] = [
   { art: STEVE, name: 'Steve' },
   { art: KLAUS, name: 'Klaus' },
   ...PRISON_BREAK,
+  ...FUTURAMA,
 ];
 
 export function sheetPng(art: CharacterArt): Buffer {

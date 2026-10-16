@@ -101,6 +101,7 @@ describe('wikiquote parser', () => {
     for (const person of Object.values(SERIES_PERSONAS)) assert.ok(wikiquoteName(person.show) !== undefined, person.show);
     assert.equal(wikiquoteName('American Dad!'), 'American Dad!');
     assert.equal(wikiquoteName('Prison Break'), 'Prison Break');
+    assert.equal(wikiquoteName('Futurama'), 'Futurama');
     assert.equal(wikiquoteName('Una serie che non c’è'), undefined);
     for (const id of Object.keys(SERIES_PERSONAS)) assert.ok((WIKIQUOTE_SPEAKERS[id]?.length ?? 0) > 0, id);
   });

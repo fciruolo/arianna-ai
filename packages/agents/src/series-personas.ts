@@ -10,6 +10,7 @@ import { SIMPSONS_PERSONAS } from './series-simpsons.ts';
 import { GRIFFIN_PERSONAS } from './series-griffin.ts';
 import { AMERICAN_DAD_PERSONAS } from './series-american-dad.ts';
 import { PRISON_BREAK_PERSONAS } from './series-personas-prison-break.ts';
+import { FUTURAMA_PERSONAS } from './series-futurama.ts';
 
 /** The pack of the people of the series, as `SERIES_PACK` in `@arianna/config` (which imports this package, never the other way). */
 export const SERIES_PACK_ID = 'serie';
@@ -222,6 +223,8 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   ...AMERICAN_DAD_PERSONAS,
   // The theme Fox River (D-240), in a file of its own.
   ...PRISON_BREAK_PERSONAS,
+  // The crew of the Planet Express of Futurama (D-242), in a file of its own.
+  ...FUTURAMA_PERSONAS,
 };
 
 /** The person of the series behind `<pack>/<character>`; undefined for any other character. Own keys only. */

@@ -129,6 +129,20 @@ test('the places of the themes: checked floor and no handrail for Base, a handra
   assert.equal(bars.length, windows.length * 4);
   for (const block of bars) assert.ok(windows.some(([c, r]) => Math.abs(block.x - (c + 0.5)) < 0.7 && Math.abs(block.z - (r + 0.5)) < 0.7), `a bar at ${String(block.x)},${String(block.z)}`);
   assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'outline' && block.y >= 0.5).length, 0);
+  // The lockers of Fox River in the colour of the counter (D-240, the dead line gone in D-242), the cabinets of Base in that of the desks.
+  const tall = (world: ReturnType<typeof buildWorld>, map: OfficeMap): Block[] => world.blocks.filter((block) => block.h === 1.05 && tilesOf(map, (kind) => kind === 'cabinet').some(([c, r]) => covers(block, c, r)));
+  assert.ok(tall(prison, prisonMap).length > 0 && tall(prison, prisonMap).every((block) => block.color === 'counter'));
+  assert.ok(tall(buildWorld(BASE, 'base'), BASE).every((block) => block.color === 'desk'));
+  // The Planet Express (D-242): one-colour floor, no handrail, the ship in the green of the theme over its three tiles, a tall glass tube for each coffee tile.
+  const expressMap = mapOf('planet-express');
+  const express = buildWorld(expressMap, 'planet-express');
+  assert.equal(rails(express).length, 0);
+  assert.ok(express.floors.every((tile) => !tile.alt));
+  const hull = express.blocks.filter((block) => block.color === 'ok' && block.y >= 0.2 && block.y < 0.3);
+  assert.deepEqual([...new Set(hull.map((block) => `${String(Math.floor(block.x))},${String(Math.floor(block.z))}`))].sort(), ['27,9', '28,9', '29,9']);
+  const tubes = express.blocks.filter((block) => block.color === 'window-light' && block.h > 1);
+  assert.equal(tubes.length, tilesOf(expressMap, (kind) => kind === 'coffee').length);
+  assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'window-light' && block.h > 1).length, 0);
 });
 
 test('a screen on the desk of every room with a desk, keyed by its seat; the bell over the Decisioni desk', () => {

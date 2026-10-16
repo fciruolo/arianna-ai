@@ -1,6 +1,7 @@
 import type { Colors } from './draw.ts';
 import { LANGLEY_PALETTE } from './langley.ts';
 import { FOX_RIVER_PALETTES } from './fox-river.ts';
+import { PLANET_EXPRESS_PALETTES } from './planet-express.ts';
 import { parseMapText, type OfficeMap } from './map.ts';
 import { SPRINGFIELD_PALETTE } from './springfield.ts';
 import { QUAHOG_PALETTE } from './quahog.ts';
@@ -14,12 +15,13 @@ import { QUAHOG_PALETTE } from './quahog.ts';
  * and anchors as the map `base`: the theme changes the plan a little (its map
  * in src/office/maps/) and how the code draws floor, walls and furniture.
  * With Prison Break the penitentiary of Fox River (D-240, lib/office/fox-river.ts).
+ * With Futurama the headquarters of the Planet Express (D-242, lib/office/planet-express.ts).
  * Base stays as it was, pixel for pixel. Fan art of the places of the series
  * for personal use, like the pack `serie` (D-211): to be removed before the
  * repository is shared. With American Dad! the house of the Smiths (D-239,
  * lib/office/langley.ts).
  */
-export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river'] as const;
+export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river', 'planet-express'] as const;
 export type OfficeSkin = (typeof OFFICE_SKINS)[number];
 
 /** The office of the theme in use: its own for the themes of the series (the id of the theme is the id of the place), otherwise the base. */
@@ -113,6 +115,8 @@ const PALETTES: Readonly<Record<Exclude<OfficeSkin, 'base'>, { light: Palette; d
   langley: LANGLEY_PALETTE,
   // The penitentiary of Prison Break (D-240), in lib/office/fox-river.ts.
   'fox-river': FOX_RIVER_PALETTES,
+  // The headquarters of the Planet Express of Futurama (D-242), in lib/office/planet-express.ts.
+  'planet-express': PLANET_EXPRESS_PALETTES,
 };
 
 /** Fixed colours of the places, the same in light and dark: they are things, not the page. */

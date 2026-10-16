@@ -8,6 +8,7 @@ import springfieldMapText from '../office/maps/springfield.json?raw';
 import quahogMapText from '../office/maps/quahog.json?raw';
 import langleyMapText from '../office/maps/langley.json?raw';
 import foxRiverMapText from '../office/maps/fox-river.json?raw';
+import planetExpressMapText from '../office/maps/planet-express.json?raw';
 import { listDelegations } from '../lib/api.ts';
 import { boardPoint } from '../lib/office/map.ts';
 import { officeMapOf, officeView, skinOfTheme } from '../lib/office/skins.ts';
@@ -53,7 +54,7 @@ const props = defineProps<{
 const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string]; talk: [agent: string, project?: string] }>();
 
 // The place of the theme (D-216): its map, or the base one with its colours when it does not pass.
-const MAP_TEXTS = { base: baseMapText, corsia: corsiaMapText, ufficio: ufficioMapText, springfield: springfieldMapText, quahog: quahogMapText, langley: langleyMapText, 'fox-river': foxRiverMapText };
+const MAP_TEXTS = { base: baseMapText, corsia: corsiaMapText, ufficio: ufficioMapText, springfield: springfieldMapText, quahog: quahogMapText, langley: langleyMapText, 'fox-river': foxRiverMapText, 'planet-express': planetExpressMapText };
 const skin = computed(() => skinOfTheme(props.theme));
 const chosenMap = computed(() => officeMapOf(skin.value, MAP_TEXTS));
 const map = computed(() => chosenMap.value.map);
