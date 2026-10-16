@@ -386,7 +386,9 @@ function checkRooms(map: OfficeMap): void {
     for (const [c, r] of [item.seat, ...deskTiles(item.desk)]) if (!inRoom(item.room, c, r)) throw new MapError(`scrivania e posto di «${where}» devono stare dentro la sua stanza`);
     const ring = ringTiles(item.room);
     if (ring.some(([c, r]) => { const kind = tileAt(map, c, r); return kind !== 'door' && !isWall(kind); })) throw new MapError(`la stanza «${where}» non è chiusa da muri e porte`);
-    const doors = ring.filter(([c, r]) => tileAt(map, c, r) === 'door');
+    // A door in a corner touches the room only diagonally: it does not open it.
+    const [c0, r0, c1, r1] = item.room;
+    const doors = ring.filter(([c, r]) => tileAt(map, c, r) === 'door' && ((c >= c0 && c <= c1) || (r >= r0 && r <= r1)));
     if (doors.length === 0) throw new MapError(`la stanza «${where}» non ha una porta`);
     if (!doors.some(([c, r]) => from.has(r * map.width + c))) throw new MapError(`nessuna porta della stanza «${where}» si raggiunge dall'ingresso`);
   };

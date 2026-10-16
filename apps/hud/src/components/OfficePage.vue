@@ -113,7 +113,9 @@ onBeforeUnmount(() => {
 });
 
 /** Who has a room (D-229): pinned projects first, then those active in the last days; the rest behind the archive. */
-const claims = computed(() => roomClaims(props.projects, props.conversations, work.value, now.value));
+// Working now counts too: the running delegations and the run of each agent (the repository it works in).
+const working = computed(() => [...work.value, ...(props.status?.agents ?? []).filter((agent) => agent.state === 'thinking' || agent.state === 'working').map((agent) => ({ repo: agent.run?.repo ?? null }))]);
+const claims = computed(() => roomClaims(props.projects, props.conversations, working.value, now.value));
 
 const snapshot = computed<OfficeSnapshot>(() =>
   officeSnapshot({

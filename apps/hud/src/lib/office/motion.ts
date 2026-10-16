@@ -1,4 +1,4 @@
-import { archiveTiles, deskTiles, isWalkable, reachable, seatFace, seatPoint, tileCenter, type OfficeMap, type Point, type Room } from './map.ts';
+import { archiveTiles, deskTiles, isWalkable, reachable, seatFace, seatPoint, tileAt, tileCenter, type OfficeMap, type Point, type Room } from './map.ts';
 import { findPath, tileOf } from './path.ts';
 import type { OfficePlace } from './snapshot.ts';
 import { placeKey } from './snapshot.ts';
@@ -35,13 +35,13 @@ export function besideSeat(map: OfficeMap, main: Point, furniture: readonly Poin
   const same = (a: Point, b: Point): boolean => a[0] === b[0] && a[1] === b[1];
   const along = furniture
     .map(([c, r]): Point => [c, r + side])
-    .filter((at) => !same(at, main) && isWalkable(map, at[0], at[1]))
+    .filter((at) => !same(at, main) && tileAt(map, at[0], at[1]) === 'floor')
     .sort(order);
   const floor: Point[] = [];
   for (let r = room[1]; r <= room[3]; r++) {
     for (let c = room[0]; c <= room[2]; c++) {
       const at: Point = [c, r];
-      if (isWalkable(map, c, r) && !same(at, main) && !along.some((item) => same(item, at))) floor.push(at);
+      if (tileAt(map, c, r) === 'floor' && !same(at, main) && !along.some((item) => same(item, at))) floor.push(at);
     }
   }
   return [...along, ...floor.sort(order)][index - 1] ?? main;
@@ -67,7 +67,8 @@ export function pauseSpot(map: OfficeMap, index: number): Point {
   for (let r = room[1]; r <= room[3]; r++) {
     for (let c = room[0]; c <= room[2]; c++) {
       const at: Point = [c, r];
-      if (isWalkable(map, c, r) && from.has(r * map.width + c) && ![...seats, ...elsewhere].some((seat) => same(seat, at))) floor.push(at);
+      // Floor only, never a door (D-229): an agent never stands in a doorway.
+      if (tileAt(map, c, r) === 'floor' && from.has(r * map.width + c) && ![...seats, ...elsewhere].some((seat) => same(seat, at))) floor.push(at);
     }
   }
   floor.sort((a, b) => distance(a) - distance(b) || b[0] - a[0] || a[1] - b[1]);

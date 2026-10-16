@@ -374,13 +374,19 @@ function render(): void {
   follow();
 }
 
+/** Pixels from the feet to the middle of a character: the window centres on the body, not the feet. */
+const BODY_MIDDLE = 12;
+/** The window is never lower than this (CSS pixels), nor taller than the page minus its header and the line under the map. */
+const MIN_VIEW_HEIGHT = 192;
+const PAGE_CHROME = 160;
+
 /** The window follows the user (D-229): the stage moves, the canvas never scrolls. */
 function follow(): void {
   const element = stage.value;
   if (element === null) return;
   const s = scale.value;
   const x = cameraOffset(viewW.value, W * s, you.x * s);
-  const y = cameraOffset(viewH.value, H * s, (you.y - 12) * s);
+  const y = cameraOffset(viewH.value, H * s, (you.y - BODY_MIDDLE) * s);
   const transform = `translate(${String(-x)}px, ${String(-y)}px)`;
   if (element.style.transform !== transform) element.style.transform = transform;
 }
@@ -463,7 +469,6 @@ function onFocusChange(): void {
   wake();
 }
 
-
 function onClick(event: MouseEvent): void {
   const element = canvas.value;
   if (element === null) return;
@@ -528,7 +533,7 @@ function fit(): void {
   const width = wrap.value?.clientWidth ?? W * 2;
   scale.value = officeScale(width, props.map.width);
   viewW.value = Math.min(W * scale.value, width);
-  viewH.value = Math.min(H * scale.value, Math.max(16 * 12, window.innerHeight - 160));
+  viewH.value = Math.min(H * scale.value, Math.max(MIN_VIEW_HEIGHT, window.innerHeight - PAGE_CHROME));
   wake();
 }
 

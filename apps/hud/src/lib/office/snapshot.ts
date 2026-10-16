@@ -132,14 +132,24 @@ export function assignIslands(
     named.push({ name: project.name, label, claim: claims === undefined ? 'active' : claims.get(project.name) });
   }
   // Rooms (D-229): the pinned projects first, then the active ones, each in the order of arianna.toml; the rest behind the archive.
+  // Each room keeps its place (D-106 point 2): a project takes the slot of its position in arianna.toml, or the free one nearest to it.
   const rank = (claim: RoomClaim | undefined): number => (claim === 'pinned' ? 0 : claim === 'active' ? 1 : 2);
   const ordered = named.map((item, index) => ({ ...item, index })).sort((a, b) => rank(a.claim) - rank(b.claim) || a.index - b.index);
+  const taken = new Set<number>();
   const valid: OfficeIsland[] = [];
   const archived: string[] = [];
   for (const item of ordered) {
-    if (item.claim !== undefined && valid.length < slots) valid.push({ slot: valid.length, project: item.name, label: item.label });
-    else archived.push(item.name);
+    if (item.claim === undefined || taken.size >= slots) {
+      archived.push(item.name);
+      continue;
+    }
+    const free = Array.from({ length: slots }, (_, slot) => slot).filter((slot) => !taken.has(slot));
+    const slot = free.sort((a, b) => Math.abs(a - item.index) - Math.abs(b - item.index) || a - b)[0] ?? 0;
+    taken.add(slot);
+    valid.push({ slot, project: item.name, label: item.label });
   }
+  valid.sort((a, b) => a.slot - b.slot);
+  archived.sort((a, b) => named.findIndex((item) => item.name === a) - named.findIndex((item) => item.name === b));
   return { islands: valid, archived, unnamed };
 }
 
@@ -182,15 +192,17 @@ export function ariannaPlace(
  * Where an idle agent goes (D-229, the user's choice: idle agents stroll):
  * by the clock, turns of WANDER_MS, one turn in three at its own pause spot
  * and the others at a stroll point, the next one each turn, never the same
- * point as another agent's in the same turn; with reduced motion, or a map
+ * point as another agent's in the same turn while the idle agents are no more
+ * than the points; with reduced motion, or a map
  * without stroll points, at its pause spot.
  */
 export function idlePlace(index: number, input: Pick<OfficeInput, 'now' | 'still' | 'strolls'>): OfficePlace {
   const points = input.strolls ?? 0;
   if (input.still === true || points <= 0) return { kind: 'pause', seat: index };
-  const turn = Math.floor(input.now / WANDER_MS);
-  if ((turn + index) % 3 === 0) return { kind: 'pause', seat: index };
-  return { kind: 'stroll', spot: (turn + index) % points };
+  const step = Math.floor(input.now / WANDER_MS) + index;
+  // The rest turn shifts by one every round of the points: over three rounds every point is visited, whatever their number.
+  if ((step + Math.floor(step / points)) % 3 === 0) return { kind: 'pause', seat: index };
+  return { kind: 'stroll', spot: step % points };
 }
 
 /** Same island or archive, second comer: the chair beside (Arianna is always the one who comes second). */

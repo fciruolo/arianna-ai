@@ -89,6 +89,8 @@ test('format 2: every project room is closed by walls and doors, and has a door'
   refused(variant((copy) => { setTile(copy, 3, 9, 'P'); setTile(copy, 4, 9, 'P'); }), /nessuna porta della stanza «private» si raggiunge dall'ingresso/);
   // One door of two blocked is enough to stay open.
   valid(variant((copy) => { setTile(copy, 3, 9, 'P'); }));
+  // A door in a corner does not open the room.
+  refused(variant((copy) => { setTile(copy, 3, 8, '#'); setTile(copy, 4, 8, '#'); setTile(copy, 7, 8, 'O'); }), /la stanza «private» non ha una porta/);
   // A project room too.
   refused(variant((copy) => { setTile(copy, 31, 13, '#'); setTile(copy, 32, 13, '#'); }), /la stanza «islands\[5\]» non ha una porta/);
 });
@@ -105,7 +107,7 @@ test('format 2: a door stands in a wall; no seat and no entrance on a door', () 
   refused(variant((copy) => { setTile(copy, 6, 10, 'O'); }), /la porta in 6,10 non sta in un muro/);
   // A door in a short wall inside the archive, under the cabinet: a seat may not stand on it.
   refused(variant((copy) => { setTile(copy, 23, 16, '#'); setTile(copy, 25, 16, '#'); setTile(copy, 24, 16, 'O'); }), /il posto «archive» non può stare su una porta/);
-  refused(variant((copy) => { copy.anchors.entrance = [3, 8]; }), /ingresso/);
+  refused(variant((copy) => { copy.anchors.entrance = [3, 8]; }), /^l'ingresso deve essere su una tessera calpestabile$/);
 });
 
 test('format 2: stroll points on the floor, reached, outside the rooms of the projects, off every seat', () => {
@@ -124,11 +126,22 @@ test('format 2: stroll points on the floor, reached, outside the rooms of the pr
 });
 
 test('idle agents stroll among the points by the clock, one turn in three at their pause spot; still with reduced motion', () => {
-  const turn = 3 * 1000;
+  // A turn where the first agent rests: (3001 + ⌊3001 / 6⌋) is a multiple of 3.
+  const turn = 3001;
   const now = turn * WANDER_MS;
   assert.deepEqual(idlePlace(0, { now, strolls: 6 }), { kind: 'pause', seat: 0 });
   assert.deepEqual(idlePlace(1, { now, strolls: 6 }), { kind: 'stroll', spot: (turn + 1) % 6 });
   assert.deepEqual(idlePlace(0, { now: now + WANDER_MS, strolls: 6 }), { kind: 'stroll', spot: (turn + 1) % 6 });
+  // Over consecutive turns an agent visits every point, and rests one turn in three.
+  const seen = new Set<number>();
+  let rests = 0;
+  for (let t = 0; t < 18; t++) {
+    const place = idlePlace(0, { now: (turn + t) * WANDER_MS, strolls: 6 });
+    if (place.kind === 'stroll') seen.add(place.spot);
+    else rests++;
+  }
+  assert.equal(seen.size, 6);
+  assert.equal(rests, 6);
   // Two agents never share a point in the same turn.
   const spots = [1, 2, 4, 5].map((index) => idlePlace(index, { now, strolls: 6 })).filter((place) => place.kind === 'stroll');
   assert.equal(new Set(spots.map((place) => placeKey(place))).size, spots.length);
@@ -147,7 +160,7 @@ test('the snapshot sends idle agents strolling, and only idle ones: waiting or p
     coderConversations: [],
     pending: { total: 0, hidden: 0, coder: 0 },
     quota: {},
-    now: (3 * 1000 + 1) * WANDER_MS,
+    now: 3002 * WANDER_MS,
     strolls: 6,
   };
   const coder = (input: OfficeInput) => officeSnapshot(input).agents.find((agent) => agent.id === 'coder')?.place;
@@ -198,16 +211,19 @@ test('a room goes to the projects pinned by the user, then to those active in th
   );
   assert.deepEqual([...claims.entries()].sort(), [['beta', 'active'], ['delta', 'active'], ['gamma', 'pinned']]);
   const { islands, archived } = assignIslands(PROJECTS, 6, claims);
-  // Pinned first, then the active ones in the order of arianna.toml; the free rooms stay free.
-  assert.deepEqual(islands.map((item) => item.project), ['gamma', 'beta', 'delta']);
+  // Each in the room of its place in arianna.toml (beta 1, gamma 2, delta 3); the free rooms stay free.
+  assert.deepEqual(islands.map((item) => [item.slot, item.project]), [[1, 'beta'], [2, 'gamma'], [3, 'delta']]);
   assert.deepEqual(archived, ['alfa', 'demo']);
   // Fewer rooms than claims: the pinned keep theirs, the rest wait behind the archive.
-  assert.deepEqual(assignIslands(PROJECTS, 2, claims).islands.map((item) => item.project), ['gamma', 'beta']);
+  assert.deepEqual(assignIslands(PROJECTS, 2, claims).islands.map((item) => [item.slot, item.project]), [[0, 'beta'], [1, 'gamma']]);
+  // A project that comes back to life does not move the others: alfa takes its own room 0.
+  const more = new Map(claims).set('alfa', 'active');
+  assert.deepEqual(assignIslands(PROJECTS, 6, more).islands.map((item) => [item.slot, item.project]), [[0, 'alfa'], [1, 'beta'], [2, 'gamma'], [3, 'delta']]);
   // The snapshot uses them.
   const snapshot = officeSnapshot({
     agents: [], projects: PROJECTS, slots: 6, claims, activity: [], coderConversations: [], pending: { total: 0, hidden: 0, coder: 0 }, quota: {}, now: NOW,
   });
-  assert.deepEqual(snapshot.islands.map((item) => item.project), ['gamma', 'beta', 'delta']);
+  assert.deepEqual(snapshot.islands.map((item) => item.project), ['beta', 'gamma', 'delta']);
 });
 
 test('what does not claim a room: archived, private, above L2, unknown projects; a running delegation claims one', () => {
