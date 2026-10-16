@@ -112,6 +112,13 @@ test('the places of the themes: checked floor and no handrail for Base, a handra
   assert.ok(rails(corsia).length > 0);
   assert.ok(corsia.floors.every((tile) => !tile.alt));
   assert.equal(rails(buildWorld(mapOf('ufficio'), 'ufficio')).length, 0);
+  // The power plant of Springfield (D-237): no handrail, the yellow hazard stripe low on its walls, the barrels with their rod.
+  const plant = buildWorld(mapOf('springfield'), 'springfield');
+  assert.equal(rails(plant).length, 0);
+  const stripe = (block: Block): boolean => block.color === 'warn' && block.w > 1 && block.y > 0.2 && block.y < 0.6;
+  assert.ok(plant.blocks.some(stripe));
+  assert.ok(plant.blocks.some((block) => block.color === 'ok' && block.w < 0.2));
+  for (const skin of ['base', 'corsia', 'ufficio'] as const) assert.ok(!buildWorld(mapOf(skin), skin).blocks.some(stripe), skin);
 });
 
 test('a screen on the desk of every room with a desk, keyed by its seat; the bell over the Decisioni desk', () => {

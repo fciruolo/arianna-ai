@@ -42,6 +42,8 @@ const SCRUBS_SEASONS = ['prima', 'seconda', 'terza', 'quarta', 'quinta', 'sesta'
 export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>> = {
   Scrubs: SCRUBS_SEASONS.map((ordinal, at) => ({ title: `${SCRUBS} (${ordinal} stagione)`, season: at + 1 })),
   'The Office (US)': [{ title: 'The Office' }],
+  // D-237: the page of the whole series, as for The Office; not verified with the network (the wiki resolves a renamed page itself, `redirects=1`).
+  'I Simpson': [{ title: 'I Simpson' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -72,6 +74,14 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   kevin: ['Kevin', 'Kevin Malone'],
   angela: ['Angela', 'Angela Martin'],
   creed: ['Creed'],
+  // D-237, the names of the Italian dub first (Boe for Moe, «Signor Burns»); not verified on the page.
+  marge: ['Marge', 'Marge Simpson'],
+  homer: ['Homer', 'Homer Simpson', 'Homer J. Simpson'],
+  burns: ['Mr. Burns', 'Signor Burns', 'Montgomery Burns', 'Monty Burns', 'Burns'],
+  lisa: ['Lisa', 'Lisa Simpson'],
+  smithers: ['Smithers', 'Waylon Smithers'],
+  bart: ['Bart', 'Bart Simpson'],
+  boe: ['Boe', 'Boe Szyslak', 'Moe', 'Moe Szyslak'],
 };
 
 export interface WikiquoteLine {

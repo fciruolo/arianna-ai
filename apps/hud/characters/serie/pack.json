@@ -1,6 +1,6 @@
 {
   "name": "Serie",
-  "source": "Fan art per uso personale disegnata da Claude (D-211): Scrubs e The Office per i temi Corsia e Ufficio. Da togliere, anche dalla storia di git, prima di condividere o pubblicare il repository; rigenerati con node apps/hud/characters/build.ts",
+  "source": "Fan art per uso personale disegnata da Claude (D-211): Scrubs, The Office e I Simpson per i temi Corsia, Ufficio e Springfield. Da togliere, anche dalla storia di git, prima di condividere o pubblicare il repository; rigenerati con node apps/hud/characters/build.ts",
   "characters": [
     { "id": "jd", "name": "J.D.", "file": "jd.png" },
     { "id": "turk", "name": "Turk", "file": "turk.png" },
@@ -19,6 +19,13 @@
     { "id": "andy", "name": "Andy", "file": "andy.png" },
     { "id": "kevin", "name": "Kevin", "file": "kevin.png" },
     { "id": "angela", "name": "Angela", "file": "angela.png" },
-    { "id": "creed", "name": "Creed", "file": "creed.png" }
+    { "id": "creed", "name": "Creed", "file": "creed.png" },
+    { "id": "marge", "name": "Marge", "file": "marge.png" },
+    { "id": "homer", "name": "Homer", "file": "homer.png" },
+    { "id": "burns", "name": "Mr. Burns", "file": "burns.png" },
+    { "id": "lisa", "name": "Lisa", "file": "lisa.png" },
+    { "id": "smithers", "name": "Smithers", "file": "smithers.png" },
+    { "id": "bart", "name": "Bart", "file": "bart.png" },
+    { "id": "boe", "name": "Boe", "file": "boe.png" }
   ]
 }

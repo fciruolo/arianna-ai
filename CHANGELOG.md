@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Tema «I Simpson» in Impostazioni → Aspetto: giallo Simpson e cielo con le nuvole; Marge è Arianna, Homer il Coder, il signor Burns GOD, Lisa la revisora, Smithers le finanze, Bart il designer e Boe il modello locale, con la loro personalità e i nomi del doppiaggio italiano, e l'ufficio pixel (in 2D e 3D) diventa la centrale nucleare di Springfield; fan art per uso personale (D-237).
+
 ## [0.130.2] - 2026-10-16
 
 ### Corretto

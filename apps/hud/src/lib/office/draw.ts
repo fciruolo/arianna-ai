@@ -1,5 +1,6 @@
 import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
+import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
 import type { Bubble } from './snapshot.ts';
 
 /**
@@ -101,6 +102,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         for (let i = 0; i < 6; i++) rect(C['floor-alt'], c * TILE + ((c * 7 + r * 3 + i * 5) % TILE), r * TILE + ((c * 5 + r * 11 + i * 9) % TILE), 1, 1);
       }
     }
+  } else if (skin === 'springfield') {
+    for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) springfieldFloor(rect, C, c, r);
   } else {
     for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) rect((c + r) % 2 === 1 ? C['floor-alt'] : C.floor, c * TILE, r * TILE, TILE, TILE);
   }
@@ -207,7 +210,11 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       rect(C['wall-line'], x, y + TILE - 2, TILE, 2);
       // The handrail halfway up the corridor's wall (D-216, the decor of the theme Corsia).
       if (skin === 'corsia') rect(C['wall-line'], x, y + 9, TILE, 1);
-      if (kind === 'shelf' && skin === 'corsia') {
+      // The hazard stripe of the power plant (D-237), under the windows and the signs.
+      if (skin === 'springfield' && kind === 'wall') springfieldStripe(rect, x, y);
+      if (kind === 'shelf' && skin === 'springfield') {
+        springfieldSign(rect, C, x, y);
+      } else if (kind === 'shelf' && skin === 'corsia') {
         // The green cross of the hospital on a white plate.
         rect(C.outline, x + 2, y + 1, 12, 12);
         rect(C.paper, x + 3, y + 2, 10, 10);
@@ -315,6 +322,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         rect(C.outline, x + w - 12, y - 5, 8, 4);
         rect(C.monitor, x + w - 11, y - 4, 6, 2);
         rect(C.outline, x + w - 12, y - 7, 8, 2);
+      } else if (skin === 'springfield') {
+        springfieldConsole(rect, C, x, y, w);
       }
       const bx = bell[0] - 3;
       rect(C.outline, bx, y - 7, 7, 5);
@@ -325,7 +334,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
 
   /** The vending machine and the cart of the Sacro Cuore, the water cooler and the photocopier of the Dunder Mifflin (D-216). */
   const skinItem = (kind: 'coffee' | 'cabinet', x: number, y: number): void => {
-    if (skin === 'corsia' && kind === 'coffee') {
+    if (skin === 'springfield') {
+      springfieldItem(rect, C, kind, x, y);
+    } else if (skin === 'corsia' && kind === 'coffee') {
       rect(C.outline, x + 1, y - 10, 14, 24);
       rect(I.metalDark, x + 2, y - 9, 12, 22);
       rect(I.glass, x + 3, y - 8, 7, 14);
@@ -363,7 +374,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   };
   /** A run of `sofa` tiles: hospital beds in the Sacro Cuore, the meeting table in the Dunder Mifflin (D-216). */
   const skinRun = (x: number, y: number, w: number, tiles: number): void => {
-    if (skin === 'corsia') {
+    if (skin === 'springfield') {
+      springfieldCouch(rect, C, x, y, w, tiles);
+    } else if (skin === 'corsia') {
       for (let i = 0; i < tiles; i++) {
         const bx = x + i * TILE;
         rect(C.outline, bx + 1, y - 4, 14, 17);

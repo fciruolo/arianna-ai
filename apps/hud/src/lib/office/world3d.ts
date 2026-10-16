@@ -33,6 +33,8 @@ export const SPRITE_HEIGHT = 1.45;
 export const SPRITE_WIDTH = SPRITE_HEIGHT / 2;
 /** The handrail of the Sacro Cuore, halfway up its walls. */
 const RAIL_HEIGHT = 0.62;
+/** The hazard stripe of the power plant of Springfield (D-237), low on its walls. */
+const STRIPE_HEIGHT = 0.42;
 /** The skirting line at the foot of the walls. */
 const SKIRTING = 0.1;
 /** How far a desk's screen sits to the side of the seat. */
@@ -137,12 +139,16 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
       return [box(x, z, 1, 1, 0, 0.3, 'sofa'), backBlock];
     }
     case 'coffee':
+      // The power plant (D-237): a cabinet with the box of doughnuts on top.
+      if (skin === 'springfield') return [box(x, z, 0.8, 0.6, 0, 0.8, 'counter'), box(x, z, 0.7, 0.5, 0.8, 0.12, 'paper')];
       return skin === 'ufficio'
         ? [box(x, z, 0.5, 0.5, 0, 0.9, 'paper'), box(x, z, 0.36, 0.36, 0.9, 0.34, 'window-light')]
         : [box(x, z, 0.7, 0.6, 0, 1.0, 'monitor'), box(x, z, 0.5, 0.62, 0.55, 0.3, 'screen')];
     case 'plant':
       return [box(x, z, 0.4, 0.4, 0, 0.32, 'pot'), box(x, z, 0.62, 0.62, 0.32, 0.45, 'plant'), box(x, z, 0.4, 0.4, 0.77, 0.25, 'plant-dark')];
     case 'cabinet':
+      // The power plant (D-237): a yellow barrel with its glowing rod.
+      if (skin === 'springfield') return [box(x, z, 0.6, 0.6, 0, 0.9, 'warn'), box(x, z, 0.14, 0.14, 0.9, 0.3, 'ok')];
       return [box(x, z, 0.9, 0.7, 0, 1.05, skin === 'corsia' ? 'counter' : 'desk'), box(x, z, 0.92, 0.72, 1.05, 0.04, 'desk-top')];
   }
 }
@@ -189,6 +195,8 @@ function wallRuns(map: OfficeMap, skin: OfficeSkin): Block[] {
         );
         // The Sacro Cuore's handrail halfway up the wall (D-216).
         if (skin === 'corsia') runs.push(box(start + w / 2, r + 0.5, w + 0.06, 1.06, RAIL_HEIGHT, 0.06, 'wall-line'));
+        // The hazard stripe of the power plant of Springfield (D-237), in the yellow of the theme.
+        if (skin === 'springfield') runs.push(box(start + w / 2, r + 0.5, w + 0.04, 1.04, STRIPE_HEIGHT, 0.08, 'warn'));
         start = -1;
       }
     }

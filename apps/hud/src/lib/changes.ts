@@ -90,7 +90,7 @@ const AREA_GROUP: Record<ChangeArea, ChangeGroup> = {
 const AREA_SECTION: Partial<Record<ChangeArea, { slug: string; link: string }>> = { 'agents-catalog': { slug: 'catalogo-agenti', link: 'Apri Catalogo agenti' } };
 
 /** The themes by the name the user sees, not their id in the code (D-103, D-211: `corsia` is Scrubs, `ufficio` is The Office). */
-const THEME_NAME: Readonly<Record<string, string>> = { base: 'Base', corsia: 'Scrubs', ufficio: 'The Office' };
+const THEME_NAME: Readonly<Record<string, string>> = { base: 'Base', corsia: 'Scrubs', ufficio: 'The Office', springfield: 'I Simpson' };
 
 export function themeName(id: string): string {
   return THEME_NAME[id] ?? id;

@@ -44,6 +44,7 @@ const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).di
 test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder Mifflin, anything else the base office', () => {
   assert.equal(skinOfTheme('corsia'), 'corsia');
   assert.equal(skinOfTheme('ufficio'), 'ufficio');
+  assert.equal(skinOfTheme('springfield'), 'springfield');
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 
@@ -60,10 +61,10 @@ test('Base is drawn the same, pixel for pixel, with or without the skin named (D
   assert.equal(skinColors(colors, 'base'), colors, 'Base keeps the very colours of the page');
 });
 
-test('the two places are drawn differently from Base and from each other, in light and dark', () => {
+test('the places are drawn differently from Base and from each other, in light and dark', () => {
   for (const mode of ['dark', 'light'] as const) {
     const hashes = OFFICE_SKINS.map((skin) => sha(rasterize(scene(skin, mode)).rgba));
-    assert.equal(new Set(hashes).size, 3, mode);
+    assert.equal(new Set(hashes).size, OFFICE_SKINS.length, mode);
   }
   const page = colorsOf(css, 'light', COLOR_TOKENS, THEME_TOKENS);
   const corsia = skinColors(page, 'corsia');
@@ -75,6 +76,23 @@ test('the two places are drawn differently from Base and from each other, in lig
   // The cross of the hospital is green, never red on white (D-103).
   const [r, g] = [Number.parseInt(SKIN_INK.cross.slice(1, 3), 16), Number.parseInt(SKIN_INK.cross.slice(3, 5), 16)];
   assert.ok(g > r * 2);
+});
+
+test('the power plant of Springfield (D-237): its own colours in light and dark, the theme tokens untouched, the hazard stripe on the plain walls only', () => {
+  const page = colorsOf(css, 'light', COLOR_TOKENS, THEME_TOKENS);
+  const plant = skinColors(page, 'springfield');
+  assert.notEqual(plant.floor, page.floor);
+  assert.notEqual(plant.floor, skinColors(page, 'ufficio').floor);
+  for (const token of THEME_TOKENS) assert.equal(plant[token], page[token], token);
+  assert.notEqual(skinColors(colorsOf(css, 'dark', COLOR_TOKENS, THEME_TOKENS), 'springfield').floor, plant.floor);
+  // The yellow of the stripe is in the drawing of the plant, never in the other places.
+  const hasYellow = (skin: OfficeSkin): boolean => {
+    const { rgba } = rasterize(scene(skin, 'light'));
+    for (let at = 0; at < rgba.length; at += 4) if (rgba[at] === 0xf2 && rgba[at + 1] === 0xc2 && rgba[at + 2] === 0x00) return true;
+    return false;
+  };
+  assert.equal(hasYellow('springfield'), true);
+  for (const skin of ['base', 'corsia', 'ufficio'] as const) assert.equal(hasYellow(skin), false, skin);
 });
 
 test('islands, desks, cardwall, Decisioni and the archive keep their place in every office, and every one is reached from the entrance', () => {

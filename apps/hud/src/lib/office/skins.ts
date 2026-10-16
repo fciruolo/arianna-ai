@@ -1,23 +1,25 @@
 import type { Colors } from './draw.ts';
 import { parseMapText, type OfficeMap } from './map.ts';
+import { SPRINGFIELD_PALETTE } from './springfield.ts';
 
 /**
  * The office of a theme (D-216): with Scrubs the Sacro Cuore (tiled floor,
  * nurses' station, beds, carts, the vending machine, the green cross), with
  * The Office the Dunder Mifflin (carpet, Pam's reception, Michael's glass
- * office, the photocopier, the meeting table, the sign). The same tile kinds
+ * office, the photocopier, the meeting table, the sign), with I Simpson the
+ * nuclear power plant of Springfield (D-237, `springfield.ts`). The same tile kinds
  * and anchors as the map `base`: the theme changes the plan a little (its map
  * in src/office/maps/) and how the code draws floor, walls and furniture.
  * Base stays as it was, pixel for pixel. Fan art of the places of the series
  * for personal use, like the pack `serie` (D-211): to be removed before the
  * repository is shared.
  */
-export const OFFICE_SKINS = ['base', 'corsia', 'ufficio'] as const;
+export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield'] as const;
 export type OfficeSkin = (typeof OFFICE_SKINS)[number];
 
-/** The office of the theme in use: its own for the two themes of the series, otherwise the base. */
+/** The office of the theme in use: its own for the themes of the series (the id of the theme is the id of the place), otherwise the base. */
 export function skinOfTheme(theme: string | undefined): OfficeSkin {
-  return theme === 'corsia' || theme === 'ufficio' ? theme : 'base';
+  return OFFICE_SKINS.find((skin) => skin !== 'base' && skin === theme) ?? 'base';
 }
 
 type Palette = Partial<Colors>;
@@ -99,6 +101,8 @@ const PALETTES: Readonly<Record<Exclude<OfficeSkin, 'base'>, { light: Palette; d
       paper: '#ece6d6',
     },
   },
+  // The nuclear power plant of Springfield (D-237), in its own file.
+  springfield: SPRINGFIELD_PALETTE,
 };
 
 /** Fixed colours of the places, the same in light and dark: they are things, not the page. */

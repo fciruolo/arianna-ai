@@ -59,6 +59,22 @@ describe('wikiquote parser', () => {
     );
   });
 
+  it('the people of Springfield by the names of the Italian dub, Mr. Burns with his dot and Boe also as Moe (D-237)', () => {
+    const page = [
+      '==Stagione 1==',
+      '===Episodio 1, \'\'Un parser inventato\'\'===',
+      "*'''Mr. Burns''': Eccellente, il parser funziona.<br />'''Homer''': Mmm… test verdi.",
+      "*Un'altra birra di prova, offre la casa. ('''Boe''')",
+      "*'''Moe''': Il nome originale vale lo stesso.",
+      "*'''Signor Burns''': Anche col titolo italiano.",
+    ].join('\n');
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.burns ?? []).map((line) => line.text), ['Eccellente, il parser funziona.', 'Anche col titolo italiano.']);
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.boe ?? []).map((line) => line.text), ["Un'altra birra di prova, offre la casa.", 'Il nome originale vale lo stesso.']);
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.homer ?? []), [{ text: 'Mmm… test verdi.', episode: '1x01' }]);
+    // Negative: nobody of Springfield speaks for another one.
+    assert.deepEqual(parseWikiquote(page, WIKIQUOTE_SPEAKERS.lisa ?? []), []);
+  });
+
   it('plainOf and cutAtSentence', () => {
     assert.equal(plainOf("Uno [[medico specializzando|specializzando]] ''bravo''&nbsp;e [[Dio]]{{NDR|ride}}"), 'Uno specializzando bravo e Dio');
     assert.equal(plainOf('L&#x27;ho detto, [[File:x.jpg|thumb|una foto]] &#39;davvero&#39;&#x7f;'), "L'ho detto, una foto 'davvero'");
@@ -80,6 +96,7 @@ describe('wikiquote parser', () => {
     assert.equal(scrubs[0], 'Scrubs - Medici ai primi ferri (prima stagione)');
     assert.equal(wikiquoteName('Scrubs'), 'Scrubs - Medici ai primi ferri');
     assert.equal(wikiquoteName('The Office (US)'), 'The Office');
+    assert.equal(wikiquoteName('I Simpson'), 'I Simpson');
     assert.equal(wikiquoteName('Una serie che non c’è'), undefined);
     for (const id of Object.keys(SERIES_PERSONAS)) assert.ok((WIKIQUOTE_SPEAKERS[id]?.length ?? 0) > 0, id);
   });

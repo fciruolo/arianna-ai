@@ -35,7 +35,7 @@ test('every person of the pack serie has a name as in pack.json, a personality, 
     Object.entries(SERIES_PERSONAS).map(([id, person]) => [id, person.name]),
     pack.characters.map(({ id, name }) => [id, name]),
   );
-  const others = (id: string) => Object.entries(SERIES_PERSONAS).filter(([other]) => other !== id).flatMap(([, person]) => [person.name, ...person.name.split(' ')]).filter((name) => name.length > 2 && name !== 'Dr.');
+  const others = (id: string) => Object.entries(SERIES_PERSONAS).filter(([other]) => other !== id).flatMap(([, person]) => [person.name, ...person.name.split(' '), ...(person.aliases ?? [])]).filter((name) => name.length > 2 && name !== 'Dr.');
   for (const [id, person] of Object.entries(SERIES_PERSONAS)) {
     assert.ok(Array.from([person.traits, person.scene, ...person.quotes].join('')).length <= MAX_SERIES_TEXT, id);
     assert.doesNotMatch(person.scene, /<|>/, id);
@@ -426,4 +426,24 @@ test('the new people of the themes (D-227): in The Office Finanze is Oscar, the 
   }
   assert.equal(characterChoiceOf(corsia({ characters: { coder: 'serie/creed' } }), 'coder'), 'serie/creed');
   assert.equal(characterPart(corsia({ characters: { coder: 'serie/creed' } }), 'coder')?.source, 'character:serie/creed');
+});
+
+test('the theme I Simpson (D-237): Marge is Arianna, Homer the Coder, Mr. Burns GOD, Lisa the Reviewer, Smithers Finanze, Bart the Designer, Boe the local model', () => {
+  const springfield = corsia({ appearance: { theme: 'springfield' }, agentsNow: () => ({ official: [...LOADED.official, 'local-chat'], user: [] }) });
+  const worn = { arianna: 'marge', coder: 'homer', god: 'burns', reviewer: 'lisa', finanze: 'smithers', designer: 'bart', 'local-chat': 'boe' };
+  for (const [agent, id] of Object.entries(worn)) {
+    assert.equal(characterChoiceOf(springfield, agent), `serie/${id}`, agent);
+    assert.equal(characterPart(springfield, agent)?.source, `character:serie/${id}`, agent);
+    assert.equal(seriesPersonaOf(`serie/${id}`)?.show, 'I Simpson', id);
+  }
+  assert.match(characterPart(springfield, 'god', 'L2')?.text ?? '', /You are Mr\. Burns of I Simpson, never Arianna/);
+  // The Italian dub: Boe, with Moe among the forms of his name; Mr. Burns also as «Burns» and «Signor Burns».
+  const names = wornSeriesNames(springfield);
+  for (const name of ['Marge', 'Homer', 'Homer Simpson', 'Mr. Burns', 'Mr Burns', 'Burns', 'Signor Burns', 'Lisa', 'Smithers', 'Waylon Smithers', 'Bart', 'Boe', 'Moe']) assert.ok(names.includes(name), name);
+  // Negative: nobody of the other series is worn with this theme.
+  for (const name of ['Carla', 'Pam', 'Kevin', 'Dr. Cox']) assert.ok(!names.includes(name), name);
+  const roster = rosterPart(springfield, 'god')?.text ?? '';
+  assert.match(roster, /- Arianna: "Marge"/);
+  assert.match(roster, /- Coder: "Homer"/);
+  assert.doesNotMatch(roster, /Mr\. Burns/);
 });

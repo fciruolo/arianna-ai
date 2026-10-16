@@ -36,7 +36,7 @@ test('the piece of every person of the series passes the second scanner, its nam
 
 test('who is who and an answer that names the agents by their characters pass the real scanner; a real person does not (D-217)', { skip: !available && 'Rizzo-PII is not in data/guard/models' }, async () => {
   assert.ok(guard !== undefined);
-  for (const theme of ['corsia', 'ufficio']) {
+  for (const theme of ['corsia', 'ufficio', 'springfield']) {
     const config = { personas: {}, appearance: { theme }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) };
     for (const agent of ['arianna', 'coder', 'god', 'designer']) {
       const roster = rosterPart(config, agent);
@@ -54,9 +54,12 @@ test('who is who and an answer that names the agents by their characters pass th
   assert.equal(piiVerdict(found, [person]).verdict, 'found');
   // The people of D-227 worn by the Designer, Finanze and the local model: an answer that names them passes too.
   const office = wornSeriesNames({ personas: {}, appearance: { theme: 'ufficio' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
+  const springfield = wornSeriesNames({ personas: {}, appearance: { theme: 'springfield' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
   for (const [names, text] of [
     [worn, 'L’Inserviente ha preparato la grafica e il Dr. Kelso ha risposto in locale.'],
     [office, 'Oscar ha controllato i conti, Andy ha fatto la grafica e Kevin ha risposto in locale.'],
+    // The people of Springfield (D-237), worn with the theme I Simpson.
+    [springfield, 'Homer ha scritto il codice, Lisa ha rivisto il diff, Smithers ha fatto i conti e il signor Burns ha approvato.'],
   ] as const) {
     const check = await guard.scan([text], fragmentNamesOf([{ value: text, label: 'L1', source: 'message:3' }], names));
     assert.deepEqual(piiVerdict(check, [text]), { verdict: 'clean' }, text);

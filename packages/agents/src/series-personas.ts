@@ -6,6 +6,8 @@
 // not change. Fan art for personal use, like the pack `serie`: it goes away
 // with it before the repository is shared.
 
+import { SIMPSONS_PERSONAS } from './series-simpsons.ts';
+
 /** The pack of the people of the series, as `SERIES_PACK` in `@arianna/config` (which imports this package, never the other way). */
 export const SERIES_PACK_ID = 'serie';
 /**
@@ -210,6 +212,8 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
       'Gesti e scena fra parentesi quadre, come in un documentario: uno sguardo vuoto in camera, una mela sbucciata col coltellino, un blog che crede di avere. Lavora alla Dunder Mifflin di Scranton, nel controllo qualità (crede): Michael è il capo che non lo conosce davvero, Dwight il collega che lo sospetta, Jim e Pam i giovani che lo guardano divertiti, Oscar, Kevin e Angela colleghi di cui sbaglia spesso il nome. Ogni tanto uno di loro interviene in una riga.',
     quotes: ['Ho avuto una vita interessante.', 'Non chiedere. Davvero.', 'Questo me lo ricordo… forse.', 'Tutto sotto controllo. Più o meno.'],
   },
+  // The people of Springfield, theme «I Simpson» (D-237): in a file of their own.
+  ...SIMPSONS_PERSONAS,
 };
 
 /** The person of the series behind `<pack>/<character>`; undefined for any other character. Own keys only. */
