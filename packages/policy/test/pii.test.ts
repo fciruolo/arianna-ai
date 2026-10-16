@@ -358,3 +358,31 @@ test('names of one fragment (D-214) are no persons in that fragment alone, and s
   assert.deepEqual(decision.pii, [{ kind: 'FULLNAME', fragment: 1 }]);
   assert.ok(check([fragment(character)], CLAUDE, piiReport([character], [found[0]])).decision === 'block');
 });
+
+test('a piece of a name of the fragment, inside a whole occurrence of it, is no person there; outside it, or around it, it is (D-227)', () => {
+  const character = 'Call yourself "Laverne". You are Dr. Kelso.';
+  const at = (value: string, from = 0): PiiEntity => {
+    const start = character.indexOf(value, from);
+    assert.ok(start >= 0);
+    return { kind: 'FULLNAME', start, end: start + value.length, score: 0.98 };
+  };
+  const names = [['Laverne', 'Dr. Kelso', 'Kelso']];
+  // Positive: «verne» of «Laverne» and «so» of «Dr. Kelso», the cuts the model made on 2026-10-16.
+  assert.equal(check([fragment(character)], CLAUDE, piiReport([character], [[at('verne'), at('so', character.indexOf('Kelso'))]], [], names)).decision, 'allow');
+  // Negative: without the names of the fragment the piece is a person.
+  assert.ok(check([fragment(character)], CLAUDE, piiReport([character], [[at('verne')]])).decision === 'block');
+  // Negative: a span larger than the occurrence («Laverne Bianchi») is a person.
+  const brief = 'Scrivi a Laverne Bianchi.';
+  const around = { kind: 'FULLNAME', start: brief.indexOf('Laverne'), end: brief.indexOf('Laverne') + 'Laverne Bianchi'.length, score: 0.98 };
+  assert.ok(check([fragment(brief)], CLAUDE, piiReport([brief], [[around]], [], names)).decision === 'block');
+  // Negative: the same letters inside another word are not in an occurrence of the name.
+  const word = 'Ciao Lavernetti.';
+  const inside = { kind: 'FULLNAME', start: word.indexOf('verne'), end: word.indexOf('verne') + 5, score: 0.98 };
+  assert.ok(check([fragment(word)], CLAUDE, piiReport([word], [[inside]], [], names)).decision === 'block');
+  // Negative: the names of one fragment never cover a piece in another fragment without them.
+  const other = 'Scrivi a Laverne.';
+  const piece = { kind: 'FULLNAME', start: other.indexOf('verne'), end: other.indexOf('verne') + 5, score: 0.98 };
+  const two = check([fragment(character), fragment(other)], CLAUDE, piiReport([character, other], [[at('verne')], [piece]], [], [names[0], undefined]));
+  assert.ok(two.decision === 'block');
+  assert.deepEqual(two.pii, [{ kind: 'FULLNAME', fragment: 1 }]);
+});

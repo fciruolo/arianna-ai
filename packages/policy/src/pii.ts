@@ -248,6 +248,24 @@ function nameSpans(text: string, names: readonly string[]): [number, number][] {
   return spans;
 }
 
+/**
+ * Where the names of one fragment (`fragmentNames`) appear in its text, as
+ * whole words (D-227): a FULLNAME inside one of them is a piece of
+ * that name (`verne` of «Laverne», `so` of «Dr. Kelso»), as the model sometimes
+ * cuts a name it does not know. Names of two words too, since only the span
+ * inside the occurrence passes: «Carla Bianchi» around «Carla» is still a person.
+ */
+function fragmentNameSpans(text: string, names: Iterable<string>): [number, number][] {
+  const spans: [number, number][] = [];
+  for (const name of names) {
+    const words = name.split(' ').map(escapeRegExp).join('\\s+');
+    for (const match of text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'giu'))) {
+      spans.push([match.index, match.index + match[0].length]);
+    }
+  }
+  return spans;
+}
+
 type CheckState =
   | { state: 'scanned'; hashes: readonly string[]; findings: readonly PiiFinding[] }
   | { state: 'unavailable'; reason: PiiUnavailableReason; development: boolean };
@@ -297,7 +315,8 @@ function isEntity(value: unknown, length: number): value is PiiEntity {
  * them as `nameSpans` says, is not a person (`ASSISTANT_NAMES` always count).
  * `fragmentNames` are more names for one fragment alone, by position (D-214:
  * the name of a character of the series in its own piece of the prompt), and
- * only whole; in every other fragment the same name is still a person.
+ * only whole, or a piece inside one whole occurrence of it (D-227); in every
+ * other fragment the same name is still a person.
  */
 export function piiReport(texts: readonly string[], entities: unknown, ignoreNames: readonly string[] = [], fragmentNames: readonly (readonly string[] | undefined)[] = []): PiiCheck {
   if (!Array.isArray(texts) || !texts.every((text) => typeof text === 'string')) return piiUnavailable('malformed');
@@ -310,6 +329,7 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
     if (!Array.isArray(found) || !found.every((entity) => isEntity(entity, text.length))) return piiUnavailable('malformed');
     const own = Array.isArray(fragmentNames[fragment]) ? new Set(usable(fragmentNames[fragment] ?? [])) : undefined;
     let names: [number, number][] | undefined;
+    let ownSpans: [number, number][] | undefined;
     const kept: PiiEntity[] = [];
     for (const entity of found) {
       if (entity.kind === 'FULLNAME') {
@@ -317,6 +337,10 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
         if (ignored.has(name) || own?.has(name) === true) continue;
         names ??= nameSpans(text, [...ignored]);
         if (names.some(([start, end]) => start <= entity.start && entity.end <= end)) continue;
+        if (own !== undefined) {
+          ownSpans ??= fragmentNameSpans(text, own);
+          if (ownSpans.some(([start, end]) => start <= entity.start && entity.end <= end)) continue;
+        }
       }
       if (isCodeIdentifier(text, entity)) continue;
       if (!hasForm(text, entity)) continue;
