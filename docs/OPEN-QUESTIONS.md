@@ -27,7 +27,6 @@
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
 | ~~Modelli: schede cloud da rileggere~~ | **Deciso (utente, 2026-10-14):** togliere i prezzi API dalle schede (l'utente usa gli abbonamenti); restano frasi e contesto. Lavoro piccolo in coda in `HANDOFF.md` | |
 | ~~Modelli da Hugging Face: scelte di D-139~~ | **Deciso (utente, 2026-10-14):** le regole di D-139 vanno bene così; D-139 accettata | |
-| Nomi della serie nella chat con un personaggio | Tutti i nomi della serie del personaggio, interi, non sono persone nei soli brief di quella chat (D-225, tappa B, scelta in autonomia); da confermare o restringere ai nomi distintivi | Prima di usare la chat con un personaggio con dati veri |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -65,14 +64,6 @@ Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzion
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
-
-### oq-nomi-della-serie-nella-chat-con-un-personaggio
-
-- Contesto: Nella chat con un personaggio delle serie, giocato da Claude, tu e Claude nominate gli altri personaggi della stessa serie. Il secondo controllo dei dati personali li prenderebbe per persone vere e fermerebbe il messaggio, così in quella chat sola tutti i nomi della serie (interi) non contano come persone. Il rovescio: una persona vera con lo stesso nome, scritta da sola, passa a Claude senza che il controllo la veda.
-- Opzione consigliata: Va bene così — tutti i nomi della serie restano esenti nei soli brief di quella chat; «Carla Bianchi» resta una persona e i nomi di un'altra serie fermano il messaggio.
-- Opzione: Solo i nomi distintivi — restano esenti solo soprannomi e cognomi rari («Turk», «Dr. Cox», «Kelso»); «Carla» o «Elliot» scritti da soli fermano il messaggio al gateway.
-- Opzione: Nessuna esenzione — ogni nome della serie nei messaggi ferma la chat; si parla col personaggio senza nominare gli altri.
-- Esempio: Nella chat con J.D. scrivi «Dì a Carla che arrivo»: con la prima opzione va a Claude; con la seconda il gateway la ferma perché «Carla» potrebbe essere tua cugina.
 
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 

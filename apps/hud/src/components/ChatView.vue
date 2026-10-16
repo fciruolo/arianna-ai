@@ -426,10 +426,13 @@ watch(
     void nextTick(resize);
   },
 );
-// A conversation known as incognito only now: nothing of it stays in the browser.
-watch(incognito, (value) => {
-  if (value) keeper.forget(props.chat.conversationId);
-});
+// A conversation known as incognito or private only now: nothing of it stays in the browser.
+watch(
+  () => keepsDraft(props.conversation),
+  (keeps) => {
+    if (!keeps) keeper.forget(props.chat.conversationId);
+  },
+);
 const flushDraft = (): void => keeper.flush();
 onMounted(() => window.addEventListener('pagehide', flushDraft));
 onBeforeUnmount(() => {

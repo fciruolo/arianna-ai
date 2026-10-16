@@ -28,9 +28,14 @@ export interface DraftStorage {
   readonly length: number;
 }
 
-/** A conversation keeps a draft unless it is incognito (D-136): nothing of it is saved, not even in the browser. */
-export function keepsDraft(conversation: { incognito?: boolean | undefined }): boolean {
-  return conversation.incognito !== true;
+/**
+ * A conversation keeps a draft only when it is of work and not incognito
+ * (D-136): nothing of an incognito one is saved, not even in the browser, and
+ * a private one keeps none either (choice of the user of 2026-10-16, D-231):
+ * its text could hold private data, in clear in the browser's profile.
+ */
+export function keepsDraft(conversation: { incognito?: boolean | undefined; mode?: string | undefined }): boolean {
+  return conversation.incognito !== true && conversation.mode !== 'private';
 }
 
 function draftKey(conversationId: string): string | undefined {

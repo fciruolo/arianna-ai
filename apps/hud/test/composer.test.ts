@@ -123,6 +123,11 @@ test('an incognito conversation keeps no draft (D-136); the others do', () => {
   assert.equal(keepsDraft({ incognito: true }), false);
   assert.equal(keepsDraft({ incognito: false }), true);
   assert.equal(keepsDraft({}), true);
+  // Private conversations keep no draft (D-231, choice of the user of 2026-10-16); work ones do.
+  assert.equal(keepsDraft({ mode: 'private' }), false);
+  assert.equal(keepsDraft({ mode: 'private', incognito: false }), false);
+  assert.equal(keepsDraft({ mode: 'work' }), true);
+  assert.equal(keepsDraft({ mode: 'work', incognito: true }), false);
 });
 
 const key = (code: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }> = {}) => ({

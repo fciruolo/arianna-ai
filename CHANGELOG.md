@@ -46,7 +46,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Nel campo di scrittura della chat un pulsante «+» con un menu solo per comandi «/», «@» a un agente, «Allega nota privata», «Nuova sessione» del Designer, «Salva in inbox» e il modello della conversazione; si usa anche da tastiera (frecce, Invio, Esc) (D-231).
 - Tasti per il modello della conversazione: sul Mac ⌃1…⌃9 scelgono i modelli del selettore nel suo ordine e ⌃0 la scelta automatica (altrove Alt+Maiusc con la cifra), solo fra quelli che quella conversazione ammette; li mostra il menu «+» (D-231).
-- Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; mai nelle incognite (D-231).
+- Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; solo nelle conversazioni di lavoro, mai nelle Private né nelle incognite (D-231).
 
 ### Cambiato
 
