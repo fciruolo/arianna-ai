@@ -6,10 +6,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Tema «I Simpson» in Impostazioni → Aspetto: giallo Simpson e cielo con le nuvole; Marge è Arianna, Homer il Coder, il signor Burns GOD, Lisa la revisora, Smithers le finanze, Bart il designer e Boe il modello locale, con la loro personalità e i nomi del doppiaggio italiano, e l'ufficio pixel (in 2D e 3D) diventa la centrale nucleare di Springfield; fan art per uso personale (D-237).
 - Tema «I Griffin»: Lois è Arianna, Peter il Coder, Stewie GOD, Brian il revisore, Meg le finanze, Chris il designer e Cleveland il modello locale, in pixel art con personalità, battute e nomi di Wikiquote, e l'ufficio pixel diventa casa Griffin col bancone del Drunken Clam, in 2D e in 3D (fan art per uso personale, D-238).
 - Tema «American Dad» in Impostazioni → Aspetto: blu notte, bianco e rosso sobrio, con Francine (Arianna), Stan (Coder), Roger (GOD), Hayley (revisore), Bullock (Finanze), Steve (Designer) e Klaus (Modello locale) in pixel art con la loro personalità, e l'ufficio pixel che diventa la casa degli Smith, in 2D e in 3D (D-239, fan art per uso personale).
 - Tema «Prison Break» (il penitenziario di Fox River, fan art per uso personale): cemento grigio, blu delle divise e arancio; Sara è Arianna, Michael il Coder, Mahone GOD, Lincoln il revisore, Abruzzi le finanze, Westmoreland il designer e Sucre il modello locale, T-Bag libero nella galleria; con personalità, battute, pagina di Wikiquote e l'ufficio pixel, in 2D e in 3D, con cemento, blocchi, sbarre alle finestre, armadietti, brande e telefono a gettoni (D-240).
+
+## [0.131.0] - 2026-10-16
+
+### Aggiunto
+
+- Tema «I Simpson» in Impostazioni → Aspetto: giallo Simpson e cielo con le nuvole; Marge è Arianna, Homer il Coder, il signor Burns GOD, Lisa la revisora, Smithers le finanze, Bart il designer e Boe il modello locale, con la loro personalità e i nomi del doppiaggio italiano, e l'ufficio pixel (in 2D e 3D) diventa la centrale nucleare di Springfield; fan art per uso personale (D-237).
 
 ## [0.130.2] - 2026-10-16
 
