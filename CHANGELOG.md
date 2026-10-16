@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Il secondo controllo dei dati personali non scambia più per una persona «hero», «skeleton», «Vite», «Tailwind», «Figma» e «Redis» da soli: «/progetta una landing page con hero» arriva a Claude; «Hero Rossi» resta bloccato (D-236).
+
 ## [0.130.0] - 2026-10-16
 
 ### Aggiunto

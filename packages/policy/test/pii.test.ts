@@ -235,6 +235,21 @@ test('a piece of an ignored name is not a person; a person next to it is', () =>
   assert.ok(blocks(arianna, 'a Bi', 'FULLNAME', names), 'across the end of an ignored name');
 });
 
+test('a word of the trade alone is not a person; a name around it still is', () => {
+  const plan = 'Piano: landing page con hero, skeleton di caricamento, Vite e Tailwind, mockup in Figma, cache su Redis';
+  for (const value of ['hero', 'skeleton', 'Vite', 'Tailwind', 'Figma', 'Redis']) assert.equal(blocks(plan, value, 'FULLNAME'), false, value);
+  assert.equal(blocks('La HERO della pagina', 'HERO', 'FULLNAME'), false, 'whatever the case');
+  assert.equal(blocks(plan, 'er', 'FULLNAME'), false, 'a piece of «hero»');
+  const person = 'Mi ha scritto Hero Rossi per la landing page con hero';
+  assert.ok(blocks(person, 'Hero Rossi', 'FULLNAME'), 'a name of two words');
+  assert.ok(blocks(person, 'Rossi', 'FULLNAME'), 'the surname next to it');
+  assert.ok(blocks('Ho parlato con marco della landing page', 'marco', 'FULLNAME'), 'a first name in lowercase still counts');
+  assert.ok(blocks('Il nuovo designer è Heron', 'Heron', 'FULLNAME'), 'a longer word');
+  assert.ok(blocks('Il nuovo designer è Heron', 'Hero', 'FULLNAME'), 'the word cut out of a longer name');
+  assert.ok(blocks('Scrivi a HeroRossi', 'Hero', 'FULLNAME'), 'a name written glued');
+  assert.ok(blocks('Il cliente è Vitello', 'Vite', 'FULLNAME'));
+});
+
 test('inside a local IPv4 address nothing counts; a public one, or an email, still counts', () => {
   const diary = '- Conversazione: [apri in Arianna](http://127.0.0.1:7420/c/x), anche 192.168.1.20 e 10.0.0.2';
   for (const value of ['2', '.', '127.0.0.1', '192.168.1.20', '10.0.0.2']) assert.equal(blocks(diary, value, 'EMAIL'), false, value);

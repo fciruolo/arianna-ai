@@ -40,6 +40,14 @@ export const PII_NON_BLOCKING: readonly string[] = ['AGE', 'AMOUNT', 'BUILDINGNU
  */
 export const ASSISTANT_NAMES: readonly string[] = ['Arianna', 'Claude', 'Codex', 'ChatGPT'];
 
+/**
+ * Words of the trade the model takes for a person in a brief (D-236): «landing
+ * page con hero» gave a FULLNAME «hero» at 0.97 and stopped a plan to Claude.
+ * Only the words the trial showed, and only alone and whole, like the names of
+ * one word: «Hero Rossi» is still a person, and so is «Rossi» next to «Hero».
+ */
+export const PII_WORK_WORDS: readonly string[] = ['hero', 'skeleton', 'vite', 'tailwind', 'figma', 'redis'];
+
 const MAX_NAME = 60;
 
 const WORD_CHAR = /[0-9A-Za-z_-]/;
@@ -312,7 +320,8 @@ function isEntity(value: unknown, length: number): value is PiiEntity {
  *
  * `ignoreNames` are names of the assistant, of the agents and of the cloud
  * models: a FULLNAME whose text is exactly one of them, or a piece of one of
- * them as `nameSpans` says, is not a person (`ASSISTANT_NAMES` always count).
+ * them as `nameSpans` says, is not a person (`ASSISTANT_NAMES` always count;
+ * `PII_WORK_WORDS` too, but only through `nameSpans`, as whole words).
  * `fragmentNames` are more names for one fragment alone, by position (D-214:
  * the name of a character of the series in its own piece of the prompt), and
  * only whole, or a piece inside one whole occurrence of it (D-227); in every
@@ -323,6 +332,8 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
   if (!Array.isArray(entities) || entities.length !== texts.length) return piiUnavailable('malformed');
   const usable = (names: readonly string[]) => names.filter((name) => typeof name === 'string' && name.trim() !== '' && name.length <= MAX_NAME).map(normalizeName);
   const ignored = new Set(usable([...ASSISTANT_NAMES, ...ignoreNames]));
+  // Only as whole words of the text: «Hero» marked inside «Heron» or «HeroRossi» is still a person.
+  const work = usable(PII_WORK_WORDS);
   const findings: PiiFinding[] = [];
   for (const [fragment, text] of texts.entries()) {
     const found: unknown = entities[fragment];
@@ -335,7 +346,7 @@ export function piiReport(texts: readonly string[], entities: unknown, ignoreNam
       if (entity.kind === 'FULLNAME') {
         const name = normalizeName(text.slice(entity.start, entity.end));
         if (ignored.has(name) || own?.has(name) === true) continue;
-        names ??= nameSpans(text, [...ignored]);
+        names ??= nameSpans(text, [...ignored, ...work]);
         if (names.some(([start, end]) => start <= entity.start && entity.end <= end)) continue;
         if (own !== undefined) {
           ownSpans ??= fragmentNameSpans(text, own);
