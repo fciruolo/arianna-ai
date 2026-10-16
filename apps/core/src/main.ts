@@ -489,6 +489,8 @@ const advise = createAdvisor({
     settings.current().cloud.executors.includes('claude') ? askAdvice(request) : Promise.reject(new CloudTextError('unavailable', 'claude is off')),
 });
 const orchestrator = createOrchestrator({
+  // D-225, tappa A: a chat reply of a character switched on is written once more, livelier.
+  livelyReplies: true,
   sql,
   agents,
   advise,

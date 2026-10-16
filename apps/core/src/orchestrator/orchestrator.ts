@@ -167,6 +167,11 @@ export interface OrchestratorOptions {
   advise?: Advise;
   /** The IM files of the approved projects for `im.add` (D-167, P4b); absent, the tool answers with an error. */
   ims?: ImToolEnv;
+  /**
+   * A chat reply of a character switched on is written once more at LIVELY_TEMPERATURE (D-225, tappa A). Off by
+   * default: main.ts turns it on; a test with a scripted model has one answer per step.
+   */
+  livelyReplies?: boolean;
 }
 
 /**
@@ -991,7 +996,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       let asked;
       try {
         // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, playing && turns.length === 0);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, options.livelyReplies === true && playing && turns.length === 0);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

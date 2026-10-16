@@ -730,7 +730,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
 
 // The switch «Personaggio» of the conversation (D-225, tappa A).
 const coxedArianna = (model: LocalModel) =>
-  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES, livelyReplies: true });
 
 test('switch «Personaggio» on (D-225): a chat reply is written once more at a higher temperature, same prompt, and the second is kept', async () => {
   const { task } = await ask('private', 'Come va?');
