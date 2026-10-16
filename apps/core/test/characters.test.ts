@@ -68,7 +68,7 @@ test('without data/characters only the originals are listed', async () => {
   const listing = await listPacks({ original: ORIGINAL, data: join(root, 'missing') });
   assert.deepEqual(
     listing.packs.map((entry) => [entry.id, entry.original, entry.characters.map(({ id, rows }) => [id, rows])]),
-    [['originali', true, [['arianna', 4], ['coder', 4], ['god', 4], ['arianna-corsia', 4], ['coder-corsia', 4], ['arianna-ufficio', 4], ['coder-ufficio', 4]]]],
+    [['originali', true, [['arianna', 4], ['coder', 4], ['god', 4], ['arianna-corsia', 4], ['coder-corsia', 4], ['arianna-ufficio', 4], ['coder-ufficio', 4], ['arianna-natale', 4], ['coder-natale', 4], ['arianna-san-patrizio', 4], ['coder-san-patrizio', 4], ['arianna-halloween', 4], ['coder-halloween', 4], ['arianna-carnevale', 4], ['coder-carnevale', 4], ['arianna-estate', 4], ['coder-estate', 4], ['arianna-pasqua', 4], ['coder-pasqua', 4]]]],
   );
   assert.deepEqual(listing.refused, []);
 });
@@ -223,7 +223,7 @@ test('uploadSheet: a new character in miei, a conflict on the same name, replace
   const first = await uploadSheet(uploadDirs, { name: 'Robot blu', png: SHEET, replace: false });
   assert.deepEqual(first, { pack: 'miei', character: 'robot-blu', name: 'Robot blu', rows: 4, replaced: false });
   const listing = await listPacks(uploadDirs);
-  assert.deepEqual(listing.packs.map((entry) => [entry.id, entry.characters.map(({ id }) => id)]), [['originali', ['arianna', 'coder', 'god', 'arianna-corsia', 'coder-corsia', 'arianna-ufficio', 'coder-ufficio']], ['miei', ['robot-blu']]]);
+  assert.deepEqual(listing.packs.map((entry) => [entry.id, entry.characters.map(({ id }) => id)]), [['originali', ['arianna', 'coder', 'god', 'arianna-corsia', 'coder-corsia', 'arianna-ufficio', 'coder-ufficio', 'arianna-natale', 'coder-natale', 'arianna-san-patrizio', 'coder-san-patrizio', 'arianna-halloween', 'coder-halloween', 'arianna-carnevale', 'coder-carnevale', 'arianna-estate', 'coder-estate', 'arianna-pasqua', 'coder-pasqua']], ['miei', ['robot-blu']]]);
   assert.deepEqual(await readSheet(uploadDirs, 'miei', 'robot-blu'), cleanSheet(SHEET).png);
 
   await assert.rejects(uploadSheet(uploadDirs, { name: 'robot BLU', png: ARIANNA, replace: false }), (error: unknown) => {

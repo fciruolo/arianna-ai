@@ -4,6 +4,12 @@ import { ARIANNA } from './art/arianna.ts';
 import { CODER } from './art/coder.ts';
 import { ARIANNA_CORSIA, CODER_CORSIA } from './art/costumes/corsia.ts';
 import { ARIANNA_UFFICIO, CODER_UFFICIO } from './art/costumes/ufficio.ts';
+import { ARIANNA_CARNEVALE, CODER_CARNEVALE } from './art/costumes/carnevale.ts';
+import { ARIANNA_ESTATE, CODER_ESTATE } from './art/costumes/estate.ts';
+import { ARIANNA_HALLOWEEN, CODER_HALLOWEEN } from './art/costumes/halloween.ts';
+import { ARIANNA_NATALE, CODER_NATALE } from './art/costumes/natale.ts';
+import { ARIANNA_PASQUA, CODER_PASQUA } from './art/costumes/pasqua.ts';
+import { ARIANNA_SAN_PATRIZIO, CODER_SAN_PATRIZIO } from './art/costumes/san-patrizio.ts';
 import { GOD } from './art/god.ts';
 import { GRIFFIN } from './art/serie/griffin.ts';
 import { BULLOCK, FRANCINE, HAYLEY, KLAUS, ROGER, STAN, STEVE } from './art/serie/american-dad.ts';
@@ -30,6 +36,19 @@ export const COSTUMED: readonly { art: CharacterArt; name: string }[] = [
   { art: dress(CODER, CODER_CORSIA), name: 'Coder · Scrubs' },
   { art: dress(ARIANNA, ARIANNA_UFFICIO), name: 'Arianna · The Office' },
   { art: dress(CODER, CODER_UFFICIO), name: 'Coder · The Office' },
+  // The feasts (D-246), worn by Arianna and the Coder in their days when Base is in use.
+  { art: dress(ARIANNA, ARIANNA_NATALE), name: 'Arianna · Natale' },
+  { art: dress(CODER, CODER_NATALE), name: 'Coder · Natale' },
+  { art: dress(ARIANNA, ARIANNA_SAN_PATRIZIO), name: 'Arianna · San Patrizio' },
+  { art: dress(CODER, CODER_SAN_PATRIZIO), name: 'Coder · San Patrizio' },
+  { art: dress(ARIANNA, ARIANNA_HALLOWEEN), name: 'Arianna · Halloween' },
+  { art: dress(CODER, CODER_HALLOWEEN), name: 'Coder · Halloween' },
+  { art: dress(ARIANNA, ARIANNA_CARNEVALE), name: 'Arianna · Carnevale' },
+  { art: dress(CODER, CODER_CARNEVALE), name: 'Coder · Carnevale' },
+  { art: dress(ARIANNA, ARIANNA_ESTATE), name: 'Arianna · Estate' },
+  { art: dress(CODER, CODER_ESTATE), name: 'Coder · Estate' },
+  { art: dress(ARIANNA, ARIANNA_PASQUA), name: 'Arianna · Pasqua' },
+  { art: dress(CODER, CODER_PASQUA), name: 'Coder · Pasqua' },
 ];
 
 /** Every sheet of the pack `originali`, as pack.json lists them. */

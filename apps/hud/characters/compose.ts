@@ -39,13 +39,16 @@ export type LayerKind = 'legs' | 'body' | 'head' | 'over';
  * right after the layer of its kind on every frame, and moves with it (the
  * head that nods while asleep takes its cap along). `skip` leaves it out of
  * the frames whose layer of that kind starts with one of the names, e.g.
- * `body-read` where the book covers the chest.
+ * `body-read` where the book covers the chest. `only` (D-246) is the other
+ * way round: the layer is drawn only on those frames, e.g. sunglasses a row
+ * higher on `head-up`, where the eyes look up.
  */
 export interface CostumeLayer {
   name: string;
   after: LayerKind;
   part: Part;
   skip?: readonly string[];
+  only?: readonly string[];
 }
 
 /**
@@ -66,6 +69,25 @@ export interface Costume {
 }
 
 const HEX = /^#[0-9a-f]{6}$/;
+
+/** A part seen from the other side (D-246): each line read right to left, as a hat with its tip on the other side from behind. */
+export function mirrored(part: Part): Part {
+  const reversed = (line: string) => {
+    let out = '';
+    for (let index = line.length - 1; index >= 0; index--) out += line.charAt(index);
+    return out;
+  };
+  return { top: part.top, rows: part.rows.map(reversed) };
+}
+
+/** A part moved by whole columns (D-246), as a hat from the side, where the head sits a column further back; what leaves the frame is lost. */
+export function shifted(part: Part, columns: number): Part {
+  const pad = '.'.repeat(Math.abs(columns));
+  return {
+    top: part.top,
+    rows: part.rows.map((line) => (columns < 0 ? `${line.slice(-columns)}${pad}` : `${pad}${line.slice(0, line.length - columns)}`)),
+  };
+}
 
 /** The character in a costume: a sheet of its own, `<character>-<theme>`. Throws on a costume by half. */
 export function dress(art: CharacterArt, costume: Costume): CharacterArt {
@@ -197,6 +219,7 @@ export function renderSheet(art: CharacterArt): { width: number; height: number;
         const kind = layer.part.split('-')[0];
         for (const extra of art.extra?.[direction] ?? []) {
           if (extra.after !== kind || (extra.skip ?? []).some((name) => layer.part.startsWith(name))) continue;
+          if (extra.only !== undefined && !extra.only.some((name) => layer.part.startsWith(name))) continue;
           draw(extra.part, column, layer.dy ?? 0);
         }
       }

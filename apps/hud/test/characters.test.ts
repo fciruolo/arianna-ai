@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
-import { checkArt, dress, renderSheet, type CharacterArt, type Costume, type Part } from '../characters/compose.ts';
+import { checkArt, dress, mirrored, renderSheet, shifted, type CharacterArt, type Costume, type Part } from '../characters/compose.ts';
 import { APP_ICONS, COSTUMED, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, SERIES, SERIES_DIR, SHEETS, sheetPng } from '../characters/originals.ts';
 import { encodePng } from '../characters/png.ts';
 
@@ -168,6 +168,30 @@ test('a costume layer skips the frames named in skip (D-103)', () => {
   const { rgba } = renderSheet(dress(ARIANNA, costume({ down: [tie], up: [tie], right: [tie] })));
   const opaque = (column: number) => (rgba[(column * 16 + 7) * 4 + 3] ?? 0) > 0;
   assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map(opaque), [true, true, true, true, true, false, false]);
+});
+
+test('a costume layer with only is drawn on those frames alone, the others skip it (D-246)', () => {
+  const glasses = { name: 'glasses', after: 'head' as const, only: ['head-up'], part: { top: 0, rows: ['.......o........'] } };
+  const { width, rgba } = renderSheet(dress(ARIANNA, costume({ down: [glasses], up: [glasses], right: [glasses] })));
+  const opaque = (row: number, column: number) => (rgba[(row * 32 * width + column * 16 + 7) * 4 + 3] ?? 0) > 0;
+  // The fourth row: think (head-up, head-up2) in the first two columns, then wait, pause, blink.
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map((column) => opaque(3, column)), [true, true, false, false, false, false, false]);
+  assert.ok(![0, 1, 2].some((row) => [0, 1, 2, 3, 4, 5, 6].some((column) => opaque(row, column))));
+});
+
+test('a part mirrored reads each line right to left, a part shifted moves by columns and loses what leaves the frame (D-246)', () => {
+  const part = { top: 3, rows: ['ab..............', '...............c'] };
+  assert.deepEqual(mirrored(part), { top: 3, rows: ['..............ba', 'c...............'] });
+  assert.deepEqual(shifted(part, 1), { top: 3, rows: ['.ab.............', '................'] });
+  assert.deepEqual(shifted(part, -1), { top: 3, rows: ['b...............', '..............c.'] });
+  assert.deepEqual(shifted(part, 0), part);
+});
+
+test('every feast dresses Arianna and the Coder, with a sheet of its own in the pack (D-246)', () => {
+  const ids = COSTUMED.map(({ art }) => art.id);
+  for (const feast of ['natale', 'san-patrizio', 'halloween', 'carnevale', 'estate', 'pasqua']) {
+    for (const character of ['arianna', 'coder']) assert.ok(ids.includes(`${character}-${feast}`), `${character}-${feast}`);
+  }
 });
 
 test('a costume by half, a recolor of a letter the character lacks or a new letter that is already its own are refused (D-103)', () => {

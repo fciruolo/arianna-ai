@@ -1,6 +1,6 @@
 {
   "name": "Originali",
-  "source": "Arianna, disegnati da Claude per il progetto (D-060), con i costumi dei temi (D-103); rigenerati con node apps/hud/characters/build.ts",
+  "source": "Arianna, disegnati da Claude per il progetto (D-060), con i costumi dei temi (D-103) e delle feste (D-246); rigenerati con node apps/hud/characters/build.ts",
   "characters": [
     { "id": "arianna", "name": "Arianna", "file": "arianna.png" },
     { "id": "coder", "name": "Coder", "file": "coder.png" },
@@ -8,6 +8,18 @@
     { "id": "arianna-corsia", "name": "Arianna · Scrubs", "file": "arianna-corsia.png" },
     { "id": "coder-corsia", "name": "Coder · Scrubs", "file": "coder-corsia.png" },
     { "id": "arianna-ufficio", "name": "Arianna · The Office", "file": "arianna-ufficio.png" },
-    { "id": "coder-ufficio", "name": "Coder · The Office", "file": "coder-ufficio.png" }
+    { "id": "coder-ufficio", "name": "Coder · The Office", "file": "coder-ufficio.png" },
+    { "id": "arianna-natale", "name": "Arianna · Natale", "file": "arianna-natale.png" },
+    { "id": "coder-natale", "name": "Coder · Natale", "file": "coder-natale.png" },
+    { "id": "arianna-san-patrizio", "name": "Arianna · San Patrizio", "file": "arianna-san-patrizio.png" },
+    { "id": "coder-san-patrizio", "name": "Coder · San Patrizio", "file": "coder-san-patrizio.png" },
+    { "id": "arianna-halloween", "name": "Arianna · Halloween", "file": "arianna-halloween.png" },
+    { "id": "coder-halloween", "name": "Coder · Halloween", "file": "coder-halloween.png" },
+    { "id": "arianna-carnevale", "name": "Arianna · Carnevale", "file": "arianna-carnevale.png" },
+    { "id": "coder-carnevale", "name": "Coder · Carnevale", "file": "coder-carnevale.png" },
+    { "id": "arianna-estate", "name": "Arianna · Estate", "file": "arianna-estate.png" },
+    { "id": "coder-estate", "name": "Coder · Estate", "file": "coder-estate.png" },
+    { "id": "arianna-pasqua", "name": "Arianna · Pasqua", "file": "arianna-pasqua.png" },
+    { "id": "coder-pasqua", "name": "Coder · Pasqua", "file": "coder-pasqua.png" }
   ]
 }
