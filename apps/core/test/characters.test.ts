@@ -119,7 +119,7 @@ test('the pack of the series in git is listed after the originals, not as one of
       ['serie', false],
     ],
   );
-  assert.deepEqual(listing.packs[1]?.characters.map(({ id, rows }) => [id, rows]), ['jd', 'turk', 'elliot', 'carla', 'cox', 'kelso', 'janitor', 'ted', 'laverne', 'michael', 'dwight', 'jim', 'pam', 'oscar', 'andy', 'kevin', 'angela', 'creed', 'marge', 'homer', 'burns', 'lisa', 'smithers', 'bart', 'boe', 'lois', 'peter', 'stewie', 'brian', 'meg', 'chris', 'cleveland', 'francine', 'stan', 'roger', 'hayley', 'bullock', 'steve', 'klaus'].map((id) => [id, 4]));
+  assert.deepEqual(listing.packs[1]?.characters.map(({ id, rows }) => [id, rows]), ['jd', 'turk', 'elliot', 'carla', 'cox', 'kelso', 'janitor', 'ted', 'laverne', 'michael', 'dwight', 'jim', 'pam', 'oscar', 'andy', 'kevin', 'angela', 'creed', 'marge', 'homer', 'burns', 'lisa', 'smithers', 'bart', 'boe', 'lois', 'peter', 'stewie', 'brian', 'meg', 'chris', 'cleveland', 'francine', 'stan', 'roger', 'hayley', 'bullock', 'steve', 'klaus', 'sara', 'scofield', 'lincoln', 'mahone', 'abruzzi', 'westmoreland', 'sucre', 'tbag'].map((id) => [id, 4]));
   assert.deepEqual(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'carla'), readFileSync(join(SERIES, 'carla.png')));
   // A folder data/characters/serie is never served in its place, with the pack in git or without it.
   assert.equal(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'robot'), undefined);

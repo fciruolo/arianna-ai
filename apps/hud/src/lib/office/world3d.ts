@@ -1,5 +1,6 @@
 import type { ColorName } from './draw.ts';
 import { langleyCabinet } from './langley.ts';
+import { foxRiverBars3d, foxRiverPhone3d } from './fox-river.ts';
 import { inRoom, isWall, isWalkable, TILE, tileAt, type OfficeMap, type Point, type Room, type TileKind } from './map.ts';
 import type { Actor, Facing } from './motion.ts';
 import type { OfficeSkin } from './skins.ts';
@@ -158,6 +159,8 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
       if (skin === 'quahog') return [box(x, z, 0.8, 0.5, 0, 0.45, 'desk'), box(x, z, 0.7, 0.5, 0.45, 0.5, 'monitor'), box(x, z, 0.5, 0.52, 0.52, 0.36, 'screen')];
       // The fridge of the Smiths (D-239): tall and white, a line between its two doors.
       if (skin === 'langley') return [box(x, z, 0.72, 0.62, 0, 1.3, 'paper'), box(x, z, 0.74, 0.64, 0.85, 0.03, 'desk-shadow')];
+      // The payphone of the penitentiary (D-240).
+      if (skin === 'fox-river') return foxRiverPhone3d(x, z);
       return skin === 'ufficio'
         ? [box(x, z, 0.5, 0.5, 0, 0.9, 'paper'), box(x, z, 0.36, 0.36, 0.9, 0.34, 'window-light')]
         : [box(x, z, 0.7, 0.6, 0, 1.0, 'monitor'), box(x, z, 0.5, 0.62, 0.55, 0.3, 'screen')];
@@ -169,6 +172,7 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
       // The house of the Smiths (D-239): Klaus's bowl on its little table, the television, the files of the CIA.
       if (skin === 'langley') return langleyCabinet3d(map, c, r, x, z);
       return [box(x, z, 0.9, 0.7, 0, 1.05, skin === 'corsia' ? 'counter' : 'desk'), box(x, z, 0.92, 0.72, 1.05, 0.04, 'desk-top')];
+      return [box(x, z, 0.9, 0.7, 0, 1.05, skin === 'corsia' || skin === 'fox-river' ? 'counter' : 'desk'), box(x, z, 0.92, 0.72, 1.05, 0.04, 'desk-top')];
   }
 }
 
@@ -233,6 +237,9 @@ export function buildWorld(map: OfficeMap, skin: OfficeSkin): World {
       if (kind === undefined) continue;
       if (isWall(kind)) {
         blocks.push(...wallFace(map, kind, c, r));
+        // The bars of the windows of the penitentiary (D-240).
+        const side = skin === 'fox-river' && kind === 'window' ? openSide(map, c, r) : null;
+        if (side !== null) blocks.push(...foxRiverBars3d(c, r, side));
         continue;
       }
       // A checked floor for Base, as in 2D; the tiles of the Sacro Cuore and the carpet of the Dunder Mifflin are one colour.

@@ -1,5 +1,6 @@
 import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
 import { langleyCabinet, langleyCabinetItem, langleyCounter, langleyFloor, langleyFridge, langleyRun, langleyShelf } from './langley.ts';
+import { foxRiverCounter, foxRiverFloor, foxRiverItem, foxRiverRun, foxRiverWall } from './fox-river.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
 import { quahogBar, quahogCouch, quahogFloor, quahogItem, quahogSign, quahogWainscot } from './quahog.ts';
@@ -88,7 +89,10 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   const I = SKIN_INK;
 
   // Floor and rugs. The Sacro Cuore has tiles with their joints, the Dunder Mifflin a flecked carpet (D-216).
-  if (skin === 'corsia') {
+  if (skin === 'fox-river') {
+    // The concrete of the penitentiary (D-240).
+    foxRiverFloor(rect, C, map);
+  } else if (skin === 'corsia') {
     for (let r = 0; r < map.height; r++) {
       for (let c = 0; c < map.width; c++) {
         rect(C.floor, c * TILE, r * TILE, TILE, TILE);
@@ -217,6 +221,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       rect(C['wall-line'], x, y + TILE - 2, TILE, 2);
       // The handrail halfway up the corridor's wall (D-216, the decor of the theme Corsia).
       if (skin === 'corsia') rect(C['wall-line'], x, y + 9, TILE, 1);
+      // Cinder blocks, barred windows and the plate of the penitentiary (D-240).
+      if (skin === 'fox-river' && foxRiverWall(rect, C, kind, x, y, r)) continue;
       // The wooden wainscot of the Griffin house (D-238).
       if (skin === 'quahog') quahogWainscot(rect, C, x, y, TILE);
       // The hazard stripe of the power plant (D-237), under the windows and the signs.
@@ -328,6 +334,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         rect(C.outline, x + w - 14, y - 6, 6, 8);
         rect(C.paper, x + w - 13, y - 5, 4, 6);
         rect(C.outline, x + w - 12, y - 7, 2, 1);
+      } else if (skin === 'fox-river') {
+        foxRiverCounter(rect, C, x, y, w);
       } else if (skin === 'ufficio') {
         // The reception: the jar of sweets and the telephone.
         rect(C.outline, x + 3, y - 8, 6, 7);
@@ -361,6 +369,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     } else if (skin === 'langley') {
       if (kind === 'coffee') langleyFridge(rect, C, x, y);
       else langleyCabinetItem(rect, C, x, y, langleyCabinet(map, x / TILE, y / TILE));
+    } else if (skin === 'fox-river') {
+      foxRiverItem(rect, C, kind, x, y);
     } else if (skin === 'corsia' && kind === 'coffee') {
       rect(C.outline, x + 1, y - 10, 14, 24);
       rect(I.metalDark, x + 2, y - 9, 12, 22);
@@ -399,6 +409,10 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   };
   /** A run of `sofa` tiles: hospital beds in the Sacro Cuore, the meeting table in the Dunder Mifflin (D-216). */
   const skinRun = (x: number, y: number, w: number, tiles: number): void => {
+    if (skin === 'fox-river') {
+      foxRiverRun(rect, C, x, y, tiles);
+      return;
+    }
     if (skin === 'langley') {
       langleyRun(rect, C, x, y, w, tiles);
       return;

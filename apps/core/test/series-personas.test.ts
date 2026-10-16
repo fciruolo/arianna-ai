@@ -447,3 +447,41 @@ test('the theme I Simpson (D-237): Marge is Arianna, Homer the Coder, Mr. Burns 
   assert.match(roster, /- Coder: "Homer"/);
   assert.doesNotMatch(roster, /Mr\. Burns/);
 });
+
+test('the theme Fox River (D-240): who wears whom, who is who, and the whole names as aliases, worn ones only', () => {
+  const fox = corsia({ appearance: { theme: 'fox-river' } });
+  const roles = { arianna: 'sara', coder: 'scofield', god: 'mahone', reviewer: 'lincoln', finanze: 'abruzzi', designer: 'westmoreland', 'local-chat': 'sucre' };
+  for (const [agent, id] of Object.entries(roles)) {
+    assert.equal(characterChoiceOf(fox, agent), `serie/${id}`, agent);
+    assert.equal(characterPart(fox, agent)?.source, `character:serie/${id}`, agent);
+  }
+  assert.match(characterPart(fox, 'coder')?.text ?? '', /Call yourself "Michael"\. You are Michael of Prison Break, never Arianna/);
+  // T-Bag is free, as Ted, Laverne, Angela and Creed: in no theme, chosen by hand only.
+  for (const theme of ['corsia', 'ufficio', 'fox-river']) assert.ok(!Object.values(themeCharactersSync(THEMES, theme)).includes('serie/tbag'), theme);
+  assert.equal(characterChoiceOf(fox, 'mio-agente'), 'originali/coder');
+  const roster = rosterPart(fox, 'god')?.text ?? '';
+  assert.match(roster, /- Arianna: "Sara"/);
+  assert.match(roster, /- Coder: "Michael"/);
+  assert.match(roster, /- Reviewer: "Lincoln"/);
+  assert.doesNotMatch(roster, /Mahone|Scofield|Tancredi/);
+  // The names worn now with their whole forms (the aliases, as «Bob Kelso» of D-227); the local model is not loaded here.
+  assert.deepEqual(wornSeriesNames(fox).sort(), ['Abruzzi', 'Alexander Mahone', 'Charles Westmoreland', 'John Abruzzi', 'Lincoln', 'Lincoln Burrows', 'Mahone', 'Michael', 'Michael Scofield', 'Sara', 'Sara Tancredi', 'Westmoreland']);
+  const only = (names: string[]) => {
+    const text = names.join(' e ');
+    const entities = names.map((name) => ({ kind: 'FULLNAME', start: text.indexOf(name), end: text.indexOf(name) + name.length, score: 0.9 }));
+    return piiVerdict(piiReport([text], [entities], [], fragmentNamesOf([{ value: text, label: 'L1', source: 'message:1' }], wornSeriesNames(fox))), [text]);
+  };
+  assert.deepEqual(only(['Michael Scofield', 'Sara', 'Lincoln Burrows', 'Mahone']), { verdict: 'clean' });
+  // Negative: a wider span is a person, and so are the names nobody wears (T-Bag and Sucre here), and Fox River names under another theme.
+  assert.equal(only(['Sara Bianchi']).verdict, 'found');
+  assert.equal(only(['Theodore Bagwell']).verdict, 'found');
+  assert.equal(only(['Fernando Sucre']).verdict, 'found');
+  assert.ok(!wornSeriesNames(corsia()).includes('Michael Scofield'));
+  // With the local model loaded, Sucre is worn too, with his whole name.
+  const sucre = wornSeriesNames(corsia({ appearance: { theme: 'fox-river' }, agentsNow: () => ({ official: [...LOADED.official, 'local-chat'], user: [] }) }));
+  for (const name of ['Sucre', 'Fernando Sucre']) assert.ok(sucre.includes(name), name);
+  assert.ok(!sucre.includes('T-Bag'));
+  // In the piece of a character every name of the series counts, aliases included (D-214, D-217).
+  const names = seriesNamesOfSource('character:serie/scofield') ?? [];
+  for (const name of ['Michael Scofield', 'Theodore Bagwell', 'T-Bag', 'Fernando Sucre', 'Dr. Cox']) assert.ok(names.includes(name), name);
+});

@@ -49,6 +49,8 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   assert.equal(skinOfTheme('quahog'), 'quahog');
   assert.equal(skinOfTheme('langley'), 'langley');
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
+  assert.equal(skinOfTheme('fox-river'), 'fox-river');
+  for (const other of [undefined, 'base', 'natale', 'Corsia', 'Fox-River', 'fox', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 
 test('Base is drawn the same, pixel for pixel, with or without the skin named (D-216, D-229)', () => {
@@ -144,4 +146,19 @@ test('the page shows the office with a notice when the base map stands in, the e
   const broken = officeView(officeMapOf('base', { ...TEXTS, base: 'nope' }));
   assert.ok(broken.kind === 'error');
   assert.match(broken.text, /^La mappa dell'ufficio non è valida: /);
+});
+
+test('Fox River (D-240): its own colours over the page, light or dark as the page is, the theme tokens kept; the base map takes its place when its map breaks', () => {
+  const light = colorsOf(css, 'light', COLOR_TOKENS, THEME_TOKENS);
+  const dark = colorsOf(css, 'dark', COLOR_TOKENS, THEME_TOKENS);
+  const prison = skinColors(light, 'fox-river');
+  assert.notEqual(prison.floor, light.floor);
+  assert.notEqual(skinColors(dark, 'fox-river').floor, prison.floor);
+  for (const token of THEME_TOKENS) assert.equal(prison[token], light[token], token);
+  assert.equal(mapOf('fox-river').id, 'fox-river');
+  // Two barred windows more than in Base, on the corridor's wall; the same anchors (the test above).
+  const windows = (map: OfficeMap): number => map.tiles.filter((kind) => kind === 'window').length;
+  assert.equal(windows(mapOf('fox-river')), windows(mapOf('base')) + 2);
+  const broken = officeMapOf('fox-river', { ...TEXTS, 'fox-river': '{}' });
+  assert.deepEqual([broken.fallback, broken.map?.id], [true, 'base']);
 });

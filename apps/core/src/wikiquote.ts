@@ -48,6 +48,8 @@ export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>>
   'Family Guy': [{ title: 'I Griffin' }],
   // D-239: one page for the whole series, as The Office (title not verified on the site: no network while building).
   'American Dad!': [{ title: 'American Dad!' }],
+  // D-240: one page for the whole series, as The Office; not verified on the wiki (written without the network), its import says so if it finds nothing.
+  'Prison Break': [{ title: 'Prison Break' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -102,6 +104,15 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   bullock: ['Bullock', 'Avery Bullock', 'Vicedirettore Bullock'],
   steve: ['Steve', 'Steve Smith'],
   klaus: ['Klaus'],
+  // Prison Break (D-240): the names as the Italian dub writes them, not verified on the page.
+  sara: ['Sara', 'Sara Tancredi'],
+  scofield: ['Michael', 'Michael Scofield', 'Scofield'],
+  lincoln: ['Lincoln', 'Lincoln Burrows', 'Linc'],
+  mahone: ['Mahone', 'Alexander Mahone', 'Alex Mahone'],
+  abruzzi: ['Abruzzi', 'John Abruzzi'],
+  westmoreland: ['Westmoreland', 'Charles Westmoreland'],
+  sucre: ['Sucre', 'Fernando Sucre'],
+  tbag: ['T-Bag', 'Theodore Bagwell'],
 };
 
 export interface WikiquoteLine {

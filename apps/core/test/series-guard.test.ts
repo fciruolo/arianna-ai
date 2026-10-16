@@ -36,7 +36,7 @@ test('the piece of every person of the series passes the second scanner, its nam
 
 test('who is who and an answer that names the agents by their characters pass the real scanner; a real person does not (D-217)', { skip: !available && 'Rizzo-PII is not in data/guard/models' }, async () => {
   assert.ok(guard !== undefined);
-  for (const theme of ['corsia', 'ufficio', 'springfield', 'quahog', 'langley']) {
+  for (const theme of ['corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river']) {
     const config = { personas: {}, appearance: { theme }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) };
     for (const agent of ['arianna', 'coder', 'god', 'designer']) {
       const roster = rosterPart(config, agent);
@@ -57,6 +57,8 @@ test('who is who and an answer that names the agents by their characters pass th
   const springfield = wornSeriesNames({ personas: {}, appearance: { theme: 'springfield' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
   const quahog = wornSeriesNames({ personas: {}, appearance: { theme: 'quahog' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
   const smiths = wornSeriesNames({ personas: {}, appearance: { theme: 'langley' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
+  // The people of Fox River (D-240), by name and by their whole names, the aliases.
+  const prison = wornSeriesNames({ personas: {}, appearance: { theme: 'fox-river' }, home, paths: { data: join(home, DATA_DIR) }, agentsNow: () => ({ official: [...loadAgents(join(home, 'agents')).keys()], user: [] }) });
   for (const [names, text] of [
     [worn, 'L’Inserviente ha preparato la grafica e il Dr. Kelso ha risposto in locale.'],
     [office, 'Oscar ha controllato i conti, Andy ha fatto la grafica e Kevin ha risposto in locale.'],
@@ -66,10 +68,16 @@ test('who is who and an answer that names the agents by their characters pass th
     [quahog, 'Lois ha passato il lavoro a Peter, Stewie ha deciso, Brian ha rivisto il diff, Meg ha fatto i conti, Chris la grafica e Cleveland ha risposto in locale.'],
     // American Dad (D-239): every agent wears a Smith or Bullock.
     [smiths, 'Francine ha chiesto a Stan il codice, Roger ha deciso, Hayley ha rivisto il diff, Bullock ha fatto i conti, Steve la grafica e Klaus ha risposto in locale.'],
+    [prison, 'Sara ha letto il piano, Michael ha scritto il codice, Mahone ha controllato e Lincoln ha rivisto il diff.'],
+    [prison, 'Michael Scofield e Sara Tancredi lo hanno visto; Abruzzi ha fatto i conti, Westmoreland la grafica e Sucre ha risposto in locale.'],
   ] as const) {
     const check = await guard.scan([text], fragmentNamesOf([{ value: text, label: 'L1', source: 'message:3' }], names));
     assert.deepEqual(piiVerdict(check, [text]), { verdict: 'clean' }, text);
   }
+  // With Fox River a real person with the name of Sara stays a person (D-240).
+  const real = 'Scrivi a Sara Bianchi per il preventivo.';
+  const stopped = await guard.scan([real], fragmentNamesOf([{ value: real, label: 'L1', source: 'message:4' }], prison));
+  assert.equal(piiVerdict(stopped, [real]).verdict, 'found');
 });
 
 test('the piece of the names the user wrote passes the real scanner, the same name in a brief does not (D-217)', { skip: !available && 'Rizzo-PII is not in data/guard/models' }, async () => {

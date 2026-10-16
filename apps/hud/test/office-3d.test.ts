@@ -119,6 +119,16 @@ test('the places of the themes: checked floor and no handrail for Base, a handra
   assert.ok(plant.blocks.some(stripe));
   assert.ok(plant.blocks.some((block) => block.color === 'ok' && block.w < 0.2));
   for (const skin of ['base', 'corsia', 'ufficio'] as const) assert.ok(!buildWorld(mapOf(skin), skin).blocks.some(stripe), skin);
+  // Fox River (D-240): one-colour concrete, no handrail, bars in front of every window, nowhere else.
+  const prisonMap = mapOf('fox-river');
+  const prison = buildWorld(prisonMap, 'fox-river');
+  assert.equal(rails(prison).length, 0);
+  assert.ok(prison.floors.every((tile) => !tile.alt));
+  const bars = prison.blocks.filter((block) => block.color === 'outline' && block.y >= 0.5);
+  const windows = tilesOf(prisonMap, (kind) => kind === 'window').filter(([c, r]) => openSide(prisonMap, c, r) !== null);
+  assert.equal(bars.length, windows.length * 4);
+  for (const block of bars) assert.ok(windows.some(([c, r]) => Math.abs(block.x - (c + 0.5)) < 0.7 && Math.abs(block.z - (r + 0.5)) < 0.7), `a bar at ${String(block.x)},${String(block.z)}`);
+  assert.equal(buildWorld(BASE, 'base').blocks.filter((block) => block.color === 'outline' && block.y >= 0.5).length, 0);
 });
 
 test('a screen on the desk of every room with a desk, keyed by its seat; the bell over the Decisioni desk', () => {
