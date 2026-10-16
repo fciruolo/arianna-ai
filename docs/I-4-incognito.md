@@ -65,7 +65,7 @@ Per ogni traccia lasciata oggi da una conversazione: dove sta, cosa contiene, e 
 | `.git` del progetto | il Coder può scriverci (rischio accettato da D-056) | **Resta**: commit, rami o stash fatti dal Coder restano nella storia del progetto |
 | Telegram (spento, D-110) | avvisi da `approval.requested` e `message.created` | **Evitata**: il canale salta gli eventi di una conversazione incognita (anche se torna acceso) |
 | Notifiche push (D-066, futuro I-1) | testo fisso, nessun contenuto | Chiamate in uscita per un task incognito **evitate** (niente `task-done`/`waiting` che squillano); la notifica di I-1 senza testo è innocua ma va comunque saltata, perché dice che è successo qualcosa |
-| Browser | stato in memoria della pagina; `localStorage` solo per disposizione e id di approvazioni chiuse; risposte API `no-store` | La pagina resta su un indirizzo fisso (`/incognito`), senza l'id della conversazione: anche `replaceState` finirebbe nella cronologia; non salva bozze; dopo la chiusura scarta ciò che ha in memoria |
+| Browser | stato in memoria della pagina; `localStorage` per disposizione, id di approvazioni chiuse e bozze del campo di scrittura delle conversazioni non incognite (D-231); risposte API `no-store` | La pagina resta su un indirizzo fisso (`/incognito`), senza l'id della conversazione: anche `replaceState` finirebbe nella cronologia; non salva bozze; dopo la chiusura scarta ciò che ha in memoria |
 
 ## Disegno proposto
 

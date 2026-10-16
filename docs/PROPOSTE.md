@@ -381,7 +381,7 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 | Consumi per modello e per compito | Statistiche di uso, fallimenti e consumi (nel loro cloud, con consenso) | Pagina «Consumi» locale, solo metadati | costruita: D-210, ramo `task/consumi`, Impostazioni → Consumi | bassa | 6-10 h |
 | Attività: cosa è cambiato | Modelli, skill e connessioni nuovi o tolti, come osservazioni | «Cosa è cambiato» in Arianna, in un posto | nuova: domanda 11 | nessuno | 5-8 h |
 | Consenso del browser per azione | Consenso per conversazione e per clic, «Share result», «Take over» | Regole del browser di D-095 tappa 3 | nuova: domanda 12 | alta | +4-6 h in D-095 |
-| Campo di scrittura più ricco | Menu «+» unico, scorciatoie ai modelli preferiti, bozze per sessione | Menu «+», tasti per i modelli, bozza per conversazione | nuova: domanda 13 | nessuno | 4-6 h |
+| Campo di scrittura più ricco | Menu «+» unico, scorciatoie ai modelli preferiti, bozze per sessione | Menu «+», tasti per i modelli, bozza per conversazione | costruita: D-231, ramo `task/campo-piu-bozze`, menu «+» nel campo della chat | nessuno | 4-6 h |
 | Importare la configurazione di Claude | Un agente sposta plugin e skill di Claude Cowork | Skill personali di Claude Code nel catalogo D-161 | nuova: domanda 14 | media | 4-6 h |
 | Den, organizzazioni, SSO, analisi d'organizzazione | Piano di controllo per team | Un utente solo | fuori: fuori scopo | — | — |
 | 50+ fornitori con chiavi, modello gratuito «Auto», AI Gateway | Modelli via API con chiavi o crediti | Solo binari ufficiali con abbonamento e modello locale | fuori: D-002, «Mai token OAuth» | alta | — |
