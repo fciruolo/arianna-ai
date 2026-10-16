@@ -29,6 +29,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
+### Aggiunto
+
+- In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
+- A ogni messaggio della chat con un personaggio il core pesca le sue battute vere (D-224) e le mette dopo il messaggio, anche quando la sessione di Claude riprende (D-225, tappa B).
+
+### Sicurezza
+
+- La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
 
 ## [0.121.0] - 2026-10-16
 
