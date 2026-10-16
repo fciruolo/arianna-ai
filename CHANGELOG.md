@@ -6,8 +6,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Tema «American Dad» in Impostazioni → Aspetto: blu notte, bianco e rosso sobrio, con Francine (Arianna), Stan (Coder), Roger (GOD), Hayley (revisore), Bullock (Finanze), Steve (Designer) e Klaus (Modello locale) in pixel art con la loro personalità, e l'ufficio pixel che diventa la casa degli Smith, in 2D e in 3D (D-239, fan art per uso personale).
 - Tema «Prison Break» (il penitenziario di Fox River, fan art per uso personale): cemento grigio, blu delle divise e arancio; Sara è Arianna, Michael il Coder, Mahone GOD, Lincoln il revisore, Abruzzi le finanze, Westmoreland il designer e Sucre il modello locale, T-Bag libero nella galleria; con personalità, battute, pagina di Wikiquote e l'ufficio pixel, in 2D e in 3D, con cemento, blocchi, sbarre alle finestre, armadietti, brande e telefono a gettoni (D-240).
+
+## [0.133.0] - 2026-10-16
+
+### Aggiunto
+
+- Tema «American Dad» in Impostazioni → Aspetto: blu notte, bianco e rosso sobrio, con Francine (Arianna), Stan (Coder), Roger (GOD), Hayley (revisore), Bullock (Finanze), Steve (Designer) e Klaus (Modello locale) in pixel art con la loro personalità, e l'ufficio pixel che diventa la casa degli Smith, in 2D e in 3D (D-239, fan art per uso personale).
+
+### Cambiato
+
+- Il pacchetto di personaggi può averne fino a 64 (prima 32), per i temi delle serie da sette personaggi ciascuno; anche «Miei» (D-239, D-240).
 
 ## [0.132.0] - 2026-10-16
 
