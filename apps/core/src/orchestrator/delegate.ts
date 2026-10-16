@@ -683,10 +683,22 @@ async function show(sql: Sql, task: Task, step: number, kind: ActivityKind, deta
   await postActivity(sql, { conversationId: task.conversationId, taskId: task.id, step, kind, detail }).catch(() => undefined);
 }
 
-/** Ends a delegation with an error the next local step reads; never fails the step. */
+/**
+ * Whether an error of `agent`'s delegation ends the task (D-250): on the card
+ * of an agent, or in the direct chat with it, no model takes another step
+ * after it. Its line of activity is `stop`, never «provo un'altra strada».
+ */
+export async function errorEndsTask(sql: Sql, task: Task, agent: string): Promise<boolean> {
+  // As isAgentCard of card-run.ts, which imports this module at load: written here, not imported.
+  if (task.conversationId === null) return task.assignee !== 'user' && task.assignee !== CHAT_AGENT;
+  return agent === task.assignee && task.assignee !== CHAT_AGENT && (await directChatOf(sql, task, agent)) !== undefined;
+}
+
+/** Ends a delegation with an error the next local step reads (or that ends the task); never fails the step. */
 async function close(env: DelegateEnv, task: Task, step: number, delegation: Delegation, status: 'failed' | 'refused', result: string): Promise<void> {
   await updateDelegation(env.sql, delegation.id, { status, result, resultLabel: delegation.label });
-  await show(env.sql, task, step, 'error', result.replace(/^error: [^:]+: /, ''));
+  const kind = (await errorEndsTask(env.sql, task, delegation.agent)) ? 'stop' : 'error';
+  await show(env.sql, task, step, kind, result.replace(/^error: [^:]+: /, ''));
 }
 
 /** What the diary of a work reads besides the delegation (I-15, D-147). */

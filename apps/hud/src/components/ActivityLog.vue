@@ -52,8 +52,8 @@ async function toggle(): Promise<void> {
       <p v-else-if="problem !== null" class="text-xs text-warn">{{ problem }}</p>
       <ul v-else-if="lines !== null" class="flex flex-col gap-[5px]">
         <li v-for="line in lines" :key="line.id" class="flex items-start gap-2.5">
-          <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="line.kind === 'error' ? 'text-warn' : 'text-ok'" aria-hidden="true">{{
-            line.kind === 'error' ? '!' : '✓'
+          <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="(line.kind === 'error' || line.kind === 'stop') ? 'text-warn' : 'text-ok'" aria-hidden="true">{{
+            (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓'
           }}</span>
           <span class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
           <time class="shrink-0 font-mono text-[12px] text-muted" :datetime="line.at" :title="new Date(line.at).toLocaleString('it-IT')">{{

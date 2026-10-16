@@ -263,7 +263,7 @@ export interface Delta {
   text: string;
 }
 
-export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error' | 'delegate' | 'tool' | 'wait';
+export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error' | 'stop' | 'delegate' | 'tool' | 'wait';
 
 /** One line of what a task is doing (D-054), live over the WebSocket; saved lines come as SavedActivity (D-083). */
 export interface Activity {

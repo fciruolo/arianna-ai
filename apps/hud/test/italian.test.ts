@@ -74,13 +74,16 @@ test('API errors become Italian, and unknown ones a generic message', () => {
 });
 
 test('activity lines are written in Italian; an unknown tool error is never shown as it is', () => {
-  const line = (kind: 'search' | 'read' | 'error' | 'thinking', detail = '') => activityText({ conversationId: 'c', taskId: 't', step: 3, kind, detail });
+  const line = (kind: 'search' | 'read' | 'error' | 'stop' | 'thinking', detail = '') => activityText({ conversationId: 'c', taskId: 't', step: 3, kind, detail });
   assert.equal(line('search', 'caldaia'), 'Cerco nella knowledge base: «caldaia»');
   assert.equal(line('read', 'kb/private/casa/caldaia.md'), 'Leggo kb/private/casa/caldaia.md');
   assert.equal(line('thinking'), 'Sto ragionando (passo 3)…');
   assert.equal(line('error', '"kb/ciao.html" is not a page path: pages look like kb/folder/name.md'), 'Errore: kb/ciao.html non è un percorso di pagina valido (kb/cartella/nome.md), provo un’altra strada');
   assert.equal(line('error', 'the same call as step 2, not run again'), 'Errore: la stessa chiamata del passo 2, non rifatta, provo un’altra strada');
   assert.equal(line('error', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore, provo un’altra strada');
+  // An error that ends the task (D-250): no other way is promised.
+  assert.equal(line('stop', 'the gateway refused the brief (second scanner found personal data: FULLNAME)'), 'Errore: il gateway ha fermato il brief');
+  assert.equal(line('stop', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore');
 });
 
 test('delegation lines: hand-over, the Coder at work, its tools, the waits, its errors', () => {

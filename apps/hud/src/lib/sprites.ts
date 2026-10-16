@@ -88,6 +88,7 @@ export function poseOf(state: AgentState | undefined, activity: Activity | undef
       case 'plan':
       case 'wait':
       case 'error':
+      case 'stop':
         return 'thinking';
     }
   }

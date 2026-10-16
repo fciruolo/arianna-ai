@@ -291,7 +291,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         <p v-if="live.length === 0" class="text-muted">Nessun passo ancora.</p>
         <ul v-else class="flex flex-col gap-[5px]">
           <li v-for="(line, index) in live" :key="`${String(line.step)}:${String(index)}`" class="flex items-start gap-2.5">
-            <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="line.kind === 'error' ? 'text-warn' : 'text-accent'" aria-hidden="true">{{ line.kind === 'error' ? '!' : '›' }}</span>
+            <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="(line.kind === 'error' || line.kind === 'stop') ? 'text-warn' : 'text-accent'" aria-hidden="true">{{ (line.kind === 'error' || line.kind === 'stop') ? '!' : '›' }}</span>
             <span class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
           </li>
         </ul>
@@ -303,7 +303,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         <p v-else-if="saved !== null && saved.length === 0" class="text-muted">Nessun passo salvato.</p>
         <ul v-else-if="saved !== null" class="flex flex-col gap-[5px]">
           <li v-for="line in saved" :key="line.id" class="flex items-start gap-2.5">
-            <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="line.kind === 'error' ? 'text-warn' : 'text-ok'" aria-hidden="true">{{ line.kind === 'error' ? '!' : '✓' }}</span>
+            <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="(line.kind === 'error' || line.kind === 'stop') ? 'text-warn' : 'text-ok'" aria-hidden="true">{{ (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓' }}</span>
             <span class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
           </li>
         </ul>

@@ -311,6 +311,9 @@ export function activityText(activity: Activity | SavedActivity): string {
       return `Piano: ${activity.detail}`;
     case 'error':
       return `Errore: ${toolError(activity.detail)}, provo un’altra strada`;
+    // An error that ends the task (D-250): the direct chat or a card, where no other way is tried.
+    case 'stop':
+      return `Errore: ${toolError(activity.detail)}`;
     case 'delegate':
       return delegateText(activity.detail);
     case 'tool':

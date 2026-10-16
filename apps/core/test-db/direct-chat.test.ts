@@ -12,12 +12,16 @@ import { after, before, test } from 'node:test';
 import { loadAgent, userCard, userPresets, type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKind, type LocalModel } from '@arianna/executors';
+import { piiReport } from '@arianna/policy';
 
 import { ChatError, createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, directChatHistory, localAgentModel, sessionLost } from '../src/orchestrator/delegate.ts';
+import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, errorEndsTask, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, directChatHistory, localAgentModel, sessionLost } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
+import { closeRefusedDirectWaits } from '../src/orchestrator/gateway-refusal.ts';
+import { configurePiiGuard } from '../src/pii-guard.ts';
+import { activitiesSaved } from '../src/reply.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { startLiveFeed } from '../src/live.ts';
@@ -334,6 +338,86 @@ function receivedArgv(): string[] {
 }
 
 const FIRST_SESSION = '00000000-0000-4000-8000-000000000001';
+
+/** A fake Rizzo-PII that reads «Mario Bianchi» as a person (D-250); `restore` puts back the clean one of support/database.ts. */
+function personGuard(): void {
+  configurePiiGuard({
+    state: 'ready',
+    scan: (texts) =>
+      Promise.resolve(piiReport(texts, texts.map((text) => [...text.matchAll(/Mario Bianchi/g)].map((match) => ({ kind: 'FULLNAME', start: match.index, end: match.index + 13, score: 0.97 }))))),
+    stop: () => Promise.resolve(),
+  });
+}
+
+function cleanGuard(): void {
+  configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+}
+
+test('a brief the gateway refuses in the direct chat ends the task with Arianna\'s message, never a wait (D-250)', async () => {
+  const direct = await directChat();
+  const model = untouched();
+  personGuard();
+  const { task } = await postUserMessage(db().sql, direct.id, 'Scrivi a Mario Bianchi che il sito è pronto.');
+  try {
+    assert.deepEqual(await drain(task.id, orchestrator(model)), ['answered']);
+    assert.equal(model.requests.length, 0);
+    const done = await loadTask(db().sql, task.id);
+    assert.equal(done?.status, 'done', 'nothing for the user to do: the task does not wait');
+    const answers = await db().sql<{ id: string; agent: string | null; body: string }[]>`
+      SELECT id::text, agent, body FROM messages WHERE conversation_id = ${direct.id} AND role = 'assistant'`;
+    assert.deepEqual(answers.map((row) => [row.agent, row.body]), [
+      [null, 'Non ho mandato il messaggio a Claude: il controllo dei dati personali ha trovato un nome di persona. Se è nel tuo messaggio, toglilo e riscrivilo; se non c’è, è nelle regole o nelle note del progetto che lo accompagnano.'],
+    ]);
+    assert.ok(!(answers[0]?.body ?? '').includes('Mario'), 'never a word of the brief');
+    assert.deepEqual(done.evidence, [{ kind: 'message', ref: answers[0]?.id }]);
+    // The line of activity promises no other way: there is none in the direct chat.
+    await activitiesSaved();
+    const lines = await db().sql<{ kind: string }[]>`SELECT kind FROM task_activities WHERE task_id = ${task.id} AND kind IN ('error', 'stop')`;
+    assert.deepEqual(lines.map((line) => line.kind), ['stop']);
+    assert.equal(await errorEndsTask(db().sql, done, 'coder'), true);
+  } finally {
+    cleanGuard();
+    restoreRepo();
+  }
+});
+
+test('an error in a conversation of Arianna keeps «provo un\'altra strada»: her model goes on (D-250)', async () => {
+  const plain = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, plain.id, 'Ciao.');
+  assert.equal(await errorEndsTask(db().sql, task, 'coder'), false);
+  // On a card of an agent no model goes on either.
+  assert.equal(await errorEndsTask(db().sql, { ...task, conversationId: null, assignee: 'coder' }, 'coder'), true);
+  assert.equal(await errorEndsTask(db().sql, { ...task, conversationId: null }, 'coder'), false, 'a card of Arianna: her model goes on');
+});
+
+test('a direct chat left waiting by a refused brief before D-250 is closed at start with the same message; another wait is not', async () => {
+  const direct = await directChat();
+  const refused = await postUserMessage(db().sql, direct.id, 'Fallisci.');
+  try {
+    assert.deepEqual(await drain(refused.task.id, orchestrator(untouched(), 'scenario: error\nYou are the Coder.')), ['waiting-user']);
+  } finally {
+    restoreRepo();
+  }
+  // What the core wrote before D-250 for a refused brief.
+  await db().sql`UPDATE tasks SET waiting_reason = 'coder could not answer: the gateway refused the brief (second scanner found personal data: FULLNAME)' WHERE id = ${refused.task.id}`;
+  const other = await directChat();
+  const failed = await postUserMessage(db().sql, other.id, 'Fallisci.');
+  try {
+    assert.deepEqual(await drain(failed.task.id, orchestrator(untouched(), 'scenario: error\nYou are the Coder.')), ['waiting-user']);
+  } finally {
+    restoreRepo();
+  }
+
+  assert.equal(await closeRefusedDirectWaits(db().sql), 1);
+  const closed = await loadTask(db().sql, refused.task.id);
+  assert.equal(closed?.status, 'done');
+  const [message] = await db().sql<{ id: string; body: string }[]>`
+    SELECT id::text, body FROM messages WHERE task_id = ${refused.task.id} AND role = 'assistant'`;
+  assert.match(message?.body ?? '', /^Non ho mandato il messaggio a Claude: il controllo dei dati personali ha trovato un nome di persona\./);
+  assert.deepEqual(closed.evidence.at(-1), { kind: 'message', ref: message?.id });
+  assert.equal((await loadTask(db().sql, failed.task.id))?.status, 'waiting_user', 'another reason: it still waits');
+  assert.equal(await closeRefusedDirectWaits(db().sql), 0, 'once');
+});
 
 test('the next message resumes the session of the latest answer: only the new message leaves (D-111, tappa A2)', async () => {
   const direct = await directChat();

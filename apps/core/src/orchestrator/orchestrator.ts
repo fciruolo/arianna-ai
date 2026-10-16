@@ -52,6 +52,7 @@ import {
 import type { Advise } from './advisor.ts';
 import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
+import { gatewayRefusalOf, gatewayRefusalReply } from './gateway-refusal.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { attachmentHistory, attachmentsOf, readPendingImages, withinBudget } from './attachment-reading.ts';
@@ -661,12 +662,19 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
    * waiting for the user with why the delegation ended without one. Nobody
    * else reads the result: the local model never runs in this chat.
    */
-  async function directChatEnd(task: Task, outcome: StepOutcome): Promise<StepOutcome> {
+  async function directChatEnd(task: Task, outcome: StepOutcome, runId?: string): Promise<StepOutcome> {
     if (outcome.kind !== 'continue') return outcome;
     const usage = outcome.usage;
     const delegation = (await loadDelegations(sql, task.id)).at(-1);
     if (delegation?.status === 'ok' && delegation.messageId !== null) {
       return { kind: 'answered', messageId: delegation.messageId, ...(usage === undefined ? {} : { usage }) };
+    }
+    // A brief the gateway refused (D-250): no other way here, so Arianna says why in the chat and the task ends.
+    const refused = delegation?.status === 'failed' ? gatewayRefusalOf(delegation.result) : undefined;
+    if (refused !== undefined && task.conversationId !== null) {
+      const reply = await openReply(sql, task.id, runId === undefined ? {} : { runId });
+      const result = await reply.finish(gatewayRefusalReply(refused, delegation?.executor ?? null), 'L0');
+      if (result.stored) return { kind: 'answered', messageId: result.message.id, ...(usage === undefined ? {} : { usage }) };
     }
     const why = (delegation?.result ?? 'the delegation did not end').replace(/^error: [^:]+: /, '');
     return { kind: 'wait-user', reason: `${task.assignee} could not answer: ${why}`, ...(usage === undefined ? {} : { usage }) };
@@ -875,11 +883,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
             return notStarted(ctx, planned.delegation, planned.label);
           case 'cloud': {
             const outcome = await runDelegation(env, ctx, planned);
-            return directChat ? directChatEnd(task, outcome) : card ? cardDone(task, outcome) : outcome;
+            return directChat ? directChatEnd(task, outcome, runId) : card ? cardDone(task, outcome) : outcome;
           }
           case 'local': {
             const outcome = await runLocalDelegation(env, ctx, planned);
-            return directChat ? directChatEnd(task, outcome) : card ? cardDone(task, outcome) : outcome;
+            return directChat ? directChatEnd(task, outcome, runId) : card ? cardDone(task, outcome) : outcome;
           }
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
@@ -897,14 +905,15 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           case 'closed':
             // Nothing to run: the local step goes on, with the error as the result of the call.
             await updateDelegation(sql, planned.delegation.id, { status: planned.status, result: planned.result, resultLabel: planned.delegation.label });
-            await show(task, step, 'error', planned.result.replace(/^error: [^:]+: /, ''));
+            // In the direct chat and on a card no other way is tried (D-250): the line says so.
+            await show(task, step, directChat || card ? 'stop' : 'error', planned.result.replace(/^error: [^:]+: /, ''));
             // A card ends here: nobody else reads the result (D-159).
             if (card) return cardDone(task, { kind: 'continue', usage: { steps: 0 } });
             break;
         }
       }
       // The direct chat never reaches the local model (D-111).
-      if (directChat) return directChatEnd(task, { kind: 'continue', usage: { steps: 0 } });
+      if (directChat) return directChatEnd(task, { kind: 'continue', usage: { steps: 0 } }, runId);
 
       // The plain chat with Claude (D-111, tappa B): Claude answers, or nobody; never the local model in its place.
       if (planned === undefined && CLOUD_CHAT_AGENTS.includes(task.assignee) && (await directChatOf(sql, task, task.assignee)) !== undefined) {

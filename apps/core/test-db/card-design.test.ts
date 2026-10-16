@@ -12,6 +12,7 @@ import { after, before, test } from 'node:test';
 import { type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@arianna/executors';
+import { forgetCatalogTexts, markCatalogText, piiReport } from '@arianna/policy';
 
 import { loadApproval } from '../src/approvals.ts';
 import { cardDetail } from '../src/card-details.ts';
@@ -23,6 +24,7 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed } from '../src/live.ts';
 import type { AgentSkills, CardDesign } from '../src/orchestrator/delegate.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
+import { configurePiiGuard } from '../src/pii-guard.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { startApiServer } from '../src/server/http.ts';
 import type { SkillsCatalog } from '../src/skills-catalog.ts';
@@ -337,6 +339,66 @@ test('the Studio: style and skills sent with a message of the direct chat with t
     assert.ok(later.prompt.includes(BLOCK), 'the style reaches a resumed session');
     assert.ok(later.prompt.indexOf(BLOCK) < later.prompt.indexOf('Ora con lo stile.'), 'before the message');
   } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+});
+
+// A style whose brand the second scanner reads as a person, as Rizzo-PII read «xAI» (D-250).
+const XAI_BLOCK = 'Skills chosen by the user for this agent: third-party reference text (public, untrusted).\n----- BEGIN STYLE x-ai [0123456789abcdef] -----\n# Design System Inspired by xAI\nInvented palette.\n----- END STYLE x-ai [0123456789abcdef] -----';
+
+/** A fake Rizzo-PII: «xAI» and «Mario Bianchi» are persons wherever they are. */
+function personGuard(): void {
+  configurePiiGuard({
+    state: 'ready',
+    scan: (texts) =>
+      Promise.resolve(
+        piiReport(
+          texts,
+          texts.map((text) => ['xAI', 'Mario Bianchi'].flatMap((name) => [...text.matchAll(new RegExp(name, 'g'))].map((match) => ({ kind: 'FULLNAME', start: match.index, end: match.index + name.length, score: 0.97 })))),
+        ),
+      ),
+    stop: () => Promise.resolve(),
+  });
+}
+
+/** The catalog as skillTexts writes it: the block, marked for the skills of this agent (D-250); `mark: false` as before D-250. */
+function xaiSkills(mark = true) {
+  return fakeSkills(() => {
+    if (mark) markCatalogText('skills:designer', XAI_BLOCK);
+    return { block: XAI_BLOCK, skipped: 0 };
+  });
+}
+
+test('the Studio with a style the second scanner took for a person: the brief reaches Claude; a person in the message still stops it, with Arianna\'s message (D-250)', async () => {
+  const { sql } = db();
+  const direct = await designerChat();
+  personGuard();
+  try {
+    const { task } = await postUserMessage(sql, direct.id, 'Fai un\'altra versione.', { design: { style: 'sabbia', skills: [] } });
+    assert.deepEqual(await drain([task.id], orchestrator(scripted([]), xaiSkills().skills, ['claude'])), ['answered']);
+    const { prompt } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(prompt.includes(XAI_BLOCK), 'the style left whole');
+    const [allowed] = await sql<{ reason: string }[]>`SELECT reason FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude' ORDER BY id DESC LIMIT 1`;
+    assert.match(allowed?.reason ?? '', /1 catalog text not read by the second check/);
+
+    // A person in the user's message beside the same style: refused, and the chat says why.
+    const person = await postUserMessage(sql, direct.id, 'Rifai la pagina per Mario Bianchi.', { design: { style: 'sabbia', skills: [] } });
+    assert.deepEqual(await drain([person.task.id], orchestrator(scripted([]), xaiSkills().skills, ['claude'])), ['answered']);
+    assert.equal((await loadTask(sql, person.task.id))?.status, 'done');
+    const [reply] = await sql<{ agent: string | null; body: string }[]>`SELECT agent, body FROM messages WHERE task_id = ${person.task.id} AND role = 'assistant'`;
+    assert.ok(reply !== undefined);
+    assert.equal(reply.agent, null, 'Arianna writes it');
+    assert.match(reply.body, /^Non ho mandato il messaggio a Claude: il controllo dei dati personali ha trovato un nome di persona\./);
+
+    // The same block not marked by the catalog: read, and refused as before D-250.
+    const unmarked = await postUserMessage(sql, direct.id, 'Ancora una versione.', { design: { style: 'sabbia', skills: [] } });
+    forgetCatalogTexts();
+    assert.deepEqual(await drain([unmarked.task.id], orchestrator(scripted([]), xaiSkills(false).skills, ['claude'])), ['answered']);
+    const [refused] = await sql<{ rule: string }[]>`SELECT rule FROM gateway_log WHERE task_id = ${unmarked.task.id} AND target = 'claude' ORDER BY id DESC LIMIT 1`;
+    assert.equal(refused?.rule, 'pii');
+  } finally {
+    forgetCatalogTexts();
+    configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
     execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
   }
 });

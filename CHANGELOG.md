@@ -10,10 +10,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Immagini e file nella chat privata: incolla con ⌘V, trascina sul campo o «Allega file» nel menu «+»; PNG, JPEG, WebP e GIF fino a 10 MB, testi .txt, .md, .csv e .json fino a 256 KiB, al massimo 4 per messaggio, con l'anteprima piccola nella bolla (D-247).
 - Ruolo «Guarda le immagini allegate» (`vision`) in Impostazioni → Modelli: Qwen3.5 9B legge le immagini sul Mac e passa ad Arianna la sua lettura; si carica solo quando c'è un'immagine da leggere e si scarica subito dopo (D-247).
 
+### Corretto
+
+- Nella chat diretta col Designer gli stili di Open Design come «x-ai», «stripe», «vercel» o «figma» non fermano più il messaggio verso Claude: il controllo dei dati personali non legge più i testi dei cataloghi adottati, che prendeva per nomi di persona (41 stili su 152) (D-250).
+- Nella chat diretta con un agente, un messaggio fermato dal gateway non lascia più la chat in «Attende te» senza niente da fare: Arianna scrive perché non l'ha mandato (per esempio un nome di persona da togliere) e il lavoro si chiude; le attese rimaste così si chiudono al riavvio (D-250).
+- La riga «provo un'altra strada» compare solo dove un'altra strada c'è: nella chat diretta e sulle card degli agenti l'errore si legge senza (D-250).
+
 ### Sicurezza
 
 - Ogni allegato è Privato (L2) e va solo in una conversazione privata con Arianna o con il modello locale: in una conversazione di lavoro, con Claude o ChatGPT, in incognito o nella coda dei messaggi è rifiutato prima dell'invio, con il testo che resta nel campo; il database lo rifiuta anche lui (migrazione 0074) (D-247).
 - Gli allegati stanno in `data/attachments` (0600, fuori da git), mai SVG, serviti con sandbox e nosniff; «Elimina» li cancella con la conversazione, quelli incollati e mai mandati spariscono dopo un giorno (D-247).
+- L'esenzione dal secondo controllo vale solo per il testo esatto che il core compone dai file adottati, nel suo frammento: un carattere diverso o lo stesso testo altrove si controlla come prima; il messaggio dell'utente, le regole, le note e la chat si controllano sempre (D-250).
 
 ## [0.137.1] - 2026-10-17
 

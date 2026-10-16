@@ -18,7 +18,7 @@ export type ServerMessage =
 export type NoticeKind = 'reply' | 'approval' | 'failure' | 'reminder';
 const NOTICE_KINDS: readonly NoticeKind[] = ['reply', 'approval', 'failure', 'reminder'];
 
-const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'];
+const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'stop', 'delegate', 'tool', 'wait'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

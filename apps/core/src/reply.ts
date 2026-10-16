@@ -173,7 +173,7 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
  * in Italian (D-045). Since D-083 the same line is also saved in
  * task_activities, to be read again once the task has ended.
  */
-export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'] as const;
+export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'stop', 'delegate', 'tool', 'wait'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export interface ActivityNotice {

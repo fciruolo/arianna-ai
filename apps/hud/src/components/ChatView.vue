@@ -1373,12 +1373,12 @@ onBeforeUnmount(() => clearInterval(clock));
                       :class="
                         index === activityOf(message).length - 1
                           ? 'animate-hud-blink text-accent'
-                          : line.kind === 'error'
+                          : (line.kind === 'error' || line.kind === 'stop')
                             ? 'text-warn'
                             : 'text-ok'
                       "
                       aria-hidden="true"
-                    >{{ index === activityOf(message).length - 1 ? '▸' : line.kind === 'error' ? '!' : '✓' }}</span>
+                    >{{ index === activityOf(message).length - 1 ? '▸' : (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓' }}</span>
                     <span class="break-words">{{ activityText(line) }}</span>
                   </li>
                 </ul>

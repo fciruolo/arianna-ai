@@ -119,6 +119,7 @@ import { listClones } from './voice/clones.ts';
 import { fileSize, trialModels } from './voice/trial.ts';
 import { trialRefusal } from './orchestrator/trial-chat.ts';
 import { CLOUD_WORKER_NAMES } from './work-diary.ts';
+import { closeRefusedDirectWaits } from './orchestrator/gateway-refusal.ts';
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -542,6 +543,8 @@ const orchestrator = createOrchestrator({
     );
   },
 });
+// D-250: a direct chat left waiting only because the gateway refused its brief ends with Arianna's message.
+closeRefusedDirectWaits(sql).catch(report);
 const refused = [...(claude === undefined ? ['claude'] : []), ...(codex === undefined ? ['codex'] : [])];
 console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${refused.length === 0 ? '' : ` (sandbox refused: ${refused.join(', ')})`}`);
 
