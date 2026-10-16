@@ -1118,6 +1118,8 @@ const server = await startApiServer({
   leaveRule,
   // «@name» and «/giro» (D-107, tappa B2): the agents Arianna may delegate to.
   mentionable: () => mentionableAgents(agents),
+  // D-235: who may do a card of a plan the user edits, as the planner chooses them.
+  planAssignees: () => orchestrator.planAssignees(),
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, config.paths.data, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.

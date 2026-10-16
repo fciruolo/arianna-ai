@@ -45,6 +45,21 @@ export interface StoredPlan extends PlanProposal {
   starts?: number[];
 }
 
+/**
+ * What the chat sends with the decision on a plan (D-235): the rows
+ * «Avvia subito» and the revision of the plan it showed. Unchecked here.
+ */
+export interface PlanDecision {
+  starts?: unknown;
+  revision?: unknown;
+}
+
+/** How many times the user edited the plan: 0 as the planner wrote it (D-235). */
+export function planRevision(detail: Record<string, unknown>): number {
+  const revision = detail.revision;
+  return typeof revision === 'number' && Number.isInteger(revision) && revision >= 0 ? revision : 0;
+}
+
 /** The action of an approval of kind `plan` (migration 0045). */
 export const PLAN_ACTION = 'task.plan';
 
@@ -146,12 +161,12 @@ export function planOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): Store
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 /** The detail of an approval of kind plan: the cards as the chat and planOf read them. */
-function planDetail(plan: PlanProposal, step: unknown, edited = false): { [key: string]: Json } {
+function planDetail(plan: PlanProposal, step: unknown, revision = 0): { [key: string]: Json } {
   return {
     title: plan.title,
     cards: plan.cards.map((card) => ({ ...card, blockedBy: [...card.blockedBy] })),
     ...(typeof step === 'number' ? { step } : {}),
-    ...(edited ? { edited: true } : {}),
+    ...(revision > 0 ? { edited: true, revision } : {}),
   };
 }
 
@@ -197,19 +212,23 @@ export function checkStarts(value: unknown, plan: PlanProposal): number[] {
  * The rows «Avvia subito» of a plan, written in its detail before the
  * decision and in its transaction (engine.ts): the cards that start are then
  * frozen with the decision, and the answer in the chat names them. `starts`
- * undefined: the default. Nothing for an approval of another kind, which
- * takes no rows.
+ * undefined: the default. `revision`, when sent, must be the plan's: a card
+ * of the chat still showing an older version of an edited plan is refused
+ * (409), so that nothing starts that the user did not see. Nothing for an
+ * approval of another kind, which takes neither.
  */
-export async function setPlanStarts(tx: Queryable, approvalId: string, starts: unknown): Promise<void> {
+export async function setPlanStarts(tx: Queryable, approvalId: string, decision: PlanDecision = {}): Promise<void> {
+  const { starts, revision } = decision;
   const [row] = await tx<{ kind: string; state: string; detail: Record<string, unknown> }[]>`
     SELECT kind, state, detail FROM approvals WHERE id = ${approvalId}::uuid FOR UPDATE`;
   if (row === undefined) return;
   if (row.kind !== 'plan') {
-    if (starts !== undefined) throw new PlanError('invalid', 'starts are only for a plan');
+    if (starts !== undefined || revision !== undefined) throw new PlanError('invalid', 'starts are only for a plan');
     return;
   }
   const plan = planOf(row);
   if (plan === undefined || row.state !== 'pending') return;
+  if (revision !== undefined && revision !== planRevision(row.detail)) throw new PlanError('conflict', 'the plan changed meanwhile: read it again before deciding');
   const rows = starts === undefined ? defaultStarts(plan) : checkStarts(starts, plan);
   await tx`UPDATE approvals SET detail = detail || ${tx.json({ starts: rows })} WHERE id = ${approvalId}::uuid AND state = 'pending'`;
 }
@@ -292,14 +311,17 @@ export const PLAN_CARD_NOTE = {
 /**
  * A card «Piano» (D-235) closes with the decision on its plan, as a
  * commitment does: in Fatto, with the approval as its evidence and the
- * outcome as its note. Only while it waits for this very approval: true when
- * closed here, and the engine has nothing more to run for it.
+ * outcome as its note. While it waits for this very approval; `fromRun`: or
+ * still at work, when the user decided in the moment between the plan
+ * written and the card waiting (the engine closes it at the end of that
+ * step). True when closed here: the engine has nothing more to run for it.
  */
-export async function closePlanningCard(tx: Queryable, approval: StoredApproval): Promise<boolean> {
-  if (approval.kind !== 'plan' || approval.taskId === null) return false;
+export async function closePlanningCard(tx: Queryable, approval: StoredApproval, fromRun = false): Promise<boolean> {
+  if (approval.kind !== 'plan' || approval.taskId === null || (approval.state !== 'approved' && approval.state !== 'rejected')) return false;
   const [row] = await tx<{ planning: string | null; status: string; waiting: string | null }[]>`
     SELECT planning, status, waiting_approval_id::text AS waiting FROM tasks WHERE id = ${approval.taskId} FOR UPDATE`;
-  if (row?.planning !== 'card' || row.status !== 'waiting_user' || row.waiting !== approval.id) return false;
+  if (row?.planning !== 'card') return false;
+  if (!((row.status === 'waiting_user' && row.waiting === approval.id) || (fromRun && row.status === 'running'))) return false;
   const note = approval.state === 'approved' ? PLAN_CARD_NOTE.approved(planOf(approval)?.cards.length ?? 0) : PLAN_CARD_NOTE.rejected;
   await moveTask(tx, approval.taskId, 'done', { evidence: [{ kind: 'approval', ref: approval.id }], cause: 'approval' });
   await tx`UPDATE tasks SET note = ${note} WHERE id = ${approval.taskId}`;
@@ -330,7 +352,7 @@ export async function editPlan(sql: Sql, approvalId: string, input: Record<strin
       const kinds = [...new Set(texts.flatMap((text) => scanText(text).map((finding) => finding.kind)))];
       if (kinds.length > 0) throw new PlanError('invalid', `a work conversation cannot hold this plan (${kinds.join(', ')}): open a private conversation`);
     }
-    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, true))} WHERE id = ${approvalId}::uuid`;
+    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, planRevision(row.detail) + 1))} WHERE id = ${approvalId}::uuid`;
     // How many cards only: their text stays in the approval.
     await appendEvent(tx, { kind: 'approval.edited', label: 'L0', payload: { approvalId, cards: checked.cards.length } });
     const edited = await loadApproval(tx, approvalId);

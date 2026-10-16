@@ -8,6 +8,7 @@ import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMe
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { keepRefused, removeDraft } from './lib/composer.ts';
 import { goesToArianna, reachesCore, resolveDraft } from './lib/commands.ts';
+import type { PlanChoice } from './lib/plan-approval.ts';
 import { choiceAgent, choiceCharacter, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { eraseFailedText } from './lib/erase.ts';
@@ -1047,10 +1048,10 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     }
   }
 
-  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]): Promise<void> {
+  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<void> {
     error.value = null;
     try {
-      await api.decide(approval.id, state, choice, starts);
+      await api.decide(approval.id, state, choice, plan);
       approvals.value = approvals.value.filter((item) => item.id !== approval.id);
     } catch (cause) {
       fail(cause);

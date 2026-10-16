@@ -4,7 +4,7 @@ import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
-import { applyPlanApproval, closePlanningCard, setPlanStarts } from './card-plans.ts';
+import { applyPlanApproval, closePlanningCard, setPlanStarts, type PlanDecision } from './card-plans.ts';
 import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -466,6 +466,9 @@ export async function processStepJob(
             AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
+          // A card «Piano» (D-235) closes in Fatto here, as the decision would have closed it waiting.
+          const decided = await loadApproval(tx, outcome.approvalId);
+          if (decided !== undefined && (await closePlanningCard(tx, decided, true))) return 'answered';
           await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });
           return 'continued';
         }
@@ -522,16 +525,16 @@ export async function recordDecision(
   state: 'approved' | 'rejected',
   via: DecisionChannel,
   choice?: ExecutorChoice,
-  starts?: unknown,
+  plan?: PlanDecision,
 ): Promise<StoredApproval> {
-  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice, starts));
+  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice, plan));
 }
 
 /**
  * `recordDecision` inside a transaction the caller holds. `choice`: the
- * executor of an approval of kind `executor` (D-159). `starts`: the rows
- * «Avvia subito» of an approved plan (D-235), checked in card-plans.ts;
- * undefined, the default rows.
+ * executor of an approval of kind `executor` (D-159). `plan`: the rows
+ * «Avvia subito» of an approved plan and the revision the chat showed
+ * (D-235), checked in card-plans.ts; without rows, the default ones.
  */
 export async function recordDecisionIn(
   tx: Queryable,
@@ -539,10 +542,10 @@ export async function recordDecisionIn(
   state: 'approved' | 'rejected',
   via: DecisionChannel,
   choice?: ExecutorChoice,
-  starts?: unknown,
+  plan?: PlanDecision,
 ): Promise<StoredApproval> {
   // The rows that start go in the plan before the decision freezes it (D-235).
-  if (state === 'approved') await setPlanStarts(tx, approvalId, starts);
+  if (state === 'approved') await setPlanStarts(tx, approvalId, plan);
   const decided = await decideApproval(tx, approvalId, state, via, choice);
   await appendEvent(tx, {
     kind: 'approval.decided',

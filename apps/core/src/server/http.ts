@@ -345,6 +345,11 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** The agents «@name» and «/giro» may call (D-107, tappa B2); without it every message goes to Arianna. */
   mentionable?: () => readonly string[];
+  /**
+   * Who may do a card of a plan the user edits (D-235): the user and the
+   * agents the planner may choose now; without it, the user and `mentionable`.
+   */
+  planAssignees?: () => readonly string[];
   /** "Ferma" in the chat (D-218): stops the answers at work in a conversation; without it the route answers 404. */
   stopChat?: (conversationId: string) => Promise<{ stopped: number }>;
   /** "Ferma" of a card, or a drag out of "In corso" (D-235); without it the route answers 404. */
@@ -556,6 +561,7 @@ interface RouteOptions {
   stopChat?: ApiServerOptions['stopChat'];
   stopCard?: ApiServerOptions['stopCard'];
   mentionable?: ApiServerOptions['mentionable'];
+  planAssignees?: ApiServerOptions['planAssignees'];
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
   designCatalog?: DesignCatalog | undefined;
@@ -2239,7 +2245,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2744,7 +2750,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const body = await readJson(request);
       onlyFields(body, ['title', 'cards']);
       try {
-        return { body: { approval: await editPlan(sql, id, body, ['user', ...(mentionable?.() ?? [])]) } };
+        return { body: { approval: await editPlan(sql, id, body, planAssignees?.() ?? ['user', ...(mentionable?.() ?? [])]) } };
       } catch (error) {
         if (error instanceof PlanError) throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'conflict' ? 409 : 400, error.message);
         throw error;
@@ -2754,10 +2760,11 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     // The web chat is the channel of the decision: a declassification can be decided only here.
     // `choice`: the executor chosen for a card (D-159), with an approval of kind executor only.
     // `starts`: the cards of a plan to start at once («Avvia subito», D-235), by their number; absent, the default.
+    // `revision`: the version of the plan the chat showed; another one is a 409, nothing starts unseen.
     route('POST', '/api/approvals/:id/decision', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['state', 'choice', 'starts']);
+      onlyFields(body, ['state', 'choice', 'starts', 'revision']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
       if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
       const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
@@ -2765,10 +2772,10 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
       try {
-        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice, body.starts) } };
+        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice, { starts: body.starts, revision: body.revision }) } };
       } catch (error) {
         if (error instanceof ApprovalChoiceError) throw new HttpError(400, error.message);
-        if (error instanceof PlanError) throw new HttpError(400, error.message);
+        if (error instanceof PlanError) throw new HttpError(error.code === 'conflict' ? 409 : 400, error.message);
         // Decided meanwhile (another tab, Telegram): the database refused the second decision.
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
@@ -4169,6 +4176,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     stopChat: options.stopChat,
     stopCard: options.stopCard,
     mentionable: options.mentionable,
+    planAssignees: options.planAssignees,
     incognito: options.incognito,
     erase: options.erase,
     designCatalog: options.designCatalog,

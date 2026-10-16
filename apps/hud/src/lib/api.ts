@@ -2,7 +2,7 @@ import type { ThemeListing } from './themes.ts';
 import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
-import type { PlanBody } from './plan-approval.ts';
+import type { PlanBody, PlanChoice } from './plan-approval.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
@@ -476,14 +476,14 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
 
 /**
  * `choice`: the executor chosen for a card, with an approval of kind executor (D-159).
- * `starts`: the cards of a plan to start at once, «Avvia subito» (D-235), by their number.
+ * `plan`: the cards of a plan to start at once, «Avvia subito», by their number, and the revision shown (D-235).
  */
-export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]): Promise<Approval> {
+export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<Approval> {
   return (
     await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
       state,
       ...(choice === undefined ? {} : { choice }),
-      ...(starts === undefined ? {} : { starts }),
+      ...(plan === undefined ? {} : { starts: plan.starts, revision: plan.revision }),
     })
   ).approval;
 }

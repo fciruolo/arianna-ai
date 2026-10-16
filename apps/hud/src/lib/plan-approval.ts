@@ -35,6 +35,14 @@ export interface PlanDraftRow {
 export interface PlanDraft {
   title: string;
   rows: PlanDraftRow[];
+  /** How many times the user edited the plan: sent with the decision, so that nothing starts unseen. */
+  revision: number;
+}
+
+/** What «Crea le card» sends with the decision (D-235): the rows «Avvia subito» and the plan's revision. */
+export interface PlanChoice {
+  starts: readonly number[];
+  revision: number;
 }
 
 /** What PUT /api/approvals/:id/plan takes: the arguments of `task.plan`. */
@@ -74,12 +82,23 @@ export function planDraft(detail: Record<string, unknown>): PlanDraft | undefine
     };
     rows.push({ ...row, start: startsByDefault(row) });
   }
-  return { title, rows };
+  const revision = typeof detail.revision === 'number' && Number.isInteger(detail.revision) && detail.revision >= 0 ? detail.revision : 0;
+  return { title, rows, revision };
+}
+
+/**
+ * The plan read again (a refresh of the chat): the user's ticks «Avvia
+ * subito» stay row by row while it is the same version; an edit made
+ * elsewhere brings the new rows with their defaults.
+ */
+export function keepTicks(fresh: PlanDraft, shown: PlanDraft | undefined): PlanDraft {
+  if (shown === undefined || shown.revision !== fresh.revision || shown.rows.length !== fresh.rows.length) return fresh;
+  return { ...fresh, rows: fresh.rows.map((row, index) => ({ ...row, start: row.assignee !== 'user' && (shown.rows[index]?.start ?? row.start) })) };
 }
 
 /** A copy to edit, so that «Annulla» finds the plan as it was. */
 export function cloneDraft(draft: PlanDraft): PlanDraft {
-  return { title: draft.title, rows: draft.rows.map((row) => ({ ...row, blockedBy: [...row.blockedBy] })) };
+  return { title: draft.title, rows: draft.rows.map((row) => ({ ...row, blockedBy: [...row.blockedBy] })), revision: draft.revision };
 }
 
 /** A new row at the end: the user's, waiting for nothing. */

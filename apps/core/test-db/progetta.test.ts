@@ -14,9 +14,10 @@ import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Proj
 import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { listApprovals, loadApproval } from '../src/approvals.ts';
-import { editPlan, PlanError } from '../src/card-plans.ts';
+import { editPlan, PlanError, requestPlan } from '../src/card-plans.ts';
 import { listCards } from '../src/cardwall.ts';
-import { ChatError, createConversation, postUserMessage } from '../src/conversations.ts';
+import { archiveConversation, ChatError, createConversation, postUserMessage, purgeConversation } from '../src/conversations.ts';
+import { eraseConversation } from '../src/erase.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed } from '../src/live.ts';
@@ -252,14 +253,19 @@ test('«/progetta» in a work conversation: Claude writes the plan as the projec
     { title: 'Landing del sito', cards: [...AGENTS.cards, row('Rifiniture', 'coder', [1], 'S')] },
     assignees,
   );
-  assert.deepEqual([edited.state, edited.label, (edited.detail.cards as unknown[]).length, edited.detail.edited], ['pending', 'L1', 5, true]);
+  assert.deepEqual([edited.state, edited.label, (edited.detail.cards as unknown[]).length, edited.detail.edited, edited.detail.revision], ['pending', 'L1', 5, true, 1]);
   const editedEvents = await db().sql<{ payload: unknown }[]>`SELECT payload FROM events WHERE kind = 'approval.edited' AND payload ->> 'approvalId' = ${approval.id}`;
   assert.deepEqual(editedEvents.map((event) => event.payload), [{ approvalId: approval.id, cards: 5 }]);
 
   // «Avvia subito»: never the user's card; an agent's card that waits may start, held back by the engine.
-  await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'web', undefined, [3]), PlanError);
+  await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'web', undefined, { starts: [3] }), PlanError);
+  // A card of the chat still showing the plan as the planner wrote it: nothing starts unseen.
+  await assert.rejects(
+    recordDecision(db().sql, approval.id, 'approved', 'web', undefined, { starts: [1], revision: 0 }),
+    (error: unknown) => error instanceof PlanError && error.code === 'conflict',
+  );
   assert.equal((await loadApproval(db().sql, approval.id))?.state, 'pending');
-  await recordDecision(db().sql, approval.id, 'approved', 'web', undefined, [1, 5]);
+  await recordDecision(db().sql, approval.id, 'approved', 'web', undefined, { starts: [1, 5], revision: 1 });
   const cards = await cardsOf(task.id);
   assert.deepEqual(
     cards.map((item) => [item.title, item.assignee, item.status, item.queued, item.project, item.label]),
@@ -355,7 +361,8 @@ test('the routes: PUT /api/approvals/:id/plan edits a pending plan, 400 for a pl
     assert.deepEqual([body.approval.detail.title, body.approval.detail.step], ['Nuovo', 1]);
     assert.equal((await call('POST', `/api/approvals/${id}/decision`, { state: 'approved', starts: [2] })).status, 400, 'the user’s card does not start');
     assert.equal((await call('POST', `/api/approvals/${id}/decision`, { state: 'approved', starts: 'tutte' })).status, 400);
-    assert.equal((await call('POST', `/api/approvals/${id}/decision`, { state: 'approved', starts: [1] })).status, 200);
+    assert.equal((await call('POST', `/api/approvals/${id}/decision`, { state: 'approved', starts: [1], revision: 0 })).status, 409, 'an older version of the plan');
+    assert.equal((await call('POST', `/api/approvals/${id}/decision`, { state: 'approved', starts: [1], revision: 1 })).status, 200);
     assert.equal((await call('PUT', `/api/approvals/${id}/plan`, { title: 'X', cards: [row('A', 'user', []), row('B', 'user', [])] })).status, 409);
     const cards = await cardsOf(task.id);
     assert.deepEqual(
@@ -369,4 +376,66 @@ test('the routes: PUT /api/approvals/:id/plan edits a pending plan, 400 for a pl
     await server.close();
     await live.close();
   }
+});
+
+/** A conversation with «/progetta» whose card «Piano» waits for its plan; `decide` approves it first. */
+async function waitingPlan(mode: 'work' | 'private', decide: boolean): Promise<{ conversationId: string; task: Task; card: Task; approvalId: string }> {
+  const conversation = mode === 'work' ? await createConversation(db().sql, { mode, project: 'site', projects: PROJECTS }) : await createConversation(db().sql, { mode });
+  const { task } = await postUserMessage(db().sql, conversation.id, '/progetta il trasloco dello studio', MENTIONABLE);
+  const executor = orchestrator(scripted([MINE]), []);
+  assert.deepEqual(await drain([task.id], executor), ['answered', 'waiting-approval']);
+  const card = await planCardOf(task.id);
+  const approvalId = (await loadTask(db().sql, card.id))?.waitingApprovalId ?? '';
+  if (decide) await recordDecision(db().sql, approvalId, 'approved', 'web', undefined, { starts: [] });
+  return { conversationId: conversation.id, task, card, approvalId };
+}
+
+test('the user decides in the moment between the plan written and the card waiting: the card «Piano» still closes in Fatto (D-235)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, '/progetta la cantina', MENTIONABLE);
+  assert.deepEqual(await drain([task.id], orchestrator(scripted([]), []), 1), ['answered']);
+  const card = await planCardOf(task.id);
+  // The step writes the plan and the user approves it before the step ends.
+  const racing: StepExecutor = {
+    plan: (planned) => Promise.resolve({ agent: planned.assignee, executor: 'local', locality: 'local' }),
+    async run(ctx) {
+      const approvalId = await db().sql.begin((tx) => requestPlan(tx, { taskId: ctx.task.id, step: ctx.step, label: 'L2', plan: { title: 'Cantina', cards: MINE.cards.map((item) => ({ title: item.title, goal: item.goal, assignee: 'user', blockedBy: item.blocked_by, criteria: item.criteria, complexity: 'M' })) } }));
+      await recordDecision(db().sql, approvalId, 'approved', 'web');
+      return { kind: 'confirm', approvalId, usage: { steps: 0 } };
+    },
+  };
+  assert.deepEqual(await drain([card.id], racing), ['answered']);
+  const closed = await loadTask(db().sql, card.id);
+  assert.deepEqual([closed?.status, closed?.note], ['done', 'Piano approvato: 2 card create in Inbox.']);
+  assert.equal((await cardsOf(task.id)).length, 2);
+  assert.deepEqual(await drain([card.id], racing), [], 'nothing queued again');
+});
+
+test('one card «Piano» per request: a second one is refused by the database (D-235)', async () => {
+  const { task } = await waitingPlan('private', false);
+  await assert.rejects(
+    db().sql`INSERT INTO tasks (title, assignee, status, parent_id, planning) VALUES ('Piano: altro', 'arianna', 'ready', ${task.id}, 'card')`,
+    /tasks_planning_card_one/,
+  );
+});
+
+test('«Elimina per sempre» erases the card «Piano» with the conversation; the cards of the plan stay, without the link (D-235, D-157)', async () => {
+  const { conversationId, card, approvalId } = await waitingPlan('private', true);
+  const [created] = await db().sql<{ id: string }[]>`SELECT id::text FROM tasks WHERE plan_approval_id = ${approvalId} ORDER BY title LIMIT 1`;
+  assert.ok(created !== undefined);
+  await eraseConversation(db().sql, conversationId);
+  assert.equal((await db().sql`SELECT 1 FROM tasks WHERE id = ${card.id}`).length, 0, 'the request word for word is gone');
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE id = ${approvalId}`).length, 0, 'the plan is gone');
+  const [kept] = await db().sql<{ plan: string | null; parent: string | null }[]>`SELECT plan_approval_id::text AS plan, parent_id::text AS parent FROM tasks WHERE id = ${created.id}`;
+  assert.deepEqual(kept, { plan: null, parent: null });
+});
+
+test('«Elimina» purges the card «Piano» with the conversation: the request and a pending plan emptied, the card closed (D-235)', async () => {
+  const { conversationId, card, approvalId } = await waitingPlan('private', false);
+  await archiveConversation(db().sql, conversationId, true);
+  await purgeConversation(db().sql, conversationId);
+  const purged = await loadTask(db().sql, card.id);
+  assert.deepEqual([purged?.status, purged?.title, purged?.goal], ['failed', 'Conversazione eliminata', null]);
+  const plan = await loadApproval(db().sql, approvalId);
+  assert.deepEqual([plan?.state, plan?.detail], ['expired', { purged: true }]);
 });

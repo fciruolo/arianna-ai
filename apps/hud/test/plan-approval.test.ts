@@ -8,6 +8,7 @@ import {
   addRow,
   cloneDraft,
   draftProblem,
+  keepTicks,
   MAX_PLAN_ROWS,
   planBody,
   planCommandProblem,
@@ -125,4 +126,17 @@ test('«/progetta» only with Arianna, never in incognito, and in a work convers
   assert.match(planCommandProblem({ ...here, workspace: null }) ?? '', /vuole un progetto/);
   assert.match(planCommandProblem({ ...here, incognito: true }) ?? '', /incognito/);
   assert.match(planCommandProblem({ ...here, ariannaChat: false }) ?? '', /solo in una conversazione con Arianna/);
+});
+
+test('the ticks «Avvia subito» survive a refresh of the same version; an edit made elsewhere brings its rows with the defaults (D-235)', () => {
+  const shown = draft();
+  rowOf(shown, 0).start = false;
+  rowOf(shown, 1).start = true;
+  const again = keepTicks(draft(), shown);
+  assert.deepEqual(again.rows.map((row) => row.start), [false, true, false, true]);
+  const edited = planDraft({ ...DETAIL, revision: 1 });
+  assert.ok(edited !== undefined);
+  assert.equal(edited.revision, 1);
+  assert.deepEqual(keepTicks(edited, shown).rows.map((row) => row.start), [true, false, false, true]);
+  assert.equal(draft().revision, 0);
 });

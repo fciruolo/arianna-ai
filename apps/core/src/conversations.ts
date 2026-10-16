@@ -512,7 +512,9 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
   if (conversation.archivedAt === null) throw new ChatError('invalid', 'only an archived conversation can be deleted');
   const [busy] = await sql<{ busy: boolean; system: boolean; side: boolean }[]>`
     SELECT
-      EXISTS (SELECT FROM tasks WHERE conversation_id = ${id} AND status IN ('ready', 'running')) AS busy,
+      -- The card «Piano» of a «/progetta» of the conversation goes with it (D-235, migration 0072): at work, it waits too.
+      EXISTS (SELECT FROM tasks WHERE status IN ('ready', 'running') AND (conversation_id = ${id}
+        OR (planning = 'card' AND parent_id IN (SELECT id FROM tasks WHERE conversation_id = ${id})))) AS busy,
       EXISTS (
         SELECT FROM conversations s JOIN tasks t ON t.conversation_id = s.id
         WHERE s.origin = 'system' AND s.purged_at IS NULL AND t.status IN ('ready', 'running')

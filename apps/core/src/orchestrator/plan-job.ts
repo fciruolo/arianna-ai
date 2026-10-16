@@ -43,6 +43,12 @@ export function planCardTitle(brief: string): string {
   return `${PLAN_CARD_PREFIX}${chars.length <= TITLE_CHARS ? first : `${chars.slice(0, TITLE_CHARS - 1).join('')}…`}`;
 }
 
+/** The note of a card «Piano» waiting for Claude's quota (D-235): code text, the time on this machine. */
+export function quotaNote(at: Date): string {
+  const time = at.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  return `In attesa della quota di Claude: riprovo alle ${time}.`;
+}
+
 /** What Arianna answers to «/progetta», written by the code. */
 export function planRequestAnswer(cardTitle: string): string {
   return `Ho messo la pianificazione sul cardwall: card «${cardTitle}». Ti avviso quando è pronta.`;
@@ -131,7 +137,11 @@ export async function planCardStep(deps: PlanCardDeps, ctx: StepContext): Promis
   if (model !== undefined) {
     const written = await writePlan(env, ctx, { title, request, label, agents: delegates, model });
     const spent = { steps: 1, tokensIn: written.usage?.tokensIn ?? 0, tokensOut: written.usage?.tokensOut ?? 0, ...(written.usage?.cost === undefined ? {} : { cost: written.usage.cost }) };
-    if (written.kind === 'retry') return { kind: 'retry', at: written.at, reason: written.reason, usage: spent };
+    if (written.kind === 'retry') {
+      // The card has no chat for the activity line: the wait is written on the card.
+      await sql`UPDATE tasks SET note = ${quotaNote(written.at)} WHERE id = ${task.id}`;
+      return { kind: 'retry', at: written.at, reason: written.reason, usage: spent };
+    }
     if (written.kind === 'error') return { kind: 'wait-user', reason: `the plan was not written: ${written.reason}`, usage: spent };
     args = written.args;
     planLabel = written.label;
@@ -145,7 +155,10 @@ export async function planCardStep(deps: PlanCardDeps, ctx: StepContext): Promis
   }
   const checked = checkPlan(args, assignees);
   if ('error' in checked) return { kind: 'wait-user', reason: `the planner wrote an invalid plan: ${checked.error}`, usage };
-  const approvalId = await sql.begin((tx) => requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked }));
+  const approvalId = await sql.begin(async (tx) => {
+    await tx`UPDATE tasks SET note = NULL WHERE id = ${task.id} AND note IS NOT NULL`;
+    return requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked });
+  });
   return { kind: 'confirm', approvalId, usage };
 }
 

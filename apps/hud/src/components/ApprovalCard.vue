@@ -13,6 +13,7 @@ import {
   COMPLEXITIES,
   COMPLEXITY_TEXT,
   draftProblem,
+  keepTicks,
   MAX_PLAN_ROWS,
   planBody,
   planDraft,
@@ -30,8 +31,8 @@ import Icon from './Icon.vue';
 
 const props = defineProps<{
   approval: Approval;
-  /** `starts`: the cards of a plan to start at once, «Avvia subito» (D-235). */
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
+  /** `plan`: the cards of a plan to start at once, «Avvia subito», and the revision shown (D-235). */
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 const busy = ref(false);
 
@@ -46,7 +47,8 @@ watch(
   () => props.approval.detail,
   (detail) => {
     if (props.approval.kind !== 'plan' || editing.value) return;
-    plan.value = planDraft(detail);
+    const fresh = planDraft(detail);
+    plan.value = fresh === undefined ? undefined : keepTicks(fresh, plan.value);
   },
   { immediate: true },
 );
@@ -87,10 +89,7 @@ async function saveEdit(): Promise<void> {
     const saved = await editPlan(props.approval.id, planBody(edited));
     const fresh = planDraft(saved.detail);
     // The ticks «Avvia subito» stay as the user left them, row by row.
-    fresh?.rows.forEach((row, index) => {
-      row.start = row.assignee !== 'user' && (edited.rows[index]?.start ?? row.start);
-    });
-    plan.value = fresh;
+    plan.value = fresh === undefined ? undefined : keepTicks(fresh, { ...edited, revision: fresh.revision });
     editing.value = false;
     draft.value = undefined;
   } catch (cause) {
@@ -132,7 +131,7 @@ async function createCards(): Promise<void> {
   if (plan.value === undefined) return;
   busy.value = true;
   try {
-    await props.decide(props.approval, 'approved', undefined, planStarts(plan.value));
+    await props.decide(props.approval, 'approved', undefined, { starts: planStarts(plan.value), revision: plan.value.revision });
   } finally {
     busy.value = false;
   }

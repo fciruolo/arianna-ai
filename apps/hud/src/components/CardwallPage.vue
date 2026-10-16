@@ -55,7 +55,7 @@ import LabelBadge from './LabelBadge.vue';
 const props = defineProps<{
   version: number;
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 
 const storage = (() => {

@@ -9,7 +9,7 @@ import { resolveHome } from '@arianna/config';
 
 import { parseAddressed } from '../src/addressed.ts';
 import { assigneeText, checkPlan, checkStarts, defaultStarts, planAnswerText, planOf, PlanError } from '../src/card-plans.ts';
-import { planCardTitle, planRequestAnswer } from '../src/orchestrator/plan-job.ts';
+import { planCardTitle, planRequestAnswer, quotaNote } from '../src/orchestrator/plan-job.ts';
 import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason, waysFor } from '../src/orchestrator/card-run.ts';
 import { claudeToolsOf, codexAccessOf, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
@@ -112,6 +112,7 @@ test('«/progetta» (D-235): parsed with its description; the title of the card 
   const long = planCardTitle('x'.repeat(80));
   assert.equal(Array.from(long).length, 'Piano: '.length + 60);
   assert.ok(long.endsWith('…'));
+  assert.match(quotaNote(new Date(2026, 9, 16, 14, 5)), /^In attesa della quota di Claude: riprovo alle 14:05\.$/);
   assert.equal(planRequestAnswer('Piano: la landing'), 'Ho messo la pianificazione sul cardwall: card «Piano: la landing». Ti avviso quando è pronta.');
 });
 

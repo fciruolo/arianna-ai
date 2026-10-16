@@ -401,7 +401,10 @@ export function livelierReply(first: ReadAnswer, second: ReadAnswer | undefined)
   return second?.answer.action === 'reply' && second.answer.text.trim() !== '' ? second : first;
 }
 
-export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
+/** The orchestrator, and who may do a card of a plan now (D-235): the user and the agents the planner may choose. */
+export type Orchestrator = StepExecutor & { planAssignees(): string[] };
+
+export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
   const { sql } = options;
   const env: DelegateEnv = {
     sql,
@@ -788,6 +791,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   }
 
   return {
+    planAssignees: () => ['user', ...delegateTargets(env, ORCHESTRATOR_AGENT).map((target) => target.name)],
+
     async plan(task: Task, step: number): Promise<RunSpec> {
       const key = `${task.id}:${String(step)}`;
       // The trial chat of a local model (D-142): that model answers, nothing else runs.

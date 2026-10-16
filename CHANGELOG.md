@@ -30,6 +30,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - Le modifiche al piano restano all'etichetta della conversazione; in una conversazione di lavoro un testo con dati personali è rifiutato come un messaggio (D-235).
+- «Elimina» ed «Elimina per sempre» di una conversazione portano via anche la card «Piano» di un suo «/progetta», con la richiesta e il piano (D-235).
+- «Crea le card» su una scheda rimasta a una versione vecchia del piano è rifiutato: non parte nulla che non hai visto (D-235).
 
 ## [0.129.1] - 2026-10-16
 
