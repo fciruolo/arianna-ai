@@ -21,6 +21,7 @@ import {
   isLeaveAfter,
   MAX_LEAVE_AFTER,
   diffConfig,
+  homeRelativePath,
   LABELS_FILE,
   loadCatalog,
   MODEL_ROLES,
@@ -633,7 +634,7 @@ function telegramFromBody(value: unknown, current: Settings['telegram']): Settin
   return { token: current?.token ?? TELEGRAM_TOKEN_REF, chats };
 }
 
-function projectsFromBody(value: unknown): ProjectSettings[] {
+function projectsFromBody(value: unknown, userHome: string): ProjectSettings[] {
   if (!Array.isArray(value)) invalid('projects must be a list');
   return value.map((item, index) => {
     const where = `projects[${String(index)}]`;
@@ -641,7 +642,8 @@ function projectsFromBody(value: unknown): ProjectSettings[] {
     only(project, ['name', 'path', 'label', 'parts', 'folders'], where);
     const label = text(project.label, `${where}.label`);
     if (label !== 'L0' && label !== 'L1') invalid(`${where}.label must be L0 or L1`);
-    const next: ProjectSettings = { name: text(project.name, `${where}.name`), path: text(project.path, `${where}.path`), label };
+    // D-228: a full path under the home is kept in the form of the file; parseConfig judges every path as before.
+    const next: ProjectSettings = { name: text(project.name, `${where}.name`), path: homeRelativePath(text(project.path, `${where}.path`), userHome), label };
     // D-145: the parts the user listed and the labels of the management folders; parseConfig checks the rest.
     if (project.parts !== undefined && project.parts !== null) next.parts = strings(project.parts, `${where}.parts`);
     if (project.folders !== undefined && project.folders !== null) {
@@ -1043,7 +1045,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         if (telegram === undefined) delete next.telegram;
         else next.telegram = telegram;
       }
-      if (given.projects !== undefined) next.projects = projectsFromBody(given.projects);
+      if (given.projects !== undefined) next.projects = projectsFromBody(given.projects, options.userHome);
       if (given.endpoints !== undefined) next.endpoints = endpointsFromBody(given.endpoints);
       if (given.fetchSites !== undefined) next.fetchSites = fetchSitesFromBody(given.fetchSites);
       const sections = check(settings, next, catalog, PRIVACY_SECTIONS);

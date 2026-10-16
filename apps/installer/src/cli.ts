@@ -21,6 +21,7 @@ import {
   MODEL_DIRS,
   modelsRoot,
   parseProjects,
+  projectProblemText,
   resolveHome,
   userHomeOf,
   type AriannaConfig,
@@ -226,6 +227,9 @@ try {
   }
 } catch (error) {
   // Our errors name a file and a code; anything else only its class.
-  console.error(error instanceof Error && ['ModelError', 'Error', 'ConfigError', 'VaultError', 'LoginError'].includes(error.name) ? error.message : 'unexpected error');
+  // D-228: a refused project in config/arianna.toml in Italian, with what to do.
+  const project = error instanceof Error && error.name === 'ConfigError' ? projectProblemText(error.message) : undefined;
+  if (project !== undefined) console.error(`config/arianna.toml, progetti: ${project}`);
+  else console.error(error instanceof Error && ['ModelError', 'Error', 'ConfigError', 'VaultError', 'LoginError'].includes(error.name) ? error.message : 'unexpected error');
   process.exitCode = 1;
 }

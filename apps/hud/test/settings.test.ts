@@ -43,6 +43,8 @@ import {
   voiceSent,
   voiceAfterSave,
   writeError,
+  fileErrorText,
+  projectProblemText,
   personalDataText,
   type AgentsForm,
   type CatalogModel,
@@ -259,6 +261,19 @@ test('a 409 reloads the values; an expired confirmation does not', () => {
   assert.match(writeError(404, 'unknown').text, /scaduta/);
   assert.match(writeError(400, 'roles: bad').text, /roles: bad/);
   assert.equal(writeError(400, 'x').reload, false);
+});
+
+test('a refused project is said in Italian with what to do (D-228); other refusals keep the core message', () => {
+  const absolute = writeError(400, 'project[1].path: a project must be under your home (~/<folder>) or inside Arianna (repos/<name>), not elsewhere on the disk');
+  assert.equal(absolute.reload, false);
+  assert.match(absolute.text, /^Progetti non salvati\. Un progetto deve stare nella tua cartella utente/);
+  assert.doesNotMatch(absolute.text, /must|disk|project\[/);
+  assert.match(writeError(400, 'project[0].path: an absolute path is not accepted, write ~/Sites/negozio').text, /Scrivi la cartella come ~\/Sites\/negozio:/);
+  assert.match(writeError(409, 'project: a and b are the same folder or one inside the other').text, /^Le impostazioni non si leggono: I progetti a e b/);
+  assert.match(writeError(400, 'project[0].path: something new').text, /^Arianna ha rifiutato la modifica: project\[0\]\.path: something new$/);
+  assert.equal(fileErrorText('project[0].name: lowercase letters, digits and dashes, starting with a letter or digit'), 'Il nome del progetto usa solo lettere minuscole, cifre e trattini, e comincia con una lettera o una cifra (per esempio negozio-finto).');
+  assert.equal(fileErrorText('roles.orchestrator: unknown model'), 'roles.orchestrator: unknown model.');
+  assert.equal(projectProblemText('roles.orchestrator: unknown model'), undefined);
 });
 
 test('a persona or a project rule with personal data is refused in Italian, naming field and kind, never the text (D-107g)', () => {

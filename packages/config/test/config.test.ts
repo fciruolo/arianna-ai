@@ -98,14 +98,17 @@ test('projects refuse the home, hidden folders, Library, other forms and labels 
       (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
     );
   };
-  rejects(section('home', '~/'), /plain name/);
-  rejects(section('home', '~'), /write ~\/<folder>/);
+  rejects(section('home', '~/'), /whole home/);
+  rejects(section('home', '~'), /whole home/);
   rejects(section('ssh', '~/.ssh'), /plain name/);
   rejects(section('deep', '~/Projects/.hidden/site'), /plain name/);
   rejects(section('up', '~/Projects/../x'), /plain name/);
   rejects(section('dot', '~/Projects/./x'), /plain name/);
   rejects(section('lib', '~/Library/Mobile Documents'), /Library/);
-  rejects(section('abs', '/opt/site'), /write ~\/<folder>/);
+  rejects(section('abs', '/opt/site'), /not elsewhere on the disk/);
+  // D-228: a full path under the home is refused in the file too, with the form to write.
+  rejects(section('abs', join(USER, 'Sites', 'site')), /an absolute path is not accepted, write ~\/Sites\/site$/);
+  rejects(section('home', USER), /whole home/);
   rejects(section('rel', 'Projects/site'), /write ~\/<folder>/);
   rejects(section('demo', 'repos/other'), /repos\/demo/);
   rejects(section('demo', 'repos/demo/sub'), /repos\/demo/);

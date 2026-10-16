@@ -93,6 +93,29 @@ function foldedWithin(inner: string, outer: string): boolean {
 }
 
 /**
+ * A project path as the user typed it, in the form the list keeps (D-228):
+ * spaces around and slashes at the end dropped, and a full path under the
+ * user's home written `~/...`, so that `<home>/Sites/shop` becomes
+ * `~/Sites/shop`. Only a change of form: every other path is returned as
+ * typed and `parseProjects` judges it with the same rules (the home itself,
+ * a folder elsewhere on the disk, `.` or `..` stay refused there).
+ */
+export function homeRelativePath(path: string, userHome: string): string {
+  let typed = path.trim();
+  while (typed.length > 1 && typed.endsWith('/')) typed = typed.slice(0, -1);
+  if (!isAbsolute(typed) || !isAbsolute(userHome)) return typed;
+  const home = resolve(userHome).normalize('NFC');
+  const full = typed.normalize('NFC');
+  if (home === sep) return typed;
+  // The Mac's disk ignores case: `/users/...` is the same home. Folded only when folding keeps the length, so the slice stays exact.
+  const [foldedHome, foldedFull] = [fold(home), fold(full)];
+  const same = foldedHome.length === home.length && foldedFull.length === full.length;
+  const [h, f] = same ? [foldedHome, foldedFull] : [home, full];
+  if (f === h) return '~';
+  return f.startsWith(`${h}/`) ? `~/${full.slice(home.length + 1)}` : typed;
+}
+
+/**
  * Where a project path points on this machine. Only two forms:
  * - `~/a/b`: under the user's home, never the home itself, nothing hidden,
  *   not `Library`, not ARIANNA_HOME nor `data/` nor a folder inside or
@@ -100,7 +123,18 @@ function foldedWithin(inner: string, outer: string): boolean {
  * - `repos/<name>`: a folder inside ARIANNA_HOME, as `repos/demo`.
  * Opening the project checks the folder on disk again (`openRepository`).
  */
+// A new refusal here needs its Italian text in project-messages.ts and in
+// apps/hud/src/lib/settings.ts, and a case in test/project-messages.test.ts (D-228).
 function resolveProject(path: string, name: string, roots: Roots, where: string): string {
+  const whole = `${where}: your whole home cannot be a project, only a folder inside it: write ~/<folder>`;
+  if (path === '~' || path === '~/') throw new ConfigError(whole);
+  if (isAbsolute(path)) {
+    // D-228: the file keeps ~/ (valid on another Mac); the wizard and the page convert a path under the home by themselves.
+    const suggestion = homeRelativePath(path, roots.userHome);
+    if (suggestion === '~') throw new ConfigError(whole);
+    if (suggestion.startsWith('~/')) throw new ConfigError(`${where}: an absolute path is not accepted, write ${suggestion}`);
+    throw new ConfigError(`${where}: a project must be under your home (~/<folder>) or inside Arianna (${PROJECTS_DIR}/<name>), not elsewhere on the disk`);
+  }
   if (path.startsWith('~/')) {
     const segments = segmentsOf(path.slice(2), where);
     if (fold(segments[0] ?? '') === 'library') throw new ConfigError(`${where}: Library holds the settings and data of every app, it cannot be a project`);

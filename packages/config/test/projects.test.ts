@@ -6,7 +6,7 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { defaultFolderLabel, managementFolders, parseConfig, projectNamed, projectParts, resolveHome, workParts, type Project } from '../src/index.ts';
+import { defaultFolderLabel, homeRelativePath, managementFolders, parseConfig, projectNamed, projectParts, projectProblemText, resolveHome, workParts, type Project } from '../src/index.ts';
 
 const ROOT = join(resolveHome({}), 'data', 'test-tmp', `projects-${randomUUID()}`);
 after(() => {
@@ -119,4 +119,79 @@ it('a management folder that is a file or a link is not a folder', () => {
   const project = container('file', []);
   writeFileSync(join(project.absolute, 'Workplan'), 'non una cartella\n');
   assert.deepEqual(managementFolders(project), []);
+});
+
+describe('a project path as typed (D-228)', () => {
+  const user = join(ROOT, 'utente');
+
+  it('a full path under the home becomes ~/..., also with spaces and slashes at the end', () => {
+    assert.equal(homeRelativePath(join(user, 'Sites', 'negozio-finto'), user), '~/Sites/negozio-finto');
+    assert.equal(homeRelativePath(`  ${join(user, 'Sites', 'negozio')}// `, user), '~/Sites/negozio');
+    assert.equal(homeRelativePath('~/Sites/negozio/', user), '~/Sites/negozio');
+    assert.equal(homeRelativePath('repos/demo/', user), 'repos/demo');
+    assert.equal(homeRelativePath(user, user), '~');
+    // The disk ignores case: the home typed in other case is still the home.
+    assert.equal(homeRelativePath(join(user.toUpperCase(), 'Sites', 'x'), user), '~/Sites/x');
+  });
+
+  it('only the form changes: dots, hidden folders and double slashes stay in the path, for parseProjects to refuse', () => {
+    const dotted = ['a', '..', 'b'].join('/');
+    assert.equal(homeRelativePath(`${user}/${dotted}`, user), `~/${dotted}`);
+    assert.equal(homeRelativePath(`${user}/./x`, user), '~/./x');
+    assert.equal(homeRelativePath(`${user}//x`, user), '~//x');
+    assert.equal(homeRelativePath(`${user}/.ssh`, user), '~/.ssh');
+    assert.equal(homeRelativePath(`${user}/Library/x`, user), '~/Library/x');
+  });
+
+  it('a path elsewhere, a folder whose name only starts like the home, or a home that is not absolute stay as typed', () => {
+    assert.equal(homeRelativePath(join(ROOT, 'altrove', 'sito'), user), join(ROOT, 'altrove', 'sito'));
+    assert.equal(homeRelativePath(`${user}-altro/sito`, user), `${user}-altro/sito`);
+    assert.equal(homeRelativePath(join(user, 'x'), 'relative/home'), join(user, 'x'));
+    assert.equal(homeRelativePath('/', user), '/');
+  });
+});
+
+describe('refusals of the project list in Italian (D-228)', () => {
+  const VALID = '[paths]\ndata = "data"\n\n[database]\nhost = "127.0.0.1"\nport = 54329\nname = "arianna"\nuser = "arianna"\n';
+  const home = join(ROOT, 'casa-arianna');
+  const user = join(ROOT, 'utente');
+  const refusal = (sections: string, userHome = user): string => {
+    try {
+      parseConfig(`${VALID}\n${sections}\n`, home, undefined, userHome);
+    } catch (error) {
+      if (error instanceof Error) return error.message;
+    }
+    assert.fail(`not refused: ${sections}`);
+  };
+  const project = (name: string, path: string, label = 'L1') => `[[project]]\nname = "${name}"\npath = "${path}"\nlabel = "${label}"\n`;
+
+  it('every refusal of a project path, name, label or list has its Italian text, with no English left', () => {
+    const cases: [string, RegExp][] = [
+      [project('casa', '~'), /cartella utente intera/],
+      [project('casa', user), /cartella utente intera/],
+      [project('assoluto', join(user, 'Sites', 'negozio')), /^Scrivi la cartella come ~\/Sites\/negozio:/],
+      [project('altrove', join(ROOT, 'altrove')), /altrove sul disco/],
+      [project('rel', 'Sites/negozio'), /oppure repos\/<nome>/],
+      [project('nascosta', '~/.ssh'), /cartelle nascoste/],
+      [project('lib', '~/Library/x'), /^Library contiene/],
+      [project('demo', 'repos/altro'), /qui repos\/demo\.$/],
+      [project('Maiuscole', '~/x'), /lettere minuscole/],
+      [project('privato', '~/x', 'L2'), /Pubblico o Interno/],
+      [`${project('a', '~/a')}\n${project('a', '~/b')}`, /^Il progetto a compare due volte\.$/],
+      [`${project('a', '~/p')}\n${project('b', '~/p/b')}`, /^I progetti a e b sono la stessa cartella/],
+    ];
+    for (const [sections, italian] of cases) {
+      const text = projectProblemText(refusal(sections));
+      assert.ok(text !== undefined, sections);
+      assert.match(text, italian);
+      assert.doesNotMatch(text, /\b(write|must|folder|project)\b/);
+    }
+    assert.match(projectProblemText(refusal(project('x', '~/x'), 'relative/home')) ?? '', /HOME/);
+  });
+
+  it('other messages are not translated', () => {
+    assert.equal(projectProblemText('roles.orchestrator: unknown model'), undefined);
+    assert.equal(projectProblemText('project[0].path: something new'), undefined);
+    assert.equal(projectProblemText('voice.port: must differ from server.port'), undefined);
+  });
 });

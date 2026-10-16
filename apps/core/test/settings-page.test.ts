@@ -613,6 +613,27 @@ describe('prepare and confirm (privacy)', () => {
     assert.deepEqual(config.local.endpoints.map(({ id }) => id), ['omlx', 'spare']);
   });
 
+  it('a project typed as a full path under the home is kept as ~/... (D-228); one elsewhere on the disk is still refused', () => {
+    const proposal = page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }, { name: 'negozio', path: `${join(userHome, 'Sites', 'negozio')}/`, label: 'L1' }] } });
+    assert.deepEqual(proposal.changes.projects?.added, [{ name: 'negozio', path: '~/Sites/negozio', label: 'L1' }]);
+    page.confirm({ id: proposal.id });
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.deepEqual(config.projects.map(({ name, path, absolute }) => [name, path, absolute]), [
+      ['demo', 'repos/demo', join(home, 'repos', 'demo')],
+      ['negozio', '~/Sites/negozio', join(userHome, 'Sites', 'negozio')],
+    ]);
+    const elsewhere = join(root, 'altrove', 'sito');
+    assert.throws(() => page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'sito', path: elsewhere, label: 'L1' }] } }), refused('invalid', /not elsewhere on the disk/));
+    assert.throws(() => page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'casa', path: userHome, label: 'L1' }] } }), refused('invalid', /whole home/));
+    // Converted, then refused by the same rules as ~/... (D-058).
+    const dotted = ['a', '..', 'b'].join('/');
+    for (const [path, why] of [[`${userHome}/.ssh`, /plain name/], [`${userHome}/Library/x`, /Library/], [`${userHome}/${dotted}`, /plain name/]] as const) {
+      assert.throws(() => page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'x', path, label: 'L1' }] } }), refused('invalid', why), path);
+    }
+    assert.match(text(), /repos\/demo/);
+    assert.doesNotMatch(text(), /name = "x"/);
+  });
+
   it('the labels of the management folders of a project (D-145): only through prepare and confirm, kept in [[project.folder]]', () => {
     const projects = [{ name: 'demo', path: 'repos/demo', label: 'L1', parts: ['demo-admin'], folders: [{ path: 'Workplan', label: 'L2' }, { path: 'documenti', label: 'L3' }] }];
     // Not an ordinary change: an agent or a page that saves the ordinary sections cannot lower a folder.

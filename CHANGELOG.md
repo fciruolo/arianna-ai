@@ -2,6 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Corretto
+
+- Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
+- I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
+
 ## [0.121.0] - 2026-10-16
 
 ### Aggiunto

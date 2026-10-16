@@ -186,11 +186,40 @@ test('projects (D-058): added under the home or in repos/, refused when the list
     { name: 'demo', path: 'repos/demo', label: 'L0' },
   ]);
   assert.deepEqual(checked, [join(`${HOME}-user`, 'Progetti', 'Sito Più'), join(HOME, 'repos', 'demo')]);
-  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('plain name')));
-  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('twice')));
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('niente cartelle nascoste')));
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('compare due volte')));
   assert.ok(io.said.some((line) => line.includes('Scrivi L0 oppure L1')));
   assert.ok(io.said.some((line) => line.includes('creo il link repos/sito-piu')));
   assert.ok(io.said.some((line) => line.includes('Progetti: sito-piu')));
+});
+
+test('projects (D-228): a full path under the home is kept as ~/..., one elsewhere is refused in Italian', async () => {
+  const userHome = `${HOME}-user`;
+  const io = scripted([
+    // Orchestrator, extractor, add oMLX, Claude, Codex.
+    '', '', '', 's', '',
+    // The full path of a folder under the home, with a slash at the end: written ~/Sites/negozio-finto.
+    's', `${userHome}/Sites/negozio-finto/`, '', '',
+    // A folder elsewhere on the disk: refused, with what to do.
+    's', `${HOME}-altrove/sito`, 'sito', '',
+    // The home itself, as a full path: refused.
+    's', userHome, 'casa', '',
+    // Converted, then refused by the rules of ~/...: a hidden folder, Library, a way up.
+    's', `${userHome}/.ssh`, 'ssh', '',
+    's', `${userHome}/Library/x`, 'lib', '',
+    's', `${userHome}/${['a', '..', 'b'].join('/')}`, 'su', '',
+    // Done; Telegram off; write.
+    'n', '', '',
+  ]);
+  const settings = await runWizard(io, context({ checkFolder: () => undefined }));
+  assert.deepEqual(settings?.projects, [{ name: 'negozio-finto', path: '~/Sites/negozio-finto', label: 'L1' }]);
+  // Said only for the project kept.
+  assert.deepEqual(io.said.filter((line) => line.startsWith('  La scrivo come')), ['  La scrivo come ~/Sites/negozio-finto.']);
+  assert.equal(io.said.filter((line) => line.startsWith('Non lo aggiungo. Ogni cartella del percorso')).length, 2);
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo. Library contiene')));
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo. Un progetto deve stare nella tua cartella utente')));
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo. La tua cartella utente intera')));
+  assert.ok(!io.said.some((line) => /write|absolute/.test(line)));
 });
 
 test('projects: a folder that is not a git repository is not added', async () => {

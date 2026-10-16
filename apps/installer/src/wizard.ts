@@ -6,8 +6,10 @@ import {
   aliasesOf,
   CLOUD_EXECUTORS,
   ConfigError,
+  homeRelativePath,
   modelSize,
   parseProjects,
+  projectProblemText,
   PROJECT_NAME,
   PROJECTS_DIR,
   TELEGRAM_TOKEN_REF,
@@ -202,13 +204,15 @@ function listProblem(context: WizardContext, projects: ProjectSettings[]): strin
     parseProjects(projects, context.home, context.userHome);
     return undefined;
   } catch (error) {
-    if (error instanceof ConfigError) return error.message;
+    if (error instanceof ConfigError) return projectProblemText(error.message) ?? error.message;
     throw error;
   }
 }
 
 async function addProject(io: Prompter, context: WizardContext, projects: ProjectSettings[]): Promise<ProjectSettings | undefined> {
-  const path = await io.ask(`Cartella (~/... sotto la tua home, oppure ${PROJECTS_DIR}/<nome> dentro Arianna): `);
+  const typed = await io.ask(`Cartella (~/... sotto la tua home, oppure ${PROJECTS_DIR}/<nome> dentro Arianna): `);
+  // D-228: a full path under the home is kept as ~/..., valid also on another Mac.
+  const path = homeRelativePath(typed, context.userHome);
   if (path === '') return undefined;
   const suggested = path.startsWith(`${PROJECTS_DIR}/`) ? path.slice(PROJECTS_DIR.length + 1) : suggestName(path);
   const name = (await io.ask(`Nome (minuscole, cifre, trattini)${suggested === '' ? '' : ` [${suggested}]`}: `)) || suggested;
@@ -222,7 +226,7 @@ async function addProject(io: Prompter, context: WizardContext, projects: Projec
   const project: ProjectSettings = { name, path, label };
   const problem = listProblem(context, [...projects, project]);
   if (problem !== undefined) {
-    io.say(`Non lo aggiungo: ${problem}`);
+    io.say(`Non lo aggiungo. ${problem}`);
     return undefined;
   }
   const [resolved] = parseProjects([project], context.home, context.userHome);
@@ -231,6 +235,7 @@ async function addProject(io: Prompter, context: WizardContext, projects: Projec
     io.say(`Non lo aggiungo: ${folder}.`);
     return undefined;
   }
+  if (path.startsWith('~/') && !typed.trim().startsWith('~/')) io.say(`  La scrivo come ${path}.`);
   if (!path.startsWith(`${PROJECTS_DIR}/`)) io.say(`  Dopo la scrittura creo il link ${PROJECTS_DIR}/${name} verso la cartella.`);
   return project;
 }

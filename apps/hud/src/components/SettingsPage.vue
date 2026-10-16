@@ -59,6 +59,7 @@ import {
   secretaryProblem,
   WEEKDAY_TEXT,
   WEEKDAYS,
+  fileErrorText,
   keptSections,
   leaveAfterProblem,
   pollAction,
@@ -1004,7 +1005,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
               <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="reload">Ricarica i valori</button>
             </div>
             <p v-if="view.error !== null" role="alert" class="rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2.5 text-[14px]">
-              Il file delle impostazioni non è valido, e finché non lo correggi tutte le uscite sono chiuse: {{ view.error }}. Chiedi a Claude Code di correggerlo, poi premi
+              Il file delle impostazioni non è valido, e finché non lo correggi tutte le uscite sono chiuse: {{ fileErrorText(view.error) }} Chiedi a Claude Code di correggerlo, poi premi
               <button type="button" class="font-semibold text-accent hover:underline" @click="reload">Riprova</button>.
             </p>
 
@@ -1243,8 +1244,13 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                     <FormField id="project-name" label="Nome" :span="2">
                       <input id="project-name" v-model="newProject.name" :class="input" placeholder="sito-verdi" />
                     </FormField>
-                    <FormField id="project-path" label="Cartella" :span="2">
-                      <input id="project-path" v-model="newProject.path" :class="input" class="font-mono text-[12.5px]" placeholder="repos/sito-verdi" spellcheck="false" />
+                    <FormField
+                      id="project-path"
+                      label="Cartella"
+                      :span="2"
+                      hint="~/… se sta nella tua cartella utente, repos/<nome> se sta dentro Arianna. Se incolli il percorso completo di una cartella della tua cartella utente, Arianna lo salva come ~/…"
+                    >
+                      <input id="project-path" v-model="newProject.path" :class="input" class="font-mono text-[12.5px]" placeholder="~/Sites/sito-verdi" spellcheck="false" />
                     </FormField>
                     <FormField id="project-label" label="Riservatezza" :span="1">
                       <select id="project-label" v-model="newProject.label" :class="input">
