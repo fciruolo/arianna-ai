@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.136.1] - 2026-10-16
+
 ### Corretto
 
 - «Prendi da Wikiquote» trova le battute vere anche per I Simpson, Futurama, The Big Bang Theory, I Griffin, American Dad e Prison Break: pagine delle stagioni, sezioni «Frasi» e «Dialoghi» e note dopo il nome come le scrive il sito; fra una pagina e l'altra aspetta di più, e se Wikiquote chiede di rallentare riprova dopo un minuto invece di fermarsi (D-245).
