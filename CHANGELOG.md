@@ -27,10 +27,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
 - Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
 - La pianta dell'ufficio segue il tuo personaggio: più grande, si sposta mentre cammini e si ferma ai bordi (D-229).
+- L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
 
 ### Cambiato
 
 - Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
+- Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 
 ### Aggiunto
 
