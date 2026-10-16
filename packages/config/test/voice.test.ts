@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { aliasesOf, DEFAULT_SETTINGS, DEFAULT_VOICE, EMPTY_CATALOG, parseConfig, readSettings, renderSettings, VOICE_ALIAS } from '../src/index.ts';
+import { aliasesOf, DEFAULT_SETTINGS, DEFAULT_VOICE, EMPTY_CATALOG, loadCatalog, parseConfig, parseRoles, readSettings, renderSettings, resolveHome, VISION_ALIAS, VOICE_ALIAS } from '../src/index.ts';
 
 const HOME = resolve('some-home');
 const VALID = `
@@ -96,4 +96,15 @@ test('voice: the wizard writes the section back unchanged, and leaves it comment
 test('the voice role gets its own alias on the local servers, outside the router (D-066)', () => {
   assert.deepEqual(aliasesOf({ orchestrator: 'big', voice: 'small' }), { 'local-large': 'big', [VOICE_ALIAS]: 'small' });
   assert.deepEqual(aliasesOf({ orchestrator: 'big' }), { 'local-large': 'big' });
+});
+
+test('the vision role gets its own alias, only when assigned (D-247)', () => {
+  assert.deepEqual(aliasesOf({ orchestrator: 'big', vision: 'eyes' }), { 'local-large': 'big', [VISION_ALIAS]: 'eyes' });
+  assert.equal(VISION_ALIAS in aliasesOf({ orchestrator: 'big' }), false);
+});
+
+test('the vision role takes only a model the catalog lists for it (D-247)', () => {
+  const catalog = loadCatalog(resolveHome({}));
+  assert.deepEqual(parseRoles({ vision: 'qwen3.5-9b-mlx-4bit' }, catalog), { vision: 'qwen3.5-9b-mlx-4bit' });
+  assert.throws(() => parseRoles({ vision: 'qwen3-4b-instruct-2507-4bit' }, catalog), /not suited to this role/);
 });

@@ -51,8 +51,9 @@ export function hubFileUrl(repo: string, revision: string, path: string): string
 export type CatalogOrigin = 'catalog' | 'huggingface';
 
 // `voice` writes the replies of a call; `stt` and `tts` hear and speak (D-066);
-// `pii` finds personal data for the second scanner of apps/guard (D-113).
-export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts', 'pii'] as const;
+// `pii` finds personal data for the second scanner of apps/guard (D-113);
+// `vision` reads the images attached in a private chat (D-247), on oMLX only.
+export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts', 'pii', 'vision'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
 // `transformers`: loaded by a Python environment of Arianna (apps/guard), not served by oMLX.

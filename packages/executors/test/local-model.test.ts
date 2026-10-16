@@ -61,6 +61,29 @@ describe('local model contract', () => {
     });
   });
 
+  it('sends the images of a user message as image_url parts after its text (D-247)', async () => {
+    const image = 'data:image/png;base64,iVBORw0KGgo=';
+    const result = await model.chat({ model: 'local-large', messages: [{ role: 'user', content: 'say hello', images: [image] }] });
+    assert.equal(result.text, 'hello');
+    assert.deepEqual((server.requests.at(-1) as { messages: unknown }).messages, [
+      { role: 'user', content: [{ type: 'text', text: 'say hello' }, { type: 'image_url', image_url: { url: image } }] },
+    ]);
+  });
+
+  it('refuses an image that is not a data URL of an image, before any request (D-247)', async () => {
+    const before = server.requests.length;
+    for (const image of ['https://example.org/a.png', 'data:image/svg+xml;base64,PHN2Zz4=', 'data:text/plain;base64,aGk=']) {
+      await assert.rejects(model.chat({ model: 'local-large', messages: [{ role: 'user', content: 'x', images: [image] }] }), /not a data URL/);
+    }
+    await assert.rejects(model.chat({ model: 'local-large', messages: [{ role: 'system', content: 'x', images: ['data:image/png;base64,AA=='] }] }), /only a user message/);
+    assert.equal(server.requests.length, before);
+  });
+
+  it('sends a message without images as text, as before', async () => {
+    await model.chat({ model: 'local-large', messages: [{ role: 'user', content: 'say hello', images: [] }] });
+    assert.deepEqual((server.requests.at(-1) as { messages: unknown }).messages, [{ role: 'user', content: 'say hello' }]);
+  });
+
   it('asks for constrained decoding and parses the JSON', async () => {
     const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] };
     const result = await model.chat({ model: 'local-large', messages: USER('check'), schema: { name: 'check', schema } });

@@ -36,6 +36,13 @@ export function parseRoles(value: unknown, catalog: ModelCatalog): Roles {
  */
 export const VOICE_ALIAS = 'local-voice';
 
+/**
+ * The alias of the `vision` role (D-247): the model that reads the images
+ * attached in a private chat, asked directly on oMLX, never routed. It is
+ * loaded only when an image waits to be read, and unloaded after.
+ */
+export const VISION_ALIAS = 'local-vision';
+
 /** Alias → model name on a local server, from the roles; the id is the name oMLX serves. */
 export function aliasesOf(roles: Roles): Record<string, string> {
   const models: Record<string, string> = {};
@@ -45,5 +52,6 @@ export function aliasesOf(roles: Roles): Record<string, string> {
     if (alias !== undefined && id !== undefined) models[alias] = id;
   }
   if (roles.voice !== undefined) models[VOICE_ALIAS] = roles.voice;
+  if (roles.vision !== undefined) models[VISION_ALIAS] = roles.vision;
   return models;
 }

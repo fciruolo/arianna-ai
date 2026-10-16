@@ -9,7 +9,7 @@ import { SCAN_KINDS } from './profile.ts';
 import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
 import type { Label } from './types.ts';
 
-export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts', 'pii'] as const;
+export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts', 'pii', 'vision'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 // Claude's models, then Codex's (D-141).
 export const CLOUD_MODELS = ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] as const;
@@ -250,6 +250,7 @@ export const ROLE_TEXT: Record<ModelRole, { task: string; name: string; hint: st
   stt: { task: 'Capisce quello che dici', name: 'Ascolto', hint: 'Trasforma la tua voce in testo.' },
   tts: { task: 'Parla con la sua voce', name: 'Voce', hint: 'Trasforma le risposte in voce.' },
   pii: { task: 'Riconosce i dati personali', name: 'Dati personali', hint: 'Secondo controllo di nomi e indirizzi prima del cloud; per ora solo in prova.' },
+  vision: { task: 'Guarda le immagini allegate', name: 'Immagini', hint: 'Legge le immagini che alleghi in una chat privata; si carica solo quando serve.' },
 };
 
 export const STATE_TEXT: Record<WatchdogState, string> = {

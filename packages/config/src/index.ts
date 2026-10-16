@@ -111,7 +111,7 @@ export {
 } from './projects.ts';
 export { projectProblemText } from './project-messages.ts';
 export { MAX_PROJECT_RULES, parseProjectRules, ruleAudience, rulesFor, rulesOfProject, type ProjectRules, type RuleAudience } from './project-rules.ts';
-export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
+export { aliasesOf, parseRoles, ROLE_ALIASES, VISION_ALIAS, VOICE_ALIAS, type Roles } from './roles.ts';
 export {
   DEFAULT_NOTIFICATIONS,
   inQuiet,

@@ -26,6 +26,24 @@ export interface LocalModel {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  /**
+   * Images for a model that reads them (D-247, the `vision` role), as
+   * `data:image/<type>;base64,...` URLs: sent after the text as OpenAI
+   * `image_url` parts of a user message. Never a remote address: the server
+   * would fetch it, and the local model must not reach the network.
+   */
+  images?: readonly string[];
+}
+
+/** An image of a chat message: a data URL of a PNG, JPEG, WebP or GIF, nothing else. */
+const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/** The message as the OpenAI API takes it: text alone, or text then the images of a user message. */
+function wireMessage({ role, content, images }: ChatMessage): Record<string, unknown> {
+  if (images === undefined || images.length === 0) return { role, content };
+  if (role !== 'user') throw new Error('only a user message carries images');
+  if (!images.every((image) => IMAGE_DATA_URL.test(image))) throw new Error('an image is not a data URL of a PNG, JPEG, WebP or GIF');
+  return { role, content: [{ type: 'text', text: content }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] };
 }
 
 export interface ChatRequest {
@@ -129,7 +147,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: 
 
   const body: Record<string, unknown> = {
     model,
-    messages: request.messages.map(({ role, content }) => ({ role, content })),
+    messages: request.messages.map(wireMessage),
     stream: request.onText !== undefined,
   };
   if (body.stream === true && request.streamUsage === true) body.stream_options = { include_usage: true };

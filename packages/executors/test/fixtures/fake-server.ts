@@ -71,9 +71,11 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
     }
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
       loaded = true;
-      const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[]; response_format?: unknown; stream?: boolean };
+      const parsed = JSON.parse(body) as { messages?: { role: string; content: string | { type: string; text?: string }[] }[]; response_format?: unknown; stream?: boolean };
       requests.push(parsed);
-      const last = parsed.messages?.at(-1)?.content ?? '';
+      // A message with images (D-247): its text part says what to answer.
+      const content = parsed.messages?.at(-1)?.content ?? '';
+      const last = typeof content === 'string' ? content : (content.find((part) => part.type === 'text')?.text ?? '');
       await answer(res, last, parsed.response_format !== undefined, parsed.stream === true);
       return;
     }

@@ -18,7 +18,7 @@
 #     family: example
 #     runtime: mlx              # mlx | llama.cpp | vllm | transformers
 #     ram_min_gib: 20           # memory once loaded
-#     roles: [orchestrator]     # orchestrator | extractor | embedder | voice | stt | tts | pii
+#     roles: [orchestrator]     # orchestrator | extractor | embedder | voice | stt | tts | pii | vision
 #     # dir: guard              # only with runtime transformers: data/guard/models (D-203)
 #     status: experimental      # experimental | verified
 #     # Optional, for the "Modelli" page (I-3), written by hand, never guessed:
@@ -162,11 +162,13 @@ models:
         size_bytes: 6722759
         sha256: "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
   # Mid-size stand-in for the orchestrator while the 27B does not fit in memory (task 1.4).
+  # Also `vision` (D-247): the weights carry the vision tower (vision_config,
+  # preprocessor_config.json), so it reads the images attached in a private chat.
   - id: qwen3.5-9b-mlx-4bit
     family: qwen3.5
     runtime: mlx
     ram_min_gib: 7
-    roles: [orchestrator]
+    roles: [orchestrator, vision]
     status: experimental
     provider: "Qwen (Alibaba); conversione MLX di mlx-community"
     source: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit

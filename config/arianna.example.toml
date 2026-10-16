@@ -33,6 +33,7 @@ user = "arianna"
 # stt = "<catalog id>"
 # tts = "<catalog id>"
 # pii = "<catalog id>"
+# vision = "<catalog id>"
 
 # Local inference (task 1.3): OpenAI-compatible servers on this machine only,
 # because requests carry L2 data in clear. Endpoints in order of preference:
