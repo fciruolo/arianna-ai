@@ -6,7 +6,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Nove personaggi nuovi delle serie, con foglio pixel, pose, scheda (chi è, come parla, mondo, battute di riserva) e nomi per Wikiquote: di Scrubs il Dr. Kelso, l'Inserviente, Ted e Laverne; di The Office Oscar, Andy, Kevin, Angela e Creed (D-227).
 - L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
 - Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
 - Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
@@ -25,7 +24,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Col tema Scrubs il Designer è l'Inserviente e il Modello locale è il Dr. Kelso; col tema The Office Finanze è Oscar, il Designer Andy e il Modello locale Kevin. Ted, Laverne, Angela e Creed sono liberi: si scelgono per qualsiasi agente in Impostazioni → Agenti → Aspetto (D-227).
 - Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
 - Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 - Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
@@ -38,8 +36,21 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
-- Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
 - La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
+
+## [0.122.0] - 2026-10-16
+
+### Aggiunto
+
+- Nove personaggi nuovi delle serie, con foglio pixel, pose, scheda (chi è, come parla, mondo, battute di riserva) e nomi per Wikiquote: di Scrubs il Dr. Kelso, l'Inserviente, Ted e Laverne; di The Office Oscar, Andy, Kevin, Angela e Creed (D-227).
+
+### Cambiato
+
+- Col tema Scrubs il Designer è l'Inserviente e il Modello locale è il Dr. Kelso; col tema The Office Finanze è Oscar, il Designer Andy e il Modello locale Kevin. Ted, Laverne, Angela e Creed sono liberi: si scelgono per qualsiasi agente in Impostazioni → Agenti → Aspetto (D-227).
+
+### Sicurezza
+
+- Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
 
 ## [0.121.1] - 2026-10-16
 
