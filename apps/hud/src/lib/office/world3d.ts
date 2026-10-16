@@ -245,6 +245,20 @@ export function standPoint(actor: Pick<Actor, 'x' | 'y' | 'walking' | 'path' | '
   return toWorld([actor.x, actor.y]);
 }
 
+/** How far into a thing a click goes from the point it hit: past the sheet and the notes of the cardwall (0.09 out of its wall). */
+export const PICK_DEPTH = 0.12;
+
+/**
+ * Where on the plan a click in 3D lands, from the point it hit and the normal
+ * of the face (world units): on the floor, there; on a thing (a wall, its
+ * panel, a desk, a cabinet), a little inside it, so the same rules as a click
+ * on the 2D canvas find the cardwall, the archive or the Decisioni desk.
+ */
+export function pickedTile(point: { x: number; y: number; z: number }, normal: { x: number; z: number } | null): { x: number; z: number } {
+  if (point.y <= 0.01 || normal === null) return { x: point.x, z: point.z };
+  return { x: point.x - normal.x * PICK_DEPTH, z: point.z - normal.z * PICK_DEPTH };
+}
+
 /** The keys of the 3D view: forward and back, a step sideways, and turning with ← →. */
 export interface WalkKeys {
   forward: boolean;

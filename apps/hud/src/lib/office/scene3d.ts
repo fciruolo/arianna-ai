@@ -23,7 +23,7 @@ import {
 } from 'three';
 
 import type { ColorName, Colors } from './draw.ts';
-import { EYE_HEIGHT, SPRITE_HEIGHT, SPRITE_WIDTH, type World } from './world3d.ts';
+import { EYE_HEIGHT, pickedTile, SPRITE_HEIGHT, SPRITE_WIDTH, type World } from './world3d.ts';
 
 /**
  * The 3D view of the office with three.js (D-230), loaded only by the page
@@ -64,6 +64,8 @@ export interface FrameState {
 export type Pick3 = { kind: 'agent'; id: string } | { kind: 'point'; x: number; z: number } | null;
 
 export interface OfficeScene {
+  /** Called once if the browser takes the WebGL context away (a GPU reset, too many contexts). */
+  onLost(callback: () => void): void;
   setColors(colors: Colors): void;
   resize(width: number, height: number): void;
   frame(state: FrameState): void;
@@ -104,11 +106,14 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
    * and west less again). With real lights the dark theme's walls vanished
    * into its background.
    */
+  // The last colours of the theme: a material made later (a screen turned on) starts with them, never white.
+  let palette: Colors | null = null;
   const materials = new Map<ColorName, MeshBasicMaterial>();
   const material = (name: ColorName): MeshBasicMaterial => {
     let known = materials.get(name);
     if (known === undefined) {
       known = new MeshBasicMaterial({ vertexColors: true });
+      if (palette !== null) known.color.copy(colorOf(palette[name]));
       materials.set(name, known);
     }
     return known;
@@ -235,8 +240,19 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
   let width = 1;
   let height = 1;
 
+  let lost: (() => void) | null = null;
+  const onContextLost = (event: Event): void => {
+    event.preventDefault();
+    lost?.();
+  };
+  canvas.addEventListener('webglcontextlost', onContextLost);
+
   return {
+    onLost(callback) {
+      lost = callback;
+    },
     setColors(colors) {
+      palette = colors;
       for (const [name, item] of materials) item.color.copy(colorOf(colors[name]));
       for (const [name, item] of floorMaterials) item.color.copy(colorOf(colors[name]));
       // Above the walls the colour of their tops, as the 2D view draws them: a ceiling in shadow, never the page itself.
@@ -282,14 +298,17 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
       const ray = new Raycaster();
       ray.setFromCamera(new Vector2((left / width) * 2 - 1, 1 - (top / height) * 2), camera);
       const hits = ray.intersectObjects([solid, ...[...figures.values()].filter((item) => item.sprite.visible).map((item) => item.sprite)], true);
-      const first = hits[0];
-      if (first === undefined) return null;
-      const agent: unknown = first.object.userData.agent;
-      if (typeof agent === 'string') return { kind: 'agent', id: agent };
-      // A wall or a thing: the floor right in front of where it was hit (a click on the cardwall, the archive, the desk).
-      const nudge = first.point.y > 0.01 && first.face !== null && first.face !== undefined ? 0.02 : 0;
-      const normal = first.face?.normal;
-      return { kind: 'point', x: first.point.x - (normal?.x ?? 0) * nudge, z: first.point.z - (normal?.z ?? 0) * nudge };
+      for (const hit of hits) {
+        const agent: unknown = hit.object.userData.agent;
+        if (typeof agent === 'string') {
+          // A sprite is a rectangle: only its middle half counts, the empty sides around the figure let the click through.
+          if (Math.hypot(hit.point.x - hit.object.position.x, hit.point.z - hit.object.position.z) <= SPRITE_WIDTH / 4) return { kind: 'agent', id: agent };
+          continue;
+        }
+        const normal = hit.face?.normal;
+        return { kind: 'point', ...pickedTile(hit.point, normal === undefined ? null : { x: normal.x, z: normal.z }) };
+      }
+      return null;
     },
     dispose() {
       for (const item of figures.values()) {
@@ -301,6 +320,8 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
       for (const child of solid.children) if (child instanceof InstancedMesh) child.dispose();
       cube.dispose();
       plane.dispose();
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      lost = null;
       renderer.dispose();
       renderer.forceContextLoss();
     },

@@ -20,6 +20,7 @@ import {
   inSight,
   loadViewMode,
   openSide,
+  pickedTile,
   saveViewMode,
   SPRITE_HEIGHT,
   standPoint,
@@ -205,6 +206,9 @@ test('areaAt: the room the user is in, with its project and label as in the tags
   assert.deepEqual(areaAt(BASE, snapshot, BASE.anchors.islands[1]?.seat ?? [0, 0]), { text: 'GOD', label: 'L1' });
   assert.deepEqual(areaAt(BASE, snapshot, BASE.anchors.islands[2]?.seat ?? [0, 0]), { text: 'Stanza libera', label: null });
   assert.deepEqual(areaAt(BASE, snapshot, BASE.anchors.archive.seat), { text: 'Archivio · 2', label: null });
+  assert.deepEqual(areaAt(BASE, snapshot, BASE.anchors.pause.seats[0] ?? [0, 0]), { text: 'Pausa', label: null });
+  const desk = BASE.anchors.decisions.desk;
+  assert.deepEqual(areaAt(BASE, snapshot, [desk[0], desk[1] + 1]), { text: 'Decisioni', label: null });
   assert.equal(areaAt(BASE, snapshot, [10, 10]), null);
 });
 
@@ -258,4 +262,43 @@ test('three.js only in the module the office loads on demand, and nothing of its
   assert.match(canvas, /import type \{ OfficeScene, SpriteState \} from '\.\.\/lib\/office\/scene3d\.ts';/);
   assert.match(canvas, /await import\('\.\.\/lib\/office\/scene3d\.ts'\)/);
   assert.doesNotMatch(canvas.replace(/import type [^;]+;/g, ''), /^import [^;]*scene3d/m);
+});
+
+test('the cardwall wears its notes on the side of the floor, within its tiles; a wall closed all round wears none', () => {
+  const world = buildWorld(BASE, 'base');
+  const board = tilesOf(BASE, (kind) => kind === 'board');
+  const COLORS = new Set(['accent', 'warn', 'info', 'ok', 'danger']);
+  const notes = world.blocks.filter((block) => COLORS.has(block.color));
+  assert.ok(notes.length >= board.length * 2);
+  const row = board[0]?.[1] ?? 0;
+  const first = board[0]?.[0] ?? 0;
+  const last = board.at(-1)?.[0] ?? 0;
+  const sheets = world.blocks.filter((block) => block.color === 'paper' && Math.floor(block.x) >= first && Math.floor(block.x) <= last);
+  const front = Math.max(...sheets.map((block) => block.z + block.d / 2));
+  for (const block of notes) {
+    assert.ok(block.x - block.w / 2 >= first - 1e-9 && block.x + block.w / 2 <= last + 1 + 1e-9, 'a note outside the cardwall');
+    // South of the wall, on the floor's side, in front of the sheet.
+    assert.ok(block.z - block.d / 2 >= front - 0.011 && block.z + block.d / 2 <= row + 1 + 0.1, 'a note behind the sheet or off the wall');
+  }
+  // No panel at all on the outer corner of the map, a wall with no floor around it.
+  assert.ok(!world.blocks.some((block) => block.x < 1 && block.z < 1 && block.color !== 'wall-face' && block.color !== 'wall-top' && block.color !== 'wall-line'));
+});
+
+test('a click in 3D lands on the plan where the 2D rules find the thing: inside the cardwall, on the floor in front of it', () => {
+  const board = tilesOf(BASE, (kind) => kind === 'board')[0];
+  assert.ok(board !== undefined);
+  const [c, r] = board;
+  const south = { x: 0, z: 1 };
+  // The front of a note, 0.09 out of the wall over the floor: the click goes back into the wall tile.
+  const onNote = pickedTile({ x: c + 0.3, y: 0.9, z: r + 1.09 }, south);
+  assert.equal(Math.floor(onNote.z), r);
+  assert.equal(tileAt(BASE, Math.floor(onNote.x), Math.floor(onNote.z)), 'board');
+  // The floor in front of it stays the floor.
+  const onFloor = pickedTile({ x: c + 0.3, y: 0, z: r + 1.2 }, { x: 0, z: 0 });
+  assert.equal(tileAt(BASE, Math.floor(onFloor.x), Math.floor(onFloor.z)), 'floor');
+  // The top of a desk: straight down, the desk itself.
+  const desk = BASE.anchors.decisions.desk;
+  const onTop = pickedTile({ x: desk[0] + 0.5, y: 0.62, z: desk[1] + 0.5 }, { x: 0, z: 0 });
+  assert.equal(tileAt(BASE, Math.floor(onTop.x), Math.floor(onTop.z)), 'counter');
+  assert.deepEqual(pickedTile({ x: 1, y: 0.5, z: 2 }, null), { x: 1, z: 2 });
 });

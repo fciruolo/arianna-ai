@@ -85,7 +85,7 @@ const props = defineProps<{
   /** The plan (default) or the walk in 3D (D-230). */
   mode?: OfficeViewMode | undefined;
 }>();
-const emit = defineEmits<{ talk: [agentId: string]; decisions: []; archive: []; cardwall: []; escape: [] }>();
+const emit = defineEmits<{ talk: [agentId: string]; decisions: []; archive: []; cardwall: []; escape: []; view: [mode: OfficeViewMode] }>();
 
 const W = props.map.width * TILE;
 const H = props.map.height * TILE;
@@ -138,8 +138,8 @@ const canvas3d = ref<HTMLCanvasElement | null>(null);
 const nameTags3 = new Map<string, HTMLElement>();
 const hint3 = ref<HTMLElement | null>(null);
 const area3 = ref<{ text: string; label: Label | null } | null>(null);
-/** off, loading three.js, drawing, or no WebGL in this browser (the plan stays). */
-const status3d = ref<'off' | 'loading' | 'ready' | 'error'>('off');
+/** off, loading three.js, drawing; or the plan stays: three.js could not be loaded (a newer build: reload), or no WebGL. */
+const status3d = ref<'off' | 'loading' | 'ready' | 'load-error' | 'webgl-error'>('off');
 let scene3d: OfficeScene | null = null;
 let yaw = 0;
 let pitch = 0;
@@ -147,7 +147,12 @@ let pitch = 0;
 let yawGoal: number | null = null;
 const TURN_SPEED = 2.4;
 const YAW: Record<Facing, number> = { up: 0, left: Math.PI / 2, down: Math.PI, right: -Math.PI / 2 };
-const is3d = computed(() => props.mode === '3d' && status3d.value !== 'error');
+const failed3d = computed(() => status3d.value === 'load-error' || status3d.value === 'webgl-error');
+const is3d = computed(() => props.mode === '3d' && !failed3d.value);
+// The page shows the keys of the view really in use: the plan when the 3D one could not start.
+watch(is3d, (on) => {
+  emit('view', on ? '3d' : '2d');
+}, { immediate: true });
 
 function releaseKeys(): void {
   keys.clear();
@@ -729,16 +734,27 @@ async function enter3d(): Promise<void> {
   const attempt = ++entering;
   status3d.value = 'loading';
   releaseKeys();
+  let module: typeof import('../lib/office/scene3d.ts');
   try {
-    const { createOfficeScene } = await import('../lib/office/scene3d.ts');
-    await nextTick();
-    const element = canvas3d.value;
-    if (attempt !== entering || props.mode !== '3d' || element === null) return;
-    scene3d = createOfficeScene(element, buildWorld(props.map, props.skin ?? 'base'));
+    module = await import('../lib/office/scene3d.ts');
   } catch {
-    if (attempt === entering) status3d.value = 'error';
+    if (attempt === entering) status3d.value = 'load-error';
     return;
   }
+  await nextTick();
+  const element = canvas3d.value;
+  if (attempt !== entering || props.mode !== '3d' || element === null) return;
+  try {
+    scene3d = module.createOfficeScene(element, buildWorld(props.map, props.skin ?? 'base'));
+  } catch {
+    status3d.value = 'webgl-error';
+    return;
+  }
+  // A context taken away by the browser: the plan again, with the reason, and every resource freed.
+  scene3d.onLost(() => {
+    leave3d();
+    status3d.value = 'webgl-error';
+  });
   yaw = YAW[you.facing];
   pitch = 0;
   yawGoal = null;
@@ -751,6 +767,8 @@ async function enter3d(): Promise<void> {
 /** Back to the plan: everything three.js holds is freed, the loop draws the 2D canvas again. */
 function leave3d(): void {
   entering++;
+  // The plan shows the user turned where the camera looked, even after turning on the spot.
+  if (scene3d !== null) you.facing = facingOfYaw(yaw);
   scene3d?.dispose();
   scene3d = null;
   drag = null;
@@ -931,7 +949,8 @@ defineExpose({ goTo, focus });
         <p v-if="status3d === 'loading'" class="absolute inset-0 grid place-items-center text-sm text-muted">Preparo la vista 3D…</p>
       </div>
     </div>
-    <p v-if="mode === '3d' && status3d === 'error'" role="status" class="mt-2 text-[13px] text-muted">La vista 3D non è disponibile in questo browser (manca WebGL): resta la pianta.</p>
+    <p v-if="mode === '3d' && status3d === 'webgl-error'" role="status" class="mt-2 text-[13px] text-muted">La vista 3D non è disponibile in questo browser (WebGL manca o si è fermato): resta la pianta.</p>
+    <p v-if="mode === '3d' && status3d === 'load-error'" role="status" class="mt-2 text-[13px] text-muted">Non riesco a caricare la vista 3D: ricarica la pagina. Intanto resta la pianta.</p>
   </div>
 </template>
 

@@ -199,6 +199,8 @@ function storage(): Storage | undefined {
   }
 }
 const viewMode = ref<OfficeViewMode>(loadViewMode(storage()));
+/** The view really drawn: the plan when the 3D one could not start (the help and the keys follow it). */
+const shownView = ref<OfficeViewMode>('2d');
 function chooseView(mode: OfficeViewMode): void {
   viewMode.value = mode;
   saveViewMode(storage(), mode);
@@ -245,6 +247,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
             :snapshot="snapshot"
             :sheets="sheets"
             :mode="viewMode"
+            @view="(mode) => (shownView = mode)"
             @talk="talk"
             @decisions="showPending = true"
             @archive="void openArchive()"
@@ -254,7 +257,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
         </template>
         <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-muted">
           <p id="office-help" class="min-w-0 flex-1">
-            <template v-if="viewMode === '3d'">Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, cammina con le frecce e trascina per guardarti intorno. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
+            <template v-if="shownView === '3d'">Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, cammina con le frecce e trascina per guardarti intorno. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
             <template v-else>Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
           </p>
           <div class="ml-auto flex items-center gap-2">
@@ -275,7 +278,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
         </div>
         <!-- Shown on request (D-194); still read as the description of the office when hidden. -->
         <div v-show="showKeys" id="office-keys" class="mt-2 rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
-          <dl v-if="viewMode === '3d'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+          <dl v-if="shownView === '3d'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
             <dt><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">S</kbd></dt>
             <dd>cammina avanti e indietro</dd>
             <dt><kbd class="kbd">A</kbd><kbd class="kbd">D</kbd></dt>
