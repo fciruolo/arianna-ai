@@ -34,14 +34,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Corretto
 
-- Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
-- I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
 - All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
 
 ### Sicurezza
 
 - Il secondo controllo dei dati personali non scambia più per una persona un pezzo del nome di un personaggio che vale già come non persona in quel testo («verne» dentro «Laverne»); un nome più lungo, come «Laverne Bianchi», resta una persona (D-227).
 - La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
+
+## [0.121.1] - 2026-10-16
+
+### Corretto
+
+- Aggiungendo un progetto in Impostazioni → Progetti o con `pnpm arianna:init` si può incollare il percorso completo della cartella: se sta nella tua cartella utente Arianna lo salva da sola come `~/…` (D-228).
+- I rifiuti della lista dei progetti (cartella fuori dalla tua cartella utente, cartella nascosta, Library, nome non valido, doppioni) sono in italiano e dicono cosa fare, nella pagina, nel wizard e nei comandi dell'installer (`pnpm arianna:*`), al posto del messaggio tecnico in inglese «write ~/<folder>…» (D-228).
 
 ## [0.121.0] - 2026-10-16
 
