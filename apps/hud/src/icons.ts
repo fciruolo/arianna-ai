@@ -5,6 +5,7 @@ import {
   ArrowDownUp,
   ArrowUp,
   Bell,
+  Bot,
   BrainCircuit,
   Building2,
   Briefcase,
@@ -21,6 +22,7 @@ import {
   Code2,
   ContactRound,
   Copy,
+  Cpu,
   Download,
   Ellipsis,
   ExternalLink,
@@ -61,11 +63,13 @@ import {
   Pin,
   PinOff,
   PhoneOff,
+  Package,
   Palette,
   Paperclip,
   Pencil,
   Plus,
   Printer,
+  Puzzle,
   RotateCcw,
   Route,
   Search,
@@ -189,6 +193,11 @@ export const ICONS = {
   'view-tablet': Tablet,
   'view-mobile': Smartphone,
   more: Ellipsis,
+  // «Cosa è cambiato» (D-233): the kinds of change.
+  chip: Cpu,
+  puzzle: Puzzle,
+  bot: Bot,
+  package: Package,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

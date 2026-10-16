@@ -99,6 +99,7 @@ import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
 import SeriesCharactersPage from './SeriesCharactersPage.vue';
 import ChangelogPage from './ChangelogPage.vue';
+import ChangesPage from './ChangesPage.vue';
 import DesignCatalog from './DesignCatalog.vue';
 import DevProgressPage from './DevProgressPage.vue';
 import UsagePage from './UsagePage.vue';
@@ -925,6 +926,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         <!-- «Su di te» (D-114): the facts of the profile, in the database, not in arianna.toml -->
         <ProfileFacts v-else-if="active === 'about-you'" />
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
+        <ChangesPage v-else-if="active === 'changes'" @section="openSection" />
         <UsagePage v-else-if="active === 'usage'" />
         <DevProgressPage v-else-if="active === 'dev-progress'" @pending="emit('devPending', $event)" @knowledge="openKnowledge" />
 

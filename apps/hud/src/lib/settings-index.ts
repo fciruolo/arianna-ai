@@ -206,6 +206,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
     group: 'Informazioni',
     items: [
       { id: 'changelog', slug: 'novita', title: 'Novità', behaviour: 'read', lead: 'Cosa è cambiato a ogni versione. Passa sopra una riga per chiederne a GOD.' },
+      // «Cosa è cambiato» (D-233, idea 11 of OpenWork): next to Novità, which tells the versions; this tells this installation.
+      {
+        id: 'changes',
+        slug: 'cosa-e-cambiato',
+        title: 'Cosa è cambiato',
+        behaviour: 'read',
+        lead: 'I cambiamenti di questa installazione, dal più recente: modelli, Claude e Codex, skill e stili, agenti, progetti, aspetto e versione. Solo nomi e versioni, mai il contenuto di chat o note.',
+        example: 'dopo aver scaricato un modello e scelto il tema di Halloween, qui leggi «Modello sul Mac: qwen…» e «Tema cambiato: halloween», con il collegamento alla pagina dove si cambiano.',
+      },
       // «Consumi» (D-093, idea 10 of OpenWork): counts and times only, read from the database of this Mac.
       {
         id: 'usage',

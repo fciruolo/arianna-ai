@@ -18,6 +18,7 @@ import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { advisorStatus, writeAdvisorSettings } from '../orchestrator/advisor.ts';
 import { loadUsage, parsePeriod, USAGE_PERIODS } from '../usage.ts';
+import { loadChanges, type ChangeWatcher } from '../install-changes.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
@@ -246,6 +247,8 @@ export interface ApiServerOptions {
   };
   /** data/, where the router's advisor keeps the path of the usage status file (D-207); without it the routes answer 404. */
   advisorData?: string;
+  /** «Cosa è cambiato» (D-233): a fresh picture of the installation before the page reads; without it the route answers 404. */
+  changes?: Pick<ChangeWatcher, 'check'>;
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel' | 'compare' | 'compareCases'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
@@ -531,6 +534,7 @@ interface RouteOptions {
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
   advisorData: ApiServerOptions['advisorData'];
+  changes: ApiServerOptions['changes'];
   approvedProjects: () => readonly Project[];
   projectContainers: () => readonly Project[];
   knowledge?: KnowledgeEnv | undefined;
@@ -1102,6 +1106,22 @@ function usageRoutes(sql: Sql): Route[] {
       const period = parsePeriod(url.searchParams.get('period'));
       if (period === undefined) throw new HttpError(400, `period must be one of ${USAGE_PERIODS.join(', ')}`);
       return { body: await loadUsage(sql, period) };
+    }),
+  ];
+}
+
+/**
+ * «Cosa è cambiato» (D-233, idea 11 of OpenWork): the observed changes of the
+ * installation, most recent first. Only the events `installation.changed`,
+ * which hold ids, versions and states (L0, project and agent names L1).
+ */
+function changesRoutes(sql: Sql, changes: Pick<ChangeWatcher, 'check'> | undefined): Route[] {
+  return [
+    route('GET', '/api/changes', async () => {
+      if (changes === undefined) throw new HttpError(404, 'not found');
+      // A failed picture is reported by the watcher: the page shows what is already in the log.
+      await changes.check();
+      return { body: await loadChanges(sql) };
     }),
   ];
 }
@@ -2215,7 +2235,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, mentionable, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2239,6 +2259,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...modelEvalRoutes(modelEvals),
     ...advisorRoutes(sql, advisorData),
     ...usageRoutes(sql),
+    ...changesRoutes(sql, changes),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
     ...searchRoutes(sql, capture),
@@ -4086,6 +4107,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     capture: options.capture,
     modelEvals: options.modelEvals,
     advisorData: options.advisorData,
+    changes: options.changes,
     approvedProjects: options.approvedProjects ?? (() => []),
     projectContainers: options.projectContainers ?? (() => []),
     cards: options.cards,

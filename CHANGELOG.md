@@ -65,6 +65,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Un personaggio delle serie si presenta come tale e mai come «Arianna» (che è solo il nome del sistema); nelle chat private, se gli chiedi chi è, da dove viene o della sua vita, risponde con quello che racconta la serie (D-225, richiesta dell'utente del 2026-10-16).
 - Le risposte di sola chiacchiera di un personaggio sul modello locale sono più vive: quando Arianna risponde subito, senza strumenti, la stessa richiesta viene riscritta una seconda volta a temperatura 0,7 e si tiene quella, se è ancora una risposta; gli strumenti restano decisi a temperatura 0 (D-225).
+### Aggiunto
+
+- Pagina «Cosa è cambiato» nelle Impostazioni, gruppo Informazioni dopo Novità (`/impostazioni/cosa-e-cambiato`): i cambiamenti di questa installazione dal più recente, per giorno, con un'icona e un filtro per tipo (modelli, Claude e Codex, skill e stili, agenti, progetti, aspetto, versione di Arianna) e il collegamento alla sezione dove si cambia quella cosa. Il core fotografa solo nomi, versioni e stati all'avvio, a ogni cambio di `arianna.toml`, ogni 10 minuti e quando apri la pagina, e scrive la differenza nel registro degli eventi; mai il contenuto di chat o note (D-233, idea 11 delle idee di OpenWork).
+- La versione di Claude Code detta dal binario all'inizio di ogni lavoro entra nell'evento del modello usato, così «Cosa è cambiato» vede quando si aggiorna; Codex non la dice e resta fuori (D-233).
 
 ## [0.120.0] - 2026-10-16
 

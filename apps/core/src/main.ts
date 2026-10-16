@@ -73,7 +73,9 @@ import { createAdvisor } from './orchestrator/advisor.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
 import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-reports.ts';
-import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
+import { createSkillsCatalog, OPEN_DESIGN_SOURCE, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
+import { cloudModelAreas, createChangeWatcher, lastBinaryVersion, modelsArea, packageVersion, readAreas, shortCommit, sourcesArea, stateFile } from './install-changes.ts';
+import { modelStatus } from './model-files.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, machineBusy, trialOpen, trialRunning } from './model-evals.ts';
@@ -221,6 +223,8 @@ if (closedIncognito > 0) console.log(`Incognito: closed ${String(closedIncognito
 
 // Set once the core starts stopping: nothing new is opened after it.
 let stopping = false;
+// «Cosa è cambiato» (D-233): set further below, once the catalogs exist; a change of arianna.toml asks for a new picture.
+let changesSoon = (): void => undefined;
 
 // Telegram is off by the user's choice (D-110, question 12; the phone is task
 // 1.19): [telegram] is read as absent. The code stays, ready to turn back on.
@@ -304,6 +308,7 @@ const settings = watchConfig({
   initial: config,
   onChange: ({ applied, restart }) => {
     if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
+    if (applied.length > 0) changesSoon();
     if (applied.includes('local.endpoints')) localServers.sync(settings.current().local.endpoints).catch(report);
     // D-107 E: a model no role serves any more leaves the memory of oMLX once idle.
     if (applied.includes('roles') || applied.includes('local.models') || applied.includes('local.endpoints')) {
@@ -971,9 +976,66 @@ const characterDirs = characterDirsOf(config.home, config.paths.data);
 // D-217: the names of the people of the series worn now are no persons for the second scanner, whole.
 configureWornNames(() => wornSeriesNames({ ...settings.current(), home: config.home, paths: config.paths }));
 configureTailAgents(() => ({ official: [...agents.keys()], user: userAgents.list().user.map((agent) => agent.name) }));
+// «Cosa è cambiato» (D-233): a picture of the installation, only ids, versions and states, compared
+// with the last one in data/changes/state.json; what differs goes in the event log. Taken at start,
+// after a change of arianna.toml, every 10 minutes and when the page is opened. An area that cannot
+// be read keeps its last value. The Codex binary tells no version: only Claude's is observed.
+const installChanges = createChangeWatcher({
+  sql,
+  file: stateFile(config.paths.data),
+  onError: report,
+  read: () =>
+    readAreas(
+      {
+        arianna: () => {
+          const version = packageVersion(config.home);
+          if (version === undefined) throw new Error('package.json: no version');
+          return { arianna: version };
+        },
+        role: () => Object.fromEntries(Object.entries(settings.current().roles)),
+        model: async () => {
+          const catalog = loadCatalog(config.home);
+          return modelsArea(catalog.models, await modelStatus(catalog.models, config.paths.data));
+        },
+        executor: () => Object.fromEntries(settings.current().cloud.executors.map((executor) => [executor, 'on'])),
+        'cloud-model': () => cloudModelAreas(settings.current().cloud.models).on,
+        'cloud-name': () => cloudModelAreas(settings.current().cloud.models).names,
+        binary: async () => {
+          const version = await lastBinaryVersion(sql, 'claude');
+          return version === undefined ? {} : { claude: version };
+        },
+        skills: () => sourcesArea(skillsCatalog.status().sources.filter((source) => !source.readOnly)),
+        design: () => ({ [OPEN_DESIGN_SOURCE]: shortCommit(designCatalog.status().adopted?.commit) }),
+        'agents-catalog': () => sourcesArea(agentsCatalog.status().sources),
+        agent: () => Object.fromEntries(userAgents.list().user.map((agent) => [agent.name, agent.state])),
+        project: () => Object.fromEntries(settings.current().projects.map((project) => [project.name, project.label])),
+        theme: () => ({ theme: settings.current().appearance.theme }),
+        character: () => settings.current().characters,
+      },
+      (area, error) => {
+        console.error(`Cosa è cambiato: ${area} not read, its last picture stays`);
+        report(error);
+      },
+    ),
+});
+let changesTimer: NodeJS.Timeout | undefined;
+changesSoon = () => {
+  if (changesTimer !== undefined || stopping) return;
+  changesTimer = setTimeout(() => {
+    changesTimer = undefined;
+    if (!stopping) void installChanges.check();
+  }, 3_000);
+  changesTimer.unref();
+};
+void installChanges.check();
+const changesTicker = setInterval(() => {
+  if (!stopping) void installChanges.check();
+}, 10 * 60_000);
+changesTicker.unref();
 const server = await startApiServer({
   sql,
   live,
+  changes: installChanges,
   host: config.server.host,
   port: config.server.port,
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
@@ -1257,6 +1319,8 @@ async function shutdown(): Promise<void> {
   secretaryTicker.stop();
   imWatcher.stop();
   clearInterval(godTicker);
+  clearInterval(changesTicker);
+  if (changesTimer !== undefined) clearTimeout(changesTimer);
   incognitoWatch.stop();
   queueDispatcher.stop();
   stopNotices();

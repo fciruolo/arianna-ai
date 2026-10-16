@@ -24,7 +24,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
       ['Progetti', 'Regole dei progetti'],
       ['Claude e Codex', 'Link da riassumere'],
       ['Server dei modelli', 'Aspetto e installazione'],
-      ['Novità', 'Consumi', 'Sviluppo di Arianna'],
+      ['Novità', 'Cosa è cambiato', 'Consumi', 'Sviluppo di Arianna'],
     ],
   );
   // Ids and slugs are unique.
