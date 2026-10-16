@@ -55,6 +55,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - «Chiedi a lato» fra le azioni di una risposta (accanto a Copia e Salva in inbox): apre a destra un pannello dove fai domande a parte su quella risposta, a cui risponde chi risponde nella conversazione (Arianna, il modello locale, Claude o ChatGPT) con le stesse regole di privacy; domande e risposte restano nel pannello e la conversazione non le rilegge. Esc chiude il pannello, la stessa risposta lo riapre sullo stesso filo («Riprendi a lato»); sullo schermo stretto il pannello prende tutta la pagina; il filo si cancella con la conversazione (D-232).
 
+### Aggiunto
+
+- «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
+- Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
+
+### Corretto
+
+- All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
+
 ## [0.121.0] - 2026-10-16
 
 ### Aggiunto
