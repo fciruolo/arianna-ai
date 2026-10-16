@@ -5,6 +5,7 @@ import { goesToArianna } from '../lib/commands.ts';
 import { cloudWarning, firstMessageProblem, localNote, longMessageStep, toAgent, type Draft } from '../lib/draft.ts';
 import { agentName } from '../lib/italian.ts';
 import { agentLabelLine } from '../lib/character-names.ts';
+import { castLook, characterNotice } from '../lib/character-chat.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, DirectAgent } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -35,6 +36,9 @@ const props = defineProps<{
 
 /** The card of the agent of this draft; undefined while the list is unknown, or when it cannot answer now. */
 const policy = computed(() => (props.draft.agent === undefined ? undefined : props.agents?.find((entry) => entry.agent === props.draft.agent)));
+
+/** The person of the series Claude plays in this draft (D-225, tappa B): its name and avatar in place of Claude's. */
+const cast = computed(() => (props.draft.character === undefined ? undefined : castLook(props.draft.character)));
 
 /** A long first message of the direct chat waits for "Invia comunque" (D-111). */
 const confirmLong = ref(false);
@@ -105,7 +109,18 @@ onMounted(() => field.value?.focus());
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="flex flex-1 items-center justify-center overflow-y-auto p-8 text-center">
       <div class="flex max-w-sm flex-col items-center gap-4">
-        <template v-if="draft.agent !== undefined">
+        <template v-if="draft.agent !== undefined && cast !== undefined">
+          <PixelAgent :choice="cast.choice" pose="idle" :scale="3" bubble :label="cast.name" />
+          <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">Con {{ cast.name }}</h2>
+          <p class="inline-flex items-center gap-1.5 text-sm text-muted">
+            <Icon :name="draft.mode" :size="14" />{{ MODE_TEXT[draft.mode] }}<template v-if="cast.show !== ''"> · {{ cast.show }}</template> · Claude
+          </p>
+          <p v-if="policy === undefined" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">
+            {{ cast.name }} non può rispondere adesso: lo gioca Claude, che è spento o non gira su questo Mac.
+          </p>
+          <p v-else role="note" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">{{ characterNotice(cast.name) }}</p>
+        </template>
+        <template v-else-if="draft.agent !== undefined">
           <PixelAgent :choice="characters?.[draft.agent]" pose="idle" :scale="3" bubble :label="agentLabelLine(draft.agent)" />
           <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">Con {{ agentLabelLine(draft.agent) }}</h2>
           <p class="inline-flex items-center gap-1.5 text-sm text-muted">
@@ -171,7 +186,7 @@ onMounted(() => field.value?.focus());
           v-model="text"
           rows="1"
           maxlength="16000"
-          :placeholder="draft.trialModel !== undefined ? `Scrivi a ${draft.trialModel}…` : draft.agent === undefined ? 'Scrivi ad Arianna…' : `Scrivi ${toAgent(draft.agent)}…`"
+          :placeholder="cast !== undefined ? `Scrivi a ${cast.name}…` : draft.trialModel !== undefined ? `Scrivi a ${draft.trialModel}…` : draft.agent === undefined ? 'Scrivi ad Arianna…' : `Scrivi ${toAgent(draft.agent)}…`"
           class="max-h-48 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 text-ink outline-none placeholder:text-muted"
           @keydown="onKey"
           @input="grow"

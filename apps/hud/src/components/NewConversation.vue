@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { arrowChoice, cloudNotice, localNote, offReason, shortTarget, type DraftChoice } from '../lib/draft.ts';
+import { CHARACTER_CHAT_AGENT, CHARACTERS_OFF, castByShow, castLook, chatCast, characterNotice } from '../lib/character-chat.ts';
 import { agentDescription, agentTitle } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, ConversationMode, DirectAgent, OffInterlocutor, ProjectInfo } from '../lib/types.ts';
@@ -37,7 +38,15 @@ const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' | 'inc
 ];
 const modes: ConversationMode[] = ['private', 'work'];
 
-const policy = computed(() => props.agents.find((entry) => entry.agent === agent.value));
+/** A person of the series Claude plays (D-225, tappa B): chosen, it wins over the agent; '' none. */
+const character = ref('');
+const cast = computed(() => chatCast.value);
+const castGroups = computed(() => castByShow(cast.value));
+const castIds = computed(() => chatCast.value.map((entry) => entry.id));
+/** The characters are played by Claude: off while the plain chat with Claude is. */
+const castOn = computed(() => props.agents.some((entry) => entry.agent === CHARACTER_CHAT_AGENT));
+const chosenCast = computed(() => (character.value === '' ? undefined : castLook(character.value)));
+const policy = computed(() => props.agents.find((entry) => entry.agent === (character.value === '' ? agent.value : CHARACTER_CHAT_AGENT)));
 /** The mode of the direct chat: the one chosen when the card allows both, else the only one. */
 const mode = computed<ConversationMode>(() => {
   const modes = policy.value?.modes ?? [];
@@ -50,11 +59,12 @@ const hint = computed(() => {
     return `Come una conversazione ${incognitoMode.value === 'private' ? 'privata' : 'di lavoro'}, ma non compare nella lista e alla chiusura Arianna ne cancella i testi. Prima del primo messaggio vedi cosa resta fuori.`;
   }
   if (kind.value !== 'agent') return MODE_HINT[kind.value];
-  return 'Parli direttamente con il modello locale, con Claude o con un agente, senza Arianna in mezzo. Dove gira e che dati può leggere lo dice la sua scheda.';
+  return 'Parli direttamente con il modello locale, con Claude, con un agente o con un personaggio delle serie, senza Arianna in mezzo. Dove gira e che dati può leggere lo dice la sua scheda.';
 });
 const ready = computed(() => {
   if (kind.value !== 'agent') return true;
   if (policy.value === undefined) return false;
+  if (character.value !== '') return castOn.value;
   return !policy.value.project || agentProject.value !== '';
 });
 
@@ -90,6 +100,11 @@ async function arrows<T>(event: KeyboardEvent, options: readonly T[], current: T
 }
 const kindIds = kinds.map((option) => option.id);
 const agentIds = computed(() => props.agents.map((entry) => entry.agent));
+/** An agent chosen: no character any more. */
+function choose(value: string): void {
+  agent.value = value;
+  character.value = '';
+}
 /** Enter on a choice opens the conversation, as the button does (D-158); Space chooses. */
 function enter(event: KeyboardEvent): void {
   const target = event.target instanceof HTMLElement ? event.target : undefined;
@@ -97,12 +112,17 @@ function enter(event: KeyboardEvent): void {
   event.preventDefault();
   submit();
 }
-const notice = computed(() => (policy.value?.cloud === true ? cloudNotice(policy.value.agent, policy.value.project ? agentProject.value : undefined, policy.value.executors) : undefined));
+const notice = computed(() => (chosenCast.value !== undefined ? undefined : policy.value?.cloud === true ? cloudNotice(policy.value.agent, policy.value.project ? agentProject.value : undefined, policy.value.executors) : undefined));
 
 function submit(): void {
   if (kind.value === 'agent') {
     const chosen = policy.value;
     if (chosen === undefined || !ready.value) return;
+    // A chat with a person of the series: the plain chat with Claude, work, never on a project (D-225, tappa B).
+    if (character.value !== '') {
+      emit('create', { mode: 'work', agent: CHARACTER_CHAT_AGENT, character: character.value });
+      return;
+    }
     const withProject = chosen.project || (mode.value === 'work' && project.value !== '');
     emit('create', { mode: mode.value, agent: chosen.agent, ...(withProject && mode.value === 'work' ? { project: agentProject.value } : {}) });
     return;
@@ -172,18 +192,18 @@ function submit(): void {
         class="grid max-h-[40vh] grid-cols-1 gap-2 overflow-y-auto p-0.5 min-[420px]:grid-cols-2"
         role="radiogroup"
         aria-label="Agente"
-        @keydown="arrows($event, agentIds, agent, (value) => (agent = value))"
+        @keydown="arrows($event, agentIds, agent, choose)"
       >
         <button
           v-for="entry in agents"
           :key="entry.agent"
           type="button"
           role="radio"
-          :aria-checked="agent === entry.agent"
+          :aria-checked="character === '' && agent === entry.agent"
           :tabindex="agent === entry.agent ? 0 : -1"
           class="flex flex-col items-start gap-1 rounded-[10px] border p-2.5 text-left transition"
-          :class="agent === entry.agent ? 'border-accent bg-surface shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line bg-surface-2 hover:border-line-strong'"
-          @click="agent = entry.agent"
+          :class="character === '' && agent === entry.agent ? 'border-accent bg-surface shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line bg-surface-2 hover:border-line-strong'"
+          @click="choose(entry.agent)"
         >
           <span class="flex w-full items-center gap-2">
             <PixelAgent :choice="characters?.[entry.agent]" pose="idle" :scale="1" />
@@ -213,6 +233,42 @@ function submit(): void {
         </div>
       </div>
       <p v-else class="text-[13.5px] leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
+      <!-- The people of the series, played by Claude (D-225, tappa B): by series, off with Claude, as ChatGPT. -->
+      <section v-if="cast.length > 0" class="flex flex-col gap-2" aria-labelledby="cast-title">
+        <h3 id="cast-title" class="px-0.5 text-xs font-medium text-muted">Personaggi</h3>
+        <p v-if="!castOn" class="px-0.5 text-xs leading-snug text-muted">{{ CHARACTERS_OFF }}</p>
+        <div
+          class="flex max-h-[30vh] flex-col gap-2 overflow-y-auto p-0.5"
+          :role="castOn ? 'radiogroup' : undefined"
+          :aria-label="castOn ? 'Personaggio' : undefined"
+          @keydown="castOn && arrows($event, castIds, character === '' ? (castIds[0] ?? '') : character, (value) => (character = value))"
+        >
+          <div v-for="group in castGroups" :key="group.show" class="flex flex-col gap-1.5">
+            <span class="px-0.5 font-mono text-[12px] text-muted">{{ group.show }}</span>
+            <div class="grid grid-cols-2 gap-1.5 min-[420px]:grid-cols-3">
+              <template v-for="entry in group.characters" :key="entry.id">
+                <button
+                  v-if="castOn"
+                  type="button"
+                  role="radio"
+                  :aria-checked="character === entry.id"
+                  :tabindex="character === entry.id || (character === '' && entry.id === castIds[0]) ? 0 : -1"
+                  class="flex min-w-0 items-center gap-2 rounded-[10px] border px-2 py-1.5 text-left transition"
+                  :class="character === entry.id ? 'border-accent bg-surface shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line bg-surface-2 hover:border-line-strong'"
+                  @click="character = entry.id"
+                >
+                  <PixelAgent :choice="castLook(entry.id).choice" pose="idle" :scale="1" />
+                  <span class="min-w-0 flex-1 truncate text-[14px] font-medium">{{ entry.name }}</span>
+                </button>
+                <div v-else aria-disabled="true" class="flex min-w-0 items-center gap-2 rounded-[10px] border border-dashed border-line bg-surface-2 px-2 py-1.5 opacity-60" :title="offReason(CHARACTER_CHAT_AGENT)">
+                  <PixelAgent :choice="castLook(entry.id).choice" pose="idle" :scale="1" />
+                  <span class="min-w-0 flex-1 truncate text-[14px] font-medium">{{ entry.name }}</span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </section>
       <div
         v-if="policy !== undefined && policy.modes.length > 1"
         class="grid grid-cols-2 gap-1 rounded-[10px] border border-line bg-surface-2 p-1"
@@ -258,6 +314,10 @@ function submit(): void {
           </details>
         </div>
       </div>
+      <div v-else-if="chosenCast !== undefined" role="note" class="flex gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[13.5px] leading-snug">
+        <span class="mt-px shrink-0 text-warn"><Icon name="warning" :size="15" /></span>
+        <span class="text-ink">{{ characterNotice(chosenCast.name) }}</span>
+      </div>
       <p v-else-if="policy !== undefined" role="note" class="rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-[13.5px] leading-snug text-muted">{{ localNote(policy.agent) }}</p>
     </template>
 
@@ -279,7 +339,7 @@ function submit(): void {
     <div class="mt-1 flex justify-end border-t border-line pt-3">
       <button type="submit" :disabled="!ready" class="btn btn-primary w-full px-4 py-2 text-[14.5px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">
         <Icon :name="kind === 'agent' ? 'coder' : kind === 'incognito' ? 'incognito' : 'new'" :size="16" />{{
-          kind === 'agent' && policy !== undefined ? `Parla con ${agentTitle(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
+          kind === 'agent' && chosenCast !== undefined ? `Parla con ${chosenCast.name}` : kind === 'agent' && policy !== undefined ? `Parla con ${agentTitle(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
         }}
       </button>
     </div>

@@ -20,6 +20,7 @@ import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { agentLabelLine, agentShortName } from '../lib/character-names.ts';
+import { castLook, conversationCharacter } from '../lib/character-chat.ts';
 import AgentName from './AgentName.vue';
 import {
   inboxNodeId,
@@ -246,9 +247,14 @@ function reportLabel(agent: string): string {
   const line = agentShortName(agent);
   return line === agentName(agent) ? `Rapporto del ${line}` : `Rapporto di ${line}`;
 }
-const directName = computed(() => trial.value ?? agentLabelLine(directAgent.value));
+/** The person of the series Claude plays here (D-225, tappa B): its name and avatar in place of Claude's. */
+const cast = computed(() => {
+  const id = conversationCharacter(props.conversation);
+  return id === null ? undefined : castLook(id);
+});
+const directName = computed(() => trial.value ?? cast.value?.name ?? agentLabelLine(directAgent.value));
 /** The same inside the messages (user's request, 2026-10-15): «Carla», not «Carla (Arianna)»; the header keeps both. */
-const directShort = computed(() => trial.value ?? agentShortName(directAgent.value));
+const directShort = computed(() => trial.value ?? cast.value?.name ?? agentShortName(directAgent.value));
 /** The model of the agent's latest answer here, from its credit line (D-141). */
 const lastAlias = computed(() => {
   const agent = direct.value;
@@ -260,7 +266,12 @@ const lastAlias = computed(() => {
   }
   return null;
 });
-const answers = computed(() => (direct.value === null ? '' : whoAnswers(direct.value, props.conversation.model, lastAlias.value)));
+const answers = computed(() => {
+  if (direct.value === null) return '';
+  const who = whoAnswers(direct.value, props.conversation.model, lastAlias.value);
+  // A character (D-225, tappa B): Claude plays it.
+  return cast.value === undefined ? who : who.replace(/^Risponde [^,]*/, `Claude gioca ${cast.value.name}`);
+});
 const directPose = computed<Pose>(() => (direct.value === null ? props.arianna.pose : participantPose(direct.value, props.status?.agents)));
 const meter = computed(() => contextMeter(props.conversation.contextTokens));
 const meterClass = { ok: 'bg-accent', warn: 'bg-warn', full: 'bg-danger' } as const;
@@ -741,7 +752,7 @@ onBeforeUnmount(() => clearInterval(clock));
               </g>
               <circle cx="37" cy="37" r="28" fill="none" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
             </svg>
-            <PixelAgent v-if="direct !== null" :choice="characters?.[direct]" :pose="directPose" :scale="2" bubble :label="directName" />
+            <PixelAgent v-if="direct !== null" :choice="cast?.choice ?? characters?.[direct]" :pose="directPose" :scale="2" bubble :label="directName" />
             <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble :label="agentLabelLine('arianna')" />
           </div>
           <!-- Who else is here (D-162, presenting D-125): small avatars overlapping the ring, each opens its menu -->
@@ -756,6 +767,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <div class="min-w-0">
             <h2 class="flex flex-wrap items-center gap-2 font-hud text-lg leading-tight font-semibold tracking-[0.05em]">
               <template v-if="trial !== null">{{ trial }}</template>
+              <template v-else-if="cast !== undefined">{{ cast.name }}</template>
               <AgentName v-else :agent="directAgent" />
               <span
                 v-if="cloud"
@@ -1003,7 +1015,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <div v-else :id="messageAnchor(message.id)" class="msg-row max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
               <span class="font-hud text-[12px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
-                {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : agentShortName('arianna') }}
+                {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (cast?.name ?? MODEL_TEXT[message.model] ?? message.model) : agentShortName('arianna') }}
               </span>
               <span v-if="message.model !== null" class="font-mono text-[12px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />

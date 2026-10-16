@@ -32,7 +32,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -259,9 +259,11 @@ function readinessOf(value: unknown): ReadinessReport | null {
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
-export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent, incognito = false, trialModel?: string): Promise<Conversation> {
+export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent, incognito = false, trialModel?: string, character?: string): Promise<Conversation> {
   const body = {
     mode,
+    // A chat with a person of the series on Claude (D-225, tappa B).
+    ...(character === undefined ? {} : { character }),
     ...(project === undefined || project === '' ? {} : { project }),
     ...(agent === undefined ? {} : { agent }),
     ...(incognito ? { incognito: true } : {}),
@@ -342,9 +344,10 @@ export async function discussWithGod(ref: ChangelogRef): Promise<Conversation> {
 
 /** The agents the user may talk with directly now (D-111d). */
 /** Who the user may talk with directly (D-111d), with the interlocutors of «Con chi parli» that cannot answer now (D-111, tappa B; absent from an older core). */
-export async function listDirectChoices(): Promise<{ agents: DirectAgent[]; off: OffInterlocutor[] }> {
-  const answer = await call<{ agents: DirectAgent[]; off?: OffInterlocutor[] }>('GET', '/api/direct-agents');
-  return { agents: answer.agents, off: answer.off ?? [] };
+export async function listDirectChoices(): Promise<{ agents: DirectAgent[]; off: OffInterlocutor[]; characters: ChatCharacter[] }> {
+  const answer = await call<{ agents: DirectAgent[]; off?: OffInterlocutor[]; characters?: ChatCharacter[] }>('GET', '/api/direct-agents');
+  // The people of the series Claude may play (D-225, tappa B); absent from an older core.
+  return { agents: answer.agents, off: answer.off ?? [], characters: answer.characters ?? [] };
 }
 
 /** The projects the user approved, which a new work conversation may choose. */

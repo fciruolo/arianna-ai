@@ -25,6 +25,14 @@ export interface DirectAgent {
   interlocutor?: boolean;
 }
 
+/** A person of the series the user may chat with on Claude (D-225, tappa B), as the core lists it. */
+export interface ChatCharacter {
+  id: string;
+  name: string;
+  show: string;
+  rows: 3 | 4;
+}
+
 /** An interlocutor of «Con chi parli» that cannot answer now (D-111, tappa B): "+ Nuovo" shows it off, with why. */
 export interface OffInterlocutor {
   agent: string;
@@ -69,6 +77,11 @@ export interface Conversation {
    * out of this conversation. Optional: a core without it sends none (on).
    */
   character?: boolean;
+  /**
+   * The person of the series Claude plays here (D-225, tappa B): only in the
+   * plain chat with Claude; null elsewhere. Optional: a core without it sends none.
+   */
+  seriesCharacter?: string | null;
   /**
    * An incognito conversation (D-136): chosen at creation, never in a list,
    * its texts deleted when it closes. Optional: a core without it sends none.

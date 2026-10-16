@@ -4,6 +4,7 @@ import { computed, nextTick, ref } from 'vue';
 import { groupByDay } from '../lib/day-groups.ts';
 import { SESSION_COPY } from '../lib/draft.ts';
 import { agentLabelLine } from '../lib/character-names.ts';
+import { castLook, conversationCharacter } from '../lib/character-chat.ts';
 import { MODE_TEXT } from '../lib/labels.ts';
 import { canErase, ERASE_CONVERSATION_TEXT } from '../lib/erase.ts';
 import { splitPinned } from '../lib/sidebar.ts';
@@ -45,6 +46,12 @@ const erasing = ref<string | null>(null);
 function confirmErase(): void {
   if (erasing.value !== null) emit('erase', erasing.value);
   erasing.value = null;
+}
+
+/** Who the user talks with here: the person of the series Claude plays (D-225, tappa B), else the agent. */
+function withWhom(conversation: Conversation, agent: string): string {
+  const character = conversationCharacter(conversation);
+  return character === null ? agentLabelLine(agent) : castLook(character).name;
 }
 
 /** A direct chat on Claude or Codex keeps its session in the user's home: the confirmation says it. */
@@ -139,7 +146,7 @@ function confirmArchive(id: string): void {
               :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
             >
-              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${agentLabelLine(conversation.agent)}` : MODE_TEXT[conversation.mode]">
+              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${withWhom(conversation, conversation.agent)}` : MODE_TEXT[conversation.mode]">
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>

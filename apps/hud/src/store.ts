@@ -7,7 +7,7 @@ import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
-import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
+import { choiceAgent, choiceCharacter, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { eraseFailedText } from './lib/erase.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
@@ -16,6 +16,7 @@ import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { rememberCharacterNames } from './lib/character-names.ts';
+import { chatCast, rememberChatCast } from './lib/character-chat.ts';
 import { reportThisMac } from './lib/push.ts';
 import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toast } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
@@ -446,11 +447,12 @@ export function createChatStore() {
   async function refreshProjects(): Promise<void> {
     try {
       // The agents too: who is active, and Claude on or off, change without a restart.
-      const keep = { agents: directAgents.value, off: offInterlocutors.value };
+      const keep = { agents: directAgents.value, off: offInterlocutors.value, characters: chatCast.value };
       const [list, choices] = await Promise.all([api.listProjects(), api.listDirectChoices().catch(() => keep)]);
       projects.value = list;
       directAgents.value = choices.agents;
       offInterlocutors.value = choices.off;
+      rememberChatCast(choices.characters);
       mentionable.value = await api.loadMentionable().catch(() => mentionable.value);
     } catch (cause) {
       fail(cause);
@@ -735,6 +737,8 @@ export function createChatStore() {
       ...(choice.incognito === true ? { incognito: true } : {}),
       // A trial chat (D-142) is incognito and private only.
       ...(choice.incognito === true && choice.mode === 'private' && choice.trialModel !== undefined ? { trialModel: choice.trialModel } : {}),
+      // A chat with a person of the series (D-225, tappa B): only with Claude, work, no project.
+      ...(choiceCharacter(choice) === undefined ? {} : { character: choiceCharacter(choice) }),
       conversationId: null,
     };
   }
@@ -759,7 +763,7 @@ export function createChatStore() {
       let created: Conversation | undefined;
       let id: string;
       if (step.kind === 'create') {
-        created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true, start.trialModel);
+        created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true, start.trialModel, start.character);
         id = created.id;
         if (start.incognito === true) knownIncognito.add(id);
         // The user left the draft while it was created: nothing is sent, the text stays where it was written.

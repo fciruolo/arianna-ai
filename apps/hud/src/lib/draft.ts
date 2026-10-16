@@ -22,6 +22,8 @@ export interface Draft {
   incognito?: boolean | undefined;
   /** "Prova in chat" of a local model (D-142): an incognito private draft where only that catalog model answers. */
   trialModel?: string | undefined;
+  /** A chat with a person of the series on Claude (D-225, tappa B): only with the agent `claude`, work, no project. */
+  character?: string | undefined;
   /**
    * Set once the core created the conversation but the first message did not
    * go through: a retry sends to it, never creates a second one.
@@ -32,13 +34,21 @@ export interface Draft {
 export const DRAFT_PATH = '/nuova';
 
 /** What "Nuovo" chose: the mode, the project, and who answers. */
-export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent' | 'incognito' | 'trialModel'>;
+export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent' | 'incognito' | 'trialModel' | 'character'>;
 
 const MODE_WORD: Record<ConversationMode, string> = { private: 'privata', work: 'lavoro' };
 
 /** An agent id as the core writes it: Arianna is never one. */
 const AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const isAgentId = (value: string | null | undefined): value is string => typeof value === 'string' && AGENT_ID.test(value) && value !== 'arianna';
+/** The id of a person of the series, as the core writes it (D-225). */
+const CHARACTER_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** The character of a choice (D-225, tappa B): only in a work draft with Claude without a project. */
+export function choiceCharacter(choice: DraftChoice): string | undefined {
+  const id = choice.character;
+  return choice.incognito !== true && choice.agent === 'claude' && choice.mode === 'work' && (choice.project ?? '') === '' && typeof id === 'string' && CHARACTER_ID.test(id) ? id : undefined;
+}
 
 /**
  * `/nuova?tipo=privata`, `/nuova?tipo=lavoro&progetto=arianna`, with an agent
@@ -49,6 +59,8 @@ export function draftPath(choice: DraftChoice): string {
   if (choice.incognito === true) return INCOGNITO_PATH;
   const params = new URLSearchParams();
   if (isAgentId(choice.agent)) params.set('con', choice.agent);
+  const character = choiceCharacter(choice);
+  if (character !== undefined) params.set('personaggio', character);
   params.set('tipo', MODE_WORD[choice.mode]);
   if (choice.mode === 'work' && choice.project !== undefined && choice.project !== '') params.set('progetto', choice.project);
   return `${DRAFT_PATH}?${params.toString()}`;
@@ -67,7 +79,9 @@ export function draftFromAddress(pathname: string, search: string): DraftChoice 
   const agent = isAgentId(asked) ? { agent: asked } : {};
   const mode: ConversationMode = kind === 'lavoro' || kind === 'coder' ? 'work' : 'private';
   const project = mode === 'work' ? params.get('progetto')?.trim() : undefined;
-  return { mode, ...(project === undefined || project === '' ? {} : { project }), ...agent };
+  const choice: DraftChoice = { mode, ...(project === undefined || project === '' ? {} : { project }), ...agent };
+  const character = choiceCharacter({ ...choice, character: params.get('personaggio') ?? undefined });
+  return character === undefined ? choice : { ...choice, character };
 }
 
 /** Who answers in a draft of this choice: an agent id, never Arianna; what its card allows is checked against the list (D-111d). */
@@ -77,7 +91,7 @@ export function choiceAgent(choice: DraftChoice): ConversationAgent | undefined 
 
 /** The same choice: the page does not open a draft again for it. */
 export function sameChoice(a: DraftChoice, b: DraftChoice): boolean {
-  return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true) && a.trialModel === b.trialModel;
+  return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true) && a.trialModel === b.trialModel && a.character === b.character;
 }
 
 /** What stays out of Arianna's hands in a direct chat on Claude or Codex (D-111, D-140): also said where such a conversation is deleted. */
