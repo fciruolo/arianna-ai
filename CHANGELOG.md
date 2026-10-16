@@ -7,9 +7,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
-- Nel campo di scrittura della chat un pulsante «+» con un menu solo per comandi «/», «@» a un agente, «Allega nota privata», «Nuova sessione» del Designer, «Salva in inbox» e il modello della conversazione; si usa anche da tastiera (frecce, Invio, Esc) (D-231).
-- Tasti per il modello della conversazione: sul Mac ⌃1…⌃9 scelgono i modelli del selettore nel suo ordine e ⌃0 la scelta automatica (altrove Alt+Maiusc con la cifra), solo fra quelli che quella conversazione ammette; li mostra il menu «+» (D-231).
-- Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; solo nelle conversazioni di lavoro, mai nelle Private né nelle incognite (D-231).
 - «Chiedi a lato» fra le azioni di una risposta (accanto a Copia e Salva in inbox): apre a destra un pannello dove fai domande a parte su quella risposta, a cui risponde chi risponde nella conversazione (Arianna, il modello locale, Claude o ChatGPT) con le stesse regole di privacy; domande e risposte restano nel pannello e la conversazione non le rilegge. Esc chiude il pannello, la stessa risposta lo riapre sullo stesso filo («Riprendi a lato»); sullo schermo stretto il pannello prende tutta la pagina; il filo si cancella con la conversazione (D-232).
 - «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
 - Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
@@ -19,13 +16,24 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
-- Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
 - I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
 - Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, in un riquadro suo con logo, versione e copie di lavoro, senza IM né incassi perché è un progetto interno (richiesta dell'utente del 2026-10-16, D-127).
 
 ### Corretto
 
 - All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
+
+## [0.125.0] - 2026-10-16
+
+### Aggiunto
+
+- Nel campo di scrittura della chat un pulsante «+» con un menu solo per comandi «/», «@» a un agente, «Allega nota privata», «Nuova sessione» del Designer, «Salva in inbox» e il modello della conversazione; si usa anche da tastiera (frecce, Invio, Esc) (D-231).
+- Tasti per il modello della conversazione: sul Mac ⌃1…⌃9 scelgono i modelli del selettore nel suo ordine e ⌃0 la scelta automatica (altrove Alt+Maiusc con la cifra), solo fra quelli che quella conversazione ammette; li mostra il menu «+» (D-231).
+- Il testo scritto e non ancora inviato resta legato alla sua conversazione quando ne apri un'altra o ricarichi la pagina; resta solo in questo browser, mai nel core, e va via quando invii, quando la conversazione è cancellata o dopo 7 giorni; solo nelle conversazioni di lavoro, mai nelle Private né nelle incognite (D-231).
+
+### Cambiato
+
+- Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
 
 ## [0.124.0] - 2026-10-16
 
