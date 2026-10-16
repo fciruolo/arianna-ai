@@ -62,9 +62,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## In attesa dell'utente
 
-| Cosa | Note |
-| --- | --- |
-| (nessuna) | La prova di D-058 è passata il 2026-10-17 (0.137.1) |
+Niente: la prova di D-058 è passata il 2026-10-17 (0.137.1). Le domande aperte stanno in `docs/OPEN-QUESTIONS.md` e `docs/PROPOSTE.md`.
 
 ## Prima dei dati veri
 
@@ -73,7 +71,7 @@ Promemoria per la fine della Fase 1A, non domande aperte (scelta dell'utente del
 - **Password vere del database:** passi in `SECURITY.md`, sezione Servizi locali e database (`\password` di psql, poi `pnpm db:migrate` e `pnpm arianna:doctor`).
 - **Chiave age vera:** la genera l'utente con i passi di `SECURITY.md`, sezione Vault, e la conserva anche fuori dal Mac (D-042).
 - **Backup cifrato** (D-096), ultimo lavoro prima dei dati veri.
-- **Verifica del profilo di Claude Code nelle incognite di lavoro** (D-136 tappa 3), se non è già stata fatta.
+- **Verifica del profilo di Claude Code nelle incognite di lavoro** (D-136 tappa 3): scelta dell'utente del 2026-10-17, si fa insieme in una sessione apposta, con l'utente che autorizza la lettura del solo elenco dei file del profilo di `claude` prima e dopo un'incognita di lavoro; il risultato va nella scheda di chiusura dell'incognita.
 
 ## Modo di lavorare concordato
 
