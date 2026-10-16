@@ -301,7 +301,9 @@ function secretarySection(secretary: SecretaryConfig | undefined): string[] {
 }
 
 function appearanceSection(appearance: AppearanceConfig | undefined): string[] {
-  return appearance === undefined ? ['#', '# [appearance]', '# theme = "base"'] : ['[appearance]', `theme = ${str(appearance.theme)}`];
+  return appearance === undefined
+    ? ['#', '# [appearance]', '# theme = "base"', '# seasonal = true']
+    : ['[appearance]', `theme = ${str(appearance.theme)}`, `seasonal = ${String(appearance.seasonal)}`];
 }
 
 function captureSection(fetchSites: string[] | undefined): string[] {
@@ -594,7 +596,9 @@ export function renderSettings(settings: Settings): string {
     '# of the characters, the same on every device. A folder of',
     '# apps/hud/themes/; "base" is the chat as it comes. A theme that is missing',
     '# or invalid falls back to base. Light or dark stays a choice of each',
-    '# browser. Absent: base. Applies without a restart.',
+    '# browser. seasonal (D-246): in the days of a feast (Natale, Halloween…)',
+    '# its theme takes the place of base, never of a theme chosen by hand.',
+    '# Absent: base, with the feasts on. Applies without a restart.',
     ...appearanceSection(settings.appearance),
     '',
     '# Links fetched and summarized (D-154): the links of these sites saved in',

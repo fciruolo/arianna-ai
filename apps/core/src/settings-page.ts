@@ -453,12 +453,16 @@ function notificationsFromBody(value: unknown): NotificationsConfig {
   return next;
 }
 
-/** `[appearance]` from the page (D-103): the id of a theme; whether its folder is valid the core says when it serves the themes. */
+/**
+ * `[appearance]` from the page (D-103): the id of a theme; whether its folder is valid the core says when it
+ * serves the themes. `seasonal` (D-246), the switch of the feasts: an older page sends none, and the feasts stay on.
+ */
 function appearanceFromBody(value: unknown): AppearanceConfig {
   const table = record(value, 'appearance');
-  only(table, ['theme'], 'appearance');
+  only(table, ['theme', 'seasonal'], 'appearance');
+  if (table.seasonal !== undefined && typeof table.seasonal !== 'boolean') invalid('appearance.seasonal must be true or false');
   try {
-    return checkAppearance({ theme: text(table.theme, 'appearance.theme') });
+    return checkAppearance({ theme: text(table.theme, 'appearance.theme'), seasonal: table.seasonal ?? DEFAULT_APPEARANCE.seasonal });
   } catch (error) {
     if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
     throw error;

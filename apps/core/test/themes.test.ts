@@ -10,7 +10,7 @@ import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { characterChoiceOf } from '../src/prompt-tail.ts';
-import { currentTheme, listThemes, MAX_THEME_BYTES, parseTheme, THEME_TOKENS, ThemeError } from '../src/themes.ts';
+import { currentTheme, currentThemeSync, feastOf, listThemes, MAX_THEME_BYTES, parseTheme, THEME_TOKENS, ThemeError } from '../src/themes.ts';
 import { THEME_TOKENS as PAGE_TOKENS } from '../../hud/src/lib/themes.ts';
 
 const HOME = resolveHome({});
@@ -43,8 +43,12 @@ test('the core and the page apply the same list of tokens (D-103)', () => {
 test('the themes of the repository pass the schema (D-103)', async () => {
   const listing = await listThemes(REPO_THEMES);
   assert.deepEqual(listing.refused, []);
-  assert.deepEqual(listing.themes.map((theme) => theme.id), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
-  for (const theme of listing.themes) assert.equal(theme.kind, 'serie');
+  assert.deepEqual(listing.themes.map((theme) => theme.id), ['base', 'carnevale', 'corsia', 'estate', 'fox-river', 'halloween', 'langley', 'natale', 'pasadena', 'pasqua', 'planet-express', 'quahog', 'san-patrizio', 'springfield', 'ufficio']);
+  // Base (D-246) and the six feasts, the others of the series.
+  const kind = (id: string) => listing.themes.find((theme) => theme.id === id)?.kind;
+  assert.equal(kind('base'), 'base');
+  for (const id of ['natale', 'san-patrizio', 'halloween', 'carnevale', 'estate', 'pasqua']) assert.equal(kind(id), 'stagionale', id);
+  assert.equal(listing.themes.filter((theme) => theme.kind === 'serie').length, 8);
 });
 
 test('a valid theme is read with every field, and optional ones left out', () => {
@@ -66,7 +70,9 @@ test('every rule of the schema refuses what breaks it (D-103)', () => {
     ['unknown key', variant({ css: 'body{}' }), /unknown key "css"/],
     ['id of another folder', variant({ id: 'altro' }), /name of the folder/],
     ['id with capitals', variant({ id: 'Prova' }), /lowercase/],
-    ['base is reserved', variant({ id: 'base' }), /no file/],
+    ['base of another kind', variant({ id: 'base' }), /base alone/],
+    ['another theme of kind base', variant({ kind: 'base' }), /base alone/],
+    ['a seasonal theme with no days', variant({ kind: 'stagionale' }), /has its days/],
     ['kind outside the list', variant({ kind: 'parodia' }), /kind: one of/],
     ['dates on a series', variant({ dates: { from: '12-08', to: '01-06' } }), /only a seasonal/],
     ['no such day', variant({ kind: 'stagionale', dates: { from: '02-30', to: '03-01' } }), /no such day/],
@@ -96,7 +102,7 @@ test('every rule of the schema refuses what breaks it (D-103)', () => {
     ['too many agents', variant({ characters: Object.fromEntries([...Array(17).keys()].map((index) => [`agente-${String(index)}`, 'originali/coder'])) }), /at most 16/],
     ['a long unknown key, cut in the reason', variant({ ['k'.repeat(500)]: 1 }), /unknown key "k{40}…"$/],
   ];
-  for (const [what, raw, reason] of bad) assert.throws(() => parseTheme(raw, what === 'base is reserved' ? 'base' : 'prova'), (error: unknown) => error instanceof ThemeError && reason.test(error.message), what);
+  for (const [what, raw, reason] of bad) assert.throws(() => parseTheme(raw, what === 'base of another kind' ? 'base' : 'prova'), (error: unknown) => error instanceof ThemeError && reason.test(error.message), what);
 });
 
 function folder(name: string, files: Record<string, string>): string {
@@ -147,8 +153,54 @@ test('the theme in use is the chosen one when it is served, Base otherwise', asy
   assert.equal(currentTheme('base', themes), 'base');
 });
 
+const day = (text: string) => {
+  const [year = 0, month = 0, date = 0] = text.split('-').map(Number);
+  return { year, month, day: date };
+};
+
+test('the feasts take the place of Base in their days, never of a theme chosen by hand (D-246)', async () => {
+  const { themes } = await listThemes(REPO_THEMES);
+  const feast = (text: string) => feastOf(themes, day(text))?.id;
+  // The windows of DECISIONS, ends included, Christmas across the new year.
+  assert.deepEqual(['2026-12-07', '2026-12-08', '2026-12-25', '2027-01-06', '2027-01-07'].map(feast), [undefined, 'natale', 'natale', 'natale', undefined]);
+  assert.deepEqual(['2026-10-24', '2026-10-25', '2026-10-31', '2026-11-01', '2026-11-02'].map(feast), [undefined, 'halloween', 'halloween', 'halloween', undefined]);
+  assert.deepEqual(['2027-03-14', '2027-03-15', '2027-03-17', '2027-03-18'].map(feast), [undefined, 'san-patrizio', 'san-patrizio', undefined]);
+  assert.deepEqual(['2026-07-31', '2026-08-01', '2026-08-15', '2026-08-31', '2026-09-01'].map(feast), [undefined, 'estate', 'estate', 'estate', undefined]);
+  // Movable feasts from Easter: 2026 on 5 April, 2027 on 28 March.
+  assert.deepEqual(['2026-03-28', '2026-03-29', '2026-04-05', '2026-04-06', '2026-04-07'].map(feast), [undefined, 'pasqua', 'pasqua', 'pasqua', undefined]);
+  assert.deepEqual(['2026-02-11', '2026-02-12', '2026-02-17', '2026-02-18'].map(feast), [undefined, 'carnevale', 'carnevale', undefined]);
+  assert.deepEqual(['2027-02-03', '2027-02-04', '2027-02-09', '2027-02-10'].map(feast), [undefined, 'carnevale', 'carnevale', undefined]);
+  // Two feasts on one day: the shorter wins (2008: Palm Sunday on 16 March, Saint Patrick on the 17th).
+  assert.equal(feast('2008-03-17'), 'san-patrizio');
+  assert.equal(feast('2008-03-18'), 'pasqua');
+  assert.equal(feast('2026-10-16'), undefined);
+
+  const on = { on: true, today: day('2026-12-24') };
+  assert.equal(currentTheme('base', themes, on), 'natale');
+  assert.equal(currentTheme('base', themes, { ...on, on: false }), 'base');
+  assert.equal(currentTheme('base', themes, { ...on, today: day('2026-10-16') }), 'base');
+  // A theme chosen by hand stays, a feast chosen by hand too, all year.
+  assert.equal(currentTheme('corsia', themes, on), 'corsia');
+  assert.equal(currentTheme('halloween', themes, on), 'halloween');
+  assert.equal(currentTheme('halloween', themes, { on: false, today: day('2026-05-01') }), 'halloween');
+  // A chosen theme that is gone falls back to Base, and Base dresses up.
+  assert.equal(currentTheme('sparito', themes, on), 'natale');
+});
+
+test('the prompt of a step names the costume of the feast the chat shows (D-246)', async () => {
+  const { themes } = await listThemes(REPO_THEMES);
+  const today = day('2026-10-31');
+  for (const chosen of ['base', 'corsia', 'sparito', 'natale']) {
+    for (const on of [true, false]) assert.equal(currentThemeSync(REPO_THEMES, chosen, { on, today }), currentTheme(chosen, themes, { on, today }), `${chosen} ${String(on)}`);
+  }
+  const config = (seasonal: boolean) => ({ personas: {}, characters: {}, appearance: { theme: 'base', seasonal }, home: HOME, paths: { data: root }, today: () => today });
+  assert.equal(characterChoiceOf(config(true), 'arianna'), 'originali/arianna-halloween');
+  assert.equal(characterChoiceOf(config(false), 'arianna'), 'originali/arianna');
+});
+
 test('GET /api/themes serves the checked themes and the characters of the chosen one go to /api/characters (D-103, D-211)', async () => {
   let chosen = 'corsia';
+  let feasts = { on: true, today: { year: 2026, month: 10, day: 31 } };
   const server = await startApiServer({
     // Unused by these routes.
     sql: undefined as unknown as Sql,
@@ -159,15 +211,16 @@ test('GET /api/themes serves the checked themes and the characters of the chosen
     characters: {
       dirs: { original: ORIGINAL, series: SERIES, data: join(root, 'no-characters') },
       choices: () => ({ coder: 'originali/coder' }),
-      themes: { dir: REPO_THEMES, chosen: () => chosen },
+      themes: { dir: REPO_THEMES, chosen: () => chosen, feasts: () => feasts },
       names: () => ({ reviewer: 'Revisore' }),
     },
   });
   try {
     const origin = `http://127.0.0.1:${String(server.port)}`;
-    const themes = (await (await fetch(`${origin}/api/themes`)).json()) as { themes: { id: string }[]; chosen: string; current: string };
-    assert.deepEqual(themes.themes.map(({ id }) => id), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
-    assert.equal(themes.current, 'corsia');
+    const themes = (await (await fetch(`${origin}/api/themes`)).json()) as { themes: { id: string }[]; chosen: string; current: string; seasonal: boolean };
+    assert.deepEqual(themes.themes.map(({ id }) => id), ['base', 'carnevale', 'corsia', 'estate', 'fox-river', 'halloween', 'langley', 'natale', 'pasadena', 'pasqua', 'planet-express', 'quahog', 'san-patrizio', 'springfield', 'ufficio']);
+    // On Halloween a theme chosen by hand stays (D-246).
+    assert.deepEqual([themes.current, themes.seasonal], ['corsia', true]);
     const characters = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { pack: string; character: string; from: string }>; names: Record<string, string> };
     // The name the user wrote wins in the chat (D-214).
     assert.deepEqual(characters.names, { reviewer: 'Revisore' });
@@ -184,7 +237,18 @@ test('GET /api/themes serves the checked themes and the characters of the chosen
     assert.equal(characters.agents.coder?.from, 'choice');
     chosen = 'sparito';
     const fallback = (await (await fetch(`${origin}/api/themes`)).json()) as { chosen: string; current: string };
-    assert.deepEqual([fallback.chosen, fallback.current], ['sparito', 'base']);
+    assert.deepEqual([fallback.chosen, fallback.current], ['sparito', 'halloween']);
+    // Base on Halloween (D-246): the feast, with its costumes; the explicit choice of the Coder still wins.
+    chosen = 'base';
+    const feast = (await (await fetch(`${origin}/api/themes`)).json()) as { chosen: string; current: string };
+    assert.deepEqual([feast.chosen, feast.current], ['base', 'halloween']);
+    const dressed = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { character: string; from: string }> };
+    assert.deepEqual([dressed.agents.arianna?.character, dressed.agents.arianna?.from], ['arianna-halloween', 'theme']);
+    assert.deepEqual([dressed.agents.coder?.character, dressed.agents.coder?.from], ['coder', 'choice']);
+    // The feasts off: Base as it is, the originals.
+    feasts = { ...feasts, on: false };
+    const plainThemes = (await (await fetch(`${origin}/api/themes`)).json()) as { current: string; seasonal: boolean };
+    assert.deepEqual([plainThemes.current, plainThemes.seasonal], ['base', false]);
     const plain = (await (await fetch(`${origin}/api/characters`)).json()) as { agents: Record<string, { character: string; from: string }> };
     assert.deepEqual([plain.agents.arianna?.character, plain.agents.arianna?.from], ['arianna', 'original']);
   } finally {

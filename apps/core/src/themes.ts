@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { BASE_THEME, CHARACTER_ID, THEME_ID } from '@arianna/config';
 
 import { readSmall } from './characters.ts';
+import { inWindow, windowLength, type CalendarDay } from './feasts.ts';
 
 /**
  * The themes of the web chat (D-103): colours, background and costumes of the
@@ -14,7 +15,10 @@ import { readSmall } from './characters.ts';
  * not `#rrggbb(aa)`, a value outside the lists refuse the whole theme; no
  * field ever reaches the CSS as written, and no text may carry an address or
  * an import, so a theme cannot become a way out for what the page shows.
- * Base has no file: it is the chat as style.css draws it.
+ * Base is `apps/hud/themes/base` (D-246), kind `base`; when its folder is
+ * missing or refused the chat is what style.css draws. The seasonal themes
+ * (the feasts) take the place of Base in their window when the switch of
+ * `[appearance]` is on, never the place of a theme chosen by hand.
  */
 
 /** The tokens a theme may set: those of style.css, plus the two colours of the decorations. */
@@ -50,7 +54,7 @@ export const THEME_TOKENS = [
 ] as const;
 export type ThemeToken = (typeof THEME_TOKENS)[number];
 
-export const THEME_KINDS = ['serie', 'stagionale'] as const;
+export const THEME_KINDS = ['base', 'serie', 'stagionale'] as const;
 export const PATTERNS = ['griglia', 'puntini', 'righe', 'nessuno'] as const;
 export const DECORS = ['neve', 'trifogli', 'pipistrelli', 'coriandoli', 'sole', 'puntini-pastello', 'corrimano', 'moquette', 'nuvole', 'carta-da-parati'] as const;
 export const GLOWS = ['nessuno', 'tenue', 'medio', 'forte'] as const;
@@ -153,7 +157,6 @@ export function parseTheme(raw: string, folder: string): Theme {
   only(root, ['id', 'name', 'kind', 'description', 'dates', 'background', 'hud', 'characters', 'tokens'], 'theme.json');
   if (typeof root.id !== 'string' || !THEME_ID.test(root.id)) throw new ThemeError('id: lowercase letters, digits and -, at most 40');
   if (root.id !== folder) throw new ThemeError('id: the same as the name of the folder');
-  if (root.id === BASE_THEME) throw new ThemeError('id: "base" is the theme with no file');
 
   let dates: Theme['dates'];
   if (root.dates !== undefined) {
@@ -191,6 +194,8 @@ export function parseTheme(raw: string, folder: string): Theme {
 
   const kind = oneOf(root.kind, THEME_KINDS, 'kind');
   if (dates !== undefined && kind !== 'stagionale') throw new ThemeError('dates: only a seasonal theme has dates');
+  if (kind === 'stagionale' && dates === undefined) throw new ThemeError('dates: a seasonal theme has its days');
+  if ((kind === 'base') !== (root.id === BASE_THEME)) throw new ThemeError('kind: "base" is the theme base alone');
   const decor = background.decor === undefined ? undefined : oneOf(background.decor, DECORS, 'background.decor');
   return {
     id: root.id,
@@ -247,35 +252,77 @@ export async function listThemes(dir: string): Promise<ThemeListing> {
   return { themes, refused };
 }
 
-/** The theme in use: the one chosen when it is served, otherwise Base. */
-export function currentTheme(chosen: string, themes: readonly Theme[]): string {
-  return themes.some((theme) => theme.id === chosen) ? chosen : BASE_THEME;
+/** The feast of `today` (D-246): the seasonal theme whose window holds it, the shorter window first when two meet. */
+export function feastOf(themes: readonly Theme[], today: CalendarDay): Theme | undefined {
+  let found: { theme: Theme; length: number } | undefined;
+  for (const theme of themes) {
+    if (theme.kind !== 'stagionale' || theme.dates === undefined || !inWindow(theme.dates, today)) continue;
+    const length = windowLength(theme.dates, today);
+    if (found === undefined || length < found.length) found = { theme, length };
+  }
+  return found?.theme;
+}
+
+/**
+ * The theme in use: the one chosen when it is served, otherwise Base; with
+ * the feasts on (D-246), Base gives way to the feast of the day. A theme
+ * chosen by hand, seasonal ones included, is never replaced.
+ */
+export function currentTheme(chosen: string, themes: readonly Theme[], feasts?: { on: boolean; today: CalendarDay }): string {
+  const served = themes.some((theme) => theme.id === chosen) ? chosen : BASE_THEME;
+  if (served !== BASE_THEME || feasts?.on !== true) return served;
+  return feastOf(themes, feasts.today)?.id ?? BASE_THEME;
 }
 
 /**
  * The characters the theme `id` gives the agents (D-214), read at once for a
  * step of the model: the same checks as `listThemes` for that one folder (a
  * real folder, theme.json alone, at most 16 KB, never through a link, the
- * closed schema). Base, a missing or refused theme: none.
+ * closed schema). A missing or refused theme: none.
  */
 export function themeCharactersSync(dir: string, id: string): Record<string, string> {
-  if (id === BASE_THEME || !THEME_ID.test(id)) return {};
+  return readThemeSync(dir, id)?.characters ?? {};
+}
+
+/** One theme read at once with the checks of `listThemes`; undefined when missing or refused. */
+function readThemeSync(dir: string, id: string): Theme | undefined {
+  if (!THEME_ID.test(id)) return undefined;
   try {
     const path = join(dir, id);
-    if (!lstatSync(path).isDirectory() || realpathSync(path) !== join(realpathSync(dir), id)) return {};
+    if (!lstatSync(path).isDirectory() || realpathSync(path) !== join(realpathSync(dir), id)) return undefined;
     const entries = readdirSync(path);
-    if (entries.length !== 1 || entries[0] !== 'theme.json') return {};
+    if (entries.length !== 1 || entries[0] !== 'theme.json') return undefined;
     const handle = openSync(join(path, 'theme.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const info = fstatSync(handle);
-      if (!info.isFile() || info.size > MAX_THEME_BYTES) return {};
+      if (!info.isFile() || info.size > MAX_THEME_BYTES) return undefined;
       const buffer = Buffer.alloc(info.size);
       readSync(handle, buffer, 0, info.size, 0);
-      return parseTheme(buffer.toString('utf8'), id).characters;
+      return parseTheme(buffer.toString('utf8'), id);
+    } catch {
+      return undefined;
     } finally {
       closeSync(handle);
     }
   } catch {
-    return {};
+    return undefined;
   }
+}
+
+/**
+ * The theme in use, read at once (D-246), for a step of the model: the same
+ * answer as `currentTheme` over `listThemes`, so the prompt names the costume
+ * the chat shows. The folders are read only when Base gives way to a feast.
+ */
+export function currentThemeSync(dir: string, chosen: string, feasts?: { on: boolean; today: CalendarDay }): string {
+  const served = readThemeSync(dir, chosen) === undefined ? BASE_THEME : chosen;
+  if (served !== BASE_THEME || feasts?.on !== true) return served;
+  let folders: string[];
+  try {
+    folders = readdirSync(dir).filter((name) => !name.startsWith('.')).sort().slice(0, MAX_THEMES);
+  } catch {
+    return BASE_THEME;
+  }
+  const themes = folders.flatMap((folder) => readThemeSync(dir, folder) ?? []);
+  return feastOf(themes, feasts.today)?.id ?? BASE_THEME;
 }

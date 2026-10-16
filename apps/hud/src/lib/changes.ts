@@ -90,7 +90,7 @@ const AREA_GROUP: Record<ChangeArea, ChangeGroup> = {
 const AREA_SECTION: Partial<Record<ChangeArea, { slug: string; link: string }>> = { 'agents-catalog': { slug: 'catalogo-agenti', link: 'Apri Catalogo agenti' } };
 
 /** The themes by the name the user sees, not their id in the code (D-103, D-211: `corsia` is Scrubs, `ufficio` is The Office). */
-const THEME_NAME: Readonly<Record<string, string>> = { base: 'Base', corsia: 'Scrubs', ufficio: 'The Office', springfield: 'I Simpson', quahog: 'I Griffin', langley: 'American Dad', 'fox-river': 'Prison Break', 'planet-express': 'Futurama', pasadena: 'The Big Bang Theory' };
+const THEME_NAME: Readonly<Record<string, string>> = { base: 'Base', corsia: 'Scrubs', ufficio: 'The Office', springfield: 'I Simpson', quahog: 'I Griffin', langley: 'American Dad', 'fox-river': 'Prison Break', 'planet-express': 'Futurama', pasadena: 'The Big Bang Theory', natale: 'Natale', 'san-patrizio': 'San Patrizio', halloween: 'Halloween', carnevale: 'Carnevale', estate: 'Estate', pasqua: 'Pasqua' };
 
 export function themeName(id: string): string {
   return THEME_NAME[id] ?? id;
@@ -174,6 +174,8 @@ export function changeText(change: Change): { title: string; detail: string | nu
       if (removed) return { title: `Progetto tolto: ${id}`, detail: null };
       return { title: `Progetto ${id}: etichetta cambiata`, detail: `${labelName(from)} → ${labelName(to)}` };
     case 'theme':
+      // The switch of the feasts (D-246) is a row of its own in the area of the theme.
+      if (id === 'seasonal') return { title: `Feste automatiche ${to === 'off' ? 'spente' : 'accese'}`, detail: null };
       return { title: `Tema cambiato: ${themeName(to ?? 'base')}`, detail: from === null ? null : `prima ${themeName(from)}` };
     case 'character':
       if (removed) return { title: `${id}: torna all’aspetto predefinito`, detail: `prima ${from ?? ''}` };

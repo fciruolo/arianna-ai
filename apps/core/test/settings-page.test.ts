@@ -177,14 +177,18 @@ describe('update (ordinary)', () => {
   });
 
   it('the theme (D-103): [appearance] written alone, Base when absent, an invalid id or key refused', () => {
-    assert.deepEqual(page.read().values?.appearance, { theme: 'base' });
+    assert.deepEqual(page.read().values?.appearance, { theme: 'base', seasonal: true });
     const before = parseConfig(text(), home, loadCatalog(home), userHome);
     page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia' } } });
     assert.deepEqual(changes, [{ sections: ['appearance'], privacy: false }]);
     const after = parseConfig(text(), home, loadCatalog(home), userHome);
-    assert.deepEqual(after.appearance, { theme: 'corsia' });
+    assert.deepEqual(after.appearance, { theme: 'corsia', seasonal: true });
     assert.deepEqual({ ...after, appearance: before.appearance }, before, 'nothing else changes');
-    assert.deepEqual(page.read().values?.appearance, { theme: 'corsia' });
+    assert.deepEqual(page.read().values?.appearance, { theme: 'corsia', seasonal: true });
+    // The switch of the feasts (D-246), in the same section.
+    page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia', seasonal: false } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).appearance, { theme: 'corsia', seasonal: false });
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia', seasonal: 'no' } } }), refused('invalid', /appearance\.seasonal/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: { theme: '../corsia' } } }), refused('invalid', /appearance\.theme/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: { theme: 'corsia', css: 'x' } } }), refused('invalid'));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: 'corsia' } }), refused('invalid'));

@@ -350,7 +350,11 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   if (parts.includes('secretary')) values.secretary = secretaryBody(current.secretary);
   // An older core has no themes (D-103): nothing to send.
-  if (parts.includes('appearance') && view.value?.values?.appearance !== undefined) values.appearance = { theme: current.appearance.theme };
+  if (parts.includes('appearance') && view.value?.values?.appearance !== undefined) {
+    // The switch of the feasts (D-246) only to a core that has it.
+    const seasonal = view.value.values.appearance.seasonal === undefined ? {} : { seasonal: current.appearance.seasonal ?? true };
+    values.appearance = { theme: current.appearance.theme, ...seasonal };
+  }
   // An older core has no rules of the projects (D-174): nothing to send.
   if (parts.includes('projectRules') && view.value?.values?.projectRules !== undefined) values.projectRules = projectRulesBody(current.projectRules);
   generation += 1;
@@ -488,6 +492,18 @@ const screenMode = computed<'dark' | 'light'>(() => {
 async function chooseTheme(id: string): Promise<void> {
   if (forms.value === null || forms.value.appearance.theme === id) return;
   forms.value.appearance.theme = id;
+  if (!(await save('appearance'))) {
+    reset('appearance');
+    return;
+  }
+  readThemes();
+  characters.value = await loadCharacters().catch(() => characters.value);
+}
+
+/** The switch of the feasts (D-246): saved at once in [appearance], like a theme. */
+async function chooseSeasonal(on: boolean): Promise<void> {
+  if (forms.value === null || forms.value.appearance.seasonal === on) return;
+  forms.value.appearance.seasonal = on;
   if (!(await save('appearance'))) {
     reset('appearance');
     return;
@@ -946,7 +962,17 @@ const grid = 'grid gap-3 sm:grid-cols-6';
               <span v-if="saved === 'appearance'" class="pill text-ok border-ok/50">Salvato</span>
               <span v-else class="pill text-ok border-ok/50">Vale subito, su tutti i dispositivi</span>
             </template>
-            <ThemePicker v-if="forms !== null" :listing="themeListing" :chosen="forms.appearance.theme" :characters="characters" :mode="screenMode" :busy="busy !== null || locked" @choose="chooseTheme" />
+            <ThemePicker
+              v-if="forms !== null"
+              :listing="themeListing"
+              :chosen="forms.appearance.theme"
+              :seasonal="forms.appearance.seasonal ?? true"
+              :characters="characters"
+              :mode="screenMode"
+              :busy="busy !== null || locked"
+              @choose="chooseTheme"
+              @seasonal="chooseSeasonal"
+            />
             <p v-else class="text-[14px] text-muted">Le impostazioni non sono lette: il tema si sceglie quando tornano.</p>
             <p v-if="errors.appearance !== undefined" class="text-[14px] text-danger">{{ errors.appearance }}</p>
           </SettingsCard>

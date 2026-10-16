@@ -92,7 +92,12 @@ test('a theme by the name the user sees, never its id in the code', () => {
   assert.equal(themeName('planet-express'), 'Futurama');
   assert.equal(themeName('pasadena'), 'The Big Bang Theory');
   assert.equal(themeName('base'), 'Base');
-  assert.equal(themeName('halloween'), 'halloween');
+  assert.equal(themeName('halloween'), 'Halloween');
+  assert.equal(themeName('san-patrizio'), 'San Patrizio');
+  assert.equal(themeName('sparito'), 'sparito');
+  // The switch of the feasts (D-246).
+  assert.deepEqual(changeText({ area: 'theme', id: 'seasonal', from: 'on', to: 'off' }), { title: 'Feste automatiche spente', detail: null });
+  assert.deepEqual(changeText({ area: 'theme', id: 'seasonal', from: 'off', to: 'on' }), { title: 'Feste automatiche accese', detail: null });
   assert.deepEqual(changeText({ area: 'theme', id: 'theme', from: 'base', to: 'corsia' }), { title: 'Tema cambiato: Scrubs', detail: 'prima Base' });
   assert.deepEqual(changeText({ area: 'theme', id: 'theme', from: 'corsia', to: 'ufficio' }), { title: 'Tema cambiato: The Office', detail: 'prima Scrubs' });
 });

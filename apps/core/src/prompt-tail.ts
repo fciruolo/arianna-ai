@@ -6,7 +6,8 @@ import { isAtMost, PERSONA_LABEL, personaFits, profileBlock, scanText, type Know
 import { knownSecrets } from '@arianna/vault';
 
 import { servesSync, type CharacterDirs } from './characters.ts';
-import { themeCharactersSync } from './themes.ts';
+import { themeDay, type CalendarDay } from './feasts.ts';
+import { currentThemeSync, themeCharactersSync } from './themes.ts';
 
 /**
  * The tail of an agent's system prompt (D-107, tappa A3): labeled pieces
@@ -74,11 +75,13 @@ export interface TailConfig {
   /** `[characters]`: a choice always wins over the theme. */
   characters?: CharacterChoices;
   /** `[appearance]`: the theme whose characters the agents wear without a choice. */
-  appearance?: { theme: string };
+  appearance?: { theme: string; seasonal?: boolean };
   /** ARIANNA_HOME, where `apps/hud/themes` and the packs in git are. */
   home?: string;
   /** Where data/characters is. */
   paths?: { data: string };
+  /** The day the themes see (D-246); `themeDay` of the environment when not given (tests give it). */
+  today?: () => CalendarDay;
   /** The characters of a theme by id; read from `home` when not given (tests give it). */
   themeCharacters?: (theme: string) => Record<string, string>;
   /** Whether a pack serves a character; read from `home` and `paths` when not given (tests give it). */
@@ -150,8 +153,12 @@ function characterResolver(config: TailConfig): { choose: (agent: string) => str
   let themed: Record<string, string> | undefined;
   const themeCharacters = (): Record<string, string> => {
     if (themed !== undefined) return themed;
-    const theme = config.appearance?.theme;
-    const read = config.themeCharacters ?? (home === undefined ? undefined : (id: string) => themeCharactersSync(join(home, 'apps', 'hud', 'themes'), id));
+    const dir = home === undefined ? undefined : join(home, 'apps', 'hud', 'themes');
+    const chosen = config.appearance?.theme;
+    // D-246: in the days of a feast Base gives way to it, as in the chat.
+    const feasts = { on: config.appearance?.seasonal === true, today: config.today?.() ?? themeDay(process.env, new Date()) };
+    const theme = chosen === undefined || dir === undefined || !feasts.on ? chosen : currentThemeSync(dir, chosen, feasts);
+    const read = config.themeCharacters ?? (dir === undefined ? undefined : (id: string) => themeCharactersSync(dir, id));
     themed = theme === undefined || read === undefined ? {} : read(theme);
     return themed;
   };

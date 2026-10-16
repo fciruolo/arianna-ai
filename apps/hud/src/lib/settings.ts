@@ -121,12 +121,13 @@ export function projectRulesProblem(form: ProjectRulesForm): string | undefined 
   return long ? `Al massimo ${String(MAX_PROJECT_RULES)} caratteri per testo.` : undefined;
 }
 
-/** `[appearance]` (D-103): the id of the theme, `base` for the chat as it comes. */
+/** `[appearance]` (D-103): the id of the theme, `base` for the chat as it comes; `seasonal` the switch of the feasts (D-246), none from an older core. */
 export interface AppearanceValues {
   theme: string;
+  seasonal?: boolean;
 }
 
-export const DEFAULT_APPEARANCE: AppearanceValues = { theme: 'base' };
+export const DEFAULT_APPEARANCE: AppearanceValues = { theme: 'base', seasonal: true };
 
 /** What the user rewrote of a person of the series (D-223): each field optional, the repository's text where absent. */
 export interface SeriesValues {

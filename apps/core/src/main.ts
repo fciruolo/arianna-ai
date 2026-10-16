@@ -67,6 +67,7 @@ import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
 import { createLocalSummarizer } from './design-news.ts';
+import { themeDay } from './feasts.ts';
 import { createFollowedProjects, PROJECT_PROMPT } from './followed-projects.ts';
 import { createGithubClient } from './github-api.ts';
 import { downloadPixelAgents } from './pixel-agents-pack.ts';
@@ -1021,7 +1022,7 @@ const installChanges = createChangeWatcher({
         'agents-catalog': () => sourcesArea(agentsCatalog.status().sources),
         agent: () => Object.fromEntries(userAgents.list().user.map((agent) => [agent.name, agent.state])),
         project: () => Object.fromEntries(settings.current().projects.map((project) => [project.name, project.label])),
-        theme: () => ({ theme: settings.current().appearance.theme }),
+        theme: () => ({ theme: settings.current().appearance.theme, seasonal: settings.current().appearance.seasonal ? 'on' : 'off' }),
         character: () => settings.current().characters,
       },
       (area, error) => {
@@ -1153,7 +1154,12 @@ const server = await startApiServer({
       Object.fromEntries(
         Object.entries(settings.current().personas).flatMap(([agent, persona]) => (persona.displayName === undefined ? [] : [[agent, persona.displayName]])),
       ),
-    themes: { dir: join(config.home, 'apps', 'hud', 'themes'), chosen: () => settings.current().appearance.theme },
+    themes: {
+      dir: join(config.home, 'apps', 'hud', 'themes'),
+      chosen: () => settings.current().appearance.theme,
+      // D-246: the feasts in place of Base; ARIANNA_TODAY=YYYY-MM-DD shows one out of season in development.
+      feasts: () => ({ on: settings.current().appearance.seasonal, today: themeDay(process.env, new Date()) }),
+    },
     // D-223: what the user rewrote of the people of the series, for their card in the settings.
     series: () => settings.current().series,
     lines: seriesLines,
@@ -1325,6 +1331,11 @@ imWatcher.start();
 await telegram.begin(telegramSection());
 
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
+// D-246: a day forced for the feasts is said at the start, so a value left in the environment is not missed.
+if (process.env.ARIANNA_TODAY !== undefined) {
+  const forced = themeDay(process.env, new Date());
+  console.log(`Themes see the day ${String(forced.year)}-${String(forced.month).padStart(2, '0')}-${String(forced.day).padStart(2, '0')} (ARIANNA_TODAY)`);
+}
 
 async function shutdown(): Promise<void> {
   if (stopping) return;

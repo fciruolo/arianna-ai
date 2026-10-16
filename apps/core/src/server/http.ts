@@ -25,6 +25,7 @@ import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, sendBackCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
+import type { CalendarDay } from '../feasts.ts';
 import { currentTheme, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import { GithubError } from '../github-api.ts';
@@ -210,7 +211,8 @@ export interface ApiServerOptions {
   characters?: {
     dirs: CharacterDirs;
     choices: () => CharacterChoices;
-    themes?: { dir: string; chosen: () => string };
+    /** `feasts` (D-246): the switch of `[appearance]` and the day the themes see, for the feast that takes the place of Base. */
+    themes?: { dir: string; chosen: () => string; feasts?: () => { on: boolean; today: CalendarDay } };
     names?: () => Record<string, string>;
     /** `[series]` (D-223): what the user rewrote of the people of the series. */
     series?: () => SeriesOverrides;
@@ -2304,7 +2306,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       let themed: Record<string, string> = {};
       if (characters.themes !== undefined) {
         const { themes } = await listThemes(characters.themes.dir);
-        const current = currentTheme(characters.themes.chosen(), themes);
+        const current = currentTheme(characters.themes.chosen(), themes, characters.themes.feasts?.());
         themed = themes.find((theme) => theme.id === current)?.characters ?? {};
       }
       return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed), names: characters.names?.() ?? {} } };
@@ -2337,13 +2339,15 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       return Promise.resolve({ body: { people } });
     }),
     // The themes (D-103): only those that pass the closed schema, the refused folders with the reason,
-    // the one chosen in [appearance] and the one in use (Base when the chosen one is missing or invalid).
+    // the one chosen in [appearance] and the one in use (Base when the chosen one is missing or invalid,
+    // the feast of the day in place of Base when the switch is on, D-246).
     route('GET', '/api/themes', async () => {
       const themes = characters?.themes;
-      if (themes === undefined) return { body: { themes: [], refused: [], chosen: 'base', current: 'base' } };
+      if (themes === undefined) return { body: { themes: [], refused: [], chosen: 'base', current: 'base', seasonal: false } };
       const listing = await listThemes(themes.dir);
       const chosen = themes.chosen();
-      return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes) } };
+      const feasts = themes.feasts?.();
+      return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes, feasts), seasonal: feasts?.on ?? false } };
     }),
     // A sheet uploaded from the chat (D-118): decoded, written again, saved in data/characters/miei.
     // A character of the same name answers 409 with `existing`: the page asks, then sends `replace`.

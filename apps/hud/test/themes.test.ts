@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { activeTheme, applyTheme, contrast, lowContrast, THEME_TOKENS, themeAttributes, themeProperties, type ChatTheme, type ThemeTokens } from '../src/lib/themes.ts';
+import { activeTheme, applyTheme, contrast, CONTRAST_PAIRS, feastInUse, lowContrast, THEME_TOKENS, themeAttributes, themeProperties, type ChatTheme, type ThemeTokens } from '../src/lib/themes.ts';
 
 const HUD = join(import.meta.dirname, '..');
 const THEMES_DIR = join(HUD, 'themes');
@@ -20,21 +20,34 @@ function cssTokens(opening: string): ThemeTokens {
 }
 const BASE = { dark: cssTokens(':root {'), light: cssTokens(':root[data-theme="light"] {') };
 
-const repoThemes: ChatTheme[] = readdirSync(THEMES_DIR).map((folder) => JSON.parse(readFileSync(join(THEMES_DIR, folder, 'theme.json'), 'utf8')) as ChatTheme);
+// As the core serves them: a theme with no characters (Base) has none.
+const repoThemes: ChatTheme[] = readdirSync(THEMES_DIR).map((folder) => {
+  const theme = JSON.parse(readFileSync(join(THEMES_DIR, folder, 'theme.json'), 'utf8')) as Omit<ChatTheme, 'characters'> & { characters?: Record<string, string> };
+  return { ...theme, characters: theme.characters ?? {} };
+});
 
-test('the repository has the themes of the series, each in its folder (D-103)', () => {
-  assert.deepEqual(repoThemes.map((theme) => theme.id).sort(), ['corsia', 'fox-river', 'langley', 'pasadena', 'planet-express', 'quahog', 'springfield', 'ufficio']);
+const FEASTS = ['carnevale', 'estate', 'halloween', 'natale', 'pasqua', 'san-patrizio'];
+
+test('the repository has Base, the themes of the series and the feasts, each in its folder (D-103, D-246)', () => {
+  assert.deepEqual(repoThemes.map((theme) => theme.id).sort(), ['base', 'carnevale', 'corsia', 'estate', 'fox-river', 'halloween', 'langley', 'natale', 'pasadena', 'pasqua', 'planet-express', 'quahog', 'san-patrizio', 'springfield', 'ufficio']);
   for (const folder of readdirSync(THEMES_DIR)) assert.deepEqual(readdirSync(join(THEMES_DIR, folder)), ['theme.json'], folder);
   // The names of the series (D-214), the ids unchanged so that a saved choice still works.
   assert.deepEqual(
     repoThemes.map((theme) => [theme.id, theme.name]).sort(),
     [
+      ['base', 'Base'],
+      ['carnevale', 'Carnevale'],
       ['corsia', 'Scrubs'],
+      ['estate', 'Estate'],
       ['fox-river', 'Prison Break'],
+      ['halloween', 'Halloween'],
       ['langley', 'American Dad'],
+      ['natale', 'Natale'],
       ['pasadena', 'The Big Bang Theory'],
+      ['pasqua', 'Pasqua'],
       ['planet-express', 'Futurama'],
       ['quahog', 'I Griffin'],
+      ['san-patrizio', 'San Patrizio'],
       ['springfield', 'I Simpson'],
       ['ufficio', 'The Office'],
     ],
@@ -45,6 +58,37 @@ test('every token a theme may set is a colour token of style.css, in both modes 
   for (const token of THEME_TOKENS) {
     assert.ok(BASE.dark[token] !== undefined, `--${token} dark`);
     assert.ok(BASE.light[token] !== undefined, `--${token} light`);
+  }
+});
+
+const BASE_THEME = repoThemes.find((theme) => theme.id === 'base') as ChatTheme;
+
+test('Base in theme.json is style.css with the seven colours under AA corrected, and nothing else changed (D-246)', () => {
+  const corrected = {
+    dark: { bubble: '#257f75' },
+    light: { accent: '#218075', glow: '#21807522', l0: '#437f58', ok: '#437f58', l1: '#218075', l2: '#9a6a17', warn: '#9a6a17', 'deco-a': '#218075' },
+  };
+  for (const mode of ['dark', 'light'] as const) {
+    const css = Object.fromEntries(THEME_TOKENS.map((token) => [token, BASE[mode][token]]));
+    assert.deepEqual(BASE_THEME.tokens[mode], { ...css, ...corrected[mode] }, mode);
+    // style.css, the fallback, is under AA exactly on those seven pairs; theme.json on none.
+    const low = lowContrast(BASE[mode], BASE[mode]).map((item) => item.pair);
+    assert.deepEqual(low, mode === 'dark' ? ['bubble-ink su bubble'] : ['accent-ink su accent', 'l0 su surface', 'l1 su surface', 'l2 su surface', 'warn su surface', 'ok su surface']);
+    assert.deepEqual(lowContrast(BASE_THEME.tokens[mode], {}), [], mode);
+  }
+  assert.equal(BASE_THEME.kind, 'base');
+  assert.deepEqual(BASE_THEME.characters, {});
+  assert.equal(CONTRAST_PAIRS.length, 16);
+});
+
+test('every feast is seasonal, has its days and dresses Arianna and the Coder in its costume (D-246)', () => {
+  for (const id of FEASTS) {
+    const theme = repoThemes.find((entry) => entry.id === id) as ChatTheme & { dates?: unknown };
+    assert.equal(theme.kind, 'stagionale', id);
+    assert.ok(theme.dates !== undefined, id);
+    assert.deepEqual(theme.characters, { arianna: `originali/arianna-${id}`, coder: `originali/coder-${id}` }, id);
+    // A full palette in both modes: no token falls back to style.css, which is under AA.
+    for (const mode of ['dark', 'light'] as const) for (const [front, back] of CONTRAST_PAIRS) assert.ok(theme.tokens[mode][front] !== undefined && theme.tokens[mode][back] !== undefined, `${id} ${mode} ${front}/${back}`);
   }
 });
 
@@ -82,7 +126,7 @@ test('the characters a theme names are costumes of the originals or people of th
       if (packId === 'originali') assert.ok(character.endsWith(`-${theme.id}`), `${theme.id}.${agent}: ${choice}`);
     }
     // In every theme of the series Arianna, the Coder and GOD wear someone of the series (D-211, D-237, D-238).
-    if (!['corsia', 'ufficio', 'springfield', 'quahog', 'langley', 'fox-river', 'planet-express', 'pasadena'].includes(theme.id)) continue;
+    if (theme.kind !== 'serie') continue;
     for (const agent of ['arianna', 'coder', 'god']) assert.equal(theme.characters[agent]?.split('/')[0], 'serie', `${theme.id}.${agent}`);
   }
 });
@@ -122,8 +166,18 @@ test('an attribute outside the closed lists is never set', () => {
   assert.deepEqual(themeAttributes(odd), { 'data-pattern': undefined, 'data-decor': undefined, 'data-corners': undefined, 'data-radius': undefined });
 });
 
-test('the theme in use is the current one of the listing, Base otherwise', () => {
+test('the theme in use is the current one of the listing, Base otherwise, style.css with no listing', () => {
   assert.equal(activeTheme(null), undefined);
   assert.equal(activeTheme({ themes: repoThemes, refused: [], chosen: 'corsia', current: 'corsia' })?.id, 'corsia');
-  assert.equal(activeTheme({ themes: repoThemes, refused: [], chosen: 'sparito', current: 'base' }), undefined);
+  assert.equal(activeTheme({ themes: repoThemes, refused: [], chosen: 'sparito', current: 'base' })?.id, 'base');
+  // Base not served (its folder refused): the fallback of style.css.
+  assert.equal(activeTheme({ themes: repoThemes.filter((theme) => theme.id !== 'base'), refused: [], chosen: 'base', current: 'base' }), undefined);
+});
+
+test('the feast in use is the one that took the place of the chosen theme, never one chosen by hand (D-246)', () => {
+  assert.equal(feastInUse(null), undefined);
+  assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'base', current: 'natale', seasonal: true })?.id, 'natale');
+  assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'natale', current: 'natale', seasonal: true }), undefined);
+  assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'base', current: 'base', seasonal: true }), undefined);
+  assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'corsia', current: 'corsia', seasonal: true }), undefined);
 });

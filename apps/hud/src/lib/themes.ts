@@ -3,8 +3,9 @@
  * core serves them already checked (`GET /api/themes`). The page applies
  * only the tokens of its own list, with `style.setProperty`, and the closed
  * values of background and HUD as attributes on <html>, read by style.css:
- * nothing of a theme reaches the CSS as written. Base has no file: removing
- * every property gives back the colours of style.css.
+ * nothing of a theme reaches the CSS as written. Base is a theme as the
+ * others (D-246, `apps/hud/themes/base`); when the core does not serve it,
+ * removing every property gives back the colours of style.css, its fallback.
  */
 
 /** The same list as THEME_TOKENS of the core (apps/core/src/themes.ts), repeated: the page does not import the core. */
@@ -49,7 +50,7 @@ export const RADII = ['squadrato', 'hud', 'morbido'] as const;
 export interface ChatTheme {
   id: string;
   name: string;
-  kind: 'serie' | 'stagionale';
+  kind: 'base' | 'serie' | 'stagionale';
   description?: string;
   background: { pattern: (typeof PATTERNS)[number]; decor?: (typeof DECORS)[number] };
   hud: { corners: boolean; glow: (typeof GLOWS)[number]; radius: (typeof RADII)[number] };
@@ -62,8 +63,10 @@ export interface ThemeListing {
   refused: { theme: string; reason: string }[];
   /** As written in `[appearance]`. */
   chosen: string;
-  /** In use: the chosen one, or Base when it is missing or refused. */
+  /** In use: the chosen one, or Base when it is missing or refused, or the feast of the day in place of Base (D-246). */
   current: string;
+  /** `[appearance] seasonal` (D-246): the feasts take the place of Base in their days. An older core sends none. */
+  seasonal?: boolean;
 }
 
 export const BASE_THEME = 'base';
@@ -123,10 +126,17 @@ export function applyTheme(target: StyleTarget, theme: ChatTheme | undefined, mo
   }
 }
 
-/** The theme in use, from the listing: undefined is Base. */
+/** The theme in use, from the listing: undefined is the fallback of style.css (no listing, or Base not served). */
 export function activeTheme(listing: ThemeListing | null): ChatTheme | undefined {
-  if (listing === null || listing.current === BASE_THEME) return undefined;
+  if (listing === null) return undefined;
   return listing.themes.find((theme) => theme.id === listing.current);
+}
+
+/** The feast that has taken the place of Base today (D-246), when there is one. */
+export function feastInUse(listing: ThemeListing | null): ChatTheme | undefined {
+  if (listing === null || listing.current === listing.chosen) return undefined;
+  const theme = listing.themes.find((entry) => entry.id === listing.current);
+  return theme?.kind === 'stagionale' ? theme : undefined;
 }
 
 // Contrast (WCAG 2.x), for the test of every theme and the preview of Impostazioni.
