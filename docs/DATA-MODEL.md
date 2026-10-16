@@ -78,7 +78,7 @@ CREATE TABLE task_activities (
   task_id  uuid NOT NULL REFERENCES tasks(id),               -- solo task di una conversazione non cancellata
   step     integer NOT NULL,
   ts       timestamptz NOT NULL DEFAULT now(),
-  kind     text NOT NULL,                                   -- search | read | write | card | plan | error | stop | delegate | tool | wait (mai thinking; stop: errore che chiude il task, D-250, migrazione 0074)
+  kind     text NOT NULL,                                   -- search | read | write | card | plan | error | stop | delegate | tool | wait (mai thinking; stop: errore che chiude il task, D-250, migrazione 0077)
   detail   text NOT NULL,                                   -- lo stesso testo breve della riga dal vivo, ≤ 300 caratteri
   label    privacy_label NOT NULL                           -- ≥ etichetta effettiva del task, ≤ clearance della conversazione
 );
