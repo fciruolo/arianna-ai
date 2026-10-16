@@ -35,7 +35,7 @@ import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, Proj
 import type { Note, NoteListing } from './thoughts.ts';
 import type { DashboardTile, Suggestion, TileWidth } from './dashboard.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import type { Approval, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -397,8 +397,21 @@ export async function sendMessage(
   conversationId: string,
   body: string,
   design?: { style?: string; skills?: string[] },
+  attachments?: readonly string[],
 ): Promise<{ message: Message; task: Task } | { queued: QueuedMessage }> {
-  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
+  // The images and files of the message (D-247): ids of pending attachments, only when there are some.
+  const attached = attachments === undefined || attachments.length === 0 ? {} : { attachments: [...attachments] };
+  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design, ...attached });
+}
+
+/** An image or a file pasted, dropped or chosen (D-247): kept pending by the core until the message leaves. */
+export async function uploadAttachment(name: string, data: string): Promise<AttachmentInfo> {
+  return (await call<{ attachment: AttachmentInfo }>('POST', '/api/attachments', { name, data })).attachment;
+}
+
+/** «×» on an attachment not sent yet: the core removes it and its file. */
+export async function discardAttachment(id: string): Promise<void> {
+  await call('DELETE', `/api/attachments/${encodeURIComponent(id)}`, {});
 }
 
 /** «Chiedi a lato» (D-232): the side threads of a conversation, by the answer they are about. */

@@ -27,7 +27,7 @@ import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
 import { splittable } from './lib/split.ts';
 import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, AttachmentInfo, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
@@ -80,7 +80,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
   /** A message the core refused: the page puts it back in the field, never lost (D-219). */
-  const refusedDraft = ref<{ conversationId: string; body: string; at: number } | null>(null);
+  const refusedDraft = ref<{ conversationId: string; body: string; at: number; attachments?: AttachmentInfo[] } | null>(null);
   /** Who «@» may call in a conversation with Arianna (D-107, tappa B2), read with the projects. */
   const mentionable = ref<string[]>([]);
   /** The messages of the open conversation waiting for the answer at work (D-218). */
@@ -925,7 +925,8 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     }
   }
 
-  async function send(body: string, design?: MessageDesign): Promise<boolean> {
+  /** `attachments`: the images and files of the message (D-247), already kept by the core as pending. */
+  async function send(body: string, design?: MessageDesign, attachments: readonly AttachmentInfo[] = []): Promise<boolean> {
     const state = chat.value;
     if (state === null || body.trim() === '') return false;
     error.value = null;
@@ -957,7 +958,12 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
       }
       // Whatever is left must be a message: a command never reaches Arianna.
       if (!goesToArianna(body)) return false;
-      const posted = await api.sendMessage(state.conversationId, body, design);
+      const posted = await api.sendMessage(
+        state.conversationId,
+        body,
+        design,
+        attachments.map((item) => item.id),
+      );
       // An answer is at work (D-218): the message waits in the queue, shown above the field.
       if ('queued' in posted) {
         if (chat.value?.conversationId === state.conversationId) await refreshQueue();
@@ -968,7 +974,8 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
       return true;
     } catch (cause) {
       fail(cause);
-      refusedDraft.value = { conversationId: state.conversationId, body, at: Date.now() };
+      // Its attachments go back to the field with it (D-247): the core still keeps them as pending.
+      refusedDraft.value = { conversationId: state.conversationId, body, at: Date.now(), ...(attachments.length === 0 ? {} : { attachments: [...attachments] }) };
       // Kept as the draft of its conversation too (D-231): the page may have moved on, and then the field does not take it back.
       keepRefused(storage, state.conversationId, body, !incognitoHere && !knownIncognito.has(state.conversationId), Date.now());
       return false;

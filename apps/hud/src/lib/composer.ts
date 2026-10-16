@@ -236,7 +236,7 @@ export function modelForDigit(digit: number, selectable: readonly { model: strin
 
 // --- The «+» menu (D-231) ---------------------------------------------------
 
-export type PlusAction = 'commands' | 'mention' | 'attach' | 'session' | 'save' | 'model';
+export type PlusAction = 'commands' | 'mention' | 'attach' | 'file' | 'session' | 'save' | 'model';
 
 export interface PlusEntry {
   id: string;
@@ -259,6 +259,11 @@ export interface PlusOptions {
   mention: boolean;
   /** The project whose Private notes may leave once (D-187), or null. */
   attachProject: string | null;
+  /**
+   * «Allega file» (D-247): images and text files read on the Mac only. `problem` says in Italian why this
+   * conversation takes none (the entry is shown off, with a short reason); absent, the entry is left out.
+   */
+  file?: { problem?: string | undefined } | undefined;
   /** «Nuova sessione» of the Designer (D-185). */
   session: boolean;
   sessionBusy?: boolean;
@@ -277,6 +282,13 @@ export function plusEntries(options: PlusOptions): PlusEntry[] {
     { id: 'commands', action: 'commands', text: 'Comandi', keys: '/', ...(empty ? {} : { hint: 'a campo vuoto', disabled: true }) },
   ];
   if (options.mention) entries.push({ id: 'mention', action: 'mention', text: 'Chiama un agente', keys: '@', ...(empty ? {} : { hint: 'a campo vuoto', disabled: true }) });
+  if (options.file !== undefined) {
+    entries.push(
+      options.file.problem === undefined
+        ? { id: 'file', action: 'file', text: 'Allega file', hint: 'immagine o testo, letto solo sul Mac', keys: options.mac ? '⌘V' : 'Ctrl+V' }
+        : { id: 'file', action: 'file', text: 'Allega file', hint: 'solo in una chat privata', disabled: true },
+    );
+  }
   if (options.attachProject !== null) entries.push({ id: 'attach', action: 'attach', text: 'Allega nota privata', hint: `di ${options.attachProject}, con la master password` });
   if (options.session) entries.push({ id: 'session', action: 'session', text: 'Nuova sessione', hint: 'il Designer riparte da un riassunto', ...(options.sessionBusy === true ? { disabled: true } : {}) });
   if (options.save) entries.push({ id: 'save', action: 'save', text: options.saved === true ? 'Aggiorna in inbox' : 'Salva in inbox', hint: 'tutta la conversazione, come nota Privata' });

@@ -180,6 +180,17 @@ export interface Message {
   agent: string | null;
   /** The cloud model that wrote Arianna's answer (Claude in a system chat, D-064); null for the local model. */
   model: string | null;
+  /** The images and files the user attached (D-247); absent from an older core. */
+  attachments?: AttachmentInfo[];
+}
+
+/** An image or a file attached in a private chat (D-247): what the chat shows, never what the model read of it. */
+export interface AttachmentInfo {
+  id: string;
+  kind: 'image' | 'text';
+  name: string;
+  mediaType: string;
+  size: number;
 }
 
 export type TaskStatus = 'inbox' | 'ready' | 'running' | 'waiting_user' | 'to_verify' | 'done' | 'failed';

@@ -170,6 +170,24 @@ const ERRORS: Record<string, string> = {
   'the note cannot be organized again': 'Questa nota non si può riordinare di nuovo.',
   'notes cannot be organized now': 'Il riordino delle note non è disponibile adesso: manca il modello locale.',
   'status must be new or organized': 'Filtro di stato non valido.',
+  // Images and files attached in the chat (D-247).
+  'attachments go only in a private conversation: they never leave the Mac':
+    'Gli allegati restano sul Mac: qui potrebbero leggerli Claude o ChatGPT. Allegali in una conversazione privata.',
+  'attachments are off in incognito: nothing of it may stay': 'In incognito non si allega niente: non resterebbe nulla della conversazione.',
+  'attachments go only in a private conversation with Arianna or the local model': 'Gli allegati vanno solo in una conversazione privata con Arianna o con il modello locale.',
+  'an attachment cannot wait in the queue: send it when the answer is done': 'Un allegato non aspetta in coda: mandalo quando la risposta in corso è finita.',
+  'no local model reads images: assign the vision role in the settings':
+    'Nessun modello locale legge le immagini: in Impostazioni → Modelli scegli chi «Guarda le immagini allegate».',
+  'an image is 10 MB at most': 'Un’immagine può essere al massimo di 10 MB.',
+  'a text file is 256 KiB at most': 'Un file di testo può essere al massimo di 256 KiB: un testo più lungo va in una nota.',
+  'the file must be a PNG, JPEG, WebP or GIF image, or a .txt, .md, .csv or .json text': 'Si allegano solo immagini PNG, JPEG, WebP o GIF e testi .txt, .md, .csv o .json.',
+  'the text file is not UTF-8': 'Il file di testo non è in UTF-8.',
+  'the text file contains a NUL character': 'Il file di testo contiene caratteri non validi.',
+  'the text file is empty': 'Il file di testo è vuoto.',
+  'an attachment was already sent or removed: attach it again': 'Un allegato è già stato mandato o tolto: allegalo di nuovo.',
+  'the attachment was sent: it goes with its message': 'L’allegato è già nel messaggio: se ne va solo con la conversazione.',
+  'a message carries 4 attachments at most': 'Al massimo 4 allegati per messaggio.',
+  'the file of the attachment is missing': 'Il file dell’allegato non c’è più.',
   // Trials of a model (D-081).
   'the model is not in the catalog': 'Il modello non è nel catalogo.',
   'the catalog does not list this role for the model': 'Il catalogo non indica questo modello per l’orchestratore.',

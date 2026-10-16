@@ -77,6 +77,11 @@ import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
 import { startDesignerSession } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
 import { paneId, paneOwnsKey, type Pane } from '../lib/split.ts';
+import { useAttachmentField } from '../lib/attachment-field.ts';
+import { attachmentPlaceProblem, attachmentsBody } from '../lib/attachments.ts';
+import type { AttachmentInfo } from '../lib/types.ts';
+import AttachmentChips from './AttachmentChips.vue';
+import MessageAttachments from './MessageAttachments.vue';
 
 const props = defineProps<{
   chat: ChatState;
@@ -109,7 +114,7 @@ const props = defineProps<{
   /** The agents «@» may call here (D-107, tappa B2): only in a conversation with Arianna. */
   mentionable?: readonly string[] | undefined;
   /** A message the core refused: back in the field when the field is empty (D-219). */
-  refusedDraft?: { conversationId: string; body: string; at: number } | null | undefined;
+  refusedDraft?: { conversationId: string; body: string; at: number; attachments?: AttachmentInfo[] } | null | undefined;
   /** «Chiedi a lato» (D-232): the side threads of this conversation by answer; without it the action is not offered. */
   sides?: ReadonlyMap<string, string> | undefined;
   /** «Affianca» (D-234): which of the two conversations side by side this is; undefined when it is alone. */
@@ -119,7 +124,8 @@ const props = defineProps<{
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
 const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
-  send: [body: string];
+  /** The message, with the images and files attached to it (D-247), already kept by the core. */
+  send: [body: string, attachments: AttachmentInfo[]];
   /** "Apri nello Studio": the project of this chat with the Designer (I-20, D-185). */
   studio: [workspace: string];
   /** «Nuova sessione» of the Designer started in this conversation (D-185): the page reads it again. */
@@ -573,6 +579,54 @@ const menuDismissed = ref<string | null>(null);
 const activeCommand = ref(0);
 const commandHint = ref<string | null>(null);
 const commandQuery = computed(() => menuQuery(draft.value));
+
+// Images and files (D-247): pasted, dropped or chosen with «Allega file»; only where the answer is written on the Mac.
+const attachProblem = computed(() => attachmentPlaceProblem(props.conversation));
+const {
+  items: attachmentItems,
+  uploading: attachmentsUploading,
+  ready: attachmentsReady,
+  add: addAttachments,
+  remove: removeAttachment,
+  take: takeAttachments,
+  restore: restoreAttachments,
+  drop: dropAttachments,
+} = useAttachmentField(
+  () => props.conversation,
+  (text) => {
+    commandHint.value = text;
+  },
+);
+const fileInput = ref<HTMLInputElement | null>(null);
+// Another conversation: what was pasted here never goes there.
+watch(
+  () => props.conversation.id,
+  () => {
+    dropAttachments();
+  },
+);
+onBeforeUnmount(dropAttachments);
+function onPaste(event: ClipboardEvent): void {
+  const files = [...(event.clipboardData?.files ?? [])];
+  if (files.length === 0) return;
+  event.preventDefault();
+  void addAttachments(files);
+}
+function onDragOver(event: DragEvent): void {
+  if (event.dataTransfer?.types.includes('Files') === true) event.preventDefault();
+}
+function onDrop(event: DragEvent): void {
+  const files = [...(event.dataTransfer?.files ?? [])];
+  if (files.length === 0) return;
+  event.preventDefault();
+  void addAttachments(files);
+}
+function onFiles(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const files = [...(input.files ?? [])];
+  input.value = '';
+  void addAttachments(files);
+}
 /** A conversation with Arianna, where «@name» and «/giro» reach the agents (D-107, tappa B2): not a direct chat, the secretary's or a trial. */
 const ariannaChat = computed(() => direct.value === null && props.conversation.secretary !== true && (props.conversation.trialModel ?? null) === null);
 /** «/progetta» (D-235): why it does not work here, or undefined where it does. */
@@ -614,7 +668,11 @@ const mention = useMentionMenu(
 watch(
   () => props.refusedDraft,
   (refused) => {
-    if (refused !== null && refused !== undefined && refused.conversationId === props.chat.conversationId && draft.value.trim() === '') setDraft(refused.body);
+    if (refused === null || refused === undefined || refused.conversationId !== props.chat.conversationId) return;
+    // Its attachments come back too, still kept by the core (D-247); the text written for them alone does not.
+    const back = refused.attachments ?? [];
+    if (back.length > 0) restoreAttachments(back);
+    if (draft.value.trim() === '' && (back.length === 0 || refused.body !== attachmentsBody('', back.map((item) => item.name)))) setDraft(refused.body);
   },
 );
 
@@ -734,6 +792,8 @@ const plus = computed(() =>
     draft: draft.value,
     mention: ariannaChat.value && (props.mentionable?.length ?? 0) > 0,
     attachProject: attachProject.value,
+    // «Allega file» (D-247): off, with its reason, where Claude or ChatGPT may answer.
+    file: { problem: attachProblem.value },
     session: direct.value === DESIGNER_AGENT && Boolean(props.conversation.workspace) && props.conversation.archivedAt === null,
     sessionBusy: sessionBusy.value || props.sending,
     save: !incognito.value && props.chat.messages.some((message) => message.role !== 'system'),
@@ -760,6 +820,9 @@ function onPlus(entry: PlusEntry): void {
     case 'attach':
       attaching.value = true;
       return;
+    case 'file':
+      fileInput.value?.click();
+      return;
     case 'session':
       void newDesignerSession();
       composer.value?.focus();
@@ -782,9 +845,20 @@ const confirmButton = ref<HTMLButtonElement | null>(null);
 
 /** `confirmed`: only from "Invia comunque" (D-111). */
 function submit(confirmed = false): void {
-  const body = draft.value;
-  if (body.trim() === '' || props.sending) return;
+  const files = attachmentsReady.value;
+  if ((draft.value.trim() === '' && attachmentItems.value.length === 0) || props.sending) return;
   commandHint.value = null;
+  // Images and files (D-247): all uploaded, where the conversation takes them, never into the queue.
+  if (attachmentItems.value.length > 0) {
+    const problem = attachmentsUploading.value
+      ? 'Aspetta che gli allegati finiscano di caricarsi.'
+      : (attachProblem.value ?? (working.value ? 'Un allegato non aspetta in coda: mandalo quando la risposta in corso è finita.' : undefined));
+    if (problem !== undefined) {
+      commandHint.value = problem;
+      return;
+    }
+  }
+  const body = attachmentsBody(draft.value, files.map((file) => file.name));
   const meaning = resolveDraft(body);
   // «/giro» only where Arianna directs (D-107, tappa B2): elsewhere it would reach one agent as it is.
   if (meaning.kind === 'command' && meaning.command.action.kind === 'round' && !ariannaChat.value) {
@@ -816,7 +890,8 @@ function submit(confirmed = false): void {
     return;
   }
   confirmLong.value = false;
-  emit('send', body);
+  // A command carries no attachment: they stay in the field for the next message.
+  emit('send', body, meaning.kind === 'message' ? takeAttachments() : []);
   // An unknown command is not sent (D-080): the draft stays, to be corrected.
   if (meaning.kind === 'error') return;
   draft.value = '';
@@ -1170,6 +1245,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <SessionLine v-if="index === session" :text="sessionText" />
           <!-- User -->
           <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
+            <MessageAttachments v-if="(message.attachments?.length ?? 0) > 0" :attachments="message.attachments ?? []" />
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
               {{ message.body }}
             </div>
@@ -1396,10 +1472,23 @@ onBeforeUnmount(() => clearInterval(clock));
           @send="(id) => emit('sendQueued', id)"
           @resume="emit('resumeQueue')"
         />
+        <AttachmentChips :items="attachmentItems" @remove="removeAttachment" />
         <form
           class="flex items-end gap-2 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-2"
           @submit.prevent="submit()"
+          @dragover="onDragOver"
+          @drop="onDrop"
         >
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            class="hidden"
+            accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown,.csv,.json"
+            tabindex="-1"
+            aria-hidden="true"
+            @change="onFiles"
+          />
           <PlusMenu :entries="plus" :model-title="answersDirect ? 'Chi risponde in questa chat' : cloud ? 'Modello' : 'Modello per i passi delegati'" @choose="onPlus" @opened="onPlusOpened" />
           <label :for="paneId(pane, 'composer')" class="sr-only">Messaggio</label>
           <textarea
@@ -1418,6 +1507,7 @@ onBeforeUnmount(() => clearInterval(clock));
             :aria-activedescendant="activeId"
             @keydown="onKey"
             @input="onInput"
+            @paste="onPaste"
           />
           <button
             v-if="working"
@@ -1433,7 +1523,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <button
             type="submit"
             :title="working ? 'Mettilo in coda: parte quando finisce la risposta in corso' : undefined"
-            :disabled="sending || draft.trim() === ''"
+            :disabled="sending || (draft.trim() === '' && attachmentItems.length === 0)"
             class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Invia"
           >
