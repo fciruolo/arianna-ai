@@ -20,8 +20,17 @@ const props = defineProps<{
   system: Conversation[];
   selected: string | null;
   rename: (id: string, title: string) => Promise<boolean>;
+  /** The conversation beside the open one (D-234), marked in the list; null when there is none. */
+  beside?: string | null | undefined;
+  /** Whether «Affianca» is offered on a conversation (D-234); without it, never. */
+  splittable?: ((conversation: Conversation) => boolean) | undefined;
 }>();
-const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; pin: [id: string, pinned: boolean]; erase: [id: string] }>();
+const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; pin: [id: string, pinned: boolean]; erase: [id: string]; split: [id: string] }>();
+
+/** «Affianca» on this row (D-234). */
+function offersSplit(conversation: Conversation): boolean {
+  return props.splittable?.(conversation) === true;
+}
 
 /** "Fissate" on top (D-089, no limit of number), then the others by day. */
 const groups = computed(() => {
@@ -140,8 +149,13 @@ function confirmArchive(id: string): void {
           <template v-else>
             <button
               type="button"
-              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-[7rem] text-left md:pr-2 md:group-focus-within:pr-[5.75rem] md:group-hover:pr-[5.75rem] 3xl:group-focus-within:pr-[7rem] 3xl:group-hover:pr-[7rem]"
-              :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
+              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 text-left md:pr-2"
+              :class="[
+                conversation.id === selected ? 'border-line-strong bg-surface-2' : conversation.id === beside ? 'border-dashed border-line-strong' : 'border-transparent hover:bg-surface-2',
+                offersSplit(conversation)
+                  ? 'pr-[8.5rem] md:group-focus-within:pr-[7rem] md:group-hover:pr-[7rem] 3xl:group-focus-within:pr-[8.5rem] 3xl:group-hover:pr-[8.5rem]'
+                  : 'pr-[7rem] md:group-focus-within:pr-[5.75rem] md:group-hover:pr-[5.75rem] 3xl:group-focus-within:pr-[7rem] 3xl:group-hover:pr-[7rem]',
+              ]"
               :aria-current="conversation.id === selected ? 'true' : undefined"
               :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
@@ -150,11 +164,22 @@ function confirmArchive(id: string): void {
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
+              <span v-if="conversation.id === beside" class="sr-only">, affiancata</span>
               <!-- D-150: from md to 3xl (a laptop) only the coloured dot, so the title keeps the room; the word in the title and for screen readers. -->
               <span class="hidden shrink-0 md:inline-flex 3xl:hidden"><LabelBadge :label="conversation.clearance" dot /></span>
               <span class="shrink-0 md:hidden 3xl:inline-flex"><LabelBadge :label="conversation.clearance" /></span>
             </button>
             <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100 [&>button]:md:p-0.5 [&>button]:3xl:p-1">
+              <button
+                v-if="offersSplit(conversation)"
+                type="button"
+                class="rounded-md p-1 text-muted hover:text-ink"
+                :aria-label="`Affianca ${titleOf(conversation)} alla conversazione aperta`"
+                title="Affianca: aprila accanto alla conversazione aperta"
+                @click="emit('split', conversation.id)"
+              >
+                <Icon name="compare" :size="15" />
+              </button>
               <button
                 type="button"
                 class="rounded-md p-1 hover:text-ink"
@@ -215,18 +240,32 @@ function confirmArchive(id: string): void {
           <template v-else>
             <button
               type="button"
-              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-16 text-left md:pr-2 md:group-focus-within:pr-16 md:group-hover:pr-16"
-              :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
+              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 text-left md:pr-2"
+              :class="[
+                conversation.id === selected ? 'border-line-strong bg-surface-2' : conversation.id === beside ? 'border-dashed border-line-strong' : 'border-transparent hover:bg-surface-2',
+                offersSplit(conversation) ? 'pr-24 md:group-focus-within:pr-24 md:group-hover:pr-24' : 'pr-16 md:group-focus-within:pr-16 md:group-hover:pr-16',
+              ]"
               :aria-current="conversation.id === selected ? 'true' : undefined"
               :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
             >
               <span class="shrink-0 text-warn" title="Chat di sistema"><Icon name="system" :size="14" /></span>
               <span class="min-w-0 flex-1 truncate">{{ titleOf(conversation) }}</span>
+              <span v-if="conversation.id === beside" class="sr-only">, affiancata</span>
               <span class="hidden shrink-0 md:inline-flex 3xl:hidden"><LabelBadge :label="conversation.clearance" dot /></span>
               <span class="shrink-0 md:hidden 3xl:inline-flex"><LabelBadge :label="conversation.clearance" /></span>
             </button>
             <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+              <button
+                v-if="offersSplit(conversation)"
+                type="button"
+                class="rounded-md p-1 text-muted hover:text-ink"
+                :aria-label="`Affianca ${titleOf(conversation)} alla conversazione aperta`"
+                title="Affianca: aprila accanto alla conversazione aperta"
+                @click="emit('split', conversation.id)"
+              >
+                <Icon name="compare" :size="15" />
+              </button>
               <button
                 type="button"
                 class="rounded-md p-1 text-muted hover:text-ink"

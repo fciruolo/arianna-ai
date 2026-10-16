@@ -73,6 +73,7 @@ import SessionLine from './SessionLine.vue';
 import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
 import { startDesignerSession } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
+import { paneId, paneOwnsKey, type Pane } from '../lib/split.ts';
 
 const props = defineProps<{
   chat: ChatState;
@@ -108,6 +109,8 @@ const props = defineProps<{
   refusedDraft?: { conversationId: string; body: string; at: number } | null | undefined;
   /** «Chiedi a lato» (D-232): the side threads of this conversation by answer; without it the action is not offered. */
   sides?: ReadonlyMap<string, string> | undefined;
+  /** «Affianca» (D-234): which of the two conversations side by side this is; undefined when it is alone. */
+  pane?: Pane | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -330,6 +333,16 @@ const answerModel = computed(() => {
 /** A long message of the direct chat waits for "Invia comunque" (D-111, risposta 5). */
 const confirmLong = ref(false);
 
+// I-7 (D-131): the whole conversation in one note of kb/inbox; a second save replaces it.
+// Before the watcher below, which runs at once and resets them.
+const wholeSaved = ref(false);
+/** The note's path in kb/inbox, for "Apri nella Conoscenza"; null when the core does not name it (above L2). A second save can change it. */
+const wholePath = ref<string | null>(null);
+/** When it was last saved, with the path: "Salvata in inbox alle …" stays after a reload. */
+const wholeSavedAt = ref<string | null>(null);
+const wholeWhen = computed(() => savedWhenText(wholeSavedAt.value, now.value));
+const wholeSaving = ref(false);
+const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
 // D-099: the messages of this conversation already saved in kb/inbox ("Salvato" after a reload).
 const saved = ref<SavedNotes>(new Map());
 watch(
@@ -352,15 +365,6 @@ watch(
   { immediate: true },
 );
 
-// I-7 (D-131): the whole conversation in one note of kb/inbox; a second save replaces it.
-const wholeSaved = ref(false);
-/** The note's path in kb/inbox, for "Apri nella Conoscenza"; null when the core does not name it (above L2). A second save can change it. */
-const wholePath = ref<string | null>(null);
-/** When it was last saved, with the path: "Salvata in inbox alle …" stays after a reload. */
-const wholeSavedAt = ref<string | null>(null);
-const wholeWhen = computed(() => savedWhenText(wholeSavedAt.value, now.value));
-const wholeSaving = ref(false);
-const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
 async function saveWhole(): Promise<void> {
   if (wholeSaving.value || incognito.value) return;
   const conversationId = props.chat.conversationId;
@@ -530,7 +534,7 @@ const menuItems = computed(() =>
 const menuOpen = computed(() => commandQuery.value !== undefined && draft.value !== menuDismissed.value);
 const activeId = computed(() => {
   const command = menuOpen.value ? menuItems.value[activeCommand.value] : undefined;
-  return command === undefined ? undefined : `command-${command.name}`;
+  return command === undefined ? undefined : paneId(props.pane, `command-${command.name}`);
 });
 watch(commandQuery, () => {
   activeCommand.value = 0;
@@ -618,6 +622,8 @@ function chooseModelEntry(model: string | null): void {
 function onModelKey(event: KeyboardEvent): void {
   const digit = modelDigit(event, mac);
   if (digit === undefined || event.defaultPrevented || event.repeat) return;
+  // Two conversations side by side (D-234): the key is for the one holding the focus, else for the left one.
+  if (!paneOwnsKey(props.pane, focusedPane(), frontPane())) return;
   // Never under another window (a confirmation, the search, a call).
   if (document.querySelector('[aria-modal="true"]') !== null) return;
   event.preventDefault();
@@ -631,6 +637,16 @@ function onModelKey(event: KeyboardEvent): void {
     return;
   }
   chooseModelEntry(choice.model);
+}
+/** The pane holding the focus when two conversations stand side by side (D-234), from the `data-pane` of their boxes. */
+function focusedPane(): Pane | null {
+  const box = document.activeElement?.closest('[data-pane]');
+  const value = box?.getAttribute('data-pane');
+  return value === 'left' || value === 'right' ? value : null;
+}
+/** The pane in front (D-234): the page marks it with `data-pane-front`; the left one when none is marked. */
+function frontPane(): Pane {
+  return document.querySelector('[data-pane-front]')?.getAttribute('data-pane') === 'right' ? 'right' : 'left';
 }
 onMounted(() => window.addEventListener('keydown', onModelKey));
 onBeforeUnmount(() => {
@@ -873,7 +889,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
 <template>
   <!-- On a wide screen the computer of the Coder stands beside the chat instead of over it (D-095). -->
-  <section class="flex flex-col" :class="computerOpen ? 'xl:pr-[560px]' : ''" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
+  <section class="flex flex-col" :class="computerOpen && pane === undefined ? 'xl:pr-[560px]' : ''" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
       <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5 short:gap-3.5 short:pt-4 short:pb-5">
         <!-- Persona header with the HUD ring -->
@@ -1269,10 +1285,10 @@ onBeforeUnmount(() => clearInterval(clock));
         <!-- The "/" menu (D-090) -->
         <div v-if="menuOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
           <p class="hud-title px-3.5 pt-1 pb-1.5">Comandi</p>
-          <ul id="command-menu" role="listbox" aria-label="Comandi" class="max-h-72 overflow-y-auto">
+          <ul :id="paneId(pane, 'command-menu')" role="listbox" aria-label="Comandi" class="max-h-72 overflow-y-auto">
             <li
               v-for="(command, index) in menuItems"
-              :id="`command-${command.name}`"
+              :id="paneId(pane, `command-${command.name}`)"
               :key="command.name"
               role="option"
               :aria-selected="index === activeCommand"
@@ -1305,9 +1321,9 @@ onBeforeUnmount(() => clearInterval(clock));
           @submit.prevent="submit()"
         >
           <PlusMenu :entries="plus" :model-title="answersDirect ? 'Chi risponde in questa chat' : cloud ? 'Modello' : 'Modello per i passi delegati'" @choose="onPlus" @opened="onPlusOpened" />
-          <label for="composer" class="sr-only">Messaggio</label>
+          <label :for="paneId(pane, 'composer')" class="sr-only">Messaggio</label>
           <textarea
-            id="composer"
+            :id="paneId(pane, 'composer')"
             ref="composer"
             v-model="draft"
             rows="1"
@@ -1317,7 +1333,7 @@ onBeforeUnmount(() => clearInterval(clock));
             role="combobox"
             aria-multiline="true"
             aria-autocomplete="list"
-            :aria-controls="menuOpen ? 'command-menu' : undefined"
+            :aria-controls="menuOpen ? paneId(pane, 'command-menu') : undefined"
             :aria-expanded="menuOpen"
             :aria-activedescendant="activeId"
             @keydown="onKey"

@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 
 import * as api from './lib/api.ts';
 import type { ThemeListing } from './lib/themes.ts';
@@ -24,6 +24,7 @@ import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
+import { splittable } from './lib/split.ts';
 import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
 import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
@@ -31,15 +32,33 @@ import type { Approval, CharacterListing, CloudModel, Conversation, Conversation
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
 
 /**
+ * The lists of the page, given to a second store (D-234): the conversation
+ * beside reads them from the first one, which keeps them up to date.
+ */
+export interface SharedLists {
+  conversations: Ref<Conversation[]>;
+  archived: Ref<Conversation[]>;
+  systemChats: Ref<Conversation[]>;
+}
+
+/**
  * State of the page. Every change comes from the API; the socket only says
  * what changed (events carry ids, never content) and streams the answers.
+ *
+ * With `beside` (D-234, «Affianca») this is the store of the conversation
+ * shown beside the open one: it holds only that conversation (messages,
+ * tasks, queue, participants) and shares the lists of the first store. It has
+ * no socket of its own (the first store passes it the live feed with
+ * `listenLive`), shows no notice, rings no call and reads nothing global:
+ * approvals, models, projects, the status and the characters stay with the first.
  */
-export function createChatStore() {
-  const conversations = ref<Conversation[]>([]);
+export function createChatStore(options: { beside?: SharedLists } = {}) {
+  const beside = options.beside !== undefined;
+  const conversations = options.beside?.conversations ?? ref<Conversation[]>([]);
   /** Archived conversations, shown in their own section (D-057). */
-  const archived = ref<Conversation[]>([]);
+  const archived = options.beside?.archived ?? ref<Conversation[]>([]);
   /** System chats, opened by the system (D-064): their own section, between the two. */
-  const systemChats = ref<Conversation[]>([]);
+  const systemChats = options.beside?.systemChats ?? ref<Conversation[]>([]);
   /** The failed task whose error window is open, with its error once read. */
   /** The failure window; `claudeAnswers`: Claude can answer the task's system chat (D-064). */
   const failure = ref<{ task: Task; error: TaskFailure | null; loading: boolean; claudeAnswers: boolean } | null>(null);
@@ -139,6 +158,11 @@ export function createChatStore() {
   }
 
   async function refreshConversations(): Promise<void> {
+    // The store beside (D-234): the first store reads the lists, this one only keeps its conversation.
+    if (beside) {
+      await keepCurrent();
+      return;
+    }
     const [listed, system] = await Promise.all([api.listConversations(), api.listSystemChats()]);
     conversations.value = listed;
     systemChats.value = system;
@@ -147,6 +171,10 @@ export function createChatStore() {
 
   /** Every list: after an archive or a restore, and at the start. */
   async function refreshAllConversations(): Promise<void> {
+    if (beside) {
+      await keepCurrent();
+      return;
+    }
     const [listed, system, archivedList] = await Promise.all([api.listConversations(), api.listSystemChats(), api.listConversations(true)]);
     conversations.value = listed;
     systemChats.value = system;
@@ -492,6 +520,8 @@ export function createChatStore() {
   }
 
   async function refreshApprovals(): Promise<void> {
+    // The approvals are the first store's (D-234): it places them in each pane.
+    if (beside) return;
     const [pending, approved, rejected] = await Promise.all([
       api.listPendingApprovals(),
       api.listDecidedApprovals('approved'),
@@ -606,10 +636,27 @@ export function createChatStore() {
     participants.value = [];
     queue.value = { paused: false, messages: [] };
     try {
+      // The store beside (D-234) first reads what the conversation is (an address, a link may name any id): an incognito
+      // conversation, the secretary's or a side thread never stands beside, and nothing of it is read.
+      if (beside) {
+        await keepCurrent();
+        if (openId() !== id) return;
+        if (!splittable(current.value)) {
+          close();
+          return;
+        }
+      }
       await Promise.all([refreshMessages(), refreshCalls(), refreshParticipants(), refreshQueue()]);
     } catch (cause) {
+      // Beside, a conversation the core does not have (erased, a wrong address) closes: nothing to show.
+      // openId() reads the chat again after the await: the type narrowed by the assignment above hides that it may have changed.
+      if (beside && gone(cause) && openId() === id) close();
       fail(cause);
     }
+  }
+
+  function openId(): string | undefined {
+    return chat.value?.conversationId;
   }
 
   async function refreshCalls(): Promise<void> {
@@ -1061,14 +1108,25 @@ export function createChatStore() {
     liveListeners.add(listener);
     return () => liveListeners.delete(listener);
   }
-  /** A conversation the page shows besides the open one (the side thread in its panel, D-232): its notices stay quiet. */
-  let alsoSeen: () => string | null = () => null;
-  function seeAlso(seen: () => string | null): void {
-    alsoSeen = seen;
+  /**
+   * The conversations the page shows besides the open one (the side thread in
+   * its panel, D-232; the conversation beside, D-234): their notices stay quiet.
+   */
+  const alsoSeen = new Set<() => string | null>();
+  function seeAlso(seen: () => string | null): () => void {
+    alsoSeen.add(seen);
+    return () => alsoSeen.delete(seen);
+  }
+  function seenAlso(conversationId: string): boolean {
+    return [...alsoSeen].some((seen) => seen() === conversationId);
   }
 
   function onLive(message: ServerMessage): void {
     for (const listener of liveListeners) listener(message);
+    if (beside) {
+      onLiveBeside(message);
+      return;
+    }
     if (message.type === 'ready') {
       tellVisibility();
       // At every connection, also after a restart of the core, which keeps it in memory (D-128).
@@ -1085,7 +1143,7 @@ export function createChatStore() {
     }
     if (message.type === 'notice') {
       // The side thread open in its panel is being read (D-232): no notice for its answer while the page is in front.
-      if (message.conversationId !== null && message.conversationId === alsoSeen() && pageInView() && document.hasFocus()) return;
+      if (message.conversationId !== null && seenAlso(message.conversationId) && pageInView() && document.hasFocus()) return;
       // One place only: the helper of the Mac, else a system notification (fixed sentence and link), else a toast; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
       const where = noticeWhere(message.conversationId, view, message.helper === true);
@@ -1205,8 +1263,82 @@ export function createChatStore() {
         if (event.kind === 'task.status' && known) work.push(refreshActivityCounts());
         // The direct chat (D-111): the context of the Coder's session is saved after its answer, the indicator follows.
         if (event.kind === 'task.status' && known && current.value?.agent !== null && current.value?.agent !== undefined) work.push(refreshConversations());
+        // A conversation beside (D-234) has no lists of its own: its indicator of the context and its «Riprova» follow these.
+        else if (event.kind === 'task.status' && alsoSeen.size > 0 && [...alsoSeen].some((seen) => seen() !== null)) work.push(refreshConversations());
         // The source task of the open system chat: its "Riprova" follows the task's status.
         if (event.kind.startsWith('task.') && event.taskId !== null && event.taskId === current.value?.sourceTaskId) work.push(refreshConversations());
+    }
+    void Promise.all(work).catch(fail);
+  }
+
+  /**
+   * The live feed for the store beside (D-234): only what changes its own
+   * conversation. Notices, calls, incognito signals, the office and the status
+   * stay with the first store, which receives the same feed.
+   */
+  function onLiveBeside(message: ServerMessage): void {
+    // Nothing until the conversation is known to stand beside (open() checks it first): never a piece of an incognito one.
+    if (!splittable(current.value)) return;
+    if (message.type === 'ready') {
+      void Promise.all([keepCurrent(), refreshMessages(), refreshQueue(), refreshParticipants(), refreshCalls()]).catch(fail);
+      return;
+    }
+    if (message.type === 'delta') {
+      if (chat.value !== null) chat.value = applyDelta(chat.value, message);
+      return;
+    }
+    if (message.type === 'activity') {
+      if (chat.value !== null) chat.value = applyActivity(chat.value, message);
+      return;
+    }
+    if (message.type === 'edit') {
+      if (chat.value !== null) chat.value = applyEdit(chat.value, message);
+      return;
+    }
+    if (message.type === 'terminal') {
+      if (chat.value !== null) chat.value = applyTerminal(chat.value, message);
+      return;
+    }
+    if (message.type !== 'event') return;
+    const { event } = message;
+    const conversationId = payloadString(event, 'conversationId');
+    const mine = conversationId !== undefined && conversationId === chat.value?.conversationId;
+    const known = event.taskId !== null && event.taskId in tasks.value;
+    const work: Promise<unknown>[] = [];
+    switch (event.kind) {
+      case 'conversation.purged':
+        if (conversationId !== undefined) forget(conversationId);
+        break;
+      case 'events.rewoven':
+        work.push(afterErase());
+        break;
+      case 'message.created':
+        if (mine) {
+          const replyId = payloadString(event, 'replyId');
+          work.push(
+            refreshMessages().then(() => {
+              if (replyId !== undefined && chat.value !== null) chat.value = settleReply(chat.value, replyId);
+            }),
+          );
+        }
+        break;
+      case 'conversation.queue':
+        if (mine) work.push(refreshQueue());
+        break;
+      case 'participant.added':
+      case 'participant.removed':
+        if (mine) work.push(refreshParticipants());
+        break;
+      case 'call.ringing':
+      case 'call.scheduled':
+      case 'call.started':
+      case 'call.ended':
+        // Only the receipts among the messages: the call itself is the first store's.
+        if (mine) work.push(refreshCalls());
+        break;
+      default:
+        if ((event.kind.startsWith('task.') || event.kind.startsWith('approval.')) && known && event.taskId !== null) work.push(refreshTask(event.taskId));
+        if (event.kind === 'task.status' && known) work.push(refreshActivityCounts());
     }
     void Promise.all(work).catch(fail);
   }
@@ -1313,7 +1445,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { listenLive, seeAlso, reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { onLive, listenLive, seeAlso, reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

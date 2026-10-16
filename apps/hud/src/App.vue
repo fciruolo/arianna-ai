@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
 import SidePanel from './components/SidePanel.vue';
+import PaneHeader from './components/PaneHeader.vue';
 import SecretaryPanel from './components/SecretaryPanel.vue';
 import IncognitoClosed from './components/IncognitoClosed.vue';
 import IncognitoEndDialog from './components/IncognitoEndDialog.vue';
@@ -77,7 +78,8 @@ import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import { activeTheme, applyTheme } from './lib/themes.ts';
-import type { Activity, Approval, CharacterChoice, Message } from './lib/types.ts';
+import type { Activity, Approval, CharacterChoice, Conversation, Message } from './lib/types.ts';
+import { canSplit, paneId, splitFits, splitFromSearch, splittable, withSplit, type Pane } from './lib/split.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
@@ -94,11 +96,32 @@ const { panel: sidePanel, tasks: sideTasks, sides, sending: sideSending, queued:
 const stopSideLive = store.listenLive(side.onLive);
 onBeforeUnmount(stopSideLive);
 store.seeAlso(side.openId);
+
+/**
+ * «Affianca» (D-234): a second conversation beside the open one, with a store
+ * of its own (messages, field, draft, queue) that shares the lists of the
+ * first one and reads the same live feed. Each conversation keeps its
+ * clearance and who answers: nothing of one goes into the other.
+ */
+const beside = createChatStore({ beside: { conversations, archived, systemChats } });
+const { chat: besideChat, current: besideCurrent, tasks: besideTasks, credits: besideCredits, activityCounts: besideActivityCounts, sending: besideSending } = beside;
+const { calls: besideCalls, participants: besideParticipants, queue: besideQueue, refusedDraft: besideRefusedDraft, error: besideError, notice: besideNotice } = beside;
+const stopBesideLive = store.listenLive(beside.onLive);
+// Its answers are being read when the page is in front: no notice of the page for them.
+const stopBesideSeen = store.seeAlso(() => besideChat.value?.conversationId ?? null);
+onBeforeUnmount(() => {
+  stopBesideLive();
+  stopBesideSeen();
+});
+/** Below the minimum width only one of the two shows, with a switch: which one. */
+const shownPane = ref<Pane>('left');
 // Another conversation open: the panel was for the one before; the answers of this one with a side thread are read.
 watch(
   () => chat.value?.conversationId ?? null,
   (id) => {
     if (sidePanel.value !== null && sidePanel.value.motherId !== id) side.close();
+    // On a narrow window the conversation just opened on the left is the one shown (D-234).
+    shownPane.value = 'left';
     void side.loadSides(id);
     // Not in a list: it may be a side thread reached by its address (a notice, a link).
     if (id !== null && current.value === undefined) void openSideAddress(id);
@@ -116,6 +139,8 @@ async function openSideAddress(id: string): Promise<void> {
   const mother = conversation?.sideOf ?? null;
   const answer = conversation?.sideMessageId ?? null;
   if (mother === null || answer === null || chat.value?.conversationId !== id) return;
+  // The panel of a side thread never opens beside two conversations (D-234): the mother opens alone.
+  beside.close();
   await openConversation(mother);
   await side.loadSides(mother);
   const message = chat.value?.messages.find((item) => item.id === answer);
@@ -154,7 +179,8 @@ function leaveClosed(): void {
 
 // Calls (D-066, D-158): the phone in the header of a private conversation with Arianna, of a direct chat with an agent, or of their empty new page.
 const callee = computed<Callee | undefined>(() => {
-  if (page.value !== 'chat') return undefined;
+  // Two conversations side by side (D-234): no call, which one would be unclear; a call starts from one alone.
+  if (page.value !== 'chat' || splitOn.value) return undefined;
   return current.value !== undefined ? conversationCallee(current.value) : draftCallee(draft.value);
 });
 
@@ -217,9 +243,12 @@ function panelColumn(): boolean {
 /** Followed live: a closed drawer is inert (out of Tab and of screen readers), a column never. */
 const wideSidebar = ref(wide(48));
 const widePanel = ref(panelColumn());
+/** Wide enough for the two conversations of «Affianca» side by side (D-234). */
+const wideSplit = ref(typeof window !== 'undefined' && splitFits(window.innerWidth));
 function measureWidth(): void {
   wideSidebar.value = wide(48);
   widePanel.value = panelColumn();
+  wideSplit.value = splitFits(window.innerWidth);
 }
 
 /** The fold button of the left bar: a thin column on wide screens, the drawer closes on narrow ones. */
@@ -569,13 +598,13 @@ function openCardwall(): void {
 }
 
 /** A "/" command of the chat (D-090). */
-function runCommand(action: PageCommandAction): void {
+function runCommand(action: PageCommandAction, from = current.value): void {
   if (action.kind === 'search') {
     openSearch();
     return;
   }
   if (action.kind === 'new-conversation') {
-    const conversation = current.value;
+    const conversation = from;
     if (conversation === undefined) return;
     const project = projects.value.find((entry) => entry.path === conversation.workspace)?.name;
     // A work conversation on a project no longer approved: say so, never open one without it silently.
@@ -610,6 +639,22 @@ function settingsChanged(sections: string[]): void {
 
 // The address follows the open conversation (/c/<id>), so a reload comes back to it.
 function followAddress(): void {
+  followMain();
+  followBeside();
+}
+
+/** The conversation beside of the address (D-234): `/c/<left>?affianca=<right>`; any other address closes it. */
+function followBeside(): void {
+  const left = conversationFromPath(window.location.pathname);
+  const asked = left === undefined ? undefined : splitFromSearch(window.location.search);
+  if (asked === undefined || asked === left || page.value !== 'chat') {
+    if (besideChat.value !== null) beside.close();
+    return;
+  }
+  if (besideChat.value?.conversationId !== asked) void beside.open(asked);
+}
+
+function followMain(): void {
   // Back out of the settings with edits not saved (D-105): ask, and stay when the user says no.
   if (page.value === 'settings' && settingsDirty.value && !isSettingsPath(window.location.pathname)) {
     if (!window.confirm('Ci sono modifiche non salvate nelle Impostazioni: uscendo si perdono. Vuoi uscire?')) {
@@ -730,8 +775,10 @@ watch(
       return;
     }
     const secretary = id !== null && current.value?.secretary === true;
-    const path = pathFor(id, secretary);
-    if (window.location.pathname === path) return;
+    // The conversation beside stays in the address (D-234) while it stays on screen.
+    const besideId = besideChat.value?.conversationId ?? null;
+    const path = secretary ? pathFor(id, true) : withSplit(pathFor(id), id !== null && besideId !== id && splittable(current.value) ? besideId : null);
+    if (`${window.location.pathname}${window.location.search}` === path) return;
     // `/c/<id>` of the secretary's conversation (a notice, an old link) becomes `/segretaria` in the same entry (D-156).
     if (id === null || (secretary && conversationFromPath(window.location.pathname) === id)) window.history.replaceState(null, '', path);
     else window.history.pushState(null, '', path);
@@ -828,7 +875,12 @@ const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(
 /** An incognito conversation's approvals only in its own page, never elsewhere nor counted there (D-136). */
 const placed = computed(() => splitApprovals(approvals.value, new Set(Object.keys(tasks.value)), chat.value?.conversationId));
 const inChat = computed(() => placed.value.inChat);
-const elsewhere = computed<Approval[]>(() => placed.value.elsewhere);
+/** Those of the conversation beside (D-234) in its own pane, never in the panel too. */
+const besidePlaced = computed(() =>
+  splitOn.value ? splitApprovals(placed.value.elsewhere, new Set(Object.keys(besideTasks.value)), besideChat.value?.conversationId) : { inChat: [], elsewhere: placed.value.elsewhere },
+);
+const besideInChat = computed(() => besidePlaced.value.inChat);
+const elsewhere = computed<Approval[]>(() => besidePlaced.value.elsewhere);
 
 const crumb = computed(() => {
   const conversation = current.value;
@@ -838,6 +890,100 @@ const crumb = computed(() => {
 });
 
 const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
+
+/** The open conversation on the left may have another one beside it (D-234): the chat page, no draft, not incognito nor the secretary's. */
+const leftSplittable = computed(() => page.value === 'chat' && draft.value === null && incognitoEnd.value === null && chat.value !== null && splittable(current.value));
+/** Two conversations on screen: the left one, and the one beside. */
+const splitOn = computed(() => leftSplittable.value && besideChat.value !== null && besideChat.value.conversationId !== chat.value?.conversationId);
+/** «Affianca» in the list: on any other conversation that may stand beside the open one. */
+function splitOffered(conversation: Conversation): boolean {
+  return leftSplittable.value && canSplit(current.value, conversation) && conversation.id !== besideChat.value?.conversationId;
+}
+/** «Affianca»: the conversation opens beside the open one; a new entry of the history, so «indietro» closes it. */
+function openBeside(id: string): void {
+  const conversation = [...conversations.value, ...systemChats.value, ...archived.value].find((item) => item.id === id);
+  if (conversation === undefined || !splitOffered(conversation)) return;
+  showSidebar.value = false;
+  // No side thread while two conversations stand side by side (D-234): its panel would cover the one on the right.
+  side.close();
+  shownPane.value = 'right';
+  const opening = beside.open(id);
+  writeSplit('push');
+  void opening.then(() => focusField(paneId('right', 'composer')));
+}
+/** «Chiudi» on the conversation beside: the open one takes the whole page again. */
+function closeBeside(): void {
+  if (besideChat.value === null) return;
+  beside.close();
+  shownPane.value = 'left';
+  writeSplit('push');
+  focusField('composer');
+}
+/** The address with the conversation beside, or without it. */
+function writeSplit(how: 'push' | 'replace'): void {
+  const left = chat.value?.conversationId;
+  if (left === undefined || !leftSplittable.value) return;
+  const path = withSplit(pathFor(left), besideChat.value?.conversationId ?? null);
+  if (`${window.location.pathname}${window.location.search}` === path) return;
+  if (how === 'push') window.history.pushState(null, '', path);
+  else window.history.replaceState(null, '', path);
+}
+function focusField(id: string): void {
+  void nextTick(() => {
+    const field = document.getElementById(id);
+    if (field instanceof HTMLTextAreaElement && !field.disabled) field.focus();
+  });
+}
+// The conversation beside closes when the page leaves the open conversation (another page, a draft, an incognito one,
+// the secretary's), when it becomes the open one, or when it may not stand beside another once read.
+watch(
+  () =>
+    [
+      besideChat.value?.conversationId ?? null,
+      page.value,
+      draft.value !== null,
+      incognitoEnd.value !== null,
+      chat.value?.conversationId ?? null,
+      current.value === undefined || splittable(current.value),
+      besideCurrent.value === undefined || splittable(besideCurrent.value),
+    ] as const,
+  ([besideId, onPage, drafting, closed, leftId, leftOk, besideOk]) => {
+    if (besideId === null) return;
+    if (onPage !== 'chat' || drafting || closed || leftId === null || !leftOk || besideId === leftId) beside.close();
+    else if (!besideOk) {
+      beside.close();
+      writeSplit('replace');
+    }
+  },
+);
+// Gone on its own (erased elsewhere, D-157): the address of the open conversation loses it in the same entry.
+watch(
+  () => besideChat.value?.conversationId ?? null,
+  (id, before) => {
+    if (id !== null || before === null) return;
+    if (splitFromSearch(window.location.search) === undefined) return;
+    if (conversationFromPath(window.location.pathname) === chat.value?.conversationId) writeSplit('replace');
+  },
+);
+/** «Elimina» from the list: the conversation beside goes too if it is that one. */
+function eraseConversation(id: string): void {
+  if (besideChat.value?.conversationId === id) beside.close();
+  void store.erase(id);
+}
+/** Arianna in the header of the conversation beside: its tasks only. */
+const besideActiveLine = computed<Activity | undefined>(() => {
+  const state = besideChat.value;
+  if (state === null) return undefined;
+  const running = Object.values(besideTasks.value).filter((task) => task.status === 'running' || task.status === 'ready');
+  return running.map((task) => state.activity[task.id]?.at(-1)).find((line) => line !== undefined);
+});
+const ariannaBeside = computed<Pose>(() => poseOf(conversationState(Object.values(besideTasks.value), besideChat.value?.conversationId, approvals.value), besideActiveLine.value));
+const besideTitle = computed(() => besideCurrent.value?.title ?? 'Nuova conversazione');
+/** The switch of a narrow window: the two conversations by title. */
+const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
+  { pane: 'left', title: current.value?.title ?? 'Nuova conversazione' },
+  { pane: 'right', title: besideTitle.value },
+]);
 </script>
 
 <template>
@@ -857,6 +1003,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :status="status"
       :dev-pending="devPending"
       :secretary-open="secretaryOpen"
+      :beside="splitOn ? (besideChat?.conversationId ?? null) : null"
+      :splittable="splitOffered"
+      @split="openBeside"
       @fold="foldSidebar"
       @home="openChat(); showSidebar = false"
       @search="openSearch"
@@ -875,7 +1024,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @open="openConversation"
       @archive="store.archive"
       @pin="store.pin"
-      @erase="store.erase"
+      @erase="eraseConversation"
     />
     <div v-if="showSidebar" class="fixed inset-0 z-20 bg-black/50 md:hidden" aria-hidden="true" @click="showSidebar = false" />
 
@@ -914,6 +1063,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         </p>
         <p v-else class="min-w-0 flex-1 truncate text-[13.5px] text-muted">
           <template v-if="page === 'studio'">Arianna / <b class="font-medium text-ink">Studio</b><template v-if="studioAddress.project"> / {{ studioAddress.project }}</template></template>
+          <template v-else-if="splitOn">Arianna / <b class="font-medium text-ink">Conversazioni affiancate</b></template>
           <template v-else-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
@@ -933,7 +1083,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else>Arianna</template>
         </p>
         <button
-          v-if="current !== undefined"
+          v-if="current !== undefined && !splitOn"
           type="button"
           class="lab inline-flex items-center gap-1"
           :class="labelClass[current.clearance]"
@@ -1148,10 +1298,39 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :mentionable="mentionable"
       />
       <template v-else-if="chat !== null && current !== undefined">
+      <!-- «Affianca» on a narrow window (D-234): one conversation at a time, with a switch between the two. -->
+      <div v-if="splitOn && !wideSplit" role="tablist" aria-label="Conversazioni affiancate" class="flex shrink-0 gap-1 border-b border-line px-3 py-1.5">
+        <button
+          v-for="tab in splitTabs"
+          :key="tab.pane"
+          type="button"
+          role="tab"
+          :aria-controls="`pane-${tab.pane}`"
+          :aria-selected="shownPane === tab.pane"
+          class="min-w-0 flex-1 truncate rounded-lg px-2.5 py-1.5 text-left text-[13.5px]"
+          :class="shownPane === tab.pane ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
+          @click="shownPane = tab.pane"
+        >
+          {{ tab.title }}
+        </button>
+      </div>
+      <div class="flex min-h-0 flex-1">
+      <div
+        v-show="!splitOn || wideSplit || shownPane === 'left'"
+        class="flex min-h-0 min-w-0 flex-1 flex-col"
+        :class="splitOn && wideSplit ? 'border-r border-line' : ''"
+        id="pane-left"
+        :role="splitOn && !wideSplit ? 'tabpanel' : undefined"
+        :data-pane="splitOn ? 'left' : undefined"
+        :data-pane-front="splitOn && (wideSplit || shownPane === 'left') ? '' : undefined"
+      >
+      <!-- Two side by side (D-234): each says where it is and its label; the top bar then names neither. -->
+      <PaneHeader v-if="splitOn" :conversation="current" @legend="showLegend = true" />
       <!-- The secretary's conversation (D-144): the mini cardwall of its commitments above it (D-156). -->
       <SecretaryPanel v-if="current.secretary === true" :version="cardsVersion" @cardwall="openCardwall" />
       <ChatView
         class="min-h-0 flex-1"
+        :pane="splitOn ? 'left' : undefined"
         :chat="chat"
         :conversation="current"
         :tasks="tasks"
@@ -1193,11 +1372,80 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         studio-link
         @studio="openStudioOf"
         @restarted="(id) => store.reloadConversation(id)"
-        :sides="sides"
+        :sides="splitOn ? undefined : sides"
         @side="openSideOn"
       />
+      </div>
+      <!-- The conversation beside (D-234): its own store, field, draft and queue; its label and who answers are its own. -->
+      <section
+        v-if="splitOn && besideChat !== null"
+        v-show="wideSplit || shownPane === 'right'"
+        class="flex min-h-0 min-w-0 flex-1 flex-col"
+        id="pane-right"
+        :role="!wideSplit ? 'tabpanel' : undefined"
+        data-pane="right"
+        :data-pane-front="!wideSplit && shownPane === 'right' ? '' : undefined"
+        :aria-label="`Conversazione affiancata: ${besideTitle}`"
+      >
+        <PaneHeader :conversation="besideCurrent" closable @legend="showLegend = true" @close="closeBeside" />
+        <p v-if="besideError !== null" role="alert" class="mx-4 mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
+          {{ besideError }}
+        </p>
+        <p v-if="besideNotice !== null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm">
+          <Icon name="saved" :size="14" />
+          <span class="flex-1 font-mono text-xs">{{ besideNotice }}</span>
+          <button type="button" class="rounded-md p-1 hover:bg-surface-2" aria-label="Chiudi" @click="besideNotice = null"><Icon name="close" :size="14" /></button>
+        </p>
+        <ChatView
+          v-if="besideCurrent !== undefined && splittable(besideCurrent)"
+          class="min-h-0 flex-1"
+          pane="right"
+          :chat="besideChat"
+          :conversation="besideCurrent"
+          :tasks="besideTasks"
+          :credits="besideCredits"
+          :activity-counts="besideActivityCounts"
+          :sending="besideSending"
+          :models="models"
+          :approvals="besideInChat"
+          :decide="store.decide"
+          :arianna="{ choice: characters?.agents.arianna, pose: ariannaBeside }"
+          :status="status"
+          :calls="besideCalls"
+          :participants="besideParticipants"
+          :queue="besideQueue"
+          :mentionable="mentionable"
+          :refused-draft="besideRefusedDraft"
+          :characters="characters?.agents"
+          :direct-agents="directAgents"
+          @send="beside.send"
+          @stop="beside.stopAnswer"
+          @edit-queued="beside.editQueued"
+          @remove-queued="beside.removeQueued"
+          @send-queued="beside.sendQueuedNow"
+          @resume-queue="beside.resumeQueue"
+          @remove-participant="beside.removeParticipant"
+          @call-when-done="beside.callWhenDone"
+          @cancel-call="beside.cancelScheduled"
+          @choose-model="beside.chooseModel"
+          @choose-character="beside.chooseCharacter"
+          @restore="beside.archive(besideCurrent.id, false)"
+          @explain="store.explain"
+          @retry="beside.retry"
+          @attach-question="beside.attachQuestion"
+          @open="openConversation"
+          @command="(action) => runCommand(action, besideCurrent)"
+          @legend="showLegend = true"
+          @open-knowledge="openKnowledge"
+          @god-dashboard="openGod"
+          studio-link
+          @studio="openStudioOf"
+          @restarted="(id) => beside.reloadConversation(id)"
+        />
+      </section>
+      </div>
       <SidePanel
-        v-if="sidePanel !== null && sidePanel.motherId === current.id"
+        v-if="sidePanel !== null && sidePanel.motherId === current.id && !splitOn"
         :panel="sidePanel"
         :tasks="sideTasks"
         :sending="sideSending"

@@ -29,6 +29,9 @@ const props = defineProps<{
   devPending: number;
   /** The secretary's conversation is the one open (D-144): its button is marked. */
   secretaryOpen: boolean;
+  /** «Affianca» (D-234): the conversation beside the open one, and on which ones it is offered. */
+  beside?: string | null | undefined;
+  splittable?: ((conversation: Conversation) => boolean) | undefined;
 }>();
 const emit = defineEmits<{
   fold: [];
@@ -50,6 +53,8 @@ const emit = defineEmits<{
   archive: [id: string, archived: boolean];
   pin: [id: string, pinned: boolean];
   erase: [id: string];
+  /** «Affianca» on a conversation of the list (D-234). */
+  split: [id: string];
 }>();
 
 const devDot = computed(() => pendingBadge(props.devPending));
@@ -210,6 +215,9 @@ function itemClass(on: boolean): string {
       :system="systemChats"
       :selected="selected"
       :rename="rename"
+      :beside="beside"
+      :splittable="splittable"
+      @split="(id) => emit('split', id)"
       @open="(id) => emit('open', id)"
       @archive="(id, value) => emit('archive', id, value)"
       @pin="(id, value) => emit('pin', id, value)"
