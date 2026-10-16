@@ -1,4 +1,5 @@
 import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
+import { langleyCabinet, langleyCabinetItem, langleyCounter, langleyFloor, langleyFridge, langleyRun, langleyShelf } from './langley.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
 import { quahogBar, quahogCouch, quahogFloor, quahogItem, quahogSign, quahogWainscot } from './quahog.ts';
@@ -108,6 +109,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   } else if (skin === 'quahog') {
     // The floorboards of the Griffin house (D-238).
     for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) quahogFloor(rect, C, c, r, TILE);
+  } else if (skin === 'langley') {
+    langleyFloor(rect, C, map);
   } else {
     for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) rect((c + r) % 2 === 1 ? C['floor-alt'] : C.floor, c * TILE, r * TILE, TILE, TILE);
   }
@@ -237,6 +240,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         rect(I.signInk, x + 3, y + 9, 10, 1);
       } else if (kind === 'shelf' && skin === 'quahog') {
         quahogSign(rect, C, x, y);
+      } else if (kind === 'shelf' && skin === 'langley') {
+        // The flag of the Smiths, framed (D-239).
+        langleyShelf(rect, C, x, y);
       } else if (kind === 'window') {
         rect(C.outline, x + 1, y + 2, 14, 11);
         rect(C.window, x + 2, y + 3, 12, 9);
@@ -335,6 +341,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       } else if (skin === 'quahog') {
         // The bar of the Drunken Clam (D-238).
         quahogBar(rect, C, x, y, w);
+      } else if (skin === 'langley') {
+        // The kitchen counter of the Smiths (D-239).
+        langleyCounter(rect, C, x, y, w);
       }
       const bx = bell[0] - 3;
       rect(C.outline, bx, y - 7, 7, 5);
@@ -349,6 +358,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       springfieldItem(rect, C, kind, x, y);
     } else if (skin === 'quahog') {
       quahogItem(rect, C, kind, x, y);
+    } else if (skin === 'langley') {
+      if (kind === 'coffee') langleyFridge(rect, C, x, y);
+      else langleyCabinetItem(rect, C, x, y, langleyCabinet(map, x / TILE, y / TILE));
     } else if (skin === 'corsia' && kind === 'coffee') {
       rect(C.outline, x + 1, y - 10, 14, 24);
       rect(I.metalDark, x + 2, y - 9, 12, 22);
@@ -387,6 +399,10 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   };
   /** A run of `sofa` tiles: hospital beds in the Sacro Cuore, the meeting table in the Dunder Mifflin (D-216). */
   const skinRun = (x: number, y: number, w: number, tiles: number): void => {
+    if (skin === 'langley') {
+      langleyRun(rect, C, x, y, w, tiles);
+      return;
+    }
     if (skin === 'springfield') {
       springfieldCouch(rect, C, x, y, w, tiles);
     } else if (skin === 'quahog') {

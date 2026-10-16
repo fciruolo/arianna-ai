@@ -49,7 +49,8 @@ export interface PackListing {
 
 const MAX_MANIFEST_BYTES = 16 * 1024;
 export const MAX_SHEET_BYTES = 256 * 1024;
-export const MAX_CHARACTERS = 32;
+/** A pack holds this many at most: the pack of the series has a theme of seven for each show (D-237 to D-240). */
+export const MAX_CHARACTERS = 64;
 const MAX_PACKS = 64;
 const SHEET_WIDTH = 112;
 const SHEET_HEIGHTS: Readonly<Record<number, 3 | 4>> = { 96: 3, 128: 4 };

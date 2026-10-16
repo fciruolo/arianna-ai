@@ -1,4 +1,5 @@
 import type { Colors } from './draw.ts';
+import { LANGLEY_PALETTE } from './langley.ts';
 import { parseMapText, type OfficeMap } from './map.ts';
 import { SPRINGFIELD_PALETTE } from './springfield.ts';
 import { QUAHOG_PALETTE } from './quahog.ts';
@@ -13,9 +14,10 @@ import { QUAHOG_PALETTE } from './quahog.ts';
  * in src/office/maps/) and how the code draws floor, walls and furniture.
  * Base stays as it was, pixel for pixel. Fan art of the places of the series
  * for personal use, like the pack `serie` (D-211): to be removed before the
- * repository is shared.
+ * repository is shared. With American Dad! the house of the Smiths (D-239,
+ * lib/office/langley.ts).
  */
-export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield', 'quahog'] as const;
+export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield', 'quahog', 'langley'] as const;
 export type OfficeSkin = (typeof OFFICE_SKINS)[number];
 
 /** The office of the theme in use: its own for the themes of the series (the id of the theme is the id of the place), otherwise the base. */
@@ -106,6 +108,7 @@ const PALETTES: Readonly<Record<Exclude<OfficeSkin, 'base'>, { light: Palette; d
   springfield: SPRINGFIELD_PALETTE,
   // The Griffin house and the Drunken Clam (D-238), in a file of its own.
   quahog: QUAHOG_PALETTE,
+  langley: LANGLEY_PALETTE,
 };
 
 /** Fixed colours of the places, the same in light and dark: they are things, not the page. */

@@ -1,6 +1,6 @@
 # Pacchetto «serie»: fan art per uso personale
 
-I personaggi di questa cartella (J.D., Turk, Elliot, Carla, Dr. Cox, Dr. Kelso, l'Inserviente, Ted e Laverne di Scrubs; Michael, Dwight, Jim, Pam, Oscar, Andy, Kevin, Angela e Creed di The Office; Marge, Homer, Mr. Burns, Lisa, Smithers, Bart e Boe dei Simpson, D-237) sono fan art disegnata da Claude in pixel art su richiesta dell'utente, **solo per uso personale** (D-211). Non sono opere originali del progetto: i personaggi appartengono ai titolari dei diritti delle serie.
+I personaggi di questa cartella (J.D., Turk, Elliot, Carla, Dr. Cox, Dr. Kelso, l'Inserviente, Ted e Laverne di Scrubs; Michael, Dwight, Jim, Pam, Oscar, Andy, Kevin, Angela e Creed di The Office; Marge, Homer, Mr. Burns, Lisa, Smithers, Bart e Boe dei Simpson, D-237; Lois, Peter, Stewie, Brian, Meg, Chris e Cleveland dei Griffin, D-238; Francine, Stan, Roger, Hayley, Bullock, Steve e Klaus di American Dad!, D-239) sono fan art disegnata da Claude in pixel art su richiesta dell'utente, **solo per uso personale** (D-211). Non sono opere originali del progetto: i personaggi appartengono ai titolari dei diritti delle serie.
 
 Prima di rendere pubblico, condividere o dare a qualcuno una copia del repository vanno tolti, **anche dalla storia di git** (i nove personaggi di D-227 sono entrati con i commit del ramo `task/personaggi-nuovi-serie`: la riscrittura della storia deve coprire anche quelli):
 
@@ -30,6 +30,7 @@ Il tema «I Simpson» (D-237, ramo `task/tema-simpson`) va tolto tutto, perché 
 I fogli si rigenerano dalle mappe con `node apps/hud/characters/build.ts`; un test fallisce se i PNG non corrispondono alle mappe.
 
 Il tema «I Griffin» (D-238, id `quahog`: Lois, Peter, Stewie, Brian, Meg, Chris e Cleveland di Family Guy, con casa Griffin e il Drunken Clam nell'ufficio pixel) va tolto con loro, anche dalla storia di git (è entrato con i commit del ramo `task/tema-griffin`):
+Il tema «American Dad» (D-239, id `langley`) va tolto intero, perché esiste solo per la serie e non ha costumi nel pacchetto `originali`:
 
 - la cartella `apps/hud/themes/quahog/`;
 - le mappe `apps/hud/characters/art/serie/griffin.ts`, la riga `...GRIFFIN` di `SERIES` e il suo import in `apps/hud/characters/originals.ts`, le sette righe di `pack.json` e i PNG `lois`, `peter`, `stewie`, `brian`, `meg`, `chris`, `cleveland` di questa cartella;
@@ -38,3 +39,9 @@ Il tema «I Griffin» (D-238, id `quahog`: Lois, Peter, Stewie, Brian, Meg, Chri
 - l'ufficio pixel: `apps/hud/src/office/maps/quahog.json` con la sua riga in `MAP_TEXTS` di `apps/hud/src/components/OfficePage.vue`, `apps/hud/src/lib/office/quahog.ts`, `quahog` in `OFFICE_SKINS` e la sua tavolozza in `skins.ts`, i rami `quahog` di `apps/hud/src/lib/office/draw.ts` e di `apps/hud/src/lib/office/world3d.ts` (il televisore in 3D);
 - il nome del tema in `THEME_NAME` di `apps/hud/src/lib/changes.ts`;
 - i test: `apps/hud/test/quahog.test.ts`, `apps/core/test/series-griffin.test.ts`, e le attese su `quahog` e sui sette personaggi in `apps/hud/test/themes.test.ts`, `apps/core/test/themes.test.ts`, `apps/core/test/characters.test.ts`, `apps/hud/test/office-skins.test.ts`, `apps/hud/test/changes.test.ts`, `apps/core/test/wikiquote.test.ts` e `apps/core/test/series-guard.test.ts`.
+- la cartella `apps/hud/themes/langley/`, con le sue attese in `apps/hud/test/themes.test.ts` e `apps/core/test/themes.test.ts`, e `langley` in `THEME_NAME` di `apps/hud/src/lib/changes.ts` con la sua riga in `apps/hud/test/changes.test.ts`;
+- le mappe `apps/hud/characters/art/serie/american-dad.ts`, con l'import e le sette righe in `SERIES` di `apps/hud/characters/originals.ts`, i PNG `francine`, `stan`, `roger`, `hayley`, `bullock`, `steve` e `klaus` di questa cartella con le loro righe in `pack.json`, e i loro id nella lista di `apps/core/test/characters.test.ts`;
+- nomi e personalità: `packages/agents/src/series-american-dad.ts`, con l'import e `...AMERICAN_DAD_PERSONAS` in `packages/agents/src/series-personas.ts`;
+- Wikiquote: `'American Dad!'` in `WIKIQUOTE_PAGES` e i sette nomi in `WIKIQUOTE_SPEAKERS` di `apps/core/src/wikiquote.ts`, con la riga di `wikiquoteName('American Dad!')` in `apps/core/test/wikiquote.test.ts`;
+- i test `apps/core/test/series-american-dad.test.ts` e, in `apps/core/test/series-guard.test.ts`, `langley` fra i temi e la risposta con `smiths`;
+- la casa degli Smith nell'ufficio pixel: la mappa `apps/hud/src/office/maps/langley.json` con la sua riga in `MAP_TEXTS` di `apps/hud/src/components/OfficePage.vue`, `apps/hud/src/lib/office/langley.ts`, `langley` in `OFFICE_SKINS` e `PALETTES` di `apps/hud/src/lib/office/skins.ts`, i rami `langley` di `apps/hud/src/lib/office/draw.ts` e di `apps/hud/src/lib/office/world3d.ts` (il frigorifero e `langleyCabinet3d`), il test `apps/hud/test/office-langley.test.ts` e `skinOfTheme('langley')` in `apps/hud/test/office-skins.test.ts`.

@@ -119,7 +119,7 @@ test('the pack of the series in git is listed after the originals, not as one of
       ['serie', false],
     ],
   );
-  assert.deepEqual(listing.packs[1]?.characters.map(({ id, rows }) => [id, rows]), ['jd', 'turk', 'elliot', 'carla', 'cox', 'kelso', 'janitor', 'ted', 'laverne', 'michael', 'dwight', 'jim', 'pam', 'oscar', 'andy', 'kevin', 'angela', 'creed', 'marge', 'homer', 'burns', 'lisa', 'smithers', 'bart', 'boe', 'lois', 'peter', 'stewie', 'brian', 'meg', 'chris', 'cleveland'].map((id) => [id, 4]));
+  assert.deepEqual(listing.packs[1]?.characters.map(({ id, rows }) => [id, rows]), ['jd', 'turk', 'elliot', 'carla', 'cox', 'kelso', 'janitor', 'ted', 'laverne', 'michael', 'dwight', 'jim', 'pam', 'oscar', 'andy', 'kevin', 'angela', 'creed', 'marge', 'homer', 'burns', 'lisa', 'smithers', 'bart', 'boe', 'lois', 'peter', 'stewie', 'brian', 'meg', 'chris', 'cleveland', 'francine', 'stan', 'roger', 'hayley', 'bullock', 'steve', 'klaus'].map((id) => [id, 4]));
   assert.deepEqual(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'carla'), readFileSync(join(SERIES, 'carla.png')));
   // A folder data/characters/serie is never served in its place, with the pack in git or without it.
   assert.equal(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'robot'), undefined);
@@ -278,18 +278,18 @@ test('POST /api/characters/upload: 201, 409 with the existing character, 400 on 
   }
 });
 
-test('uploadSheet: at most 32 characters in miei, a file of another character refused, a replacement writes over the file it names', async () => {
+test('uploadSheet: at most 64 characters in miei, a file of another character refused, a replacement writes over the file it names', async () => {
   const fullDirs = { original: ORIGINAL, data: join(UPLOAD, 'full') };
   const dir = join(fullDirs.data, 'miei');
   mkdirSync(dir, { recursive: true });
   const clean = cleanSheet(SHEET).png;
-  const characters = Array.from({ length: 32 }, (_item, index) => ({ id: `c${String(index)}`, name: `C ${String(index)}`, file: `c${String(index)}.png` }));
+  const characters = Array.from({ length: 64 }, (_item, index) => ({ id: `c${String(index)}`, name: `C ${String(index)}`, file: `c${String(index)}.png` }));
   for (const { file } of characters) writeFileSync(join(dir, file), clean);
   writeFileSync(join(dir, 'pack.json'), JSON.stringify({ name: 'Miei', characters }));
-  await assert.rejects(uploadSheet(fullDirs, { name: 'Trentatré', png: SHEET, replace: false }), (error: unknown) => {
+  await assert.rejects(uploadSheet(fullDirs, { name: 'Sessantacinque', png: SHEET, replace: false }), (error: unknown) => {
     assert.ok(error instanceof UploadError);
     assert.equal(error.code, 'full');
-    assert.match(error.message, /holds at most 32 characters/);
+    assert.match(error.message, /holds at most 64 characters/);
     return true;
   });
   // Replacing one of the 32 is still allowed.

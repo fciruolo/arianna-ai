@@ -46,6 +46,8 @@ export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>>
   'I Simpson': [{ title: 'I Simpson' }],
   // I Griffin (D-238): one page for the whole series, as The Office; title and «==Stagione N==» headings not verified (no network while building).
   'Family Guy': [{ title: 'I Griffin' }],
+  // D-239: one page for the whole series, as The Office (title not verified on the site: no network while building).
+  'American Dad!': [{ title: 'American Dad!' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -92,6 +94,14 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   meg: ['Meg', 'Meg Griffin'],
   chris: ['Chris', 'Chris Griffin'],
   cleveland: ['Cleveland', 'Cleveland Brown'],
+  // American Dad! (D-239): the names as the dubbing calls them, not verified on the page (no network while building).
+  francine: ['Francine', 'Francine Smith'],
+  stan: ['Stan', 'Stan Smith'],
+  roger: ['Roger'],
+  hayley: ['Hayley', 'Hayley Smith'],
+  bullock: ['Bullock', 'Avery Bullock', 'Vicedirettore Bullock'],
+  steve: ['Steve', 'Steve Smith'],
+  klaus: ['Klaus'],
 };
 
 export interface WikiquoteLine {

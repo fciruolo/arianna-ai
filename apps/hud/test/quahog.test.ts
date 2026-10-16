@@ -36,9 +36,10 @@ test('the theme I Griffin dresses every agent as someone of the family, all in t
     designer: 'serie/chris',
     'local-chat': 'serie/cleveland',
   });
-  // The seven people are at the end of the pack, in the order of the file of the series.
+  // The seven people are together in the pack, in the order of the file of the series.
+  const first = SERIES.findIndex(({ art }) => art.id === GRIFFIN[0]?.art.id);
   assert.deepEqual(
-    SERIES.slice(-GRIFFIN.length).map(({ art, name }) => [art.id, name]),
+    SERIES.slice(first, first + GRIFFIN.length).map(({ art, name }) => [art.id, name]),
     GRIFFIN.map(({ art, name }) => [art.id, name]),
   );
 });

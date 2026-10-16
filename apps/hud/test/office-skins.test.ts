@@ -1,5 +1,6 @@
 // The office of the themes (D-216): the Sacro Cuore with Scrubs, the Dunder
-// Mifflin with The Office, Base as it was pixel for pixel.
+// Mifflin with The Office, the house of the Smiths with American Dad (D-239),
+// Base as it was pixel for pixel.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -46,6 +47,7 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   assert.equal(skinOfTheme('ufficio'), 'ufficio');
   assert.equal(skinOfTheme('springfield'), 'springfield');
   assert.equal(skinOfTheme('quahog'), 'quahog');
+  assert.equal(skinOfTheme('langley'), 'langley');
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 

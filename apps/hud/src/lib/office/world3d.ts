@@ -1,4 +1,5 @@
 import type { ColorName } from './draw.ts';
+import { langleyCabinet } from './langley.ts';
 import { inRoom, isWall, isWalkable, TILE, tileAt, type OfficeMap, type Point, type Room, type TileKind } from './map.ts';
 import type { Actor, Facing } from './motion.ts';
 import type { OfficeSkin } from './skins.ts';
@@ -113,6 +114,18 @@ function note(c: number, r: number, side: { dc: number; dr: number }, offset: nu
 /** The colours of the notes on the cardwall, as the 2D view draws them: a drawing, never the cards. */
 const NOTES: readonly ColorName[] = ['accent', 'warn', 'info', 'ok', 'danger'];
 
+/** A cabinet of the house of the Smiths in 3D (D-239), as lib/office/langley.ts chooses it for the 2D view. */
+function langleyCabinet3d(map: OfficeMap, c: number, r: number, x: number, z: number): Block[] {
+  switch (langleyCabinet(map, c, r)) {
+    case 'bowl':
+      return [box(x, z, 0.6, 0.6, 0, 0.55, 'desk'), box(x, z, 0.42, 0.42, 0.55, 0.36, 'window-light')];
+    case 'tv':
+      return [box(x, z, 0.9, 0.6, 0, 0.4, 'desk'), box(x, z, 0.8, 0.3, 0.4, 0.55, 'monitor')];
+    case 'files':
+      return [box(x, z, 0.9, 0.7, 0, 1.05, 'counter'), box(x, z, 0.92, 0.72, 1.05, 0.04, 'counter-top')];
+  }
+}
+
 /** The blocks of a tile that is not floor. */
 function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: OfficeSkin): Block[] {
   const x = c + 0.5;
@@ -143,6 +156,8 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
       if (skin === 'springfield') return [box(x, z, 0.8, 0.6, 0, 0.8, 'counter'), box(x, z, 0.7, 0.5, 0.8, 0.12, 'paper')];
       // The television of the Griffin house on its low cabinet (D-238).
       if (skin === 'quahog') return [box(x, z, 0.8, 0.5, 0, 0.45, 'desk'), box(x, z, 0.7, 0.5, 0.45, 0.5, 'monitor'), box(x, z, 0.5, 0.52, 0.52, 0.36, 'screen')];
+      // The fridge of the Smiths (D-239): tall and white, a line between its two doors.
+      if (skin === 'langley') return [box(x, z, 0.72, 0.62, 0, 1.3, 'paper'), box(x, z, 0.74, 0.64, 0.85, 0.03, 'desk-shadow')];
       return skin === 'ufficio'
         ? [box(x, z, 0.5, 0.5, 0, 0.9, 'paper'), box(x, z, 0.36, 0.36, 0.9, 0.34, 'window-light')]
         : [box(x, z, 0.7, 0.6, 0, 1.0, 'monitor'), box(x, z, 0.5, 0.62, 0.55, 0.3, 'screen')];
@@ -151,6 +166,8 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
     case 'cabinet':
       // The power plant (D-237): a yellow barrel with its glowing rod.
       if (skin === 'springfield') return [box(x, z, 0.6, 0.6, 0, 0.9, 'warn'), box(x, z, 0.14, 0.14, 0.9, 0.3, 'ok')];
+      // The house of the Smiths (D-239): Klaus's bowl on its little table, the television, the files of the CIA.
+      if (skin === 'langley') return langleyCabinet3d(map, c, r, x, z);
       return [box(x, z, 0.9, 0.7, 0, 1.05, skin === 'corsia' ? 'counter' : 'desk'), box(x, z, 0.92, 0.72, 1.05, 0.04, 'desk-top')];
   }
 }
