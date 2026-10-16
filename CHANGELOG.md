@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Pagina «Cruscotto»: «Fissa al Cruscotto» su una risposta della chat la tiene in un riquadro con titolo, etichetta, data e conversazione d'origine; la domanda per gli aggiornamenti la riscrive il modello locale e tu la correggi; «Aggiorna» la rifà solo al modello locale, anche per le risposte di Claude o ChatGPT, e l'etichetta del riquadro può solo salire; riquadri stretti o larghi, da riordinare e togliere (D-248).
+
 ## [0.137.1] - 2026-10-17
 
 ### Corretto
