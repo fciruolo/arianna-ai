@@ -812,6 +812,20 @@ async function projectPath(options: OpenRepositoryOptions): Promise<string> {
 }
 
 /**
+ * The branch HEAD is on, also in a repository without commits yet (`git init`
+ * only, D-058), where `rev-parse --abbrev-ref HEAD` fails; `HEAD` when
+ * detached, as `rev-parse` writes it. A git that cannot read the repository
+ * at all also gives `HEAD` here: `repositoryStatus` refuses it right after.
+ */
+async function currentBranch(repo: string): Promise<string> {
+  try {
+    return (await git(repo, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+  } catch {
+    return 'HEAD';
+  }
+}
+
+/**
  * Opens the project folder itself as the working directory of a cloud
  * executor (D-056, D-058): the user approved it to let the Coder work there
  * as they do with the CLI. The folder must be exactly the approved path (no
@@ -839,10 +853,15 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
   } catch (error) {
     throw new WorkspaceError(`${shown} is ${error instanceof Error ? error.message : 'not a git repository'}`);
   }
+  // Never a bare error of git out of here (D-058): the caller tells the user why the folder did not open.
+  const unreadable = (): never => {
+    throw new WorkspaceError(`${shown}: git cannot read the state of the repository`);
+  };
+  const listed = (args: string[]): Promise<string> => git(repo, args).catch(unreadable);
   const entries: WorkspaceEntry[] = [];
   const seen = new Set<string>();
   // Tracked files with their mode: a submodule (160000) is another repository, not scanned here, so it blocks.
-  for (const line of zList(await git(repo, ['ls-files', '-z', '--stage']))) {
+  for (const line of zList(await listed(['ls-files', '-z', '--stage']))) {
     const tab = line.indexOf('\t');
     const mode = line.slice(0, 6);
     const path = line.slice(tab + 1);
@@ -864,7 +883,7 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
     }
   }
   // Untracked, not ignored. A nested repository comes as `name/`: another repository git does not look into, so it blocks.
-  for (const path of zList(await git(repo, ['ls-files', '-z', '--others', '--exclude-standard']))) {
+  for (const path of zList(await listed(['ls-files', '-z', '--others', '--exclude-standard']))) {
     if (path.endsWith('/')) {
       entries.push({ path: path.slice(0, -1), kind: 'other' });
       continue;
@@ -884,8 +903,14 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const decision = checkProject({ label: options.project.label, entries });
   if (decision.decision !== 'allow') return { decision };
-  const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-  const dirty = await repositoryStatus(repo);
+  const branch = await currentBranch(repo);
+  let dirty: string[];
+  try {
+    dirty = await repositoryStatus(repo);
+  } catch (error) {
+    if (error instanceof WorkspaceError) throw new WorkspaceError(`${shown} is ${error.message}`);
+    return unreadable();
+  }
   const opened: OpenedRepository = Object.freeze({ decision, path: repo, branch, dirty });
   prepared.set(opened, repo);
   if (options.part !== undefined) containers.set(opened, container);

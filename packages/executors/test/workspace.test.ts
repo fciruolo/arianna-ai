@@ -298,6 +298,42 @@ describe('openRepository (D-056)', () => {
     assert.equal(linked.decision.decision === 'block' && linked.decision.findings.some((f) => f.kind === 'symlink-outside'), true);
   });
 
+  it('opens a repository without commits yet (`git init` only), its files all uncommitted (D-058)', async () => {
+    const dir = join(HOME, 'repos', 'unborn');
+    mkdirSync(dir, { recursive: true });
+    git(dir, 'init', '--quiet', '--initial-branch=main');
+    const empty = await openRepository({ home: HOME, project: project('repos/unborn') });
+    assert.equal(empty.decision.decision, 'allow');
+    assert.equal(empty.branch, 'main');
+    assert.deepEqual(empty.dirty, []);
+    write(dir, { 'index.html': '<h1>fake</h1>\n' });
+    const written = await openRepository({ home: HOME, project: project('repos/unborn') });
+    assert.deepEqual([written.branch, written.dirty], ['main', ['index.html']]);
+    // Added to the index, still no commit: uncommitted too.
+    write(dir, { 'style.css': 'h1 {}\n' });
+    git(dir, 'add', 'style.css');
+    const staged = await openRepository({ home: HOME, project: project('repos/unborn') });
+    assert.deepEqual([staged.branch, staged.dirty], ['main', ['index.html', 'style.css']]);
+  });
+
+  it('a repository git cannot read is a WorkspaceError with the project name, never a bare error of git (D-058)', async () => {
+    const repo = makeRepo('broken-index', { 'a.ts': 'x\n' });
+    writeFileSync(join(HOME, repo, '.git', 'index'), 'not an index, invented bytes\n');
+    await assert.rejects(openRepository({ home: HOME, project: project(repo) }), (error: unknown) => {
+      assert.ok(error instanceof WorkspaceError);
+      assert.equal(error.message, 'broken-index: git cannot read the state of the repository');
+      return true;
+    });
+  });
+
+  it('a detached HEAD is opened on `HEAD`, as before', async () => {
+    const repo = makeRepo('detached', { 'a.ts': 'x\n' });
+    const dir = join(HOME, repo);
+    git(dir, 'checkout', '--quiet', '--detach');
+    const opened = await openRepository({ home: HOME, project: project(repo) });
+    assert.deepEqual([opened.decision.decision, opened.branch, opened.dirty], ['allow', 'HEAD', []]);
+  });
+
   it('refuses a folder through a link, missing, or that is not a git repository', async () => {
     const repo = makeRepo('inplace-plain', { 'a.ts': 'x\n' });
     mkdirSync(join(HOME, 'repos', 'nogit'));
