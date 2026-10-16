@@ -95,7 +95,8 @@ export async function listWaitingTasks(sql: Queryable): Promise<WaitingListing> 
       WHERE m.task_id = t.id AND m.conversation_id = t.conversation_id AND m.role = 'assistant' AND m.agent IS NULL
       ORDER BY m.id DESC LIMIT 1
     ) q ON true
-    WHERE t.status = 'waiting_user' AND (t.conversation_id IS NULL OR c.purged_at IS NULL)
+    -- A refresh of the Cruscotto (D-248) never waits for the user: the core closes it, it is never listed.
+    WHERE t.status = 'waiting_user' AND (t.conversation_id IS NULL OR (c.purged_at IS NULL AND c.dashboard_of IS NULL))
     ORDER BY since, t.id`;
   const tasks: WaitingTask[] = [];
   let hidden = 0;

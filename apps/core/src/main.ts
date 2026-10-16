@@ -101,6 +101,7 @@ import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './
 import { installationInfo } from './installation.ts';
 import { createReadiness } from './readiness.ts';
 import { draftProjectRules } from './rules-draft.ts';
+import { isRefreshConversation, settleDashboard, suggestQuestion } from './dashboard.ts';
 import { NO_RULES, planRulesExport, writeRulesExport } from './rules-export.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
@@ -1062,6 +1063,8 @@ const server = await startApiServer({
     const project = projectContainers().find((item) => item.name === name);
     return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
   },
+  // «Fissa al Cruscotto» (D-248): the local model rewrites the question of the tile; the user checks it.
+  dashboardSuggest: (messageId) => suggestQuestion({ sql, model: localModel }, messageId),
   // "Fai uscire una volta" of a Private note (I-11 P5, D-187): the hash of the master password is read from the vault at each try.
   noteRelease: createNoteReleaser({
     sql,
@@ -1229,6 +1232,18 @@ for (const one of workers) await one.start();
 // D-218: the messages written while an answer was at work leave when it ends, one at a time.
 const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents) }), onError: report });
 queueDispatcher.start();
+// D-248: every 3 s the refreshes of the Cruscotto that ended are copied in their tiles, and their conversations purged.
+let settling = false;
+const dashboardTicker = setInterval(() => {
+  if (settling) return;
+  settling = true;
+  settleDashboard(sql, { stop: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }), onError: report })
+    .catch(report)
+    .finally(() => {
+      settling = false;
+    });
+}, 3_000);
+dashboardTicker.unref();
 // D-136: 10 minutes without a page on an incognito conversation close it; the pages hear it a minute before.
 const incognitoWatch = createIncognitoWatch({
   list: () => openIncognito(sql),
@@ -1286,7 +1301,8 @@ const ringer = createRinger({
 const notifier = createNotifier({
   settings: () => settings.current().notifications,
   conversationOf: (taskId) => conversationOfTask(sql, taskId),
-  incognito: (conversationId) => isIncognitoConversation(sql, conversationId),
+  // A refresh of the Cruscotto (D-248) says nothing either: its answer shows in the tile.
+  incognito: async (conversationId) => (await isIncognitoConversation(sql, conversationId)) || (await isRefreshConversation(sql, conversationId)),
   visiblePages: () => server.visiblePages(),
   broadcast: (notice) => {
     server.broadcast(notice);
@@ -1349,6 +1365,7 @@ async function shutdown(): Promise<void> {
   clearInterval(changesTicker);
   if (changesTimer !== undefined) clearTimeout(changesTimer);
   incognitoWatch.stop();
+  clearInterval(dashboardTicker);
   queueDispatcher.stop();
   stopNotices();
   await telegram.close();

@@ -46,7 +46,8 @@ export interface Ringer {
 type Candidate = { kind: 'row'; call: Call } | { kind: 'waiting'; taskId: string; conversationId: string };
 
 /** A conversation of the user, neither archived nor deleted nor incognito (alias c; D-136: Arianna never calls about one). */
-const OPEN_CONVERSATION = "c.archived_at IS NULL AND c.purged_at IS NULL AND c.origin = 'user' AND NOT c.incognito";
+// Nor a refresh of the Cruscotto (D-248): it never asks the user anything.
+const OPEN_CONVERSATION = "c.archived_at IS NULL AND c.purged_at IS NULL AND c.origin = 'user' AND NOT c.incognito AND c.dashboard_of IS NULL";
 
 async function nextCandidate(sql: Queryable, now: Date, waitingMinutes: number, due: Date): Promise<Candidate | undefined> {
   // A call the user scheduled, now due.

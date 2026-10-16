@@ -1,6 +1,7 @@
 import { removeWorkspace } from '@arianna/executors';
 
 import { ChatError, isUuid } from './conversations.ts';
+import { liveRefreshesOf } from './dashboard.ts';
 import type { Queryable, Sql } from './db/client.ts';
 
 /**
@@ -128,6 +129,9 @@ export async function eraseConversation(sql: Sql, id: string, options: EraseOpti
   if (found.incognito) throw new ChatError('incognito', 'an incognito conversation ends with Termina');
 
   if (await liveCall(sql, id, await tasksOf(sql, id))) throw new ChatError('busy', 'a call of the conversation is still at work: try again when it ends');
+
+  // The refreshes of its tiles of the Cruscotto still alive go first (D-248); the tiles go with it (ON DELETE CASCADE, migration 0075).
+  for (const refresh of await liveRefreshesOf(sql, id)) await eraseConversation(sql, refresh, options);
 
   // Two attempts: a step claimed between the stop and the locks is stopped again.
   let stopped = false;

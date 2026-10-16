@@ -34,6 +34,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     sourceTaskStatus: null,
     sideOf: null,
     sideMessageId: null,
+    dashboardOf: null,
     seriesCharacter: null,
     createdAt: new Date(0),
     lastMessageAt: null,
@@ -55,6 +56,8 @@ test('no side thread for a direct chat, a system chat, an incognito, the secreta
     { trialModel: 'qwen3.5-9b-mlx-4bit', incognito: true },
     { archivedAt: new Date(0) },
     { sideOf: '00000000-0000-4000-8000-000000000002', sideMessageId: '7' },
+    // A refresh of the Cruscotto (D-248).
+    { agent: 'local-chat', dashboardOf: '00000000-0000-4000-8000-000000000003' },
   ];
   for (const overrides of refused) assert.notEqual(sideRefusal(conversation(overrides)), undefined, JSON.stringify(overrides));
 });

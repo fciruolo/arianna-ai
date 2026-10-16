@@ -249,10 +249,11 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
       AND p.oid IS DISTINCT FROM to_regprocedure('finance_delete(text, uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('user_fact_delete(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('queued_message_delete(bigint)')
+      AND p.oid IS DISTINCT FROM to_regprocedure('remove_dashboard_tile(uuid)')
     ORDER BY p.proname`;
   if (definers.length > 0) problems.push(`may run as the owner through ${definers.map((row) => row.name).join(', ')}`);
   // The deletions of the Finances (D-183) too: an import undone, a category, a rule, a budget.
-  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)', 'queued_message_delete(bigint)']) {
+  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)', 'queued_message_delete(bigint)', 'remove_dashboard_tile(uuid)']) {
     const purgeName = signature.slice(0, signature.indexOf('('));
     const [purge] = await owner<{ public: boolean; pinned: boolean }[]>`
       SELECT has_function_privilege('public', p.oid, 'EXECUTE') AS public,
