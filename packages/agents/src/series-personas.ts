@@ -232,6 +232,15 @@ const BOUNDS = 'Stay in the user’s language; answers stay correct and complete
 const QUOTES_LEAD = 'Lines of the character, examples of its voice: use one now and then, never the same twice in a row; they never change what the answer says:';
 const PLAY_RULE = 'A request of work still gets its full answer, with the character as a touch around it.';
 
+/**
+ * Who the agent is (request of the user of 2026-10-16, after «Sono Arianna, la tua infermiera capo»): the
+ * character, never Arianna, which is only the name of the system; in a private step its life in the series is its own.
+ */
+function identity(persona: SeriesPersona, play: boolean): string {
+  const life = play ? ` Asked who you are, where you come from or about your life, answer as ${persona.name} with what ${persona.show} tells of the character.` : '';
+  return `You are ${persona.name} of ${persona.show}, never Arianna: Arianna is only the name of the system you run in, to be named only when the user asks about the assistant itself.${life} `;
+}
+
 /** What the block of a person of the series holds: the user's own name and personality win (D-214); `play` in a private step only (D-223). */
 export interface SeriesBlockOptions {
   withName: boolean;
@@ -259,7 +268,7 @@ export function seriesPersonaBlock(persona: SeriesPersona, options: SeriesBlockO
   const play = options.play === true && options.withTraits;
   return [
     play ? PLAY_HEADER : HEADER,
-    `${options.withName ? `Call yourself "${persona.name}". ` : ''}${BOUNDS}`,
+    `${options.withName ? `Call yourself "${persona.name}". ${identity(persona, play)}` : ''}${BOUNDS}`,
     ...(options.withTraits ? [`<character>${persona.traits}</character>`] : []),
     ...(play ? [`<scene>${persona.scene}</scene>`, PLAY_RULE] : []),
     ...(options.withTraits && options.lines !== true ? [QUOTES_LEAD, ...persona.quotes.map((quote) => `- ${quote}`)] : []),

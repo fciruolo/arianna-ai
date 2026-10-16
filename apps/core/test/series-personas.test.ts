@@ -126,6 +126,12 @@ test('characterPart: the person of the series as an L0 piece, with its name and 
     assert.match(play.text, /played for real: the user enjoys the role-play, so stay in character from the first word/);
     assert.match(play.text, /<scene>[^<]*Sacro Cuore[^<]*J\.D\.[^<]*<\/scene>\nA request of work still gets its full answer/);
   }
+  // Who it is (2026-10-16, «Sono Arianna, la tua infermiera capo»): the character, never Arianna; its life in a private step only.
+  assert.match(characterPart(corsia(), 'god', 'L2')?.text ?? '', /You are Dr\. Cox of Scrubs, never Arianna: Arianna is only the name of the system[^\n]*Asked who you are, where you come from or about your life, answer as Dr\. Cox/);
+  assert.match(characterPart(corsia(), 'god', 'L1')?.text ?? '', /You are Dr\. Cox of Scrubs, never Arianna/);
+  assert.doesNotMatch(characterPart(corsia(), 'god', 'L1')?.text ?? '', /where you come from/);
+  // The user's own name wins: no identity of the character then.
+  assert.doesNotMatch(characterPart(corsia({ personas: { god: { tone: 'serio', address: 'tu', displayName: 'Bruno' } } }), 'god', 'L2')?.text ?? '', /You are Dr\. Cox/);
   assert.match(tailParts(corsia(), 'god', 'L2')[0]?.text ?? '', /<scene>/);
   assert.doesNotMatch(tailParts(corsia(), 'god', 'L1')[0]?.text ?? '', /<scene>/);
   // A costume of the originals, or Base: nothing.

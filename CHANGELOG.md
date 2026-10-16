@@ -10,6 +10,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- Un personaggio delle serie si presenta come tale e mai come «Arianna» (che è solo il nome del sistema); nelle chat private, se gli chiedi chi è, da dove viene o della sua vita, risponde con quello che racconta la serie (D-225, richiesta dell'utente del 2026-10-16).
 - Le risposte di sola chiacchiera di un personaggio sul modello locale sono più vive: quando Arianna risponde subito, senza strumenti, la stessa richiesta viene riscritta una seconda volta a temperatura 0,7 e si tiene quella, se è ancora una risposta; gli strumenti restano decisi a temperatura 0 (D-225).
 
 ## [0.120.0] - 2026-10-16
