@@ -42,6 +42,7 @@ import {
   loadConversation,
   loadMessage,
   pinConversation,
+  setConversationCharacter,
   purgeConversation,
   renameConversation,
   setConversationModel,
@@ -2467,6 +2468,15 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       return { body: { conversation: await pinConversation(sql, id, false) } };
+    }),
+
+    // The switch «Personaggio» of a conversation (D-225): off, its agents speak without the character and its lines.
+    route('POST', '/api/conversations/:id/character', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['on']);
+      if (typeof body.on !== 'boolean') throw new HttpError(400, 'on must be true or false');
+      return { body: { conversation: await setConversationCharacter(sql, id, body.on) } };
     }),
 
     // Deletes the texts of an archived conversation for good (D-057): the user confirmed it in the page.

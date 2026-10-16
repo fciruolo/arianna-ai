@@ -14,7 +14,7 @@ import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Proj
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 import { Secret } from '@arianna/vault';
 
-import { createConversation, postUserMessage } from '../src/conversations.ts';
+import { createConversation, postUserMessage, setConversationCharacter } from '../src/conversations.ts';
 import { createDelegation, updateDelegation } from '../src/orchestrator/delegations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
@@ -437,6 +437,16 @@ test('real lines of the character the agent wears (D-224): after the brief in it
     assert.equal(call?.messages.at(-1)?.content, `${WORK_TURN}\n\n${seriesLinesBlock(['Bella domanda. Davvero.'])}`);
     // A work conversation: no line that names someone else.
     assert.deepEqual(drawn, [{ conversation: task.conversationId, named: false }]);
+    // The switch «Personaggio» off (D-225): the agent answers without the character and without lines.
+    const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'] });
+    await setConversationCharacter(db().sql, conversation.id, false);
+    const { task: off } = await postUserMessage(db().sql, conversation.id, 'Traduci: buongiorno a tutti.');
+    const quiet = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+    assert.deepEqual(await drain(off.id, orchestrator(quiet, [translator()], undefined, {}, { traduttore: 'serie/jim' })), ['continued', 'continued', 'answered']);
+    const plain = quiet.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+    assert.doesNotMatch(plain?.messages[0]?.content ?? '', /Character of the chat theme|Call yourself "Jim"/);
+    assert.equal(plain?.messages.at(-1)?.content, WORK_TURN);
+    assert.equal(drawn.length, 1, 'nothing drawn');
   } finally {
     configureSeriesLines(undefined);
   }

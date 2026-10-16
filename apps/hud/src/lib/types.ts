@@ -65,6 +65,11 @@ export interface Conversation {
   /** When the user pinned it at the top of the list (D-089); null when not pinned, always null while archived. */
   pinnedAt: string | null;
   /**
+   * The switch «Personaggio» (D-225): false keeps the character and its lines
+   * out of this conversation. Optional: a core without it sends none (on).
+   */
+  character?: boolean;
+  /**
    * An incognito conversation (D-136): chosen at creation, never in a list,
    * its texts deleted when it closes. Optional: a core without it sends none.
    */

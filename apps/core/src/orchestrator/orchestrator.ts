@@ -6,6 +6,7 @@ import {
   readAnswer,
   RESPONSE_SCHEMA_NAME,
   responseSchema,
+  seriesSource,
   type Answer,
   type DelegateTarget,
   type LoadedAgent,
@@ -19,7 +20,7 @@ import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalMod
 import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
-import { answersWithoutDelegation, CHAT_AGENT, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
+import { answersWithoutDelegation, CHAT_AGENT, characterOn, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
@@ -351,6 +352,20 @@ const NOT_STARTED = 'the user chose not to start this work now';
 // Shown to the model after its plan, so that the next step acts on it.
 const PLAN_NOTED = 'Plan noted. Now carry out its first step with one tool call, or reply if nothing is left to do.';
 
+/** The temperature of the second writing of a character's chat reply (D-225, tappa A). */
+export const LIVELY_TEMPERATURE = 0.7;
+
+/** Where the block of a person of the series comes from (`seriesSource`, D-214): `character:serie/<id>`. */
+const SERIES_SOURCE_PREFIX = seriesSource('');
+
+/**
+ * The reply of the second writing (D-225), when it is a reply with a text;
+ * otherwise the first, as it was: a tool or a refusal there changes nothing.
+ */
+export function livelierReply(first: ReadAnswer, second: ReadAnswer | undefined): ReadAnswer {
+  return second?.answer.action === 'reply' && second.answer.text.trim() !== '' ? second : first;
+}
+
 export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   const { sql } = options;
   const env: DelegateEnv = {
@@ -390,16 +405,17 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     planner: Planner,
     tail: string,
     trailer = '',
+    lively = false,
   ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
     let tokensOut = 0;
-    const call = async (thought: boolean) => {
+    const call = async (thought: boolean, temperature = 0) => {
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
         messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner, trailer),
         schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates, planner) },
-        temperature: 0,
+        temperature,
         maxTokens: options.maxTokens ?? 2048,
         signal,
       });
@@ -408,13 +424,28 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       return readAnswer(result.value, tools, thought, delegates, planner);
     };
     let read: ReadAnswer | undefined;
+    let thought = true;
     try {
       read = await call(true);
     } catch (error) {
       if (!(error instanceof LocalModelError) || error.kind !== 'bad-response') throw error;
     }
     // Not JSON, or outside the schema: once more without the thought (D-052).
-    read ??= await call(false);
+    if (read === undefined) {
+      thought = false;
+      read = await call(false);
+    }
+    // A chat reply of a character (D-225, tappa A): the same request once more at LIVELY_TEMPERATURE,
+    // byte for byte (the cache of oMLX holds its prompt), for a less rigid voice. The first call chose
+    // the reply at temperature 0; the second is kept only when it is a reply too, never a tool.
+    if (lively && read?.answer.action === 'reply') {
+      try {
+        read = livelierReply(read, await call(thought, LIVELY_TEMPERATURE));
+      } catch (error) {
+        // Stopped: the engine decides. Any other failure of the local model keeps the first reply.
+        if (signal.aborted || !(error instanceof LocalModelError)) throw error;
+      }
+    }
     return { read, tokensIn, tokensOut };
   }
 
@@ -902,9 +933,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // A private fact says how to ask for it when profile.share is offered at this step (D-213).
       const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, incognito, secretary, false, shareTargets.size > 0).includes(PROFILE_SHARE);
       const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
-      const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true }), ...(profile === undefined ? [] : [profile])];
+      // The switch «Personaggio» of the conversation (D-225): off, neither the character's block nor its lines.
+      const character = await characterOn(sql, task.conversationId);
+      const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true, character }), ...(profile === undefined ? [] : [profile])];
       // Real lines of the character drawn by the core for this answer (D-224), L0, after the history.
-      const lines = linesPart(env.settings(), task.assignee, tailClearance, task.conversationId ?? `task:${task.id}`);
+      const lines = linesPart(env.settings(), task.assignee, tailClearance, task.conversationId ?? `task:${task.id}`, character);
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
       let context: Context = contextOf(task, label);
@@ -930,6 +963,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (decision.texts.length !== history.length + skillsCount + tail.length + linesCount) throw new Error('the gateway allowed a different number of texts');
       const allowedSkills = skills === undefined ? undefined : decision.texts[history.length];
       const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount, history.length + skillsCount + tail.length));
+      // The assignee plays a person of the series in this step (D-225), as the gateway let its block out:
+      // a chat reply may be written once more, livelier.
+      const playing = tail.some((part, index) => part.source.startsWith(SERIES_SOURCE_PREFIX) && (decision.texts[history.length + skillsCount + index] ?? '') !== '');
       const allowedLines = lines === undefined ? '' : (decision.texts.at(-1) ?? '');
       const prompt = allowedSkills === undefined || allowedSkills === '' ? agent.prompt : `${agent.prompt}\n\n${allowedSkills}`;
       // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
@@ -954,7 +990,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines);
+        // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, playing && turns.length === 0);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

@@ -307,8 +307,11 @@ function drawsLines(config: TailConfig, worn: WornPerson, clearance: Label): boo
  * someone else in a private step only (as the scene, D-223). None when the
  * agent wears no person of the series, the user's personality or catchphrases
  * win, or the archive is empty; then `characterPart` keeps the fixed ones.
+ * None either with the switch «Personaggio» of the conversation off (`on`
+ * false, D-225).
  */
-export function linesPart(config: TailConfig, agent: string, clearance: Label, conversation: string): TailPart | undefined {
+export function linesPart(config: TailConfig, agent: string, clearance: Label, conversation: string, on = true): TailPart | undefined {
+  if (!on) return undefined;
   const worn = wornPerson(config, agent, clearance);
   const source = config.lines ?? seriesLines;
   if (worn === undefined || source === undefined || !drawsLines(config, worn, clearance)) return undefined;
@@ -322,10 +325,16 @@ export function seriesFits(override: SeriesOverride, secrets: KnownSecrets = kno
   return texts.every((text) => scanText(text).length === 0 && secrets.find(text).length === 0);
 }
 
-/** The pieces of the tail of `agent` for a step with `clearance`, in the order the model reads them. */
-export function tailParts(config: TailConfig, agent: string, clearance: Label, options: { lines?: boolean } = {}): TailPart[] {
+/**
+ * The pieces of the tail of `agent` for a step with `clearance`, in the order
+ * the model reads them. `character` false: the switch «Personaggio» of the
+ * conversation is off (D-225), the character's block stays out; who is who
+ * and the persona the user wrote stay.
+ */
+export function tailParts(config: TailConfig, agent: string, clearance: Label, options: { lines?: boolean; character?: boolean } = {}): TailPart[] {
   // `lines`: the caller adds `linesPart` at the end of the last message, so the fixed catchphrases stay out (D-224).
-  const pieces = [characterPart(config, agent, clearance, options.lines === true), rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
+  const character = options.character === false ? undefined : characterPart(config, agent, clearance, options.lines === true);
+  const pieces = [character, rosterPart(config, agent), personaPart(config.personas, agent, clearance), userNamesPart(config, agent, clearance)];
   return pieces.filter((piece): piece is TailPart => piece !== undefined);
 }
 

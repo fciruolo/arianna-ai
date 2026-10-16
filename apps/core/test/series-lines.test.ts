@@ -306,6 +306,27 @@ test('linesPart: none without lines for the step, for an agent without a person 
   assert.equal(linesPart(corsia(), 'god', 'L2', 'c'), undefined);
 });
 
+test('the switch «Personaggio» off (D-225): no block of the character and no lines; who is who and the persona stay', () => {
+  const source = fakeLines([], ['Sbagliato! Riprova.']);
+  const config = corsia({ lines: source, personas: { god: { tone: 'caloroso', address: 'tu' } } });
+  // On (the default, and `true` written out): the block and the lines, as before.
+  assert.ok(tailParts(config, 'god', 'L1', { lines: true }).some((part) => part.source === 'character:serie/cox'));
+  assert.ok(tailParts(config, 'god', 'L1', { lines: true, character: true }).some((part) => part.source === 'character:serie/cox'));
+  assert.ok(linesPart(config, 'god', 'L1', 'conv-1', true) !== undefined);
+  // Off: neither, in a work step and in a private one; nothing drawn, so nothing counts as used.
+  const asked = source.asked.length;
+  for (const clearance of ['L1', 'L2'] as const) {
+    const off = tailParts(config, 'god', clearance, { lines: true, character: false });
+    assert.ok(off.every((part) => !part.source.startsWith('character:serie/')), clearance);
+    assert.ok(off.some((part) => part.source === 'character:roster'), 'who is who stays');
+    assert.ok(off.some((part) => part.source === 'persona:god'), 'the persona stays');
+    assert.equal(linesPart(config, 'god', clearance, 'conv-1', false), undefined);
+  }
+  assert.equal(source.asked.length, asked);
+  // A brief to the cloud (no lines option) loses the fixed catchphrases too.
+  assert.ok(tailParts(config, 'god', 'L1', { character: false }).every((part) => !/Che vuoi, pivello\?/.test(part.text)));
+});
+
 test('the piece of the lines: the names of the series are no person for the second scanner there, as in the block of the character', () => {
   assert.equal(seriesLinesSource('cox'), 'character:serie/cox#lines');
   assert.ok(seriesNamesOfSource('character:serie/cox#lines')?.includes('J.D.'));

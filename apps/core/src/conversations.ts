@@ -47,6 +47,12 @@ export interface Conversation {
   archivedAt: Date | null;
   /** When the user pinned it at the top of the list (D-089); null when not pinned. Never set while archived. */
   pinnedAt: Date | null;
+  /**
+   * The switch «Personaggio» of the chat (D-225, migration 0069): true (the
+   * default) lets its agents play the person of the series they wear; false
+   * keeps the character's block and its lines out of every prompt of it.
+   */
+  character: boolean;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
   /**
@@ -171,7 +177,7 @@ export class ChatError extends Error {
 }
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.finance, c.workspace, c.model, c.agent,
-  c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
+  c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt", c.character_on AS "character",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt", c.direct_session_at AS "directSessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
@@ -416,6 +422,29 @@ export async function pinConversation(sql: Sql, id: string, pinned: boolean): Pr
     }
     return reload(tx, id);
   });
+}
+
+/**
+ * Turns the switch «Personaggio» of a conversation on or off (D-225). Any
+ * conversation that is not purged, an incognito one or an archived one too:
+ * it only says what the next prompts hold. The event carries the id only.
+ */
+export async function setConversationCharacter(sql: Sql, id: string, on: boolean): Promise<Conversation> {
+  return sql.begin(async (tx) => {
+    const conversation = await lockConversation(tx, id);
+    if (conversation.character !== on) {
+      await tx`UPDATE conversations SET character_on = ${on} WHERE id = ${id}`;
+      await appendEvent(tx, { kind: 'conversation.character', label: 'L0', payload: { conversationId: id, on } });
+    }
+    return reload(tx, id);
+  });
+}
+
+/** The switch «Personaggio» of a conversation (D-225); true without a conversation, or for one that is not there. */
+export async function characterOn(sql: Queryable, conversationId: string | null): Promise<boolean> {
+  if (conversationId === null || !isUuid(conversationId)) return true;
+  const [row] = await sql<{ character_on: boolean }[]>`SELECT character_on FROM conversations WHERE id = ${conversationId}`;
+  return row?.character_on !== false;
 }
 
 /**

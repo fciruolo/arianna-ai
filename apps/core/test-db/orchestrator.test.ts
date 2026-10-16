@@ -9,14 +9,14 @@ import { DEFAULT_APPEARANCE, defaultCloudModels, loadConfig, parseLabelRules, re
 import { createContext } from '@arianna/policy';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
-import { createConversation, postUserMessage } from '../src/conversations.ts';
+import { archiveConversation, characterOn, ChatError, createConversation, loadConversation, postUserMessage, purgeConversation, setConversationCharacter } from '../src/conversations.ts';
 import { processStepJob, resumeTask, scheduleTask, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { hasOpenCards, updateCard } from '../src/orchestrator/cards.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { recordFailure } from '../src/failures.ts';
-import { createOrchestrator, SYSTEM_MESSAGE_MARK } from '../src/orchestrator/orchestrator.ts';
+import { createOrchestrator, LIVELY_TEMPERATURE, SYSTEM_MESSAGE_MARK } from '../src/orchestrator/orchestrator.ts';
 import { openFailureChat } from '../src/system-chats.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { openReply } from '../src/reply.ts';
@@ -708,7 +708,8 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
     const coxed = (model: LocalModel) =>
       createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
     const { task } = await ask('private', 'Ciao!');
-    const model = scripted([{ action: 'reply', text: 'Che vuoi?' }]);
+    // A chat reply of a character is written twice (D-225): the second, livelier, is kept.
+    const model = scripted([{ action: 'reply', text: 'Che vuoi?' }, { action: 'reply', text: 'Che vuoi, pivello?' }]);
     assert.deepEqual(await drain(task.id, model, coxed(model)), ['answered']);
     const first = model.requests[0];
     assert.match(systemOf(first), /Call yourself "Dr\. Cox"/);
@@ -717,7 +718,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
     assert.deepEqual(drawn, [{ conversation: task.conversationId, named: true }]);
     // A work conversation: the lines without names of others, a new draw; the system prompt before the tail unchanged.
     const { task: work } = await ask('work', 'Ciao!');
-    const other = scripted([{ action: 'reply', text: 'Che vuoi?' }]);
+    const other = scripted([{ action: 'reply', text: 'Che vuoi?' }, { action: 'reply', text: 'Che vuoi?' }]);
     await drain(work.id, other, coxed(other));
     assert.deepEqual(drawn.at(-1), { conversation: work.conversationId, named: false });
     assert.match(other.requests[0]?.messages.at(-1)?.content ?? '', /- Battuta vera 2\./);
@@ -725,6 +726,104 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
   } finally {
     configureSeriesLines(undefined);
   }
+});
+
+// The switch «Personaggio» of the conversation (D-225, tappa A).
+const coxedArianna = (model: LocalModel) =>
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
+
+test('switch «Personaggio» on (D-225): a chat reply is written once more at a higher temperature, same prompt, and the second is kept', async () => {
+  const { task } = await ask('private', 'Come va?');
+  const model = scripted([{ action: 'reply', text: 'Bene.' }, { action: 'reply', text: 'Bene, novellino. Non farmelo ripetere.' }]);
+  assert.deepEqual(await drain(task.id, model, coxedArianna(model)), ['answered']);
+  const [first, second] = model.requests;
+  assert.deepEqual([first?.temperature, second?.temperature], [0, LIVELY_TEMPERATURE]);
+  // Byte for byte the same request: the cache of the local model holds it, and the schema still lets the tools in.
+  assert.deepEqual(second?.messages, first?.messages);
+  assert.deepEqual(second?.schema, first?.schema);
+  assert.match(systemOf(first), /Call yourself "Dr\. Cox"/);
+  assert.equal((await assistantMessages(task.id))[0]?.body, 'Bene, novellino. Non farmelo ripetere.');
+});
+
+test('switch «Personaggio» on (D-225): a tool in the second writing, a failure of it, or a reply after a tool keep the answer at temperature 0', async () => {
+  // The second writing asks for a tool: the first reply stays, no tool runs.
+  const { task } = await ask('private', 'Come va?');
+  const tool = scripted([{ action: 'reply', text: 'Bene.' }, { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } }]);
+  assert.deepEqual(await drain(task.id, tool, coxedArianna(tool)), ['answered']);
+  assert.equal((await assistantMessages(task.id))[0]?.body, 'Bene.');
+  // The second writing is not JSON: the first reply stays.
+  const { task: broken } = await ask('private', 'Come va?');
+  const bad = scripted([{ action: 'reply', text: 'Bene.' }, 'not-json']);
+  assert.deepEqual(await drain(broken.id, bad, coxedArianna(bad)), ['answered']);
+  assert.equal((await assistantMessages(broken.id))[0]?.body, 'Bene.');
+  // A reply after a tool: what the tool said is not written again.
+  const { task: work } = await ask('private', "Cosa dice il contratto d'affitto sulla caparra?");
+  const steps = scripted([{ action: 'call', tool: 'kb.search', arguments: { query: 'caparra affitto' } }, { action: 'reply', text: 'Tre mensilità.' }]);
+  assert.deepEqual(await drain(work.id, steps, coxedArianna(steps)), ['continued', 'answered']);
+  assert.equal(steps.requests.length, 2);
+  assert.ok(steps.requests.every((request) => request.temperature === 0));
+  // Without a person of the series nothing changes: one call at temperature 0.
+  const { task: plain } = await ask('private', 'Come va?');
+  const once = scripted([{ action: 'reply', text: 'Bene.' }]);
+  assert.deepEqual(await drain(plain.id, once), ['answered']);
+  assert.deepEqual(once.requests.map((request) => request.temperature), [0]);
+});
+
+test('switch «Personaggio» off (D-225): no block of the character, no lines, one call at temperature 0; on again, all back', async () => {
+  const drawn: string[] = [];
+  configureSeriesLines({
+    has: (character) => character === 'cox',
+    draw: (_character, options) => {
+      drawn.push(options.conversation);
+      return ['Battuta vera.'];
+    },
+  });
+  try {
+    const conversation = await createConversation(db().sql, { mode: 'private' });
+    assert.equal(conversation.character, true, 'on by default');
+    const off = await setConversationCharacter(db().sql, conversation.id, false);
+    assert.equal(off.character, false);
+    assert.equal((await loadConversation(db().sql, conversation.id))?.character, false, 'saved');
+    const { task } = await postUserMessage(db().sql, conversation.id, 'Ciao!');
+    const model = scripted([{ action: 'reply', text: 'Ciao.' }]);
+    assert.deepEqual(await drain(task.id, model, coxedArianna(model)), ['answered']);
+    assert.equal(model.requests.length, 1);
+    assert.equal(model.requests[0]?.temperature, 0);
+    assert.doesNotMatch(systemOf(model.requests[0]), /Character of the chat theme|Dr\. Cox/);
+    assert.doesNotMatch(model.requests[0].messages.at(-1)?.content ?? '', /character_lines/);
+    assert.deepEqual(drawn, [], 'nothing drawn');
+    // On again: the block and the lines are back in the next answer.
+    await setConversationCharacter(db().sql, conversation.id, true);
+    const { task: next } = await postUserMessage(db().sql, conversation.id, 'Ancora?');
+    const again = scripted([{ action: 'reply', text: 'Sì.' }, { action: 'reply', text: 'Sì, pivello.' }]);
+    assert.deepEqual(await drain(next.id, again, coxedArianna(again)), ['answered']);
+    assert.match(systemOf(again.requests[0]), /Call yourself "Dr\. Cox"/);
+    assert.match(again.requests[0]?.messages.at(-1)?.content ?? '', /- Battuta vera\./);
+    assert.deepEqual(drawn, [conversation.id]);
+    const events = await db().sql<{ payload: unknown }[]>`
+      SELECT payload FROM events WHERE kind = 'conversation.character' AND payload ->> 'conversationId' = ${conversation.id} ORDER BY id`;
+    assert.deepEqual(events.map((row) => row.payload), [{ conversationId: conversation.id, on: false }, { conversationId: conversation.id, on: true }]);
+  } finally {
+    configureSeriesLines(undefined);
+  }
+});
+
+test('switch «Personaggio» (D-225): the same value twice writes no event; an unknown or purged conversation is refused', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'demo', projects: ['demo'] });
+  await setConversationCharacter(db().sql, conversation.id, true);
+  const [count] = await db().sql<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM events WHERE kind = 'conversation.character' AND payload ->> 'conversationId' = ${conversation.id}`;
+  assert.equal(count?.n, 0);
+  await assert.rejects(setConversationCharacter(db().sql, randomUUID(), false), (error: unknown) => error instanceof ChatError && error.code === 'not-found');
+  await assert.rejects(setConversationCharacter(db().sql, 'not-a-uuid', false), (error: unknown) => error instanceof ChatError && error.code === 'not-found');
+  // Without a conversation (a task of its own) the character speaks; an unknown id the same.
+  assert.equal(await characterOn(db().sql, null), true);
+  assert.equal(await characterOn(db().sql, randomUUID()), true);
+  await archiveConversation(db().sql, conversation.id, true);
+  await purgeConversation(db().sql, conversation.id);
+  await assert.rejects(setConversationCharacter(db().sql, conversation.id, false), (error: unknown) => error instanceof ChatError && error.code === 'not-found');
+  // Below the core too: a purged conversation never changes, the switch included.
+  await assert.rejects(db().sql`UPDATE conversations SET character_on = false WHERE id = ${conversation.id}`, /purged conversation never changes/);
 });
 
 test('persona: in a work conversation the text enters (L1 by declaration) and the reply stays L1', async () => {

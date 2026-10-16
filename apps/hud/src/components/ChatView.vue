@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
+import { characterSwitch } from '../lib/character-switch.ts';
 import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type PageCommandAction } from '../lib/commands.ts';
 import { useMentionMenu } from '../lib/mention-menu.ts';
@@ -114,6 +115,8 @@ const emit = defineEmits<{
   /** "Cosa vogliono dire le etichette?": the legend (etichette parlanti). */
   legend: [];
   chooseModel: [model: string | null];
+  /** The switch «Personaggio» of this conversation (D-225). */
+  chooseCharacter: [on: boolean];
   restore: [];
   /** Open the error window of a failed task (D-064). */
   explain: [task: Task];
@@ -234,6 +237,8 @@ const targets = computed(() => cloudTargets(directExecutors.value, props.convers
 const targetName = computed(() => shortTarget(targets.value));
 /** "Prova in chat" (D-142): the catalog model that alone answers here. */
 const trial = computed(() => props.conversation.trialModel ?? null);
+/** The switch «Personaggio» (D-225): on by default, saved for this conversation by the core. */
+const characterState = computed(() => characterSwitch(props.conversation, props.characters));
 // D-214: with a person of the series, its name first («Dr. Cox (GOD)» on one line, two lines in the header).
 const directAgent = computed(() => direct.value ?? 'arianna');
 /** «Rapporto del Coder» as always; with a character, «Rapporto di Dr. Cox»: inside the messages its name alone. */
@@ -762,6 +767,16 @@ onBeforeUnmount(() => clearInterval(clock));
                 class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-incognito-ink"
                 title="Alla chiusura Arianna cancella i testi di questa conversazione"
               ><Icon name="incognito" :size="11" />incognito</span>
+              <button
+                v-if="characterState.shown"
+                type="button"
+                role="switch"
+                :aria-checked="characterState.on"
+                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal"
+                :class="characterState.on ? 'border-accent/60 text-accent' : 'border-line-strong text-muted'"
+                :title="characterState.title"
+                @click="emit('chooseCharacter', !characterState.on)"
+              ><span class="size-1.5 rounded-full" :class="characterState.on ? 'bg-accent' : 'bg-muted'" aria-hidden="true" />{{ characterState.text }}</button>
             </h2>
             <p class="mt-1 flex items-center gap-2 text-[13.5px] text-muted">
               <span v-if="(directPose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">

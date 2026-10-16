@@ -342,12 +342,14 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /** The tail of the speaker's system prompt (D-107, tappa A3): its persona, read at each turn, within `clearance`. */
-  const voiceTail = (agent: string, clearance: Label): TailPart[] => {
+  const voiceTail = (agent: string, clearance: Label, character: boolean): TailPart[] => {
     const { personas, series, characters, appearance, home, paths } = options.config();
     return tailParts(
       { personas: personas ?? {}, ...(series === undefined ? {} : { series }), ...(characters === undefined ? {} : { characters }), ...(appearance === undefined ? {} : { appearance }), ...(home === undefined ? {} : { home }), ...(paths === undefined ? {} : { paths }) },
       agent,
       clearance,
+      // The switch «Personaggio» of the conversation (D-225): off, the call speaks without the character.
+      { character },
     );
   };
 
@@ -370,14 +372,14 @@ export function createCalls(options: CallsOptions): Calls {
         'L0',
         session.anchor,
         { content: agentVoiceSystem(agent.prompt), label: promptLabelOf(agent) },
-        voiceTail(speaker.agent, minLabel(conversation.clearance, ceiling)),
+        voiceTail(speaker.agent, minLabel(conversation.clearance, ceiling), conversation.character),
       );
       if (!isAtMost(prompt.label, ceiling)) return undefined;
       target = { kind: 'executor', id: 'local', locality: 'local' };
     } else {
       // Arianna's persona within her card and the conversation; without her card, the fixed sentences alone (default-deny).
       const ceiling = options.agents?.().get(ORCHESTRATOR_AGENT)?.card.maxLabel ?? 'L0';
-      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor, undefined, voiceTail(ORCHESTRATOR_AGENT, minLabel(conversation.clearance, ceiling)));
+      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor, undefined, voiceTail(ORCHESTRATOR_AGENT, minLabel(conversation.clearance, ceiling), conversation.character));
       target = { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' };
     }
     const effective = maxLabel(conversation.effectiveLabel, prompt.label);

@@ -362,6 +362,11 @@ export async function setModel(conversationId: string, model: string | null): Pr
   return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/model`, { model })).conversation;
 }
 
+/** Turns the switch «Personaggio» of a conversation on or off (D-225). */
+export async function setCharacter(conversationId: string, on: boolean): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/character`, { on })).conversation;
+}
+
 export async function listMessages(conversationId: string, beforeId?: string): Promise<Message[]> {
   const query = new URLSearchParams({ limit: '100', ...(beforeId === undefined ? {} : { before: beforeId }) });
   const path = `/api/conversations/${encodeURIComponent(conversationId)}/messages?${query.toString()}`;

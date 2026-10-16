@@ -2,6 +2,16 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- In alto in ogni chat, accanto al nome, l'interruttore «Personaggio acceso / spento», salvato per conversazione e acceso per default: spento, Arianna e gli agenti di quella chat (locali, Claude, Codex e le chiamate) rispondono senza personaggio né battute; nome e aspetto restano. Compare quando almeno un agente indossa un personaggio delle serie (D-225).
+
+### Cambiato
+
+- Le risposte di sola chiacchiera di un personaggio sul modello locale sono più vive: quando Arianna risponde subito, senza strumenti, la stessa richiesta viene riscritta una seconda volta a temperatura 0,7 e si tiene quella, se è ancora una risposta; gli strumenti restano decisi a temperatura 0 (D-225).
+
 ## [0.120.0] - 2026-10-16
 
 ### Aggiunto

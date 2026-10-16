@@ -39,7 +39,7 @@ import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
-import { CHAT_AGENT, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
+import { CHAT_AGENT, characterOn, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
@@ -1119,7 +1119,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   // The tail of the agent's prompt (D-107, tappa A3: its persona): more pieces of the brief the gateway judges,
   // within the cloud ceiling of its card and the task's clearance; a resumed session read them when it started.
-  const tail = tailParts(env.settings(), delegation.agent, minLabel(task.clearance, cloudCeiling(agent.card)));
+  // Without the character's block when the switch «Personaggio» of the conversation is off (D-225).
+  const tail = tailParts(env.settings(), delegation.agent, minLabel(task.clearance, cloudCeiling(agent.card)), { character: await characterOn(sql, task.conversationId) });
   const dossier = godDossierPart(container, path, folder.label);
   // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
   // A new session of the Designer in its conversation (I-20, D-185): the summary of what came before, once.
@@ -1441,9 +1442,11 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // Then the profile «Su di te» (D-114, tappa B) within the same clearance, on this machine only: the agent answers
   // without tools, so past its limit it reads the topics alone. It counts in the label of what it reads and reports.
   const profile = profilePart(await listUserFacts(sql), stepClearance);
-  const tail = [...tailParts(env.settings(), delegation.agent, stepClearance, { lines: true }), ...(profile === undefined ? [] : [profile])];
+  // The switch «Personaggio» of the conversation (D-225): off, neither the character's block nor its lines.
+  const character = await characterOn(sql, task.conversationId);
+  const tail = [...tailParts(env.settings(), delegation.agent, stepClearance, { lines: true, character }), ...(profile === undefined ? [] : [profile])];
   // Real lines of the character drawn by the core for this answer (D-224), L0: after the brief, in the agent's message.
-  const lines = linesPart(env.settings(), delegation.agent, stepClearance, task.conversationId ?? `task:${task.id}`);
+  const lines = linesPart(env.settings(), delegation.agent, stepClearance, task.conversationId ?? `task:${task.id}`, character);
   const partsWith = (window: readonly BriefFragment[]): BriefFragment[] => [
     prompt,
     ...(skills === undefined ? [] : [skills]),
