@@ -7,6 +7,7 @@
 // with it before the repository is shared.
 
 import { SIMPSONS_PERSONAS } from './series-simpsons.ts';
+import { GRIFFIN_PERSONAS } from './series-griffin.ts';
 
 /** The pack of the people of the series, as `SERIES_PACK` in `@arianna/config` (which imports this package, never the other way). */
 export const SERIES_PACK_ID = 'serie';
@@ -214,6 +215,7 @@ export const SERIES_PERSONAS: Readonly<Record<string, SeriesPersona>> = {
   },
   // The people of Springfield, theme «I Simpson» (D-237): in a file of their own.
   ...SIMPSONS_PERSONAS,
+  ...GRIFFIN_PERSONAS,
 };
 
 /** The person of the series behind `<pack>/<character>`; undefined for any other character. Own keys only. */

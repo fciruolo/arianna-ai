@@ -7,6 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Tema «I Simpson» in Impostazioni → Aspetto: giallo Simpson e cielo con le nuvole; Marge è Arianna, Homer il Coder, il signor Burns GOD, Lisa la revisora, Smithers le finanze, Bart il designer e Boe il modello locale, con la loro personalità e i nomi del doppiaggio italiano, e l'ufficio pixel (in 2D e 3D) diventa la centrale nucleare di Springfield; fan art per uso personale (D-237).
+- Tema «I Griffin»: Lois è Arianna, Peter il Coder, Stewie GOD, Brian il revisore, Meg le finanze, Chris il designer e Cleveland il modello locale, in pixel art con personalità, battute e nomi di Wikiquote, e l'ufficio pixel diventa casa Griffin col bancone del Drunken Clam, in 2D e in 3D (fan art per uso personale, D-238).
 
 ## [0.130.2] - 2026-10-16
 

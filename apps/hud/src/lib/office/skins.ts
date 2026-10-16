@@ -1,6 +1,7 @@
 import type { Colors } from './draw.ts';
 import { parseMapText, type OfficeMap } from './map.ts';
 import { SPRINGFIELD_PALETTE } from './springfield.ts';
+import { QUAHOG_PALETTE } from './quahog.ts';
 
 /**
  * The office of a theme (D-216): with Scrubs the Sacro Cuore (tiled floor,
@@ -14,7 +15,7 @@ import { SPRINGFIELD_PALETTE } from './springfield.ts';
  * for personal use, like the pack `serie` (D-211): to be removed before the
  * repository is shared.
  */
-export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield'] as const;
+export const OFFICE_SKINS = ['base', 'corsia', 'ufficio', 'springfield', 'quahog'] as const;
 export type OfficeSkin = (typeof OFFICE_SKINS)[number];
 
 /** The office of the theme in use: its own for the themes of the series (the id of the theme is the id of the place), otherwise the base. */
@@ -103,6 +104,8 @@ const PALETTES: Readonly<Record<Exclude<OfficeSkin, 'base'>, { light: Palette; d
   },
   // The nuclear power plant of Springfield (D-237), in its own file.
   springfield: SPRINGFIELD_PALETTE,
+  // The Griffin house and the Drunken Clam (D-238), in a file of its own.
+  quahog: QUAHOG_PALETTE,
 };
 
 /** Fixed colours of the places, the same in light and dark: they are things, not the page. */

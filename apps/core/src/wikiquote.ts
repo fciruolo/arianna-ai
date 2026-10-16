@@ -44,6 +44,8 @@ export const WIKIQUOTE_PAGES: Readonly<Record<string, readonly WikiquotePage[]>>
   'The Office (US)': [{ title: 'The Office' }],
   // D-237: the page of the whole series, as for The Office; not verified with the network (the wiki resolves a renamed page itself, `redirects=1`).
   'I Simpson': [{ title: 'I Simpson' }],
+  // I Griffin (D-238): one page for the whole series, as The Office; title and «==Stagione N==» headings not verified (no network while building).
+  'Family Guy': [{ title: 'I Griffin' }],
 };
 
 /** The short name of the pages of a series, for the confirmation: «Scrubs - Medici ai primi ferri». */
@@ -82,6 +84,14 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   smithers: ['Smithers', 'Waylon Smithers'],
   bart: ['Bart', 'Bart Simpson'],
   boe: ['Boe', 'Boe Szyslak', 'Moe', 'Moe Szyslak'],
+  // I Griffin (D-238): the names of the Italian dub, not yet seen on the page.
+  lois: ['Lois', 'Lois Griffin'],
+  peter: ['Peter', 'Peter Griffin'],
+  stewie: ['Stewie', 'Stewie Griffin'],
+  brian: ['Brian', 'Brian Griffin'],
+  meg: ['Meg', 'Meg Griffin'],
+  chris: ['Chris', 'Chris Griffin'],
+  cleveland: ['Cleveland', 'Cleveland Brown'],
 };
 
 export interface WikiquoteLine {

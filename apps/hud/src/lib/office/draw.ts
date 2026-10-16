@@ -1,6 +1,7 @@
 import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
+import { quahogBar, quahogCouch, quahogFloor, quahogItem, quahogSign, quahogWainscot } from './quahog.ts';
 import type { Bubble } from './snapshot.ts';
 
 /**
@@ -104,6 +105,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     }
   } else if (skin === 'springfield') {
     for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) springfieldFloor(rect, C, c, r);
+  } else if (skin === 'quahog') {
+    // The floorboards of the Griffin house (D-238).
+    for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) quahogFloor(rect, C, c, r, TILE);
   } else {
     for (let r = 0; r < map.height; r++) for (let c = 0; c < map.width; c++) rect((c + r) % 2 === 1 ? C['floor-alt'] : C.floor, c * TILE, r * TILE, TILE, TILE);
   }
@@ -210,6 +214,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       rect(C['wall-line'], x, y + TILE - 2, TILE, 2);
       // The handrail halfway up the corridor's wall (D-216, the decor of the theme Corsia).
       if (skin === 'corsia') rect(C['wall-line'], x, y + 9, TILE, 1);
+      // The wooden wainscot of the Griffin house (D-238).
+      if (skin === 'quahog') quahogWainscot(rect, C, x, y, TILE);
       // The hazard stripe of the power plant (D-237), under the windows and the signs.
       if (skin === 'springfield' && kind === 'wall') springfieldStripe(rect, x, y);
       if (kind === 'shelf' && skin === 'springfield') {
@@ -229,6 +235,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         rect(I.signInk, x + 7, y + 5, 6, 1);
         rect(I.signInk, x + 7, y + 7, 4, 1);
         rect(I.signInk, x + 3, y + 9, 10, 1);
+      } else if (kind === 'shelf' && skin === 'quahog') {
+        quahogSign(rect, C, x, y);
       } else if (kind === 'window') {
         rect(C.outline, x + 1, y + 2, 14, 11);
         rect(C.window, x + 2, y + 3, 12, 9);
@@ -324,6 +332,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
         rect(C.outline, x + w - 12, y - 7, 8, 2);
       } else if (skin === 'springfield') {
         springfieldConsole(rect, C, x, y, w);
+      } else if (skin === 'quahog') {
+        // The bar of the Drunken Clam (D-238).
+        quahogBar(rect, C, x, y, w);
       }
       const bx = bell[0] - 3;
       rect(C.outline, bx, y - 7, 7, 5);
@@ -336,6 +347,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   const skinItem = (kind: 'coffee' | 'cabinet', x: number, y: number): void => {
     if (skin === 'springfield') {
       springfieldItem(rect, C, kind, x, y);
+    } else if (skin === 'quahog') {
+      quahogItem(rect, C, kind, x, y);
     } else if (skin === 'corsia' && kind === 'coffee') {
       rect(C.outline, x + 1, y - 10, 14, 24);
       rect(I.metalDark, x + 2, y - 9, 12, 22);
@@ -376,6 +389,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   const skinRun = (x: number, y: number, w: number, tiles: number): void => {
     if (skin === 'springfield') {
       springfieldCouch(rect, C, x, y, w, tiles);
+    } else if (skin === 'quahog') {
+      quahogCouch(rect, C, x, y, w, tiles, TILE);
     } else if (skin === 'corsia') {
       for (let i = 0; i < tiles; i++) {
         const bx = x + i * TILE;

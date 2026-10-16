@@ -45,6 +45,7 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   assert.equal(skinOfTheme('corsia'), 'corsia');
   assert.equal(skinOfTheme('ufficio'), 'ufficio');
   assert.equal(skinOfTheme('springfield'), 'springfield');
+  assert.equal(skinOfTheme('quahog'), 'quahog');
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 

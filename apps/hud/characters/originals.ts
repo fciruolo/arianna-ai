@@ -5,6 +5,7 @@ import { CODER } from './art/coder.ts';
 import { ARIANNA_CORSIA, CODER_CORSIA } from './art/costumes/corsia.ts';
 import { ARIANNA_UFFICIO, CODER_UFFICIO } from './art/costumes/ufficio.ts';
 import { GOD } from './art/god.ts';
+import { GRIFFIN } from './art/serie/griffin.ts';
 import { ANDY, ANGELA, CREED, DWIGHT, JIM, KEVIN, MICHAEL, OSCAR, PAM } from './art/serie/office.ts';
 import { CARLA, COX, ELLIOT, JANITOR, JD, KELSO, LAVERNE, TED, TURK } from './art/serie/scrubs.ts';
 import { BART, BOE, BURNS, HOMER, LISA, MARGE, SMITHERS } from './art/serie/simpsons.ts';
@@ -63,6 +64,7 @@ export const SERIES: readonly { art: CharacterArt; name: string }[] = [
   { art: SMITHERS, name: 'Smithers' },
   { art: BART, name: 'Bart' },
   { art: BOE, name: 'Boe' },
+  ...GRIFFIN,
 ];
 
 export function sheetPng(art: CharacterArt): Buffer {

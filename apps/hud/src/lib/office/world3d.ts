@@ -141,6 +141,8 @@ function tileBlocks(map: OfficeMap, kind: TileKind, c: number, r: number, skin: 
     case 'coffee':
       // The power plant (D-237): a cabinet with the box of doughnuts on top.
       if (skin === 'springfield') return [box(x, z, 0.8, 0.6, 0, 0.8, 'counter'), box(x, z, 0.7, 0.5, 0.8, 0.12, 'paper')];
+      // The television of the Griffin house on its low cabinet (D-238).
+      if (skin === 'quahog') return [box(x, z, 0.8, 0.5, 0, 0.45, 'desk'), box(x, z, 0.7, 0.5, 0.45, 0.5, 'monitor'), box(x, z, 0.5, 0.52, 0.52, 0.36, 'screen')];
       return skin === 'ufficio'
         ? [box(x, z, 0.5, 0.5, 0, 0.9, 'paper'), box(x, z, 0.36, 0.36, 0.9, 0.34, 'window-light')]
         : [box(x, z, 0.7, 0.6, 0, 1.0, 'monitor'), box(x, z, 0.5, 0.62, 0.55, 0.3, 'screen')];

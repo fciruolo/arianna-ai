@@ -26,6 +26,13 @@
     { "id": "lisa", "name": "Lisa", "file": "lisa.png" },
     { "id": "smithers", "name": "Smithers", "file": "smithers.png" },
     { "id": "bart", "name": "Bart", "file": "bart.png" },
-    { "id": "boe", "name": "Boe", "file": "boe.png" }
+    { "id": "boe", "name": "Boe", "file": "boe.png" },
+    { "id": "lois", "name": "Lois", "file": "lois.png" },
+    { "id": "peter", "name": "Peter", "file": "peter.png" },
+    { "id": "stewie", "name": "Stewie", "file": "stewie.png" },
+    { "id": "brian", "name": "Brian", "file": "brian.png" },
+    { "id": "meg", "name": "Meg", "file": "meg.png" },
+    { "id": "chris", "name": "Chris", "file": "chris.png" },
+    { "id": "cleveland", "name": "Cleveland", "file": "cleveland.png" }
   ]
 }

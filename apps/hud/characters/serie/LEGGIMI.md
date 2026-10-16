@@ -28,3 +28,13 @@ Il tema «I Simpson» (D-237, ramo `task/tema-simpson`) va tolto tutto, perché 
 - la centrale nucleare dell'ufficio pixel: `apps/hud/src/lib/office/springfield.ts`, la mappa `apps/hud/src/office/maps/springfield.json` con la sua riga in `MAP_TEXTS` di `apps/hud/src/components/OfficePage.vue`, `springfield` in `OFFICE_SKINS` e `PALETTES` di `apps/hud/src/lib/office/skins.ts`, i rami `springfield` di `apps/hud/src/lib/office/draw.ts` e `apps/hud/src/lib/office/world3d.ts` (con `STRIPE_HEIGHT`), e i loro test in `apps/hud/test/office-skins.test.ts` e `apps/hud/test/office-3d.test.ts`.
 
 I fogli si rigenerano dalle mappe con `node apps/hud/characters/build.ts`; un test fallisce se i PNG non corrispondono alle mappe.
+
+Il tema «I Griffin» (D-238, id `quahog`: Lois, Peter, Stewie, Brian, Meg, Chris e Cleveland di Family Guy, con casa Griffin e il Drunken Clam nell'ufficio pixel) va tolto con loro, anche dalla storia di git (è entrato con i commit del ramo `task/tema-griffin`):
+
+- la cartella `apps/hud/themes/quahog/`;
+- le mappe `apps/hud/characters/art/serie/griffin.ts`, la riga `...GRIFFIN` di `SERIES` e il suo import in `apps/hud/characters/originals.ts`, le sette righe di `pack.json` e i PNG `lois`, `peter`, `stewie`, `brian`, `meg`, `chris`, `cleveland` di questa cartella;
+- nomi e personalità: `packages/agents/src/series-griffin.ts`, con la riga `...GRIFFIN_PERSONAS` e il suo import in `packages/agents/src/series-personas.ts`;
+- Wikiquote: la pagina `'Family Guy'` di `WIKIQUOTE_PAGES` e i sette nomi in coda a `WIKIQUOTE_SPEAKERS` in `apps/core/src/wikiquote.ts`;
+- l'ufficio pixel: `apps/hud/src/office/maps/quahog.json` con la sua riga in `MAP_TEXTS` di `apps/hud/src/components/OfficePage.vue`, `apps/hud/src/lib/office/quahog.ts`, `quahog` in `OFFICE_SKINS` e la sua tavolozza in `skins.ts`, i rami `quahog` di `apps/hud/src/lib/office/draw.ts` e di `apps/hud/src/lib/office/world3d.ts` (il televisore in 3D);
+- il nome del tema in `THEME_NAME` di `apps/hud/src/lib/changes.ts`;
+- i test: `apps/hud/test/quahog.test.ts`, `apps/core/test/series-griffin.test.ts`, e le attese su `quahog` e sui sette personaggi in `apps/hud/test/themes.test.ts`, `apps/core/test/themes.test.ts`, `apps/core/test/characters.test.ts`, `apps/hud/test/office-skins.test.ts`, `apps/hud/test/changes.test.ts`, `apps/core/test/wikiquote.test.ts` e `apps/core/test/series-guard.test.ts`.

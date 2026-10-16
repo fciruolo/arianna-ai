@@ -97,6 +97,8 @@ describe('wikiquote parser', () => {
     assert.equal(wikiquoteName('Scrubs'), 'Scrubs - Medici ai primi ferri');
     assert.equal(wikiquoteName('The Office (US)'), 'The Office');
     assert.equal(wikiquoteName('I Simpson'), 'I Simpson');
+    assert.equal(wikiquoteName('Family Guy'), 'I Griffin');
+    for (const person of Object.values(SERIES_PERSONAS)) assert.ok(wikiquoteName(person.show) !== undefined, person.show);
     assert.equal(wikiquoteName('Una serie che non c’è'), undefined);
     for (const id of Object.keys(SERIES_PERSONAS)) assert.ok((WIKIQUOTE_SPEAKERS[id]?.length ?? 0) > 0, id);
   });
