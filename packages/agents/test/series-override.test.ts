@@ -35,3 +35,16 @@ test('otherSeriesNames: the other people of the series, whole words, never the c
   assert.deepEqual(otherSeriesNames('cox', 'Carlamente, Jimmy e Pampa.'), []);
   assert.deepEqual(otherSeriesNames('jim', 'Fa scherzi a Dwight.'), ['Dwight']);
 });
+
+test('the aliases of a person are names of the series too, and a rewrite keeps them (D-227)', () => {
+  const kelso = SERIES_PERSONAS.kelso;
+  assert.ok(kelso !== undefined);
+  assert.ok(seriesNamesOfSource(seriesSource('jd'))?.includes('Bob Kelso'));
+  assert.ok(otherSeriesNames('cox', 'Odia Bob Kelso.').includes('Bob Kelso'));
+  assert.deepEqual(otherSeriesNames('kelso', 'Sono Bob Kelso, il Dott. Kelso.'), []);
+  assert.deepEqual(withSeriesOverride(kelso, { traits: 'Altro.' }).persona.aliases, kelso.aliases);
+  // Negative: without aliases, a person has none after a rewrite either.
+  const jd = SERIES_PERSONAS.jd;
+  assert.ok(jd !== undefined);
+  assert.equal(withSeriesOverride(jd, { traits: 'Altro.' }).persona.aliases, undefined);
+});

@@ -134,8 +134,11 @@ test('characterPart: the person of the series as an L0 piece, with its name and 
   assert.doesNotMatch(characterPart(corsia({ personas: { god: { tone: 'serio', address: 'tu', displayName: 'Bruno' } } }), 'god', 'L2')?.text ?? '', /You are Dr\. Cox/);
   assert.match(tailParts(corsia(), 'god', 'L2')[0]?.text ?? '', /<scene>/);
   assert.doesNotMatch(tailParts(corsia(), 'god', 'L1')[0]?.text ?? '', /<scene>/);
+  // The Designer and the local model wear the Janitor and Dr. Kelso in Scrubs (D-227).
+  assert.equal(characterPart(corsia(), 'designer')?.source, 'character:serie/janitor');
+  assert.equal(characterPart(corsia(), 'local-chat')?.source, 'character:serie/kelso');
   // A costume of the originals, or Base: nothing.
-  assert.equal(characterPart(corsia(), 'designer'), undefined);
+  assert.equal(characterPart(corsia({ characters: { designer: 'originali/coder-corsia' } }), 'designer'), undefined);
   assert.equal(characterPart(corsia({ appearance: { theme: 'base' } }), 'god'), undefined);
 });
 
@@ -316,10 +319,13 @@ test('who is who (D-217): each agent reads the names of the others in the theme,
   assert.match(roster.text, /- Arianna: "Carla"/);
   assert.match(roster.text, /- Coder: "J\.D\."/);
   assert.match(roster.text, /- Reviewer: "Elliot"/);
+  assert.match(roster.text, /- Designer: "Inserviente"/);
   // Not itself, nor an agent in a costume of the originals.
-  assert.doesNotMatch(roster.text, /GOD|Designer/);
+  assert.doesNotMatch(roster.text, /GOD/);
+  const costumed = corsia({ characters: { designer: 'originali/coder-corsia' } });
+  assert.doesNotMatch(rosterPart(costumed, 'god')?.text ?? '', /Designer/);
   // An agent without a person of the series still reads the others' names.
-  assert.match(rosterPart(corsia(), 'designer')?.text ?? '', /- GOD: "Dr\. Cox"/);
+  assert.match(rosterPart(costumed, 'designer')?.text ?? '', /- GOD: "Dr\. Cox"/);
   // Base and no choice: nobody.
   assert.equal(rosterPart(corsia({ appearance: { theme: 'base' } }), 'god'), undefined);
   // The name the user wrote wins: out of the L0 piece, into the user's piece, L1 and only where L1 fits.
@@ -331,7 +337,12 @@ test('who is who (D-217): each agent reads the names of the others in the theme,
   assert.equal(userNamesPart(named, 'god', 'L0'), undefined);
   assert.equal(userNamesPart(named, 'coder', 'L1'), undefined, 'its own name is in its persona');
   // The names worn now, whole, for the gateway.
-  assert.deepEqual(wornSeriesNames(corsia()).sort(), ['Carla', 'Cox', 'Dr Cox', 'Dr. Cox', 'Elliot', 'J.D.', 'JD', 'Turk']);
+  assert.deepEqual(wornSeriesNames(corsia()).sort(), ['Carla', 'Cox', 'Dr Cox', 'Dr. Cox', 'Elliot', 'Inserviente', 'J.D.', 'JD', 'Turk']);
+  // With the local model loaded, Dr. Kelso with the forms of D-227: «Bob Kelso» and «Dott. Kelso» as the derived ones.
+  const kelso = wornSeriesNames(corsia({ agentsNow: () => ({ official: [...LOADED.official, 'local-chat'], user: [] }) }));
+  for (const name of ['Dr. Kelso', 'Kelso', 'Dr Kelso', 'Bob Kelso', 'Dott. Kelso']) assert.ok(kelso.includes(name), name);
+  // Negative: nobody wears Kevin in Scrubs, so none of his names passes.
+  assert.ok(!kelso.includes('Kevin'));
   assert.deepEqual(wornSeriesNames(corsia({ appearance: { theme: 'base' } })), []);
 });
 
@@ -399,4 +410,20 @@ test('the gateway reads the names worn from main.ts when not given (configureWor
     configureWornNames(() => []);
   }
   assert.deepEqual(fragmentNamesOf([{ value: 'Ciao Carla', label: 'L1', source: 'message:1' }]), [undefined]);
+});
+
+test('the new people of the themes (D-227): in The Office Finanze is Oscar, the Designer Andy, the local model Kevin; in Scrubs the Designer is the Janitor, the local model Dr. Kelso', () => {
+  const ufficio = corsia({ appearance: { theme: 'ufficio' } });
+  assert.equal(characterChoiceOf(ufficio, 'finanze'), 'serie/oscar');
+  assert.equal(characterChoiceOf(ufficio, 'designer'), 'serie/andy');
+  assert.equal(characterChoiceOf(ufficio, 'local-chat'), 'serie/kevin');
+  assert.equal(characterChoiceOf(corsia(), 'designer'), 'serie/janitor');
+  assert.equal(characterChoiceOf(corsia(), 'local-chat'), 'serie/kelso');
+  // The free ones are in no theme: only chosen by hand, for any agent.
+  for (const id of ['ted', 'laverne', 'angela', 'creed']) {
+    assert.ok(!Object.values(themeCharactersSync(THEMES, 'corsia')).includes(`serie/${id}`), id);
+    assert.ok(!Object.values(themeCharactersSync(THEMES, 'ufficio')).includes(`serie/${id}`), id);
+  }
+  assert.equal(characterChoiceOf(corsia({ characters: { coder: 'serie/creed' } }), 'coder'), 'serie/creed');
+  assert.equal(characterPart(corsia({ characters: { coder: 'serie/creed' } }), 'coder')?.source, 'character:serie/creed');
 });

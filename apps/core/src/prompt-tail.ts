@@ -169,7 +169,7 @@ function characterResolver(config: TailConfig): { choose: (agent: string) => str
 }
 
 /** How an agent is named in the roster (D-217): as the cards and the chat call it. */
-const AGENT_LABEL: Readonly<Record<string, string>> = { arianna: 'Arianna', coder: 'Coder', god: 'GOD', designer: 'Designer', finanze: 'Finanze', reviewer: 'Reviewer' };
+const AGENT_LABEL: Readonly<Record<string, string>> = { arianna: 'Arianna', coder: 'Coder', god: 'GOD', designer: 'Designer', finanze: 'Finanze', reviewer: 'Reviewer', 'local-chat': 'Modello locale' };
 
 function agentLabel(agent: string): string {
   return Object.hasOwn(AGENT_LABEL, agent) ? (AGENT_LABEL[agent] ?? agent) : agent.charAt(0).toUpperCase() + agent.slice(1);

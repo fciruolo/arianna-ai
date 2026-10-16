@@ -57,10 +57,21 @@ export const WIKIQUOTE_SPEAKERS: Readonly<Record<string, readonly string[]>> = {
   elliot: ['Elliot', 'Elliot Reid'],
   carla: ['Carla', 'Carla Espinosa'],
   cox: ['Dott. Cox', 'Dr. Cox', 'Cox', 'Perry Cox', 'Perry'],
+  // Seen on the pages of the first season on 2026-10-16: «Dott. Kelso» and «Kelso», «Inserviente», «Ted», «Laverne».
+  kelso: ['Dott. Kelso', 'Dr. Kelso', 'Kelso', 'Bob Kelso'],
+  janitor: ['Inserviente', 'L’inserviente', "L'inserviente"],
+  ted: ['Ted', 'Ted Buckland'],
+  laverne: ['Laverne', 'Laverne Roberts'],
   michael: ['Michael Scott', 'Michael'],
   dwight: ['Dwight', 'Dwight Schrute'],
   jim: ['Jim', 'Jim Halpert'],
   pam: ['Pam', 'Pam Beesly', 'Pam Beesley', 'Pam Halpert'],
+  // On 2026-10-16 the page had lines of Kevin, Angela and Creed, none yet of Oscar and Andy: their import says so.
+  oscar: ['Oscar', 'Oscar Martinez'],
+  andy: ['Andy', 'Andy Bernard'],
+  kevin: ['Kevin', 'Kevin Malone'],
+  angela: ['Angela', 'Angela Martin'],
+  creed: ['Creed'],
 };
 
 export interface WikiquoteLine {

@@ -176,10 +176,10 @@ test('GET /api/themes serves the checked themes and the characters of the chosen
       const config = { personas: {}, characters: { coder: 'originali/coder' }, appearance: { theme: 'corsia' }, home: HOME, paths: { data: root } };
       assert.equal(characterChoiceOf(config, agent), `${choice.pack}/${choice.character}`, agent);
     }
-    // The people of the series (D-211) and a costume of the originals, both from the theme.
+    // The people of the series (D-211, D-227), from the theme.
     assert.deepEqual(characters.agents.arianna, { pack: 'serie', character: 'carla', rows: 4, from: 'theme' });
     assert.deepEqual(characters.agents.god, { pack: 'serie', character: 'cox', rows: 4, from: 'theme' });
-    assert.deepEqual(characters.agents.designer, { pack: 'originali', character: 'coder-corsia', rows: 4, from: 'theme' });
+    assert.deepEqual(characters.agents.designer, { pack: 'serie', character: 'janitor', rows: 4, from: 'theme' });
     // The explicit choice of [characters] wins over the theme.
     assert.equal(characters.agents.coder?.from, 'choice');
     chosen = 'sparito';

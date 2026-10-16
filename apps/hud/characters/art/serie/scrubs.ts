@@ -160,3 +160,131 @@ export const CARLA: CharacterArt = person({
   garment: { kind: 'scrubs', short: true },
   hair: LONG_HAIR,
 });
+
+const KELSO_FRONT = ['......oooo......', '....oossssoo....', '...ossLLsssso...', '..osssssssssso..', '..ohhsssssshho..', ...manFace('...ossmmmmsso...')];
+
+/** Dr. Kelso: bald on top with white hair at the sides, the smug grin, white coat on a shirt and a maroon tie. */
+export const KELSO: CharacterArt = person({
+  id: 'kelso',
+  palette: { ...COMMON, s: '#efc6a6', S: '#cc9c7e', L: '#fbe0ca', m: '#9a4e46', h: '#deded8', H: '#b4b2aa', J: '#eef1f3', K: '#b9c3cb', i: '#c3d3e6', t: '#7a2a3c', T: '#561c2a', n: '#3a3f4a', N: '#2c3038' },
+  head: {
+    down: KELSO_FRONT,
+    up: [
+      '......oooo......',
+      '....oossssoo....',
+      '...ossLLsssso...',
+      '..osssssssssso..',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhhhhho..',
+      '..oohhhhhhhhoo..',
+      '...ohhhhhhhho...',
+      '....oossssoo....',
+    ],
+    right: [
+      '.....oooo.......',
+      '...oossssoo.....',
+      '..ossLLsssso....',
+      '..osssssssssso..',
+      '..ohhsssssssso..',
+      '..ohhhssssssso..',
+      '..ohhhSsssseso..',
+      '...ohsssssssso..',
+      '....ossssmmso...',
+      '.....ossssoo....',
+    ],
+  },
+  garment: { kind: 'coat', tie: true },
+});
+
+const JANITOR_SIDE_HAIR = ['.....oooo.......', '...oohhHhoo.....', '..ohhhhhhhhoo...', '..ohhhhhhhhhho..'] as const;
+const JANITOR_FRONT = ['......oooo......', '....oohhhhoo....', '...ohhhHhhhho...', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', ...manFace(undefined, undefined, '..ohshhsshhsho..')];
+
+/** The Janitor: short brown hair, a frown under heavy brows, a grey-green work overall with the keys at the belt. */
+export const JANITOR: CharacterArt = person({
+  id: 'janitor',
+  palette: { ...COMMON, s: '#eec29e', S: '#c9946f', m: '#8a4a42', h: '#5a4130', H: '#76583f', J: '#7f8c74', K: '#66715d', i: '#6a7561', t: '#6a7561', T: '#59634f', n: '#7f8c74', N: '#66715d', x: '#9aa0a6', X: '#d9c27a' },
+  head: {
+    down: JANITOR_FRONT,
+    up: backOf(JANITOR_FRONT),
+    right: [...manSide(JANITOR_SIDE_HAIR).slice(0, 5), '..ohhhhhssshso..', ...manSide(JANITOR_SIDE_HAIR).slice(6)],
+  },
+  garment: { kind: 'shirt' },
+  accessory: {
+    down: ['................', '................', '................', '................', '................', '..........xX....'],
+    up: [],
+    right: ['................', '................', '................', '................', '................', '.......xX.......'],
+  },
+});
+
+const TED_FRONT = ['......oooo......', '....oossssoo....', '...osshLhhsso...', '..osssssssssso..', '..ohhsssssshho..', ...manFace()];
+
+/** Ted: thinning brown hair combed over a bald top, a worried face, a beige shirt and a dull blue tie. */
+export const TED: CharacterArt = person({
+  id: 'ted',
+  palette: { ...COMMON, s: '#eec4a0', S: '#c99a78', L: '#f8d8bc', m: '#9a5048', h: '#6b5340', H: '#8a6f58', J: '#e6e0cc', K: '#c4bca4', i: '#e6e0cc', t: '#55688a', T: '#3e4e6a', n: '#5c5a52', N: '#47463f' },
+  head: {
+    down: TED_FRONT,
+    up: [
+      '......oooo......',
+      '....oossssoo....',
+      '...osshhhhsso...',
+      '..osssssssssso..',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhhhhho..',
+      '..oohhhhhhhhoo..',
+      '...ohhhhhhhho...',
+      '....oossssoo....',
+    ],
+    right: [
+      '.....oooo.......',
+      '...oosshhoo.....',
+      '..osshLhhsso....',
+      '..osssssssssso..',
+      '..ohhsssssssso..',
+      '..ohhhssssssso..',
+      '..ohhhSsssseso..',
+      '...ohsssssssso..',
+      '....osssssmso...',
+      '.....ossssoo....',
+    ],
+  },
+  garment: { kind: 'shirt', tie: true },
+});
+
+const LAVERNE_FRONT = [
+  '....oo.oo.oo....',
+  '...ohhohhohho...',
+  '..ohhhHhhhHhho..',
+  '..ohhhhhhhhhho..',
+  '..ohhsssssshho..',
+  '..ohssssssssho..',
+  '..ohsessssesho..',
+  '..ohpsssssspho..',
+  '...ossmmmmsso...',
+  '....oossssoo....',
+];
+
+/** Laverne: short black curls, dark skin, a warm smile, lavender nurse scrubs. */
+export const LAVERNE: CharacterArt = person({
+  id: 'laverne',
+  palette: { ...COMMON, s: '#7e5136', S: '#5e3a25', m: '#a85a52', p: '#93603f', h: '#1e1612', H: '#3a2a22', J: '#9a98d6', K: '#7573b4', n: '#9a98d6', N: '#7573b4' },
+  head: {
+    down: LAVERNE_FRONT,
+    up: backOf(LAVERNE_FRONT),
+    right: [
+      '....oo.oo.......',
+      '...ohhoHhoo.....',
+      '..ohHhhhhHhoo...',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhsssso..',
+      '..ohhhhhssssso..',
+      '..ohhhSsssseso..',
+      '...ohssssssspo..',
+      '....ossssmmso...',
+      '.....ossssoo....',
+    ],
+  },
+  garment: { kind: 'scrubs', short: true },
+});

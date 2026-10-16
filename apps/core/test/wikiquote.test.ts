@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { SERIES_PERSONAS } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 import { secretMatcher } from '@arianna/policy';
 
@@ -80,7 +81,7 @@ describe('wikiquote parser', () => {
     assert.equal(wikiquoteName('Scrubs'), 'Scrubs - Medici ai primi ferri');
     assert.equal(wikiquoteName('The Office (US)'), 'The Office');
     assert.equal(wikiquoteName('Una serie che non c’è'), undefined);
-    for (const id of ['jd', 'turk', 'elliot', 'carla', 'cox', 'michael', 'dwight', 'jim', 'pam']) assert.ok((WIKIQUOTE_SPEAKERS[id]?.length ?? 0) > 0, id);
+    for (const id of Object.keys(SERIES_PERSONAS)) assert.ok((WIKIQUOTE_SPEAKERS[id]?.length ?? 0) > 0, id);
   });
 });
 

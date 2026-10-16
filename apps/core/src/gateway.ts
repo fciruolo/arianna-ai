@@ -45,7 +45,7 @@ function textsOf(payload: readonly Labeled<unknown>[]): readonly string[] | unde
 
 /**
  * For the second scanner, by position: the names that are no persons in that
- * fragment alone, only whole. The pieces of the characters and of who is who
+ * fragment alone, whole or a piece inside a whole occurrence (D-227). The pieces of the characters and of who is who
  * (`character:…`, D-214, D-217) every name of the series; every other fragment
  * the names worn now (`worn`, D-217), so that an answer that called an agent
  * «Carla» can go on in a brief, while «Carla Bianchi», or «Pam» when nobody
@@ -64,7 +64,8 @@ let wornNames: () => readonly string[] = () => [];
 /**
  * What tells the gateway the names worn now (D-217): an answer of an agent
  * calls another by its character's name («ne parlo con Carla»), and that answer
- * may go on in a later brief. Those names, whole and only while worn, are no
+ * may go on in a later brief. Those names, whole (or a piece inside a whole
+ * occurrence, D-227) and only while worn, are no
  * person for the second scanner in any fragment; a longer name («Carla
  * Bianchi») or a name no agent wears is still a person.
  */

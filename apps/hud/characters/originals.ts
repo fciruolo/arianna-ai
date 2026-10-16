@@ -5,8 +5,8 @@ import { CODER } from './art/coder.ts';
 import { ARIANNA_CORSIA, CODER_CORSIA } from './art/costumes/corsia.ts';
 import { ARIANNA_UFFICIO, CODER_UFFICIO } from './art/costumes/ufficio.ts';
 import { GOD } from './art/god.ts';
-import { DWIGHT, JIM, MICHAEL, PAM } from './art/serie/office.ts';
-import { CARLA, COX, ELLIOT, JD, TURK } from './art/serie/scrubs.ts';
+import { ANDY, ANGELA, CREED, DWIGHT, JIM, KEVIN, MICHAEL, OSCAR, PAM } from './art/serie/office.ts';
+import { CARLA, COX, ELLIOT, JANITOR, JD, KELSO, LAVERNE, TED, TURK } from './art/serie/scrubs.ts';
 import { dress, renderSheet, type CharacterArt } from './compose.ts';
 import { encodePng } from './png.ts';
 
@@ -42,10 +42,19 @@ export const SERIES: readonly { art: CharacterArt; name: string }[] = [
   { art: ELLIOT, name: 'Elliot' },
   { art: CARLA, name: 'Carla' },
   { art: COX, name: 'Dr. Cox' },
+  { art: KELSO, name: 'Dr. Kelso' },
+  { art: JANITOR, name: 'Inserviente' },
+  { art: TED, name: 'Ted' },
+  { art: LAVERNE, name: 'Laverne' },
   { art: MICHAEL, name: 'Michael' },
   { art: DWIGHT, name: 'Dwight' },
   { art: JIM, name: 'Jim' },
   { art: PAM, name: 'Pam' },
+  { art: OSCAR, name: 'Oscar' },
+  { art: ANDY, name: 'Andy' },
+  { art: KEVIN, name: 'Kevin' },
+  { art: ANGELA, name: 'Angela' },
+  { art: CREED, name: 'Creed' },
 ];
 
 export function sheetPng(art: CharacterArt): Buffer {

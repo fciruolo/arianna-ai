@@ -7,9 +7,18 @@
     { "id": "elliot", "name": "Elliot", "file": "elliot.png" },
     { "id": "carla", "name": "Carla", "file": "carla.png" },
     { "id": "cox", "name": "Dr. Cox", "file": "cox.png" },
+    { "id": "kelso", "name": "Dr. Kelso", "file": "kelso.png" },
+    { "id": "janitor", "name": "Inserviente", "file": "janitor.png" },
+    { "id": "ted", "name": "Ted", "file": "ted.png" },
+    { "id": "laverne", "name": "Laverne", "file": "laverne.png" },
     { "id": "michael", "name": "Michael", "file": "michael.png" },
     { "id": "dwight", "name": "Dwight", "file": "dwight.png" },
     { "id": "jim", "name": "Jim", "file": "jim.png" },
-    { "id": "pam", "name": "Pam", "file": "pam.png" }
+    { "id": "pam", "name": "Pam", "file": "pam.png" },
+    { "id": "oscar", "name": "Oscar", "file": "oscar.png" },
+    { "id": "andy", "name": "Andy", "file": "andy.png" },
+    { "id": "kevin", "name": "Kevin", "file": "kevin.png" },
+    { "id": "angela", "name": "Angela", "file": "angela.png" },
+    { "id": "creed", "name": "Creed", "file": "creed.png" }
   ]
 }

@@ -103,3 +103,149 @@ export const PAM: CharacterArt = person({
   garment: { kind: 'cardigan' },
   legs: 'skirt',
 });
+
+const OSCAR_FRONT = [
+  '......oooo......',
+  '....oohhhhoo....',
+  '...ohhhhhhHho...',
+  '..ohhhhhhhhhho..',
+  '..ohhsssssshho..',
+  '..ohssssssssho..',
+  '..ohsessssesho..',
+  '..ooSssssssSoo..',
+  '...oSssmmssSo...',
+  '....ooSSSSoo....',
+];
+
+/** Oscar: short black hair, a trimmed dark beard on the jaw, a lavender shirt and a dark tie. */
+export const OSCAR: CharacterArt = person({
+  id: 'oscar',
+  palette: { ...COMMON, s: '#cf9d76', S: '#5a4234', m: '#7a3a34', h: '#1f1915', H: '#3a302a', J: '#b8a6d6', K: '#9482b6', i: '#b8a6d6', t: '#33334f', T: '#24243a', n: '#3a3d46', N: '#2c2e35' },
+  head: {
+    down: OSCAR_FRONT,
+    up: backOf(OSCAR_FRONT),
+    right: [...manSide().slice(0, 7), '...ohssssssSSo..', '....oSsssSmSo...', '.....oSSSSoo....'],
+  },
+  garment: { kind: 'shirt', tie: true },
+});
+
+const ANDY_FRONT = ['......ooooo.....', '....oohhHHhoo...', '...ohhhhHHhhho..', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', ...manFace('...ossmmmmsso...', undefined, '..ohhsssssssho..')];
+
+/** Andy: sandy hair with a side quiff, the big grin, a navy blazer on a pink shirt and a green tie. */
+export const ANDY: CharacterArt = person({
+  id: 'andy',
+  palette: { ...COMMON, s: '#f3cba8', S: '#d09c7c', m: '#9a4440', h: '#9a7444', H: '#c29a62', J: '#2f4a7c', K: '#22375e', i: '#f2c2cc', t: '#3f7a4a', T: '#2c5a36', n: '#c9b88e', N: '#a8976e' },
+  head: {
+    down: ANDY_FRONT,
+    up: backOf(ANDY_FRONT),
+    right: manSide(['.....ooooo......', '...oohhHHhoo....', '..ohhhhHHhhhoo..', '..ohhhhhhhhhhho.'], '....osssssmmo...'),
+  },
+  garment: { kind: 'suit' },
+});
+
+const KEVIN_FRONT = [
+  '......oooo......',
+  '....oohhhhoo....',
+  '...ohhhhhhhho...',
+  '..ohhsssssshho..',
+  '..osssssssssso..',
+  '.osssssssssssso.',
+  '.osssessssessso.',
+  '.osssssssssssso.',
+  '..osssmmmmssso..',
+  '...oossssssoo...',
+];
+
+/** Kevin: thinning hair over a high forehead, a big round face, a tan shirt and a brown tie. */
+export const KEVIN: CharacterArt = person({
+  id: 'kevin',
+  palette: { ...COMMON, s: '#f0c49e', S: '#cc9876', m: '#8a3e38', h: '#5e4634', H: '#7a5e48', J: '#d6c6a2', K: '#b5a47e', i: '#d6c6a2', t: '#7a4a2a', T: '#59341c', n: '#4a4d58', N: '#383a43' },
+  head: {
+    down: KEVIN_FRONT,
+    up: [
+      '......oooo......',
+      '....oohhhhoo....',
+      '...ohhhhhhhho...',
+      '..ohhhhhhhhhho..',
+      '..ohhhhhhhhhho..',
+      '.ohhhhhhhhhhhho.',
+      '.ohhhhhhhhhhhho.',
+      '.ohhhhhhhhhhhho.',
+      '..ohhhhhhhhhho..',
+      '...oossssssoo...',
+    ],
+    right: [
+      '.....oooo.......',
+      '...oohhhhoo.....',
+      '..ohhhhhsssso...',
+      '..ohhhssssssso..',
+      '..ohhssssssssso.',
+      '.ohhhssssssssso.',
+      '.ohhhSsssssesso.',
+      '.oSssssssssssso.',
+      '..ossssssssmso..',
+      '...oosssssooo...',
+    ],
+  },
+  garment: { kind: 'shirt', tie: true },
+});
+
+/** Angela: blonde hair pulled back in a tight bun, a prim small mouth, a butter cardigan on a white blouse, a brown skirt. */
+export const ANGELA: CharacterArt = person({
+  id: 'angela',
+  palette: { ...COMMON, s: '#f6d4b8', S: '#d6a88a', m: '#b85a62', p: '#efb0a6', h: '#e2c068', H: '#f2da98', r: '#b38f3c', J: '#ece0b0', K: '#c9bb88', i: '#fbfaf5', n: '#6e5a48', N: '#584736' },
+  head: {
+    down: [
+      '......oooo......',
+      '....oohhhhoo....',
+      '...ohhhHHhhho...',
+      '..ohhhhHhhhhho..',
+      '..ohssssssssho..',
+      '..ohssssssssho..',
+      '..ohsessssesho..',
+      '..oossssssssoo..',
+      '...osssmsssso...',
+      '....oossssoo....',
+    ],
+    up: [
+      '......oooo......',
+      '....oohhhhoo....',
+      '...ohhhhhhhho...',
+      '..ohhhhrrhhhho..',
+      '..ohhhrHHrhhho..',
+      '..ohhhrhhrhhho..',
+      '..ohhhhrrhhhho..',
+      '..ohhhhhhhhhho..',
+      '...ohhhhhhhho...',
+      '....oossssoo....',
+    ],
+    right: [
+      '.....oooo.......',
+      '...oohhHhoo.....',
+      '..ohhhHHhhho....',
+      'oooohhhhhhhho...',
+      'oHhohhhhhsssso..',
+      'ohhohhhsssssso..',
+      '.oooohhsssseso..',
+      '....ohsssssspo..',
+      '....osssssssmo..',
+      '.....oossssso...',
+    ],
+  },
+  garment: { kind: 'cardigan' },
+  legs: 'skirt',
+});
+
+const CREED_FRONT = ['.....oooooo.....', '...oohhhhhhoo...', '..ohhhHhhHhhho..', '..ohhhhhhhhhho..', '..ohhsssssshho..', ...manFace('...ossssmmsso...')];
+
+/** Creed: grey hair swept back, a weathered face with a sly half smile, a white shirt and a plum tie. */
+export const CREED: CharacterArt = person({
+  id: 'creed',
+  palette: { ...COMMON, s: '#e4b48e', S: '#bd8a66', m: '#8a4a40', h: '#b9b7ae', H: '#dedcd4', J: '#e6e9ec', K: '#bfc6cd', i: '#e6e9ec', t: '#5c3858', T: '#43273f', n: '#565a60', N: '#43464b' },
+  head: {
+    down: CREED_FRONT,
+    up: backOf(CREED_FRONT),
+    right: manSide(['.....ooooo......', '...oohhHhhoo....', '..ohhhhhhHhhoo..', '..ohhhhhhhhhhho.'], '....ossssmmso...'),
+  },
+  garment: { kind: 'shirt', tie: true },
+});

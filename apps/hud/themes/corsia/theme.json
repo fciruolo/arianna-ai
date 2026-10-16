@@ -2,10 +2,10 @@
   "id": "corsia",
   "name": "Scrubs",
   "kind": "serie",
-  "description": "Il Sacro Cuore: verde acqua e bianco d'ospedale. Carla è Arianna, J.D. il Coder, il Dr. Cox è GOD.",
+  "description": "Il Sacro Cuore: verde acqua e bianco d'ospedale. Carla è Arianna, J.D. il Coder, il Dr. Cox GOD, Kelso il modello locale.",
   "background": { "pattern": "nessuno" },
   "hud": { "corners": false, "glow": "tenue", "radius": "morbido" },
-  "characters": { "arianna": "serie/carla", "coder": "serie/jd", "god": "serie/cox", "reviewer": "serie/elliot", "finanze": "serie/turk", "designer": "originali/coder-corsia" },
+  "characters": { "arianna": "serie/carla", "coder": "serie/jd", "god": "serie/cox", "reviewer": "serie/elliot", "finanze": "serie/turk", "designer": "serie/janitor", "local-chat": "serie/kelso" },
   "tokens": {
     "dark": {
       "bg": "#0b1517",
