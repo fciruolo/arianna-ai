@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { ApiError, cancelTileRefresh, loadTiles, orderTiles, refreshTile, removeTile, updateTile } from '../lib/api.ts';
+import { ApiError, cancelTileRefresh, chartTile, loadTiles, orderTiles, refreshTile, removeTile, updateTile } from '../lib/api.ts';
 import {
   anyRunning,
   answeredByText,
@@ -31,7 +31,12 @@ import {
   whenText,
   WIDTH_TEXT,
   type DashboardTile,
+  CHART_MISSING_TEXT,
+  EDIT_QUESTION_TEXT,
+  SAVE_REFRESH_TEXT,
+  SAVE_TEXT,
 } from '../lib/dashboard.ts';
+import DashboardChart from './DashboardChart.vue';
 import type { RowMenuItem } from '../lib/projects-page.ts';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -40,7 +45,7 @@ import PageHeader from './PageHeader.vue';
 import RowMenu from './RowMenu.vue';
 
 /**
- * The page «Cruscotto» (D-248): the answers pinned from the chat as tiles,
+ * The page «Dashboard» (D-248): the answers pinned from the chat as tiles,
  * in the user's order, narrow or wide. Each shows its label (always), when it
  * was refreshed, who wrote it and the conversation it came from; «Aggiorna»
  * asks its question again on the local model. While a tile is at work the
@@ -59,7 +64,11 @@ const busy = ref<Set<string>>(new Set());
 const dragging = ref<string | null>(null);
 const dropTarget = ref<string | null>(null);
 const notice = ref<{ text: string; undo?: () => void } | null>(null);
-const shownQuestion = ref<string | null>(null);
+/** «Modifica la domanda»: the tile whose question is open in its field, and the text being written. */
+const editingQuestion = ref<string | null>(null);
+const draftQuestion = ref('');
+/** Tiles whose chart the local model is writing now (after «Mostra come grafico»). */
+const charting = ref<Set<string>>(new Set());
 let poll: ReturnType<typeof setTimeout> | undefined;
 let clock: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,6 +184,48 @@ async function setWidth(tile: DashboardTile, width: 'narrow' | 'wide'): Promise<
   }
 }
 
+/** «Salva» or «Salva e aggiorna» of the question: the next refresh asks the new one; the label stays. */
+async function saveQuestion(tile: DashboardTile, refreshNow: boolean): Promise<void> {
+  const question = draftQuestion.value.trim();
+  if (question === '') return;
+  await work(tile.id, async () => {
+    try {
+      const saved = question === tile.question ? tile : await updateTile(tile.id, { question });
+      replace(saved);
+      editingQuestion.value = null;
+      if (refreshNow) {
+        replace(await refreshTile(tile.id));
+        void load();
+      }
+    } catch (error) {
+      failed(error, 'Non riesco a salvare la domanda.');
+    }
+  });
+}
+
+/** «Mostra come grafico» or «come testo»: a chart that is not there yet is asked to the local model from the answer the tile holds. */
+async function setKind(tile: DashboardTile, kind: 'text' | 'chart'): Promise<void> {
+  await work(tile.id, async () => {
+    try {
+      const changed = await updateTile(tile.id, { kind });
+      replace(changed);
+      if (kind === 'chart' && changed.chart === null) {
+        charting.value = new Set([...charting.value, tile.id]);
+        try {
+          replace(await chartTile(tile.id));
+        } finally {
+          const next = new Set(charting.value);
+          next.delete(tile.id);
+          charting.value = next;
+        }
+      }
+    } catch (error) {
+      failed(error, 'Non riesco a cambiare come si mostra.');
+      void load();
+    }
+  });
+}
+
 async function saveOrder(ids: string[]): Promise<void> {
   const before = tiles.value;
   const byId = new Map(before.map((tile) => [tile.id, tile]));
@@ -222,7 +273,8 @@ function menuOf(tile: DashboardTile): RowMenuItem[] {
     { id: 'up', text: 'Sposta prima', disabled: at <= 0 },
     { id: 'down', text: 'Sposta dopo', disabled: at < 0 || at >= ids.length - 1 },
     { id: 'open', text: 'Apri la conversazione d’origine' },
-    { id: 'question', text: 'Vedi la domanda per gli aggiornamenti' },
+    { id: 'question', text: EDIT_QUESTION_TEXT, disabled: running },
+    tile.kind === 'text' ? { id: 'chart', text: 'Mostra come grafico', disabled: running || tile.label === 'L3' } : { id: 'text', text: 'Mostra come testo' },
     { id: 'remove', text: REMOVE_TEXT, danger: true, disabled: running },
   ];
 }
@@ -234,7 +286,10 @@ function choose(tile: DashboardTile, id: string): void {
   else if (id === 'up') void saveOrder(moved(ids, tile.id, -1));
   else if (id === 'down') void saveOrder(moved(ids, tile.id, 1));
   else if (id === 'open') emit('open', tile.sourceConversationId);
-  else if (id === 'question') shownQuestion.value = shownQuestion.value === tile.id ? null : tile.id;
+  else if (id === 'question') {
+    editingQuestion.value = tile.id;
+    draftQuestion.value = tile.question;
+  } else if (id === 'chart' || id === 'text') void setKind(tile, id);
   else if (id === 'remove') confirming.value = tile.id;
 }
 
@@ -353,15 +408,27 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-else-if="tile.refreshState === 'failed' && tile.refreshError !== null" class="mx-3.5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/45 bg-danger/8 px-2.5 py-2 text-[13px]" role="status">
-              <span><b class="font-semibold text-danger">Aggiornamento non riuscito</b>: {{ REFRESH_ERROR_TEXT[tile.refreshError] }}. Sotto resta la risposta di {{ whenText(tile.refreshedAt, now) }}.</span>
+              <span><b class="font-semibold text-danger">Aggiornamento non riuscito</b>: {{ REFRESH_ERROR_TEXT[tile.refreshError] }}. Sotto resta {{ tile.kind === 'chart' ? 'il grafico' : 'la risposta' }} di {{ whenText(tile.refreshedAt, now) }}.</span>
             </div>
 
             <p v-if="cloudNote(tile) !== null" class="mx-3.5 mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-muted">{{ cloudNote(tile) }}</p>
-            <p v-if="shownQuestion === tile.id" class="mx-3.5 mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px]">
-              <span class="text-muted">Domanda per gli aggiornamenti:</span> {{ tile.question }}
-            </p>
+            <form v-if="editingQuestion === tile.id" class="mx-3.5 mt-2.5 flex flex-col gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px]" @submit.prevent="saveQuestion(tile, false)">
+              <label :for="`tile-question-${tile.id}`" class="text-muted">Domanda per gli aggiornamenti</label>
+              <textarea :id="`tile-question-${tile.id}`" v-model="draftQuestion" rows="3" maxlength="2000" class="field w-full px-2.5 py-1.5 text-[14px] text-ink" @keydown.esc.prevent="editingQuestion = null" />
+              <span class="text-[12px] text-muted">L’etichetta del riquadro resta quella che è: può solo salire.</span>
+              <div class="flex flex-wrap justify-end gap-2">
+                <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" @click="editingQuestion = null">{{ CANCEL_TEXT }}</button>
+                <button type="submit" class="btn px-2.5 py-0.5 text-[13px]" :disabled="draftQuestion.trim() === '' || busy.has(tile.id)">{{ SAVE_TEXT }}</button>
+                <button type="button" class="btn btn-primary px-2.5 py-0.5 text-[13px]" :disabled="draftQuestion.trim() === '' || busy.has(tile.id) || !canRefresh(tile)" @click="saveQuestion(tile, true)">{{ SAVE_REFRESH_TEXT }}</button>
+              </div>
+            </form>
 
-            <MarkdownText class="min-w-0 flex-1 px-3.5 pt-3 pb-1 text-[14.5px]" :class="tile.refreshState === 'running' ? 'opacity-50' : ''" :source="tile.body" />
+            <div v-if="tile.kind === 'chart'" class="min-w-0 flex-1 px-3.5 pt-3 pb-1" :class="tile.refreshState === 'running' ? 'opacity-50' : ''">
+              <DashboardChart v-if="tile.chart !== null" :chart="tile.chart" />
+              <p v-else-if="charting.has(tile.id)" class="flex items-center gap-2 text-[13.5px] text-muted" role="status"><span class="spinner" aria-hidden="true" />Il modello locale prepara il grafico dalla risposta…</p>
+              <p v-else class="text-[13.5px] text-muted">{{ CHART_MISSING_TEXT }}</p>
+            </div>
+            <MarkdownText v-else class="tile-body min-w-0 flex-1 px-3.5 pt-3 pb-1 text-[14.5px]" :class="tile.refreshState === 'running' ? 'opacity-50' : ''" :source="tile.body" />
 
             <footer class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-line px-3.5 py-2 text-[12.5px] text-muted">
               <span>Aggiornato {{ whenText(tile.refreshedAt, now) }}</span>
@@ -389,6 +456,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* A long word, a link or a block of code never pushes the tile wider than its column. */
+.tile-body {
+  overflow-wrap: anywhere;
+}
+.tile-body :deep(pre),
+.tile-body :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
 .spinner {
   width: 12px;
   height: 12px;

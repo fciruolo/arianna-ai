@@ -41,7 +41,7 @@ const emit = defineEmits<{
   secretary: [];
   god: [];
   thoughts: [];
-  /** The Cruscotto (D-248). */
+  /** The Dashboard (D-248). */
   dashboard: [];
   knowledge: [];
   projects: [];
@@ -66,8 +66,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 const shortcut = isMac ? '⌘K' : 'Ctrl K';
 
 const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> = {
-  // The Cruscotto (D-248): the answers pinned from the chat, refreshed on the local model.
-  dashboard: { label: 'Cruscotto', icon: 'dashboard', title: 'Le risposte fissate dalla chat, da aggiornare col modello locale' },
+  // The Dashboard (D-248): the answers pinned from the chat, refreshed on the local model.
+  dashboard: { label: 'Dashboard', icon: 'dashboard', title: 'Le risposte fissate dalla chat, da aggiornare col modello locale' },
   secretary: { label: 'Segretaria', icon: 'secretary', title: 'Di’ ad Arianna le cose da fare: le segna con il giorno' },
   projects: { label: 'Progetti', icon: 'project' },
   clients: { label: 'Clienti', icon: 'clients' },

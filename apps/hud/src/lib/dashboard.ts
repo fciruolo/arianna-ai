@@ -1,7 +1,8 @@
+import type { ChartData } from './chart.ts';
 import type { Conversation, Label, Message } from './types.ts';
 
 /**
- * Cruscotto personale (D-248, idea 6 of OpenWork; «Fisso + Aggiorna a mano»):
+ * Dashboard personale (D-248, idea 6 of OpenWork; «Fisso + Aggiorna a mano»):
  * the answers pinned from the chat, as tiles. «Aggiorna» asks the question of
  * the tile again on the local model only; the label of a tile only goes up.
  * Pure helpers and the texts of the page: the tests need no browser.
@@ -9,8 +10,10 @@ import type { Conversation, Label, Message } from './types.ts';
 
 export type TileWidth = 'narrow' | 'wide';
 export type RefreshState = 'idle' | 'running' | 'failed';
-export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost';
+export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost' | 'chart';
 export type AnsweredBy = 'local' | 'claude' | 'codex';
+/** A tile shows its answer in words or as a chart (migration 0077). */
+export type TileKind = 'text' | 'chart';
 
 /** A tile as GET /api/dashboard/tiles gives it (dates as text). */
 export interface DashboardTile {
@@ -27,6 +30,8 @@ export interface DashboardTile {
   answeredBy: AnsweredBy;
   originCloud: boolean;
   width: TileWidth;
+  kind: TileKind;
+  chart: ChartData | null;
   position: number;
   refreshedAt: string;
   refreshState: RefreshState;
@@ -43,18 +48,18 @@ export interface Suggestion {
   fallback: boolean;
 }
 
-export const DASHBOARD_TITLE = 'Cruscotto';
-export const DASHBOARD_PRIVACY = 'Il Cruscotto si vede solo qui. «Aggiorna» rifà la domanda al modello locale: niente esce verso il cloud.';
-export const DASHBOARD_EMPTY_TITLE = 'Il Cruscotto è vuoto';
-export const DASHBOARD_EMPTY_TEXT = 'Su una risposta in chat scegli «Fissa al Cruscotto»: la ritrovi qui, con la data e un pulsante per aggiornarla.';
-export const DASHBOARD_LOAD_ERROR = 'Non riesco a leggere il Cruscotto.';
+export const DASHBOARD_TITLE = 'Dashboard';
+export const DASHBOARD_PRIVACY = 'La Dashboard si vede solo qui. «Aggiorna» rifà la domanda al modello locale: niente esce verso il cloud.';
+export const DASHBOARD_EMPTY_TITLE = 'La Dashboard è vuota';
+export const DASHBOARD_EMPTY_TEXT = 'Su una risposta in chat scegli «Fissa alla Dashboard»: la ritrovi qui, con la data e un pulsante per aggiornarla.';
+export const DASHBOARD_LOAD_ERROR = 'Non riesco a leggere la Dashboard.';
 export const REFRESH_ALL_TEXT = 'Aggiorna tutti';
 export const REFRESH_ALL_HINT = 'Rifà al modello locale la domanda di ogni riquadro, uno alla volta';
 
-export const PIN_TEXT = 'Fissa al Cruscotto';
-export const PIN_HINT = 'Tieni questa risposta nel Cruscotto, con un pulsante per aggiornarla col modello locale';
-export const PINNED_TEXT = 'Fissato · Apri nel Cruscotto';
-export const PIN_DIALOG_TITLE = 'Fissa al Cruscotto';
+export const PIN_TEXT = 'Fissa alla Dashboard';
+export const PIN_HINT = 'Tieni questa risposta nella Dashboard, con un pulsante per aggiornarla col modello locale';
+export const PINNED_TEXT = 'Fissato · Apri nella Dashboard';
+export const PIN_DIALOG_TITLE = 'Fissa alla Dashboard';
 export const PIN_CONFIRM = 'Fissa';
 export const PIN_TITLE_LABEL = 'Titolo';
 export const PIN_QUESTION_LABEL = 'Domanda per gli aggiornamenti';
@@ -62,16 +67,23 @@ export const PIN_QUESTION_HINT = '«Aggiorna» rifà questa domanda al modello l
 export const PIN_SUGGESTING = 'Il modello locale riscrive la domanda perché si capisca da sola…';
 export const PIN_FALLBACK = 'Il modello locale non ha riscritto la domanda: è il tuo messaggio, controllalo.';
 export const PIN_WIDTH_LABEL = 'Larghezza';
-export const PIN_LABEL_NOTE = 'come la risposta; nel Cruscotto non si abbassa';
+export const PIN_LABEL_NOTE = 'come la risposta; nella Dashboard non si abbassa';
 
 export const WIDTH_TEXT: Record<TileWidth, string> = { narrow: 'Stretta', wide: 'Larga' };
+export const KIND_TEXT: Record<TileKind, string> = { text: 'Testo', chart: 'Grafico' };
+export const PIN_KIND_LABEL = 'Mostra come';
+export const PIN_KIND_HINT = 'Grafico: a ogni «Aggiorna» il modello locale trasforma la risposta in dati (barre, linee o torta).';
+export const EDIT_QUESTION_TEXT = 'Modifica la domanda';
+export const SAVE_TEXT = 'Salva';
+export const SAVE_REFRESH_TEXT = 'Salva e aggiorna';
+export const CHART_MISSING_TEXT = 'Il grafico non c’è ancora: «Aggiorna» lo chiede al modello locale.';
 
 export const REFRESH_TEXT = 'Aggiorna';
 export const REFRESH_LOCAL_TEXT = 'Aggiorna in locale';
 export const RETRY_TEXT = 'Riprova';
 export const CANCEL_TEXT = 'Annulla';
 export const REFRESHING_TEXT = 'Aggiorno col modello locale…';
-export const REMOVE_TEXT = 'Togli dal Cruscotto';
+export const REMOVE_TEXT = 'Togli dalla Dashboard';
 export const REMOVE_CONFIRM_TEXT = 'Togliere il riquadro? La conversazione d’origine resta com’è.';
 export const REMOVED_TEXT = 'Riquadro tolto.';
 export const SECRET_NO_REFRESH = 'Segreto: nessun modello lo legge, quindi non si aggiorna.';
@@ -83,6 +95,7 @@ export const REFRESH_ERROR_TEXT: Record<RefreshError, string> = {
   question: 'per rispondere voleva chiederti qualcosa: aggiorna dalla conversazione',
   empty: 'la risposta era vuota',
   lost: 'l’aggiornamento si è interrotto',
+  chart: 'il modello locale non ha dato dati validi per il grafico',
 };
 
 /** Who wrote the body now, for the foot of the tile. */
@@ -109,7 +122,7 @@ export function canRefresh(tile: Pick<DashboardTile, 'label' | 'refreshState'>):
   return tile.label !== 'L3' && tile.refreshState !== 'running';
 }
 
-/** Whether the answers of this conversation offer «Fissa al Cruscotto»: never incognito, a trial, a character chat, a side thread, a system chat or a refresh. */
+/** Whether the answers of this conversation offer «Fissa alla Dashboard»: never incognito, a trial, a character chat, a side thread, a system chat or a refresh. */
 export function pinAllowed(conversation: Conversation | undefined): boolean {
   if (conversation === undefined) return false;
   if (conversation.incognito === true || (conversation.trialModel ?? null) !== null) return false;
@@ -119,7 +132,7 @@ export function pinAllowed(conversation: Conversation | undefined): boolean {
   return (conversation.dashboardOf ?? null) === null;
 }
 
-/** Whether «Fissa al Cruscotto» shows on this message: an answer, in a conversation that allows it. */
+/** Whether «Fissa alla Dashboard» shows on this message: an answer, in a conversation that allows it. */
 export function canPin(conversation: Conversation | undefined, message: Pick<Message, 'role'>): boolean {
   return message.role === 'assistant' && pinAllowed(conversation);
 }
@@ -189,7 +202,7 @@ export function countText(count: number): string {
 
 /** The message of a failed call to the core, for the user. */
 export function dashboardErrorText(status: number, fallback: string): string {
-  if (status === 409) return 'Il riquadro è già in aggiornamento, o questa risposta è già nel Cruscotto.';
+  if (status === 409) return 'Il riquadro è già in aggiornamento, o questa risposta è già nella Dashboard.';
   if (status === 422) return 'La domanda contiene dati che una conversazione di lavoro non può tenere (IBAN, codice fiscale, carta, chiave).';
   if (status === 404) return 'Il riquadro o la risposta non ci sono più.';
   if (status === 503) return 'Il modello locale ora non è disponibile.';

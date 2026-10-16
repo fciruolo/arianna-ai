@@ -160,11 +160,11 @@ const emit = defineEmits<{
   godDashboard: [];
   /** «Chiedi a lato» (D-232) on an answer: the page opens the panel of its side thread. */
   side: [message: Message];
-  /** «Fissato · Apri nel Cruscotto» (D-248). */
+  /** «Fissato · Apri nella Dashboard» (D-248). */
   dashboard: [];
 }>();
 
-// Cruscotto (D-248): the answers of this conversation already pinned, and the one being pinned.
+// Dashboard (D-248): the answers of this conversation already pinned, and the one being pinned.
 const pinned = ref<Set<string>>(new Set());
 const pinning = ref<Message | null>(null);
 watch(
@@ -181,7 +181,7 @@ watch(
   },
   { immediate: true },
 );
-/** «Fissa al Cruscotto» on this message (D-248): on answers where the conversation allows it, «Fissato» once pinned. */
+/** «Fissa alla Dashboard» on this message (D-248): on answers where the conversation allows it, «Fissato» once pinned. */
 function pinOf(message: Message): 'pin' | 'pinned' | undefined {
   if (!canPin(props.conversation, message)) return undefined;
   return pinned.value.has(message.id) ? 'pinned' : 'pin';

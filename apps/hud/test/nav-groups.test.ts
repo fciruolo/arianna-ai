@@ -6,7 +6,7 @@ import { DEFAULT_OPEN, NAV_GROUPS, groupOf, isOpen, parseOpen, toggle } from '..
 test('every area belongs to exactly one group', () => {
   const areas = NAV_GROUPS.flatMap((group) => group.areas);
   assert.equal(new Set(areas).size, areas.length);
-  // Twelve with the Cruscotto (D-248).
+  // Twelve with the Dashboard (D-248).
   assert.equal(areas.length, 12);
 });
 

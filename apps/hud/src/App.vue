@@ -496,9 +496,9 @@ function openGodChat(workspace: string): void {
   openDraft({ mode: 'work', project: workspace, agent: GOD_AGENT });
 }
 
-/** The Cruscotto (D-248): the answers pinned from the chat. */
+/** The Dashboard (D-248): the answers pinned from the chat. */
 function openDashboard(): void {
-  openPage('dashboard', DASHBOARD_PATH, 'Cruscotto');
+  openPage('dashboard', DASHBOARD_PATH, 'Dashboard');
 }
 
 /** The thoughts (D-090). */
@@ -698,6 +698,8 @@ function followMain(): void {
     return;
   }
   if (isDashboardPath(window.location.pathname)) {
+    // The old address «/cruscotto» becomes the new one, without a step in the history.
+    if (!window.location.pathname.startsWith(DASHBOARD_PATH)) window.history.replaceState(window.history.state, '', DASHBOARD_PATH);
     openDashboard();
     return;
   }
@@ -1086,7 +1088,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
-          <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Cruscotto</b></template>
+          <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Dashboard</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>

@@ -7,6 +7,9 @@ import {
   PIN_CONFIRM,
   PIN_DIALOG_TITLE,
   PIN_FALLBACK,
+  PIN_KIND_HINT,
+  PIN_KIND_LABEL,
+  KIND_TEXT,
   PIN_LABEL_NOTE,
   PIN_QUESTION_HINT,
   PIN_QUESTION_LABEL,
@@ -15,6 +18,7 @@ import {
   PIN_WIDTH_LABEL,
   WIDTH_TEXT,
   type DashboardTile,
+  type TileKind,
   type TileWidth,
 } from '../lib/dashboard.ts';
 import type { Label } from '../lib/types.ts';
@@ -22,7 +26,7 @@ import ConfirmDialog from './ConfirmDialog.vue';
 import LabelBadge from './LabelBadge.vue';
 
 /**
- * «Fissa al Cruscotto» (D-248): the title, the question «Aggiorna» will ask
+ * «Fissa alla Dashboard» (D-248): the title, the question «Aggiorna» will ask
  * again (rewritten complete by the local model, the user's answer 2; checked
  * and corrected here), the width, and the label of the answer, shown and not
  * changed. The core takes text and label from the message, never from here.
@@ -32,10 +36,12 @@ const emit = defineEmits<{ pinned: [tile: DashboardTile]; cancel: [] }>();
 
 const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-60';
 const WIDTHS: readonly TileWidth[] = ['narrow', 'wide'];
+const KINDS: readonly TileKind[] = ['text', 'chart'];
 
 const title = ref('');
 const question = ref('');
 const width = ref<TileWidth>('narrow');
+const kind = ref<TileKind>('text');
 const tileLabel = ref<Label>(props.label);
 const suggesting = ref(true);
 const fallback = ref(false);
@@ -64,7 +70,7 @@ async function confirm(): Promise<void> {
   busy.value = true;
   problem.value = null;
   try {
-    emit('pinned', await pinTile(props.messageId, title.value.trim(), question.value.trim(), width.value));
+    emit('pinned', await pinTile(props.messageId, title.value.trim(), question.value.trim(), width.value, kind.value));
   } catch (error) {
     problem.value = error instanceof ApiError ? dashboardErrorText(error.status, error.message) : 'Non sono riuscita a fissarla.';
   } finally {
@@ -100,6 +106,21 @@ async function confirm(): Promise<void> {
         >{{ WIDTH_TEXT[choice] }}</button>
       </span>
     </div>
+    <div class="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+      {{ PIN_KIND_LABEL }}
+      <span class="inline-flex overflow-hidden rounded-full border border-line-strong" role="group" :aria-label="PIN_KIND_LABEL">
+        <button
+          v-for="choice in KINDS"
+          :key="choice"
+          type="button"
+          class="px-3 py-0.5 text-[13px]"
+          :class="kind === choice ? 'bg-accent text-accent-ink' : 'text-ink'"
+          :aria-pressed="kind === choice"
+          @click="kind = choice"
+        >{{ KIND_TEXT[choice] }}</button>
+      </span>
+    </div>
+    <p v-if="kind === 'chart'" class="-mt-1 text-[12.5px] text-muted">{{ PIN_KIND_HINT }}</p>
     <div class="flex flex-wrap items-center gap-2 text-[13px] text-muted">
       <LabelBadge :label="tileLabel" /><span>{{ PIN_LABEL_NOTE }}</span>
     </div>

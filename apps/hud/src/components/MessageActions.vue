@@ -42,7 +42,7 @@ const props = defineProps<{
   canSave: boolean;
   /** «Chiedi a lato» (D-232): `ask` on an answer, `reopen` when it has a side thread already; absent where it is not offered. */
   side?: 'ask' | 'reopen' | undefined;
-  /** «Fissa al Cruscotto» (D-248): `pin` on an answer, `pinned` when it is in the Cruscotto already; absent where it is not offered. */
+  /** «Fissa alla Dashboard» (D-248): `pin` on an answer, `pinned` when it is in the Dashboard already; absent where it is not offered. */
   pin?: 'pin' | 'pinned' | undefined;
 }>();
 const emit = defineEmits<{
@@ -51,9 +51,9 @@ const emit = defineEmits<{
   openKnowledge: [nodeId: string];
   /** «Chiedi a lato» (D-232): the panel of the side thread on this answer. */
   side: [messageId: string];
-  /** «Fissa al Cruscotto» (D-248): the dialog to pin this answer. */
+  /** «Fissa alla Dashboard» (D-248): the dialog to pin this answer. */
   pin: [messageId: string];
-  /** «Fissato · Apri nel Cruscotto». */
+  /** «Fissato · Apri nella Dashboard». */
   openDashboard: [];
 }>();
 

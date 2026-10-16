@@ -1,6 +1,6 @@
 /**
  * The areas of the left bar in three groups that fold (readability pass of
- * 2026-10-12): with eleven areas (twelve with the Cruscotto, D-248) above the conversations, finding a chat meant
+ * 2026-10-12): with eleven areas (twelve with the Dashboard, D-248) above the conversations, finding a chat meant
  * scrolling past the menu. The group of the page in view is always open.
  */
 

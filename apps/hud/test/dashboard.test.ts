@@ -39,6 +39,8 @@ const tile = (overrides: Partial<DashboardTile> = {}): DashboardTile => ({
   answeredBy: 'local',
   originCloud: false,
   width: 'narrow',
+  kind: 'text',
+  chart: null,
   position: 0,
   refreshedAt: '2026-10-16T09:12:00',
   refreshState: 'idle',
@@ -48,7 +50,7 @@ const tile = (overrides: Partial<DashboardTile> = {}): DashboardTile => ({
   ...overrides,
 });
 
-test('«Fissa al Cruscotto» on answers only, never in an incognito, a trial, a character chat or a refresh', () => {
+test('«Fissa alla Dashboard» on answers only, never in an incognito, a trial, a character chat or a refresh', () => {
   assert.equal(canPin(conversation(), { role: 'assistant' }), true);
   assert.equal(canPin(conversation(), { role: 'user' }), false);
   assert.equal(canPin(conversation(), { role: 'system' }), false);

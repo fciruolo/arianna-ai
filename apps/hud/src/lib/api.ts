@@ -33,7 +33,7 @@ import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, Transl
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { DashboardTile, Suggestion, TileWidth } from './dashboard.ts';
+import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -424,7 +424,7 @@ export async function openSide(conversationId: string, messageId: string): Promi
   return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/sides`, { messageId })).conversation;
 }
 
-/** Cruscotto (D-248): the tiles, after the refreshes that ended are settled. */
+/** Dashboard (D-248): the tiles, after the refreshes that ended are settled. */
 export async function loadTiles(): Promise<DashboardTile[]> {
   return (await call<{ tiles: DashboardTile[] }>('GET', '/api/dashboard/tiles')).tiles;
 }
@@ -439,11 +439,16 @@ export async function suggestTile(messageId: string): Promise<Suggestion> {
   return call<Suggestion>('POST', '/api/dashboard/suggest', { messageId });
 }
 
-export async function pinTile(messageId: string, title: string, question: string, width: TileWidth): Promise<DashboardTile> {
-  return (await call<{ tile: DashboardTile }>('POST', '/api/dashboard/tiles', { messageId, title, question, width })).tile;
+export async function pinTile(messageId: string, title: string, question: string, width: TileWidth, kind: TileKind): Promise<DashboardTile> {
+  return (await call<{ tile: DashboardTile }>('POST', '/api/dashboard/tiles', { messageId, title, question, width, kind })).tile;
 }
 
-export async function updateTile(id: string, change: { title?: string; width?: TileWidth }): Promise<DashboardTile> {
+/** The chart of a tile again from the answer it holds (the local model). */
+export async function chartTile(id: string): Promise<DashboardTile> {
+  return (await call<{ tile: DashboardTile }>('POST', `/api/dashboard/tiles/${encodeURIComponent(id)}/chart`, {})).tile;
+}
+
+export async function updateTile(id: string, change: { title?: string; width?: TileWidth; kind?: TileKind; question?: string }): Promise<DashboardTile> {
   return (await call<{ tile: DashboardTile }>('PATCH', `/api/dashboard/tiles/${encodeURIComponent(id)}`, change)).tile;
 }
 

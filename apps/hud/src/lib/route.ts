@@ -72,11 +72,13 @@ export function isThoughtsPath(pathname: string): boolean {
   return pathname === THOUGHTS_PATH || pathname === `${THOUGHTS_PATH}/`;
 }
 
-/** The Cruscotto (D-248): the answers pinned from the chat. */
-export const DASHBOARD_PATH = '/cruscotto';
+/** The Dashboard (D-248): the answers pinned from the chat. */
+export const DASHBOARD_PATH = '/dashboard';
+/** Its first address, before the user renamed the page (2026-10-17): it leads to the new one. */
+export const OLD_DASHBOARD_PATH = '/cruscotto';
 
 export function isDashboardPath(pathname: string): boolean {
-  return pathname === DASHBOARD_PATH || pathname === `${DASHBOARD_PATH}/`;
+  return [DASHBOARD_PATH, `${DASHBOARD_PATH}/`, OLD_DASHBOARD_PATH, `${OLD_DASHBOARD_PATH}/`].includes(pathname);
 }
 
 /** What the knowledge page shows: the user's notes (kb/) or Arianna's own documents (D-155). */
