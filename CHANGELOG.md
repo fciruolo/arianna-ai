@@ -6,10 +6,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
-- Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
-- Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
-- La pianta dell'ufficio segue il tuo personaggio: più grande, si sposta mentre cammini e si ferma ai bordi (D-229).
 - L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
 - In «Nuova conversazione» → Agente una sezione «Personaggi» con i personaggi delle serie divisi per serie (avatar e nome): scelto uno, si apre una chat di lavoro in cui lo gioca Claude (Sonnet, oppure Opus dal selettore della chat) con un prompt corto da gioco di ruolo, in italiano e in stile chat; nella chat nome e avatar del personaggio in alto e nei messaggi. Con Claude spento i personaggi si vedono spenti col motivo (D-225, tappa B).
 - A ogni messaggio della chat con un personaggio il core pesca le sue battute vere (D-224) e le mette dopo il messaggio, anche quando la sessione di Claude riprende (D-225, tappa B).
@@ -24,7 +20,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
 - Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 - Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
 - I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
@@ -37,6 +32,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - La chat con un personaggio è di livello Interno: passa dal gateway come la chat semplice con Claude e un dato personale la ferma lì; le chat private restano sul Mac. Nei soli messaggi di quella chat i nomi della sua serie («Turk», «Dr. Cox») non contano come persone per il secondo controllo, interi e mai quelli di un'altra serie. Il personaggio si sceglie alla creazione e il database non lo fa cambiare né lo ammette fuori dalla chat semplice con Claude (migrazione `0070`, D-225 tappa B).
+
+## [0.123.0] - 2026-10-16
+
+### Aggiunto
+
+- L'ufficio pixel ha le stanze: Privata e sei stanze di progetto chiuse da muri, ognuna con la sua porta sul corridoio e un arredo diverso, la Pausa, l'atrio con la scrivania Decisioni all'ingresso e l'Archivio; vale per Base, Scrubs (il Sacro Cuore) e The Office (la Dunder Mifflin) (D-229).
+- Hanno una stanza prima i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri stanno nell'Archivio (D-229, domanda 8 di D-106).
+- Gli agenti senza lavoro passeggiano per il corridoio e la Pausa, a turni di 30 secondi; fermi con «riduci movimento» (D-229, domanda 6 di D-106).
+- La pianta dell'ufficio segue il tuo personaggio: più grande, si sposta mentre cammini e si ferma ai bordi (D-229).
+
+### Cambiato
+
+- Mappe dell'ufficio nel formato 2 (porte e punti di passeggio), con le regole nuove del validatore; il formato 1 resta valido (D-229).
 
 ## [0.122.0] - 2026-10-16
 
