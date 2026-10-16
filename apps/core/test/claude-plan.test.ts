@@ -16,6 +16,12 @@ test('Claude plans only in a work conversation: the model chosen there, else Son
   assert.equal(plannerModelOf({ mode: 'work', model: null }, ['gpt-5']), undefined, 'no Claude model on: the local model plans');
   assert.equal(plannerModelOf({ mode: 'private', model: null }, ['sonnet']), undefined, 'never in a private conversation');
   assert.equal(plannerModelOf(undefined, ['sonnet']), undefined);
+  // The project's `planner` (D-235): first, when on; `local` keeps the plan here; never in a private conversation.
+  assert.equal(plannerModelOf({ mode: 'work', model: 'sonnet' }, ['sonnet', 'opus'], 'opus'), 'opus');
+  assert.equal(plannerModelOf({ mode: 'work', model: 'opus' }, ['sonnet', 'opus'], 'sonnet'), 'sonnet');
+  assert.equal(plannerModelOf({ mode: 'work', model: null }, ['sonnet'], 'opus'), 'sonnet', 'opus off: the rule of D-164');
+  assert.equal(plannerModelOf({ mode: 'work', model: null }, ['sonnet', 'opus'], 'local'), undefined);
+  assert.equal(plannerModelOf({ mode: 'private', model: null }, ['sonnet', 'opus'], 'opus'), undefined);
 });
 
 test('the brief: the prompt, the agents and the request with its label, nothing else', () => {

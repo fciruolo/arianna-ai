@@ -4,7 +4,7 @@ import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
-import { applyPlanApproval } from './card-plans.ts';
+import { applyPlanApproval, closePlanningCard, setPlanStarts } from './card-plans.ts';
 import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -522,18 +522,27 @@ export async function recordDecision(
   state: 'approved' | 'rejected',
   via: DecisionChannel,
   choice?: ExecutorChoice,
+  starts?: unknown,
 ): Promise<StoredApproval> {
-  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice));
+  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice, starts));
 }
 
-/** `recordDecision` inside a transaction the caller holds. `choice`: the executor of an approval of kind `executor` (D-159). */
+/**
+ * `recordDecision` inside a transaction the caller holds. `choice`: the
+ * executor of an approval of kind `executor` (D-159). `starts`: the rows
+ * «Avvia subito» of an approved plan (D-235), checked in card-plans.ts;
+ * undefined, the default rows.
+ */
 export async function recordDecisionIn(
   tx: Queryable,
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
   choice?: ExecutorChoice,
+  starts?: unknown,
 ): Promise<StoredApproval> {
+  // The rows that start go in the plan before the decision freezes it (D-235).
+  if (state === 'approved') await setPlanStarts(tx, approvalId, starts);
   const decided = await decideApproval(tx, approvalId, state, via, choice);
   await appendEvent(tx, {
     kind: 'approval.decided',
@@ -547,6 +556,8 @@ export async function recordDecisionIn(
   if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
   // A fact Arianna proposed (D-114, tappa D): written "Solo in casa" with the decision.
   if (decided.kind === 'fact' && state === 'approved') await applyFactProposal(tx, decided);
+  // The card «Piano» of «/progetta» (D-235) closes in Fatto with the decision: nothing more to run.
+  if (await closePlanningCard(tx, decided)) return decided;
   if (decided.taskId !== null) {
     const task = await loadTask(tx, decided.taskId);
     if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {

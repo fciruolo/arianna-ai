@@ -28,6 +28,7 @@ import {
   modelPath,
   parseConfig,
   PROJECT_NAME,
+  PROJECT_PLANNERS,
   parseSkillIds,
   parseQuiet,
   quietText,
@@ -639,11 +640,17 @@ function projectsFromBody(value: unknown, userHome: string): ProjectSettings[] {
   return value.map((item, index) => {
     const where = `projects[${String(index)}]`;
     const project = record(item, where);
-    only(project, ['name', 'path', 'label', 'parts', 'folders'], where);
+    only(project, ['name', 'path', 'label', 'parts', 'folders', 'planner'], where);
     const label = text(project.label, `${where}.label`);
     if (label !== 'L0' && label !== 'L1') invalid(`${where}.label must be L0 or L1`);
     // D-228: a full path under the home is kept in the form of the file; parseConfig judges every path as before.
     const next: ProjectSettings = { name: text(project.name, `${where}.name`), path: homeRelativePath(text(project.path, `${where}.path`), userHome), label };
+    // D-235: who writes the cards of a plan of the project; absent, the rule of D-164.
+    if (project.planner !== undefined && project.planner !== null) {
+      const planner = PROJECT_PLANNERS.find((candidate) => candidate === project.planner);
+      if (planner === undefined) invalid(`${where}.planner must be opus, sonnet or local`);
+      next.planner = planner;
+    }
     // D-145: the parts the user listed and the labels of the management folders; parseConfig checks the rest.
     if (project.parts !== undefined && project.parts !== null) next.parts = strings(project.parts, `${where}.parts`);
     if (project.folders !== undefined && project.folders !== null) {

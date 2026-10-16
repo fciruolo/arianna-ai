@@ -93,6 +93,10 @@ astra = true
 # a [[project.folder]] gives its label (path = the folder name, label L0-L3;
 # the page Progetti writes them). The wizard links repos/<name> to each
 # folder under your home, as a shortcut: the executor always uses `path`.
+# `planner` (D-235, optional) writes the cards of «/progetta» and of a plan
+# in a work conversation of the project: opus, sonnet or local; without it
+# Claude plans when it is on (the model of the conversation, else Sonnet,
+# else Opus). A private conversation always plans on the local model.
 # A privacy setting: only the user edits it, never an agent; it applies
 # without a restart.
 #

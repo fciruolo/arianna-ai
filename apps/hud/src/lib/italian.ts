@@ -66,6 +66,11 @@ const CARD_REASONS: [RegExp, (agent: string) => string][] = [
   [/^the user did not choose where ([a-z0-9-]+) works/, () => 'non hai scelto con chi lavora: «Riprendi» per scegliere di nuovo'],
   [/^no way for ([a-z0-9-]+) to work on this card now$/, (agent) => `${agentTitle(agent)} non ha una strada per lavorarci ora (esecutori spenti o nessun modello locale)`],
   [/^(claude|codex|local) can no longer take this card/, () => 'la strada scelta non è più ammessa: «Riprendi» per scegliere di nuovo'],
+  // The card «Piano» of «/progetta» (D-235).
+  [/^the plan was not written: /, () => 'il piano non è stato scritto: «Riprendi» per riprovare'],
+  [/^the planner wrote an invalid plan: /, () => 'il pianificatore ha scritto un piano non valido: «Riprendi» per riprovare'],
+  [/^the local model gave no plan$/, () => 'il modello locale non ha scritto un piano: «Riprendi» per riprovare'],
+  [/^the local model cannot read this request: /, () => 'il modello locale non può leggere questa richiesta'],
 ];
 
 function actionName(action: string): string {
@@ -104,6 +109,14 @@ const ERRORS: Record<string, string> = {
   // «@nome» and «/giro» (D-107, tappa B2, D-219).
   'write what you ask the agents after /giro': 'Scrivi dopo /giro la domanda per gli agenti.',
   'no agent is in this conversation yet: /giro asks those already here': 'In questa chat non c’è ancora nessun agente: /giro chiede a chi è già entrato. Chiamane uno con @nome.',
+  // «/progetta» and the plans edited in their card (D-235).
+  'write after /progetta the work to plan': 'Scrivi dopo /progetta il lavoro da pianificare.',
+  '/progetta needs a work conversation with a project': '/progetta, in una conversazione di lavoro, vuole un progetto: aprine una con il progetto.',
+  '/progetta works only in a conversation with Arianna': '/progetta funziona solo in una conversazione con Arianna.',
+  '/progetta does not work in incognito: nothing of it would outlive the conversation': '/progetta non funziona in incognito: le card resterebbero dopo la conversazione.',
+  'only a plan is edited': 'Si modifica solo un piano.',
+  'starts must be a list of card numbers': 'Le card da avviare non sono valide.',
+  'starts are only for a plan': 'Le card da avviare valgono solo per un piano.',
   // The queue and «Ferma» (D-218).
   'this message is no longer in the queue': 'Questo messaggio non è più in coda.',
   'an answer is still at work: wait for it, or stop it': 'Una risposta è ancora in corso: aspetta che finisca, o premi Ferma.',
@@ -165,6 +178,33 @@ const ERRORS: Record<string, string> = {
   'a trial of this model is already queued or running': 'Una prova di questo modello è già in coda o in corso.',
 };
 
+/** A plan refused by the core (D-235: the edit in its card, the rows to start), in Italian; undefined for another error. */
+export function planErrorText(message: string): string | undefined {
+  const work = /^a work conversation cannot hold this plan \(([^)]*)\)/.exec(message);
+  if (work?.[1] !== undefined) {
+    const kinds = work[1].split(', ').map((kind) => SCANNER_KIND_TEXT[kind] ?? 'dati riservati');
+    return `Il piano di una conversazione di lavoro non può contenere ${[...new Set(kinds)].join(', ')}: scrivilo in una conversazione privata.`;
+  }
+  const card = /^card (\d+)(:| )/.exec(message);
+  if (card?.[1] !== undefined) {
+    const which = `Card ${card[1]}`;
+    if (/"blocked_by"/.test(message)) return `${which}: «bloccata da» può indicare solo card precedenti.`;
+    if (/"assignee"/.test(message)) return `${which}: chi la fa dev’essere tu o un agente che Arianna può chiamare.`;
+    if (/needs a title/.test(message)) return `${which}: manca il titolo (al massimo 120 caratteri).`;
+    if (/needs a goal/.test(message)) return `${which}: manca l’obiettivo (al massimo 500 caratteri).`;
+    if (/"criteria"/.test(message)) return `${which}: manca il criterio di completamento (al massimo 500 caratteri).`;
+    if (/"complexity"/.test(message)) return `${which}: la complessità è S, M o L.`;
+    return `${which} non è valida.`;
+  }
+  if (/^the plan needs a title/.test(message)) return 'Il piano vuole un titolo (al massimo 120 caratteri).';
+  const size = /^a plan has (\d+) to (\d+) cards/.exec(message);
+  if (size !== null) return `Un piano ha da ${size[1] ?? ''} a ${size[2] ?? ''} card.`;
+  const mine = /^starts: card (\d+) is yours/.exec(message);
+  if (mine?.[1] !== undefined) return `La card ${mine[1]} è tua: non parte da sola.`;
+  if (/^starts: /.test(message)) return 'Le card da avviare non sono valide.';
+  return undefined;
+}
+
 /** An error of the API (or of the network) as the user reads it. */
 export function errorText(cause: unknown): string {
   if (!(cause instanceof ApiError)) {
@@ -183,6 +223,8 @@ export function errorText(cause: unknown): string {
     const kinds = title[1].split(', ').map((kind) => SCANNER_KIND_TEXT[kind] ?? 'dati riservati');
     return `Il titolo di una conversazione di lavoro non può contenere ${[...new Set(kinds)].join(', ')}.`;
   }
+  const plan = planErrorText(cause.message);
+  if (plan !== undefined) return plan;
   const mention = /^write what you ask ([a-z][a-z0-9-]*) after its name$/.exec(cause.message);
   if (mention?.[1] !== undefined) return `Scrivi dopo @${mention[1]} cosa gli chiedi.`;
   const queueFull = /^the queue already holds (\d+) messages/.exec(cause.message);

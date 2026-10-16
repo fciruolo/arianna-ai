@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
 defineProps<{
   version: number;
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
 }>();
 const emit = defineEmits<{ close: [] }>();
 

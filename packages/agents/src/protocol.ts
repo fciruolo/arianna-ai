@@ -8,7 +8,11 @@ import type { ToolId } from './tools.ts';
 
 /** Cards in one plan of `task.plan` (D-159). Before TOOL_ARGS, which reads them. */
 export const MIN_PLAN_CARDS = 2;
-export const MAX_PLAN_CARDS = 8;
+/** D-235: up to 12 cards (8 before). */
+export const MAX_PLAN_CARDS = 12;
+/** How large a card of a plan is (D-235): small, medium, large. */
+export const PLAN_COMPLEXITIES = ['S', 'M', 'L'] as const;
+export type PlanComplexity = (typeof PLAN_COMPLEXITIES)[number];
 
 /**
  * Who writes the cards of `task.plan` (D-164): the local model itself, or
@@ -82,7 +86,7 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'task.create': 'Create a card in the inbox.',
   'task.update': 'Update a card of this conversation: status and a note for the user. With an unknown id it answers with the list of open cards and their ids.',
   'task.plan':
-    'Propose to the user a plan for a large piece of work that takes several people or agents (for example a website: the design, then the code): 2 to 8 cards in order. Each card has a short title, its goal, who does it ("user", or an agent that can work now) and "blocked_by": the numbers of earlier cards of this plan it must wait for (1 is the first card; [] when it waits for none). Nothing is created until the user approves the plan in the chat: call it once, and never call task.create for the same cards.',
+    'Propose to the user a plan for a large piece of work that takes several people or agents (for example a website: the design, then the code): 2 to 12 cards in order. Each card has a short title, its goal, who does it ("user", or an agent that can work now), "blocked_by": the numbers of earlier cards of this plan it must wait for (1 is the first card; [] when it waits for none), "criteria": when the card is done, one short sentence the user can check, and "complexity": "S", "M" or "L". Nothing is created until the user approves the plan in the chat: call it once, and never call task.create for the same cards.',
   'task.delegate': 'Hand a step to another agent with a self-contained brief. "reason" is one short line for the user, in their language, on why you bring this agent in (the chat shows it when the agent joins).',
   'user.ask': 'Ask the user a question when the request is unclear or information is missing.',
   'file.delete': 'Delete a file (the user approves before it happens).',
@@ -140,20 +144,24 @@ function argsOf(tool: ToolId, delegates: readonly DelegateTarget[], planner: Pla
 }
 
 /**
- * The arguments of `task.plan` (D-159): a title and 2 to 8 cards, each with
- * who does it among `assignees` and the earlier cards it waits for, by their
- * number in the plan (1-based: the number the model reads in its own list).
- * Every field is required: local models skip an optional one.
+ * The arguments of `task.plan` (D-159, D-235): a title and 2 to 12 cards,
+ * each with who does it among `assignees`, the earlier cards it waits for, by
+ * their number in the plan (1-based: the number the model reads in its own
+ * list), when it is done and how large it is. Every field is required: local
+ * models skip an optional one. Also the schema of the card «Piano» on the
+ * local model (D-235).
  */
-function planArgs(assignees: readonly string[]): JsonSchema {
+export function planArgs(assignees: readonly string[]): JsonSchema {
   const card = object(
     {
       title: text(120),
       goal: text(500),
       assignee: { type: 'string', enum: [...assignees] },
       blocked_by: { type: 'array', items: { type: 'integer', minimum: 1, maximum: MAX_PLAN_CARDS - 1 }, maxItems: MAX_PLAN_CARDS - 1 },
+      criteria: text(500),
+      complexity: { type: 'string', enum: [...PLAN_COMPLEXITIES] },
     },
-    ['title', 'goal', 'assignee', 'blocked_by'],
+    ['title', 'goal', 'assignee', 'blocked_by', 'criteria', 'complexity'],
   );
   return object({ title: text(120), cards: { type: 'array', minItems: MIN_PLAN_CARDS, maxItems: MAX_PLAN_CARDS, items: card } }, ['title', 'cards']);
 }

@@ -2,6 +2,7 @@ import type { ThemeListing } from './themes.ts';
 import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
+import type { PlanBody } from './plan-approval.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
@@ -473,9 +474,23 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
   return (await call<{ approvals: Approval[] }>('GET', `/api/approvals?state=${state}&limit=${String(limit)}`)).approvals;
 }
 
-/** `choice`: the executor chosen for a card, with an approval of kind executor (D-159). */
-export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<Approval> {
-  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state, ...(choice === undefined ? {} : { choice }) })).approval;
+/**
+ * `choice`: the executor chosen for a card, with an approval of kind executor (D-159).
+ * `starts`: the cards of a plan to start at once, «Avvia subito» (D-235), by their number.
+ */
+export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]): Promise<Approval> {
+  return (
+    await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
+      state,
+      ...(choice === undefined ? {} : { choice }),
+      ...(starts === undefined ? {} : { starts }),
+    })
+  ).approval;
+}
+
+/** The user's edit of a pending plan (D-235): the cards replaced, checked again by the core. */
+export async function editPlan(approvalId: string, plan: PlanBody): Promise<Approval> {
+  return (await call<{ approval: Approval }>('PUT', `/api/approvals/${encodeURIComponent(approvalId)}/plan`, plan)).approval;
 }
 
 /** The status panel: agents, last router decision, gateway today. */

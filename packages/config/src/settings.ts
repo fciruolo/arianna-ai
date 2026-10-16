@@ -13,7 +13,7 @@ import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
 import type { SeriesOverrides } from './series.ts';
 import type { ProjectRules } from './project-rules.ts';
-import type { ProjectFolder, ProjectLabel } from './projects.ts';
+import type { ProjectFolder, ProjectLabel, ProjectPlanner } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
 import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
@@ -38,6 +38,8 @@ export interface ProjectSettings {
   parts?: string[];
   /** D-145: `[[project.folder]]`, the labels the user gave the management folders. */
   folders?: ProjectFolder[];
+  /** D-235: who writes the cards of a plan of the project. */
+  planner?: ProjectPlanner;
 }
 
 export interface Settings {
@@ -136,10 +138,11 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       // Absent means every alias on under its own name: kept absent, as written.
       ...(isDeepStrictEqual(config.cloud.models, defaultCloudModels()) ? {} : { models: structuredClone(config.cloud.models) }),
     },
-    projects: config.projects.map(({ name, path, label, parts, folders }) => ({
+    projects: config.projects.map(({ name, path, label, parts, folders, planner }) => ({
       name,
       path,
       label,
+      ...(planner === undefined ? {} : { planner }),
       ...(parts === undefined ? {} : { parts: [...parts] }),
       ...(folders === undefined ? {} : { folders: folders.map((folder) => ({ ...folder })) }),
     })),
@@ -451,6 +454,10 @@ export function renderSettings(settings: Settings): string {
     '# a [[project.folder]] gives its label (path = the folder name, label L0-L3;',
     '# the page Progetti writes them). The wizard links repos/<name> to each',
     '# folder under your home, as a shortcut: the executor always uses `path`.',
+    '# `planner` (D-235, optional) writes the cards of «/progetta» and of a plan',
+    '# in a work conversation of the project: opus, sonnet or local; without it',
+    '# Claude plans when it is on (the model of the conversation, else Sonnet,',
+    '# else Opus). A private conversation always plans on the local model.',
     '# A privacy setting: only the user edits it, never an agent; it applies',
     '# without a restart.',
     ...(settings.projects.length === 0
@@ -461,6 +468,7 @@ export function renderSettings(settings: Settings): string {
           `name = ${str(project.name)}`,
           `path = ${str(project.path)}`,
           `label = ${str(project.label)}`,
+          ...(project.planner === undefined ? [] : [`planner = ${str(project.planner)}`]),
           ...(project.parts === undefined ? [] : [`parts = [${project.parts.map(str).join(', ')}]`]),
           ...(project.folders ?? []).flatMap((folder) => ['', '[[project.folder]]', `path = ${str(folder.path)}`, `label = ${str(folder.label)}`]),
         ])),

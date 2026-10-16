@@ -6,7 +6,8 @@ import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_M
 import { canSaveToInbox } from '../lib/capture.ts';
 import { characterSwitch } from '../lib/character-switch.ts';
 import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
-import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type PageCommandAction } from '../lib/commands.ts';
+import { completion, filterCommands, menuQuery, moveSelection, reachesCore, resolveDraft, usage, type ChatCommand, type PageCommandAction } from '../lib/commands.ts';
+import { planCommandProblem } from '../lib/plan-approval.ts';
 import { useMentionMenu } from '../lib/mention-menu.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
@@ -87,7 +88,7 @@ const props = defineProps<{
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
   /** The calls of this conversation (D-066), shown as receipts among the messages. */
@@ -531,8 +532,16 @@ const commandHint = ref<string | null>(null);
 const commandQuery = computed(() => menuQuery(draft.value));
 /** A conversation with Arianna, where «@name» and «/giro» reach the agents (D-107, tappa B2): not a direct chat, the secretary's or a trial. */
 const ariannaChat = computed(() => direct.value === null && props.conversation.secretary !== true && (props.conversation.trialModel ?? null) === null);
+/** «/progetta» (D-235): why it does not work here, or undefined where it does. */
+const planProblem = computed(() =>
+  planCommandProblem({ ariannaChat: ariannaChat.value, incognito: incognito.value, mode: props.conversation.mode, workspace: props.conversation.workspace }),
+);
 const menuItems = computed(() =>
-  commandQuery.value === undefined ? [] : filterCommands(commandQuery.value).filter((command) => command.action.kind !== 'round' || ariannaChat.value),
+  commandQuery.value === undefined
+    ? []
+    : filterCommands(commandQuery.value).filter(
+        (command) => (command.action.kind !== 'round' || ariannaChat.value) && (command.action.kind !== 'plan' || planProblem.value === undefined),
+      ),
 );
 const menuOpen = computed(() => commandQuery.value !== undefined && draft.value !== menuDismissed.value);
 const activeId = computed(() => {
@@ -584,6 +593,9 @@ function run(command: ChatCommand): void {
       return;
     case 'round':
       setDraft('/giro ');
+      return;
+    case 'plan':
+      setDraft('/progetta ');
       return;
     case 'stop':
       setDraft('');
@@ -726,7 +738,15 @@ function submit(confirmed = false): void {
     commandHint.value = '/giro vale solo in una conversazione con Arianna.';
     return;
   }
-  if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && meaning.command.action.kind !== 'round') {
+  // «/progetta» (D-235): said here, before the core refuses it; the text stays in the field.
+  if (meaning.kind === 'command' && meaning.command.action.kind === 'plan') {
+    const problem = planProblem.value ?? (meaning.argument === '' ? 'Scrivi dopo /progetta il lavoro da pianificare.' : undefined);
+    if (problem !== undefined) {
+      commandHint.value = problem;
+      return;
+    }
+  }
+  if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && !reachesCore(meaning.command.action)) {
     run(meaning.command);
     return;
   }

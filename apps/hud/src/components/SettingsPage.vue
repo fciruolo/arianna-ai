@@ -63,6 +63,7 @@ import {
   fileErrorText,
   keptSections,
   leaveAfterProblem,
+  PLANNERS,
   pollAction,
   SECTION_TEXT,
   sectionChanged,
@@ -636,6 +637,13 @@ function addProject(): void {
 function addEndpoint(): void {
   forms.value?.endpoints.push({ id: '', url: 'http://127.0.0.1:', command: '' });
 }
+/** Who writes the cards of a plan of the project (D-235): '' takes the key away, the rule of D-164. */
+function setPlanner(project: ProjectValues, value: string): void {
+  const planner = PLANNERS.find((candidate) => candidate === value);
+  if (planner === undefined) delete project.planner;
+  else project.planner = planner;
+}
+
 /** The rules of the projects: lines and characters used, said under the field. */
 const rulesCount = computed(() => {
   const text = forms.value?.projectRules.template ?? '';
@@ -1243,6 +1251,18 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                     <select v-model="project.label" class="field w-[150px] px-2 py-1.5 text-[14px]" :aria-label="`Riservatezza di ${project.name}`">
                       <option value="L0">Pubblico</option>
                       <option value="L1">Interno</option>
+                    </select>
+                    <select
+                      :value="project.planner ?? ''"
+                      class="field w-[190px] px-2 py-1.5 text-[14px]"
+                      :aria-label="`Chi pianifica in ${project.name}`"
+                      title="Chi scrive le card di /progetta e dei piani di questo progetto (D-235). In una conversazione privata pianifica sempre il modello locale."
+                      @change="setPlanner(project, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="">Piani: come oggi</option>
+                      <option value="opus">Piani: Opus</option>
+                      <option value="sonnet">Piani: Sonnet</option>
+                      <option value="local">Piani: modello locale</option>
                     </select>
                     <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="forms.projects.splice(index, 1)">Togli</button>
                   </li>

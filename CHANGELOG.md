@@ -6,19 +6,30 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
+- «/progetta <descrizione>» nella chat con Arianna: risponde subito e mette sul cardwall la card «Piano: …», che pianifica a parte e si vede In corso; il piano arriva nella conversazione, nel dettaglio della card e con la notifica del Mac (D-235).
+- Chiave `planner = "opus" | "sonnet" | "local"` nel `[[project]]` di `arianna.toml` e in Impostazioni → Progetti: chi scrive le card dei piani del progetto; in una conversazione privata pianifica sempre il modello locale (D-235).
+- Il piano si modifica nella sua scheda prima di decidere: titolo, obiettivo, chi la fa, «bloccata da», criterio di completamento e complessità; righe aggiunte ed eliminate, ricontrollate dal core (D-235).
+- «Avvia subito» per ogni card di un agente nella scheda del piano, selezionata sulle righe che non aspettano altre card (D-235).
 - Trascinare una card di un agente in «In corso» la fa partire, come «Avvia», «Riprendi» o «Riprova»; trascinarla di nuovo lì non fa partire niente di più (D-235).
 - «Ferma» nel dettaglio di una card al lavoro o in coda, e lo stesso trascinandola fuori da «In corso»: il lavoro si interrompe, la card va fra le fallite con «Fermata da te» e riparte con «Riprova» (D-235).
 - «Passi» nel dettaglio della card di un agente: cosa cerca, legge, scrive o delega mentre lavora, aggiornati ogni pochi secondi finché la card è in corso, con la privacy della card (D-235).
 - «Rimanda» nel dettaglio di una card in «Da verificare»: una nota obbligatoria, con la sua privacy (Privato di base: la card resta sul modello locale; Interno: può tornare a Claude o ChatGPT); l'agente riparte dal suo rapporto, dai file che ha toccato e dalla nota, e le note restano nella card (D-235).
 
+### Cambiato
+
+- Un piano ha fino a 12 card (prima 8), ognuna con criterio di completamento e complessità S, M o L (D-235).
+- Approvato un piano, tutte le card nascono in Inbox; partono solo quelle con «Avvia subito» (prima partivano tutte quelle degli agenti) (D-235).
+- Approvato o rifiutato il piano di «/progetta», la card «Piano» va in Fatto con l'esito (D-235).
+- Una card rimandata ha di nuovo i suoi limiti di passi e minuti interi a ogni giro (D-235).
+- Le card lavorano su due worker loro, separati da quello della chat: una card lunga del Coder non fa più aspettare le risposte. Una sola card al lavoro per progetto, perché lavorano nella stessa cartella, e nessuna mentre una delega della chat lavora in quella cartella: le altre aspettano con «In coda, 1ª» sulla card (D-235).
+
 ### Corretto
 
 - Un testo scritto a mano su una card Interna nata da un piano la rende Privata e ora le lascia anche leggere ciò che è Privato: prima il motore la fermava appena partiva sul modello locale (D-152, trovato con D-235).
 
-### Cambiato
+### Sicurezza
 
-- Una card rimandata ha di nuovo i suoi limiti di passi e minuti interi a ogni giro (D-235).
-- Le card lavorano su due worker loro, separati da quello della chat: una card lunga del Coder non fa più aspettare le risposte. Una sola card al lavoro per progetto, perché lavorano nella stessa cartella, e nessuna mentre una delega della chat lavora in quella cartella: le altre aspettano con «In coda, 1ª» sulla card (D-235).
+- Le modifiche al piano restano all'etichetta della conversazione; in una conversazione di lavoro un testo con dati personali è rifiutato come un messaggio (D-235).
 
 ## [0.129.1] - 2026-10-16
 

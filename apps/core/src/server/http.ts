@@ -109,6 +109,7 @@ import { MAX_PROJECTS, PROJECT_KEY, type FollowedProjects, type ProjectNews } fr
 import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveProjectChoice, saveRewrite, saveUserNote, type AnswerGate, type ProjectChoice, type OpenQuestion } from '../dev-progress.ts';
 import { createUserFacts, FACTS_STATUS, FactsError, MAX_FACT_TEXT, MAX_TOPIC } from '../user-facts.ts';
 import { passGateway } from '../gateway.ts';
+import { editPlan, PlanError } from '../card-plans.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
@@ -2736,12 +2737,27 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       return { body: { approval } };
     }),
 
+    // The user edits a pending plan in its card (D-235): the cards are replaced, checked again; the plan keeps
+    // the label of its conversation, and in a work conversation the scanner refuses what a message would not hold.
+    route('PUT', '/api/approvals/:id/plan', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['title', 'cards']);
+      try {
+        return { body: { approval: await editPlan(sql, id, body, ['user', ...(mentionable?.() ?? [])]) } };
+      } catch (error) {
+        if (error instanceof PlanError) throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'conflict' ? 409 : 400, error.message);
+        throw error;
+      }
+    }),
+
     // The web chat is the channel of the decision: a declassification can be decided only here.
     // `choice`: the executor chosen for a card (D-159), with an approval of kind executor only.
+    // `starts`: the cards of a plan to start at once («Avvia subito», D-235), by their number; absent, the default.
     route('POST', '/api/approvals/:id/decision', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['state', 'choice']);
+      onlyFields(body, ['state', 'choice', 'starts']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
       if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
       const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
@@ -2749,9 +2765,10 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
       try {
-        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice) } };
+        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice, body.starts) } };
       } catch (error) {
         if (error instanceof ApprovalChoiceError) throw new HttpError(400, error.message);
+        if (error instanceof PlanError) throw new HttpError(400, error.message);
         // Decided meanwhile (another tab, Telegram): the database refused the second decision.
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;

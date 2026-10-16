@@ -7,7 +7,9 @@ import { test } from 'node:test';
 import { readAnswer, responseSchema, systemPrompt, type ToolId } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { assigneeText, checkPlan, planAnswerText, planOf } from '../src/card-plans.ts';
+import { parseAddressed } from '../src/addressed.ts';
+import { assigneeText, checkPlan, checkStarts, defaultStarts, planAnswerText, planOf, PlanError } from '../src/card-plans.ts';
+import { planCardTitle, planRequestAnswer } from '../src/orchestrator/plan-job.ts';
 import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason, waysFor } from '../src/orchestrator/card-run.ts';
 import { claudeToolsOf, codexAccessOf, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
@@ -21,56 +23,96 @@ const coder = official.get('coder');
 
 const ASSIGNEES = ['user', 'coder', 'designer'];
 const plan = (cards: unknown[], title: unknown = 'Sito della pasticceria') => ({ title, cards });
-const card = (title: string, assignee: string, blocked_by: unknown = [], goal = 'Fare la parte.') => ({ title, goal, assignee, blocked_by });
+const card = (title: string, assignee: string, blocked_by: unknown = [], goal = 'Fare la parte.', criteria: unknown = 'La parte è fatta.', complexity: unknown = 'M') => ({
+  title,
+  goal,
+  assignee,
+  blocked_by,
+  criteria,
+  complexity,
+});
 
-test('a plan: a title, 2 to 8 cards by the user or an agent that can work, each waiting only for earlier ones (D-159)', () => {
+test('a plan: a title, 2 to 12 cards by the user or an agent that can work, each waiting only for earlier ones, with criteria and complexity (D-159, D-235)', () => {
   const checked = checkPlan(plan([card('Grafica della landing', 'designer'), card('Codice della landing', 'coder', [1]), card('Testi', 'user', [1, 1])]), ASSIGNEES);
   assert.ok(!('error' in checked));
   assert.deepEqual(
-    checked.cards.map((item) => [item.title, item.assignee, item.blockedBy]),
+    checked.cards.map((item) => [item.title, item.assignee, item.blockedBy, item.criteria, item.complexity]),
     [
-      ['Grafica della landing', 'designer', []],
-      ['Codice della landing', 'coder', [1]],
+      ['Grafica della landing', 'designer', [], 'La parte è fatta.', 'M'],
+      ['Codice della landing', 'coder', [1], 'La parte è fatta.', 'M'],
       // Named twice: once.
-      ['Testi', 'user', [1]],
+      ['Testi', 'user', [1], 'La parte è fatta.', 'M'],
     ],
   );
+  // Twelve cards are a plan (D-235).
+  assert.ok(!('error' in checkPlan(plan(Array.from({ length: 12 }, (_, index) => card(`Card ${String(index)}`, 'user'))), ASSIGNEES)));
   // Whitespace folded, as a card's title on the wall.
   const spaced = checkPlan(plan([card('  Uno \n due ', 'user'), card('Tre', 'user')], ' Piano  '), ASSIGNEES);
   assert.ok(!('error' in spaced));
   assert.deepEqual([spaced.title, spaced.cards[0]?.title], ['Piano', 'Uno due']);
 });
 
-test('a plan is refused with an error the model reads: one card, nine, a stranger, a later or own card waited for, no blocked_by', () => {
+test('a plan is refused with an error the model reads: one card, thirteen, a stranger, a later or own card waited for, no blocked_by, no criteria, a size that is not S, M or L', () => {
   const error = (value: Record<string, unknown>): string => {
     const checked = checkPlan(value, ASSIGNEES);
     assert.ok('error' in checked);
     return checked.error;
   };
-  assert.match(error(plan([card('Sola', 'user')])), /2 to 8 cards; for one card call task.create/);
-  assert.match(error(plan(Array.from({ length: 9 }, (_, index) => card(`Card ${String(index)}`, 'user')))), /2 to 8 cards/);
+  assert.match(error(plan([card('Sola', 'user')])), /2 to 12 cards; for one card call task.create/);
+  assert.match(error(plan(Array.from({ length: 13 }, (_, index) => card(`Card ${String(index)}`, 'user')))), /2 to 12 cards/);
+  assert.match(error(plan([card('Uno', 'user'), card('Due', 'user', [], 'x', '')])), /card 2 needs "criteria"/);
+  assert.match(error(plan([card('Uno', 'user'), card('Due', 'user', [], 'x', null)])), /card 2 needs "criteria"/);
+  assert.match(error(plan([card('Uno', 'user', [], 'x', 'Fatto.', 'XL'), card('Due', 'user')])), /card 1: "complexity" must be S, M or L/);
+  assert.match(error(plan([card('Uno', 'user', [], 'x', 'Fatto.', 'm'), card('Due', 'user')])), /"complexity" must be S, M or L/);
   assert.match(error(plan([card('Uno', 'user'), card('Due', 'reviewer')])), /"assignee" must be one of user, coder, designer/);
   assert.match(error(plan([card('Uno', 'user', [2]), card('Due', 'user')])), /only earlier cards/);
   assert.match(error(plan([card('Uno', 'user'), card('Due', 'user', [2])])), /only earlier cards of the plan, by their number \(1 to 1\)/);
   assert.match(error(plan([card('Uno', 'user'), card('Due', 'user', [0])])), /only earlier cards/);
-  assert.match(error(plan([card('Uno', 'user'), { title: 'Due', goal: 'x', assignee: 'user' }])), /needs "blocked_by"/);
+  assert.match(error(plan([card('Uno', 'user'), { title: 'Due', goal: 'x', assignee: 'user', criteria: 'y', complexity: 'S' }])), /needs "blocked_by"/);
   assert.match(error(plan([card('Uno', 'user'), card('Due', 'user')], '')), /needs a title/);
   assert.match(error(plan([card('Uno', 'user'), card('', 'user')])), /card 2 needs a title/);
 });
 
 test('the answer of a decided plan, written by the code', () => {
-  const checked = checkPlan(plan([card('Grafica', 'designer'), card('Codice', 'coder', [1]), card('Testi', 'user', [1, 2])]), ASSIGNEES);
+  const checked = checkPlan(plan([card('Grafica', 'designer', [], 'x', 'Mockup approvato.', 'S'), card('Codice', 'coder', [1]), card('Testi', 'user', [1, 2], 'x', 'Testi scritti.', 'L')]), ASSIGNEES);
   assert.ok(!('error' in checked));
-  assert.equal(
-    planAnswerText(checked, 'approved'),
-    'Ho creato 3 card per «Sito della pasticceria»:\n\n1. Grafica — Designer\n2. Codice — Coder, aspetta la 1\n3. Testi — tu, aspetta le 1 e 2\n\nLe card degli agenti partono da sole appena non aspettano più nulla. Le tue sono in Da fare sul cardwall.',
-  );
+  const head = 'Ho creato 3 card per «Sito della pasticceria», tutte in Inbox sul cardwall:\n\n1. Grafica — Designer · S\n2. Codice — Coder · M, aspetta la 1\n3. Testi — tu · L, aspetta le 1 e 2';
+  // A plan read before D-235, without the rows that start: nothing about them.
+  assert.equal(planAnswerText(checked, 'approved'), head);
+  assert.equal(planAnswerText({ ...checked, starts: [1] }, 'approved'), `${head}\n\nPartono subito: la 1; una che aspetta un’altra card parte quando quella è in Fatto.`);
+  assert.equal(planAnswerText({ ...checked, starts: [1, 2] }, 'approved'), `${head}\n\nPartono subito: le 1, 2; una che aspetta un’altra card parte quando quella è in Fatto.`);
+  assert.equal(planAnswerText({ ...checked, starts: [] }, 'approved'), `${head}\n\nNessuna parte da sola: avviale dal cardwall quando vuoi.`);
   assert.equal(planAnswerText(checked, 'rejected'), 'Va bene, non ho creato nessuna card.');
   assert.equal(assigneeText('user'), 'tu');
   // Read back from an approval: a detail that is not a plan is none.
   assert.deepEqual(planOf({ kind: 'plan', detail: { ...checked, step: 1 } }), checked);
+  assert.deepEqual(planOf({ kind: 'plan', detail: { ...checked, starts: [2, 9, 'x'] } }), { ...checked, starts: [2] });
+  // A plan written before D-235: no criteria, no size.
+  const old = { title: 'Vecchio', cards: [{ title: 'Uno', goal: 'g', assignee: 'user', blockedBy: [] }] };
+  assert.deepEqual(planOf({ kind: 'plan', detail: old })?.cards[0], { title: 'Uno', goal: 'g', assignee: 'user', blockedBy: [], criteria: '', complexity: null });
   assert.equal(planOf({ kind: 'plan', detail: {} }), undefined);
   assert.equal(planOf({ kind: 'commitment', detail: { ...checked } }), undefined);
+});
+
+test('«Avvia subito» (D-235): by default the agents’ cards that wait for none; the chat may tick any agent’s card, never the user’s', () => {
+  const checked = checkPlan(plan([card('Grafica', 'designer'), card('Codice', 'coder', [1]), card('Testi', 'user'), card('Controlli', 'coder')]), ASSIGNEES);
+  assert.ok(!('error' in checked));
+  assert.deepEqual(defaultStarts(checked), [1, 4]);
+  assert.deepEqual(checkStarts([4, 2, 2], checked), [2, 4]);
+  assert.deepEqual(checkStarts([], checked), []);
+  for (const bad of [[3], [0], [5], [1.5], ['1'], 'tutte', null]) assert.throws(() => checkStarts(bad, checked), PlanError, JSON.stringify(bad));
+});
+
+test('«/progetta» (D-235): parsed with its description; the title of the card «Piano» and Arianna’s line, written by the code', () => {
+  assert.deepEqual(parseAddressed('/progetta  la landing della pasticceria\ncon il menu'), { kind: 'plan', brief: 'la landing della pasticceria\ncon il menu' });
+  assert.deepEqual(parseAddressed('/progetta'), { kind: 'plan', brief: '' });
+  assert.equal(parseAddressed('/progettare la landing'), undefined);
+  assert.equal(parseAddressed('ti scrivo /progetta x'), undefined);
+  assert.equal(planCardTitle('  la landing \n della pasticceria'), 'Piano: la landing');
+  const long = planCardTitle('x'.repeat(80));
+  assert.equal(Array.from(long).length, 'Piano: '.length + 60);
+  assert.ok(long.endsWith('…'));
+  assert.equal(planRequestAnswer('Piano: la landing'), 'Ho messo la pianificazione sul cardwall: card «Piano: la landing». Ti avviso quando è pronta.');
 });
 
 test('task.plan: offered to Arianna, never in the secretary’s conversation nor in incognito; its assignees are the user and the agents that can work', () => {

@@ -7,7 +7,8 @@
  */
 import type { Queryable } from './db/client.ts';
 
-export type Addressed = { kind: 'mention'; agent: string; brief: string } | { kind: 'round'; brief: string };
+/** «/progetta …» (D-235) is parsed here too: it starts the planner instead of Arianna's model. */
+export type Addressed = { kind: 'mention'; agent: string; brief: string } | { kind: 'round'; brief: string } | { kind: 'plan'; brief: string };
 
 /** The round of «/giro» and the agents of one message (D-107: at most 6 interventions, 2 of the same agent). */
 export const MAX_INTERVENTIONS = 6;
@@ -15,6 +16,7 @@ export const MAX_PER_AGENT = 2;
 
 const MENTION = /^@([a-z][a-z0-9-]{0,40})[,:]?(?:\s+([\s\S]*))?$/;
 const ROUND = /^\/giro(?:\s+([\s\S]*))?$/;
+const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/;
 
 /**
  * What the message asks: a mention, a round, or nothing (a message for
@@ -27,6 +29,8 @@ export function parseAddressed(body: string): Addressed | undefined {
   if (mention?.[1] !== undefined) return { kind: 'mention', agent: mention[1], brief: (mention[2] ?? '').trim() };
   const round = ROUND.exec(text);
   if (round !== null) return { kind: 'round', brief: (round[1] ?? '').trim() };
+  const plan = PLAN.exec(text);
+  if (plan !== null) return { kind: 'plan', brief: (plan[1] ?? '').trim() };
   return undefined;
 }
 
@@ -40,13 +44,13 @@ export const ADDRESSED_REASON = { mention: 'lo chiedi tu', round: 'giro della co
 
 /** A task the user addressed to the agents: how, and who answers in order. */
 export interface AddressedTask {
-  kind: Addressed['kind'];
+  kind: 'mention' | 'round';
   agents: string[];
 }
 
 /** The addressed task of `taskId` (migration 0067), or undefined for a task of Arianna's. */
 export async function addressedTask(sql: Queryable, taskId: string): Promise<AddressedTask | undefined> {
-  const [row] = await sql<{ kind: Addressed['kind'] | null; agents: string[] | null }[]>`
+  const [row] = await sql<{ kind: AddressedTask['kind'] | null; agents: string[] | null }[]>`
     SELECT addressed AS kind, addressed_agents AS agents FROM tasks WHERE id = ${taskId}`;
   return row?.kind == null || row.agents === null ? undefined : { kind: row.kind, agents: [...row.agents] };
 }

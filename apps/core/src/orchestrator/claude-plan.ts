@@ -1,5 +1,5 @@
 import { MAX_PLAN_CARDS, MIN_PLAN_CARDS, type DelegateTarget } from '@arianna/agents';
-import { enabledCloudModels } from '@arianna/config';
+import { enabledCloudModels, projectNamed, type ProjectPlanner } from '@arianna/config';
 import { prepareEmptyWorkspace, removeWorkspace, type ClaudeModel } from '@arianna/executors';
 import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
@@ -40,27 +40,43 @@ export const PLANNER_PROMPT = [
   `- Write ${String(MIN_PLAN_CARDS)} to ${String(MAX_PLAN_CARDS)} cards, in the order they are done. Each card is one piece of work for one assignee: a short title and a goal of one or two sentences, in Italian, concrete enough that the assignee can start without asking.`,
   '- "assignee" is "user" or one of the agents listed below, by its name: give an agent only what its description says it does; give the user what only the user can do (texts they said they write, choices, contents, accounts, approvals). Never invent an agent.',
   '- "blocked_by" lists the numbers of earlier cards this one must wait for (1 is the first card; [] when it waits for none). Never a later card.',
+  '- "criteria" says when the card is done, in Italian: one short sentence the user can check (a page that opens, a test that passes, a text approved).',
+  '- "complexity" is "S" (an hour or two), "M" (about a day) or "L" (several days).',
   '- Do not add cards nobody asked for (no deploy, marketing or analytics unless requested). Keep the details the user gave.',
   '- You have no tools and no files: you cannot look at the project. Write the plan from the request alone.',
-  '- Answer with exactly one JSON object and nothing else, no code fence: {"title": "...", "cards": [{"title": "...", "goal": "...", "assignee": "...", "blocked_by": []}]}.',
+  '- Answer with exactly one JSON object and nothing else, no code fence: {"title": "...", "cards": [{"title": "...", "goal": "...", "assignee": "...", "blocked_by": [], "criteria": "...", "complexity": "M"}]}.',
 ].join('\n');
 
 /**
  * The Claude model that writes the cards in this conversation, or undefined
  * when the local model writes them: only in a work conversation, while Claude
- * can run. The model the user chose for the conversation when it is a Claude
- * one, else Sonnet, else Opus, among those switched on (D-071).
+ * can run. The project's `planner` first (D-235): `local` keeps the plan on
+ * this machine, `opus` or `sonnet` that model when it is switched on.
+ * Otherwise, and without the key, the model the user chose for the
+ * conversation when it is a Claude one, else Sonnet, else Opus, among those
+ * switched on (D-071).
  */
-export function plannerModelOf(conversation: Pick<Conversation, 'mode' | 'model'> | undefined, enabled: readonly string[]): ClaudeModel | undefined {
-  if (conversation?.mode !== 'work') return undefined;
+export function plannerModelOf(
+  conversation: Pick<Conversation, 'mode' | 'model'> | undefined,
+  enabled: readonly string[],
+  planner?: ProjectPlanner,
+): ClaudeModel | undefined {
+  if (conversation?.mode !== 'work' || planner === 'local') return undefined;
   const on = DIRECT_MODELS.filter((model) => enabled.includes(model));
-  return on.find((model) => model === conversation.model) ?? on[0];
+  return on.find((model) => model === planner) ?? on.find((model) => model === conversation.model) ?? on[0];
 }
 
-/** The planner of a task's step: Claude in a work conversation within L1, the local model otherwise. */
+/**
+ * The planner of a task's step: Claude in a work conversation within L1, the
+ * local model otherwise (and always in a private conversation, whatever the
+ * project says). `conversationId`: the conversation the plan is asked in.
+ */
 export async function plannerFor(env: DelegateEnv, conversationId: string | null, label: Label): Promise<ClaudeModel | undefined> {
   if (conversationId === null || !isAtMost(label, 'L1') || !canAnswerDirectly(env)) return undefined;
-  return plannerModelOf(await loadConversation(env.sql, conversationId), enabledCloudModels(env.settings().cloud));
+  const conversation = await loadConversation(env.sql, conversationId);
+  const settings = env.settings();
+  const project = projectNamed(settings.projects, conversation?.workspace?.split(':')[0]);
+  return plannerModelOf(conversation, enabledCloudModels(settings.cloud), project?.planner);
 }
 
 export type WrittenPlan =

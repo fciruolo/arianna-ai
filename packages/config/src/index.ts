@@ -97,6 +97,7 @@ export {
   parseProjects,
   PROJECT_LABELS,
   PROJECT_NAME,
+  PROJECT_PLANNERS,
   projectNamed,
   projectParts,
   PROJECTS_DIR,
@@ -106,6 +107,7 @@ export {
   type ProjectFolder,
   type ProjectLabel,
   type ProjectPart,
+  type ProjectPlanner,
 } from './projects.ts';
 export { projectProblemText } from './project-messages.ts';
 export { MAX_PROJECT_RULES, parseProjectRules, ruleAudience, rulesFor, rulesOfProject, type ProjectRules, type RuleAudience } from './project-rules.ts';

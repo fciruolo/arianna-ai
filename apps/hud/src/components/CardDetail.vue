@@ -93,7 +93,7 @@ const props = defineProps<{
   splitInbox: boolean;
   /** The pending approvals of the chat: those of this card show here (D-159). */
   approvals?: Approval[];
-  decide?: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  decide?: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
 }>();
 const emit = defineEmits<{ close: []; changed: [] }>();
 
@@ -562,9 +562,9 @@ function sendBack(): void {
   });
 }
 
-async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
+async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]): Promise<void> {
   if (props.decide === undefined) return;
-  await props.decide(approval, state, choice);
+  await props.decide(approval, state, choice, starts);
   emit('changed');
   void loadDetail();
 }

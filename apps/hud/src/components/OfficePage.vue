@@ -40,7 +40,7 @@ const props = defineProps<{
   characters: CharacterListing | null;
   signals: OfficeSignals;
   cardsVersion: number;
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
   /** The agents the user may talk with directly now (D-111d): «Parla con…» opens a chat with them (D-212). */
   directAgents?: string[] | undefined;
   /** The theme in use (D-103): Scrubs and The Office have a place of their own (D-216); undefined is Base. */

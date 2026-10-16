@@ -23,8 +23,9 @@ export interface StoredApproval extends DeclassifyApproval {
   choice: ExecutorChoice | null;
   /**
    * The chat task an approval of kind `executor` shows under (D-159): the task
-   * of the plan the card came from, whose conversation is `conversationId`.
-   * Null for every other approval, and for a card that came from no chat.
+   * of the plan the card came from, whose conversation is `conversationId`;
+   * for a plan of a card «Piano» (D-235), the chat task of «/progetta». Null
+   * for every other approval, and for a card that came from no chat.
    */
   chatTaskId: string | null;
 }
@@ -33,8 +34,12 @@ export interface StoredApproval extends DeclassifyApproval {
 export const EXECUTOR_CHOICES = ['claude', 'codex', 'local'] as const;
 export type ExecutorChoice = (typeof EXECUTOR_CHOICES)[number];
 
-/** The chat task of a card's executor approval: the card's parent, when the card has no conversation and the parent has one. */
-const CHAT_TASK = `(CASE WHEN approvals.kind = 'executor' THEN (SELECT p.id FROM tasks t JOIN tasks p ON p.id = t.parent_id
+/**
+ * The chat task of a card's executor approval, or of the plan of a card
+ * «Piano» (D-235): the card's parent, when the card has no conversation and
+ * the parent has one.
+ */
+const CHAT_TASK = `(CASE WHEN approvals.kind IN ('executor', 'plan') THEN (SELECT p.id FROM tasks t JOIN tasks p ON p.id = t.parent_id
   WHERE t.id = approvals.task_id AND t.conversation_id IS NULL AND p.conversation_id IS NOT NULL) END)`;
 
 const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, label, state,
@@ -77,12 +82,12 @@ export async function requestDeclassify(
  */
 export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100, options: { conversationId?: string } = {}): Promise<StoredApproval[]> {
   const order = state === 'pending' ? 'requested_at, id' : 'decided_at DESC, id';
-  // The executor approvals of the cards a plan of the conversation created go with it (D-159).
+  // The executor approvals of the cards a plan of the conversation created go with it (D-159), and the plan of its «/progetta» (D-235).
   const where =
     options.conversationId === undefined
       ? ''
       : `AND (task_id IN (SELECT id FROM tasks WHERE conversation_id = $3::uuid)
-          OR (kind = 'executor' AND task_id IN (SELECT t.id FROM tasks t JOIN tasks p ON p.id = t.parent_id WHERE t.conversation_id IS NULL AND p.conversation_id = $3::uuid)))`;
+          OR (kind IN ('executor', 'plan') AND task_id IN (SELECT t.id FROM tasks t JOIN tasks p ON p.id = t.parent_id WHERE t.conversation_id IS NULL AND p.conversation_id = $3::uuid)))`;
   const rows = await sql.unsafe<StoredApproval[]>(
     `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ${where} ORDER BY ${order} LIMIT $2`,
     options.conversationId === undefined ? [state, limit] : [state, limit, options.conversationId],

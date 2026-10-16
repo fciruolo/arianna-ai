@@ -7,7 +7,7 @@ import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { keepRefused, removeDraft } from './lib/composer.ts';
-import { goesToArianna, resolveDraft } from './lib/commands.ts';
+import { goesToArianna, reachesCore, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, choiceCharacter, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { eraseFailedText } from './lib/erase.ts';
@@ -937,7 +937,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     }
     // The other "/" commands (D-090) are carried out by the page, never sent to Arianna.
     const meaning = resolveDraft(body);
-    if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && meaning.command.action.kind !== 'round') return false;
+    if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && !reachesCore(meaning.command.action)) return false;
     const incognitoHere = current.value?.incognito === true;
     // "/nota" is off in incognito (D-136): nothing of it goes to kb/inbox, the draft stays.
     const note = parseNoteCommand(body);
@@ -1047,10 +1047,10 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     }
   }
 
-  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
+  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]): Promise<void> {
     error.value = null;
     try {
-      await api.decide(approval.id, state, choice);
+      await api.decide(approval.id, state, choice, starts);
       approvals.value = approvals.value.filter((item) => item.id !== approval.id);
     } catch (cause) {
       fail(cause);
@@ -1253,6 +1253,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
         break;
       }
       case 'approval.decided':
+      case 'approval.edited':
       case 'approval.requested':
         work.push(refreshApprovals());
         if (known && event.taskId !== null) work.push(refreshTask(event.taskId));

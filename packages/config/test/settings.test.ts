@@ -48,7 +48,7 @@ const FULL: Settings = {
     models: { sonnet: { enabled: true }, opus: { enabled: true, name: 'claude-opus-5-5[1m]' }, fable: { enabled: false }, luna: { enabled: true }, sol: { enabled: true }, astra: { enabled: true } },
   },
   projects: [
-    { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
+    { name: 'site', path: '~/Projects/odd "name" à', label: 'L1', planner: 'opus' },
     { name: 'demo', path: 'repos/demo', label: 'L0' },
   ],
   characters: { arianna: 'originali/arianna', coder: 'my-pack/robot_2' },

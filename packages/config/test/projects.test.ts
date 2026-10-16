@@ -96,6 +96,15 @@ describe('parts and folders in arianna.toml', () => {
     assert.deepEqual(project.folders, [{ path: 'Workplan', label: 'L2' }]);
   });
 
+  it('reads `planner` (D-235): opus, sonnet or local; absent, no key', () => {
+    for (const planner of ['opus', 'sonnet', 'local'] as const) assert.equal(parse(`planner = "${planner}"`)[0]?.planner, planner);
+    assert.equal('planner' in (parse('')[0] ?? {}), false);
+  });
+
+  it('refuses a `planner` that is not opus, sonnet or local (D-235)', () => {
+    for (const extra of ['planner = "fable"', 'planner = "Opus"', 'planner = ""', 'planner = true']) assert.throws(() => parse(extra), /planner/, extra);
+  });
+
   it('refuses a part or a folder that is a path, hidden, twice, or a label that is not one', () => {
     for (const extra of [
       'parts = ["../fuori"]',

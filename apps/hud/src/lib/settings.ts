@@ -76,7 +76,13 @@ export interface ProjectValues {
   parts?: string[];
   /** D-145: `[[project.folder]]`, written from the tab "Conoscenza" of Progetti. */
   folders?: ProjectFolderValues[];
+  /** D-235: who writes the cards of a plan of the project; absent, the rule of D-164. */
+  planner?: ProjectPlanner;
 }
+
+/** The values of `planner` in a `[[project]]` (D-235). */
+export const PLANNERS = ['opus', 'sonnet', 'local'] as const;
+export type ProjectPlanner = (typeof PLANNERS)[number];
 
 export interface EndpointValues {
   id: string;

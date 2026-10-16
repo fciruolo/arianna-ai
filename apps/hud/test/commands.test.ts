@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { COMMANDS, completion, filterCommands, filterMentions, findCommand, goesToArianna, mentionQuery, menuQuery, moveSelection, resolveDraft, usage } from '../src/lib/commands.ts';
+import { COMMANDS, completion, filterCommands, filterMentions, findCommand, goesToArianna, mentionQuery, menuQuery, moveSelection, reachesCore, resolveDraft, usage } from '../src/lib/commands.ts';
 
 const names = (list: readonly { name: string }[]) => list.map((command) => command.name);
 
@@ -12,7 +12,7 @@ test('the registry: unique lowercase names and aliases, an Italian description e
     assert.match(command.name, /^\p{Ll}+$/u);
     assert.ok(command.description.length > 0);
   }
-  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'nuova', 'impostazioni', 'cerca', 'giro', 'basta', 'aiuto']);
+  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'nuova', 'impostazioni', 'cerca', 'giro', 'progetta', 'basta', 'aiuto']);
 });
 
 test('the menu opens on a slash and one word, and closes at the first space', () => {
@@ -31,8 +31,8 @@ test('the filter: all for an empty query, then exact, prefix, inside the name, i
   assert.deepEqual(names(filterCommands('pen')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('PEN')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('grafo')), ['conoscenza']);
-  // The alias of «conoscenza» first, then «giro», which starts with it.
-  assert.deepEqual(names(filterCommands('g')), ['conoscenza', 'giro']);
+  // The alias of «conoscenza» first, then «giro», which starts with it, then «progetta», which holds it.
+  assert.deepEqual(names(filterCommands('g')), ['conoscenza', 'giro', 'progetta']);
   assert.deepEqual(names(filterCommands('el')), []);
   assert.deepEqual(names(filterCommands('elenco')), ['aiuto']);
   assert.deepEqual(filterCommands('xyz'), []);
@@ -113,6 +113,16 @@ test('«/giro testo» reaches the core as a message; «/basta» is carried out b
   const stop = resolveDraft('/basta');
   assert.ok(stop.kind === 'command' && stop.command.action.kind === 'stop');
   assert.equal(resolveDraft('/basta ora').kind, 'error');
+});
+
+test('«/progetta descrizione» reaches the core as a message, as «/giro» (D-235)', () => {
+  assert.equal(goesToArianna('/progetta la landing della pasticceria'), true);
+  const plan = resolveDraft('/progetta la landing\ncon il menu');
+  assert.ok(plan.kind === 'command' && plan.command.action.kind === 'plan' && plan.argument === 'la landing\ncon il menu');
+  assert.ok(reachesCore({ kind: 'plan' }) && reachesCore({ kind: 'round' }) && !reachesCore({ kind: 'stop' }));
+  const command = findCommand('progetta');
+  assert.ok(command !== undefined);
+  assert.equal(usage(command), '/progetta <descrizione>');
 });
 
 test('«@» and a name open the menu of the agents, those starting with it first; a space or other text closes it', () => {

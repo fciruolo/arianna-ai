@@ -1,20 +1,142 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-import { executorChoices, planRows } from '../lib/cardwall.ts';
+import { editPlan, loadMentionable } from '../lib/api.ts';
+import { executorChoices } from '../lib/cardwall.ts';
 import { outcomeText, reportEntries } from '../lib/commitments.ts';
 import { IM_NO, IM_YES, imConfirmation } from '../lib/im-approval.ts';
 import { ACTION_TEXT, CHOICE_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import { errorText } from '../lib/italian.ts';
+import {
+  addRow,
+  cloneDraft,
+  COMPLEXITIES,
+  COMPLEXITY_TEXT,
+  draftProblem,
+  MAX_PLAN_ROWS,
+  planBody,
+  planDraft,
+  planStarts,
+  removeRow,
+  toggleBlockedBy,
+  whoText,
+  withAssignee,
+  type PlanDraft,
+} from '../lib/plan-approval.ts';
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ approval: Approval; decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void> }>();
+const props = defineProps<{
+  approval: Approval;
+  /** `starts`: the cards of a plan to start at once, «Avvia subito» (D-235). */
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
+}>();
 const busy = ref(false);
 
-/** A plan of Arianna (D-159): the cards it would create, who does each and what each waits for. */
-const plan = computed(() => (props.approval.kind === 'plan' ? planRows(props.approval.detail) : undefined));
+/**
+ * A plan of Arianna (D-159, D-235): the cards it would create, who does each,
+ * what each waits for, when it is done and how large it is. Editable before
+ * the decision; «Avvia subito» per agent's row goes with «Crea le card».
+ */
+const plan = ref<PlanDraft | undefined>(undefined);
+const editing = ref(false);
+watch(
+  () => props.approval.detail,
+  (detail) => {
+    if (props.approval.kind !== 'plan' || editing.value) return;
+    plan.value = planDraft(detail);
+  },
+  { immediate: true },
+);
+const draft = ref<PlanDraft | undefined>(undefined);
+const planError = ref<string | null>(null);
+/** Who may do a row: the user and the agents Arianna may call, with those the plan already names. */
+const agents = ref<string[]>([]);
+const assignees = computed(() => {
+  const named = [...agents.value, ...(draft.value?.rows ?? []).map((row) => row.assignee)].filter((name) => name !== 'user');
+  return ['user', ...new Set(named)];
+});
+const draftIssue = computed(() => (draft.value === undefined ? undefined : draftProblem(draft.value)));
+
+async function startEdit(): Promise<void> {
+  if (plan.value === undefined) return;
+  draft.value = cloneDraft(plan.value);
+  planError.value = null;
+  editing.value = true;
+  try {
+    agents.value = await loadMentionable();
+  } catch {
+    // Without the list only the agents the plan names are offered.
+  }
+}
+
+function cancelEdit(): void {
+  editing.value = false;
+  draft.value = undefined;
+  planError.value = null;
+}
+
+async function saveEdit(): Promise<void> {
+  const edited = draft.value;
+  if (edited === undefined || draftIssue.value !== undefined) return;
+  busy.value = true;
+  planError.value = null;
+  try {
+    const saved = await editPlan(props.approval.id, planBody(edited));
+    const fresh = planDraft(saved.detail);
+    // The ticks «Avvia subito» stay as the user left them, row by row.
+    fresh?.rows.forEach((row, index) => {
+      row.start = row.assignee !== 'user' && (edited.rows[index]?.start ?? row.start);
+    });
+    plan.value = fresh;
+    editing.value = false;
+    draft.value = undefined;
+  } catch (cause) {
+    planError.value = errorText(cause);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function setStart(index: number, on: boolean): void {
+  const row = plan.value?.rows[index];
+  if (row !== undefined && row.assignee !== 'user') row.start = on;
+}
+
+function setAssignee(index: number, assignee: string): void {
+  const row = draft.value?.rows[index];
+  if (draft.value !== undefined && row !== undefined) draft.value.rows[index] = withAssignee(row, assignee);
+}
+
+function toggleWait(index: number, on: number): void {
+  const row = draft.value?.rows[index];
+  if (draft.value !== undefined && row !== undefined) draft.value.rows[index] = toggleBlockedBy(row, index + 1, on);
+}
+
+function dropRow(number: number): void {
+  if (draft.value !== undefined) draft.value = removeRow(draft.value, number);
+}
+
+function newRow(): void {
+  if (draft.value !== undefined) draft.value = addRow(draft.value);
+}
+
+/** «bloccata da: 1. Grafica» of a row of the plan. */
+function waitsText(blockedBy: readonly number[]): string {
+  return blockedBy.map((on) => `${String(on)}. ${plan.value?.rows[on - 1]?.title ?? ''}`).join(', ');
+}
+
+async function createCards(): Promise<void> {
+  if (plan.value === undefined) return;
+  busy.value = true;
+  try {
+    await props.decide(props.approval, 'approved', undefined, planStarts(plan.value));
+  } finally {
+    busy.value = false;
+  }
+}
 /** Where a card of an agent runs (D-159): the ways allowed, and the ones left out with why. */
 const executor = computed(() => (props.approval.kind === 'executor' ? executorChoices(props.approval.detail) : undefined));
 
@@ -123,22 +245,61 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[12.5px]">{{ file }}</li>
         </ul>
       </template>
-      <template v-else-if="plan !== undefined">
+      <template v-else-if="plan !== undefined && !editing">
         <p>
-          Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei; quelle degli agenti partono da sole
-          appena non aspettano più nulla.
+          Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei: nascono tutte in Inbox, e partono subito
+          solo quelle con «Avvia subito».
         </p>
         <ol class="flex flex-col gap-1.5">
-          <li v-for="row in plan.rows" :key="row.number" class="rounded-lg border border-line bg-bg px-3 py-2">
+          <li v-for="(row, index) in plan.rows" :key="index" class="rounded-lg border border-line bg-bg px-3 py-2">
             <p class="flex flex-wrap items-baseline gap-x-2 break-words">
-              <span class="font-mono text-[12.5px] text-muted">{{ row.number }}.</span>
+              <span class="font-mono text-[12.5px] text-muted">{{ index + 1 }}.</span>
               <strong class="min-w-0 flex-1">{{ row.title }}</strong>
-              <span class="chip text-[12.5px]">{{ row.who }}</span>
+              <span class="chip text-[12.5px]" :title="COMPLEXITY_TEXT[row.complexity]">{{ row.complexity }}</span>
+              <span class="chip text-[12.5px]">{{ whoText(row.assignee) }}</span>
             </p>
             <p v-if="row.goal !== ''" class="mt-0.5 text-[13.5px] break-words text-muted">{{ row.goal }}</p>
-            <p v-if="row.blockedBy !== undefined" class="mt-0.5 text-[13px] text-warn">{{ row.blockedBy }}</p>
+            <p v-if="row.criteria !== ''" class="mt-0.5 text-[13px] break-words"><span class="text-muted">Fatta quando:</span> {{ row.criteria }}</p>
+            <p v-if="row.blockedBy.length > 0" class="mt-0.5 text-[13px] text-warn">bloccata da: {{ waitsText(row.blockedBy) }}</p>
+            <label v-if="row.assignee !== 'user'" class="mt-1 flex w-fit items-center gap-1.5 text-[13px]">
+              <input type="checkbox" :checked="row.start" :disabled="busy" @change="setStart(index, ($event.target as HTMLInputElement).checked)" />
+              Avvia subito<span v-if="row.blockedBy.length > 0" class="text-muted">: parte quando le card che aspetta sono in Fatto</span>
+            </label>
           </li>
         </ol>
+      </template>
+      <template v-else-if="plan !== undefined && draft !== undefined">
+        <label class="flex flex-col gap-1 text-[13px] text-muted">
+          Titolo del piano
+          <input v-model="draft.title" maxlength="120" class="field px-2.5 py-1.5 text-[14px] text-ink" />
+        </label>
+        <ol class="flex flex-col gap-2">
+          <li v-for="(row, index) in draft.rows" :key="index" class="flex flex-col gap-1.5 rounded-lg border border-line bg-bg px-3 py-2">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[12.5px] text-muted">{{ index + 1 }}.</span>
+              <input v-model="row.title" maxlength="120" class="field min-w-0 flex-1 px-2 py-1 text-[14px]" :aria-label="`Titolo della card ${index + 1}`" placeholder="Titolo" />
+              <button type="button" class="btn px-2 py-1 text-[13px]" :disabled="busy" :aria-label="`Elimina la card ${index + 1}`" @click="dropRow(index + 1)">Elimina</button>
+            </div>
+            <textarea v-model="row.goal" maxlength="500" rows="2" class="field resize-y px-2 py-1 text-[13.5px]" :aria-label="`Obiettivo della card ${index + 1}`" placeholder="Obiettivo" />
+            <input v-model="row.criteria" maxlength="500" class="field px-2 py-1 text-[13.5px]" :aria-label="`Criterio di completamento della card ${index + 1}`" placeholder="Fatta quando…" />
+            <div class="flex flex-wrap items-center gap-2 text-[13px]">
+              <select :value="row.assignee" class="field px-2 py-1 text-[13.5px]" :aria-label="`Chi fa la card ${index + 1}`" @change="setAssignee(index, ($event.target as HTMLSelectElement).value)">
+                <option v-for="name in assignees" :key="name" :value="name">{{ whoText(name) }}</option>
+              </select>
+              <select v-model="row.complexity" class="field px-2 py-1 text-[13.5px]" :aria-label="`Complessità della card ${index + 1}`">
+                <option v-for="size in COMPLEXITIES" :key="size" :value="size">{{ COMPLEXITY_TEXT[size] }}</option>
+              </select>
+              <span v-if="index > 0" class="flex flex-wrap items-center gap-1.5">
+                <span class="text-muted">bloccata da</span>
+                <label v-for="on in index" :key="on" class="flex items-center gap-1">
+                  <input type="checkbox" :checked="row.blockedBy.includes(on)" @change="toggleWait(index, on)" />{{ on }}
+                </label>
+              </span>
+            </div>
+          </li>
+        </ol>
+        <button type="button" class="btn w-fit px-2.5 py-1 text-[13px]" :disabled="busy || draft.rows.length >= MAX_PLAN_ROWS" @click="newRow">Aggiungi una card</button>
+        <p v-if="draftIssue !== undefined" class="text-[13px] text-warn">{{ draftIssue }}</p>
       </template>
       <template v-else-if="executor !== undefined">
         <p>
@@ -188,6 +349,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         che costa oltre il piano. Approvando, parte con questo modello; rifiutando, Arianna lo saprà e deciderà altrimenti.
       </p>
       <pre v-else class="max-h-48 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-xs break-words whitespace-pre-wrap">{{ detail }}</pre>
+      <p v-if="planError !== null" class="text-[13px] text-warn" role="alert">{{ planError }}</p>
     </div>
 
     <div v-if="executor !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
@@ -196,8 +358,13 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       </button>
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
     </div>
+    <div v-else-if="plan !== undefined && editing" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
+      <button type="button" :disabled="busy || draftIssue !== undefined" class="btn btn-primary" @click="saveEdit">Salva le modifiche</button>
+      <button type="button" :disabled="busy" class="btn" @click="cancelEdit">Annulla</button>
+    </div>
     <div v-else-if="plan !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
-      <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')"><Icon name="approve" :size="16" />Crea le card</button>
+      <button type="button" :disabled="busy" class="btn btn-primary" @click="createCards"><Icon name="approve" :size="16" />Crea le card</button>
+      <button type="button" :disabled="busy" class="btn" @click="startEdit">Modifica</button>
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">

@@ -116,9 +116,9 @@ const PLAN: Answer = {
   arguments: {
     title: 'Landing del sito',
     cards: [
-      { title: 'Grafica della landing', goal: 'Due varianti della landing.', assignee: 'designer', blocked_by: [] },
-      { title: 'Codice della landing', goal: 'La landing dalla variante scelta.', assignee: 'coder', blocked_by: [1] },
-      { title: 'Testi della landing', goal: 'I testi delle sezioni.', assignee: 'user', blocked_by: [] },
+      { title: 'Grafica della landing', goal: 'Due varianti della landing.', assignee: 'designer', blocked_by: [], criteria: 'Due mockup HTML aperti nel browser.', complexity: 'M' },
+      { title: 'Codice della landing', goal: 'La landing dalla variante scelta.', assignee: 'coder', blocked_by: [1], criteria: 'La pagina si apre e i test passano.', complexity: 'L' },
+      { title: 'Testi della landing', goal: 'I testi delle sezioni.', assignee: 'user', blocked_by: [], criteria: 'Testi di tutte le sezioni scritti.', complexity: 'S' },
     ],
   },
 };
@@ -139,14 +139,17 @@ async function waitingApproval(taskId: string) {
 
 async function childrenOf(taskId: string) {
   return [
-    ...(await db().sql<{ id: string; title: string; assignee: string; status: string; label: string; project: string | null; queued: boolean }[]>`
+    ...(await db().sql<
+      { id: string; title: string; assignee: string; status: string; label: string; project: string | null; queued: boolean; criteria: string | null; complexity: string | null; plan: string | null }[]
+    >`
     SELECT id::text, title, assignee, status, label, project,
-      EXISTS (SELECT FROM jobs j WHERE j.key = 'task:' || t.id::text) AS queued
+      EXISTS (SELECT FROM jobs j WHERE j.key = 'task:' || t.id::text) AS queued,
+      done_criteria AS criteria, complexity, plan_approval_id::text AS plan
     FROM tasks t WHERE parent_id = ${taskId} ORDER BY title`),
   ];
 }
 
-test('a plan approved in the chat: the cards and their dependencies with the decision, the agents’ ones queued, the answer without the model (D-159)', async () => {
+test('a plan approved in the chat: the cards in the inbox with their dependencies, criteria and size, «Avvia subito» by default queued, the answer without the model (D-159, D-235)', async () => {
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Facciamo la landing del sito: grafica, codice e testi.');
   const model = scripted([ASK_PLANNER]);
@@ -167,31 +170,38 @@ test('a plan approved in the chat: the cards and their dependencies with the dec
   await recordDecision(db().sql, approval.id, 'approved', 'web');
 
   const cards = await childrenOf(task.id);
+  // All in the inbox (D-235); «Avvia subito» by default: the agents' cards that wait for none, the Designer's.
   assert.deepEqual(
-    cards.map((card) => [card.title, card.assignee, card.status, card.label, card.project, card.queued]),
+    cards.map((card) => [card.title, card.assignee, card.status, card.label, card.project, card.queued, card.complexity, card.plan]),
     [
-      ['Codice della landing', 'coder', 'ready', 'L1', 'site', true],
-      ['Grafica della landing', 'designer', 'ready', 'L1', 'site', true],
-      ['Testi della landing', 'user', 'inbox', 'L1', 'site', false],
+      ['Codice della landing', 'coder', 'inbox', 'L1', 'site', false, 'L', approval.id],
+      ['Grafica della landing', 'designer', 'ready', 'L1', 'site', true, 'M', approval.id],
+      ['Testi della landing', 'user', 'inbox', 'L1', 'site', false, 'S', approval.id],
     ],
   );
+  assert.deepEqual((await loadApproval(db().sql, approval.id))?.detail.starts, [1]);
   const [code, design] = cards;
+  assert.ok(code !== undefined && design !== undefined);
+  assert.equal(code.criteria, 'La pagina si apre e i test passano.');
   const deps = await db().sql<{ task: string; on: string }[]>`
     SELECT task_id::text AS task, depends_on::text AS on FROM task_dependencies WHERE task_id = ANY (${cards.map((card) => card.id)}::uuid[]) AND removed_at IS NULL`;
-  assert.deepEqual([...deps], [{ task: code?.id, on: design?.id }]);
+  assert.deepEqual([...deps], [{ task: code.id, on: design.id }]);
   // On the wall the code waits for the design.
   const wall = await listCards(db().sql);
-  assert.equal(wall.find((card) => card.id === code?.id)?.column, 'waiting');
+  assert.equal(wall.find((card) => card.id === code.id)?.column, 'waiting');
 
-  // The chat task answers without calling the model again; the Designer's card asks where it runs, the Coder's is held back.
-  const results = await drain([task.id, design?.id ?? '', code?.id ?? ''], executor);
-  assert.deepEqual(results.sort(), ['answered', 'blocked', 'waiting-approval']);
+  // The chat task answers without calling the model again; the Designer's card asks where it runs, the Coder's was not started.
+  const results = await drain([task.id, design.id, code.id], executor);
+  assert.deepEqual(results.sort(), ['answered', 'waiting-approval']);
   assert.equal(model.requests.length, 1);
   const [reply] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'assistant'`;
-  assert.match(reply?.body ?? '', /^Ho creato 3 card per «Landing del sito»:\n\n1\. Grafica della landing — Designer\n2\. Codice della landing — Coder, aspetta la 1\n3\. Testi della landing — tu/);
+  assert.match(
+    reply?.body ?? '',
+    /^Ho creato 3 card per «Landing del sito», tutte in Inbox sul cardwall:\n\n1\. Grafica della landing — Designer · M\n2\. Codice della landing — Coder · L, aspetta la 1\n3\. Testi della landing — tu · S\n\nPartono subito: la 1;/,
+  );
 
   // The choice shows under the plan's message, in that conversation.
-  const choice = await waitingApproval(design?.id ?? '');
+  const choice = await waitingApproval(design.id);
   assert.deepEqual([choice.kind, choice.action, choice.label, choice.conversationId, choice.chatTaskId], ['executor', 'card.executor', 'L1', conversation.id, task.id]);
   assert.deepEqual(choice.detail.options, ['claude', 'local']);
   assert.deepEqual(choice.detail.excluded, [{ executor: 'codex', reason: 'off' }]);
@@ -201,8 +211,9 @@ test('a plan approved in the chat: the cards and their dependencies with the dec
 test('a rejected plan creates no card, and a plan the code refuses is an error the model reads', async () => {
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Organizza il lavoro del sito.');
-  const lonely: Answer = { action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [{ title: 'Una', goal: 'Tutto.', assignee: 'user', blocked_by: [] }, { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [2] }] } };
-  const mine: Answer = { action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [{ title: 'Una', goal: 'Tutto.', assignee: 'user', blocked_by: [] }, { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [1] }] } };
+  const row = (title: string, blocked_by: number[]) => ({ title, goal: 'Tutto.', assignee: 'user', blocked_by, criteria: 'Fatto.', complexity: 'S' });
+  const lonely: Answer = { action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [row('Una', []), row('Due', [2])] } };
+  const mine: Answer = { action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [row('Una', []), row('Due', [1])] } };
   const model = scripted([lonely, mine]);
   const executor = orchestrator(model);
   assert.deepEqual(await drain([task.id], executor), ['continued', 'waiting-approval']);
@@ -660,7 +671,10 @@ test('the local model writes the cards itself in a private conversation, and wit
 
   const work = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, work.id, 'Organizza il lavoro del sito.');
-  const alone = scripted([{ action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [{ title: 'Una', goal: 'Tutto.', assignee: 'user', blocked_by: [] }, { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [1] }] } }]);
+  const alone = scripted([{ action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [
+          { title: 'Una', goal: 'Tutto.', assignee: 'user', blocked_by: [], criteria: 'Fatto.', complexity: 'S' },
+          { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [1], criteria: 'Fatto.', complexity: 'M' },
+        ] } }]);
   assert.deepEqual(await drain([task.id], orchestrator(alone)), ['waiting-approval']);
   assert.doesNotMatch(JSON.stringify(alone.requests[0]?.schema?.schema), /"request"/);
 });

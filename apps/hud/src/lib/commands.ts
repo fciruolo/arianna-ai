@@ -13,11 +13,18 @@ export type CommandAction =
   | { kind: 'help' }
   /** «/giro testo» (D-107, tappa B2): sent to the core as it is, every agent of the chat answers once. */
   | { kind: 'round' }
+  /** «/progetta descrizione» (D-235): sent to the core as it is, the planning goes on the cardwall as a card «Piano». */
+  | { kind: 'plan' }
   /** «/basta»: the same as «Ferma» (D-218), the answer or the round at work stops. */
   | { kind: 'stop' };
 
 /** The command actions the page carries out itself: «/nota» goes to the capture, «/giro» to the core, «/aiuto» opens the menu. */
-export type PageCommandAction = Exclude<CommandAction, { kind: 'note' | 'help' | 'round' | 'stop' }>;
+export type PageCommandAction = Exclude<CommandAction, { kind: 'note' | 'help' | 'round' | 'plan' | 'stop' }>;
+
+/** The commands that reach the core as a message: «/giro» and «/progetta». */
+export function reachesCore(action: CommandAction): boolean {
+  return action.kind === 'round' || action.kind === 'plan';
+}
 
 export interface ChatCommand {
   /** Without the slash, lowercase, letters only. */
@@ -40,6 +47,13 @@ export const COMMANDS: readonly ChatCommand[] = [
   { name: 'impostazioni', alias: 'i', description: 'Apre le impostazioni', takesArgument: false, action: { kind: 'open', page: 'settings' } },
   { name: 'cerca', description: 'Cerca in conversazioni, messaggi, pensieri e pagine', takesArgument: false, action: { kind: 'search' } },
   { name: 'giro', description: 'Chiede a ogni agente della chat una risposta, uno alla volta', takesArgument: true, argumentHint: 'domanda', action: { kind: 'round' } },
+  {
+    name: 'progetta',
+    description: 'Arianna pianifica il lavoro in card, sul cardwall; ti avvisa quando il piano è pronto',
+    takesArgument: true,
+    argumentHint: 'descrizione',
+    action: { kind: 'plan' },
+  },
   { name: 'basta', description: 'Ferma la risposta o il giro in corso, come «Ferma»', takesArgument: false, action: { kind: 'stop' } },
   { name: 'aiuto', alias: 'a', description: 'Mostra l’elenco dei comandi', takesArgument: false, action: { kind: 'help' } },
 ];
@@ -150,8 +164,8 @@ export function resolveDraft(draft: string, commands: readonly ChatCommand[] = C
  */
 export function goesToArianna(draft: string): boolean {
   const meaning = resolveDraft(draft);
-  // «/giro» reaches the core as a message: the agents of the chat answer it (D-107, tappa B2).
-  return meaning.kind === 'message' || (meaning.kind === 'command' && meaning.command.action.kind === 'round');
+  // «/giro» and «/progetta» reach the core as a message (D-107, tappa B2; D-235).
+  return meaning.kind === 'message' || (meaning.kind === 'command' && reachesCore(meaning.command.action));
 }
 
 /** «@na»: the start of a mention being typed (D-107, tappa B2), the menu of the agents shows; undefined otherwise. */

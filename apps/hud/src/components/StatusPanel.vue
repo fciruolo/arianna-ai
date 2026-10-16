@@ -31,7 +31,7 @@ const props = defineProps<{
   poseFor: (id: string) => Pose;
   approvals: Approval[];
   remoteDecisions: RemoteDecision[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, starts?: readonly number[]) => Promise<void>;
 }>();
 const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: []; close: []; open: [conversationId: string] }>();
 

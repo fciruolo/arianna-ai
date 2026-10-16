@@ -699,10 +699,20 @@ export async function addressedOf(
   conversation: MessageTarget,
   body: string,
   options: MessageOptions,
-): Promise<{ kind: 'mention' | 'round'; agents: readonly string[] } | undefined> {
-  if (options.mentionable === undefined || conversation.agent !== null || conversation.secretary) return undefined;
+): Promise<{ kind: 'mention' | 'round'; agents: readonly string[] } | { kind: 'plan' } | undefined> {
+  if (options.mentionable === undefined || conversation.agent !== null) return undefined;
   const parsed = parseAddressed(body);
   if (parsed === undefined) return undefined;
+  // «/progetta …» (D-235): only in a conversation with Arianna, never in incognito nor the secretary's. A work conversation
+  // needs its project; a private one has none (conversations_workspace_only_work): its cards are general, planned here.
+  if (parsed.kind === 'plan') {
+    if (conversation.incognito) throw new ChatError('invalid', '/progetta does not work in incognito: nothing of it would outlive the conversation');
+    if (conversation.secretary) throw new ChatError('invalid', '/progetta works only in a conversation with Arianna');
+    if (conversation.mode === 'work' && conversation.workspace === null) throw new ChatError('invalid', '/progetta needs a work conversation with a project');
+    if (parsed.brief === '') throw new ChatError('invalid', 'write after /progetta the work to plan');
+    return { kind: 'plan' };
+  }
+  if (conversation.secretary) return undefined;
   if (parsed.kind === 'mention') {
     // «@ciao» or an agent Arianna cannot call: an ordinary message.
     if (!options.mentionable.includes(parsed.agent)) return undefined;
@@ -769,7 +779,10 @@ export async function writeUserMessage(
     assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
-  if (addressed !== undefined) {
+  if (addressed?.kind === 'plan') {
+    // «/progetta» (D-235): the step answers without the model and puts the card «Piano» on the wall.
+    await tx`UPDATE tasks SET planning = 'request' WHERE id = ${task.id}`;
+  } else if (addressed !== undefined) {
     await tx`UPDATE tasks SET addressed = ${addressed.kind}, addressed_agents = ${[...addressed.agents]}::text[] WHERE id = ${task.id}`;
   }
   // Names of public text (D-184): the task's label stays what it is; the Designer reads them as a card's (D-163).
@@ -810,7 +823,9 @@ export async function writeUserMessage(
     payload: { conversationId, messageId: row.id, role: 'user' },
   });
   // The agents with nothing to do here for a while say goodbye (I-8), after the message that made them idle; a direct chat has none.
-  if (options.leave !== undefined && conversation.agent === null) await leaveIdle(tx, conversationId, task.id, options.leave, addressed?.agents ?? []);
+  if (options.leave !== undefined && conversation.agent === null) {
+    await leaveIdle(tx, conversationId, task.id, options.leave, addressed === undefined || addressed.kind === 'plan' ? [] : addressed.agents);
+  }
   const message = await loadMessage(tx, row.id);
   if (message === undefined) throw new Error('the new message is missing');
   return { message, task };

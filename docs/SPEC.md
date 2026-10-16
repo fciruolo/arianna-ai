@@ -279,6 +279,7 @@ Todo e cardwall sono la stessa lista di task vista in due modi, con un campo "as
 
 - Gli agenti con autonomia A0 e A1 creano carte solo in Inbox; solo da A2 in su possono metterle direttamente in Pronti.
 - Una carta non passa a Fatto senza prove allegate.
+- «/progetta <descrizione>» in una conversazione con Arianna (di lavoro con progetto, o privata) mette sul cardwall la carta «Piano», che pianifica a parte: Claude in una conversazione di lavoro (il modello lo sceglie `planner` del progetto), il modello locale in una privata. Il piano, fino a 12 carte con criterio di completamento e complessità S/M/L, si modifica nella sua scheda prima di decidere; approvato, le carte nascono tutte in Inbox e partono subito solo quelle con «Avvia subito» (D-235).
 - Una carta con livello L2 non può essere assegnata a un agente che usa il cloud.
 - Le scadenze (fatture da pagare, affitti, rinnovi, documenti) generano carte in automatico dallo scadenziario della KB.
 - La vista Todo mostra solo le carte assegnate a te, ordinate per scadenza e priorità, ed è quella che ricevi ogni mattina in chat o a voce.

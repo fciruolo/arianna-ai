@@ -79,9 +79,15 @@ export function createNoticeBoard(options: { now?: () => number; keepMs?: number
   };
 }
 
-/** The conversation of a task, or null when it has none. */
+/**
+ * The conversation of a task, or null when it has none. A card «Piano» of
+ * «/progetta» (D-235) leads to the chat it was asked in: its plan waits for
+ * the user there, so the approval notifies as one of that chat.
+ */
 export async function conversationOfTask(sql: Queryable, taskId: string): Promise<string | null> {
-  const [row] = await sql<{ conversationId: string | null }[]>`SELECT conversation_id::text AS "conversationId" FROM tasks WHERE id = ${taskId}`;
+  const [row] = await sql<{ conversationId: string | null }[]>`
+    SELECT coalesce(t.conversation_id, CASE WHEN t.planning = 'card' THEN p.conversation_id END)::text AS "conversationId"
+    FROM tasks t LEFT JOIN tasks p ON p.id = t.parent_id WHERE t.id = ${taskId}`;
   return row?.conversationId ?? null;
 }
 

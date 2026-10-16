@@ -13,6 +13,14 @@ export const PROJECTS_DIR = 'repos';
 export const PROJECT_LABELS = ['L0', 'L1'] as const;
 export type ProjectLabel = (typeof PROJECT_LABELS)[number];
 
+/**
+ * Who writes the cards of a plan of the project (D-235): a Claude model or the
+ * local model. Absent, the rule of D-164. A private conversation or a request
+ * above L1 always plans on the local model, whatever the key says.
+ */
+export const PROJECT_PLANNERS = ['opus', 'sonnet', 'local'] as const;
+export type ProjectPlanner = (typeof PROJECT_PLANNERS)[number];
+
 /** Also the name of the link in `repos/`: no separators, no dots, nothing hidden. */
 export const PROJECT_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
@@ -51,6 +59,8 @@ export interface Project {
   parts?: readonly string[];
   /** D-145: the labels the user gave the management folders of the container; the others have their default. */
   folders?: readonly ProjectFolder[];
+  /** D-235: who writes the cards of a plan of the project; absent, the rule of D-164. */
+  planner?: ProjectPlanner;
 }
 
 /** True when `inner` is `outer` or inside it; a folder named `..x` is inside. */
@@ -174,7 +184,7 @@ export function parseProjects(value: unknown, home: string, userHome: string, da
   const projects = asArray(value, 'project').map((item, index): Project => {
     const where = `project[${String(index)}]`;
     const table = asTable(item, where);
-    onlyKeys(table, ['name', 'path', 'label', 'parts', 'folder'], where);
+    onlyKeys(table, ['name', 'path', 'label', 'parts', 'folder', 'planner'], where);
     const name = asString(table.name, `${where}.name`);
     if (!PROJECT_NAME.test(name)) throw new ConfigError(`${where}.name: lowercase letters, digits and dashes, starting with a letter or digit`);
     const path = asString(table.path, `${where}.path`);
@@ -185,7 +195,16 @@ export function parseProjects(value: unknown, home: string, userHome: string, da
     const label = table.label === undefined ? 'L1' : asOneOf(table.label, PROJECT_LABELS, `${where}.label`);
     const parts = table.parts === undefined ? undefined : parseParts(table.parts, `${where}.parts`);
     const folders = table.folder === undefined ? undefined : parseFolders(table.folder, `${where}.folder`);
-    return { name, path, absolute, label, ...(parts === undefined ? {} : { parts }), ...(folders === undefined ? {} : { folders }) };
+    const planner = table.planner === undefined ? undefined : asOneOf(table.planner, PROJECT_PLANNERS, `${where}.planner`);
+    return {
+      name,
+      path,
+      absolute,
+      label,
+      ...(parts === undefined ? {} : { parts }),
+      ...(folders === undefined ? {} : { folders }),
+      ...(planner === undefined ? {} : { planner }),
+    };
   });
   for (const [index, project] of projects.entries()) {
     for (const other of projects.slice(index + 1)) {

@@ -75,6 +75,8 @@ import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
 import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.ts';
 import { plannerFor, writePlan } from './claude-plan.ts';
+import { planCardStep, planRequestStep } from './plan-job.ts';
+import { planningOf } from '../card-plans.ts';
 import {
   cardBrief,
   loadCardReturns,
@@ -791,6 +793,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // The trial chat of a local model (D-142): that model answers, nothing else runs.
       const trial = await trialModelOf(sql, task.conversationId);
       if (trial !== undefined) return { agent: task.assignee, executor: 'local', locality: 'local', model: trial };
+      // «/progetta» (D-235): the chat task answers without a model; the card «Piano» may call the local model.
+      const planning = await planningOf(sql, task.id);
+      if (planning === 'request') return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
+      if (planning === 'card') return localSpec(task);
       const directChat = await isDirectChat(task);
       const planned = await delegationPlanFor(task, step, directChat);
       // Nothing left to run in the direct chat: the step only closes the task (directChatEnd). Its run row says
@@ -827,6 +833,17 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const key = `${task.id}:${String(step)}`;
       const trial = await trialModelOf(sql, task.conversationId);
       if (trial !== undefined) return runTrialChat(sql, ctx, trial, options.trialModel?.(trial));
+      // «/progetta» (D-235): the line of the chat and the card «Piano», then the card's plan; never Arianna's model.
+      const planning = await planningOf(sql, task.id);
+      if (planning === 'request') {
+        const [answered] = await sql<{ id: string }[]>`
+          SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
+        if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
+        return planRequestStep(sql, ctx);
+      }
+      if (planning === 'card') {
+        return planCardStep({ env, model: options.model, localAlias: ORCHESTRATOR_MODEL, localExecutor: ORCHESTRATOR_EXECUTOR, delegates: delegateTargets(env, task.assignee) }, ctx);
+      }
       const directChat = await isDirectChat(task);
       const card = isAgentCard(task);
       const planned = plans.get(key) ?? (await delegationPlanFor(task, step, directChat));
