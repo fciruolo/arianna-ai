@@ -2522,3 +2522,58 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 **Risposte dell'utente** (domande a opzioni del 2026-10-14): (1) **il testo della richiesta solo se Pubblico o Interno**; Privati e Segreti restano alle regole fisse; (2) **al più 50 pareri al giorno, spento con la quota settimanale oltre il 90%**. Accettata come D-207; da costruire su un ramo `task/advisor-router`.
 
 (3) **La percentuale della settimana dal file dell'app della barra dei consumi** (scelta dell'utente del 2026-10-14): il percorso lo indica l'utente in Impostazioni; il core legge solo percentuale e reset della settimana di Claude; con il file mancante, illeggibile o vecchio di oltre un'ora vale il solo tetto di 50 (più il blocco `quota`).
+
+---
+
+## D-248 — Cruscotto personale
+
+**Contesto.** Idea 6 delle «Idee da OpenWork (2026-10-14)»: là un cruscotto di artefatti tenuti vivi dalle automazioni. L'utente l'ha messa in coda (15-25 h, «scelta diversa dalla consigliata») e il 2026-10-16 ha scelto la forma **«Fisso + Aggiorna a mano»**: si fissa una risposta dalla chat, la si ritrova in una pagina «Cruscotto» e la si aggiorna con un pulsante; più avanti le routine (D-110) la aggiorneranno da sole. Il Cruscotto di Finanze (D-189) resta com'è: è una pagina di numeri calcolati dal codice, questo è un posto per le risposte di Arianna che si vogliono tenere sott'occhio.
+
+**Anteprima:** `docs/mockups/cruscotto.html` (file autonomo, tema chiaro e scuro, dati inventati): la pagina con quattro riquadri (Spesa di ottobre Privata e larga; Prossime scadenze Interna; un progetto finto nato da una conversazione col Coder su Claude, con l'ultimo aggiornamento fallito; un Pubblico mentre si aggiorna), la pagina vuota e la bolla in chat con «Fissa al Cruscotto».
+
+### Proposta
+
+- **Dove.** Voce «Cruscotto» nella barra sinistra, sotto «Chat». In chat, «Fissa al Cruscotto» fra le azioni della risposta (Copia, Salva in inbox, Chiedi a lato), solo sulle risposte finite di Arianna, degli agenti e del Coder; mai sui messaggi dell'utente, sulle righe di sistema, sui messaggi bloccati o non inviati, né nelle conversazioni in incognito (I-4: non lasciano traccia). Il clic apre un riquadretto con titolo (precompilato), **domanda per gli aggiornamenti** (domanda 2), larghezza e label, che non si cambia; dopo «Fissa» il pulsante diventa «Fissato · Apri nel Cruscotto». Una risposta si fissa una volta sola.
+- **Il riquadro.** Testata con maniglia per trascinare, titolo (clic per rinominare, Invio salva, Esc annulla, al più 80 caratteri), **label sempre visibile** (pallino e parola: Pubblico, Interno, Privato, Segreto) e menu ⋯ (Rinomina, Stretta, Larga, Sposta prima, Sposta dopo, Apri la conversazione d'origine, Vedi la domanda, Togli dal Cruscotto). Corpo con la risposta resa come in chat. Piede con «Aggiornato <quando>», il link alla conversazione d'origine, chi ha risposto (`Arianna · locale`, `Coder · Claude`, `Modello locale`) e «Aggiorna». Due larghezze: **Stretta** (mezza riga) e **Larga** (riga intera); su telefono tutte larghe. Riordino col trascinamento e, da tastiera, con «Sposta prima/dopo». «Togli» chiede conferma nel riquadro e lascia 5 secondi per «Annulla»; la conversazione d'origine resta com'è.
+- **Stati.** *In aggiornamento:* il contenuto vecchio resta, attenuato, con una riga «Aggiorno col modello locale… 0:14» e «Annulla»; «Aggiorna» spento. *Fallito:* il contenuto vecchio resta, con un avviso rosso che dice quando e perché in parole semplici (modello non pronto, tempo scaduto, serviva un esecutore cloud, risposta bloccata) e «Riprova». «Aggiorna tutti» in testata li fa uno alla volta, in fila.
+- **Dati: migrazione `0075`** (riservata a questo lavoro). Tabella `dashboard_tiles`: `id`, `title`, `question` (la domanda per gli aggiornamenti), `body` (il testo della risposta), `label`, `source_conversation_id` (riferimento a `conversations`), `source_message_id`, `answered_by` (`local`, `claude`, `codex`), `origin_cloud` (vero se la prima risposta veniva da un esecutore cloud), `width` (`narrow`, `wide`), `position`, `refreshed_at`, `refresh_state` (`idle`, `running`, `failed`), `refresh_error` (un codice, mai testo del modello), `created_at`, `updated_at`. Ad `arianna_app` solo SELECT, INSERT e UPDATE; la rimozione passa da una funzione `remove_dashboard_tile(uuid)` `SECURITY DEFINER` come le altre (nessun DELETE generico, D-157). `erase_conversation` e `purge_conversation` ridefinite per togliere anche i riquadri della conversazione. Eventi `dashboard.tile_pinned`, `dashboard.tile_refreshed`, `dashboard.tile_refresh_failed`, `dashboard.tile_removed` con id del riquadro e della conversazione, mai il testo.
+- **Rotte.** `GET /api/dashboard/tiles`; `POST /api/dashboard/tiles` (da un id di messaggio, con titolo, domanda e larghezza: testo e label li prende il core dal messaggio, mai dalla pagina); `PATCH /api/dashboard/tiles/:id` (titolo, larghezza, posizione); `POST /api/dashboard/tiles/:id/refresh` e `…/cancel`; `POST /api/dashboard/tiles/:id/remove`. La pagina si aggiorna con il WebSocket che c'è già.
+- **Regole di privacy.**
+  1. **Il riquadro eredita la label della risposta** fissata; la pagina non la può abbassare.
+  2. **«Aggiorna» solo col modello locale.** Un job `dashboard.refresh` in coda fa la domanda all'orchestratore locale con lo stesso agente della risposta (Finanze per la spesa), senza la storia della conversazione e con il router obbligato al locale: se servirebbe una delega a un esecutore cloud, l'aggiornamento non parte verso il cloud e fallisce con «serve Claude o Codex: aggiorna dalla conversazione». Nessun testo passa dal gateway; niente quota consumata.
+  3. **Label dopo un aggiornamento:** la risposta nuova ha la label dei suoi input (regola di sempre); il riquadro prende la più alta fra la sua e quella nuova, cioè **non scende da solo** (domanda 3).
+  4. **Riquadro nato da una conversazione con esecutore cloud** (Coder diretto D-111, Codex): si può fissare; «Aggiorna» diventa **«Aggiorna in locale»** e rifà la domanda al modello locale, senza la sessione di Claude o di Codex e senza i loro strumenti; una riga nel riquadro lo dice («La prima risposta era del Coder con Claude…»); dopo il primo aggiornamento il piede dice `Modello locale`. È la scelta più sicura: nessun aggiornamento fa uscire testo verso il cloud senza che l'utente lo chieda in una conversazione, e nessuna quota si consuma di nascosto (domanda 1).
+  5. **Segreto (L3):** nessun modello lo legge, quindi un riquadro Segreto non ha «Aggiorna» e mostra il contenuto solo dopo «Mostra».
+  6. **Conversazione eliminata per sempre** (D-157): i suoi riquadri spariscono nella stessa transazione, eventi compresi. **Archiviata:** il riquadro resta e il link apre l'archivio.
+  7. Il Cruscotto non va mai su Telegram né al telefono, e le routine future (D-110) lo aggiornano con le stesse regole 2-6.
+- **Cosa resta fuori in questa parte.** L'aggiornamento automatico (aspetta D-110), grafici veri dentro i riquadri (il testo della risposta è reso come in chat), condivisione.
+
+### Stima
+
+16-24 h di sessione: migrazione 0075 con le due funzioni ridefinite e `test-db` (4-6 h); rotte e job `dashboard.refresh` col router obbligato al locale, test positivi e negativi delle regole 1-6 (5-7 h); pagina Cruscotto con trascinamento, menu, stati e logica pura in `apps/hud/src/lib/dashboard.ts` con test (5-8 h); «Fissa al Cruscotto» e riquadretto in chat (2-3 h). Nessuna dipendenza nuova: il trascinamento usa l'API nativa del browser. Il cambio al router (obbligo del locale) passa dagli eval (`pnpm eval`).
+
+### Domande chiuse
+
+- Forma: «Fisso + Aggiorna a mano» (scelta dell'utente del 2026-10-16).
+- Due larghezze, riordino, rimozione, titolo modificabile, label sempre visibile, conversazione d'origine nel riquadro: chieste dall'utente.
+- Aggiornamento solo col modello locale: chiesto dall'utente.
+
+### Domande per l'utente
+
+1. **Riquadro nato da una conversazione con Claude o Codex: come si aggiorna?** Raccomandazione: «Aggiorna in locale».
+   - Contesto: Se fissi una risposta del Coder (che lavora con Claude), «Aggiorna» non può richiamare Claude: gli aggiornamenti sono solo locali. Si decide cosa fa il pulsante su questi riquadri.
+   - Opzione consigliata: Aggiorna in locale — il modello locale rifà la domanda, senza la sessione di Claude; il riquadro lo dice; niente esce e niente quota; la risposta può essere più breve.
+   - Opzione: Riquadro fermo — niente «Aggiorna» su questi riquadri; per una risposta nuova si torna alla conversazione e la si fissa di nuovo.
+   - Opzione: Aggiorna dalla conversazione — il pulsante apre la conversazione d'origine con la domanda già scritta; l'invio (e la quota) li decidi tu.
+   - Esempio: Fissi «Pasticceria Rossi, stato del sito», risposta del Coder del 14/10. Con la consigliata, oggi premi «Aggiorna in locale» e il modello locale riscrive l'elenco dai dati che ha; il piede passa da «Coder · Claude» a «Modello locale».
+2. **Domanda per gli aggiornamenti: come nasce?** Raccomandazione: riscritta dal modello locale, da controllare.
+   - Contesto: «Aggiorna» rifà una domanda da sola, senza il resto della conversazione. Un messaggio come «E il mese scorso?» da solo non si capisce. Si decide da dove viene la domanda salvata nel riquadro.
+   - Opzione consigliata: Riscritta e da controllare — il modello locale la riscrive completa quando premi «Fissa»; la vedi e la correggi prima di salvare; un passo locale in più.
+   - Opzione: Il tuo messaggio com'è — precompilata col messaggio prima della risposta, modificabile; nessun passo in più, ma una domanda vaga dà aggiornamenti sbagliati.
+   - Opzione: Domanda più ultimi messaggi — si salvano anche gli ultimi 6 messaggi come contesto; aggiornamenti più fedeli, ma il riquadro conserva una copia di pezzi di conversazione.
+   - Esempio: In «Conti di casa» scrivi «E il mese scorso, in totale?». Con la consigliata il riquadro propone «Quanto ho speso in tutto a settembre?» e tu premi «Fissa».
+3. **La label del riquadro può scendere dopo un aggiornamento?** Raccomandazione: no, solo salire.
+   - Contesto: Ogni risposta ha la label dei dati che ha letto. Un aggiornamento può leggere dati diversi da quelli della prima volta. Si decide se il riquadro segue sempre l'ultima risposta o tiene la label più alta che ha avuto.
+   - Opzione consigliata: Solo salire — il riquadro tiene la più alta fra la sua e la nuova; per abbassarla lo si toglie e si fissa una risposta nuova; nessun dato Privato finisce sotto una label più bassa per sbaglio.
+   - Opzione: Segue l'ultima risposta — la label è sempre quella della risposta nuova; più fedele, ma un riquadro Privato può diventare Interno senza che tu lo chieda.
+   - Esempio: «Prossime scadenze» è Interno; un aggiornamento legge anche una scadenza personale e diventa Privato. Il giorno dopo la scadenza personale è passata: con la consigliata il riquadro resta Privato.
