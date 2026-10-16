@@ -8,6 +8,7 @@ import { listDelegations } from '../lib/api.ts';
 import { boardPoint } from '../lib/office/map.ts';
 import { officeMapOf, officeView, skinOfTheme } from '../lib/office/skins.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
+import { roomClaims } from '../lib/office/rooms.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
 import { pendingRows, pendingTotal } from '../lib/pending.ts';
@@ -111,6 +112,9 @@ onBeforeUnmount(() => {
   motionQuery?.removeEventListener('change', motionChanged);
 });
 
+/** Who has a room (D-229): pinned projects first, then those active in the last days; the rest behind the archive. */
+const claims = computed(() => roomClaims(props.projects, props.conversations, work.value, now.value));
+
 const snapshot = computed<OfficeSnapshot>(() =>
   officeSnapshot({
     agents: props.status?.agents ?? [
@@ -119,6 +123,8 @@ const snapshot = computed<OfficeSnapshot>(() =>
     ],
     projects: props.projects,
     slots: map.value?.anchors.islands.length ?? 0,
+    claims: claims.value,
+    strolls: map.value?.anchors.strolls.length ?? 0,
     activity: props.signals.activity,
     coderConversations: work.value.filter((item) => item.agent === 'coder').map((item) => item.conversationId),
     pending: pending.value,
@@ -139,12 +145,14 @@ function placeText(agent: OfficeAgent): string {
       return 'Privata';
     case 'pause':
       return 'Pausa';
+    case 'stroll':
+      return 'in giro';
     case 'archive':
       return 'Archivio';
     case 'island': {
       const slot = agent.place.slot;
       const island = snapshot.value.islands.find((item) => item.slot === slot);
-      return island === undefined ? 'Isola' : `${island.project} · ${labelWord(island.label)}`;
+      return island === undefined ? 'Stanza' : `${island.project} · ${labelWord(island.label)}`;
     }
   }
 }
@@ -282,7 +290,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
 
         <section v-if="hasBoard" class="hud-card p-3.5" aria-labelledby="office-cardwall">
           <h2 id="office-cardwall" class="hud-title mb-2">Cardwall</h2>
-          <p class="text-xs text-muted">Sul muro in alto, accanto alla libreria: le card e gli impegni, con i filtri della pagina Cardwall.</p>
+          <p class="text-xs text-muted">Sul muro del corridoio, accanto alla libreria: le card e gli impegni, con i filtri della pagina Cardwall.</p>
           <div class="mt-2 flex flex-wrap gap-1.5">
             <button type="button" class="btn px-2.5 py-1 text-xs" @click="reach('cardwall')">Vai al cardwall</button>
             <button type="button" class="btn px-2.5 py-1 text-xs" aria-haspopup="dialog" @click="showCardwall = true">Apri subito</button>
@@ -291,7 +299,8 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
 
         <section v-if="archiveCount > 0 || showArchive" class="hud-card p-3.5" aria-labelledby="office-archive">
           <h2 id="office-archive" ref="archiveHeading" tabindex="-1" class="hud-title mb-2 outline-none">Archivio</h2>
-          <p v-if="archiveCount === 0" class="text-xs text-muted">Tutti i progetti approvati hanno un'isola.</p>
+          <p v-if="archiveCount === 0" class="text-xs text-muted">Tutti i progetti approvati hanno una stanza.</p>
+          <p v-else class="mb-2 text-xs text-muted">Hanno una stanza i progetti con una conversazione fissata, poi quelli attivi negli ultimi 7 giorni; gli altri sono qui.</p>
           <ul v-if="snapshot.archived.length > 0" class="flex flex-col gap-1.5 text-xs">
             <li v-for="(name, index) in snapshot.archived" :key="`${name}-${String(index)}`" class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate font-mono">{{ name }}</span>

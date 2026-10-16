@@ -20,7 +20,9 @@ export type OfficePlace =
   | { kind: 'private' }
   | { kind: 'island'; slot: number; seat?: number }
   | { kind: 'archive'; seat?: number }
-  | { kind: 'pause'; seat: number };
+  | { kind: 'pause'; seat: number }
+  /** Strolling (D-229): an idle agent walks to a point of the map's `strolls`, by index. */
+  | { kind: 'stroll'; spot: number };
 
 export interface OfficeAgent {
   id: string;
@@ -59,6 +61,14 @@ export interface OfficeInput {
   projects: readonly { name: string; path: string; label: string }[];
   /** Island slots of the map. */
   slots: number;
+  /**
+   * Which projects claim a room (D-229, the user's choice of 2026-10-15):
+   * pinned ones first, then those active in the last days (lib/office/rooms.ts);
+   * the others go behind the archive. Absent, every project claims one, in order.
+   */
+  claims?: ReadonlyMap<string, RoomClaim>;
+  /** Stroll points of the map (D-229): idle agents walk among them; 0 keeps them at the pause. */
+  strolls?: number;
   /** Recent activity kinds, any conversation. */
   activity: readonly ActivitySignal[];
   /** The conversations of the Coder's running delegations: their activity is his. */
@@ -86,6 +96,9 @@ export const QUOTA_PAUSE_MS = 60 * 60 * 1000;
  */
 export const WANDER_MS = 30_000;
 
+/** A room for a project (D-229): pinned by the user, or active lately. */
+export type RoomClaim = 'pinned' | 'active';
+
 /** The name of an agent the chat does not know: never its raw id. */
 export const UNKNOWN_AGENT = 'Agente';
 
@@ -98,10 +111,13 @@ const LABELS: readonly Label[] = ['L0', 'L1', 'L2', 'L3'];
  * reaches the office: only counted behind the archive, apart from the names
  * (so a real project named like a placeholder is never confused with one).
  */
-export function assignIslands(projects: OfficeInput['projects'], slots: number): { islands: OfficeIsland[]; archived: string[]; unnamed: number } {
+export function assignIslands(
+  projects: OfficeInput['projects'],
+  slots: number,
+  claims?: ReadonlyMap<string, RoomClaim>,
+): { islands: OfficeIsland[]; archived: string[]; unnamed: number } {
   const seen = new Set<string>();
-  const valid: OfficeIsland[] = [];
-  const archived: string[] = [];
+  const named: { name: string; label: Label; claim: RoomClaim | undefined }[] = [];
   let unnamed = 0;
   for (const listed of projects) {
     // The parts of a container (D-145, `<project>:<part>`) share the island of their project (D-127: GOD's clones).
@@ -113,8 +129,16 @@ export function assignIslands(projects: OfficeInput['projects'], slots: number):
       continue;
     }
     const label = LABELS.find((item) => item === project.label) ?? 'L2';
-    if (valid.length < slots) valid.push({ slot: valid.length, project: project.name, label });
-    else archived.push(project.name);
+    named.push({ name: project.name, label, claim: claims === undefined ? 'active' : claims.get(project.name) });
+  }
+  // Rooms (D-229): the pinned projects first, then the active ones, each in the order of arianna.toml; the rest behind the archive.
+  const rank = (claim: RoomClaim | undefined): number => (claim === 'pinned' ? 0 : claim === 'active' ? 1 : 2);
+  const ordered = named.map((item, index) => ({ ...item, index })).sort((a, b) => rank(a.claim) - rank(b.claim) || a.index - b.index);
+  const valid: OfficeIsland[] = [];
+  const archived: string[] = [];
+  for (const item of ordered) {
+    if (item.claim !== undefined && valid.length < slots) valid.push({ slot: valid.length, project: item.name, label: item.label });
+    else archived.push(item.name);
   }
   return { islands: valid, archived, unnamed };
 }
@@ -152,6 +176,21 @@ export function ariannaPlace(
   if (running) return run?.mode === 'work' ? placeOfRepo(run.repo, projects, islands) : { kind: 'private' };
   if (still || Math.floor(now / WANDER_MS) % 2 === 0) return { kind: 'private' };
   return { kind: 'pause', seat: pauseSeat() };
+}
+
+/**
+ * Where an idle agent goes (D-229, the user's choice: idle agents stroll):
+ * by the clock, turns of WANDER_MS, one turn in three at its own pause spot
+ * and the others at a stroll point, the next one each turn, never the same
+ * point as another agent's in the same turn; with reduced motion, or a map
+ * without stroll points, at its pause spot.
+ */
+export function idlePlace(index: number, input: Pick<OfficeInput, 'now' | 'still' | 'strolls'>): OfficePlace {
+  const points = input.strolls ?? 0;
+  if (input.still === true || points <= 0) return { kind: 'pause', seat: index };
+  const turn = Math.floor(input.now / WANDER_MS);
+  if ((turn + index) % 3 === 0) return { kind: 'pause', seat: index };
+  return { kind: 'stroll', spot: (turn + index) % points };
 }
 
 /** Same island or archive, second comer: the chair beside (Arianna is always the one who comes second). */
@@ -202,7 +241,7 @@ export function agentPose(
 }
 
 export function officeSnapshot(input: OfficeInput): OfficeSnapshot {
-  const { islands, archived, unnamed } = assignIslands(input.projects, input.slots);
+  const { islands, archived, unnamed } = assignIslands(input.projects, input.slots, input.claims);
   const coderSet = new Set(input.coderConversations);
   const ordered = [...input.agents].sort((a, b) => (a.id === 'arianna' ? -1 : b.id === 'arianna' ? 1 : a.id.localeCompare(b.id)));
   // Places: the other agents first, so that Arianna takes the pause seat and
@@ -211,19 +250,23 @@ export function officeSnapshot(input: OfficeInput): OfficeSnapshot {
   const places = new Map<string, OfficePlace>();
   // Each agent has its own pause spot, its place in this order: one that starts
   // or stops working never moves the others (the corner has a spot for each).
-  for (const [index, agent] of placing.entries()) {
-    const running = agent.state === 'thinking' || agent.state === 'working';
-    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => index));
-    else if (running) places.set(agent.id, placeOfRepo(agent.run?.repo ?? null, input.projects, islands));
-    else places.set(agent.id, { kind: 'pause', seat: index });
-  }
-  shareSeats(places, placing.map((agent) => agent.id));
-  const agents = ordered.map((agent): OfficeAgent => {
+  const poses = new Map<string, OfficePose>();
+  for (const agent of ordered) {
     const arianna = agent.id === 'arianna';
     const activity = latest(input.activity, input.now, (signal) => (arianna ? !coderSet.has(signal.conversationId) : coderSet.has(signal.conversationId)));
     const others = input.pending.total - input.pending.coder;
     const waits = arianna ? others > 0 : agent.id === 'coder' && input.pending.coder > 0;
-    const pose = agentPose(agent.state, activity, waits, input.quota[agent.id], input.now);
+    poses.set(agent.id, agentPose(agent.state, activity, waits, input.quota[agent.id], input.now));
+  }
+  for (const [index, agent] of placing.entries()) {
+    const running = agent.state === 'thinking' || agent.state === 'working';
+    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => index));
+    else if (running) places.set(agent.id, placeOfRepo(agent.run?.repo ?? null, input.projects, islands));
+    else places.set(agent.id, poses.get(agent.id) === 'idle' ? idlePlace(index, input) : { kind: 'pause', seat: index });
+  }
+  shareSeats(places, placing.map((agent) => agent.id));
+  const agents = ordered.map((agent): OfficeAgent => {
+    const pose = poses.get(agent.id) ?? 'idle';
     return {
       id: agent.id,
       name: knownAgentName(agent.id) ?? UNKNOWN_AGENT,
@@ -272,6 +315,8 @@ export function placeKey(place: OfficePlace): string {
       return place.seat === undefined ? 'archive' : `archive-${String(place.seat)}`;
     case 'pause':
       return `pause-${String(place.seat)}`;
+    case 'stroll':
+      return `stroll-${String(place.spot)}`;
     default:
       return place.kind;
   }

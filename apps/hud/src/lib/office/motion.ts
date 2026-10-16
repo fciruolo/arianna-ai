@@ -62,7 +62,7 @@ export function pauseSpot(map: OfficeMap, index: number): Point {
   const distance = (at: Point): number => Math.abs(at[0] - first[0]) + Math.abs(at[1] - first[1]);
   const from = reachable(map, map.anchors.entrance);
   // Never standing on a seat of another place, nor in the entrance, should the rooms touch.
-  const elsewhere: Point[] = [map.anchors.entrance, map.anchors.private.seat, map.anchors.archive.seat, ...map.anchors.islands.map((island) => island.seat)];
+  const elsewhere: Point[] = [map.anchors.entrance, map.anchors.private.seat, map.anchors.archive.seat, ...map.anchors.islands.map((island) => island.seat), ...map.anchors.strolls];
   const floor: Point[] = [];
   for (let r = room[1]; r <= room[3]; r++) {
     for (let c = room[0]; c <= room[2]; c++) {
@@ -91,7 +91,16 @@ export function seatOf(map: OfficeMap, place: OfficePlace): Point {
       return archive(place.seat ?? 0);
     case 'pause':
       return pauseSpot(map, place.seat);
+    case 'stroll':
+      return strollSpot(map, place.spot);
   }
+}
+
+/** A stroll point of the map (D-229), by index in turn; a map without them (format 1) strolls in the pause corner. */
+export function strollSpot(map: OfficeMap, spot: number): Point {
+  const points = map.anchors.strolls;
+  if (points.length === 0) return pauseSpot(map, spot);
+  return points[Math.max(0, spot) % points.length] ?? map.anchors.entrance;
 }
 
 export function seated(map: OfficeMap, place: OfficePlace): Actor {

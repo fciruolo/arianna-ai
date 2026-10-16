@@ -135,6 +135,24 @@ export function hintText(target: string, snapshot: Pick<OfficeSnapshot, 'agents'
   return `Parla con ${name}`;
 }
 
+/**
+ * The plan follows the user (D-229): the scale shows about VIEW_TILES tiles
+ * across the room the page gives (between 2 and 4, a whole number for crisp
+ * pixels); the window on the map is centred on the user and stops at its edges.
+ */
+export const VIEW_TILES = 22;
+
+export function officeScale(width: number, mapTiles: number): number {
+  const tiles = Math.max(1, Math.min(mapTiles, VIEW_TILES));
+  return Math.max(2, Math.min(4, Math.floor(width / (tiles * TILE))));
+}
+
+/** The offset of the window on one axis: 0 when the map fits, else centred on `at` and kept inside the map. */
+export function cameraOffset(view: number, world: number, at: number): number {
+  if (world <= view) return 0;
+  return Math.round(Math.max(0, Math.min(world - view, at - view / 2)));
+}
+
 /** The photograph as a key: the page makes a new one every second, the canvas wakes only when it differs. */
 export function snapshotKey(snapshot: OfficeSnapshot): string {
   return JSON.stringify(snapshot);

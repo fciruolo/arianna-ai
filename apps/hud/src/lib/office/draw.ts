@@ -1,4 +1,4 @@
-import { isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
+import { doorAcross, isWall, TILE, tileAt, type Desk, type OfficeMap, type Point, type Room } from './map.ts';
 import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import type { Bubble } from './snapshot.ts';
 
@@ -150,18 +150,37 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   rug(anchors.pause.room, C['rug-neutral']);
   rug(anchors.decisions.room, C['rug-neutral']);
   rug(anchors.archive.room, C['rug-neutral']);
-  // Michael's glass office around the private island, open towards the floor (D-216).
-  if (skin === 'ufficio') {
-    const [c0, r0, c1, r1] = anchors.private.room;
-    const x0 = c0 * TILE;
-    const y0 = r0 * TILE;
-    const x1 = (c1 + 1) * TILE - 1;
-    const y1 = (r1 + 1) * TILE - 1;
-    rect(I.glass, x1 - 1, y0, 2, y1 - y0 - TILE);
-    rect(I.glass, x0, y1 - 1, x1 - x0 - TILE * 2, 2);
-    for (let y = y0; y < y1 - TILE; y += TILE) rect(C.outline, x1 - 1, y, 2, 2);
-    for (let x = x0; x < x1 - TILE * 2; x += TILE) rect(C.outline, x, y1 - 1, 2, 2);
-  }
+  /**
+   * A door (D-229): an opening in the wall, the floor seen through it, the
+   * wall's top over it as a lintel, the jambs where the wall goes on and the
+   * line at the foot of the wall carried across as a threshold.
+   */
+  const door = (c: number, r: number, x: number, y: number): void => {
+    if (doorAcross(map, c, r) === 'vertical') {
+      rect(C['wall-top'], x, y, 2, TILE);
+      rect(C['wall-top'], x + TILE - 2, y, 2, TILE);
+      return;
+    }
+    // The opening: the floor in the shade of the lintel, the lintel, the jambs.
+    rect(C['floor-alt'], x, y + 4, TILE, 5);
+    rect(C['wall-top'], x, y, TILE, 4);
+    rect(C.outline, x, y + 4, TILE, 1);
+    if (tileAt(map, c - 1, r) !== 'door') {
+      rect(C.outline, x, y, 1, TILE);
+      rect(C['wall-face'], x + 1, y + 1, 3, TILE - 1);
+      rect(C.outline, x + 4, y + 4, 1, TILE - 4);
+      // The leaf, open against the jamb.
+      rect(C.outline, x + 5, y + 5, 4, 10);
+      rect(C.desk, x + 6, y + 6, 2, 8);
+      rect(C['desk-top'], x + 6, y + 9, 1, 1);
+    }
+    if (tileAt(map, c + 1, r) !== 'door') {
+      rect(C.outline, x + TILE - 1, y, 1, TILE);
+      rect(C['wall-face'], x + TILE - 4, y + 1, 3, TILE - 1);
+      rect(C.outline, x + TILE - 5, y + 4, 1, TILE - 4);
+    }
+    rect(C['wall-line'], x, y + TILE - 2, TILE, 2);
+  };
 
   // Walls: a face where the floor is below, the top elsewhere; windows, a shelf and the cardwall on the faces.
   // The cardwall spans its run: drawn after every face, which would cover it.
@@ -169,12 +188,19 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   for (let r = 0; r < map.height; r++) {
     for (let c = 0; c < map.width; c++) {
       const kind = tileAt(map, c, r);
-      if (!isWall(kind)) continue;
       const x = c * TILE;
       const y = r * TILE;
+      if (kind === 'door') {
+        door(c, r, x, y);
+        continue;
+      }
+      if (!isWall(kind)) continue;
       const below = tileAt(map, c, r + 1);
       if (below === undefined || isWall(below)) {
         rect(C['wall-top'], x, y, TILE, TILE);
+        // The edge of a wall seen from above, where the floor is beside it (D-229: the walls of the rooms).
+        if (!isWall(tileAt(map, c - 1, r)) && tileAt(map, c - 1, r) !== undefined) rect(C['wall-line'], x, y, 1, TILE);
+        if (!isWall(tileAt(map, c + 1, r)) && tileAt(map, c + 1, r) !== undefined) rect(C['wall-line'], x + TILE - 1, y, 1, TILE);
         continue;
       }
       rect(C['wall-face'], x, y, TILE, TILE);

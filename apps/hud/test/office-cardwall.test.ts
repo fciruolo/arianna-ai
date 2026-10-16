@@ -28,7 +28,7 @@ import { boardTag, closestTarget, hintText, hitsBoard, type Target } from '../sr
 
 /** The cardwall in the office (I-13 tappa C4, D-165). */
 
-const TEXT = readFileSync(join(import.meta.dirname, '../src/office/maps/base.json'), 'utf8');
+const TEXT = readFileSync(join(import.meta.dirname, 'support/office-open-plan.json'), 'utf8');
 const BASE = JSON.parse(TEXT) as Record<string, unknown> & { rows: string[]; legend: Record<string, string> };
 
 function variant(change: (copy: typeof BASE) => void): unknown {

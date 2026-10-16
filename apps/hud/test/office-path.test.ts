@@ -8,7 +8,7 @@ import { advance, followPath, pauseSpot, retarget, seated, seatOf, walkFrame } f
 import { canStand, findPath, moveFree, tilesNear, tileOf } from '../src/lib/office/path.ts';
 
 function base(): OfficeMap {
-  const result = parseMapText(readFileSync(join(import.meta.dirname, '../src/office/maps/base.json'), 'utf8'));
+  const result = parseMapText(readFileSync(join(import.meta.dirname, 'support/office-open-plan.json'), 'utf8'));
   if (!result.ok) throw new Error(result.reason);
   return result.map;
 }

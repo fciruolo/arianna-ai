@@ -9,7 +9,7 @@ import type { OfficeSnapshot } from '../src/lib/office/snapshot.ts';
 import { archiveCount, areaTags, hitsArchive, isShortcut, keepDrawing, nameTagTop, snapshotKey } from '../src/lib/office/view.ts';
 
 function base(): OfficeMap {
-  const result = parseMapText(readFileSync(join(import.meta.dirname, '../src/office/maps/base.json'), 'utf8'));
+  const result = parseMapText(readFileSync(join(import.meta.dirname, 'support/office-open-plan.json'), 'utf8'));
   if (!result.ok) throw new Error(result.reason);
   return result.map;
 }

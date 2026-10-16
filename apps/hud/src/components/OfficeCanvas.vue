@@ -16,6 +16,7 @@ import {
   decisionsPoint,
   DESK_TALK_REACH,
   DESK_WALK_REACH,
+  inRoom,
   TALK_REACH,
   TILE,
   tileCenter,
@@ -23,12 +24,25 @@ import {
   WALK_REACH,
   type OfficeMap,
   type Point,
-  type Room,
 } from '../lib/office/map.ts';
 import { advance, followPath, retarget, seated, walkFrame, type Actor, type Facing } from '../lib/office/motion.ts';
 import { findPath, moveFree, tileOf } from '../lib/office/path.ts';
 import { bubbleOf, POSE_SHORT, type OfficeSnapshot } from '../lib/office/snapshot.ts';
-import { areaTags, boardTag, closestTarget, hintText, hitsArchive, hitsBoard, isShortcut, keepDrawing, nameTagTop, snapshotKey, type Target } from '../lib/office/view.ts';
+import {
+  areaTags,
+  boardTag,
+  cameraOffset,
+  closestTarget,
+  hintText,
+  hitsArchive,
+  hitsBoard,
+  isShortcut,
+  keepDrawing,
+  nameTagTop,
+  officeScale,
+  snapshotKey,
+  type Target,
+} from '../lib/office/view.ts';
 import { frameAt, poseFrames, type Pose } from '../lib/sprites.ts';
 import type { CharacterChoice, Label } from '../lib/types.ts';
 
@@ -55,7 +69,12 @@ const W = props.map.width * TILE;
 const H = props.map.height * TILE;
 const canvas = ref<HTMLCanvasElement | null>(null);
 const wrap = ref<HTMLElement | null>(null);
+/** The map with its tags, moved under the window to follow the user (D-229). */
+const stage = ref<HTMLElement | null>(null);
 const scale = ref(2);
+/** The window on the map, in CSS pixels: the whole map when it fits. */
+const viewW = ref(W * 2);
+const viewH = ref(H * 2);
 /** The name tags of the agents, by id: written every frame, outside Vue's reactivity. */
 const nameTags = new Map<string, HTMLElement>();
 const youTag = ref<HTMLElement | null>(null);
@@ -352,6 +371,18 @@ function render(): void {
     }
   }
   place(youTag.value, you.x, you.y + 2, 'below');
+  follow();
+}
+
+/** The window follows the user (D-229): the stage moves, the canvas never scrolls. */
+function follow(): void {
+  const element = stage.value;
+  if (element === null) return;
+  const s = scale.value;
+  const x = cameraOffset(viewW.value, W * s, you.x * s);
+  const y = cameraOffset(viewH.value, H * s, (you.y - 12) * s);
+  const transform = `translate(${String(-x)}px, ${String(-y)}px)`;
+  if (element.style.transform !== transform) element.style.transform = transform;
 }
 
 function loop(time: number): void {
@@ -432,9 +463,6 @@ function onFocusChange(): void {
   wake();
 }
 
-function inside(room: Room, c: number, r: number): boolean {
-  return c >= room[0] && c <= room[2] && r >= room[1] && r <= room[3];
-}
 
 function onClick(event: MouseEvent): void {
   const element = canvas.value;
@@ -466,7 +494,7 @@ function onClick(event: MouseEvent): void {
     goTo('cardwall');
     return;
   }
-  if (inside([0, 0, props.map.width - 1, props.map.height - 1], c, r)) walkTo([c, r]);
+  if (inRoom([0, 0, props.map.width - 1, props.map.height - 1], c, r)) walkTo([c, r]);
 }
 
 function readTheme(): void {
@@ -498,8 +526,9 @@ function onMotion(event: MediaQueryListEvent): void {
 let resize: ResizeObserver | undefined;
 function fit(): void {
   const width = wrap.value?.clientWidth ?? W * 2;
-  const byHeight = Math.floor((window.innerHeight - 140) / H);
-  scale.value = Math.max(1, Math.min(4, Math.floor(width / W), Math.max(2, byHeight)));
+  scale.value = officeScale(width, props.map.width);
+  viewW.value = Math.min(W * scale.value, width);
+  viewH.value = Math.min(H * scale.value, Math.max(16 * 12, window.innerHeight - 160));
   wake();
 }
 
@@ -555,41 +584,44 @@ defineExpose({ goTo, focus });
 
 <template>
   <div ref="wrap" class="min-w-0">
-    <div class="relative mx-auto overflow-hidden rounded-md border border-line-strong" :style="{ width: `${String(W * scale)}px` }">
-      <canvas
-        ref="canvas"
-        :width="W"
-        :height="H"
-        tabindex="0"
-        role="application"
-        aria-roledescription="ufficio"
-        aria-label="Ufficio: frecce o W A S D per camminare, E o Invio vicino a un agente per parlarci, vicino alla scrivania Decisioni per aprirle, vicino al cardwall per aprirlo, Esc per uscire"
-        aria-describedby="office-help office-keys"
-        class="office-canvas pixelated block cursor-pointer"
-        :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }"
-        @keydown="onKeydown"
-        @focus="onFocusChange"
-        @blur="onFocusChange"
-        @click="onClick"
-      />
-      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-        <span
-          v-for="(tag, index) in tags"
-          :key="index"
-          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
-          :class="tag.muted ? 'text-muted' : 'text-ink'"
-          :style="{ transform: `translate(${String(tag.x * scale)}px, ${String(tag.y * scale)}px) translateY(-100%)` }"
-        >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
-        <span
-          v-for="agent in snapshot.agents"
-          :key="agent.id"
-          :ref="(element) => { setNameTag(agent.id, element); }"
-          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+    <!-- overflow-clip, not hidden: focusing the canvas must never scroll the window on the map (D-229). -->
+    <div class="relative mx-auto overflow-clip rounded-md border border-line-strong" :style="{ width: `${String(viewW)}px`, height: `${String(viewH)}px` }">
+      <div ref="stage" class="absolute top-0 left-0" :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }">
+        <canvas
+          ref="canvas"
+          :width="W"
+          :height="H"
+          tabindex="0"
+          role="application"
+          aria-roledescription="ufficio"
+          aria-label="Ufficio: frecce o W A S D per camminare, E o Invio vicino a un agente per parlarci, vicino alla scrivania Decisioni per aprirle, vicino al cardwall per aprirlo, Esc per uscire"
+          aria-describedby="office-help office-keys"
+          class="office-canvas pixelated block cursor-pointer"
+          :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }"
+          @keydown="onKeydown"
+          @focus="onFocusChange"
+          @blur="onFocusChange"
+          @click="onClick"
         />
-        <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap">Tu</span>
-        <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
-          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
-        </span>
+        <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+          <span
+            v-for="(tag, index) in tags"
+            :key="index"
+            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+            :class="tag.muted ? 'text-muted' : 'text-ink'"
+            :style="{ transform: `translate(${String(tag.x * scale)}px, ${String(tag.y * scale)}px) translateY(-100%)` }"
+          >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
+          <span
+            v-for="agent in snapshot.agents"
+            :key="agent.id"
+            :ref="(element) => { setNameTag(agent.id, element); }"
+            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+          />
+          <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap">Tu</span>
+          <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
+            <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
+          </span>
+        </div>
       </div>
     </div>
   </div>

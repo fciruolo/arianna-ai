@@ -30,7 +30,7 @@ function scene(skin: OfficeSkin | undefined, mode: 'dark' | 'light'): Scene {
     colors: skinColors(colorsOf(css, mode, COLOR_TOKENS, THEME_TOKENS), skin ?? 'base'),
     now: 0,
     reduceMotion: true,
-    islandRugs: ['l1', 'l2', null, null, null],
+    islandRugs: ['l1', 'l2', null, null, null, null],
     screens: new Set(['3,3']),
     figures: [],
     decisionsWaiting: true,
@@ -47,10 +47,11 @@ test('the theme chooses the place: Scrubs the Sacro Cuore, The Office the Dunder
   for (const other of [undefined, 'base', 'natale', 'Corsia', '', 'constructor']) assert.equal(skinOfTheme(other), 'base', String(other));
 });
 
-test('Base is drawn as before, pixel for pixel, with or without the skin named (D-216)', () => {
-  // The drawing of main before D-216, measured on the same canvas. Measure them again (and say why in the
+test('Base is drawn the same, pixel for pixel, with or without the skin named (D-216, D-229)', () => {
+  // The drawing of the base office, measured on the same canvas. Measure them again (and say why in the
   // commit) only when the base office changes on purpose: the --office-* colours of style.css or base.json.
-  const before = { dark: '4fc3614b0ad84a569bb8c01ef202a8633e4309b57a2184ef716e03125c007c19', light: '3173e6746a861727fc3d08c303625d5268261a567682d2558c061c7cd8f27d5f' };
+  // Measured again for D-229: the base office with rooms, walls and doors.
+  const before = { dark: '16a3fac0d63551d8f94e6fafe89b08ba53dcc2f42c250f51a28e385ef86913c3', light: '742d5163ae6fe760e9644fe48ab83d106d46f2c94e2508a7c7f319ff7e3c5bce' };
   for (const mode of ['dark', 'light'] as const) {
     assert.equal(sha(rasterize(scene(undefined, mode)).rgba), before[mode], mode);
     assert.equal(sha(rasterize(scene('base', mode)).rgba), before[mode], mode);
@@ -103,8 +104,8 @@ test('a place whose map does not pass falls back on the base map with its colour
   assert.ok(none.problem !== null);
   const both = officeMapOf('ufficio', { ...TEXTS, base: 'nope', ufficio: 'nope' });
   assert.deepEqual([both.map, both.fallback], [null, true]);
-  // A map with an unreachable seat is refused like any other (the validator of D-106).
-  const walled = TEXTS.ufficio.replace('"#.DDD....DDD....DDD..#",\n    "#....................#",\n    "#....................#",\n    "#A', '"#.DDD....DDD....DDD..#",\n    "######################",\n    "#....................#",\n    "#A');
+  // A map whose private room lost its door is refused like any other (the validator of D-106, D-229).
+  const walled = TEXTS.ufficio.replace('"#WWOOTTTTBOO', '"#WW##TTTTBOO');
   assert.notEqual(walled, TEXTS.ufficio);
   assert.equal(officeMapOf('ufficio', { ...TEXTS, ufficio: walled }).fallback, true);
 });

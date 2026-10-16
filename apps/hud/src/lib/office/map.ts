@@ -9,6 +9,13 @@
  * engine draws: the seat of an island just above its desk, the archive seat
  * just below a cabinet. A map may hang the cardwall on a wall (D-165): the
  * `board` tiles, one run of 1 to MAX_BOARD in a row, above the floor.
+ *
+ * Two forms (D-229): format 1 is the open plan of stage 1 (islands on one
+ * floor); format 2 has rooms. In format 2 the private room and every project
+ * room are closed by walls with at least one `door` reached from the
+ * entrance, their desk and seat inside; the other areas (Decisioni, pause,
+ * archive) keep their furniture inside their own rectangle, no two areas
+ * overlap, and `strolls` lists where idle agents walk to, outside the rooms.
  */
 
 export const TILE = 16;
@@ -18,6 +25,8 @@ export const MAX_BYTES = 16 * 1024;
 export const MAX_ISLANDS = 12;
 export const MIN_ISLANDS = 2;
 export const MAX_PAUSE_SEATS = 6;
+/** Where idle agents stroll to (D-229, format 2). */
+export const MAX_STROLLS = 12;
 /** Solid furniture tiles (walls apart): a map is a room, not a warehouse. */
 export const MAX_FURNITURE = 200;
 
@@ -34,7 +43,7 @@ export const DESK_TALK_REACH = 30;
 /** Closer than this a tile is under the thing itself: not a place to stand next to it. */
 export const MIN_REACH = 9;
 
-export const TILE_KINDS = ['wall', 'window', 'shelf', 'board', 'floor', 'desk', 'counter', 'sofa', 'coffee', 'plant', 'cabinet'] as const;
+export const TILE_KINDS = ['wall', 'window', 'shelf', 'board', 'floor', 'door', 'desk', 'counter', 'sofa', 'coffee', 'plant', 'cabinet'] as const;
 export type TileKind = (typeof TILE_KINDS)[number];
 
 /** The cardwall on the wall (D-165): at most this many tiles, in one row. */
@@ -56,7 +65,8 @@ export interface Island {
 }
 
 export interface OfficeMap {
-  format: 1;
+  /** 1 the open plan, 2 rooms with walls and doors (D-229). */
+  format: 1 | 2;
   id: string;
   width: number;
   height: number;
@@ -69,6 +79,8 @@ export interface OfficeMap {
     decisions: { room: Room; desk: Desk };
     pause: { room: Room; seats: readonly Point[] };
     archive: { room: Room; seat: Point };
+    /** Where idle agents stroll to (D-229); none in format 1, where they stroll in the pause corner. */
+    strolls: readonly Point[];
   };
 }
 
@@ -81,8 +93,10 @@ export function tileAt(map: Pick<OfficeMap, 'width' | 'height' | 'tiles'>, c: nu
   return map.tiles[r * map.width + c];
 }
 
+/** Floor and doors (D-229): where a walker may step. */
 export function isWalkable(map: Pick<OfficeMap, 'width' | 'height' | 'tiles'>, c: number, r: number): boolean {
-  return tileAt(map, c, r) === 'floor';
+  const kind = tileAt(map, c, r);
+  return kind === 'floor' || kind === 'door';
 }
 
 export function isWall(kind: TileKind | undefined): boolean {
@@ -187,7 +201,8 @@ export function parseMap(raw: unknown): MapResult {
 
 function check(raw: unknown): OfficeMap {
   const top = closed(raw, ['format', 'id', 'size', 'rows', 'legend', 'anchors'], 'mappa');
-  if (top.format !== 1) throw new MapError('formato sconosciuto: serve «format»: 1');
+  if (top.format !== 1 && top.format !== 2) throw new MapError('formato sconosciuto: serve «format»: 1 o 2');
+  const format = top.format;
   if (typeof top.id !== 'string' || !ID.test(top.id)) throw new MapError('«id» deve avere solo minuscole, cifre e trattini');
   const [width = 0, height = 0] = ints(top.size, 2, 'size');
   if (width < 4 || height < 4 || width > MAX_WIDTH || height > MAX_HEIGHT) {
@@ -200,6 +215,7 @@ function check(raw: unknown): OfficeMap {
     if (Array.from(letter).length !== 1) throw new MapError(`la chiave «${letter}» di «legend» deve essere un solo carattere`);
     const known = TILE_KINDS.find((item) => item === kind);
     if (known === undefined) throw new MapError(`tessera sconosciuta per «${letter}»`);
+    if (known === 'door' && format === 1) throw new MapError('la tessera «door» serve il formato 2');
     legend.set(letter, known);
   }
 
@@ -213,10 +229,10 @@ function check(raw: unknown): OfficeMap {
       tiles.push(kind);
     }
   });
-  const furniture = tiles.filter((kind) => kind !== 'floor' && !isWall(kind)).length;
+  const furniture = tiles.filter((kind) => kind !== 'floor' && kind !== 'door' && !isWall(kind)).length;
   if (furniture > MAX_FURNITURE) throw new MapError(`troppi arredi (${String(furniture)}, al massimo ${String(MAX_FURNITURE)})`);
 
-  const a = closed(top.anchors, ['entrance', 'private', 'islands', 'decisions', 'pause', 'archive'], 'anchors');
+  const a = closed(top.anchors, format === 2 ? [...ANCHORS, 'strolls'] : ANCHORS, 'anchors');
   if (!Array.isArray(a.islands)) throw new MapError('«islands» deve essere una lista');
   if (a.islands.length < MIN_ISLANDS || a.islands.length > MAX_ISLANDS) {
     throw new MapError(`servono da ${String(MIN_ISLANDS)} a ${String(MAX_ISLANDS)} isole`);
@@ -227,8 +243,15 @@ function check(raw: unknown): OfficeMap {
   if (!Array.isArray(pauseRaw.seats) || pauseRaw.seats.length < 1 || pauseRaw.seats.length > MAX_PAUSE_SEATS) {
     throw new MapError(`«pause.seats» deve avere da 1 a ${String(MAX_PAUSE_SEATS)} posti`);
   }
+  let strolls: Point[] = [];
+  if (format === 2) {
+    if (!Array.isArray(a.strolls) || a.strolls.length < 1 || a.strolls.length > MAX_STROLLS) {
+      throw new MapError(`«strolls» deve avere da 1 a ${String(MAX_STROLLS)} punti`);
+    }
+    strolls = a.strolls.map((item: unknown, index) => point(item, `strolls[${String(index)}]`));
+  }
   const map: OfficeMap = {
-    format: 1,
+    format,
     id: top.id,
     width,
     height,
@@ -240,20 +263,26 @@ function check(raw: unknown): OfficeMap {
       decisions: { room: room(decisionsRaw.room, 'decisions.room', width, height), desk: desk(decisionsRaw.desk, 'decisions.desk') },
       pause: { room: room(pauseRaw.room, 'pause.room', width, height), seats: pauseRaw.seats.map((item: unknown, index) => point(item, `pause.seats[${String(index)}]`)) },
       archive: { room: room(archiveRaw.room, 'archive.room', width, height), seat: point(archiveRaw.seat, 'archive.seat') },
+      strolls,
     },
   };
+  // The rooms first (D-229): a closed room without a door says so, not that its seat cannot be reached.
+  if (format === 2) checkRooms(map);
   checkPlaces(map);
   return map;
 }
 
+const ANCHORS = ['entrance', 'private', 'islands', 'decisions', 'pause', 'archive'] as const;
+
 /** Desks on furniture, seats on the floor next to their furniture, each seat reached from the entrance, no seat shared. */
 function checkPlaces(map: OfficeMap): void {
   const { anchors } = map;
-  if (!isWalkable(map, ...anchors.entrance)) throw new MapError('l\'ingresso deve essere su una tessera calpestabile');
+  if (tileAt(map, ...anchors.entrance) !== 'floor') throw new MapError('l\'ingresso deve essere su una tessera calpestabile');
   const from = reachable(map, anchors.entrance);
   const taken = new Set<number>();
   const seat = (where: string, at: Point, next: (c: number, r: number) => boolean): void => {
     if (!isWalkable(map, ...at)) throw new MapError(`il posto «${where}» deve essere su una tessera calpestabile`);
+    if (tileAt(map, ...at) === 'door') throw new MapError(`il posto «${where}» non può stare su una porta`);
     if (!NEIGHBOURS.some(([dc, dr]) => next(at[0] + dc, at[1] + dr))) throw new MapError(`il posto «${where}» non è accanto al suo arredo`);
     const key = at[1] * map.width + at[0];
     if (taken.has(key)) throw new MapError(`il posto «${where}» è già di un altro`);
@@ -305,6 +334,85 @@ function checkBoard(map: OfficeMap, withinReach: (where: string, at: Point, reac
   if (tiles.some(([c, r]) => tileAt(map, c, r + 1) === undefined || isWall(tileAt(map, c, r + 1)))) throw new MapError('sotto il cardwall serve la stanza, non un muro');
   const point = boardPoint(map);
   if (point !== null) withinReach('il cardwall', point, WALK_REACH);
+}
+
+/** A tile inside a rectangle, edges included. */
+export function inRoom(room: Room, c: number, r: number): boolean {
+  return c >= room[0] && c <= room[2] && r >= room[1] && r <= room[3];
+}
+
+/** The tiles around a room, corners included: its walls and doors in format 2. */
+export function ringTiles(room: Room): Point[] {
+  const [c0, r0, c1, r1] = room;
+  const ring: Point[] = [];
+  for (let c = c0 - 1; c <= c1 + 1; c++) ring.push([c, r0 - 1], [c, r1 + 1]);
+  for (let r = r0; r <= r1; r++) ring.push([c0 - 1, r], [c1 + 1, r]);
+  return ring;
+}
+
+/** A door stands in a wall: walls or doors on both sides, left and right or above and below. */
+export function doorAcross(map: Pick<OfficeMap, 'width' | 'height' | 'tiles'>, c: number, r: number): 'horizontal' | 'vertical' | null {
+  const closes = (kind: TileKind | undefined): boolean => isWall(kind) || kind === 'door';
+  if (closes(tileAt(map, c - 1, r)) && closes(tileAt(map, c + 1, r))) return 'horizontal';
+  if (closes(tileAt(map, c, r - 1)) && closes(tileAt(map, c, r + 1))) return 'vertical';
+  return null;
+}
+
+/**
+ * The rules of the rooms (D-229, format 2): the private room and each project
+ * room closed by walls and doors, with a door reached from the entrance, desk
+ * and seat inside; every area's furniture inside its rectangle; no two areas
+ * overlapping; doors standing in a wall; stroll points on the floor, reached,
+ * outside the rooms and off every seat.
+ */
+function checkRooms(map: OfficeMap): void {
+  const { anchors } = map;
+  if (tileAt(map, ...anchors.entrance) !== 'floor') throw new MapError('l\'ingresso deve essere su una tessera calpestabile');
+  const from = reachable(map, anchors.entrance);
+  const areas: { where: string; room: Room }[] = [
+    { where: 'private', room: anchors.private.room },
+    ...anchors.islands.map((item, index) => ({ where: `islands[${String(index)}]`, room: item.room })),
+    { where: 'decisions', room: anchors.decisions.room },
+    { where: 'pause', room: anchors.pause.room },
+    { where: 'archive', room: anchors.archive.room },
+  ];
+  areas.forEach((a, i) => {
+    for (const b of areas.slice(i + 1)) {
+      const apart = a.room[2] < b.room[0] || b.room[2] < a.room[0] || a.room[3] < b.room[1] || b.room[3] < a.room[1];
+      if (!apart) throw new MapError(`le stanze «${a.where}» e «${b.where}» si sovrappongono`);
+    }
+  });
+  const closedRoom = (where: string, item: Island): void => {
+    for (const [c, r] of [item.seat, ...deskTiles(item.desk)]) if (!inRoom(item.room, c, r)) throw new MapError(`scrivania e posto di «${where}» devono stare dentro la sua stanza`);
+    const ring = ringTiles(item.room);
+    if (ring.some(([c, r]) => { const kind = tileAt(map, c, r); return kind !== 'door' && !isWall(kind); })) throw new MapError(`la stanza «${where}» non è chiusa da muri e porte`);
+    const doors = ring.filter(([c, r]) => tileAt(map, c, r) === 'door');
+    if (doors.length === 0) throw new MapError(`la stanza «${where}» non ha una porta`);
+    if (!doors.some(([c, r]) => from.has(r * map.width + c))) throw new MapError(`nessuna porta della stanza «${where}» si raggiunge dall'ingresso`);
+  };
+  closedRoom('private', anchors.private);
+  anchors.islands.forEach((item, index) => {
+    closedRoom(`islands[${String(index)}]`, item);
+  });
+  if (!deskTiles(anchors.decisions.desk).every(([c, r]) => inRoom(anchors.decisions.room, c, r))) throw new MapError('la scrivania Decisioni deve stare dentro la sua stanza');
+  if (!anchors.pause.seats.every(([c, r]) => inRoom(anchors.pause.room, c, r))) throw new MapError('i posti della Pausa devono stare dentro la sua stanza');
+  if (!inRoom(anchors.archive.room, ...anchors.archive.seat)) throw new MapError('il posto dell\'Archivio deve stare dentro la sua stanza');
+  map.tiles.forEach((kind, index) => {
+    const c = index % map.width;
+    const r = Math.floor(index / map.width);
+    if (kind === 'door' && doorAcross(map, c, r) === null) throw new MapError(`la porta in ${String(c)},${String(r)} non sta in un muro`);
+  });
+  const seats = [anchors.entrance, anchors.private.seat, anchors.archive.seat, ...anchors.islands.map((item) => item.seat), ...anchors.pause.seats];
+  const projectRooms = [anchors.private.room, ...anchors.islands.map((item) => item.room)];
+  const taken = new Set<number>();
+  anchors.strolls.forEach(([c, r], index) => {
+    const where = `strolls[${String(index)}]`;
+    if (tileAt(map, c, r) !== 'floor') throw new MapError(`il punto «${where}» deve essere sul pavimento`);
+    if (!from.has(r * map.width + c)) throw new MapError(`il punto «${where}» non si raggiunge dall'ingresso`);
+    if (projectRooms.some((room) => inRoom(room, c, r))) throw new MapError(`il punto «${where}» non può stare in una stanza di progetto né in Privata`);
+    if (seats.some((at) => at[0] === c && at[1] === r) || taken.has(r * map.width + c)) throw new MapError(`il punto «${where}» è già un posto`);
+    taken.add(r * map.width + c);
+  });
 }
 
 /** The tiles of the cardwall on the wall (D-165), left to right; none in a map without it. */
@@ -383,5 +491,5 @@ export function tileCenter(at: Point): Point {
 export function seatFace(map: Pick<OfficeMap, 'width' | 'height' | 'tiles'>, at: Point): 'down' | 'up' {
   const above = tileAt(map, at[0], at[1] - 1);
   if (tileAt(map, at[0], at[1] + 1) === 'desk' || above === 'sofa') return 'down';
-  return above !== undefined && above !== 'floor' && !isWall(above) ? 'up' : 'down';
+  return above !== undefined && above !== 'floor' && above !== 'door' && !isWall(above) ? 'up' : 'down';
 }

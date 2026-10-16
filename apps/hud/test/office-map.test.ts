@@ -23,7 +23,7 @@ import {
   type OfficeMap,
 } from '../src/lib/office/map.ts';
 
-const TEXT = readFileSync(join(import.meta.dirname, '../src/office/maps/base.json'), 'utf8');
+const TEXT = readFileSync(join(import.meta.dirname, 'support/office-open-plan.json'), 'utf8');
 const BASE = JSON.parse(TEXT) as Record<string, unknown> & { rows: string[]; anchors: Record<string, unknown>; legend: Record<string, string> };
 
 /** A copy of the base map with a change. */
@@ -50,10 +50,10 @@ function refused(raw: unknown, reason: RegExp): void {
   assert.match('reason' in result ? result.reason : '', reason);
 }
 
-test('the base map is valid, with id "base", five island slots and the anchors', () => {
+test('the open plan of format 1 is valid, with five island slots and the anchors', () => {
   const map = valid(JSON.parse(TEXT));
   assert.equal(parseMapText(TEXT).ok, true);
-  assert.equal(map.id, 'base');
+  assert.equal(map.id, 'open-plan');
   assert.equal(map.anchors.islands.length, 5);
   assert.equal(tileAt(map, 0, 0), 'wall');
   assert.equal(tileAt(map, 3, 4), 'desk');
@@ -79,7 +79,7 @@ test('a seat is drawn behind its desk, on the sofa, or in its tile; and faces it
 test('the validator refuses unknown keys, a wrong format and a free id', () => {
   refused(variant((copy) => { copy.title = 'Ufficio'; }), /chiave sconosciuta «title»/);
   refused(variant((copy) => { copy.anchors.extra = [1, 1]; }), /chiave sconosciuta «extra»/);
-  refused(variant((copy) => { copy.format = 2; }), /formato/);
+  refused(variant((copy) => { copy.format = 3; }), /formato/);
   refused(variant((copy) => { copy.id = 'Il mio ufficio'; }), /«id»/);
   refused(variant((copy) => { delete copy.anchors.archive; }), /manca «archive»/);
 });

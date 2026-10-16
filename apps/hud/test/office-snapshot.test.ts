@@ -239,7 +239,7 @@ test('bubbles: "…" thinks, "!" waits, "zZ" paused, none while walking', () => 
 const ALLOWED: Record<string, readonly string[]> = {
   snapshot: ['agents', 'islands', 'archived', 'unnamed', 'decisions'],
   agent: ['id', 'name', 'pose', 'place', 'locality'],
-  place: ['kind', 'slot', 'seat'],
+  place: ['kind', 'slot', 'seat', 'spot'],
   island: ['slot', 'project', 'label'],
   decisions: ['total', 'hidden'],
 };
