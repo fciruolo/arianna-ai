@@ -49,7 +49,7 @@ export type TileWidth = 'narrow' | 'wide';
 export type RefreshState = 'idle' | 'running' | 'failed';
 /** Why a refresh failed, as the tile and the event carry it: a closed list, never a text. */
 export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost' | 'chart';
-/** A tile shows its answer in words or as a chart (D-248, migration 0077). */
+/** A tile shows its answer in words or as a chart (D-248, migration 0076). */
 export type TileKind = 'text' | 'chart';
 export const TILE_KINDS: readonly TileKind[] = ['text', 'chart'];
 export type AnsweredBy = 'local' | 'claude' | 'codex';

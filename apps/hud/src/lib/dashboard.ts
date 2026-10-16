@@ -12,7 +12,7 @@ export type TileWidth = 'narrow' | 'wide';
 export type RefreshState = 'idle' | 'running' | 'failed';
 export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost' | 'chart';
 export type AnsweredBy = 'local' | 'claude' | 'codex';
-/** A tile shows its answer in words or as a chart (migration 0077). */
+/** A tile shows its answer in words or as a chart (migration 0076). */
 export type TileKind = 'text' | 'chart';
 
 /** A tile as GET /api/dashboard/tiles gives it (dates as text). */

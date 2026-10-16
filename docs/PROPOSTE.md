@@ -2569,4 +2569,4 @@ Decisione registrata come D-248 in `docs/DECISIONS.md`; costruita sul ramo `task
 - Il nome per l'utente diventa **«Dashboard»** (voce nella barra, titolo, «Fissa alla Dashboard», indirizzo `/dashboard`; `/cruscotto` vi rimanda).
 - **La domanda si modifica dalla Dashboard**: menu ⋯ → «Modifica la domanda», con «Salva», «Salva e aggiorna» e «Annulla»; l'etichetta resta quella che è.
 - **Grafici**: un riquadro può essere «Testo» o «Grafico»; per un grafico il modello locale scrive i dati in una forma chiusa (barre, linee o torta), il core li controlla, la pagina li disegna coi colori del tema e mostra la tabella dei dati a richiesta; se i dati non sono validi il riquadro tiene il grafico di prima e offre «Riprova».
-- Costruito sul ramo `task/d248-cruscotto` con la migrazione `0077`; registrato in D-248.
+- Costruito sul ramo `task/d248-cruscotto` con la migrazione `0077`, poi rinumerata in `0076` per l'ordine delle unioni; registrato in D-248.
