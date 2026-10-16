@@ -4,15 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
-### Aggiunto
-
-- «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
-- Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
-
 ### Cambiato
 
 - I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
 - Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, in un riquadro suo con logo, versione e copie di lavoro, senza IM né incassi perché è un progetto interno (richiesta dell'utente del 2026-10-16, D-127).
+
+## [0.129.0] - 2026-10-16
+
+### Aggiunto
+
+- «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
+- Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
 
 ### Corretto
 
