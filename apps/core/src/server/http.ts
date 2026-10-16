@@ -167,6 +167,7 @@ import { projectFits, type DirectPolicy, type OffInterlocutor } from '../direct-
 import type { ChatCharacter } from '../character-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
+import { attachmentIds, AttachmentError, discardAttachment, MAX_IMAGE_BYTES, readAttachment, saveAttachment } from '../attachments.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
@@ -330,6 +331,11 @@ export interface ApiServerOptions {
   devProgress?: DevProgressApi;
   /** The cardwall (D-152): the folder of the files attached to cards (data/cards); without it the file routes answer 404. */
   cards?: { dir: string };
+  /**
+   * Images and files attached in the chat (D-247): their folder (data/attachments) and whether a model has
+   * the `vision` role now; without it the attachment routes answer 404.
+   */
+  attachments?: { dir: string; vision: () => boolean };
   /** The clients (D-168): the folder of their logos (data/clients); without it the logo routes answer 404. */
   /** `opener`: "Apri" and "Mostra nel Finder" of the documents (D-171); `open` of macOS when absent, a fake in the tests. */
   clients?: { dir: string; opener?: Opener };
@@ -2682,8 +2688,10 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     route('POST', '/api/conversations/:id/messages', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['body', 'style', 'skills']);
+      onlyFields(body, ['body', 'style', 'skills', 'attachments']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
+      // The images and files of the message (D-247): ids of pending attachments, checked with the conversation.
+      const attached = attachmentIds(body.attachments);
       // The style and skills chosen in the Studio (I-19, D-184): checked as on a Designer card (D-163).
       let design;
       try {
@@ -2699,6 +2707,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
         ...(leave === undefined ? {} : { leave }),
         ...(named === undefined ? {} : { mentionable: named }),
         ...(design === undefined ? {} : { design }),
+        ...(attached.length === 0 ? {} : { attachments: attached }),
       });
       if ('queued' in posted) return { status: 202, body: { queued: posted.queued } };
       return { status: 201, body: posted.sent };
@@ -3146,6 +3155,51 @@ function financeRoutes(sql: Sql): Route[] {
  * them, nothing goes out. A field that does not pass answers 400 with
  * `issues` (field and why), which the chat shows next to the field.
  */
+/** An attachment comes as JSON with its bytes in base64: a third more than the largest image, and some room. */
+const MAX_ATTACHMENT_BODY = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 16 * 1024;
+
+/**
+ * Images and files attached in the chat (D-247): pasted or dropped, kept as
+ * pending until the message that carries them leaves; shown small in its
+ * bubble. Never run: an image is served with a sandbox and nosniff, a text
+ * file only as a download.
+ */
+function attachmentRoutes(sql: Sql, attachments: ApiServerOptions['attachments']): Route[] {
+  const need = (): NonNullable<ApiServerOptions['attachments']> => {
+    if (attachments === undefined) throw new HttpError(404, 'not found');
+    return attachments;
+  };
+  return [
+    route('POST', '/api/attachments', async (request) => {
+      const options = need();
+      const body = await readJson(request, MAX_ATTACHMENT_BODY);
+      onlyFields(body, ['name', 'data']);
+      return { status: 201, body: { attachment: await saveAttachment(sql, options.dir, body, { vision: options.vision() }) } };
+    }),
+    route('GET', '/api/attachments/:id', async (_request, _url, params) => {
+      const file = await readAttachment(sql, need().dir, idParam(params, 'id'));
+      const image = file.mediaType.startsWith('image/');
+      const ascii = file.name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+      const encoded = encodeURIComponent(file.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+      return {
+        raw: file.bytes,
+        type: image ? file.mediaType : `${file.mediaType}; charset=utf-8`,
+        headers: {
+          'content-disposition': `${image ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encoded}`,
+          'content-security-policy': "default-src 'none'; sandbox",
+          'x-content-type-options': 'nosniff',
+        },
+        noStore: true,
+      };
+    }),
+    route('DELETE', '/api/attachments/:id', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      await discardAttachment(sql, need().dir, idParam(params, 'id'));
+      return { status: 204, body: null };
+    }),
+  ];
+}
+
 function clientRoutes(sql: Sql, names: () => ClientNames, clients: ApiServerOptions['clients']): Route[] {
   const logosDir = (): string => {
     if (clients === undefined) throw new HttpError(404, 'not found');
@@ -4143,6 +4197,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };
+  if (error instanceof AttachmentError) {
+    const status = { invalid: 400, 'too-large': 413, type: 415, 'not-found': 404, conflict: 409, 'no-vision': 409 }[error.code];
+    return { status, message: error.message };
+  }
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
   if (error instanceof GodCloneError) return { status: 409, message: error.message };
@@ -4264,6 +4322,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...profileRoutes(sql));
+  table.push(...attachmentRoutes(sql, options.attachments));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
   table.push(route('GET', '/api/notifications/latest', () => Promise.resolve({ body: { notice: options.notices?.latest() ?? null } })));
   // A trial notice (I-1): the same way as a real one, to every open page, with no conversation;

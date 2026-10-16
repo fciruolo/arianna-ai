@@ -48,6 +48,7 @@ test('migrations apply from zero and create every table', async () => {
       'im_prices',
       'jobs',
       'label_changes',
+      'message_attachments',
       'message_queue_pauses',
       'messages',
       'model_evals',

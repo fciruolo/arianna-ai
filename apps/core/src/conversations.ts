@@ -9,6 +9,7 @@ import type { TaskStatus } from './task-status.ts';
 import { createDelegation } from './orchestrator/delegations.ts';
 import { MAX_INTERVENTIONS, parseAddressed } from './addressed.ts';
 import { activeParticipants, leaveIdle, roundLine, type LeaveRule } from './participants.ts';
+import { attachmentRefusal, bindAttachments, type AttachmentInfo } from './attachments.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 import { closeSupersededWaits } from './waiting.ts';
 
@@ -137,6 +138,8 @@ export interface Message {
   agent: string | null;
   /** The cloud model that wrote an answer of Arianna's task (Claude in a system chat, D-064); null for the local model. */
   model: string | null;
+  /** The images and files the user attached to this message (D-247), oldest first; never their reading. */
+  attachments: AttachmentInfo[];
 }
 
 /** The Claude models that can answer a system chat directly (D-064, second part). */
@@ -215,7 +218,9 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
     ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
-  task_id::text AS "taskId", agent, model`;
+  task_id::text AS "taskId", agent, model,
+  (SELECT coalesce(json_agg(json_build_object('id', a.id::text, 'kind', a.kind, 'name', a.name, 'mediaType', a.media_type, 'size', a.size_bytes)
+     ORDER BY a.created_at, a.id), '[]'::json) FROM message_attachments a WHERE a.message_id = messages.id) AS attachments`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -659,6 +664,8 @@ export interface MessageOptions {
    * Without it a message starting with «@» or «/giro» is an ordinary message.
    */
   mentionable?: readonly string[];
+  /** Ids of pending attachments the message carries (D-247): only in a private conversation answered on the Mac. */
+  attachments?: readonly string[];
 }
 
 /** What a user message is checked against: the conversation, locked for the transaction. */
@@ -674,6 +681,8 @@ export interface MessageTarget {
   secretary: boolean;
   /** A refresh of the Cruscotto (D-248): it takes no message of the user. */
   refresh: boolean;
+  origin: ConversationOrigin;
+  sideOf: string | null;
 }
 
 /** Locks the conversation a user message goes to; refuses one that does not exist or is purged. */
@@ -681,7 +690,7 @@ export async function lockForMessage(tx: Queryable, conversationId: string): Pro
   const conversation = isUuid(conversationId)
     ? (
         await tx<MessageTarget[]>`
-        SELECT mode, clearance, title, agent, workspace, incognito, finance, secretary, dashboard_of IS NOT NULL AS refresh,
+        SELECT mode, clearance, title, agent, workspace, incognito, finance, secretary, dashboard_of IS NOT NULL AS refresh, origin, side_of::text AS "sideOf",
           -- A side thread (D-232) takes no message while its mother is archived, as the mother does not.
           (archived_at IS NOT NULL OR (side_of IS NOT NULL AND EXISTS (
             SELECT FROM conversations m WHERE m.id = conversations.side_of AND (m.archived_at IS NOT NULL OR m.purged_at IS NOT NULL)))) AS archived
@@ -713,6 +722,12 @@ export function checkUserMessage(conversation: MessageTarget, body: string, opti
   // The style and skills of the Studio (D-184): only in the direct chat with the Designer.
   if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
     throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
+  }
+
+  // Images and files (D-247): Privato, only where the answer is written on the Mac.
+  if ((options.attachments?.length ?? 0) > 0) {
+    const refusal = attachmentRefusal(conversation);
+    if (refusal !== undefined) throw new ChatError('invalid', refusal);
   }
 }
 
@@ -840,6 +855,8 @@ export async function writeUserMessage(
     VALUES (${conversationId}, 'user', ${options.channel ?? 'web'}, ${label}::privacy_label, ${body}, ${task.id})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+  // The attachments go with the message (D-247), before its task can read it: the job runs after the commit.
+  await bindAttachments(tx, conversationId, row.id, options.attachments ?? []);
   // Who answers a «/giro» (D-219): a line under the message, before the answers.
   if (addressed?.kind === 'round') await roundLine(tx, conversationId, task.id, addressed.agents);
   // The first message names the conversation, as in the chat apps (D-057).

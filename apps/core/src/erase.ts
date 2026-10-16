@@ -1,5 +1,6 @@
 import { removeWorkspace } from '@arianna/executors';
 
+import { attachmentFilesOf, attachmentsDir, removeAttachmentFiles } from './attachments.ts';
 import { ChatError, isUuid } from './conversations.ts';
 import { liveRefreshesOf } from './dashboard.ts';
 import type { Queryable, Sql } from './db/client.ts';
@@ -139,10 +140,13 @@ export async function eraseConversation(sql: Sql, id: string, options: EraseOpti
     const taskIds = await tasksOf(sql, id);
     stopped = (await stopSteps(sql, taskIds, options)) || stopped;
     const runIds = await runsOf(sql, taskIds);
+    // The images and files attached in it (D-247): their rows go with the messages, their files right after.
+    const attached = await attachmentFilesOf(sql, id);
     try {
       const [row] = await sql<{ erased: EraseResult }[]>`SELECT erase_conversation(${id}::uuid) AS erased`;
       const dataDir = options.dataDir;
       if (dataDir !== undefined) {
+        await removeAttachmentFiles(sql, attachmentsDir(dataDir), attached).catch((error: unknown) => options.onError?.(error));
         await Promise.all(runIds.map((runId) => removeWorkspace({ data: dataDir, runId }).catch((error: unknown) => options.onError?.(error))));
       }
       return row?.erased ?? { conversations: 0, tasks: 0, cards: 0, events: 0 };

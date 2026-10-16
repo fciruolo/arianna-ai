@@ -51,6 +51,7 @@ import { CARD_WORKERS, createWorker, type StopCause } from './engine.ts';
 import type { Task } from './tasks.ts';
 import { stopCard } from './cardwall.ts';
 import { eraseConversation } from './erase.ts';
+import { attachmentsDir, pruneAttachments } from './attachments.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
 import { createServiceManager } from './project-services.ts';
@@ -499,9 +500,15 @@ const advise = createAdvisor({
   ask: (request) =>
     settings.current().cloud.executors.includes('claude') ? askAdvice(request) : Promise.reject(new CloudTextError('unavailable', 'claude is off')),
 });
+// Images and files attached in a private chat (D-247): data/attachments, private, outside git. The pasted
+// ones never sent for a day go at start, with the files left without a row.
+const attachmentFiles = attachmentsDir(config.paths.data);
+pruneAttachments(sql, attachmentFiles).catch(report);
+
 const orchestrator = createOrchestrator({
   // D-225, tappa A: a chat reply of a character switched on is written once more, livelier.
   livelyReplies: true,
+  attachmentsDir: attachmentFiles,
   sql,
   agents,
   advise,
@@ -1104,6 +1111,8 @@ const server = await startApiServer({
   cards: { dir: join(config.home, 'data', 'cards') },
   // The logos of the clients (D-168): private copies, outside git, shown only in the web chat.
   clients: { dir: join(config.home, 'data', 'clients') },
+  // Images and files of a private chat (D-247): an image only while a model has the vision role.
+  attachments: { dir: attachmentFiles, vision: () => settings.current().roles.vision !== undefined },
   services,
   designCatalog,
   skillsCatalog,

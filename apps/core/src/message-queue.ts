@@ -89,6 +89,8 @@ export async function postOrQueue(sql: Sql, conversationId: string, body: string
     if (!(await conversationBusy(tx, conversationId)) && (waiting === 0 || (await isPaused(tx, conversationId)))) {
       return { sent: await writeUserMessage(tx, conversationId, body, options) };
     }
+    // An attachment never waits in the queue (D-247): the queue holds text only.
+    if ((options.attachments?.length ?? 0) > 0) throw new ChatError('busy', 'an attachment cannot wait in the queue: send it when the answer is done');
     if (waiting >= MAX_QUEUED) throw new ChatError('busy', `the queue already holds ${String(MAX_QUEUED)} messages: wait for the answers`);
     const label = labelForUserMessage(createContext(conversation.clearance));
     const [row] = await tx<QueuedMessage[]>`

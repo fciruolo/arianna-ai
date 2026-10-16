@@ -54,6 +54,7 @@ import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
+import { attachmentHistory, attachmentsOf, readPendingImages } from './attachment-reading.ts';
 import { imDecisionAnswer, imReplay, requestIm, WAITING_IM } from './im-step.ts';
 import {
   bindSharedFacts,
@@ -179,6 +180,8 @@ export interface OrchestratorOptions {
    * default: main.ts turns it on; a test with a scripted model has one answer per step.
    */
   livelyReplies?: boolean;
+  /** data/attachments (D-247): the images attached in a private chat, read by the `vision` model; without it they stay unread. */
+  attachmentsDir?: string;
 }
 
 /**
@@ -271,10 +274,14 @@ async function historyOf(
     if (side !== undefined) history.push(side);
     const summary = summaryMessage(view.pieces);
     if (summary !== undefined) history.push(summary);
+    // The images and files of the user's messages (D-247): after each message, each part L2.
+    const attached = await attachmentsOf(sql, view.messages.filter((row) => row.role === 'user').map((row) => row.id));
     for (const row of view.messages) {
       const value: TurnMessage =
         row.role === 'system' ? { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${clip(row.body)}` } : { role: row.role, content: clip(row.body) };
       history.push({ value, label: row.label, source: `message:${row.id}` });
+      const parts = attached.get(row.id);
+      if (parts !== undefined) history.push(...attachmentHistory(parts));
     }
     // Who else is here (D-125): the agents that joined before this task, as a note of the system after
     // the chat, never in the system prompt. The same for every step of the task, so its prefix stays.
@@ -427,6 +434,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
   /** What `plan` decided about Claude (or ChatGPT, D-212) answering directly (null: Arianna answers), for its `run`. */
   const directs = new Map<string, DirectTarget | null>();
   const summaryEnv = { sql, model: options.model };
+  const attachmentEnv = { sql, model: options.model, dir: options.attachmentsDir };
   const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
   /** One line of activity in the chat (D-054); a card's is saved for its detail (D-235). Never fails the step. */
@@ -972,6 +980,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // The anchor jumped (D-077): at the first step of the task the local
       // model summarizes what it left behind, before the answer; the later
       // steps only read, so their prefix stays the one of the first.
+      // The images of the message (D-247): read once by the vision model, before the first answer reads them.
+      if (step === 1) await readPendingImages(attachmentEnv, task, { runId, signal: ctx.signal });
       let view = task.conversationId === null ? undefined : await conversationView(sql, task.conversationId, task.id, MAX_TEXT);
       let summarized: SummarizeOutcome | undefined;
       if (view !== undefined && task.conversationId !== null && step === 1 && view.missing.length > 0) {
