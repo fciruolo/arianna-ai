@@ -111,7 +111,8 @@ test('a trivial task runs on claude and is logged: run, session, usage, gateway 
   const [model] = await db().sql<{ label: string; payload: Record<string, unknown> }[]>`
     SELECT label::text, payload FROM events WHERE task_id = ${task.id} AND kind = 'executor.model'`;
   assert.equal(model?.label, 'L0');
-  assert.deepEqual(model.payload, { executor: 'claude', alias: 'sonnet', model: 'claude-sonnet-5-5' });
+  // D-233: with the version of the binary, as its init reported it.
+  assert.deepEqual(model.payload, { executor: 'claude', alias: 'sonnet', model: 'claude-sonnet-5-5', version: '2.1.288' });
 });
 
 test('an L2 brief never launches claude: one blocked gateway row, the task waits for the user', async () => {

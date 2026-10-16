@@ -28,6 +28,9 @@ export interface FileEditPart {
 export const FILE_EDIT_TOOLS = ['Edit', 'MultiEdit', 'Write'] as const;
 export type FileEditTool = (typeof FILE_EDIT_TOOLS)[number];
 
+/** The version of the binary as its init reports it: digits and dots only, so nothing else rides along. */
+const CLAUDE_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
+
 /**
  * What a run reports while it works. Tool inputs are left out, names are
  * enough to follow it; the exceptions are a change to a file (`edit`, after
@@ -38,7 +41,8 @@ export type FileEditTool = (typeof FILE_EDIT_TOOLS)[number];
  * `filePath` is as the binary wrote it: the caller checks it is in the project.
  */
 export type ClaudeEvent =
-  | { type: 'init'; sessionRef: string; model: string; tools: string[] }
+  /** `version`: `claude_code_version` of the init, only when it is a plain X.Y.Z (D-233). */
+  | { type: 'init'; sessionRef: string; model: string; tools: string[]; version?: string }
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'edit'; tool: FileEditTool; filePath: string; parts: FileEditPart[] }
@@ -210,7 +214,8 @@ export class ClaudeStream {
     this.sessionRef = message.session_id;
     this.model = typeof message.model === 'string' ? message.model : undefined;
     const tools = Array.isArray(message.tools) ? message.tools.map(String) : [];
-    return [{ type: 'init', sessionRef: this.sessionRef, model: this.model ?? '', tools }];
+    const version = typeof message.claude_code_version === 'string' && CLAUDE_VERSION.test(message.claude_code_version) ? message.claude_code_version : undefined;
+    return [{ type: 'init', sessionRef: this.sessionRef, model: this.model ?? '', tools, ...(version === undefined ? {} : { version }) }];
   }
 
   #assistant(message: Record<string, unknown>): ClaudeEvent[] {

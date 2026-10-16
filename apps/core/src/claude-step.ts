@@ -163,7 +163,8 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
           ...ids,
           kind: 'executor.model',
           label: 'L0',
-          payload: { executor: 'claude', alias: input.model, model: REPORTED_MODEL.test(event.model) ? event.model : null },
+          // D-233: the version of the binary, digits and dots only, read by «Cosa è cambiato».
+          payload: { executor: 'claude', alias: input.model, model: REPORTED_MODEL.test(event.model) ? event.model : null, ...(event.version === undefined ? {} : { version: event.version }) },
         });
       }
       if (event.type === 'text' || event.type === 'tool' || event.type === 'edit' || event.type === 'command' || event.type === 'command-output') await input.onEvent?.(event);

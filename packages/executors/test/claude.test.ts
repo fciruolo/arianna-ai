@@ -191,6 +191,20 @@ describe('claude profile', () => {
 });
 
 describe('claude stream', () => {
+  it('reports the version of the binary only when it is a plain X.Y.Z (D-233)', () => {
+    const recordedInit = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'claude-stream.jsonl'), 'utf8').split('\n')[0] ?? '') as Record<string, unknown>;
+    const versionOf = (value: unknown): string | undefined => {
+      const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+      const [init] = stream.feed(JSON.stringify({ ...recordedInit, cwd: '/w', claude_code_version: value }));
+      assert.ok(init?.type === 'init');
+      return init.version;
+    };
+    assert.equal(versionOf('2.1.300'), '2.1.300');
+    assert.equal(versionOf('2.1.300 (Claude Code) extra'), undefined);
+    assert.equal(versionOf(2), undefined);
+    assert.equal(versionOf(undefined), undefined);
+  });
+
   const recorded = readFileSync(join(import.meta.dirname, 'fixtures', 'claude-stream.jsonl'), 'utf8').trim().split('\n');
   const realInit = (cwd: string) => JSON.stringify({ ...(JSON.parse(recorded[0] ?? '') as object), cwd });
 
@@ -204,6 +218,10 @@ describe('claude stream', () => {
     assert.deepEqual(stream.result, { ok: true, text: 'ok', permissionDenials: 0 });
     assert.equal(stream.sessionRef, SESSION);
     assert.deepEqual(stream.usage, { tokensIn: 2 + 1675 + 1448, tokensOut: 4, turns: 1, context: 2 + 1675 + 1448 + 4 });
+    // D-233: the version of the binary, for «Cosa è cambiato».
+    const init = events[0];
+    assert.ok(init?.type === 'init');
+    assert.equal(init.version, '2.1.288');
     const limit = events[3];
     assert.ok(limit?.type === 'rate-limit');
     assert.equal(limit.window, 'five_hour');
