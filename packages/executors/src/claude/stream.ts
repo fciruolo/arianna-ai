@@ -43,7 +43,19 @@ const CLAUDE_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
 export type ClaudeEvent =
   /** `version`: `claude_code_version` of the init, only when it is a plain X.Y.Z (D-233). */
   | { type: 'init'; sessionRef: string; model: string; tools: string[]; version?: string }
-  | { type: 'text'; text: string }
+  /**
+   * A whole text block of the answer. `streamed`: its text already came in
+   * `text-delta` events (D-249), a caller that shows those does not show it again.
+   */
+  | { type: 'text'; text: string; streamed?: true }
+  /** A piece of the answer as it is written (`--include-partial-messages`, D-249). */
+  | { type: 'text-delta'; text: string }
+  /**
+   * The model is thinking (D-249): a piece of its thinking, or '' when a
+   * thinking block starts or its text is withheld (the API's `display:
+   * omitted` sends only a signature): the chat then shows that it thinks.
+   */
+  | { type: 'thinking'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'edit'; tool: FileEditTool; filePath: string; parts: FileEditPart[] }
   /** A call to Bash: `callId` pairs it with its output. */
@@ -151,6 +163,8 @@ export class ClaudeStream {
   #rejected = false;
   /** Calls to Bash still waiting for their output, by tool use id. */
   readonly #commands = new Set<string>();
+  /** Whether text came in pieces since the last whole text block (D-249). */
+  #partial = false;
 
   /** `sessionRef`: the session a resume asked for; the binary must continue that one, not start another. */
   constructor(expected: { cwd: string; tools: readonly ClaudeTool[]; sessionRef?: string }) {
@@ -191,6 +205,8 @@ export class ClaudeStream {
         return this.#toolResults(message);
       case 'rate_limit_event':
         return this.#rateLimit(message);
+      case 'stream_event':
+        return this.#partialEvent(message);
       case 'result':
         return this.#result(message);
       default:
@@ -226,7 +242,10 @@ export class ClaudeStream {
     const events: ClaudeEvent[] = [];
     for (const block of Array.isArray(body.content) ? body.content : []) {
       if (!isRecord(block)) continue;
-      if (block.type === 'text' && typeof block.text === 'string' && block.text !== '') events.push({ type: 'text', text: block.text });
+      if (block.type === 'text' && typeof block.text === 'string' && block.text !== '') {
+        events.push(this.#partial ? { type: 'text', text: block.text, streamed: true } : { type: 'text', text: block.text });
+        this.#partial = false;
+      }
       if (block.type === 'tool_use' && typeof block.name === 'string') {
         events.push({ type: 'tool', name: block.name });
         const edit = fileEditOf(block.name, block.input);
@@ -247,6 +266,35 @@ export class ClaudeStream {
       events.push({ type: 'usage', usage: this.usage });
     }
     return events;
+  }
+
+  /**
+   * A piece of a message being written (`--include-partial-messages`, D-249):
+   * the raw event of the API inside `event`. Only the start of a thinking
+   * block and the deltas of text and thinking are read; a signature, a tool's
+   * input being written and anything else are ignored, as are subagents'.
+   * Shapes from the documentation of the API's stream, not from a recorded
+   * run: an unexpected one is ignored, never a failure.
+   */
+  #partialEvent(message: Record<string, unknown>): ClaudeEvent[] {
+    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) return [];
+    const event = message.event;
+    if (!isRecord(event)) return [];
+    // A new message: pieces of an earlier one that never came whole do not mark its text.
+    if (event.type === 'message_start') this.#partial = false;
+    if (event.type === 'content_block_start') {
+      const block = event.content_block;
+      if (!isRecord(block) || (block.type !== 'thinking' && block.type !== 'redacted_thinking')) return [];
+      return [{ type: 'thinking', text: typeof block.thinking === 'string' ? block.thinking : '' }];
+    }
+    if (event.type !== 'content_block_delta' || !isRecord(event.delta)) return [];
+    const delta = event.delta;
+    if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string' && delta.thinking !== '') return [{ type: 'thinking', text: delta.thinking }];
+    if (delta.type === 'text_delta' && typeof delta.text === 'string' && delta.text !== '') {
+      this.#partial = true;
+      return [{ type: 'text-delta', text: delta.text }];
+    }
+    return [];
   }
 
   /** The outputs of the calls to Bash, from the tool results the binary echoes back; any other result is ignored. */

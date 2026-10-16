@@ -166,6 +166,8 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--output-format',
     'stream-json',
     '--verbose',
+    // The answer and the thinking as they are written (D-249): `stream_event` lines, read by ClaudeStream.
+    '--include-partial-messages',
     '--model',
     options.modelName ?? options.model,
     '--tools',

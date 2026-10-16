@@ -23,7 +23,9 @@ type Message = Record<string, unknown>;
 const recorded = readFileSync(join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'executors', 'test', 'fixtures', 'claude-stream.jsonl'), 'utf8')
   .trim()
   .split('\n')
-  .map((line) => JSON.parse(line) as Message);
+  .map((line) => JSON.parse(line) as Message)
+  // The partial messages built by hand (D-249) are not part of the recorded run.
+  .filter((message) => message.type !== 'stream_event');
 const [init, assistant, rateLimit, result] = recorded as [Message, Message & { message: Message }, Message & { rate_limit_info: Message }, Message];
 init.cwd = process.cwd();
 init.tools = (flag('--tools') ?? '').split(',').filter((tool) => tool !== '');

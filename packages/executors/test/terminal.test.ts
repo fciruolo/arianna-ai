@@ -22,7 +22,8 @@ import { secretMatcher } from '@arianna/policy';
 
 const recorded = readFileSync(join(import.meta.dirname, 'fixtures', 'claude-stream.jsonl'), 'utf8').trim().split('\n');
 const init = (cwd: string): string => JSON.stringify({ ...(JSON.parse(recorded[0] ?? '') as object), cwd });
-const assistant = JSON.parse(recorded[1] ?? '') as { message: Record<string, unknown> };
+// The recorded assistant message, past the partial messages built by hand (D-249).
+const assistant = JSON.parse(recorded.find((line) => line.startsWith('{"type":"assistant"')) ?? '') as { message: Record<string, unknown> };
 const use = (id: string, name: string, input: unknown, extra: Record<string, unknown> = {}): string =>
   JSON.stringify({ ...assistant, ...extra, message: { ...assistant.message, id: `msg_${id}`, content: [{ type: 'tool_use', id, name, input }] } });
 const result = (id: string, content: unknown, extra: Record<string, unknown> = {}): string =>

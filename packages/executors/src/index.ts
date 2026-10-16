@@ -79,6 +79,7 @@ export {
   type LocalModelErrorKind,
   type LocalModelOptions,
 } from './local/model.ts';
+export { JsonFieldStream, ThinkSplitter, type FieldPiece, type ThinkPiece } from './local/live-text.ts';
 export {
   anonymize,
   anonymizeInput,

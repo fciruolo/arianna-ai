@@ -117,9 +117,12 @@ async function failure(promise: Promise<unknown>): Promise<ClaudeError> {
 describe('claude profile', () => {
   it('builds the confined arguments, with the prompt kept out of them', () => {
     const args = claudeArgs({ model: 'sonnet', tools: ['Read', 'Edit'], sandbox: SANDBOX });
-    for (const flag of ['-p', '--strict-mcp-config', '--restricted', '--safe-mode', '--disable-slash-commands', '--no-chrome', '--verbose']) {
+    for (const flag of ['-p', '--strict-mcp-config', '--restricted', '--safe-mode', '--disable-slash-commands', '--no-chrome', '--verbose', '--include-partial-messages']) {
       assert.ok(args.includes(flag), flag);
     }
+    // D-249: the partial messages are the only output option added; once, and before the model.
+    assert.equal(args.filter((arg) => arg === '--include-partial-messages').length, 1);
+    assert.ok(args.indexOf('--include-partial-messages') < args.indexOf('--model'));
     const value = (flag: string) => args[args.indexOf(flag) + 1];
     assert.equal(value('--output-format'), 'stream-json');
     assert.equal(value('--tools'), 'Read,Edit');
@@ -206,15 +209,24 @@ describe('claude stream', () => {
   });
 
   const recorded = readFileSync(join(import.meta.dirname, 'fixtures', 'claude-stream.jsonl'), 'utf8').trim().split('\n');
+  // The recorded assistant message, past the partial messages built by hand (D-249).
+  const recordedAssistant = recorded.find((line) => (JSON.parse(line) as { type: string }).type === 'assistant') ?? '';
   const realInit = (cwd: string) => JSON.stringify({ ...(JSON.parse(recorded[0] ?? '') as object), cwd });
 
   it('reads a recorded real run: session, text, usage, rate limit and result', () => {
     const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
     const events = [realInit('/w'), ...recorded.slice(1)].flatMap((line) => stream.feed(line));
+    // The stream_event lines are built by hand on the documented format (D-249), the rest is recorded.
     assert.deepEqual(
       events.map((event) => event.type),
-      ['init', 'text', 'usage', 'rate-limit'],
+      ['init', 'thinking', 'thinking', 'thinking', 'text-delta', 'text-delta', 'text', 'usage', 'rate-limit'],
     );
+    assert.deepEqual(
+      events.flatMap((event) => (event.type === 'thinking' ? [event.text] : [])),
+      ['', 'Basta rispondere ', 'ok.'],
+    );
+    // The whole block says its text came in pieces: a caller showing the pieces does not show it twice.
+    assert.deepEqual(events[6], { type: 'text', text: 'ok', streamed: true });
     assert.deepEqual(stream.result, { ok: true, text: 'ok', permissionDenials: 0 });
     assert.equal(stream.sessionRef, SESSION);
     assert.deepEqual(stream.usage, { tokensIn: 2 + 1675 + 1448, tokensOut: 4, turns: 1, context: 2 + 1675 + 1448 + 4 });
@@ -222,11 +234,31 @@ describe('claude stream', () => {
     const init = events[0];
     assert.ok(init?.type === 'init');
     assert.equal(init.version, '2.1.288');
-    const limit = events[3];
+    const limit = events[8];
     assert.ok(limit?.type === 'rate-limit');
     assert.equal(limit.window, 'five_hour');
     assert.equal(limit.utilization, 0.25);
     assert.equal(limit.resetsAt?.toISOString(), new Date(1_790_979_600_000).toISOString());
+  });
+
+  it('reads the partial messages of the answer and of the thinking, never those of a subagent (D-249)', () => {
+    const partial = (event: unknown, parent: string | null = null) => JSON.stringify({ type: 'stream_event', event, parent_tool_use_id: parent, session_id: SESSION });
+    const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+    stream.feed(realInit('/w'));
+    // A thinking block whose text the API withholds (display omitted): only its start and a signature.
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } })), [{ type: 'thinking', text: '' }]);
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'abc' } })), []);
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_start', index: 0, content_block: { type: 'redacted_thinking', data: 'x' } })), [{ type: 'thinking', text: '' }]);
+    // Negative: a subagent's pieces, a tool's input being written, empty and odd shapes.
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'altro' } }, 'toolu_1')), []);
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"a"' } })), []);
+    assert.deepEqual(stream.feed(partial({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '' } })), []);
+    assert.deepEqual(stream.feed(partial('nope')), []);
+    assert.deepEqual(stream.feed(JSON.stringify({ type: 'stream_event' })), []);
+    assert.equal(stream.result, undefined);
+    // A text block without pieces before it is not marked as streamed.
+    const plain = stream.feed(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ciao' }] }, parent_tool_use_id: null }));
+    assert.deepEqual(plain, [{ type: 'text', text: 'ciao' }]);
   });
 
   it('the context is the latest response, not the sum of the run (D-111)', () => {
@@ -244,7 +276,7 @@ describe('claude stream', () => {
 
   it('trusts nothing before init, and fails on a line that is not JSON', () => {
     const early = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
-    assert.deepEqual(early.feed(recorded[1] ?? ''), []);
+    assert.deepEqual(early.feed(recordedAssistant), []);
     assert.equal(early.result?.failure, 'bad-output');
     const garbage = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
     garbage.feed(realInit('/w'));
@@ -255,7 +287,7 @@ describe('claude stream', () => {
   it('reports the changes to files of Edit, MultiEdit and Write after their tool name (D-117)', () => {
     const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
     stream.feed(realInit('/w'));
-    const assistant = JSON.parse(recorded[1] ?? '') as { message: Record<string, unknown> };
+    const assistant = JSON.parse(recordedAssistant) as { message: Record<string, unknown> };
     const use = (name: string, input: unknown, extra: Record<string, unknown> = {}) =>
       JSON.stringify({ ...assistant, ...extra, message: { ...assistant.message, id: `msg_${name}`, content: [{ type: 'tool_use', id: 't', name, input }] } });
     const events = [
@@ -284,7 +316,7 @@ describe('claude stream', () => {
     assert.equal(fileEditOf('Edit', 'not an object'), undefined);
     const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
     stream.feed(realInit('/w'));
-    const assistant = JSON.parse(recorded[1] ?? '') as { message: Record<string, unknown> };
+    const assistant = JSON.parse(recordedAssistant) as { message: Record<string, unknown> };
     const sub = JSON.stringify({
       ...assistant,
       parent_tool_use_id: 'toolu_1',
@@ -296,8 +328,8 @@ describe('claude stream', () => {
   it('a model response split in several messages counts once', () => {
     const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
     stream.feed(realInit('/w'));
-    stream.feed(recorded[1] ?? '');
-    stream.feed(recorded[1] ?? '');
+    stream.feed(recordedAssistant);
+    stream.feed(recordedAssistant);
     assert.equal(stream.usage.turns, 1);
   });
 });
@@ -320,6 +352,18 @@ describe('claude executor', () => {
     assert.equal(got.prompt, 'scenario: ok\nfake task');
     assert.ok(!got.argv.some((arg) => arg.includes('fake task')), 'the prompt is not in argv');
     for (const key of ['SOPS_AGE_KEY', 'ANTHROPIC_API_KEY', 'NODE_OPTIONS']) assert.equal(got.env[key], undefined, key);
+  });
+
+  it('passes the partial messages on as thinking and text pieces, with the whole block marked as streamed (D-249)', async () => {
+    const { run, events, path } = await start('partial');
+    const result = await run.result;
+    assert.equal(result.text, 'ok');
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['init', 'thinking', 'thinking', 'thinking', 'text-delta', 'text-delta', 'text', 'usage'],
+    );
+    assert.deepEqual(events[6], { type: 'text', text: 'ok', streamed: true });
+    assert.ok(received(path).argv.includes('--include-partial-messages'));
   });
 
   it('asks for the exact model name at each launch, and refuses a bad one before starting (D-071)', async () => {

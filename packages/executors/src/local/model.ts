@@ -66,6 +66,13 @@ export interface ChatRequest {
    */
   onText?: (piece: string) => void;
   /**
+   * The reasoning a server sends apart from the answer (`reasoning_content`
+   * or `reasoning` of the stream's deltas), as it comes (D-249): the request
+   * is streamed as with `onText`. Never part of `text`. Once a piece has come,
+   * a failing server is not replaced by the next one, as for `onText`.
+   */
+  onReasoning?: (piece: string) => void;
+  /**
    * With `onText`: asks the server for the token counts at the end of the
    * stream (OpenAI `stream_options.include_usage`, D-199). A server that
    * does not send them leaves `usage` absent.
@@ -148,7 +155,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: 
   const body: Record<string, unknown> = {
     model,
     messages: request.messages.map(wireMessage),
-    stream: request.onText !== undefined,
+    stream: request.onText !== undefined || request.onReasoning !== undefined,
   };
   if (body.stream === true && request.streamUsage === true) body.stream_options = { include_usage: true };
   if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
@@ -161,8 +168,9 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: 
   }
 
   const started = performance.now();
-  if (body.stream === true && request.onText !== undefined) {
-    const given = request.onText;
+  if (body.stream === true) {
+    const given = request.onText ?? (() => undefined);
+    const reasoned = request.onReasoning ?? (() => undefined);
     let firstTextMs: number | undefined;
     let firstTokenMs: number | undefined;
     const onText = (piece: string): void => {
@@ -174,7 +182,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: 
     };
     let result: Pick<ChatResult, 'text' | 'finishReason' | 'usage'>;
     try {
-      result = await streamCompletion(endpoint, body, signal, headers, onText, onToken);
+      result = await streamCompletion(endpoint, body, signal, headers, onText, onToken, reasoned);
     } catch (error) {
       throw toModelError(error, endpoint.id, request.signal, timeout);
     }
@@ -222,6 +230,7 @@ async function streamCompletion(
   headers: Record<string, string>,
   onText: (piece: string) => void,
   onToken: () => void = () => undefined,
+  onReasoning: (piece: string) => void = () => undefined,
 ): Promise<Pick<ChatResult, 'text' | 'finishReason' | 'usage'>> {
   const bad = (what: string) => new LocalModelError('bad-response', `${endpoint.id}: ${what}`, { endpoint: endpoint.id });
   const decoder = new StringDecoder('utf8');
@@ -253,6 +262,7 @@ async function streamCompletion(
       // The reasoning a server sends apart counts as written tokens too (usage counts it).
       const reasoning = isRecord(choice.delta) ? (choice.delta.reasoning_content ?? choice.delta.reasoning) : undefined;
       if ((typeof delta === 'string' && delta !== '') || (typeof reasoning === 'string' && reasoning !== '')) onToken();
+      if (typeof reasoning === 'string' && reasoning !== '') onReasoning(reasoning);
       if (typeof delta === 'string' && delta !== '') {
         text += delta;
         onText(delta);
@@ -368,17 +378,26 @@ export function createLocalModel(options: LocalModelOptions): LocalModel {
 
       // Once part of a streamed answer went out, another server would say it twice.
       let started = false as boolean;
-      const onText = request.onText;
-      const tracked: ChatRequest =
-        onText === undefined
-          ? request
+      const { onText, onReasoning } = request;
+      const tracked: ChatRequest = {
+        ...request,
+        ...(onText === undefined
+          ? {}
           : {
-              ...request,
-              onText: (piece) => {
+              onText: (piece: string) => {
                 started = true;
                 onText(piece);
               },
-            };
+            }),
+        ...(onReasoning === undefined
+          ? {}
+          : {
+              onReasoning: (piece: string) => {
+                started = true;
+                onReasoning(piece);
+              },
+            }),
+      };
       const attempts: LocalModelError[] = [];
       for (const endpoint of ordered) {
         try {

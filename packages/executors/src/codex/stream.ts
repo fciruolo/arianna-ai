@@ -21,6 +21,11 @@ export type CodexFileChangeKind = (typeof CODEX_FILE_CHANGE_KINDS)[number];
 export type CodexEvent =
   | { type: 'init'; sessionRef: string }
   | { type: 'text'; text: string }
+  /**
+   * A summary of the model's reasoning for one step (a `reasoning` item, D-249),
+   * whole when the item completes; '' when an item starts without text yet.
+   */
+  | { type: 'thinking'; text: string }
   | { type: 'tool'; name: 'command' | 'file_change' }
   | { type: 'file'; path: string; kind: CodexFileChangeKind }
   | { type: 'usage'; usage: CodexUsage };
@@ -174,6 +179,12 @@ export class CodexStream {
         // The answer is the last message of the turn; the earlier ones are progress.
         this.#text = item.text;
         return item.text === '' ? [] : [{ type: 'text', text: item.text }];
+      case 'reasoning': {
+        // Shape from the documentation of `codex exec --json` (`text` of the item), not from a recorded run with text.
+        const text = typeof item.text === 'string' ? item.text : '';
+        if (phase === 'item.completed') return text.trim() === '' ? [] : [{ type: 'thinking', text }];
+        return phase === 'item.started' ? [{ type: 'thinking', text: '' }] : [];
+      }
       case 'command_execution':
         if (phase !== 'item.started') return [];
         this.#turns += 1;
@@ -190,7 +201,7 @@ export class CodexStream {
         return events;
       }
       default:
-        // Reasoning, plans and warnings (`error` items do not end the turn).
+        // Plans and warnings (`error` items do not end the turn).
         return [];
     }
   }

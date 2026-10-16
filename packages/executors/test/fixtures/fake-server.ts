@@ -10,6 +10,7 @@
 //   "!cut:<text>"  streamed: <text>, then the connection closes without [DONE]
 //   "!short:<text>" streamed: <text>, then the answer ends without [DONE] nor finish_reason
 //   "!badevent"    streamed: an event that is not JSON
+//   "!reason:<text>" streamed: <text> as `reasoning_content` pieces, then "hello" (D-249)
 // A request with "stream": true gets server-sent events, one per word.
 // anything else   "hello", or {"ok":true} when a schema was asked.
 // POST /__hang makes every later request hang; GET /__last returns the last chat body.
@@ -129,7 +130,11 @@ async function answer(res: ServerResponse, last: string, wantsJson: boolean, str
   if (stream) {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const event = (value: unknown) => res.write(`data: ${JSON.stringify(value)}\n\n`);
-    for (const piece of content.match(/\S+\s*/g) ?? []) {
+    // The reasoning a server sends apart, before the answer (D-249).
+    if (command === 'reason') {
+      for (const piece of argument.match(/\S+\s*/g) ?? []) event({ choices: [{ index: 0, delta: { reasoning_content: piece }, finish_reason: null }] });
+    }
+    for (const piece of (command === 'reason' ? 'hello' : content).match(/\S+\s*/g) ?? []) {
       event({ choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
       await new Promise((resolve) => setTimeout(resolve, 5));
     }

@@ -286,6 +286,27 @@ describe('codex stream', () => {
     assert.equal(codexRefusalOf('connection reset', 503), undefined);
   });
 
+  it('gives the reasoning of each step as thinking, whole when its item completes (D-249)', () => {
+    const { stream, events } = feed([
+      { type: 'thread.started', thread_id: THREAD },
+      { type: 'item.started', item: { type: 'reasoning', text: '' } },
+      { type: 'item.completed', item: { type: 'reasoning', text: '**Cerco** il file' } },
+      // Negative: an empty summary and an update say nothing new.
+      { type: 'item.completed', item: { type: 'reasoning', text: '  ' } },
+      { type: 'item.updated', item: { type: 'reasoning', text: 'parziale' } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'fatto' } },
+      { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
+    ]);
+    assert.equal(stream.result?.ok, true);
+    assert.deepEqual(
+      events.filter((event) => event.type === 'thinking'),
+      [
+        { type: 'thinking', text: '' },
+        { type: 'thinking', text: '**Cerco** il file' },
+      ],
+    );
+  });
+
   it('warnings, reasoning, plans and unknown events pass; odd file changes keep only valid entries', () => {
     const { stream, events } = feed([
       { type: 'thread.started', thread_id: THREAD },

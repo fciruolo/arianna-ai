@@ -276,6 +276,22 @@ describe('streaming (D-070)', () => {
     assert.equal(result.firstTextMs, undefined);
   });
 
+  it('streams the reasoning a server sends apart to onReasoning, never into the text (D-249)', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    const reasoning: string[] = [];
+    const pieces: string[] = [];
+    const result = await model.chat({ model: 'local-large', messages: USER('!reason:Ci penso un attimo.'), onReasoning: (piece) => reasoning.push(piece), onText: (piece) => pieces.push(piece) });
+    assert.equal(reasoning.join(''), 'Ci penso un attimo.');
+    assert.equal(result.text, 'hello');
+    assert.deepEqual(pieces, ['hello']);
+    // onReasoning alone streams the request too.
+    const alone: string[] = [];
+    const quiet = await model.chat({ model: 'local-large', messages: USER('!reason:Solo pensiero.'), onReasoning: (piece) => alone.push(piece) });
+    assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, true);
+    assert.equal(alone.join(''), 'Solo pensiero.');
+    assert.equal(quiet.text, 'hello');
+  });
+
   it('streams with a schema too, parses the JSON at the end and times the first piece (D-199)', async () => {
     const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
     const pieces: string[] = [];

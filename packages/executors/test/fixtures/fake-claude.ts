@@ -25,20 +25,30 @@ interface Assistant extends Message {
 interface RateLimit extends Message {
   rate_limit_info: Message;
 }
-const recorded = readFileSync(join(import.meta.dirname, 'claude-stream.jsonl'), 'utf8')
+const lines = readFileSync(join(import.meta.dirname, 'claude-stream.jsonl'), 'utf8')
   .trim()
   .split('\n')
   .map((line) => JSON.parse(line) as Message);
+// The partial messages (D-249) are built by hand, not recorded: kept apart, sent only by the `partial` scenario.
+const partials = lines.filter((message) => message.type === 'stream_event');
+const recorded = lines.filter((message) => message.type !== 'stream_event');
 const [init, assistant, rateLimit, result] = recorded as [Message, Assistant, RateLimit, Message];
 init.cwd = process.cwd();
 init.tools = tools;
-for (const message of recorded) message.session_id = sessionRef;
+for (const message of lines) message.session_id = sessionRef;
 
 const out = (message: unknown) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const answer = (text: string, id = 'msg_1') => ({ ...assistant, message: { ...assistant.message, id, content: [{ type: 'text', text }] } });
 const hang = () => setInterval(() => undefined, 1_000);
 
 switch (scenario) {
+  case 'partial':
+    // D-249: the thinking and the text in pieces, then the whole block and the result, as with --include-partial-messages.
+    out(init);
+    for (const message of partials) out(message);
+    out(answer('ok'));
+    out({ ...result, result: 'ok' });
+    break;
   case 'ok':
     out(init);
     out(answer(flag('--resume') === undefined ? 'ok' : 'resumed'));
