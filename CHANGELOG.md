@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.130.0] - 2026-10-16
+
 ### Aggiunto
 
 - «/progetta <descrizione>» nella chat con Arianna: risponde subito e mette sul cardwall la card «Piano: …», che pianifica a parte e si vede In corso; il piano arriva nella conversazione, nel dettaglio della card e con la notifica del Mac (D-235).
