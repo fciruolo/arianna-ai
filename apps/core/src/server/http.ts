@@ -23,7 +23,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, sendBackCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { currentTheme, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
@@ -3388,6 +3388,13 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
       return guard(async () => ({ body: { card: { id, status: (await runCard(sql, id, known().agents)).status } } }));
+    }),
+    // D-235: «Rimanda», an agent's card in Da verificare back to work with a note and its label.
+    route('POST', '/api/cards/:id/send-back', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['note', 'label']);
+      return guard(async () => ({ body: { card: { id, status: (await sendBackCard(sql, id, body)).status } } }));
     }),
     // D-235: "Ferma" of a card, or a drag out of "In corso".
     route('POST', '/api/cards/:id/stop', async (request, _url, params) => {

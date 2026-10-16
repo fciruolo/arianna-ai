@@ -85,6 +85,14 @@ export interface CardDetail {
   style: string | null;
   /** The skills of the catalog chosen for it, `owner/repo/slug` (D-163). */
   skills: string[];
+  /** The notes of «Rimanda» (D-235), oldest first, each with the label the user chose. */
+  returns: CardReturnNote[];
+}
+
+export interface CardReturnNote {
+  note: string;
+  label: Label;
+  at: string;
 }
 
 /** The event kinds the history shows. */
@@ -113,7 +121,7 @@ async function reportOf(sql: Queryable, id: string): Promise<CardReport | null> 
 
 export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail> {
   const card = await loadCard(sql, id);
-  const [links, checklist, files, history, report, executor, design] = await Promise.all([
+  const [links, checklist, files, history, report, executor, design, returns] = await Promise.all([
     sql<CardLink[]>`
       SELECT id::text, url, title, created_at AS "createdAt" FROM card_links WHERE task_id = ${id} AND removed_at IS NULL ORDER BY created_at, id`,
     sql<ChecklistItem[]>`
@@ -128,6 +136,7 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     sql<{ choice: string }[]>`
       SELECT choice FROM approvals WHERE task_id = ${id} AND kind = 'executor' AND state = 'approved' ORDER BY decided_at DESC, id DESC LIMIT 1`,
     cardDesign(sql, id),
+    sql<{ note: string; label: Label; at: Date }[]>`SELECT note, label, created_at AS at FROM card_returns WHERE task_id = ${id} ORDER BY id`,
   ]);
   const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value));
   return {
@@ -143,6 +152,7 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     executor: executor[0]?.choice ?? null,
     style: design.style,
     skills: [...design.skills],
+    returns: returns.map((row) => ({ note: row.note, label: row.label, at: row.at.toISOString() })),
   };
 }
 

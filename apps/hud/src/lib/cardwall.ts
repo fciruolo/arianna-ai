@@ -111,6 +111,8 @@ export interface CardDetailData {
   history: HistoryEntry[];
   /** What the agent reported (D-159): its last delegation that ended well, or its last answer on the local model. */
   report: CardReport | null;
+  /** The notes of «Rimanda» (D-235), oldest first; absent from an older core. */
+  returns?: { note: string; label: Label; at: string }[];
   /** Where the user chose the card runs, the last time it was asked (D-159). */
   executor: string | null;
   /** The style of Open Design chosen for a Designer card (D-163); absent from an older core. */
@@ -577,12 +579,15 @@ export function saveState(storage: StorageLike | undefined, state: WallState): v
 
 // What a card says.
 
-/** "aspetta: <title>", "+N" for the others; undefined when it waits for no card. */
 /** "In coda, 1ª" (D-235): the card waits for another card of its project at work. */
 export function turnText(card: Pick<Card, 'turn'>): string | undefined {
   return card.turn === null ? undefined : `In coda, ${String(card.turn)}ª: un'altra card del progetto è al lavoro`;
 }
 
+/** What the wall says when "Ferma" did not stop the card yet (D-235). */
+export const NOT_STOPPED_TEXT = 'La card non si è ancora fermata: riprova fra qualche secondo.';
+
+/** "aspetta: <title>", "+N" for the others; undefined when it waits for no card. */
 export function blockedText(card: Pick<Card, 'column' | 'blockedBy'>): string | undefined {
   const [first, ...rest] = card.blockedBy;
   if (card.column !== 'waiting' || first === undefined) return undefined;
@@ -746,6 +751,10 @@ export function historyText(entry: Pick<HistoryEntry, 'kind' | 'payload'>): stri
         return `${names.length === 1 ? 'Modificato' : 'Modificati'}: ${listText(names)}`;
       }
       if (typeof payload.dependsOn === 'string') return 'Aspetta un’altra card';
+      // D-235.
+      if (payload.started === true) return 'Avviata';
+      if (payload.stopped === true) return 'Fermata da te';
+      if (payload.sentBack === true) return 'Rimandata con una nota';
       if (typeof payload.removedDependency === 'string') return 'Non aspetta più una card';
       for (const part of ['link', 'item', 'file']) {
         const value = payload[part];
@@ -801,6 +810,11 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^the card never started/, 'La card non è mai partita: avviala, o spostala in Da fare.'],
   // A drag into "In corso" (D-235).
   [/^the card is to verify/, RUN_VERIFY_TEXT],
+  // «Rimanda» (D-235).
+  [/^a card is sent back with a note/, 'Scrivi una nota: dice all’agente cosa correggere.'],
+  [/^only a card to verify is sent back/, 'Si rimanda solo una card in Da verificare.'],
+  [/^only the card of an agent is sent back/, 'Si rimanda solo la card di un agente.'],
+  [/^note is longer than (\d+) characters/, (match) => `La nota è più lunga di ${match[1] ?? ''} caratteri.`],
   [/^the card is closed/, RUN_CLOSED_TEXT],
   [/^Arianna does not work on cards from the wall/, 'Arianna non lavora sulle card dal cardwall: assegna la card a un agente.'],
   [/^the card waits for another card/, 'La card aspetta un’altra card: riparte da sola quando quella è fatta.'],

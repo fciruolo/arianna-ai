@@ -52,7 +52,7 @@ import { MAX_SAVED_TERMINAL, postTerminal, saveTerminal, terminalFailure, termin
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
 import { coderNotes, KnowledgeError, privateKnowledge, type CoderNotes } from '../project-knowledge.ts';
-import { openReply, postActivity, type ActivityKind } from '../reply.ts';
+import { openReply, postActivity, postCardActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { writeWeekSummary } from '../work-diary-week.ts';
@@ -675,7 +675,11 @@ export function adaptersOf(env: Pick<DelegateEnv, 'claude' | 'codex'>): { claude
 }
 
 async function show(sql: Sql, task: Task, step: number, kind: ActivityKind, detail = ''): Promise<void> {
-  if (task.conversationId === null) return;
+  // A card's line is saved for its detail (D-235).
+  if (task.conversationId === null) {
+    await postCardActivity(sql, { taskId: task.id, step, kind, detail }).catch(() => undefined);
+    return;
+  }
   await postActivity(sql, { conversationId: task.conversationId, taskId: task.id, step, kind, detail }).catch(() => undefined);
 }
 

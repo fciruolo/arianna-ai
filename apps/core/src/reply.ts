@@ -244,6 +244,44 @@ export async function postActivity(sql: Sql, notice: ActivityNotice): Promise<vo
   }
 }
 
+/** A line of a card at work (D-235): no conversation to tell, so it is only saved; the card's detail reads it while the card works. */
+export interface CardActivity {
+  taskId: string;
+  step: number;
+  kind: ActivityKind;
+  detail: string;
+}
+
+/**
+ * Saves one activity line of a card (D-235), as postActivity saves a line of
+ * a chat task: a detail holding a value revealed by the vault is refused, a
+ * long one is cut, "thinking" is not saved. Queued behind the other saves.
+ * The line carries the card's label at least: its text is the request the
+ * agent works on. Above the card's clearance the database refuses it, and it
+ * is dropped.
+ */
+export function postCardActivity(sql: Sql, line: CardActivity): Promise<void> {
+  const detail = activityDetail(line.detail);
+  const refs = knownSecrets.find(detail);
+  if (refs.length > 0) return Promise.reject(new Error(`the activity contains the value of ${refs.join(', ')}`));
+  if (!isSavedActivity(line.kind)) return Promise.resolve();
+  saving = saving
+    .then(async () => {
+      await sql`
+        INSERT INTO task_activities (task_id, step, kind, detail, label)
+        SELECT t.id, ${line.step}, ${line.kind}, ${detail}, GREATEST(t.label, t.effective_label)
+        FROM tasks t
+        WHERE t.id = ${line.taskId}::uuid AND t.conversation_id IS NULL
+          AND (SELECT count(*) FROM task_activities a WHERE a.task_id = t.id) < ${MAX_SAVED_ACTIVITIES}
+          AND NOT EXISTS (
+            SELECT FROM (SELECT step, kind, detail FROM task_activities a WHERE a.task_id = t.id ORDER BY a.id DESC LIMIT 1) last
+            WHERE last.step = ${line.step} AND last.kind = ${line.kind} AND last.detail = ${detail}
+          )`;
+    })
+    .catch(() => undefined);
+  return Promise.resolve();
+}
+
 async function saveActivity(sql: Sql, notice: ActivityNotice): Promise<void> {
   await sql`
     INSERT INTO task_activities (task_id, step, kind, detail, label)

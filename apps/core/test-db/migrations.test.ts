@@ -19,6 +19,7 @@ test('migrations apply from zero and create every table', async () => {
       'card_checklist',
       'card_files',
       'card_links',
+      'card_returns',
       'client_contacts',
       'client_documents',
       'client_projects',

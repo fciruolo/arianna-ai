@@ -19,6 +19,7 @@ import {
   fileSizeText,
   historyLines,
   historyText,
+  turnText,
   isWebAddress,
   MAX_FILE_BYTES,
   moveRefusal,
@@ -438,6 +439,12 @@ test('files, links and checklist', () => {
 test('the history in Italian, written by the code', () => {
   assert.equal(historyText({ kind: 'task.created', payload: { status: 'inbox' } }), 'Creata');
   assert.equal(historyText({ kind: 'card.changed', payload: { created: true } }), undefined);
+  // D-235: started, stopped, sent back; and the turn of a card in line.
+  assert.equal(historyText({ kind: 'card.changed', payload: { started: true } }), 'Avviata');
+  assert.equal(historyText({ kind: 'card.changed', payload: { stopped: true } }), 'Fermata da te');
+  assert.equal(historyText({ kind: 'card.changed', payload: { sentBack: true } }), 'Rimandata con una nota');
+  assert.equal(turnText({ turn: 2 }), "In coda, 2ª: un'altra card del progetto è al lavoro");
+  assert.equal(turnText({ turn: null }), undefined);
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'inbox', to: 'waiting_user', cause: 'user' } }), 'Da «Da fare» a «Aspetta», da te');
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'running', to: 'to_verify', cause: 'engine' } }), 'Da «In corso» a «Da verificare», dal motore');
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'waiting_user', to: 'ready', cause: 'approval' } }), 'Da «Aspetta» a «Da fare», con una decisione');

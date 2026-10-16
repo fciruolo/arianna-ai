@@ -27,7 +27,7 @@ import { passGateway } from '../gateway.ts';
 import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
-import { openReply, postActivity, type ActivityKind } from '../reply.ts';
+import { openReply, postActivity, postCardActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
 import { canAnswerDirectly, directTargetOf, runDirect, type DirectTarget } from './claude-direct.ts';
@@ -77,6 +77,8 @@ import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.
 import { plannerFor, writePlan } from './claude-plan.ts';
 import {
   cardBrief,
+  loadCardReturns,
+  returnNoteText,
   cardEnd,
   cardLabel,
   cardRepo,
@@ -283,7 +285,26 @@ async function historyOf(
   }
   // A profile.share the user decided (D-114, tappa C): the model reads the decision, never the text.
   const shared = await shareResults(sql, task.id, turns);
+  // A card sent back (D-235): each note after the turns before it, as the user's.
+  const returns = task.conversationId === null ? await loadCardReturns(sql, task.id) : [];
+  let nextReturn = 0;
+  let reportedUpTo = 0;
+  const notesUpTo = (step: number): void => {
+    for (let note = returns[nextReturn]; note !== undefined && note.afterStep < step; note = returns[nextReturn]) {
+      // A delegation of the card before the note (it ran in the cloud): its report first, as the brief of a new delegation has it.
+      const done = delegations.filter((item) => item.status === 'ok' && item.result !== null && item.step > reportedUpTo && item.step <= note.afterStep).at(-1);
+      if (done?.result !== undefined && done.result !== null) {
+        const files = (done.files ?? []).map((file) => `- ${file.path}`);
+        const content = [`Your report last time:\n${done.result}`, ...(files.length === 0 ? [] : [`Files you changed last time:\n${files.join('\n')}`])].join('\n\n');
+        history.push({ value: { role: 'user', content }, label: done.resultLabel ?? done.label, source: `delegation:${task.id}:${String(done.step)}` });
+      }
+      reportedUpTo = note.afterStep;
+      history.push({ value: { role: 'user', content: returnNoteText(note.note) }, label: note.label, source: `card-return:${task.id}:${String(nextReturn)}` });
+      nextReturn += 1;
+    }
+  };
   for (const turn of turns) {
+    notesUpTo(turn.step);
     const source = `turn:${task.id}:${String(turn.step)}`;
     history.push({ value: { role: 'assistant', content: answerText(turn.answer) }, label: turn.label, source });
     if (turn.result !== null) {
@@ -294,6 +315,7 @@ async function historyOf(
       history.push({ value: { role: 'tool', content: result.text }, label: result.label, source: `delegation:${task.id}:${String(turn.step)}` });
     }
   }
+  notesUpTo(Number.MAX_SAFE_INTEGER);
   return history;
 }
 
@@ -402,9 +424,12 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   const summaryEnv = { sql, model: options.model };
   const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
-  /** One line of activity in the chat (D-054); a task without a conversation shows none. Never fails the step. */
+  /** One line of activity in the chat (D-054); a card's is saved for its detail (D-235). Never fails the step. */
   async function show(task: Task, step: number, kind: ActivityKind, detail = ''): Promise<void> {
-    if (task.conversationId === null) return;
+    if (task.conversationId === null) {
+      await postCardActivity(sql, { taskId: task.id, step, kind, detail }).catch(() => undefined);
+      return;
+    }
     await postActivity(sql, { conversationId: task.conversationId, taskId: task.id, step, kind, detail }).catch(() => undefined);
   }
 
@@ -555,12 +580,19 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       return { kind: 'wait-user', reason: `the card is above what ${task.assignee} may read (${agent.card.maxLabel}): the local model does not take it`, usage: { steps: 0 } };
     }
     const latest = (await loadDelegations(sql, task.id)).at(-1);
+    // Sent back after its last delegation, or with none (D-235): a new one starts with the note.
+    const sentBack = (await loadCardReturns(sql, task.id)).at(-1);
+    const fresh = sentBack !== undefined && (latest === undefined || sentBack.afterStep >= latest.step);
+    // The brief of a card sent back carries its last report and the note: the ways are chosen on the highest of their labels.
+    const last = fresh ? latest : undefined;
+    const briefLabel = sentBack !== undefined && fresh ? maxLabel(cardLabel(task), sentBack.label, last?.resultLabel ?? 'L0') : cardLabel(task);
+    const wayTask: Task = { ...task, label: briefLabel };
     const ceiling = briefCeiling(agent.card);
     const opened = (label: Label, brief: string): StepOutcome =>
       isAtMost(label, ceiling) ? { kind: 'continue', usage: { steps: 0 } } : { kind: 'declassify', text: brief, from: label, to: ceiling, usage: { steps: 0 } };
     // This step ran before a crash: the same outcome again, never a second delegation.
     if (latest !== undefined && latest.step === step && (latest.status === 'pending' || latest.status === 'running')) return opened(latest.label, latest.brief);
-    if (latest !== undefined && latest.step === step - 1 && latest.status !== 'pending' && latest.status !== 'running') {
+    if (!fresh && latest !== undefined && latest.step === step - 1 && latest.status !== 'pending' && latest.status !== 'running') {
       return cardEnd(task, latest, { kind: 'continue', usage: { steps: 0 } });
     }
     let only: CloudExecutor | undefined;
@@ -571,24 +603,28 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (choice === undefined) {
         const pending = await pendingExecutorApproval(sql, task.id);
         if (pending !== undefined) return { kind: 'confirm', approvalId: pending, usage: { steps: 0 } };
-        const choices = executorOptions(env, agent.card, task);
+        const choices = executorOptions(env, agent.card, wayTask);
         if (choices.options.length === 0) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, choices.excluded), usage: { steps: 0 } };
         return { kind: 'confirm', approvalId: await requestExecutor(sql, task, step, task.assignee, choices), usage: { steps: 0 } };
       }
       // Checked again: what was allowed when the user chose may not be now.
-      if (!executorOptions(env, agent.card, task).options.includes(choice)) {
+      if (!executorOptions(env, agent.card, wayTask).options.includes(choice)) {
         return { kind: 'wait-user', reason: `${choice} can no longer take this card: resume it to choose again`, usage: { steps: 0 } };
       }
       only = cloudOf(choice);
       if (only === undefined) return undefined;
     } else {
-      const way = defaultWay(env, agent.card, task);
-      if (way === undefined) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, executorOptions(env, agent.card, task).excluded), usage: { steps: 0 } };
+      const way = defaultWay(env, agent.card, wayTask);
+      if (way === undefined) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, executorOptions(env, agent.card, wayTask).excluded), usage: { steps: 0 } };
       if (way === 'local') return undefined;
     }
     // The card itself is the brief, in the card's project: the way of a delegation (delegate.ts).
-    const brief = cardBrief(task);
-    const label = cardLabel(task);
+    // Sent back (D-235): with the last report, the files it touched and the note, at the highest of their labels.
+    const brief =
+      sentBack === undefined || !fresh
+        ? cardBrief(task)
+        : cardBrief(task, { report: last?.status === 'ok' ? last.result : null, files: (last?.files ?? []).map((file) => file.path), note: sentBack.note });
+    const label = briefLabel;
     const repo = cardRepo(env, task);
     await createDelegation(sql, { taskId: task.id, step, agent: task.assignee, brief, label, ...(repo === undefined ? {} : { repo }) });
     return opened(label, brief);

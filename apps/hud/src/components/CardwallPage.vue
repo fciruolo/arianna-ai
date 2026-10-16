@@ -6,6 +6,7 @@ import {
   assigneeText,
   blockedText,
   turnText,
+  NOT_STOPPED_TEXT,
   type Card,
   cardErrorText,
   cardMarks,
@@ -263,7 +264,9 @@ async function onDrop(event: DragEvent, column: WallColumn): Promise<void> {
   problem.value = null;
   try {
     if (action.kind === 'commitment-done') await markCommitmentDone(card.id);
-    else if (action.kind === 'run' || action.kind === 'stop') await cardAction(card.id, action.kind);
+    else if (action.kind === 'run' || action.kind === 'stop') {
+      if ((await cardAction(card.id, action.kind)).left) problem.value = NOT_STOPPED_TEXT;
+    }
     else await moveCard(card.id, action.to);
   } catch (cause) {
     problem.value = cardErrorText(cause);

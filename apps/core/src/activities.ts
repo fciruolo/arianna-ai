@@ -19,11 +19,11 @@ export interface SavedActivity {
   at: string;
 }
 
-/** The lines of a task, oldest first; undefined when the task has no readable conversation. */
+/** The lines of a task, oldest first; undefined when the task has no readable conversation. A card's within its own clearance (D-235). */
 export async function listTaskActivities(sql: Queryable, taskId: string): Promise<SavedActivity[] | undefined> {
   const [task] = await sql<{ clearance: Label }[]>`
-    SELECT c.clearance FROM tasks t JOIN conversations c ON c.id = t.conversation_id
-    WHERE t.id = ${taskId}::uuid AND c.purged_at IS NULL`;
+    SELECT coalesce(c.clearance, t.clearance) AS clearance FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.id = ${taskId}::uuid AND (t.conversation_id IS NULL OR c.purged_at IS NULL)`;
   if (task === undefined) return undefined;
   const rows = await sql<SavedActivity[]>`
     SELECT a.id::text, a.step, a.kind, a.detail, a.label, to_char(a.ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at

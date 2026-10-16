@@ -4,11 +4,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { listTaskActivities } from '../src/activities.ts';
 import { createCard, listCards, runCard, startCard, stopCard } from '../src/cardwall.ts';
 import { stopTaskByUser } from '../src/chat-stop.ts';
 import { createConversation } from '../src/conversations.ts';
 import { scheduleTask, STEP_QUEUE, submitTask } from '../src/engine.ts';
 import { claimStep, completeJob, failJob } from '../src/jobs.ts';
+import { activitiesSaved, postCardActivity } from '../src/reply.ts';
 import { createTask, loadTask, moveTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -127,4 +129,92 @@ test('"Ferma" of a card: a queued step fails with it; one at work stops through 
   const idle = await createCard(sql, { title: 'Mai partita', assignee: 'coder' }, NAMES);
   assert.deepEqual(await stopCard(sql, idle.id, { stopTask: () => false }), { stopped: false, left: false });
   assert.equal((await loadTask(sql, idle.id))?.status, 'inbox');
+});
+
+test('two card workers claiming at once start one card of a project; cards without a project never wait (D-235)', async () => {
+  const { sql } = db();
+  await clearQueue();
+  const first = await agentCard('Grafica', 'demo', 'designer');
+  const second = await agentCard('Codice', 'demo');
+  const taken = await Promise.all([claimStep(sql, STEP_QUEUE, 'cards-1', 'cards'), claimStep(sql, STEP_QUEUE, 'cards-2', 'cards')]);
+  assert.deepEqual(
+    taken.map(taskOf).filter((id) => id !== undefined),
+    [first],
+  );
+  assert.equal((await listCards(sql)).find((card) => card.id === second)?.turn, null);
+  await clearQueue();
+  const loose = [await agentCard('Senza progetto 1', null), await agentCard('Senza progetto 2', null)];
+  const both = [taskOf(await claimStep(sql, STEP_QUEUE, 'cards-1', 'cards')), taskOf(await claimStep(sql, STEP_QUEUE, 'cards-2', 'cards'))];
+  assert.deepEqual(new Set(both), new Set(loose));
+});
+
+test('a delegation of the chat at work in the project folder holds the cards of that project (D-235)', async () => {
+  const { sql } = db();
+  await clearQueue();
+  const conversation = await createConversation(sql, { mode: 'work' });
+  const chat = await createTask(sql, { title: 'Una risposta', conversationId: conversation.id, label: 'L1', clearance: 'L1' });
+  await sql`INSERT INTO task_delegations (task_id, step, agent, brief, label, repo, status) VALUES (${chat.id}, 1, 'coder', 'Il bottone', 'L1', 'demo', 'running')`;
+  const card = await agentCard('Codice', 'demo');
+  const elsewhere = await agentCard('Altro', 'altro');
+  assert.equal(taskOf(await claimStep(sql, STEP_QUEUE, 'cards-1', 'cards')), elsewhere);
+  assert.equal(await claimStep(sql, STEP_QUEUE, 'cards-2', 'cards'), undefined);
+  await sql`UPDATE task_delegations SET status = 'ok', result = 'fatto', result_label = 'L1', ended_at = now() WHERE task_id = ${chat.id}`;
+  assert.equal(taskOf(await claimStep(sql, STEP_QUEUE, 'cards-2', 'cards')), card);
+});
+
+test('a drag into "In corso" of a card in Aspetta resumes it; one waiting for a decision or to verify is refused (D-235)', async () => {
+  const { sql } = db();
+  await clearQueue();
+  const card = await agentCard('Hero', 'demo');
+  await clearQueue();
+  await moveTask(sql, card, 'running');
+  await moveTask(sql, card, 'waiting_user', { reason: 'Messa in attesa a mano.' });
+  assert.equal((await runCard(sql, card, NAMES.agents)).status, 'ready');
+  const [queued] = await sql`SELECT 1 FROM jobs WHERE key = ${`task:${card}`} AND status = 'queued'`;
+  assert.ok(queued !== undefined);
+  // An agent gone: refused, as "Avvia" refuses it.
+  await clearQueue();
+  await moveTask(sql, card, 'running');
+  await moveTask(sql, card, 'waiting_user', { reason: 'Messa in attesa a mano.' });
+  await assert.rejects(runCard(sql, card, ['designer']), /no longer exists/);
+
+  await moveTask(sql, card, 'ready', { cause: 'user' });
+  await moveTask(sql, card, 'running');
+  await moveTask(sql, card, 'to_verify', { evidence: [{ kind: 'test', ref: 'x' }], cause: 'executor' });
+  await assert.rejects(runCard(sql, card, NAMES.agents), /to verify/);
+
+  const asking = await agentCard('Grafica', 'demo', 'designer');
+  await clearQueue();
+  await moveTask(sql, asking, 'running');
+  const [approval] = await sql<{ id: string }[]>`
+    INSERT INTO approvals (task_id, kind, action, detail, label) VALUES (${asking}, 'executor', 'card.executor', ${sql.json({ options: ['local'], excluded: [] })}, 'L2') RETURNING id::text`;
+  await moveTask(sql, asking, 'waiting_user', { reason: 'approval needed: card.executor', cause: 'approval', approvalId: approval?.id ?? '' });
+  await assert.rejects(runCard(sql, asking, NAMES.agents), /waits for a decision/);
+});
+
+test('"Ferma" of a card left at work with no job: it stops, so it no longer holds its project (D-235)', async () => {
+  const { sql } = db();
+  await clearQueue();
+  const card = await agentCard('Orfana', 'demo');
+  await clearQueue();
+  await moveTask(sql, card, 'running');
+  assert.deepEqual(await stopCard(sql, card, { stopTask: () => false }), { stopped: true, left: false });
+  assert.equal((await loadTask(sql, card))?.status, 'failed');
+});
+
+test('the steps of a card at work are saved for its detail, within the card’s clearance (D-235)', async () => {
+  const { sql } = db();
+  const card = await createCard(sql, { title: 'Grafica', assignee: 'designer', project: 'demo' }, NAMES);
+  await postCardActivity(sql, { taskId: card.id, step: 1, kind: 'delegate', detail: 'designer' });
+  await postCardActivity(sql, { taskId: card.id, step: 1, kind: 'delegate', detail: 'designer' });
+  await postCardActivity(sql, { taskId: card.id, step: 2, kind: 'thinking', detail: '' });
+  await activitiesSaved();
+  const lines = await listTaskActivities(sql, card.id);
+  assert.deepEqual(
+    lines?.map(({ step, kind, detail, label }) => ({ step, kind, detail, label })),
+    [{ step: 1, kind: 'delegate', detail: 'designer', label: 'L2' }],
+  );
+  // Above the card's clearance: the database refuses it.
+  const open = await createTask(sql, { title: 'Pubblica', label: 'L1', clearance: 'L1', effectiveLabel: 'L1', project: 'demo' });
+  await assert.rejects(sql`INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${open.id}, 1, 'read', 'x', 'L2')`, /clearance of card|permission/);
 });

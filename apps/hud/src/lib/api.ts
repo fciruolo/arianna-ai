@@ -203,8 +203,15 @@ export async function moveCard(id: string, to: MoveTarget): Promise<void> {
  * "Avvia", "Riprendi" and "Riprova" of a card (D-159); `run`, a drag into "In
  * corso", and `stop`, "Ferma" (D-235). The core refuses (409) what it does not allow.
  */
-export async function cardAction(id: string, action: 'start' | 'resume' | 'retry' | 'run' | 'stop'): Promise<void> {
-  await call('POST', `/api/cards/${encodeURIComponent(id)}/${action}`, {});
+export async function cardAction(id: string, action: 'start' | 'resume' | 'retry' | 'run' | 'stop'): Promise<{ left: boolean }> {
+  const body = await call<{ left?: unknown }>('POST', `/api/cards/${encodeURIComponent(id)}/${action}`, {});
+  // Only "Ferma" says whether the card is still at work after the core waited for it.
+  return { left: body.left === true };
+}
+
+/** «Rimanda» (D-235): an agent's card back to work with a note; `L2` keeps it on the local model, `L1` lets it go back to the cloud. */
+export async function sendBackCard(id: string, note: string, label: 'L1' | 'L2'): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/send-back`, { note, label });
 }
 
 /** "Aspetta anche…": `id` waits for `on` to be done. */

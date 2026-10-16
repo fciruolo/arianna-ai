@@ -9,6 +9,7 @@ import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
 import { stopTaskByUser } from './chat-stop.ts';
 import { appendEvent } from './events.ts';
 import { SLUG } from './git-catalog.ts';
+import { nextStep } from './runs.ts';
 import { createTask, isHeld, loadTask, moveTask, releaseIfFree, TaskError, type Task } from './tasks.ts';
 import type { TaskStatus } from './task-status.ts';
 
@@ -154,6 +155,7 @@ interface TaskRow {
   planned: string | null;
   started: boolean;
   queuedJob: string | null;
+  queuedAt: Date | null;
   hasBody: boolean;
   links: number;
   files: number;
@@ -190,6 +192,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
     SELECT t.id::text, t.title, t.status, t.project, t.assignee, t.due_at AS "dueAt", t.label, t.waiting_reason AS "waitingReason", t.note,
       t.priority, t.planned_on::text AS planned, ${startedSql(sql)} AS started,
       (SELECT j.id::text FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedJob",
+      (SELECT j.run_at FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedAt",
       (t.goal IS NOT NULL OR t.done_criteria IS NOT NULL) AS "hasBody",
       (SELECT count(*)::int FROM card_links l WHERE l.task_id = t.id AND l.removed_at IS NULL) AS links,
       (SELECT count(*)::int FROM card_files f WHERE f.task_id = t.id AND f.removed_at IS NULL) AS files,
@@ -280,19 +283,19 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
 /**
  * The cards waiting for their turn (D-235): a queued step of an agent's card,
  * free of dependencies, in a project where another card is at work. Numbered
- * in the order the workers take them (the job's id, as claimStep).
+ * in the order the workers take them (the job's time, then its id, as claimStep).
  */
 function cardTurns(tasks: readonly TaskRow[], dependencies: readonly DependencyRow[]): Map<string, number> {
-  const busy = new Set(tasks.filter((task) => task.status === 'running' && task.assignee !== CHAT_AGENT).map((task) => task.project ?? ''));
+  const busy = new Set(tasks.filter((task) => task.status === 'running' && task.assignee !== CHAT_AGENT && task.project !== null).map((task) => task.project));
   const open = new Set(dependencies.filter((row) => row.status !== 'done').map((row) => row.taskId));
   const waiting = tasks
-    .filter((task) => task.status === 'ready' && task.queuedJob !== null && task.assignee !== CHAT_AGENT && !open.has(task.id) && busy.has(task.project ?? ''))
-    .sort((a, b) => Number(BigInt(a.queuedJob ?? '0') - BigInt(b.queuedJob ?? '0')));
+    .filter((task) => task.status === 'ready' && task.queuedJob !== null && task.assignee !== CHAT_AGENT && !open.has(task.id) && busy.has(task.project))
+    .sort((a, b) => (a.queuedAt?.getTime() ?? 0) - (b.queuedAt?.getTime() ?? 0) || Number(BigInt(a.queuedJob ?? '0') - BigInt(b.queuedJob ?? '0')));
   const turns = new Map<string, number>();
-  const counts = new Map<string, number>();
+  const counts = new Map<string | null, number>();
   for (const task of waiting) {
-    const next = (counts.get(task.project ?? '') ?? 0) + 1;
-    counts.set(task.project ?? '', next);
+    const next = (counts.get(task.project) ?? 0) + 1;
+    counts.set(task.project, next);
     turns.set(task.id, next);
   }
   return turns;
@@ -602,8 +605,55 @@ export async function runCard(sql: Sql, id: string, agents?: readonly string[]):
       if (card.status === 'ready') return card;
       throw new CardError('conflict', 'the card waits for another card: it goes on when that one is done');
     }
+    if (card.status === 'to_verify') throw new CardError('conflict', 'the card is to verify: send it back with a note');
+    if (card.status === 'done') throw new CardError('conflict', 'the card is closed');
+    if (agents !== undefined && !agents.includes(card.assignee)) throw new CardError('conflict', `the agent ${card.assignee} no longer exists: assign the card to another one`);
     if (card.status === 'failed' || card.status === 'waiting_user') return goOn(tx, card);
-    throw new CardError('conflict', card.status === 'to_verify' ? 'the card is to verify: send it back with a note' : 'the card is closed');
+    // To do, had by the engine, nothing queued nor held: its step goes back in the queue.
+    if (!(await scheduleTask(tx, id))) throw new CardError('conflict', 'the card is already at work');
+    await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { started: true } });
+    return card.status === 'ready' ? card : moveTask(tx, id, 'ready', { cause: 'user' });
+  });
+}
+
+/** Longest note of «Rimanda» (migration 0073). */
+export const MAX_RETURN_NOTE = 2_000;
+
+/**
+ * «Rimanda» (D-235): an agent's card in Da verificare goes back to work with
+ * the user's note. The note keeps the label the user chose for it: `L2`
+ * (Privato, the default: the card's label goes up to it, so it stays on the
+ * local model) or `L1` (Interno: the card may go back to the cloud as it was).
+ * The agent reads its earlier report and the note (orchestrator, card-run.ts);
+ * an agent that asks where it works asks again.
+ */
+export async function sendBackCard(sql: Sql, id: string, input: { note?: unknown; label?: unknown }): Promise<Task> {
+  const note = checkText(input.note, MAX_RETURN_NOTE, 'note');
+  if (note === null) throw new CardError('invalid', 'a card is sent back with a note');
+  if (input.label !== undefined && input.label !== 'L1' && input.label !== 'L2') throw new CardError('invalid', 'the label of the note is L1 or L2');
+  const label: Label = input.label === 'L1' ? 'L1' : 'L2';
+  return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
+    const card = await loadCard(tx, id, true);
+    if (card.status !== 'to_verify') throw new CardError('conflict', 'only a card to verify is sent back');
+    if (card.assignee === 'user' || card.assignee === CHAT_AGENT) throw new CardError('conflict', 'only the card of an agent is sent back');
+    if (!(await engineHad(tx, id))) throw new CardError('conflict', 'the card never started: start it');
+    // The last step that ended well: the next one reads the note (runs.ts, nextStep).
+    const afterStep = (await nextStep(tx, id)) - 1;
+    await tx`INSERT INTO card_returns (task_id, after_step, note, label) VALUES (${id}, ${afterStep}, ${note}, ${label}::privacy_label)`;
+    // The card may read what it now holds: its clearance goes up with its label (never L3, the tasks' check).
+    await tx`
+      UPDATE tasks SET label = GREATEST(label, ${label}::privacy_label), clearance = GREATEST(clearance, ${label}::privacy_label), updated_at = now()
+      WHERE id = ${id}`;
+    try {
+      const moved = await moveTask(tx, id, 'ready', { cause: 'user', from: ['to_verify'] });
+      if (!(await scheduleTask(tx, id))) throw new CardError('conflict', 'the card is already at work');
+      await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { sentBack: true } });
+      return moved;
+    } catch (error) {
+      if (error instanceof TaskError) throw new CardError('conflict', error.message);
+      throw error;
+    }
   });
 }
 
@@ -638,8 +688,15 @@ export async function stopCard(sql: Sql, id: string, options: CardStopOptions): 
         return 'stopped';
       }
       const [running] = await tx`SELECT 1 FROM jobs WHERE key = ${`task:${id}`} AND status = 'running'`;
+      if (running !== undefined) return 'running';
+      // At work with no job (a worker that died meanwhile): it stops here, or it would hold its project for good.
+      if (card.status === 'running') {
+        await stopTaskByUser(tx, id);
+        await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { stopped: true } });
+        return 'stopped';
+      }
       // Ready with nothing queued: never started, nothing to stop.
-      return running === undefined ? 'idle' : 'running';
+      return 'idle';
     });
     if (state === 'stopped') return { stopped: true, left: false };
     if (state === 'idle') return { stopped: atWork, left: false };
@@ -732,6 +789,7 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
         design_style = ${nextStyle},
         design_skills = ${nextSkills}::text[],
         label = CASE WHEN ${written} THEN GREATEST(label, 'L2'::privacy_label) ELSE label END,
+        clearance = CASE WHEN ${written} THEN GREATEST(clearance, 'L2'::privacy_label) ELSE clearance END,
         updated_at = now()
       WHERE id = ${id}`;
     await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { fields: Object.keys(fields) } });

@@ -6,6 +6,8 @@ import {
   addCardLink,
   addChecklistItem,
   cardAction,
+  listActivities,
+  sendBackCard,
   cardFileUrl,
   listDesignStyles,
   listSkills,
@@ -28,6 +30,7 @@ import {
   type CardAction,
   CARD_ACTION_TEXT,
   cardActions,
+  NOT_STOPPED_TEXT,
   type CardDetailData,
   cardErrorText,
   type ChecklistItem,
@@ -57,11 +60,11 @@ import {
   stateText,
   STATUS_COLUMN_TEXT,
 } from '../lib/cardwall.ts';
-import { agentName, reasonText } from '../lib/italian.ts';
+import { activityText, agentName, reasonText, relativeTimeText } from '../lib/italian.ts';
 import { CHOICE_TEXT } from '../lib/labels.ts';
 import { listUserAgents } from '../lib/user-agents.ts';
 import { useModal } from '../lib/modal.ts';
-import type { Approval, ExecutorChoice } from '../lib/types.ts';
+import type { Approval, ExecutorChoice, SavedActivity } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -509,7 +512,54 @@ function move(to: MoveTarget): void {
 }
 
 function runAction(action: CardAction): void {
-  void act(() => cardAction(props.card.id, action));
+  let left = false;
+  void act(async () => {
+    left = (await cardAction(props.card.id, action)).left;
+  }).then(() => {
+    if (left) problem.value = NOT_STOPPED_TEXT;
+  });
+}
+
+// The steps of the agent (D-235): what it searched, read, wrote or delegated; read again every few seconds while the card works.
+const STEPS_POLL_MS = 3_000;
+const steps = ref<SavedActivity[]>([]);
+async function loadSteps(): Promise<void> {
+  if (!isTask.value || props.card.assignee === 'user') return;
+  try {
+    steps.value = await listActivities(props.card.id);
+  } catch {
+    // Not there (an older core): the card shows no steps.
+  }
+}
+let stepsTimer: number | undefined;
+function followSteps(): void {
+  window.clearInterval(stepsTimer);
+  void loadSteps();
+  if (props.card.status === 'running') stepsTimer = window.setInterval(() => void loadSteps(), STEPS_POLL_MS);
+}
+watch(() => props.card.status, followSteps);
+onMounted(followSteps);
+onBeforeUnmount(() => window.clearInterval(stepsTimer));
+
+// «Rimanda» (D-235): an agent's card in Da verificare goes back to work with a note; the note is Privato unless the user says Interno.
+const canSendBack = computed(() => props.card.kind === 'task' && props.card.status === 'to_verify' && props.card.assignee !== 'user');
+/** A card already private stays so: Interno would not take it back to the cloud, so it is not offered. */
+const alreadyPrivate = computed(() => props.card.label === 'L2' || props.card.label === 'L3');
+const returns = computed(() => detail.value?.returns ?? []);
+const returnNote = ref('');
+const returnLabel = ref<'L1' | 'L2'>('L2');
+
+function sendBack(): void {
+  const note = returnNote.value.trim();
+  if (note === '') {
+    problem.value = 'Scrivi una nota: dice all’agente cosa correggere.';
+    return;
+  }
+  void act(async () => {
+    await sendBackCard(props.card.id, note, returnLabel.value);
+    returnNote.value = '';
+    returnLabel.value = 'L2';
+  });
 }
 
 async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
@@ -818,6 +868,36 @@ function absoluteTime(at: string): string {
               <ul v-if="report.files.length > 0" class="mt-2 flex flex-wrap gap-1.5" aria-label="File scritti nel progetto">
                 <li v-for="file in report.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[12.5px]">{{ file }}</li>
               </ul>
+            </div>
+            <div v-if="steps.length > 0" class="rounded-lg border border-line px-3 py-2.5">
+              <p class="mb-1.5 text-[13px] text-muted">Passi{{ card.status === 'running' ? ' · si aggiornano mentre lavora' : '' }}</p>
+              <ol class="flex max-h-48 flex-col gap-1 overflow-y-auto text-[13.5px]" aria-label="Passi dell’agente">
+                <li v-for="item in steps" :key="item.id" class="break-words">{{ activityText(item) }}</li>
+              </ol>
+            </div>
+            <ul v-if="returns.length > 0" class="flex flex-col gap-1.5" aria-label="Note con cui l’hai rimandata">
+              <li v-for="(item, index) in returns" :key="item.at" class="rounded-lg border border-line px-3 py-2 text-[14px]">
+                <p class="mb-1 flex items-center gap-2 text-[13px] text-muted">
+                  <span class="flex-1">Rimandata, {{ index + 1 }}ª volta · {{ relativeTimeText(item.at, new Date()) }}</span>
+                  <LabelBadge :label="item.label" />
+                </p>
+                <p class="whitespace-pre-wrap break-words">{{ item.note }}</p>
+              </li>
+            </ul>
+            <div v-if="canSendBack" class="flex flex-col gap-2 rounded-lg border border-line px-3 py-2.5">
+              <label for="card-return" class="text-[13.5px] text-muted">Non va? Rimandala con una nota: l’agente riparte dal suo rapporto e da quello che scrivi.</label>
+              <textarea id="card-return" v-model="returnNote" rows="3" maxlength="2000" class="field px-2 py-1.5 text-[14px]" placeholder="Per esempio: usa i colori del DESIGN.md" :disabled="busy" />
+              <div class="flex flex-wrap items-center gap-2">
+                <template v-if="!alreadyPrivate">
+                  <label for="card-return-label" class="text-[13.5px] text-muted">Privacy della nota</label>
+                  <select id="card-return-label" v-model="returnLabel" class="field px-2 py-1.5 text-[14px]" :disabled="busy">
+                    <option value="L2">Privato: la card resta sul modello locale</option>
+                    <option value="L1">Interno: può tornare a Claude o ChatGPT</option>
+                  </select>
+                </template>
+                <span v-else class="text-[13.5px] text-muted">La card è già Privata: la nota resta sul modello locale.</span>
+                <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy" @click="sendBack">Rimanda</button>
+              </div>
             </div>
           </div>
         </section>

@@ -165,13 +165,18 @@ export async function nextStep(sql: Queryable, taskId: string): Promise<number> 
   return row?.step ?? 1;
 }
 
-/** What the task's runs have used so far, for the caps. Running runs count their time. */
+/**
+ * What the task's runs have used so far, for the caps. Running runs count their
+ * time. A card sent back with «Rimanda» (D-235) counts from its last return:
+ * each round has the agent's caps whole.
+ */
 export async function taskUsage(sql: Queryable, taskId: string): Promise<TaskUsage> {
   const [row] = await sql<{ steps: number; minutes: number; cost: string }[]>`
     SELECT
       COALESCE(sum(steps_used), 0)::int AS steps,
       COALESCE(sum(extract(epoch FROM COALESCE(ended_at, now()) - started_at)), 0)::float8 / 60 AS minutes,
       COALESCE(sum(cost_estimate), 0)::text AS cost
-    FROM runs WHERE task_id = ${taskId}`;
+    FROM runs WHERE task_id = ${taskId}
+      AND step > COALESCE((SELECT max(after_step) FROM card_returns WHERE task_id = ${taskId}), -1)`;
   return { steps: row?.steps ?? 0, minutes: row?.minutes ?? 0, cost: Number(row?.cost ?? 0) };
 }

@@ -4,6 +4,22 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Trascinare una card di un agente in «In corso» la fa partire, come «Avvia», «Riprendi» o «Riprova»; trascinarla di nuovo lì non fa partire niente di più (D-235).
+- «Ferma» nel dettaglio di una card al lavoro o in coda, e lo stesso trascinandola fuori da «In corso»: il lavoro si interrompe, la card va fra le fallite con «Fermata da te» e riparte con «Riprova» (D-235).
+- «Passi» nel dettaglio della card di un agente: cosa cerca, legge, scrive o delega mentre lavora, aggiornati ogni pochi secondi finché la card è in corso, con la privacy della card (D-235).
+- «Rimanda» nel dettaglio di una card in «Da verificare»: una nota obbligatoria, con la sua privacy (Privato di base: la card resta sul modello locale; Interno: può tornare a Claude o ChatGPT); l'agente riparte dal suo rapporto, dai file che ha toccato e dalla nota, e le note restano nella card (D-235).
+
+### Corretto
+
+- Un testo scritto a mano su una card Interna nata da un piano la rende Privata e ora le lascia anche leggere ciò che è Privato: prima il motore la fermava appena partiva sul modello locale (D-152, trovato con D-235).
+
+### Cambiato
+
+- Una card rimandata ha di nuovo i suoi limiti di passi e minuti interi a ogni giro (D-235).
+- Le card lavorano su due worker loro, separati da quello della chat: una card lunga del Coder non fa più aspettare le risposte. Una sola card al lavoro per progetto, perché lavorano nella stessa cartella, e nessuna mentre una delega della chat lavora in quella cartella: le altre aspettano con «In coda, 1ª» sulla card (D-235).
+
 ## [0.129.1] - 2026-10-16
 
 ### Cambiato

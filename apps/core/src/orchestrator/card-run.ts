@@ -136,13 +136,46 @@ export function localCardRequest(task: Pick<Task, 'title' | 'goal'>, card: Pick<
   return parts.join('\n\n');
 }
 
-/** The brief of a card's delegation: what the user wrote on it, as the agent reads it. */
-export function cardBrief(task: Pick<Task, 'title' | 'goal' | 'doneCriteria' | 'project'>): string {
+/** A note of «Rimanda» (D-235, migration 0073): the user sent the card back after `afterStep`. */
+export interface CardReturn {
+  afterStep: number;
+  note: string;
+  label: Label;
+}
+
+/** The notes the card was sent back with, oldest first. */
+export async function loadCardReturns(sql: Queryable, taskId: string): Promise<CardReturn[]> {
+  const rows = await sql<CardReturn[]>`
+    SELECT after_step AS "afterStep", note, label FROM card_returns WHERE task_id = ${taskId} ORDER BY id`;
+  return [...rows];
+}
+
+/** What a card sent back adds to its brief (D-235): the agent's last report, the files it touched, the user's latest note. */
+export interface CardRound {
+  report: string | null;
+  files: readonly string[];
+  note: string;
+}
+
+/** The note as the agent reads it after its own turns on the local model (D-235). */
+export function returnNoteText(note: string): string {
+  return `The user checked your work and sent the card back:\n${note}`;
+}
+
+/** The brief of a card's delegation: what the user wrote on it, as the agent reads it; sent back, also its last report and the note (D-235). */
+export function cardBrief(task: Pick<Task, 'title' | 'goal' | 'doneCriteria' | 'project'>, round?: CardRound): string {
   return [
     `Card: ${task.title}`,
     ...(task.project === null ? [] : [`Project: ${task.project}`]),
     ...(task.goal === null || task.goal.trim() === '' ? [] : [`What to do:\n${task.goal.trim()}`]),
     ...(task.doneCriteria === null || task.doneCriteria.trim() === '' ? [] : [`Done when:\n${task.doneCriteria.trim()}`]),
+    ...(round === undefined
+      ? []
+      : [
+          ...(round.report === null || round.report.trim() === '' ? [] : [`Your report last time:\n${round.report.trim()}`]),
+          ...(round.files.length === 0 ? [] : [`Files you changed last time:\n${round.files.map((file) => `- ${file}`).join('\n')}`]),
+          returnNoteText(round.note),
+        ]),
   ].join('\n\n');
 }
 
