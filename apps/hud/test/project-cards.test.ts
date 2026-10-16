@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { ImBillingRow, ImInvoice, ImOverview } from '../src/lib/im-billing.ts';
-import { cardMoneyText, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards } from '../src/lib/project-cards.ts';
+import { ariannaFirst, cardMoneyText, isAriannaProject, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards } from '../src/lib/project-cards.ts';
 
 const row = (number: number, change: Partial<ImBillingRow> = {}): ImBillingRow => ({
   number,
@@ -98,6 +98,16 @@ test('the parts and the letters of a card', () => {
   assert.equal(partsText({ single: false, parts: ['a:x', 'a:y'] }), '2 parti');
   assert.equal(projectInitials('progetto-test'), 'PT');
   assert.equal(projectInitials('demo'), 'DE');
+});
+
+test('the project of Arianna comes first, even before one past due; the others keep their order', () => {
+  const list = [{ name: 'zeta' }, { name: 'arianna' }, { name: 'beta' }];
+  assert.deepEqual(sortProjectCards(list, new Map([['zeta', 2]])).map((item) => item.name), ['arianna', 'zeta', 'beta']);
+  assert.deepEqual(sortProjectCards([{ name: 'beta' }, { name: 'alfa' }], new Map()).map((item) => item.name), ['alfa', 'beta']);
+  assert.deepEqual(ariannaFirst([{ name: 'demo' }, { name: 'x' }, { name: 'arianna' }]).map((entry) => [entry.project.name, entry.index]), [['arianna', 2], ['demo', 0], ['x', 1]]);
+  assert.deepEqual(ariannaFirst([{ name: 'demo' }]).map((entry) => entry.index), [0]);
+  assert.equal(isAriannaProject('arianna'), true);
+  assert.equal(isAriannaProject('Arianna-sito'), false);
 });
 
 test('the cards: past due first, then by name; not read yet counts as none past due', () => {

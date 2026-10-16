@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ariannaFirst, isAriannaProject } from '../lib/project-cards.ts';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
 import {
@@ -1224,9 +1225,16 @@ const grid = 'grid gap-3 sm:grid-cols-6';
               <!-- Progetti: the folders Claude and Codex may work in, with how reserved each is -->
               <SettingsCard v-if="active === 'projects'" id="projects" :busy="locked">
                 <ul v-if="forms.projects.length > 0" class="flex flex-col">
-                  <li v-for="(project, index) in forms.projects" :key="project.name" class="flex flex-wrap items-center gap-3 border-t border-line py-2.5 first:border-t-0 first:pt-0">
+                  <li
+                    v-for="{ project, index } in ariannaFirst(forms.projects)"
+                    :key="project.name"
+                    class="flex flex-wrap items-center gap-3 border-t border-line py-2.5 first:border-t-0 first:pt-0"
+                    :class="isAriannaProject(project.name) ? 'mb-1 rounded-[10px] border border-accent bg-accent/10 px-3 first:pt-2.5' : ''"
+                  >
                     <span class="min-w-[160px] flex-1">
-                      <b class="font-semibold">{{ project.name }}</b>
+                      <b class="flex items-center gap-2 font-semibold"
+                        >{{ project.name }}<span v-if="isAriannaProject(project.name)" class="rounded-full border border-accent/50 px-2 py-px text-[12px] font-semibold text-accent">Arianna stessa</span></b
+                      >
                       <span class="block truncate font-mono text-[12.5px] text-muted" :title="project.path">{{ project.path }}</span>
                     </span>
                     <select v-model="project.label" class="field w-[150px] px-2 py-1.5 text-[14px]" :aria-label="`Riservatezza di ${project.name}`">

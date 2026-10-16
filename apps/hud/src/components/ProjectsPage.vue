@@ -5,7 +5,7 @@ import { clientOfProject, deleteProjectPath, listBrowsableProjects, listClients,
 import { diffRows } from '../lib/delegations.ts';
 import { calendarText, todayInput, type ImOverview } from '../lib/im-billing.ts';
 import { imDayText } from '../lib/im.ts';
-import { cardMoneyText, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards, type ProjectCardIm } from '../lib/project-cards.ts';
+import { cardMoneyText, isAriannaProject, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards, type ProjectCardIm } from '../lib/project-cards.ts';
 import { isPartTab, nextIm, overdueInvoices, overdueText, partPressed, PROJECT_TABS, type ProjectTab } from '../lib/projects-page.ts';
 import {
   agoText,
@@ -686,18 +686,23 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
     <template v-else-if="chosenContainer === null">
       <p class="text-[13px] text-muted">{{ containers.length === 1 ? '1 progetto' : `${String(containers.length)} progetti` }} · numeri del {{ thisYear }}</p>
       <ul class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
-        <li v-for="item in cards" :key="item.name" class="flex">
+        <li v-for="item in cards" :key="item.name" class="flex" :class="isAriannaProject(item.name) ? 'col-span-full' : ''">
           <button
             type="button"
-            class="flex w-full flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 text-left transition-colors hover:border-accent"
-            :class="(cardIm.get(item.name)?.money?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : ''"
+            class="flex w-full flex-col gap-3 rounded-2xl border p-4 text-left transition-colors hover:border-accent"
+            :class="[
+              isAriannaProject(item.name) ? 'border-accent bg-accent/10' : 'border-line bg-surface-2',
+              (cardIm.get(item.name)?.money?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : '',
+            ]"
             @click="go(item.name)"
           >
             <span v-for="owner in [cardClients.get(item.name) ?? null]" :key="owner?.id ?? 'none'" class="flex items-center gap-3">
               <img v-if="owner && logoUrl(owner.id, owner.logo)" :src="logoUrl(owner.id, owner.logo) ?? undefined" alt="" class="size-[52px] shrink-0 rounded-xl border border-line bg-white object-contain p-0.5" />
               <span v-else class="grid size-[52px] shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-[17px] font-semibold text-accent" aria-hidden="true">{{ projectInitials(item.name) }}</span>
               <span class="min-w-0">
-                <b class="block truncate text-[16px] leading-snug font-semibold">{{ item.name }}</b>
+                <b class="flex items-center gap-2 truncate text-[16px] leading-snug font-semibold"
+                  >{{ item.name }}<span v-if="isAriannaProject(item.name)" class="rounded-full border border-accent/50 px-2 py-px text-[12px] font-semibold text-accent">Arianna stessa</span></b
+                >
                 <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
                   <template v-if="owner">{{ owner.displayName }}</template><template v-else>Nessun cliente</template>
                   <template v-if="partsText(item)"> · {{ partsText(item) }}</template>

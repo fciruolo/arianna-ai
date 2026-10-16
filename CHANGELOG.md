@@ -51,6 +51,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Cambiando conversazione il testo non inviato non passa più alla conversazione aperta dopo (D-231).
+- Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, con l'etichetta «Arianna stessa» (richiesta dell'utente del 2026-10-16, D-127).
+
 ### Aggiunto
 
 - «Chiedi a lato» fra le azioni di una risposta (accanto a Copia e Salva in inbox): apre a destra un pannello dove fai domande a parte su quella risposta, a cui risponde chi risponde nella conversazione (Arianna, il modello locale, Claude o ChatGPT) con le stesse regole di privacy; domande e risposte restano nel pannello e la conversazione non le rilegge. Esc chiude il pannello, la stessa risposta lo riapre sullo stesso filo («Riprendi a lato»); sullo schermo stretto il pannello prende tutta la pagina; il filo si cancella con la conversazione (D-232).

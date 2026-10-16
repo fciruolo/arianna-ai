@@ -87,8 +87,23 @@ export function projectInitials(name: string): string {
  * The cards in order: the projects with invoices past due first, then by
  * name; a project whose numbers are not read yet counts as none past due.
  */
+/** The project of Arianna herself, where GOD works on her clones (D-127): always first and set apart (request of the user of 2026-10-16). */
+export const ARIANNA_PROJECT = 'arianna';
+
+export function isAriannaProject(name: string): boolean {
+  return name === ARIANNA_PROJECT;
+}
+
+/** The project of Arianna first, the others in their order: the list of Impostazioni → Progetti, by position in the form. */
+export function ariannaFirst<T extends { name: string }>(projects: readonly T[]): { project: T; index: number }[] {
+  const indexed = projects.map((project, index) => ({ project, index }));
+  return [...indexed.filter((entry) => isAriannaProject(entry.project.name)), ...indexed.filter((entry) => !isAriannaProject(entry.project.name))];
+}
+
 export function sortProjectCards<T extends Pick<BrowsableContainer, 'name'>>(containers: readonly T[], overdue: ReadonlyMap<string, number>): T[] {
   return [...containers].sort((a, b) => {
+    const own = Number(isAriannaProject(b.name)) - Number(isAriannaProject(a.name));
+    if (own !== 0) return own;
     const late = Number((overdue.get(b.name) ?? 0) > 0) - Number((overdue.get(a.name) ?? 0) > 0);
     return late !== 0 ? late : a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
   });
