@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.137.1] - 2026-10-17
+
 ### Corretto
 
 - Il Designer e il Coder lavorano anche in una cartella di progetto appena creata con `git init` e senza ancora un commit: prima, dopo la scelta «Claude», il task falliva con un errore generico dopo tre tentativi senza avviare l'agente; un guasto di git nel leggere la cartella ora chiude il lavoro con il motivo, che Arianna dice in chat, invece di far fallire il task (D-058).
