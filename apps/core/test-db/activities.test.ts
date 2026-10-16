@@ -105,9 +105,12 @@ test('a line is never below the label of its task, nor above the clearance of it
   await assert.rejects(sql`INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${work.taskId}, 1, 'thinking', '', 'L1')`, /check/);
   await assert.rejects(sql`INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${work.taskId}, 1, 'read', ${'x'.repeat(301)}, 'L1')`, /check/);
   await assert.rejects(sql`INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${work.taskId}, 1, 'read', ${'a\nb'}, 'L1')`, /check/);
-  // A task without a conversation saves nothing.
-  const [card] = await db().owner<{ id: string }[]>`INSERT INTO tasks (title, assignee) VALUES ('carta', 'arianna') RETURNING id::text`;
-  await assert.rejects(insert(card?.id ?? '', 'L2'), /has no conversation/);
+  // A card (a task without a conversation) saves its steps within its own clearance (D-235).
+  const [card] = await db().owner<{ id: string }[]>`
+    INSERT INTO tasks (title, assignee, label, clearance, effective_label) VALUES ('carta', 'coder', 'L1', 'L1', 'L1') RETURNING id::text`;
+  await insert(card?.id ?? '', 'L1');
+  await assert.rejects(insert(card?.id ?? '', 'L0'), /below the effective label/);
+  await assert.rejects(insert(card?.id ?? '', 'L2'), /above the clearance of card/);
 });
 
 test('at most 200 lines per task: past the cap the line is shown, not saved', async () => {
