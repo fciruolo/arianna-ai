@@ -107,7 +107,7 @@ export interface Conversation {
   sideOf: string | null;
   sideMessageId: string | null;
   /**
-   * Cruscotto (D-248, migration 0074): the conversation a refresh of a tile
+   * Dashboard (D-248, migration 0074): the conversation a refresh of a tile
    * asks its question again for; null for every other one. A refresh
    * conversation is private, never listed nor searched, and takes no message
    * of the user: dashboard.ts writes its one question and purges it after.
@@ -333,7 +333,7 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
   if (conversation.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
   // A side thread (D-232) keeps the model of its mother at its birth: the same answers it.
   if (conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread keeps the model of its conversation');
-  if (conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Cruscotto keeps its model');
+  if (conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Dashboard keeps its model');
   if (model !== null && !selectable.includes(model)) throw new ChatError('invalid', 'the model is not one of the cloud models of this installation');
   // In a system chat the model answers directly (D-064): Sonnet or Opus, never one behind a budget approval.
   if (model !== null && conversation.origin === 'system' && !(DIRECT_MODELS as readonly string[]).includes(model)) {
@@ -439,8 +439,8 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     if (archived && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary cannot be archived');
     // A side thread (D-232) follows its mother: archived with her, never on its own.
     if (conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread follows its conversation: archive that one');
-    // A refresh of the Cruscotto (D-248) is archived and purged by dashboard.ts alone.
-    if (conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Cruscotto is not archived by hand');
+    // A refresh of the Dashboard (D-248) is archived and purged by dashboard.ts alone.
+    if (conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Dashboard is not archived by hand');
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
@@ -463,7 +463,7 @@ export async function pinConversation(sql: Sql, id: string, pinned: boolean): Pr
     if (pinned && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary has its own button');
     // A side thread (D-232) is never in the list: nothing to pin.
     if (pinned && conversation.sideOf !== null) throw new ChatError('invalid', 'a side thread is never pinned');
-    if (pinned && conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Cruscotto is never pinned');
+    if (pinned && conversation.dashboardOf !== null) throw new ChatError('invalid', 'a refresh of the Dashboard is never pinned');
     if ((conversation.pinnedAt !== null) !== pinned) {
       await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.pinned', label: 'L0', payload: { conversationId: id, pinned } });
@@ -549,11 +549,11 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
   if (busy?.system === true) throw new ChatError('busy', 'a system chat about this conversation is still at work: wait for it to finish');
   // Its side threads go with it (D-232, migration 0071).
   if (busy?.side === true) throw new ChatError('busy', 'a side thread of this conversation is still at work: wait for it to finish');
-  // A tile of the Cruscotto being refreshed (D-248): «Annulla» it, or wait.
-  if (busy?.refresh === true) throw new ChatError('busy', 'a tile of the Cruscotto from this conversation is being refreshed: wait for it to finish');
+  // A tile of the Dashboard being refreshed (D-248): «Annulla» it, or wait.
+  if (busy?.refresh === true) throw new ChatError('busy', 'a tile of the Dashboard from this conversation is being refreshed: wait for it to finish');
   try {
     await sql.begin(async (tx) => {
-      // Its tiles of the Cruscotto go with it (D-248), and the refreshes of them that nothing works in any more.
+      // Its tiles of the Dashboard go with it (D-248), and the refreshes of them that nothing works in any more.
       const tiles = await tx<{ id: string }[]>`SELECT id::text FROM dashboard_tiles WHERE source_conversation_id = ${id} ORDER BY id FOR UPDATE`;
       for (const tile of tiles) {
         await tx`UPDATE dashboard_tiles SET refresh_state = 'idle', refresh_error = NULL, refresh_conversation_id = NULL, refresh_started_at = NULL WHERE id = ${tile.id} AND refresh_state <> 'idle'`;
@@ -679,7 +679,7 @@ export interface MessageTarget {
   incognito: boolean;
   finance: boolean;
   secretary: boolean;
-  /** A refresh of the Cruscotto (D-248): it takes no message of the user. */
+  /** A refresh of the Dashboard (D-248): it takes no message of the user. */
   refresh: boolean;
   origin: ConversationOrigin;
   sideOf: string | null;
@@ -709,7 +709,7 @@ export async function lockForMessage(tx: Queryable, conversationId: string): Pro
  */
 export function checkUserMessage(conversation: MessageTarget, body: string, options: MessageOptions = {}): void {
   checkMessageBody(body);
-  if (conversation.refresh) throw new ChatError('invalid', 'a refresh of the Cruscotto takes no message');
+  if (conversation.refresh) throw new ChatError('invalid', 'a refresh of the Dashboard takes no message');
   if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');
 
   if (conversation.mode === 'work') {

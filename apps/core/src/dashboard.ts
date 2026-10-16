@@ -9,11 +9,12 @@ import { contextOf } from './finance-mark.ts';
 import { passGateway } from './gateway.ts';
 import { modelUnavailable } from './organize.ts';
 import { createTask, TaskError } from './tasks.ts';
+import type { ChartData, ChartInput } from './dashboard-chart.ts';
 
 /**
- * Cruscotto personale (D-248, idea 6 of OpenWork; the user's choice of
+ * Dashboard personale (D-248, idea 6 of OpenWork; the user's choice of
  * 2026-10-16 «Fisso + Aggiorna a mano»). An answer of the chat is pinned to
- * the page «Cruscotto» as a tile: a title the user changes, the answer, the
+ * the page «Dashboard» as a tile: a title the user changes, the answer, the
  * label of the answer (the tile's label only goes up), the conversation it
  * came from, two widths and an order.
  *
@@ -47,7 +48,10 @@ export const SUGGEST_LIMITS = { before: 6, text: 2_000, answer: 4_000 } as const
 export type TileWidth = 'narrow' | 'wide';
 export type RefreshState = 'idle' | 'running' | 'failed';
 /** Why a refresh failed, as the tile and the event carry it: a closed list, never a text. */
-export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost';
+export type RefreshError = 'failed' | 'timeout' | 'question' | 'empty' | 'lost' | 'chart';
+/** A tile shows its answer in words or as a chart (D-248, migration 0077). */
+export type TileKind = 'text' | 'chart';
+export const TILE_KINDS: readonly TileKind[] = ['text', 'chart'];
 export type AnsweredBy = 'local' | 'claude' | 'codex';
 
 export const TILE_WIDTHS: readonly TileWidth[] = ['narrow', 'wide'];
@@ -67,6 +71,9 @@ export interface DashboardTile {
   answeredBy: AnsweredBy;
   originCloud: boolean;
   width: TileWidth;
+  kind: TileKind;
+  /** The data of a chart tile, checked (dashboard-chart.ts); null before the first one, and for a text tile that never was a chart. */
+  chart: ChartData | null;
   position: number;
   refreshedAt: Date;
   refreshState: RefreshState;
@@ -78,7 +85,7 @@ export interface DashboardTile {
 const TILE_COLUMNS = `t.id::text, t.title, t.question, t.question_label AS "questionLabel", t.body, t.label,
   t.source_conversation_id::text AS "sourceConversationId", t.source_message_id::text AS "sourceMessageId",
   c.title AS "sourceTitle", c.archived_at IS NOT NULL AS "sourceArchived",
-  t.answered_by AS "answeredBy", t.origin_cloud AS "originCloud", t.width, t.position, t.refreshed_at AS "refreshedAt",
+  t.answered_by AS "answeredBy", t.origin_cloud AS "originCloud", t.width, t.kind, t.chart, t.position, t.refreshed_at AS "refreshedAt",
   t.refresh_state AS "refreshState", t.refresh_error AS "refreshError", t.refresh_started_at AS "refreshStartedAt", t.created_at AS "createdAt"`;
 
 // ---------------------------------------------------------------------------
@@ -178,6 +185,11 @@ export function checkQuestion(raw: unknown): string {
   return question;
 }
 
+export function checkKind(raw: unknown): TileKind {
+  if (raw === 'text' || raw === 'chart') return raw;
+  throw new ChatError('invalid', 'kind must be text or chart');
+}
+
 export function checkWidth(raw: unknown): TileWidth {
   if (raw === 'narrow' || raw === 'wide') return raw;
   throw new ChatError('invalid', 'width must be narrow or wide');
@@ -242,6 +254,7 @@ export interface PinInput {
   title: unknown;
   question: unknown;
   width?: unknown;
+  kind?: unknown;
 }
 
 /**
@@ -255,6 +268,7 @@ export async function pinTile(sql: Sql, input: PinInput): Promise<DashboardTile>
   const title = checkTitle(input.title);
   const question = checkQuestion(input.question);
   const width = input.width === undefined ? 'narrow' : checkWidth(input.width);
+  const kind = input.kind === undefined ? 'text' : checkKind(input.kind);
   const id = await sql.begin(async (tx) => {
     const { conversation, answer } = await pinnable(tx, messageId);
     if (conversation.mode === 'work') {
@@ -262,7 +276,7 @@ export async function pinTile(sql: Sql, input: PinInput): Promise<DashboardTile>
       if (kinds.length > 0) throw new ChatError('scanner', `the question holds what a work conversation cannot (${kinds.join(', ')})`);
     }
     const [taken] = await tx`SELECT 1 FROM dashboard_tiles WHERE source_message_id = ${messageId}::bigint`;
-    if (taken !== undefined) throw new ChatError('busy', 'this answer is already in the Cruscotto');
+    if (taken !== undefined) throw new ChatError('busy', 'this answer is already in the Dashboard');
     const delegated =
       answer.taskId === null
         ? []
@@ -270,10 +284,12 @@ export async function pinTile(sql: Sql, input: PinInput): Promise<DashboardTile>
     const answeredBy = answeredByOf(conversation.agent, answer.model, delegated);
     const questionLabel = questionLabelOf(conversation, answer.label);
     const label = maxLabel(answer.label, questionLabel);
+    // No model reads Segreto: such a tile is never a chart (a chart is written by the local model).
+    if (kind === 'chart' && !isAtMost(label, 'L2')) throw new ChatError('invalid', 'a Segreto tile is never a chart: no model reads it');
     const [row] = await tx<{ id: string }[]>`
-      INSERT INTO dashboard_tiles (title, question, question_label, body, label, source_conversation_id, source_message_id, answered_by, origin_cloud, width, position)
+      INSERT INTO dashboard_tiles (title, question, question_label, body, label, source_conversation_id, source_message_id, answered_by, origin_cloud, width, kind, position)
       VALUES (${title}, ${question}, ${questionLabel}::privacy_label, ${tileBody(answer.body)}, ${label}::privacy_label, ${conversation.id}, ${messageId}::bigint,
-        ${answeredBy}, ${answeredBy !== 'local'}, ${width}, (SELECT coalesce(min(position), 0) - 1 FROM dashboard_tiles))
+        ${answeredBy}, ${answeredBy !== 'local'}, ${width}, ${kind}, (SELECT coalesce(min(position), 0) - 1 FROM dashboard_tiles))
       RETURNING id::text`;
     if (row === undefined) throw new Error('INSERT INTO dashboard_tiles returned no row');
     await appendEvent(tx, { kind: 'dashboard.tile_pinned', label: 'L0', payload: { tileId: row.id, conversationId: conversation.id, messageId } });
@@ -284,21 +300,82 @@ export async function pinTile(sql: Sql, input: PinInput): Promise<DashboardTile>
   return tile;
 }
 
-/** «Rinomina» and the width. */
-export async function updateTile(sql: Sql, id: string, input: { title?: unknown; width?: unknown }): Promise<DashboardTile> {
-  if (input.title === undefined && input.width === undefined) throw new ChatError('invalid', 'nothing to change');
+/**
+ * «Rinomina», the width, «Testo» or «Grafico», and «Modifica la domanda»: the
+ * next refresh asks the new question. Its label stays (the user's text in the
+ * same conversation), so a work conversation refuses one the scanner flags;
+ * never while the tile is being refreshed.
+ */
+export async function updateTile(sql: Sql, id: string, input: { title?: unknown; width?: unknown; kind?: unknown; question?: unknown }): Promise<DashboardTile> {
+  if (input.title === undefined && input.width === undefined && input.kind === undefined && input.question === undefined) throw new ChatError('invalid', 'nothing to change');
   const title = input.title === undefined ? undefined : checkTitle(input.title);
   const width = input.width === undefined ? undefined : checkWidth(input.width);
+  const kind = input.kind === undefined ? undefined : checkKind(input.kind);
+  const question = input.question === undefined ? undefined : checkQuestion(input.question);
   await sql.begin(async (tx) => {
+    const [tile] = await tx<{ refreshState: RefreshState; mode: string; label: Label }[]>`
+      SELECT t.refresh_state AS "refreshState", c.mode, t.label FROM dashboard_tiles t JOIN conversations c ON c.id = t.source_conversation_id
+      WHERE t.id = ${isUuid(id) ? id : null}::uuid FOR UPDATE OF t`;
+    if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
+    if (kind === 'chart' && !isAtMost(tile.label, 'L2')) throw new ChatError('invalid', 'a Segreto tile is never a chart: no model reads it');
+    if (question !== undefined) {
+      if (tile.refreshState === 'running') throw new ChatError('busy', 'the tile is being refreshed: change the question when it ends');
+      if (tile.mode === 'work') {
+        const kinds = [...new Set(scanText(question).map((finding) => finding.kind))];
+        if (kinds.length > 0) throw new ChatError('scanner', `the question holds what a work conversation cannot (${kinds.join(', ')})`);
+      }
+    }
     const [row] = await tx<{ conversationId: string }[]>`
-      UPDATE dashboard_tiles SET title = coalesce(${title ?? null}, title), width = coalesce(${width ?? null}, width)
-      WHERE id = ${isUuid(id) ? id : null}::uuid RETURNING source_conversation_id::text AS "conversationId"`;
+      UPDATE dashboard_tiles SET title = coalesce(${title ?? null}, title), width = coalesce(${width ?? null}, width),
+        kind = coalesce(${kind ?? null}, kind), question = coalesce(${question ?? null}, question)
+      WHERE id = ${id}::uuid RETURNING source_conversation_id::text AS "conversationId"`;
     if (row === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
     await appendEvent(tx, { kind: 'dashboard.tile_changed', label: 'L0', payload: { tileId: id, conversationId: row.conversationId } });
   });
   const tile = await loadTile(sql, id);
   if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
   return tile;
+}
+
+/**
+ * The chart of a tile from the answer it holds now (after «Fissa» or «Grafico»
+ * in the menu): stored when the local model gives valid data, else the tile
+ * fails with `chart` and keeps what it had. Never while it is being refreshed.
+ */
+export async function chartFromBody(sql: Sql, id: string, chart: (input: ChartInput) => Promise<ChartData | undefined>): Promise<DashboardTile> {
+  if (!isUuid(id)) throw new ChatError('not-found', `tile ${id} does not exist`);
+  const [tile] = await sql<
+    { question: string; questionLabel: Label; body: string; label: Label; refreshState: RefreshState; finance: boolean; conversationId: string; updatedAt: string }[]
+  >`
+    SELECT t.question, t.question_label AS "questionLabel", t.body, t.label, t.refresh_state AS "refreshState", c.finance, c.id::text AS "conversationId",
+      t.updated_at::text AS "updatedAt"
+    FROM dashboard_tiles t JOIN conversations c ON c.id = t.source_conversation_id WHERE t.id = ${id}`;
+  if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
+  if (tile.refreshState === 'running') throw new ChatError('busy', 'the tile is being refreshed');
+  if (!isAtMost(tile.label, 'L2')) throw new ChatError('invalid', 'a Segreto tile is never a chart: no model reads it');
+  let data: ChartData | undefined;
+  try {
+    data = await chart({ question: tile.question, body: tile.body, questionLabel: tile.questionLabel, bodyLabel: tile.label, finance: tile.finance });
+  } catch {
+    data = undefined;
+  }
+  await sql.begin(async (tx) => {
+    // Only on the tile as it was read: a refresh that ended meanwhile has a newer answer, and this chart would be of the old one.
+    const rows =
+      data === undefined
+        ? await tx`UPDATE dashboard_tiles SET refresh_state = 'failed', refresh_error = 'chart' WHERE id = ${id} AND refresh_state <> 'running' AND updated_at::text = ${tile.updatedAt} RETURNING id`
+        : await tx`UPDATE dashboard_tiles SET chart = ${tx.json(data as never)}, refresh_state = 'idle', refresh_error = NULL WHERE id = ${id} AND refresh_state <> 'running' AND updated_at::text = ${tile.updatedAt} RETURNING id`;
+    if (rows.length === 0) return;
+    await appendEvent(
+      tx,
+      data === undefined
+        ? { kind: 'dashboard.tile_refresh_failed', label: 'L0', payload: { tileId: id, conversationId: tile.conversationId, error: 'chart' } }
+        : { kind: 'dashboard.tile_changed', label: 'L0', payload: { tileId: id, conversationId: tile.conversationId } },
+    );
+  });
+  const after = await loadTile(sql, id);
+  if (after === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
+  return after;
 }
 
 /** The order of the page: every tile once, in the order given. */
@@ -317,7 +394,7 @@ export async function orderTiles(sql: Sql, raw: unknown): Promise<DashboardTile[
   return listTiles(sql);
 }
 
-/** «Togli dal Cruscotto»: refused while the tile is being refreshed. */
+/** «Togli dalla Dashboard»: refused while the tile is being refreshed. */
 export async function removeTile(sql: Sql, id: string): Promise<void> {
   if (!isUuid(id)) throw new ChatError('not-found', `tile ${id} does not exist`);
   try {
@@ -424,6 +501,8 @@ export async function cancelRefresh(sql: Sql, id: string, stop: (conversationId:
 export interface SettleEnv {
   /** Stops the steps of a refresh conversation (a refresh past its time). */
   stop?: (conversationId: string) => Promise<unknown>;
+  /** The chart of an answer from the local model (dashboard-chart.ts); without it a chart tile waits for the ticker. */
+  chart?: (input: ChartInput) => Promise<ChartData | undefined>;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }
@@ -436,9 +515,12 @@ export interface SettleEnv {
  */
 export async function settleDashboard(sql: Sql, env: SettleEnv = {}): Promise<number> {
   const now = (env.now ?? (() => new Date()))();
-  const running = await sql<{ id: string; conversationId: string | null; startedAt: Date; sourceConversationId: string }[]>`
-    SELECT id::text, refresh_conversation_id::text AS "conversationId", refresh_started_at AS "startedAt", source_conversation_id::text AS "sourceConversationId"
-    FROM dashboard_tiles WHERE refresh_state = 'running' ORDER BY refresh_started_at, id`;
+  const running = await sql<
+    { id: string; conversationId: string | null; startedAt: Date; sourceConversationId: string; kind: TileKind; question: string; questionLabel: Label; finance: boolean }[]
+  >`
+    SELECT t.id::text, t.refresh_conversation_id::text AS "conversationId", t.refresh_started_at AS "startedAt", t.source_conversation_id::text AS "sourceConversationId",
+      t.kind, t.question, t.question_label AS "questionLabel", c.finance
+    FROM dashboard_tiles t JOIN conversations c ON c.id = t.source_conversation_id WHERE t.refresh_state = 'running' ORDER BY t.refresh_started_at, t.id`;
   let changed = 0;
   for (const tile of running) {
     try {
@@ -461,6 +543,19 @@ export async function settleDashboard(sql: Sql, env: SettleEnv = {}): Promise<nu
               SELECT body, label FROM messages WHERE conversation_id = ${tile.conversationId} AND role = 'assistant' ORDER BY id DESC LIMIT 1`
           : [];
       if (outcome === 'done' && answer === undefined) outcome = 'empty';
+      // A chart: the data of the new answer from the local model, checked; without them the tile keeps its chart and answer.
+      let chart: ChartData | undefined;
+      if (outcome === 'done' && answer !== undefined && tile.kind === 'chart') {
+        if (env.chart === undefined) continue;
+        try {
+          chart = await env.chart({ question: tile.question, body: answer.body, questionLabel: tile.questionLabel, bodyLabel: answer.label, finance: tile.finance });
+        } catch (error) {
+          // Never left running for ever: an error of the chart is a chart that did not come.
+          env.onError?.(error);
+          chart = undefined;
+        }
+        if (chart === undefined) outcome = 'chart';
+      }
       await sql.begin(async (tx) => {
         // The same refresh that was read: one stopped and started again meanwhile is the next round's.
         const [current] = await tx<{ label: Label }[]>`
@@ -470,6 +565,7 @@ export async function settleDashboard(sql: Sql, env: SettleEnv = {}): Promise<nu
         if (outcome === 'done' && answer !== undefined) {
           await tx`
             UPDATE dashboard_tiles SET body = ${tileBody(answer.body)}, label = ${raisedLabel(current.label, answer.label)}::privacy_label,
+              chart = ${chart === undefined ? null : tx.json(chart as never)},
               answered_by = 'local', refreshed_at = now(), refresh_state = 'idle', refresh_error = NULL, refresh_conversation_id = NULL, refresh_started_at = NULL
             WHERE id = ${tile.id}`;
           await appendEvent(tx, { kind: 'dashboard.tile_refreshed', label: 'L0', payload: { tileId: tile.id, conversationId: tile.sourceConversationId } });
@@ -527,7 +623,7 @@ export async function liveRefreshesOf(sql: Queryable, conversationId: string): P
   return rows.map((row) => row.id);
 }
 
-/** The conversation is a refresh of the Cruscotto: no notice says it answered (notifications.ts). */
+/** The conversation is a refresh of the Dashboard: no notice says it answered (notifications.ts). */
 export async function isRefreshConversation(sql: Queryable, conversationId: string): Promise<boolean> {
   if (!isUuid(conversationId)) return false;
   const [row] = await sql<{ refresh: boolean }[]>`SELECT dashboard_of IS NOT NULL AS refresh FROM conversations WHERE id = ${conversationId}`;

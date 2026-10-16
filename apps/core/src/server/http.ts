@@ -102,8 +102,10 @@ import { IM_STATES } from '../im-format.ts';
 import { RELEASE_STATUS, ReleaseError, type NoteReleaser, type ProposalOutcome } from '../note-release.ts';
 import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
+import type { ChartData, ChartInput } from '../dashboard-chart.ts';
 import {
   cancelRefresh,
+  chartFromBody,
   listTiles,
   orderTiles,
   pinnedMessages,
@@ -315,8 +317,10 @@ export interface ApiServerOptions {
   knowledge?: KnowledgeEnv;
   /** "Proponi bozza" of the tab "Regole" (I-14 R2, D-175): the local model drafts a container's rules; without it the route answers 503. */
   rulesDraft?: (container: string) => Promise<DraftOutcome | undefined>;
-  /** «Fissa al Cruscotto» (D-248): the local model rewrites the question of a tile; without it the page proposes the user's message. */
+  /** «Fissa alla Dashboard» (D-248): the local model rewrites the question of a tile; without it the page proposes the user's message. */
   dashboardSuggest?: (messageId: unknown) => Promise<Suggestion>;
+  /** A chart tile of the Dashboard (D-248): the local model turns an answer into checked chart data; without it a chart waits. */
+  dashboardChart?: (input: ChartInput) => Promise<ChartData | undefined>;
   /** "Fai uscire una volta" of a Private note (I-11 P5, D-187): anonymous proposal, master password, one message; without it the routes answer 503. */
   noteRelease?: NoteReleaser;
   /**
@@ -572,6 +576,7 @@ interface RouteOptions {
   knowledge?: KnowledgeEnv | undefined;
   rulesDraft?: ApiServerOptions['rulesDraft'];
   dashboardSuggest?: ApiServerOptions['dashboardSuggest'];
+  dashboardChart?: ApiServerOptions['dashboardChart'];
   rulesExport?: ApiServerOptions['rulesExport'];
   noteRelease?: NoteReleaser | undefined;
   installation: ApiServerOptions['installation'];
@@ -2042,11 +2047,18 @@ function rulesDraftRoutes(containers: () => readonly Project[], draft: ApiServer
 }
 
 /**
- * Cruscotto (D-248): the tiles pinned from the chat, their order, title and
+ * Dashboard (D-248): the tiles pinned from the chat, their order, title and
  * width, «Aggiorna» on the local model and its «Annulla», «Togli». The page
  * reads the tiles after the refreshes that ended are settled.
  */
-function dashboardRoutes(sql: Sql, env: RefreshEnv, suggest: ApiServerOptions['dashboardSuggest'], stopChat: ApiServerOptions['stopChat']): Route[] {
+function dashboardRoutes(
+  sql: Sql,
+  env: RefreshEnv,
+  suggest: ApiServerOptions['dashboardSuggest'],
+  stopChat: ApiServerOptions['stopChat'],
+  chart: ApiServerOptions['dashboardChart'],
+  onError: (error: unknown) => void,
+): Route[] {
   return [
     route('GET', '/api/dashboard/tiles', async () => {
       await settleDashboard(sql);
@@ -2060,8 +2072,17 @@ function dashboardRoutes(sql: Sql, env: RefreshEnv, suggest: ApiServerOptions['d
     }),
     route('POST', '/api/dashboard/tiles', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['messageId', 'title', 'question', 'width']);
-      return { status: 201, body: { tile: await pinTile(sql, body as unknown as PinInput) } };
+      onlyFields(body, ['messageId', 'title', 'question', 'width', 'kind']);
+      const tile = await pinTile(sql, body as unknown as PinInput);
+      // A chart: its first data from the answer pinned; without valid data the tile says so and offers «Riprova».
+      if (tile.kind !== 'chart' || chart === undefined) return { status: 201, body: { tile } };
+      // The tile is pinned already: a chart that fails leaves it there, saying why («Riprova»).
+      try {
+        return { status: 201, body: { tile: await chartFromBody(sql, tile.id, chart) } };
+      } catch (error) {
+        onError(error);
+        return { status: 201, body: { tile } };
+      }
     }),
     route('POST', '/api/dashboard/order', async (request) => {
       const body = await readJson(request);
@@ -2071,8 +2092,15 @@ function dashboardRoutes(sql: Sql, env: RefreshEnv, suggest: ApiServerOptions['d
     route('PATCH', '/api/dashboard/tiles/:id', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['title', 'width']);
+      onlyFields(body, ['title', 'width', 'kind', 'question']);
       return { body: { tile: await updateTile(sql, id, body) } };
+    }),
+    // «Grafico» in the menu, and «Riprova» of a chart that failed on the answer it holds: the chart again from that answer.
+    route('POST', '/api/dashboard/tiles/:id/chart', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if (chart === undefined) throw new HttpError(503, 'the local model is not available');
+      return { body: { tile: await chartFromBody(sql, id, chart) } };
     }),
     route('POST', '/api/dashboard/tiles/:id/refresh', async (request, _url, params) => {
       const id = idParam(params, 'id');
@@ -2328,7 +2356,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2340,7 +2368,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
     ...rulesDraftRoutes(projectContainers, rulesDraft),
-    ...dashboardRoutes(sql, { agents, financeAgents }, dashboardSuggest, stopChat),
+    ...dashboardRoutes(sql, { agents, financeAgents }, dashboardSuggest, stopChat, dashboardChart, onError),
     ...rulesExportRoutes(projectContainers, rulesExport),
     ...noteReleaseRoutes(projectContainers, noteRelease),
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
@@ -4303,6 +4331,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     knowledge: options.knowledge,
     rulesDraft: options.rulesDraft,
     dashboardSuggest: options.dashboardSuggest,
+    dashboardChart: options.dashboardChart,
     rulesExport: options.rulesExport,
     noteRelease: options.noteRelease,
     installation: options.installation,

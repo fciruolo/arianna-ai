@@ -12,11 +12,15 @@ import {
   removeTile,
   settleDashboard,
   startRefresh,
+  chartFromBody,
   suggestQuestion,
   updateTile,
   type DashboardTile,
 } from '../src/dashboard.ts';
+import { chartOf, type ChartData } from '../src/dashboard-chart.ts';
 import { eraseConversation } from '../src/erase.ts';
+import { LocalModelError } from '@arianna/executors';
+
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -145,7 +149,7 @@ test('title, width and order change; the label never goes down; «Togli» remove
   await assert.rejects(orderTiles(sql, [a.id, a.id]), code('invalid'));
   // The label only goes up; question and source never change.
   await assert.rejects(owner`UPDATE dashboard_tiles SET label = 'L0' WHERE id = ${b.id}`, /only goes up/);
-  await assert.rejects(owner`UPDATE dashboard_tiles SET question = 'altro' WHERE id = ${a.id}`, /only title/);
+  await assert.rejects(owner`UPDATE dashboard_tiles SET question_label = 'L2' WHERE id = ${a.id}`, /only title/);
   // The application role deletes no tile by hand.
   await assert.rejects(sql`DELETE FROM dashboard_tiles WHERE id = ${a.id}`, /permission denied/);
   await removeTile(sql, a.id);
@@ -366,4 +370,110 @@ test('a refresh past its time is stopped by the ticker, never by a reading of th
   // Its own conversation among those stopped (the tiles of the tests before are past their time too).
   const [own] = await db().owner<{ id: string }[]>`SELECT id::text FROM conversations WHERE dashboard_of = ${tile.sourceConversationId}`;
   assert.ok(own !== undefined && stopped.includes(own.id));
+});
+
+test('«Modifica la domanda»: the next refresh asks the new one, the label stays; never while it is asked, never what the scanner flags at work', async () => {
+  const { sql, owner } = db();
+  const { answerId } = await answered('work');
+  const tile = await pin(answerId);
+  const edited = await updateTile(sql, tile.id, { question: '  Quanto ho speso in tutto a ottobre? ' });
+  assert.equal(edited.question, 'Quanto ho speso in tutto a ottobre?');
+  assert.deepEqual([edited.label, edited.questionLabel], [tile.label, tile.questionLabel]);
+  await assert.rejects(updateTile(sql, tile.id, { question: '' }), code('invalid'));
+  await assert.rejects(updateTile(sql, tile.id, { question: 'Il bonifico su IT60X0542811101000000123456?' }), code('scanner'));
+  await startRefresh(sql, tile.id, env);
+  const [asked] = await owner<{ body: string }[]>`
+    SELECT m.body FROM messages m JOIN dashboard_tiles d ON d.refresh_conversation_id = m.conversation_id WHERE d.id = ${tile.id} AND m.role = 'user'`;
+  assert.equal(asked?.body, 'Quanto ho speso in tutto a ottobre?');
+  await assert.rejects(updateTile(sql, tile.id, { question: 'Altra domanda' }), code('busy'));
+  // Below the core too: never while asked, and its label never changes.
+  await assert.rejects(owner`UPDATE dashboard_tiles SET question = 'Altra' WHERE id = ${tile.id}`, /does not change while it is asked/);
+  await assert.rejects(owner`UPDATE dashboard_tiles SET question_label = 'L2' WHERE id = ${tile.id}`, /only title, question/);
+});
+
+const chartData: ChartData = { kind: 'bar', title: 'Spesa di ottobre', unit: '€', labels: ['Spesa', 'Casa'], series: [{ name: 'Ottobre', values: [238.15, 164] }] };
+
+test('a chart tile: data from the answer it holds, then at each refresh; without valid data the tile keeps its chart and says why', async () => {
+  const { sql } = db();
+  const { answerId } = await answered('private');
+  const tile = await pinTile(sql, { messageId: answerId, title: 'Spesa', question: 'Quanto ho speso a ottobre, per categoria?', kind: 'chart' });
+  assert.deepEqual([tile.kind, tile.chart], ['chart', null]);
+  const inputs: unknown[] = [];
+  const first = await chartFromBody(sql, tile.id, (input) => {
+    inputs.push(input);
+    return Promise.resolve(chartData);
+  });
+  assert.deepEqual(first.chart, chartData);
+  // What the model read: the question and the answer with their labels.
+  assert.deepEqual(inputs, [{ question: 'Quanto ho speso a ottobre, per categoria?', body: tile.body, questionLabel: 'L2', bodyLabel: 'L2', finance: false }]);
+  // The page reading the tiles does not settle a chart: only the ticker, with the model, does.
+  await startRefresh(sql, tile.id, env);
+  await answerRefresh(tile.id, 'L2', 'Spesa 250 euro, casa 170 euro (dati finti).');
+  await settleDashboard(sql);
+  assert.equal((await loadTile(sql, tile.id))?.refreshState, 'running');
+  const newer: ChartData = { ...chartData, series: [{ name: 'Ottobre', values: [250, 170] }] };
+  await settleDashboard(sql, { chart: () => Promise.resolve(newer) });
+  const refreshed = await loadTile(sql, tile.id);
+  assert.deepEqual([refreshed?.refreshState, refreshed?.chart, refreshed?.body], ['idle', newer, 'Spesa 250 euro, casa 170 euro (dati finti).']);
+  // The model gives no valid data: failed with `chart`, the chart and the answer of before stay.
+  await startRefresh(sql, tile.id, env);
+  await answerRefresh(tile.id, 'L2', 'Testo senza numeri.');
+  await settleDashboard(sql, { chart: () => Promise.resolve(undefined) });
+  const kept = await loadTile(sql, tile.id);
+  assert.deepEqual([kept?.refreshState, kept?.refreshError, kept?.chart, kept?.body], ['failed', 'chart', newer, 'Spesa 250 euro, casa 170 euro (dati finti).']);
+  // Back to text: the answer in words shows, the chart is kept for a later switch.
+  const text = await updateTile(sql, tile.id, { kind: 'text' });
+  assert.equal(text.kind, 'text');
+  await assert.rejects(updateTile(sql, tile.id, { kind: 'table' }), code('invalid'));
+  // The database keeps a chart an object of bounded size.
+  await assert.rejects(db().owner`UPDATE dashboard_tiles SET chart = '[1, 2]'::jsonb WHERE id = ${tile.id}`, /chart_check/);
+});
+
+test('chartOf: valid data from the local model through the gateway; anything else is no chart', async () => {
+  const { sql, owner } = db();
+  const answering = (value: unknown, finishReason = 'stop') => ({
+    sql,
+    model: () => ({ chat: () => Promise.resolve({ value, finishReason, text: '', model: 'finto' }) }) as never,
+  });
+  const input = { question: 'Quanto ho speso?', body: 'Spesa 238 euro, casa 164 euro (dati finti).', questionLabel: 'L1' as const, bodyLabel: 'L2' as const, finance: false };
+  const before = (await owner<{ count: number }[]>`SELECT count(*)::int FROM gateway_log WHERE target_kind = 'executor' AND locality = 'local'`)[0]?.count ?? 0;
+  assert.deepEqual(await chartOf(answering(chartData), input), chartData);
+  // Through the gateway, towards the local executor only, at the highest label read.
+  const [logged] = await owner<{ label: string; decision: string }[]>`SELECT label, decision FROM gateway_log WHERE target_kind = 'executor' ORDER BY id DESC LIMIT 1`;
+  assert.deepEqual(logged, { label: 'L2', decision: 'allow' });
+  assert.equal((await owner<{ count: number }[]>`SELECT count(*)::int FROM gateway_log WHERE target_kind = 'executor' AND locality = 'local'`)[0]?.count, before + 1);
+  assert.equal(await chartOf(answering(chartData, 'length'), input), undefined);
+  assert.equal(await chartOf(answering({ ...chartData, kind: 'scatter' }), input), undefined);
+  assert.equal(await chartOf(answering('non un grafico'), input), undefined);
+  const failing = { sql, model: () => ({ chat: () => Promise.reject(new LocalModelError('unavailable', 'spento')) }) as never };
+  assert.equal(await chartOf(failing, input), undefined);
+});
+
+test('a chart that fails keeps the tile as it was; a text tile refreshed drops its old chart; Segreto is never a chart', async () => {
+  const { sql, owner } = db();
+  const { answerId } = await answered('private');
+  const tile = await pinTile(sql, { messageId: answerId, title: 'Spesa', question: 'Quanto ho speso a ottobre?', kind: 'chart' });
+  const failed = await chartFromBody(sql, tile.id, () => Promise.reject(new Error('il database del gateway non risponde')));
+  assert.deepEqual([failed.refreshState, failed.refreshError, failed.chart, failed.body], ['failed', 'chart', null, tile.body]);
+  const drawn = await chartFromBody(sql, tile.id, () => Promise.resolve(chartData));
+  assert.deepEqual([drawn.refreshState, drawn.chart], ['idle', chartData]);
+  // Back to text and refreshed: the chart of the old answer goes, a later «Grafico» asks for a new one.
+  await updateTile(sql, tile.id, { kind: 'text' });
+  await startRefresh(sql, tile.id, env);
+  await answerRefresh(tile.id, 'L2', 'Risposta nuova (dati finti).');
+  await settleDashboard(sql, { chart: () => Promise.resolve(chartData) });
+  assert.equal((await loadTile(sql, tile.id))?.chart, null);
+  // A chart that throws in the ticker is a chart that did not come, never a tile left running.
+  await updateTile(sql, tile.id, { kind: 'chart' });
+  await startRefresh(sql, tile.id, env);
+  await answerRefresh(tile.id, 'L2', 'Altra risposta.');
+  await settleDashboard(sql, { chart: () => Promise.reject(new Error('rotto')) });
+  assert.deepEqual([(await loadTile(sql, tile.id))?.refreshState, (await loadTile(sql, tile.id))?.refreshError], ['failed', 'chart']);
+  // The database: a kind it does not know, and a Segreto chart, are refused.
+  await assert.rejects(owner`UPDATE dashboard_tiles SET kind = 'table' WHERE id = ${tile.id}`, /kind_check/);
+  await assert.rejects(owner`UPDATE dashboard_tiles SET label = 'L3', refresh_state = 'idle', refresh_error = NULL WHERE id = ${tile.id}`, /secret_never_chart/);
+  // Below the chart a Segreto text tile stays text.
+  await owner`UPDATE dashboard_tiles SET kind = 'text', label = 'L3', refresh_state = 'idle', refresh_error = NULL WHERE id = ${tile.id}`;
+  await assert.rejects(updateTile(sql, tile.id, { kind: 'chart' }), code('invalid'));
+  await assert.rejects(chartFromBody(sql, tile.id, () => Promise.resolve(chartData)), code('invalid'));
 });

@@ -30,7 +30,7 @@ export const SIDE_AGENTS: readonly (string | null)[] = [null, LOCAL_CHAT_AGENT, 
 /** Why a conversation takes no side thread, or undefined when it does. */
 export function sideRefusal(conversation: Conversation): string | undefined {
   if (conversation.sideOf !== null) return 'a side thread takes no side thread of its own';
-  if (conversation.dashboardOf !== null) return 'a refresh of the Cruscotto takes no side thread';
+  if (conversation.dashboardOf !== null) return 'a refresh of the Dashboard takes no side thread';
   if (conversation.origin !== 'user') return 'a system chat takes no side thread';
   if (conversation.incognito) return 'an incognito conversation takes no side thread';
   if (conversation.secretary) return 'the conversation of the secretary takes no side thread';

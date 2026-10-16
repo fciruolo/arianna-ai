@@ -131,7 +131,7 @@ export async function eraseConversation(sql: Sql, id: string, options: EraseOpti
 
   if (await liveCall(sql, id, await tasksOf(sql, id))) throw new ChatError('busy', 'a call of the conversation is still at work: try again when it ends');
 
-  // The refreshes of its tiles of the Cruscotto still alive go first (D-248); the tiles go with it (ON DELETE CASCADE, migration 0074).
+  // The refreshes of its tiles of the Dashboard still alive go first (D-248); the tiles go with it (ON DELETE CASCADE, migration 0074).
   for (const refresh of await liveRefreshesOf(sql, id)) await eraseConversation(sql, refresh, options);
 
   // Two attempts: a step claimed between the stop and the locks is stopped again.

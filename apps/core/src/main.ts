@@ -103,6 +103,7 @@ import { installationInfo } from './installation.ts';
 import { createReadiness } from './readiness.ts';
 import { draftProjectRules } from './rules-draft.ts';
 import { isRefreshConversation, settleDashboard, suggestQuestion } from './dashboard.ts';
+import { chartOf } from './dashboard-chart.ts';
 import { NO_RULES, planRulesExport, writeRulesExport } from './rules-export.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
@@ -1070,8 +1071,10 @@ const server = await startApiServer({
     const project = projectContainers().find((item) => item.name === name);
     return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
   },
-  // «Fissa al Cruscotto» (D-248): the local model rewrites the question of the tile; the user checks it.
+  // «Fissa alla Dashboard» (D-248): the local model rewrites the question of the tile; the user checks it.
   dashboardSuggest: (messageId) => suggestQuestion({ sql, model: localModel }, messageId),
+  // A chart tile (D-248): the answer in checked data, from the local model.
+  dashboardChart: (input) => chartOf({ sql, model: localModel }, input),
   // "Fai uscire una volta" of a Private note (I-11 P5, D-187): the hash of the master password is read from the vault at each try.
   noteRelease: createNoteReleaser({
     sql,
@@ -1241,12 +1244,16 @@ for (const one of workers) await one.start();
 // D-218: the messages written while an answer was at work leave when it ends, one at a time.
 const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents) }), onError: report });
 queueDispatcher.start();
-// D-248: every 3 s the refreshes of the Cruscotto that ended are copied in their tiles, and their conversations purged.
+// D-248: every 3 s the refreshes of the Dashboard that ended are copied in their tiles, and their conversations purged.
 let settling = false;
 const dashboardTicker = setInterval(() => {
   if (settling) return;
   settling = true;
-  settleDashboard(sql, { stop: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }), onError: report })
+  settleDashboard(sql, {
+    stop: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
+    chart: (input) => chartOf({ sql, model: localModel }, input),
+    onError: report,
+  })
     .catch(report)
     .finally(() => {
       settling = false;
@@ -1310,7 +1317,7 @@ const ringer = createRinger({
 const notifier = createNotifier({
   settings: () => settings.current().notifications,
   conversationOf: (taskId) => conversationOfTask(sql, taskId),
-  // A refresh of the Cruscotto (D-248) says nothing either: its answer shows in the tile.
+  // A refresh of the Dashboard (D-248) says nothing either: its answer shows in the tile.
   incognito: async (conversationId) => (await isIncognitoConversation(sql, conversationId)) || (await isRefreshConversation(sql, conversationId)),
   visiblePages: () => server.visiblePages(),
   broadcast: (notice) => {
