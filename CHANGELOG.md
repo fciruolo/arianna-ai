@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- I pacchetti di personaggi del repository (originali e serie) non hanno più un numero massimo di personaggi; quelli caricati o scaricati in data/ ne tengono fino a 200 (prima 64) (D-244).
+
 ## [0.135.1] - 2026-10-16
 
 ### Cambiato

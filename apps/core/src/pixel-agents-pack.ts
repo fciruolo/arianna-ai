@@ -12,6 +12,9 @@ import { join } from 'node:path';
 import { cleanSheet, MAX_CHARACTERS, MAX_SHEET_BYTES, UploadError, type CharacterDirs } from './characters.ts';
 import type { GithubGet } from './github-api.ts';
 
+/** One request to the API of GitHub for each sheet, 60 an hour without an account: a download never asks more than this (D-244). */
+const MAX_PIXEL_AGENTS_SHEETS = 50;
+
 export const PIXEL_AGENTS_PACK = 'pixel-agents';
 export const PIXEL_AGENTS_REPOSITORY = 'pixel-agents-hq/pixel-agents';
 const SHEETS_PATH = 'webview-ui/public/assets/characters';
@@ -68,7 +71,7 @@ async function sheetNames(get: GithubGet): Promise<{ name: string; number: numbe
     })
     .sort((a, b) => a.number - b.number);
   if (names.length === 0) throw new PixelAgentsError('no character found in the repository');
-  return names.slice(0, MAX_CHARACTERS);
+  return names.slice(0, Math.min(MAX_CHARACTERS, MAX_PIXEL_AGENTS_SHEETS));
 }
 
 async function exists(path: string): Promise<boolean> {

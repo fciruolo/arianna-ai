@@ -47,10 +47,18 @@ export interface PackListing {
   refused: { pack: string; reason: string }[];
 }
 
-const MAX_MANIFEST_BYTES = 16 * 1024;
+/** The pack.json of a pack of data/: room for MAX_CHARACTERS entries. */
+const MAX_MANIFEST_BYTES = 64 * 1024;
+/** The pack.json of a pack in git, whose sheets the tests check: no limit on how many people, only on the file. */
+const MAX_REPOSITORY_MANIFEST_BYTES = 1024 * 1024;
 export const MAX_SHEET_BYTES = 256 * 1024;
-/** A pack holds this many at most: the pack of the series has a theme of seven for each show (D-237 to D-240). */
-export const MAX_CHARACTERS = 64;
+/**
+ * A pack of data/ (uploaded in «Miei», downloaded from GitHub) holds this many
+ * at most: a broken or strange pack does not make the core read hundreds of MB.
+ * The packs in git (originali, serie) have no such limit: a theme of the
+ * series more is never refused (choice of the user of 2026-10-16).
+ */
+export const MAX_CHARACTERS = 200;
 const MAX_PACKS = 64;
 const SHEET_WIDTH = 112;
 const SHEET_HEIGHTS: Readonly<Record<number, 3 | 4>> = { 96: 3, 128: 4 };
@@ -125,7 +133,13 @@ interface Manifest {
   characters: { id: string; name: string; file: string }[];
 }
 
-function parseManifest(raw: Buffer): Manifest {
+/** The packs in git: the originals and the series, checked by the tests. */
+function inRepository(pack: string): boolean {
+  return pack === ORIGINAL_PACK || pack === SERIES_PACK;
+}
+
+/** `limit`: how many people at most; undefined for a pack in git. */
+function parseManifest(raw: Buffer, limit: number | undefined): Manifest {
   let value: unknown;
   try {
     value = JSON.parse(raw.toString('utf8'));
@@ -135,8 +149,8 @@ function parseManifest(raw: Buffer): Manifest {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new PackError('pack.json: expected an object');
   const record = value as Record<string, unknown>;
   const list = record.characters;
-  if (!Array.isArray(list) || list.length === 0 || list.length > MAX_CHARACTERS) {
-    throw new PackError(`pack.json: characters is a list of 1-${String(MAX_CHARACTERS)}`);
+  if (!Array.isArray(list) || list.length === 0 || (limit !== undefined && list.length > limit)) {
+    throw new PackError(limit === undefined ? 'pack.json: characters is a list of one or more' : `pack.json: characters is a list of 1-${String(limit)}`);
   }
   const characters = list.map((item: unknown, index) => {
     const where = `characters[${String(index)}]`;
@@ -198,7 +212,7 @@ export function servedRowsSync(dirs: CharacterDirs, pack: string, character: str
       dir = realpathSync(folder);
       if (dir !== join(realpathSync(dirs.data), pack)) return undefined;
     }
-    const entry = parseManifest(readSmallSync(join(dir, 'pack.json'), MAX_MANIFEST_BYTES)).characters.find((item) => item.id === character);
+    const entry = parseManifest(readSmallSync(join(dir, 'pack.json'), manifestBytes(pack)), characterLimit(pack)).characters.find((item) => item.id === character);
     if (entry === undefined) return undefined;
     return sheetRows(readSmallSync(join(dir, entry.file), MAX_SHEET_BYTES));
   } catch {
@@ -206,13 +220,21 @@ export function servedRowsSync(dirs: CharacterDirs, pack: string, character: str
   }
 }
 
-async function readManifest(dir: string): Promise<Manifest> {
-  return parseManifest(await readSmall(join(dir, 'pack.json'), MAX_MANIFEST_BYTES));
+function manifestBytes(pack: string): number {
+  return inRepository(pack) ? MAX_REPOSITORY_MANIFEST_BYTES : MAX_MANIFEST_BYTES;
+}
+
+function characterLimit(pack: string): number | undefined {
+  return inRepository(pack) ? undefined : MAX_CHARACTERS;
+}
+
+async function readManifest(dir: string, pack: string): Promise<Manifest> {
+  return parseManifest(await readSmall(join(dir, 'pack.json'), manifestBytes(pack)), characterLimit(pack));
 }
 
 async function readPack(dirs: CharacterDirs, id: string): Promise<CharacterPack> {
   const dir = await packDir(dirs, id);
-  const manifest = await readManifest(dir);
+  const manifest = await readManifest(dir, id);
   const characters: CharacterInfo[] = [];
   for (const entry of manifest.characters) {
     characters.push({ id: entry.id, name: entry.name, rows: sheetRows(await readSmall(join(dir, entry.file), MAX_SHEET_BYTES)) });
@@ -275,7 +297,7 @@ export async function readSheet(dirs: CharacterDirs, pack: string, character: st
   if (!CHARACTER_ID.test(pack) || !CHARACTER_ID.test(character)) return undefined;
   try {
     const dir = await packDir(dirs, pack);
-    const entry = (await readManifest(dir)).characters.find((item) => item.id === character);
+    const entry = (await readManifest(dir, pack)).characters.find((item) => item.id === character);
     if (entry === undefined) return undefined;
     const png = await readSmall(join(dir, entry.file), MAX_SHEET_BYTES);
     sheetRows(png);
@@ -457,7 +479,7 @@ export function uploadSheet(dirs: CharacterDirs, request: UploadRequest): Promis
     const dir = await userPackDir(dirs);
     let manifest: Manifest;
     try {
-      manifest = await readManifest(dir);
+      manifest = await readManifest(dir, USER_PACK);
     } catch (error) {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) {
         throw new UploadError('pack', `data/characters/${USER_PACK}: ${reasonOf(error)}; fix it or move it away`);

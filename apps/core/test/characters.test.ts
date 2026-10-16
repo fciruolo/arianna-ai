@@ -11,6 +11,7 @@ import {
   characterId,
   cleanSheet,
   listPacks,
+  MAX_CHARACTERS,
   MAX_SHEET_BYTES,
   MAX_UPLOAD_BODY,
   parseUpload,
@@ -125,6 +126,28 @@ test('the pack of the series in git is listed after the originals, not as one of
   assert.equal(await readSheet({ original: ORIGINAL, series: SERIES, data: DATA }, 'serie', 'robot'), undefined);
   const broken = await listPacks({ original: ORIGINAL, series: join(root, 'no-series'), data: join(root, 'missing') });
   assert.deepEqual(broken.refused, [{ pack: 'serie', reason: 'pack.json or a sheet is missing' }]);
+});
+
+test('a pack in git has no limit on how many people; a pack of data/ holds MAX_CHARACTERS at most (choice of the user of 2026-10-16)', async () => {
+  const many = (count: number) => ({ name: 'Molti', characters: Array.from({ length: count }, (_item, index) => ({ id: `p${String(index)}`, name: `P ${String(index)}`, file: 'p.png' })) });
+  // In git: the series with more people than a pack of data/ may hold is listed whole.
+  const series = join(root, 'big-series');
+  mkdirSync(series, { recursive: true });
+  writeFileSync(join(series, 'pack.json'), JSON.stringify(many(MAX_CHARACTERS + 50)));
+  writeFileSync(join(series, 'p.png'), header(112, 128));
+  const listing = await listPacks({ original: ORIGINAL, series, data: join(root, 'missing') });
+  assert.equal(listing.packs.find((entry) => entry.id === 'serie')?.characters.length, MAX_CHARACTERS + 50);
+  assert.equal((await readSheet({ original: ORIGINAL, series, data: join(root, 'missing') }, 'serie', `p${String(MAX_CHARACTERS + 10)}`))?.length, header(112, 128).length);
+  // In data/: one more than the limit is refused, the limit itself is listed.
+  const data = join(root, 'limit-data');
+  for (const [name, count] of [['full', MAX_CHARACTERS], ['over', MAX_CHARACTERS + 1]] as const) {
+    mkdirSync(join(data, name), { recursive: true });
+    writeFileSync(join(data, name, 'pack.json'), JSON.stringify(many(count)));
+    writeFileSync(join(data, name, 'p.png'), header(112, 96));
+  }
+  const limited = await listPacks({ original: ORIGINAL, data });
+  assert.equal(limited.packs.find((entry) => entry.id === 'full')?.characters.length, MAX_CHARACTERS);
+  assert.deepEqual(limited.refused, [{ pack: 'over', reason: `pack.json: characters is a list of 1-${String(MAX_CHARACTERS)}` }]);
 });
 
 test('unreadable originals are refused, and the packs of data/ are still listed', async () => {
@@ -278,21 +301,21 @@ test('POST /api/characters/upload: 201, 409 with the existing character, 400 on 
   }
 });
 
-test('uploadSheet: at most 64 characters in miei, a file of another character refused, a replacement writes over the file it names', async () => {
+test('uploadSheet: at most MAX_CHARACTERS characters in miei, a file of another character refused, a replacement writes over the file it names', async () => {
   const fullDirs = { original: ORIGINAL, data: join(UPLOAD, 'full') };
   const dir = join(fullDirs.data, 'miei');
   mkdirSync(dir, { recursive: true });
   const clean = cleanSheet(SHEET).png;
-  const characters = Array.from({ length: 64 }, (_item, index) => ({ id: `c${String(index)}`, name: `C ${String(index)}`, file: `c${String(index)}.png` }));
+  const characters = Array.from({ length: MAX_CHARACTERS }, (_item, index) => ({ id: `c${String(index)}`, name: `C ${String(index)}`, file: `c${String(index)}.png` }));
   for (const { file } of characters) writeFileSync(join(dir, file), clean);
   writeFileSync(join(dir, 'pack.json'), JSON.stringify({ name: 'Miei', characters }));
   await assert.rejects(uploadSheet(fullDirs, { name: 'Sessantacinque', png: SHEET, replace: false }), (error: unknown) => {
     assert.ok(error instanceof UploadError);
     assert.equal(error.code, 'full');
-    assert.match(error.message, /holds at most 64 characters/);
+    assert.match(error.message, new RegExp(`holds at most ${String(MAX_CHARACTERS)} characters`));
     return true;
   });
-  // Replacing one of the 32 is still allowed.
+  // Replacing one of them is still allowed.
   assert.equal((await uploadSheet(fullDirs, { name: 'c0', png: ARIANNA, replace: true })).replaced, true);
 
   const takenDirs = { original: ORIGINAL, data: join(UPLOAD, 'taken') };
