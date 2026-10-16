@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.135.1] - 2026-10-16
+
 ### Cambiato
 
 - Impostazioni → Personaggi: la barra laterale ha il campo «Cerca un personaggio» (nome o serie, Invio apre il primo trovato) e ogni serie si apre e si chiude dal suo titolo, con «Apri tutte / Chiudi tutte»; di base è aperta la serie del personaggio scelto e il browser ricorda le altre (D-224).
