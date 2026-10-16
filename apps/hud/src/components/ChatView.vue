@@ -12,6 +12,7 @@ import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/cal
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { computerTask } from '../lib/computer.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
+import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { listImClosings } from '../lib/api.ts';
@@ -62,6 +63,7 @@ import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
+import PlusMenu from './PlusMenu.vue';
 import QueuedMessages from './QueuedMessages.vue';
 import BriefNote from './BriefNote.vue';
 import MentionMenu from './MentionMenu.vue';
@@ -377,21 +379,47 @@ function markSaved(messageId: string, note: string | null): void {
 }
 
 const draft = ref('');
-// Leaving an incognito conversation (D-136): its unsent text never follows into the next one, which keeps it.
-let onIncognito = incognito.value;
+/**
+ * The unsent text of each conversation (D-231): kept in this browser only
+ * (localStorage, never the core), back when the conversation opens again or
+ * the page reloads; gone when the message leaves, when the conversation is
+ * erased, or after a week. An incognito conversation (D-136) keeps none, and
+ * its text never follows into the next conversation.
+ */
+let drafts: DraftStorage | undefined;
+try {
+  drafts = typeof window === 'undefined' ? undefined : window.localStorage;
+} catch {
+  drafts = undefined;
+}
+pruneDrafts(drafts, Date.now());
+const keeper = draftKeeper(drafts, Date.now, {
+  set: (run, ms) => window.setTimeout(run, ms),
+  clear: (handle) => window.clearTimeout(handle as number | undefined),
+});
+/** The conversation the text in the field belongs to. */
+let draftOwner = props.chat.conversationId;
+draft.value = keeper.open(draftOwner, keepsDraft(props.conversation));
+watch(draft, (text) => keeper.write(draftOwner, text));
 watch(
   () => props.chat.conversationId,
-  () => {
-    if (onIncognito) {
-      draft.value = '';
-      commandHint.value = null;
-      void nextTick(resize);
-    }
-    onIncognito = incognito.value;
+  (id) => {
+    draftOwner = id;
+    draft.value = keeper.open(id, keepsDraft(props.conversation));
+    commandHint.value = null;
+    modelNote.value = null;
+    void nextTick(resize);
   },
 );
+// A conversation known as incognito only now: nothing of it stays in the browser.
 watch(incognito, (value) => {
-  if (value) onIncognito = true;
+  if (value) keeper.forget(props.chat.conversationId);
+});
+const flushDraft = (): void => keeper.flush();
+onMounted(() => window.addEventListener('pagehide', flushDraft));
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', flushDraft);
+  keeper.flush();
 });
 const list = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
@@ -554,6 +582,101 @@ function choose(command: ChatCommand, how: 'enter' | 'tab'): void {
   commandHint.value = null;
   if (how === 'tab' || command.takesArgument) setDraft(completion(command));
   else run(command);
+}
+
+// The keys for the models (D-231): ⌃0…⌃9 on the Mac, Alt+Maiusc with the digit elsewhere, among the
+// entries of this conversation's selector only (the core checks again what it admits).
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+/** The conversation has a selector of the model (the same condition as the header's). */
+const hasSelector = computed(() => props.conversation.mode === 'work' && (direct.value === null || cloud.value) && props.conversation.archivedAt === null);
+/** What the selector shows as chosen, null for the automatic entry. */
+const selectedModel = computed(() => (selected.value === AUTO ? null : selected.value));
+/** «Modello: Opus» for a moment after a key, in the foot of the field. */
+const modelNote = ref<string | null>(null);
+let modelNoteTimer: number | undefined;
+function noteModel(text: string): void {
+  modelNote.value = text;
+  window.clearTimeout(modelNoteTimer);
+  modelNoteTimer = window.setTimeout(() => (modelNote.value = null), 3000);
+}
+function chooseModelEntry(model: string | null): void {
+  const name = model === null ? autoText.value : (MODEL_TEXT[model] ?? model);
+  if (model !== selectedModel.value) emit('chooseModel', model);
+  noteModel(`${answersDirect.value ? 'Risponde' : 'Modello'}: ${name}`);
+}
+function onModelKey(event: KeyboardEvent): void {
+  const digit = modelDigit(event, mac);
+  if (digit === undefined || event.defaultPrevented || event.repeat) return;
+  // Never under another window (a confirmation, the search, a call).
+  if (document.querySelector('[aria-modal="true"]') !== null) return;
+  event.preventDefault();
+  if (!hasSelector.value) {
+    noteModel('Qui il modello non si sceglie.');
+    return;
+  }
+  const choice = modelForDigit(digit, selectable.value);
+  if (choice === undefined) {
+    noteModel(`Nessun modello al tasto ${modelKeyText(digit, mac)}.`);
+    return;
+  }
+  chooseModelEntry(choice.model);
+}
+onMounted(() => window.addEventListener('keydown', onModelKey));
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onModelKey);
+  window.clearTimeout(modelNoteTimer);
+});
+/** The keys of the selector's entries, for the foot of the field: «⌃0–⌃3 modello». */
+const modelKeysText = computed(() => {
+  if (!hasSelector.value) return null;
+  const last = Math.min(selectable.value.length, 9);
+  return last === 0 ? `${modelKeyText(0, mac)} modello` : `${modelKeyText(0, mac)}–${modelKeyText(last, mac)} modello`;
+});
+
+// The «+» menu (D-231): what was around the field, and the model with its keys.
+const plus = computed(() =>
+  plusEntries({
+    draft: draft.value,
+    mention: ariannaChat.value && (props.mentionable?.length ?? 0) > 0,
+    attachProject: attachProject.value,
+    session: direct.value === DESIGNER_AGENT && Boolean(props.conversation.workspace) && props.conversation.archivedAt === null,
+    sessionBusy: sessionBusy.value || props.sending,
+    save: !incognito.value && props.chat.messages.some((message) => message.role !== 'system'),
+    saved: wholeSaved.value,
+    selector: hasSelector.value
+      ? { autoText: autoText.value, models: selectable.value.map((entry) => ({ model: entry.model, text: MODEL_TEXT[entry.model] ?? entry.model })), selected: selectedModel.value }
+      : undefined,
+    mac,
+  }),
+);
+/** The «+» menu opens over the field: the «/» and «@» menus close, as with Esc. */
+function onPlusOpened(): void {
+  menuDismissed.value = draft.value;
+  mention.dismiss();
+}
+function onPlus(entry: PlusEntry): void {
+  switch (entry.action) {
+    case 'commands':
+      setDraft('/');
+      return;
+    case 'mention':
+      setDraft('@');
+      return;
+    case 'attach':
+      attaching.value = true;
+      return;
+    case 'session':
+      void newDesignerSession();
+      composer.value?.focus();
+      return;
+    case 'save':
+      void saveWhole();
+      composer.value?.focus();
+      return;
+    case 'model':
+      chooseModelEntry(entry.model ?? null);
+      composer.value?.focus();
+  }
 }
 
 // A changed text, or another conversation, asks again when it is still long.
@@ -1165,19 +1288,10 @@ onBeforeUnmount(() => clearInterval(clock));
           @resume="emit('resumeQueue')"
         />
         <form
-          class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
+          class="flex items-end gap-2 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-2"
           @submit.prevent="submit()"
         >
-          <button
-            v-if="attachProject !== null"
-            type="button"
-            class="mb-1 grid size-[30px] shrink-0 place-items-center rounded-full text-muted hover:text-ink"
-            :title="`Allega una nota privata di ${attachProject}: esce una volta, anonima, con la master password`"
-            aria-label="Allega nota privata"
-            @click="attaching = true"
-          >
-            <Icon name="gateway" :size="16" />
-          </button>
+          <PlusMenu :entries="plus" :model-title="answersDirect ? 'Chi risponde in questa chat' : cloud ? 'Modello' : 'Modello per i passi delegati'" @choose="onPlus" @opened="onPlusOpened" />
           <label for="composer" class="sr-only">Messaggio</label>
           <textarea
             id="composer"
@@ -1218,7 +1332,7 @@ onBeforeUnmount(() => clearInterval(clock));
           </button>
         </form>
       </div>
-      <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false" />
+      <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false; composer?.focus()" />
       <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">
           Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
@@ -1227,9 +1341,10 @@ onBeforeUnmount(() => clearInterval(clock));
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
+      <p v-if="modelNote !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-muted">{{ modelNote }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted short:mt-1.5">
-        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
-        <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
+        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · incognito: /nota spento, "Copia" funziona</span>
+        <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span>
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>

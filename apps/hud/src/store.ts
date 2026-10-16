@@ -6,6 +6,7 @@ import { startCall as openCallSession, type CallSession } from './lib/call-sessi
 import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
+import { keepRefused, removeDraft } from './lib/composer.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, choiceCharacter, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
@@ -340,6 +341,8 @@ export function createChatStore() {
     conversations.value = conversations.value.filter((item) => item.id !== id);
     systemChats.value = systemChats.value.filter((item) => item.id !== id);
     archived.value = archived.value.filter((item) => item.id !== id);
+    // Its unsent text kept in this browser (D-231) goes with it.
+    removeDraft(storage, id);
     if (chat.value?.conversationId === id) {
       chat.value = null;
       detached.value = undefined;
@@ -888,9 +891,10 @@ export function createChatStore() {
     // The other "/" commands (D-090) are carried out by the page, never sent to Arianna.
     const meaning = resolveDraft(body);
     if (meaning.kind === 'command' && meaning.command.action.kind !== 'note' && meaning.command.action.kind !== 'round') return false;
+    const incognitoHere = current.value?.incognito === true;
     // "/nota" is off in incognito (D-136): nothing of it goes to kb/inbox, the draft stays.
     const note = parseNoteCommand(body);
-    const off = noteRefusal(note !== undefined, current.value?.incognito === true);
+    const off = noteRefusal(note !== undefined, incognitoHere);
     if (off !== undefined) {
       error.value = off;
       return false;
@@ -917,6 +921,8 @@ export function createChatStore() {
     } catch (cause) {
       fail(cause);
       refusedDraft.value = { conversationId: state.conversationId, body, at: Date.now() };
+      // Kept as the draft of its conversation too (D-231): the page may have moved on, and then the field does not take it back.
+      keepRefused(storage, state.conversationId, body, !incognitoHere && !knownIncognito.has(state.conversationId), Date.now());
       return false;
     } finally {
       sending.value = false;

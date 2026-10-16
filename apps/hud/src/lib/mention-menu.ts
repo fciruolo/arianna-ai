@@ -43,5 +43,10 @@ export function useMentionMenu(text: Ref<string>, enabled: () => boolean, agents
     return false;
   }
 
-  return { items, open, active, onKey, choose };
+  /** Closes the menu over what is written now, as Esc does (D-231: the «+» menu opens above it). */
+  function dismiss(): void {
+    dismissed.value = text.value;
+  }
+
+  return { items, open, active, onKey, choose, dismiss };
 }
