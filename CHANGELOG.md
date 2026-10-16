@@ -6,7 +6,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
 - «Affianca» nel menu di una conversazione della barra sinistra (l'icona a due colonne, accanto a Fissa): la apre accanto a quella aperta, ognuna col suo campo, la sua bozza, la sua coda, la sua etichetta e chi risponde; «Chiudi» sulla seconda la toglie. L'indirizzo le porta tutte e due (`/c/<id>?affianca=<id>`), così ricaricando o con «indietro» tornano (D-234, idea 7 di OpenWork).
 - Sotto i 1280 px di larghezza della finestra le due conversazioni affiancate si vedono una alla volta, con due schede in alto per passare dall'una all'altra (D-234).
 - Pagina «Cosa è cambiato» nelle Impostazioni, gruppo Informazioni dopo Novità (`/impostazioni/cosa-e-cambiato`): i cambiamenti di questa installazione dal più recente, per giorno, con un'icona e un filtro per tipo (modelli, Claude e Codex, skill e stili, agenti, progetti, aspetto, versione di Arianna) e il collegamento alla sezione dove si cambia quella cosa. Il core fotografa solo nomi, versioni e stati all'avvio, a ogni cambio di `arianna.toml`, ogni 10 minuti e quando apri la pagina, e scrive la differenza nel registro degli eventi; mai il contenuto di chat o note (D-233, idea 11 delle idee di OpenWork).
@@ -14,13 +13,22 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 - I temi si chiamano col loro nome anche in «Cosa è cambiato» e nei costumi della galleria: «Scrubs» e «The Office», non più «corsia» e «ufficio» (richiesta dell'utente del 2026-10-16, D-233).
 - Il progetto «arianna» (Arianna stessa, dove lavora GOD) è il primo e in evidenza nella pagina Progetti e in Impostazioni → Progetti, in un riquadro suo con logo, versione e copie di lavoro, senza IM né incassi perché è un progetto interno (richiesta dell'utente del 2026-10-16, D-127).
 
 ### Corretto
 
 - All'apertura di una conversazione la chat ricorda di nuovo se l'intera conversazione era già stata salvata in inbox: un errore la faceva leggere solo cambiando conversazione (D-131, trovato con D-234).
+
+## [0.127.0] - 2026-10-16
+
+### Aggiunto
+
+- L'ufficio si può attraversare a piedi in 3D: l'interruttore «2D / 3D» sotto la mappa (spento di default, ricordato dal browser) apre una vista in prima persona costruita dalla pianta del tema, con muri, porte, arredi e i personaggi pixel come sagome piatte; ci si muove con le frecce o W A S D, ci si gira trascinando o con ← →, E per parlare come in 2D (D-230, domanda 3 di D-106).
+
+### Cambiato
+
+- Nuova dipendenza della chat: three.js 0.186.1 (MIT), scaricata solo quando si accende la vista 3D dell'ufficio (D-230).
 
 ## [0.126.0] - 2026-10-16
 
