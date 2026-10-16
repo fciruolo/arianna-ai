@@ -11,6 +11,7 @@ import type { OfficeSignals } from '../lib/office/signals.ts';
 import { roomClaims } from '../lib/office/rooms.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
+import { loadViewMode, saveViewMode, type OfficeViewMode } from '../lib/office/world3d.ts';
 import { pendingRows, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
@@ -188,6 +189,20 @@ const showCardwall = ref(false);
 const showArchive = ref(false);
 /** The list of the keys under the map, behind «? Comandi» (D-194). */
 const showKeys = ref(false);
+
+/** The plan or the walk in 3D (D-230): a choice of this browser, the plan by default. */
+function storage(): Storage | undefined {
+  try {
+    return typeof window === 'undefined' ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+const viewMode = ref<OfficeViewMode>(loadViewMode(storage()));
+function chooseView(mode: OfficeViewMode): void {
+  viewMode.value = mode;
+  saveViewMode(storage(), mode);
+}
 const archiveHeading = ref<HTMLElement | null>(null);
 async function openArchive(): Promise<void> {
   showArchive.value = true;
@@ -229,6 +244,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
             :skin="skin"
             :snapshot="snapshot"
             :sheets="sheets"
+            :mode="viewMode"
             @talk="talk"
             @decisions="showPending = true"
             @archive="void openArchive()"
@@ -238,13 +254,40 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
         </template>
         <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-muted">
           <p id="office-help" class="min-w-0 flex-1">
-            Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.
+            <template v-if="viewMode === '3d'">Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, cammina con le frecce e trascina per guardarti intorno. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
+            <template v-else>Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
           </p>
-          <button type="button" class="btn ml-auto px-2.5 py-1 text-[13px]" aria-controls="office-keys" :aria-expanded="showKeys" @click="showKeys = !showKeys">? Comandi</button>
+          <div class="ml-auto flex items-center gap-2">
+            <div role="group" aria-label="Vista dell'ufficio" class="inline-flex overflow-hidden rounded-md border border-line-strong">
+              <button
+                v-for="option in (['2d', '3d'] as const)"
+                :key="option"
+                type="button"
+                class="px-2.5 py-1 text-[13px] font-semibold"
+                :class="viewMode === option ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink'"
+                :aria-pressed="viewMode === option"
+                :disabled="map === null"
+                @click="chooseView(option)"
+              >{{ option === '2d' ? '2D' : '3D' }}</button>
+            </div>
+            <button type="button" class="btn px-2.5 py-1 text-[13px]" aria-controls="office-keys" :aria-expanded="showKeys" @click="showKeys = !showKeys">? Comandi</button>
+          </div>
         </div>
         <!-- Shown on request (D-194); still read as the description of the office when hidden. -->
         <div v-show="showKeys" id="office-keys" class="mt-2 rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
-          <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+          <dl v-if="viewMode === '3d'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+            <dt><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">S</kbd></dt>
+            <dd>cammina avanti e indietro</dd>
+            <dt><kbd class="kbd">A</kbd><kbd class="kbd">D</kbd></dt>
+            <dd>un passo di lato</dd>
+            <dt><kbd class="kbd">←</kbd><kbd class="kbd">→</kbd> o trascina</dt>
+            <dd>girati e guardati intorno (col mouse o col dito); un clic o un tocco sul pavimento o su un agente ti ci porta</dd>
+            <dt><kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd></dt>
+            <dd>vicino a un agente apre nella chat la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le decisioni in attesa; al cardwall sul muro, le card sopra l'ufficio</dd>
+            <dt><kbd class="kbd">Esc</kbd></dt>
+            <dd>esce dall'ufficio</dd>
+          </dl>
+          <dl v-else class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
             <dt><kbd class="kbd">←</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">→</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">A</kbd><kbd class="kbd">S</kbd><kbd class="kbd">D</kbd></dt>
             <dd>cammina; oppure clicca un punto del pavimento o un agente</dd>
             <dt><kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd></dt>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { renderSheet } from '../../characters/compose.ts';
 import { USER } from '../../characters/art/user.ts';
@@ -43,6 +43,21 @@ import {
   snapshotKey,
   type Target,
 } from '../lib/office/view.ts';
+import type { OfficeScene, SpriteState } from '../lib/office/scene3d.ts';
+import {
+  areaAt,
+  buildWorld,
+  facingOfYaw,
+  inSight,
+  SPRITE_HEIGHT,
+  standPoint,
+  TAG_DISTANCE,
+  toWorld,
+  viewFacing,
+  walkVector,
+  yawTowards,
+  type OfficeViewMode,
+} from '../lib/office/world3d.ts';
 import { frameAt, poseFrames, type Pose } from '../lib/sprites.ts';
 import type { CharacterChoice, Label } from '../lib/types.ts';
 
@@ -55,6 +70,11 @@ import type { CharacterChoice, Label } from '../lib/types.ts';
  * conversation, near the Decisioni desk the window of D-091, near the archive
  * its list, near the cardwall on the wall the cardwall (D-165). Esc leaves the canvas. Paused while the tab is hidden; with
  * reduced motion still frames, drawn again only when something changes.
+ *
+ * The 3D view (D-230) is another drawing of the same engine: the same
+ * actors, the same user's point on the map, the same collisions (moveFree),
+ * the same E. three.js arrives with a dynamic import only when the view is
+ * on, and everything it holds is disposed when it goes off.
  */
 const props = defineProps<{
   map: OfficeMap;
@@ -62,6 +82,8 @@ const props = defineProps<{
   skin?: OfficeSkin | undefined;
   snapshot: OfficeSnapshot;
   sheets: Record<string, CharacterChoice | undefined>;
+  /** The plan (default) or the walk in 3D (D-230). */
+  mode?: OfficeViewMode | undefined;
 }>();
 const emit = defineEmits<{ talk: [agentId: string]; decisions: []; archive: []; cardwall: []; escape: [] }>();
 
@@ -104,6 +126,33 @@ let userSheet: HTMLCanvasElement | null = null;
 const KEYS: Record<string, 'up' | 'down' | 'left' | 'right'> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right',
 };
+
+// The 3D view (D-230): ↑ ↓ (W S) walk, A D step sideways, ← → turn; the mouse or a finger drags to look around.
+type Key3 = 'forward' | 'back' | 'left' | 'right' | 'turnLeft' | 'turnRight';
+const KEYS3: Record<string, Key3> = {
+  ArrowUp: 'forward', ArrowDown: 'back', ArrowLeft: 'turnLeft', ArrowRight: 'turnRight', KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right',
+};
+const keys3 = new Set<Key3>();
+const view3d = ref<HTMLElement | null>(null);
+const canvas3d = ref<HTMLCanvasElement | null>(null);
+const nameTags3 = new Map<string, HTMLElement>();
+const hint3 = ref<HTMLElement | null>(null);
+const area3 = ref<{ text: string; label: Label | null } | null>(null);
+/** off, loading three.js, drawing, or no WebGL in this browser (the plan stays). */
+const status3d = ref<'off' | 'loading' | 'ready' | 'error'>('off');
+let scene3d: OfficeScene | null = null;
+let yaw = 0;
+let pitch = 0;
+/** Where the camera turns by itself while walking a path or on arrival; never with reduced motion. */
+let yawGoal: number | null = null;
+const TURN_SPEED = 2.4;
+const YAW: Record<Facing, number> = { up: 0, left: Math.PI / 2, down: Math.PI, right: -Math.PI / 2 };
+const is3d = computed(() => props.mode === '3d' && status3d.value !== 'error');
+
+function releaseKeys(): void {
+  keys.clear();
+  keys3.clear();
+}
 
 const DECISIONS = decisionsPoint(props.map);
 const ARCHIVE = archivePoint(props.map);
@@ -169,13 +218,13 @@ function rowsOf(id: string): 3 | 4 {
 }
 
 /** The frame of a seated agent: its pose facing down; facing up it types or stands. */
-function seatedFrame(state: AgentActor, id: string): { column: number; row: number; mirror: boolean } {
-  const { actor, pose } = state;
-  if (actor.facing === 'up') {
+function seatedFrame(state: AgentActor, id: string, facing: Facing = state.actor.facing): { column: number; row: number; mirror: boolean } {
+  const { pose } = state;
+  if (facing === 'up') {
     const typing = pose === 'working' && !reduceMotion ? Math.floor((clock - state.since) / 180) % 2 : 0;
     return { column: pose === 'working' ? 3 + typing : 1, row: 1, mirror: false };
   }
-  if (actor.facing !== 'down') return { column: 1, row: 2, mirror: actor.facing === 'left' };
+  if (facing !== 'down') return { column: 1, row: 2, mirror: facing === 'left' };
   const at = frameAt(poseFrames(pose, rowsOf(id)), clock - state.since, reduceMotion);
   return { ...at, mirror: false };
 }
@@ -194,7 +243,7 @@ function nearby(): string | null {
 
 function interact(target: string | null): void {
   if (target === null) return;
-  keys.clear();
+  releaseKeys();
   if (target === 'decisions') emit('decisions');
   else if (target === 'archive') emit('archive');
   else if (target === 'cardwall') emit('cardwall');
@@ -213,6 +262,8 @@ function face(target: Point): void {
   const dx = target[0] - you.x;
   const dy = target[1] - you.y;
   you.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+  // In 3D the camera turns to it, slowly; with reduced motion it never turns by itself.
+  if (is3d.value && !reduceMotion) yawGoal = yawTowards(toWorld([you.x, you.y]), toWorld(target));
 }
 
 /** Walks next to an agent, the Decisioni desk, the archive or the cardwall; `open` then opens it. */
@@ -256,26 +307,57 @@ function arrive(): void {
   const target = then.startsWith('walk:') ? then.slice(5) : then;
   const point = pointOf(target);
   if (point !== undefined) face(point);
+  // In 3D an agent is where its sprite stands (in the middle of its seat), not where the plan draws its feet.
+  const actor = actors.get(target)?.actor;
+  if (actor !== undefined && yawGoal !== null) yawGoal = yawTowards(toWorld([you.x, you.y]), standPoint(actor));
   if (!then.startsWith('walk:')) interact(target);
+}
+
+/** The shortest turn from one yaw to another, in (-π, π]. */
+function turnBetween(from: number, to: number): number {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 }
 
 function updateYou(dt: number): void {
   let vx = 0;
   let vy = 0;
-  if (keys.has('left')) vx -= 1;
-  if (keys.has('right')) vx += 1;
-  if (keys.has('up')) vy -= 1;
-  if (keys.has('down')) vy += 1;
+  if (is3d.value) {
+    const turn = (keys3.has('turnLeft') ? 1 : 0) - (keys3.has('turnRight') ? 1 : 0);
+    if (turn !== 0) {
+      yaw += (turn * TURN_SPEED * dt) / 1000;
+      yawGoal = null;
+    }
+    [vx, vy] = walkVector({ forward: keys3.has('forward'), back: keys3.has('back'), left: keys3.has('left'), right: keys3.has('right') }, yaw);
+    if (vx !== 0 || vy !== 0) yawGoal = null;
+    if (yawGoal !== null) {
+      const left = turnBetween(yaw, yawGoal);
+      const step = (TURN_SPEED * dt) / 1000;
+      if (Math.abs(left) <= step) {
+        yaw = yawGoal;
+        yawGoal = null;
+      } else {
+        yaw += Math.sign(left) * step;
+      }
+    }
+  } else {
+    if (keys.has('left')) vx -= 1;
+    if (keys.has('right')) vx += 1;
+    if (keys.has('up')) vy -= 1;
+    if (keys.has('down')) vy += 1;
+  }
   if (vx !== 0 || vy !== 0) {
     you.path = [];
     you.then = null;
     [you.x, you.y] = moveFree(props.map, [you.x, you.y], vx, vy, (56 * dt) / 1000, others());
-    you.facing = Math.abs(vx) >= Math.abs(vy) && vx !== 0 ? (vx > 0 ? 'right' : 'left') : vy > 0 ? 'down' : 'up';
+    you.facing = is3d.value ? facingOfYaw(yaw) : Math.abs(vx) >= Math.abs(vy) && vx !== 0 ? (vx > 0 ? 'right' : 'left') : vy > 0 ? 'down' : 'up';
     you.moving = true;
     return;
   }
   if (you.path.length > 0) {
     const step = followPath([you.x, you.y], you.path, (56 * dt) / 1000, you.facing);
+    const next = step.path[0];
+    // Walking a path in 3D the camera looks where the user goes (never with reduced motion: there the walk is a jump).
+    if (is3d.value && !reduceMotion && next !== undefined && Math.hypot(next[0] - step.at[0], next[1] - step.at[1]) > 0.5) yawGoal = yawTowards(toWorld(step.at), toWorld(next));
     [you.x, you.y] = step.at;
     you.path = step.path;
     you.facing = step.facing;
@@ -310,19 +392,82 @@ function place(element: HTMLElement | null | undefined, x: number, y: number, an
   element.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
 }
 
+/** The desks whose screen is on: someone seated there reads, writes, thinks or waits (the same in 2D and 3D). */
+function screensOn(): Set<string> {
+  const screens = new Set<string>();
+  for (const state of actors.values()) {
+    const { actor } = state;
+    if (!actor.walking && ['working', 'reading', 'thinking', 'waiting'].includes(state.pose)) screens.add(`${String(actor.seat[0])},${String(actor.seat[1])}`);
+  }
+  return screens;
+}
+
+/** The text of an agent's tag: its name (D-214: the person of the series it wears) and what it does. */
+function tagText(id: string, name: string, state: AgentActor): string {
+  return `${characterNames.value[id] ?? name} · ${state.actor.walking ? POSE_SHORT.walking : POSE_SHORT[state.pose]}`;
+}
+
+/** The same state drawn in 3D (D-230): the sprites turned as the camera sees them, tags only for who is in sight. */
+function render3d(): void {
+  const scene = scene3d;
+  const box = view3d.value;
+  if (scene === null || box === null) return;
+  const eye = toWorld([you.x, you.y]);
+  const near = nearby();
+  const sprites: SpriteState[] = [];
+  const width = box.clientWidth;
+  const height = box.clientHeight;
+  for (const agent of props.snapshot.agents) {
+    const state = actors.get(agent.id);
+    if (state === undefined) continue;
+    const { actor } = state;
+    const at = standPoint(actor);
+    const seen = viewFacing(actor.facing, at, eye);
+    const frameOf = actor.walking ? walkFrame(seen, clock, reduceMotion) : seatedFrame(state, agent.id, seen);
+    const sheet = images.get(agent.id) ?? null;
+    sprites.push({ id: agent.id, x: at.x, z: at.z, sheet, ...frameOf, dim: state.pose === 'paused' && !actor.walking });
+    const tag = nameTags3.get(agent.id);
+    if (tag === undefined) continue;
+    const text = tagText(agent.id, agent.name, state);
+    if (tag.textContent !== text) tag.textContent = text;
+    tag.classList.toggle('near', near === agent.id);
+    const close = Math.hypot(at.x - eye.x, at.z - eye.z) < TAG_DISTANCE && inSight(props.map, eye, at);
+    const point = close && sheet !== null ? scene.project(at.x, SPRITE_HEIGHT + 0.08, at.z) : null;
+    const shown = point !== null && point.left >= 0 && point.left <= width && point.top >= 0 && point.top <= height;
+    tag.hidden = !shown;
+    if (shown) tag.style.transform = `translate(${String(Math.round(point.left))}px, ${String(Math.round(point.top))}px) translate(-50%, -100%)`;
+  }
+  scene.frame({ eye, yaw, pitch, sprites, screens: screensOn(), decisionsWaiting: props.snapshot.decisions.total > 0, now: clock, reduceMotion });
+  const hintElement = hint3.value;
+  if (hintElement !== null) {
+    const show = near !== null && document.activeElement === canvas3d.value;
+    hintElement.hidden = !show;
+    const label = hintElement.querySelector('span');
+    if (show && label !== null) {
+      const text = hintText(near, props.snapshot);
+      if (label.textContent !== text) label.textContent = text;
+    }
+  }
+  const area = areaAt(props.map, props.snapshot, tileOf(you.x, you.y));
+  if (area?.text !== area3.value?.text || area?.label !== area3.value?.label) area3.value = area;
+}
+
 function render(): void {
+  if (is3d.value) {
+    render3d();
+    return;
+  }
   const context = canvas.value?.getContext('2d');
   if (context === null || context === undefined || colors === undefined) return;
   context.imageSmoothingEnabled = false;
   const near = nearby();
   const figures: Figure[] = [];
-  const screens = new Set<string>();
+  const screens = screensOn();
   for (const agent of props.snapshot.agents) {
     const state = actors.get(agent.id);
     if (state === undefined) continue;
     const { actor } = state;
     const frameOf = actor.walking ? walkFrame(actor.facing, clock, reduceMotion) : seatedFrame(state, agent.id);
-    if (!actor.walking && ['working', 'reading', 'thinking', 'waiting'].includes(state.pose)) screens.add(`${String(actor.seat[0])},${String(actor.seat[1])}`);
     figures.push({
       x: actor.x,
       y: actor.y,
@@ -335,7 +480,7 @@ function render(): void {
     const tag = nameTags.get(agent.id);
     if (tag !== undefined) {
       // D-214: the name of the person of the series, when the agent wears one.
-      const text = `${characterNames.value[agent.id] ?? agent.name} · ${actor.walking ? POSE_SHORT.walking : POSE_SHORT[state.pose]}`;
+      const text = tagText(agent.id, agent.name, state);
       if (tag.textContent !== text) tag.textContent = text;
       place(tag, actor.x, nameTagTop(props.map, actor), 'below');
     }
@@ -401,7 +546,8 @@ function loop(time: number): void {
   render();
   if (!running) return;
   const agentsWalking = [...actors.values()].some(({ actor }) => actor.walking);
-  if (keepDrawing(reduceMotion, { keys: keys.size, userPath: you.path.length, agentsWalking })) wake();
+  const turning = yawGoal !== null || drag !== null ? 1 : 0;
+  if (keepDrawing(reduceMotion, { keys: keys.size + keys3.size + turning, userPath: you.path.length, agentsWalking })) wake();
   else last = 0;
 }
 
@@ -422,7 +568,7 @@ function stop(): void {
   running = false;
   scheduled = false;
   window.cancelAnimationFrame(frame);
-  keys.clear();
+  releaseKeys();
 }
 function onVisibility(): void {
   if (document.visibilityState === 'hidden') stop();
@@ -431,12 +577,22 @@ function onVisibility(): void {
 
 function onKeydown(event: KeyboardEvent): void {
   if (isShortcut(event)) return;
-  const key = KEYS[event.code] ?? KEYS[event.key];
-  if (key !== undefined) {
-    keys.add(key);
-    event.preventDefault();
-    wake();
-    return;
+  if (is3d.value) {
+    const key3 = KEYS3[event.code] ?? KEYS3[event.key];
+    if (key3 !== undefined) {
+      keys3.add(key3);
+      event.preventDefault();
+      wake();
+      return;
+    }
+  } else {
+    const key = KEYS[event.code] ?? KEYS[event.key];
+    if (key !== undefined) {
+      keys.add(key);
+      event.preventDefault();
+      wake();
+      return;
+    }
   }
   if (event.code === 'KeyE' || event.key === 'Enter') {
     event.preventDefault();
@@ -445,7 +601,7 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if (event.key === 'Escape') {
     event.preventDefault();
-    keys.clear();
+    releaseKeys();
     you.path = [];
     emit('escape');
   }
@@ -453,19 +609,21 @@ function onKeydown(event: KeyboardEvent): void {
 function onKeyup(event: KeyboardEvent): void {
   // A key let go while Cmd was down sends no keyup of its own on macOS.
   if (event.key === 'Meta') {
-    keys.clear();
+    releaseKeys();
   } else {
     const key = KEYS[event.code] ?? KEYS[event.key];
     if (key !== undefined) keys.delete(key);
+    const key3 = KEYS3[event.code] ?? KEYS3[event.key];
+    if (key3 !== undefined) keys3.delete(key3);
   }
   wake();
 }
 function onWindowBlur(): void {
-  keys.clear();
+  releaseKeys();
   wake();
 }
 function onFocusChange(): void {
-  keys.clear();
+  releaseKeys();
   wake();
 }
 
@@ -479,11 +637,23 @@ function onClick(event: MouseEvent): void {
   const y = ((event.clientY - box.top) / box.height) * H;
   for (const [id, { actor }] of actors) {
     if (x >= actor.x - 8 && x <= actor.x + 8 && y >= actor.y - 30 && y <= actor.y) {
-      if (Math.hypot(actor.x - you.x, actor.y - you.y) < TALK_REACH) interact(id);
-      else goTo(id);
+      clickAgent(id);
       return;
     }
   }
+  clickMap(x, y);
+}
+
+/** A click on an agent: talks within reach, otherwise walks to it. */
+function clickAgent(id: string): void {
+  const actor = actors.get(id)?.actor;
+  if (actor === undefined) return;
+  if (Math.hypot(actor.x - you.x, actor.y - you.y) < TALK_REACH) interact(id);
+  else goTo(id);
+}
+
+/** A click on a point of the map (pixels), from the plan or from the 3D view: the desk, the archive, the cardwall, or a walk. */
+function clickMap(x: number, y: number): void {
   const c = Math.floor(x / TILE);
   const r = Math.floor(y / TILE);
   const desk = props.map.anchors.decisions.desk;
@@ -504,7 +674,102 @@ function onClick(event: MouseEvent): void {
 
 function readTheme(): void {
   colors = skinColors(readColors(getComputedStyle(document.documentElement)), props.skin ?? 'base');
+  scene3d?.setColors(colors);
   wake();
+}
+
+// Dragging in the 3D view turns the camera; a press that does not move is a click (a tap on the phone).
+let drag: { id: number; x: number; y: number; yaw: number; pitch: number; moved: boolean } | null = null;
+const DRAG_TURN = 0.006;
+const MAX_PITCH = 0.6;
+function onPointerDown(event: PointerEvent): void {
+  const element = canvas3d.value;
+  if (element === null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  element.focus({ preventScroll: true });
+  element.setPointerCapture(event.pointerId);
+  drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw, pitch, moved: false };
+  wake();
+}
+function onPointerMove(event: PointerEvent): void {
+  if (drag?.id !== event.pointerId) return;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+  drag.moved = true;
+  yawGoal = null;
+  yaw = drag.yaw - dx * DRAG_TURN;
+  pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, drag.pitch - dy * DRAG_TURN));
+  wake();
+}
+function onPointerUp(event: PointerEvent): void {
+  if (drag?.id !== event.pointerId) return;
+  const clicked = !drag.moved;
+  drag = null;
+  const element = canvas3d.value;
+  if (!clicked || element === null || scene3d === null) return;
+  const box = element.getBoundingClientRect();
+  const hit = scene3d.pick(event.clientX - box.left, event.clientY - box.top);
+  if (hit === null) return;
+  if (hit.kind === 'agent') clickAgent(hit.id);
+  else clickMap(hit.x * TILE, hit.z * TILE);
+  wake();
+}
+function onPointerCancel(): void {
+  drag = null;
+}
+
+function sizeScene(): void {
+  const box = view3d.value;
+  if (scene3d !== null && box !== null) scene3d.resize(box.clientWidth, box.clientHeight);
+}
+
+/** Turns the 3D view on: three.js arrives now, with a dynamic import; looking where the user faced in the plan. */
+let entering = 0;
+async function enter3d(): Promise<void> {
+  const attempt = ++entering;
+  status3d.value = 'loading';
+  releaseKeys();
+  try {
+    const { createOfficeScene } = await import('../lib/office/scene3d.ts');
+    await nextTick();
+    const element = canvas3d.value;
+    if (attempt !== entering || props.mode !== '3d' || element === null) return;
+    scene3d = createOfficeScene(element, buildWorld(props.map, props.skin ?? 'base'));
+  } catch {
+    if (attempt === entering) status3d.value = 'error';
+    return;
+  }
+  yaw = YAW[you.facing];
+  pitch = 0;
+  yawGoal = null;
+  status3d.value = 'ready';
+  readTheme();
+  sizeScene();
+  wake();
+}
+
+/** Back to the plan: everything three.js holds is freed, the loop draws the 2D canvas again. */
+function leave3d(): void {
+  entering++;
+  scene3d?.dispose();
+  scene3d = null;
+  drag = null;
+  yawGoal = null;
+  releaseKeys();
+  status3d.value = 'off';
+  wake();
+}
+watch(
+  () => props.mode,
+  (mode) => {
+    if (mode === '3d') void enter3d();
+    else leave3d();
+  },
+);
+
+function setNameTag3(id: string, element: unknown): void {
+  if (element instanceof HTMLElement) nameTags3.set(id, element);
+  else nameTags3.delete(id);
 }
 const themeObserver = typeof MutationObserver === 'undefined' ? undefined : new MutationObserver(readTheme);
 const schemeQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-color-scheme: light)');
@@ -534,6 +799,7 @@ function fit(): void {
   scale.value = officeScale(width, props.map.width);
   viewW.value = Math.min(W * scale.value, width);
   viewH.value = Math.min(H * scale.value, Math.max(MIN_VIEW_HEIGHT, window.innerHeight - PAGE_CHROME));
+  void nextTick(sizeScene);
   wake();
 }
 
@@ -568,9 +834,11 @@ onMounted(() => {
   schemeQuery?.addEventListener('change', readTheme);
   motionQuery?.addEventListener('change', onMotion);
   if (document.visibilityState !== 'hidden') start();
+  if (props.mode === '3d') void enter3d();
 });
 onBeforeUnmount(() => {
   stop();
+  leave3d();
   resize?.disconnect();
   window.removeEventListener('resize', fit);
   window.removeEventListener('keyup', onKeyup);
@@ -582,7 +850,7 @@ onBeforeUnmount(() => {
 });
 
 function focus(): void {
-  canvas.value?.focus({ preventScroll: false });
+  (is3d.value ? canvas3d.value : canvas.value)?.focus({ preventScroll: false });
 }
 defineExpose({ goTo, focus });
 </script>
@@ -590,7 +858,7 @@ defineExpose({ goTo, focus });
 <template>
   <div ref="wrap" class="min-w-0">
     <!-- overflow-clip, not hidden: focusing the canvas must never scroll the window on the map (D-229). -->
-    <div class="relative mx-auto overflow-clip rounded-md border border-line-strong" :style="{ width: `${String(viewW)}px`, height: `${String(viewH)}px` }">
+    <div v-show="!is3d" class="relative mx-auto overflow-clip rounded-md border border-line-strong" :style="{ width: `${String(viewW)}px`, height: `${String(viewH)}px` }">
       <div ref="stage" class="absolute top-0 left-0" :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }">
         <canvas
           ref="canvas"
@@ -629,6 +897,41 @@ defineExpose({ goTo, focus });
         </div>
       </div>
     </div>
+    <!-- The 3D view (D-230): the same office walked in first person; three.js only while it is on. -->
+    <div v-if="is3d" ref="view3d" class="relative overflow-clip rounded-md border border-line-strong" :style="{ height: `${String(viewH)}px` }">
+      <canvas
+        ref="canvas3d"
+        tabindex="0"
+        role="application"
+        aria-roledescription="ufficio in 3D"
+        aria-label="Ufficio in 3D: freccia su e giù o W e S per camminare, A e D per un passo di lato, frecce sinistra e destra per girarti, trascina per guardarti intorno, E o Invio vicino a un agente per parlarci, Esc per uscire"
+        aria-describedby="office-help office-keys"
+        class="office-canvas block size-full cursor-grab touch-none select-none active:cursor-grabbing"
+        @keydown="onKeydown"
+        @focus="onFocusChange"
+        @blur="onFocusChange"
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerCancel"
+      />
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+        <span
+          v-for="agent in snapshot.agents"
+          :key="agent.id"
+          :ref="(element) => { setNameTag3(agent.id, element); }"
+          hidden
+          class="tag3 absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+        />
+        <span v-if="area3 !== null" class="absolute top-2 left-2 rounded border border-line-strong bg-surface/90 px-2 py-0.5 text-[13px] whitespace-nowrap text-ink">{{ area3.text }}<span v-if="area3.label !== null" class="ml-1.5 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[area3.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[area3.label] }}</span></span>
+        <span ref="hint3" hidden class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
+          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
+        </span>
+        <span class="absolute top-1/2 left-1/2 size-1.5 -translate-1/2 rounded-full bg-ink/50" />
+        <p v-if="status3d === 'loading'" class="absolute inset-0 grid place-items-center text-sm text-muted">Preparo la vista 3D…</p>
+      </div>
+    </div>
+    <p v-if="mode === '3d' && status3d === 'error'" role="status" class="mt-2 text-[13px] text-muted">La vista 3D non è disponibile in questo browser (manca WebGL): resta la pianta.</p>
   </div>
 </template>
 
@@ -636,5 +939,10 @@ defineExpose({ goTo, focus });
 /* The ring of :focus-visible inside the canvas: the rounded frame around it would clip it outside. */
 .office-canvas:focus-visible {
   outline-offset: -2px;
+}
+/* The agent within reach of E, in 3D: its tag underlined, as the 2D view underlines the figure. */
+.tag3.near {
+  border-color: var(--accent);
+  text-decoration: underline;
 }
 </style>
