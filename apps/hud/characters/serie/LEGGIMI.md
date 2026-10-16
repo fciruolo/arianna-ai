@@ -30,7 +30,6 @@ Il tema «I Simpson» (D-237, ramo `task/tema-simpson`) va tolto tutto, perché 
 I fogli si rigenerano dalle mappe con `node apps/hud/characters/build.ts`; un test fallisce se i PNG non corrispondono alle mappe.
 
 Il tema «I Griffin» (D-238, id `quahog`: Lois, Peter, Stewie, Brian, Meg, Chris e Cleveland di Family Guy, con casa Griffin e il Drunken Clam nell'ufficio pixel) va tolto con loro, anche dalla storia di git (è entrato con i commit del ramo `task/tema-griffin`):
-Il tema «American Dad» (D-239, id `langley`) va tolto intero, perché esiste solo per la serie e non ha costumi nel pacchetto `originali`:
 
 - la cartella `apps/hud/themes/quahog/`;
 - le mappe `apps/hud/characters/art/serie/griffin.ts`, la riga `...GRIFFIN` di `SERIES` e il suo import in `apps/hud/characters/originals.ts`, le sette righe di `pack.json` e i PNG `lois`, `peter`, `stewie`, `brian`, `meg`, `chris`, `cleveland` di questa cartella;
@@ -39,6 +38,9 @@ Il tema «American Dad» (D-239, id `langley`) va tolto intero, perché esiste s
 - l'ufficio pixel: `apps/hud/src/office/maps/quahog.json` con la sua riga in `MAP_TEXTS` di `apps/hud/src/components/OfficePage.vue`, `apps/hud/src/lib/office/quahog.ts`, `quahog` in `OFFICE_SKINS` e la sua tavolozza in `skins.ts`, i rami `quahog` di `apps/hud/src/lib/office/draw.ts` e di `apps/hud/src/lib/office/world3d.ts` (il televisore in 3D);
 - il nome del tema in `THEME_NAME` di `apps/hud/src/lib/changes.ts`;
 - i test: `apps/hud/test/quahog.test.ts`, `apps/core/test/series-griffin.test.ts`, e le attese su `quahog` e sui sette personaggi in `apps/hud/test/themes.test.ts`, `apps/core/test/themes.test.ts`, `apps/core/test/characters.test.ts`, `apps/hud/test/office-skins.test.ts`, `apps/hud/test/changes.test.ts`, `apps/core/test/wikiquote.test.ts` e `apps/core/test/series-guard.test.ts`.
+
+Il tema «American Dad» (D-239, id `langley`) va tolto intero, perché esiste solo per la serie e non ha costumi nel pacchetto `originali`:
+
 - la cartella `apps/hud/themes/langley/`, con le sue attese in `apps/hud/test/themes.test.ts` e `apps/core/test/themes.test.ts`, e `langley` in `THEME_NAME` di `apps/hud/src/lib/changes.ts` con la sua riga in `apps/hud/test/changes.test.ts`;
 - le mappe `apps/hud/characters/art/serie/american-dad.ts`, con l'import e le sette righe in `SERIES` di `apps/hud/characters/originals.ts`, i PNG `francine`, `stan`, `roger`, `hayley`, `bullock`, `steve` e `klaus` di questa cartella con le loro righe in `pack.json`, e i loro id nella lista di `apps/core/test/characters.test.ts`;
 - nomi e personalità: `packages/agents/src/series-american-dad.ts`, con l'import e `...AMERICAN_DAD_PERSONAS` in `packages/agents/src/series-personas.ts`;
