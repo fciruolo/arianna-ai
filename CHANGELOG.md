@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.139.1] - 2026-10-17
+
 ### Corretto
 
 - Nella chat diretta col Designer gli stili di Open Design come «x-ai», «stripe», «vercel» o «figma» non fermano più il messaggio verso Claude: il controllo dei dati personali non legge più i testi dei cataloghi adottati, che prendeva per nomi di persona (41 stili su 152) (D-250).
