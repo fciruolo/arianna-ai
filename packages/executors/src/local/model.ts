@@ -78,6 +78,13 @@ export interface ChatRequest {
    * does not send them leaves `usage` absent.
    */
   streamUsage?: boolean;
+  /**
+   * False asks the server not to think before answering (D-251): sent as
+   * `chat_template_kwargs.enable_thinking`, which the chat templates of the
+   * Qwen models read. A server or template that does not know it ignores it.
+   * Absent, nothing is sent and the model thinks as it is set to.
+   */
+  thinking?: false;
 }
 
 export interface ChatResult {
@@ -160,6 +167,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest, headers: 
   if (body.stream === true && request.streamUsage === true) body.stream_options = { include_usage: true };
   if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.thinking === false) body.chat_template_kwargs = { enable_thinking: false };
   if (request.schema !== undefined) {
     body.response_format = {
       type: 'json_schema',

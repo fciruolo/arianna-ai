@@ -94,6 +94,13 @@ describe('local model contract', () => {
     });
   });
 
+  it('asks the server not to think only when thinking is false (D-251)', async () => {
+    await model.chat({ model: 'local-large', messages: USER('say hello'), thinking: false });
+    assert.deepEqual((server.requests.at(-1) as { chat_template_kwargs?: unknown }).chat_template_kwargs, { enable_thinking: false });
+    await model.chat({ model: 'local-large', messages: USER('say hello') });
+    assert.equal((server.requests.at(-1) as { chat_template_kwargs?: unknown }).chat_template_kwargs, undefined);
+  });
+
   it('rejects content that is not JSON when a schema was asked', async () => {
     await rejectsWith(
       model.chat({ model: 'local-large', messages: USER('!notjson'), schema: { name: 'x', schema: {} } }),
