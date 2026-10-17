@@ -11,6 +11,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- Le risposte di Arianna col modello locale si scrivono in testo libero: tabelle, elenchi e blocchi di codice vanno a capo come con Claude invece di arrivare su una riga sola; il JSON resta solo per decidere cosa fare (D-251).
 - Il pensiero dell'orchestratore non è più solo nel log del run: si vede in chat, ma non entra mai in un brief, nel contesto mandato al cloud né negli eval (D-249, cambia D-051).
 
 ### Sicurezza
