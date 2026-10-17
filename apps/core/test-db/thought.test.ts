@@ -109,7 +109,7 @@ test('the thinking passes the gateway with the answer, logged as one exit to the
   const thought = await (await openReply(sql, task.id)).finish('Risposta', 'L2', { thought: 'Ho pensato così' });
   assert.ok(thought.stored);
   assert.equal(thought.message.thought, 'Ho pensato così');
-  assert.deepEqual(await exits(), [{ bytes_out: Buffer.byteLength('Risposta') + Buffer.byteLength('Ho pensato così') }]);
+  assert.deepEqual((await exits()).slice(), [{ bytes_out: Buffer.byteLength('Risposta') + Buffer.byteLength('Ho pensato così') }]);
   // Negative: without thinking, only the answer is offered.
   const plain = await (await openReply(sql, task.id)).finish('Sola', 'L2');
   assert.ok(plain.stored);
