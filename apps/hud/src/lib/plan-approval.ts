@@ -61,6 +61,14 @@ export function startsByDefault(row: Pick<PlanDraftRow, 'assignee' | 'blockedBy'
   return row.assignee !== 'user' && row.blockedBy.length === 0;
 }
 
+/**
+ * «Scritto da Sonnet: Opus è spento» (D-235): the core's note of a plan
+ * written by another model than the project asked for; undefined otherwise.
+ */
+export function planWrittenBy(detail: Record<string, unknown>): string | undefined {
+  return typeof detail.writtenBy === 'string' && detail.writtenBy.trim() !== '' ? detail.writtenBy : undefined;
+}
+
 /** The plan in an approval's detail, as rows to show and edit; undefined when the detail is not a plan. */
 export function planDraft(detail: Record<string, unknown>): PlanDraft | undefined {
   const { title, cards } = detail;

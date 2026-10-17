@@ -13,7 +13,7 @@ import { contextOf } from '../finance-mark.ts';
 import { passGateway } from '../gateway.ts';
 import { openReply } from '../reply.ts';
 import { createTask, loadTask, type Task } from '../tasks.ts';
-import { PLANNER_PROMPT, plannerBrief, plannerFor, writePlan } from './claude-plan.ts';
+import { PLANNER_PROMPT, plannerBrief, plannerChoice, writePlan } from './claude-plan.ts';
 import type { DelegateEnv } from './delegate.ts';
 
 /**
@@ -128,8 +128,8 @@ export async function planCardStep(deps: PlanCardDeps, ctx: StepContext): Promis
   const parent = task.parentId === null ? undefined : await loadTask(sql, task.parentId);
   const label = maxLabel(task.label, task.effectiveLabel);
   const assignees = ['user', ...delegates.map((target) => target.name)];
-  // Claude only in a work conversation within L1, while it can run (plannerFor); the project's key picks the model.
-  const model = await plannerFor(env, parent?.conversationId ?? null, label);
+  // Claude only in a work conversation within L1, while it can run (plannerChoice); the project's key picks the model, and a fallback is said on the card.
+  const { model, note } = await plannerChoice(env, parent?.conversationId ?? null, label);
 
   let args: Record<string, unknown>;
   let planLabel: Label;
@@ -156,8 +156,9 @@ export async function planCardStep(deps: PlanCardDeps, ctx: StepContext): Promis
   const checked = checkPlan(args, assignees);
   if ('error' in checked) return { kind: 'wait-user', reason: `the planner wrote an invalid plan: ${checked.error}`, usage };
   const approvalId = await sql.begin(async (tx) => {
-    await tx`UPDATE tasks SET note = NULL WHERE id = ${task.id} AND note IS NOT NULL`;
-    return requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked });
+    // The quota's wait is over; a plan written by another model than the project asked for says so (D-235).
+    await tx`UPDATE tasks SET note = ${note} WHERE id = ${task.id} AND note IS DISTINCT FROM ${note}`;
+    return requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked, ...(note === null ? {} : { writtenBy: note }) });
   });
   return { kind: 'confirm', approvalId, usage };
 }

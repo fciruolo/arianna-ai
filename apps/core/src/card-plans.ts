@@ -161,20 +161,29 @@ export function planOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): Store
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 /** The detail of an approval of kind plan: the cards as the chat and planOf read them. */
-function planDetail(plan: PlanProposal, step: unknown, revision = 0): { [key: string]: Json } {
+function planDetail(plan: PlanProposal, step: unknown, revision = 0, writtenBy?: unknown): { [key: string]: Json } {
   return {
     title: plan.title,
     cards: plan.cards.map((card) => ({ ...card, blockedBy: [...card.blockedBy] })),
     ...(typeof step === 'number' ? { step } : {}),
     ...(revision > 0 ? { edited: true, revision } : {}),
+    ...(typeof writtenBy === 'string' ? { writtenBy } : {}),
   };
 }
 
-/** Writes the approval of a plan, at the label of what the step had read; returns its id. */
-export async function requestPlan(tx: Queryable, options: { taskId: string; step: number; label: Label; plan: PlanProposal }): Promise<string> {
+/** The note of a plan written by another model than the project asked for (D-235, plannerNote), from its detail. */
+export function planWrittenBy(detail: Record<string, unknown>): string | undefined {
+  return typeof detail.writtenBy === 'string' && detail.writtenBy.trim() !== '' ? detail.writtenBy : undefined;
+}
+
+/**
+ * Writes the approval of a plan, at the label of what the step had read; returns its id.
+ * `writtenBy`: the note of a fallback of the planner, code text (plannerNote).
+ */
+export async function requestPlan(tx: Queryable, options: { taskId: string; step: number; label: Label; plan: PlanProposal; writtenBy?: string }): Promise<string> {
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
-    VALUES (${options.taskId}, 'plan', ${PLAN_ACTION}, ${tx.json(planDetail(options.plan, options.step))}, ${options.label}::privacy_label)
+    VALUES (${options.taskId}, 'plan', ${PLAN_ACTION}, ${tx.json(planDetail(options.plan, options.step, 0, options.writtenBy))}, ${options.label}::privacy_label)
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO approvals returned no row');
   return row.id;
@@ -322,7 +331,10 @@ export async function closePlanningCard(tx: Queryable, approval: StoredApproval,
     SELECT planning, status, waiting_approval_id::text AS waiting FROM tasks WHERE id = ${approval.taskId} FOR UPDATE`;
   if (row?.planning !== 'card') return false;
   if (!((row.status === 'waiting_user' && row.waiting === approval.id) || (fromRun && row.status === 'running'))) return false;
-  const note = approval.state === 'approved' ? PLAN_CARD_NOTE.approved(planOf(approval)?.cards.length ?? 0) : PLAN_CARD_NOTE.rejected;
+  const outcome = approval.state === 'approved' ? PLAN_CARD_NOTE.approved(planOf(approval)?.cards.length ?? 0) : PLAN_CARD_NOTE.rejected;
+  // Who wrote the plan stays on the card when another model than the one asked for wrote it.
+  const writtenBy = planWrittenBy(approval.detail);
+  const note = writtenBy === undefined ? outcome : `${outcome}\n${writtenBy}.`;
   await moveTask(tx, approval.taskId, 'done', { evidence: [{ kind: 'approval', ref: approval.id }], cause: 'approval' });
   await tx`UPDATE tasks SET note = ${note} WHERE id = ${approval.taskId}`;
   await appendEvent(tx, { kind: 'card.changed', taskId: approval.taskId, label: 'L0', payload: { plan: approval.id, state: approval.state } });
@@ -365,7 +377,7 @@ export async function editPlan(sql: Sql, approvalId: string, input: Record<strin
       const kinds = [...new Set(texts.flatMap((text) => scanText(text).map((finding) => finding.kind)))];
       if (kinds.length > 0) throw new PlanError('invalid', `a work conversation cannot hold this plan (${kinds.join(', ')}): open a private conversation`);
     }
-    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, planRevision(row.detail) + 1))} WHERE id = ${approvalId}::uuid`;
+    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, planRevision(row.detail) + 1, planWrittenBy(row.detail)))} WHERE id = ${approvalId}::uuid`;
     // How many cards only: their text stays in the approval.
     await appendEvent(tx, { kind: 'approval.edited', label: 'L0', payload: { approvalId, cards: checked.cards.length } });
     const edited = await loadApproval(tx, approvalId);

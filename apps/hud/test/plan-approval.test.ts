@@ -14,6 +14,7 @@ import {
   planCommandProblem,
   planDraft,
   planStarts,
+  planWrittenBy,
   removeRow,
   toggleBlockedBy,
   withAssignee,
@@ -139,4 +140,11 @@ test('the ticks «Avvia subito» survive a refresh of the same version; an edit 
   assert.equal(edited.revision, 1);
   assert.deepEqual(keepTicks(edited, shown).rows.map((row) => row.start), [true, false, false, true]);
   assert.equal(draft().revision, 0);
+});
+
+test('the note of a plan written by another model than the project asked for (D-235)', () => {
+  assert.equal(planWrittenBy({ title: 'Sito', cards: [], writtenBy: 'Scritto da Sonnet: Opus è spento' }), 'Scritto da Sonnet: Opus è spento');
+  assert.equal(planWrittenBy({ title: 'Sito', cards: [] }), undefined);
+  assert.equal(planWrittenBy({ writtenBy: '  ' }), undefined);
+  assert.equal(planWrittenBy({ writtenBy: 3 }), undefined);
 });

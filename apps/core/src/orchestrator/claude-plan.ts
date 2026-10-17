@@ -72,11 +72,41 @@ export function plannerModelOf(
  * project says). `conversationId`: the conversation the plan is asked in.
  */
 export async function plannerFor(env: DelegateEnv, conversationId: string | null, label: Label): Promise<ClaudeModel | undefined> {
+  // Without Claude there is no model to pick: the chat needs no note, so nothing is read.
   if (conversationId === null || !isAtMost(label, 'L1') || !canAnswerDirectly(env)) return undefined;
+  return (await plannerChoice(env, conversationId, label)).model;
+}
+
+/** How the note names a model. */
+const PLANNER_NAME: Record<ClaudeModel, string> = { sonnet: 'Sonnet', opus: 'Opus', fable: 'Fable' };
+
+/**
+ * The note of a plan written by another model than the project's `planner`
+ * asked for (D-235): «Scritto da Sonnet: Opus è spento», «Scritto dal modello
+ * locale: Claude non è disponibile». Null when the planner asked was used, or
+ * none was asked (no key, or `local`). Code text, never a word of the plan.
+ */
+export function plannerNote(requested: ProjectPlanner | undefined, used: ClaudeModel | undefined, claudeOn: boolean): string | null {
+  if (requested === undefined || requested === 'local' || used === requested) return null;
+  const by = used === undefined ? 'dal modello locale' : `da ${PLANNER_NAME[used]}`;
+  const why = claudeOn ? `${PLANNER_NAME[requested]} è spento` : 'Claude non è disponibile';
+  return `Scritto ${by}: ${why}`;
+}
+
+/**
+ * plannerFor with the note of a fallback (plannerNote): the project's key
+ * asked for a Claude model the plan does not go to. Above L1, or without a
+ * conversation, nothing is read and there is no note: the local model plans
+ * by the privacy rule, not by a fallback.
+ */
+export async function plannerChoice(env: DelegateEnv, conversationId: string | null, label: Label): Promise<{ model: ClaudeModel | undefined; note: string | null }> {
+  if (conversationId === null || !isAtMost(label, 'L1')) return { model: undefined, note: null };
   const conversation = await loadConversation(env.sql, conversationId);
   const settings = env.settings();
   const project = projectNamed(settings.projects, conversation?.workspace?.split(':')[0]);
-  return plannerModelOf(conversation, enabledCloudModels(settings.cloud), project?.planner);
+  const claudeOn = canAnswerDirectly(env);
+  const model = claudeOn ? plannerModelOf(conversation, enabledCloudModels(settings.cloud), project?.planner) : undefined;
+  return { model, note: conversation?.mode === 'work' ? plannerNote(project?.planner, model, claudeOn) : null };
 }
 
 export type WrittenPlan =

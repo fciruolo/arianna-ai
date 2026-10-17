@@ -18,6 +18,7 @@ import {
   planBody,
   planDraft,
   planStarts,
+  planWrittenBy,
   removeRow,
   toggleBlockedBy,
   whoText,
@@ -52,6 +53,8 @@ watch(
   },
   { immediate: true },
 );
+/** Who wrote the plan, when another model than the project asked for (D-235). */
+const writtenBy = computed(() => (props.approval.kind === 'plan' ? planWrittenBy(props.approval.detail) : undefined));
 const draft = ref<PlanDraft | undefined>(undefined);
 const planError = ref<string | null>(null);
 /** Who may do a row: the user and the agents Arianna may call, with those the plan already names. */
@@ -249,6 +252,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei: nascono tutte in Inbox, e partono subito
           solo quelle con «Avvia subito».
         </p>
+        <p v-if="writtenBy !== undefined" class="text-[13px] text-warn">{{ writtenBy }}.</p>
         <ol class="flex flex-col gap-1.5">
           <li v-for="(row, index) in plan.rows" :key="index" class="rounded-lg border border-line bg-bg px-3 py-2">
             <p class="flex flex-wrap items-baseline gap-x-2 break-words">

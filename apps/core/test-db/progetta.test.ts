@@ -89,12 +89,12 @@ function scripted(values: unknown[]): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
-function orchestrator(model: LocalModel, cloud: 'claude'[], planner?: ProjectPlanner): StepExecutor {
+function orchestrator(model: LocalModel, cloud: 'claude'[], planner?: ProjectPlanner, models = defaultCloudModels()): StepExecutor {
   const settings = () => ({
     ...BASE,
     home: HOME,
     paths: { data: join(HOME, 'data') },
-    cloud: { executors: cloud, models: defaultCloudModels() },
+    cloud: { executors: cloud, models },
     projects: PROJECTS.map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1', ...(planner === undefined ? {} : { planner }) })),
   });
   return createOrchestrator({
@@ -243,6 +243,8 @@ test('«/progetta» in a work conversation: Claude writes the plan as the projec
   const approval = await loadApproval(db().sql, asked?.waitingApprovalId ?? '');
   assert.ok(approval !== undefined);
   assert.deepEqual([approval.label, (approval.detail.cards as unknown[]).length], ['L1', 4]);
+  // Opus asked and on: no note of a fallback, on the card or in the plan.
+  assert.deepEqual([asked?.note, approval.detail.writtenBy], [null, undefined]);
 
   // Edited before the decision: checked again, at the privacy of the conversation.
   const assignees = ['user', 'coder', 'designer'];
@@ -283,11 +285,46 @@ test('«/progetta» in a work conversation: Claude writes the plan as the projec
     ],
   );
   assert.deepEqual((await loadApproval(db().sql, approval.id))?.detail.starts, [1, 5]);
+  // The cardwall shows each card's size (S/M/L) as the plan said it.
+  const wall = await listCards(db().sql);
+  assert.deepEqual(
+    cards.map((item) => [item.title, wall.find((shown) => shown.id === item.id)?.complexity]),
+    [
+      ['Codice', 'L'],
+      ['Controlli', 'M'],
+      ['Grafica', 'M'],
+      ['Rifiniture', 'S'],
+      ['Testi', 'S'],
+    ],
+  );
+  assert.equal(wall.find((shown) => shown.id === card.id)?.complexity, null, 'the card «Piano» has no size');
   // The card that waits for the design is held back, not run.
   const finishing = cards.find((item) => item.title === 'Rifiniture')?.id ?? '';
   assert.deepEqual(await drain([finishing], executor), ['blocked']);
   assert.equal((await loadTask(db().sql, card.id))?.status, 'done');
   await assert.rejects(editPlan(db().sql, approval.id, { title: 'Tardi', cards: [row('A', 'user', []), row('B', 'user', [])] }, assignees), /already approved/);
+});
+
+test('«/progetta» with `planner = "opus"` and Opus off: Sonnet writes the plan, and the card «Piano» and the plan say so, before and after the decision (D-235)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, '/progetta la landing del sito', MENTIONABLE);
+  const model = scripted([]);
+  const executor = orchestrator(model, ['claude'], 'opus', { ...defaultCloudModels(), opus: { enabled: false } });
+  assert.deepEqual(await drain([task.id], executor, 1), ['answered']);
+  const card = await planCardOf(task.id);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  assert.equal(model.requests.length, 0, 'Claude writes it, not the local model');
+  const asked = await loadTask(db().sql, card.id);
+  assert.equal(asked?.note, 'Scritto da Sonnet: Opus è spento');
+  const approval = await loadApproval(db().sql, asked.waitingApprovalId ?? '');
+  assert.ok(approval !== undefined);
+  assert.equal(approval.detail.writtenBy, 'Scritto da Sonnet: Opus è spento');
+  // An edit keeps it.
+  const edited = await editPlan(db().sql, approval.id, { title: 'Landing', cards: [row('A', 'user', []), row('B', 'user', [1])] }, ['user', 'coder', 'designer']);
+  assert.equal(edited.detail.writtenBy, 'Scritto da Sonnet: Opus è spento');
+  await recordDecision(db().sql, approval.id, 'rejected', 'web', undefined, { revision: 1 });
+  const closed = await loadTask(db().sql, card.id);
+  assert.deepEqual([closed?.status, closed?.note], ['done', 'Piano non approvato: nessuna card creata.\nScritto da Sonnet: Opus è spento.']);
 });
 
 test('«/progetta» with `planner = "local"`: a work conversation plans on the local model; a rejected plan closes the card with no card created (D-235)', async () => {

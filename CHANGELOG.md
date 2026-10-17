@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Il cardwall mostra la complessità delle card nate da un piano: un piccolo segno S, M o L sulla card, con «Complessità: piccola/media/grande» al passaggio del mouse (D-235).
+- Quando il piano di «/progetta» lo scrive un modello diverso da quello chiesto dal progetto (`planner = "opus"` con Opus spento), la card «Piano» e la scheda del piano lo dicono: «Scritto da Sonnet: Opus è spento», o «Scritto dal modello locale: Claude non è disponibile»; la nota resta sulla card anche dopo la decisione (D-235).
+
 ## [0.141.0] - 2026-10-18
 
 ### Cambiato

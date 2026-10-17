@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { responseSchema, systemPrompt, validate } from '@arianna/agents';
 
 import type { DelegateEnv } from '../src/orchestrator/delegate.ts';
-import { PLANNER_PROMPT, planInAnswer, plannerBrief, plannerFor, plannerModelOf } from '../src/orchestrator/claude-plan.ts';
+import { PLANNER_PROMPT, planInAnswer, plannerBrief, plannerChoice, plannerFor, plannerModelOf, plannerNote } from '../src/orchestrator/claude-plan.ts';
 
 test('Claude plans only in a work conversation: the model chosen there, else Sonnet, else Opus, among those switched on', () => {
   assert.equal(plannerModelOf({ mode: 'work', model: null }, ['sonnet', 'opus', 'gpt-5']), 'sonnet');
@@ -68,4 +68,17 @@ test('above L1, or without a conversation, the local model plans: nothing is ask
   assert.equal(await plannerFor(env, 'c1', 'L2'), undefined);
   assert.equal(await plannerFor(env, 'c1', 'L3'), undefined);
   assert.equal(await plannerFor(env, null, 'L0'), undefined);
+});
+
+test('a plan written by another model than the project asked for says so (D-235)', async () => {
+  assert.equal(plannerNote('opus', 'sonnet', true), 'Scritto da Sonnet: Opus è spento');
+  assert.equal(plannerNote('sonnet', 'opus', true), 'Scritto da Opus: Sonnet è spento');
+  assert.equal(plannerNote('opus', undefined, true), 'Scritto dal modello locale: Opus è spento', 'no Claude model on');
+  assert.equal(plannerNote('opus', undefined, false), 'Scritto dal modello locale: Claude non è disponibile');
+  // The model asked for, `local`, or no key: nothing to say.
+  assert.equal(plannerNote('opus', 'opus', true), null);
+  assert.equal(plannerNote('local', undefined, true), null);
+  assert.equal(plannerNote(undefined, 'sonnet', true), null);
+  // Above L1 the local model plans by the privacy rule, not by a fallback: no note, nothing read.
+  assert.deepEqual(await plannerChoice({} as DelegateEnv, 'c1', 'L2'), { model: undefined, note: null });
 });
