@@ -403,6 +403,16 @@ export const LIVELY_TEMPERATURE = 0.7;
 const SERIES_SOURCE_PREFIX = seriesSource('');
 
 /**
+ * Whether the pieces of a step read within `label` may go live to the chat
+ * (D-249): the checks `finish` applies to the stored reply, before the text
+ * exists. Above the conversation's clearance the reply is refused, and L3
+ * never reaches the web channel (the gateway blocks it).
+ */
+export function showsLive(label: Label, clearance: Label): boolean {
+  return isAtMost(label, clearance) && label !== 'L3';
+}
+
+/**
  * The reply of the second writing (D-225), when it is a reply with a text;
  * otherwise the first, as it was: a tool or a refusal there changes nothing.
  */
@@ -1135,7 +1145,9 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       let asked;
       try {
         // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, options.livelyReplies === true && playing && turns.length === 0, live);
+        // Live pieces skip the checks of `finish`: shown only when the reply could be stored and shown (D-249).
+        const lively = options.livelyReplies === true && playing && turns.length === 0;
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, lively, showsLive(label, task.clearance) ? live : undefined);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

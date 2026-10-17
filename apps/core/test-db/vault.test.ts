@@ -116,6 +116,13 @@ test('a vault secret is used by the code and never reaches a prompt, the chat, g
     const kept = await thinking.finish('Risposta pulita', 'L2', { thought: `il token è ${value}` });
     assert.ok(kept.stored);
     assert.equal(kept.message.thought, null);
+    // A refused piece drops what came before it too: the accepted start of the value is not stored.
+    const split = await openReply(sql, task.id);
+    await split.thought(`penso a ${value.slice(0, 6)}`);
+    await assert.rejects(split.thought(value.slice(6)), /vault:\/\/service-token/);
+    const dropped = await split.finish('Risposta pulita', 'L2');
+    assert.ok(dropped.stored);
+    assert.deepEqual([dropped.message.thought, dropped.message.thoughtMs], [null, null]);
 
     // The reference is harmless anywhere.
     const harmless = await openReply(sql, task.id);

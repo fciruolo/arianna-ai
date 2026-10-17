@@ -139,6 +139,8 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
   let thinking = '';
   let thinkingMs = 0;
   let thoughtSeen = false;
+  // A piece refused for a vault value (D-249): what came before it may hold the value's start, so nothing is stored.
+  let thoughtRefused = false;
   let blockBreak = false;
   // The thinking runs from the end of what the model last wrote (or the opening) to its next text (D-249).
   let lastWritten = performance.now();
@@ -194,7 +196,10 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       // The same check as the fragments, on the thinking's own tail.
       const joined = thoughtTail + text;
       const refs = knownSecrets.find(joined);
-      if (refs.length > 0) throw new Error(`the thought contains the value of ${refs.join(', ')}`);
+      if (refs.length > 0) {
+        thoughtRefused = true;
+        throw new Error(`the thought contains the value of ${refs.join(', ')}`);
+      }
       thoughtTail = joined.slice(-STREAMED_TAIL);
       thinking += text;
       await send(text, 'thought');
@@ -207,8 +212,8 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       const thoughtText = storedThought(extra.thought ?? thinking);
       const thoughtMs = Math.max(0, Math.round(extra.thoughtMs ?? thinkingMs));
       // Kept when the model thought, even without showing it: the line «Ha ragionato per…» (D-249).
-      // A value revealed by the vault drops it, as it drops a fragment; never in an incognito.
-      const keepThought = !incognito && (thoughtText !== '' || (thoughtSeen && extra.thought === undefined)) && knownSecrets.find(thoughtText).length === 0;
+      // A value revealed by the vault drops it, as it drops a fragment, and so does a live piece refused for one; never in an incognito.
+      let keepThought = !incognito && !thoughtRefused && (thoughtText !== '' || (thoughtSeen && extra.thought === undefined)) && knownSecrets.find(thoughtText).length === 0;
       // The task may have read more since it started: read its label again.
       const current: Task | undefined = await loadTask(sql, taskId);
       if (current === undefined) throw new Error(`task ${taskId} does not exist`);
@@ -217,19 +222,28 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
       if (!isAtMost(stored, current.clearance)) return { stored: false, reason: 'above-clearance', label: stored };
       // A task that has read finance data writes finance:derived, in a marked context (D-183): only local targets take it.
       const context = contextOf(current, current.effectiveLabel);
-      const decision = await passGateway(sql, [{ value: body, label: stored, source: outputSource(current, `task:${taskId}`) }], context, { kind: 'channel', id: 'web' }, {
-        taskId,
-        ...(options.runId === undefined ? {} : { runId: options.runId }),
-      });
+      const meta = { taskId, ...(options.runId === undefined ? {} : { runId: options.runId }) };
+      const answer = { value: body, label: stored, source: outputSource(current, `task:${taskId}`) };
+      // The thinking passes the gateway with the answer, as its second fragment (D-249).
+      const withThought = keepThought && thoughtText !== '';
+      const payload = withThought ? [answer, { value: thoughtText, label: stored, source: outputSource(current, `task:${taskId}:thought`) }] : [answer];
+      let decision = await passGateway(sql, payload, context, { kind: 'channel', id: 'web' }, meta);
+      if (decision.decision === 'block' && withThought) {
+        // A thinking the gateway refuses is not stored; the answer may still be, on its own.
+        keepThought = false;
+        decision = await passGateway(sql, [answer], context, { kind: 'channel', id: 'web' }, meta);
+      }
       if (decision.decision === 'block') return { stored: false, reason: 'blocked', decision };
-      const [text] = decision.texts;
+      const [text, allowedThought] = decision.texts;
       if (text === undefined) throw new Error('the gateway allowed no text');
+      const keptThought = keepThought ? (withThought ? allowedThought : thoughtText) : undefined;
+      if (keepThought && keptThought === undefined) throw new Error('the gateway allowed no thinking');
 
       const messageId = await sql.begin(async (tx) => {
         const [row] = await tx<{ id: string }[]>`
           INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent, model, thought, thought_ms)
           VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null}, ${options.model ?? null},
-            ${keepThought ? thoughtText : null}, ${keepThought ? thoughtMs : null})
+            ${keptThought ?? null}, ${keptThought === undefined ? null : thoughtMs})
           RETURNING id::text`;
         if (row === undefined) throw new Error('INSERT INTO messages returned no row');
         await appendEvent(tx, {

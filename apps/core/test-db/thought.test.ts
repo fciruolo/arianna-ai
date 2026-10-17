@@ -99,3 +99,19 @@ test('the database keeps the thinking on answers only, within its length, with i
   await assert.rejects(insert('assistant', null, 5), /messages_thought_ms/);
   await assert.rejects(insert('assistant', 'negativo', -1), /messages_thought_ms/);
 });
+
+test('the thinking passes the gateway with the answer, logged as one exit to the chat (D-249)', async () => {
+  const { sql } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  const { task } = await postUserMessage(sql, conversation.id, 'Gateway');
+  const exits = async () =>
+    sql<{ bytes_out: number | null }[]>`SELECT bytes_out FROM gateway_log WHERE task_id = ${task.id} AND target = 'web' ORDER BY id`;
+  const thought = await (await openReply(sql, task.id)).finish('Risposta', 'L2', { thought: 'Ho pensato così' });
+  assert.ok(thought.stored);
+  assert.equal(thought.message.thought, 'Ho pensato così');
+  assert.deepEqual(await exits(), [{ bytes_out: Buffer.byteLength('Risposta') + Buffer.byteLength('Ho pensato così') }]);
+  // Negative: without thinking, only the answer is offered.
+  const plain = await (await openReply(sql, task.id)).finish('Sola', 'L2');
+  assert.ok(plain.stored);
+  assert.deepEqual((await exits()).slice(1), [{ bytes_out: Buffer.byteLength('Sola') }]);
+});

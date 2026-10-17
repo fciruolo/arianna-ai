@@ -43,10 +43,10 @@ export interface CodexStepInput {
    */
   onEvent?: (event: Extract<CodexEvent, { type: 'text' | 'tool' }>) => void | Promise<void>;
   /**
-   * The thinking and the answer as they are written (D-249), for the chat:
-   * `thought` pieces ('' when the model thinks without showing it) and, for
-   * Claude, `text` pieces (a `text` event then says `streamed`). Awaited in
-   * order; a failure is dropped and never stops the run.
+   * The thinking as it is written (D-249), for the chat: Codex sends only
+   * `thought` pieces (its reasoning summaries; '' when it thinks without
+   * showing it), never pieces of the answer, which comes in whole `text`
+   * events. Awaited in order; a failure is dropped and never stops the run.
    */
   onLive?: (piece: LivePiece) => void | Promise<void>;
   /** As for `runClaudeStep`: a string resumes that session, null starts a new one. */

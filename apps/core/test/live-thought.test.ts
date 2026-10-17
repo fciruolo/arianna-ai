@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { answerThought } from '../src/orchestrator/orchestrator.ts';
+import { answerThought, showsLive } from '../src/orchestrator/orchestrator.ts';
 import { MAX_THOUGHT, replyStream, storedThought, type ChatReply } from '../src/reply.ts';
 
 /** A reply that only records what it was given. */
@@ -23,6 +23,15 @@ function recorder(): { reply: ChatReply; sent: string[] } {
 }
 
 describe('the thinking of an answer (D-249)', () => {
+  it('goes live only when the reply could be stored and reach the chat', () => {
+    assert.equal(showsLive('L1', 'L1'), true);
+    assert.equal(showsLive('L2', 'L2'), true);
+    assert.equal(showsLive('L0', 'L2'), true);
+    // Negative: above the conversation's clearance (refused by finish), or L3 (blocked by the gateway).
+    assert.equal(showsLive('L2', 'L1'), false);
+    assert.equal(showsLive('L3', 'L3'), false);
+  });
+
   it('joins the thoughts of the steps since the last answer, with their times', () => {
     const turns = [
       { thought: 'vecchio', thoughtMs: 900, messageId: null },
