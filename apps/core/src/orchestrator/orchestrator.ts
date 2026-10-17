@@ -23,6 +23,7 @@ import { contextOf } from '../finance-mark.ts';
 import { answersWithoutDelegation, CHAT_AGENT, characterOn, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
+import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
 import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
@@ -53,6 +54,7 @@ import type { Advise } from './advisor.ts';
 import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import { gatewayRefusalOf, gatewayRefusalReply } from './gateway-refusal.ts';
+import { writeFreeReply, type DraftReason } from './free-reply.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { attachmentHistory, attachmentsOf, readPendingImages, withinBudget } from './attachment-reading.ts';
@@ -181,6 +183,12 @@ export interface OrchestratorOptions {
    * default: main.ts turns it on; a test with a scripted model has one answer per step.
    */
   livelyReplies?: boolean;
+  /**
+   * A chat reply is written once more as free text in Markdown, without the schema (D-251): the JSON decides, the
+   * second call writes what the user reads. Off by default: main.ts turns it on; a test with a scripted model has one
+   * answer per step.
+   */
+  freeReplies?: boolean;
   /** data/attachments (D-247): the images attached in a private chat, read by the `vision` model; without it they stay unread. */
   attachmentsDir?: string;
 }
@@ -484,12 +492,13 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     trailer = '',
     lively = false,
     live?: ChatReply,
-  ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number; thoughtMs?: number }> {
+    free = false,
+  ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number; thoughtMs?: number; draftKept?: DraftReason }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
     let tokensOut = 0;
     // The thinking of the first call, live in the chat (D-249): the `thought` field as the JSON arrives,
-    // and the reasoning a server sends apart; the reply's text too, unless a livelier one may replace it.
+    // and the reasoning a server sends apart; the reply's text too, unless a livelier one or the free text (D-251) may replace it.
     let thoughtMs: number | undefined;
     let shown: Promise<void> = Promise.resolve();
     const queue = (send: () => Promise<void>): void => {
@@ -505,7 +514,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         onText: (piece) => {
           for (const field of fields.feed(piece)) {
             if (field.key === 'thought') queue(() => live.thought(field.text));
-            else if (field.key === 'text' && !lively && fields.values.get('action') === 'reply') queue(() => live.delta(field.text));
+            else if (field.key === 'text' && !lively && !free && fields.values.get('action') === 'reply') queue(() => live.delta(field.text));
           }
           // The thought is over once the next field starts.
           if (ended === undefined && fields.values.has('thought') && fields.values.size > 1) ended = performance.now() - started;
@@ -516,11 +525,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         ended: () => ended,
       };
     };
+    const messagesOf = (thought: boolean) => chatMessages(prompt, tools, history, thought, tail, delegates, planner, trailer);
     const call = async (thought: boolean, temperature = 0, watch = false) => {
       const watched = watch ? watching() : undefined;
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
-        messages: chatMessages(prompt, tools, history, thought, tail, delegates, planner, trailer),
+        messages: messagesOf(thought),
         schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates, planner) },
         temperature,
         maxTokens: options.maxTokens ?? 2048,
@@ -538,6 +548,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     };
     let read: ReadAnswer | undefined;
     let thought = true;
+    let draftKept: DraftReason | undefined;
     try {
       read = await call(true, 0, true);
     } catch (error) {
@@ -549,10 +560,32 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       thoughtMs = undefined;
       read = await call(false);
     }
-    // A chat reply of a character (D-225, tappa A): the same request once more at LIVELY_TEMPERATURE,
-    // byte for byte (the cache of oMLX holds its prompt), for a less rigid voice. The first call chose
-    // the reply at temperature 0; the second is kept only when it is a reply too, never a tool.
-    if (lively && read?.answer.action === 'reply') {
+    // The reply written as free text (D-251), from the JSON's draft: same messages, then the draft and an instruction.
+    // For a character it is the livelier writing too, at LIVELY_TEMPERATURE, instead of a second JSON.
+    if (free && read?.answer.action === 'reply') {
+      const written = await writeFreeReply(options.model(), {
+        model: ORCHESTRATOR_MODEL,
+        messages: messagesOf(thought),
+        draft: read.answer.text,
+        temperature: lively ? LIVELY_TEMPERATURE : 0,
+        signal,
+        ...(live === undefined
+          ? {}
+          : {
+              onText: (piece: string) => {
+                queue(() => live.delta(piece));
+              },
+            }),
+      });
+      await shown;
+      tokensIn += written.tokensIn;
+      tokensOut += written.tokensOut;
+      draftKept = written.draftKept;
+      read = { ...read, answer: { action: 'reply', text: written.text } };
+    } else if (lively && read?.answer.action === 'reply') {
+      // A chat reply of a character (D-225, tappa A): the same request once more at LIVELY_TEMPERATURE,
+      // byte for byte (the cache of oMLX holds its prompt), for a less rigid voice. The first call chose
+      // the reply at temperature 0; the second is kept only when it is a reply too, never a tool.
       try {
         read = livelierReply(read, await call(thought, LIVELY_TEMPERATURE));
       } catch (error) {
@@ -560,7 +593,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         if (signal.aborted || !(error instanceof LocalModelError)) throw error;
       }
     }
-    return { read, tokensIn, tokensOut, ...(thoughtMs === undefined || read?.thought === undefined ? {} : { thoughtMs }) };
+    return { read, tokensIn, tokensOut, ...(thoughtMs === undefined || read?.thought === undefined ? {} : { thoughtMs }), ...(draftKept === undefined ? {} : { draftKept }) };
   }
 
   /**
@@ -1147,7 +1180,9 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
         // Live pieces skip the checks of `finish`: shown only when the reply could be stored and shown (D-249).
         const lively = options.livelyReplies === true && playing && turns.length === 0;
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, lively, showsLive(label, task.clearance) ? live : undefined);
+        // A chat reply as free text (D-251): only where there is a chat; a card keeps the text of the JSON in its turn.
+        const free = options.freeReplies === true && task.conversationId !== null;
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, lively, showsLive(label, task.clearance) ? live : undefined, free);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };
@@ -1157,6 +1192,10 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         }
         // Down, stuck or cancelled: the engine retries the step, or stops it.
         throw error;
+      }
+      // Why the free text was not kept (D-251): a reason of a closed list, never a text, for the trial on the real model.
+      if (asked.draftKept !== undefined) {
+        await appendEvent(sql, { kind: 'reply.draft-kept', label: 'L0', taskId: task.id, runId, payload: { conversationId: task.conversationId, reason: asked.draftKept } }).catch(() => undefined);
       }
       const usage = { steps: 1, tokensIn: asked.tokensIn + (summarized?.tokensIn ?? 0), tokensOut: asked.tokensOut + (summarized?.tokensOut ?? 0) };
       if (asked.read === undefined) return { kind: 'wait-user', reason: INVALID_ANSWER, usage };

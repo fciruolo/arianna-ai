@@ -808,6 +808,29 @@ test('switch «Personaggio» on (D-225): a tool in the second writing, a failure
   assert.deepEqual(once.requests.map((request) => request.temperature), [0]);
 });
 
+test('switch «Personaggio» on with the free text (D-251): the free text is the livelier writing, no second JSON', async () => {
+  const { task } = await ask('private', 'Come va?');
+  const model = scripted([{ action: 'reply', text: 'Bene.' }, { action: 'reply', text: 'ignored' }]);
+  const executor = createOrchestrator({
+    sql: db().sql,
+    agents,
+    kb,
+    model: () => model,
+    settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }),
+    rules: RULES,
+    livelyReplies: true,
+    freeReplies: true,
+  });
+  assert.deepEqual(await drain(task.id, model, executor), ['answered']);
+  const [first, second] = model.requests;
+  assert.equal(model.requests.length, 2);
+  assert.deepEqual([first?.temperature, second?.temperature], [0, LIVELY_TEMPERATURE]);
+  assert.ok(first?.schema !== undefined);
+  assert.equal(second?.schema, undefined);
+  // The scripted model answers JSON again: the draft is kept.
+  assert.equal((await assistantMessages(task.id))[0]?.body, 'Bene.');
+});
+
 test('switch «Personaggio» off (D-225): no block of the character, no lines, one call at temperature 0; on again, all back', async () => {
   const drawn: string[] = [];
   configureSeriesLines({

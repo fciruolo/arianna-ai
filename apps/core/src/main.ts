@@ -510,6 +510,8 @@ pruneAttachments(sql, attachmentFiles).catch(report);
 const orchestrator = createOrchestrator({
   // D-225, tappa A: a chat reply of a character switched on is written once more, livelier.
   livelyReplies: true,
+  // D-251: a chat reply of the local model is written once more as free text in Markdown.
+  freeReplies: true,
   attachmentsDir: attachmentFiles,
   sql,
   agents,
