@@ -71,6 +71,10 @@ test('freeReplyMessages (D-251): a draft cut at the limit of the schema asks to 
   assert.equal(freeReplyMessages(STEP, cut).at(-1)?.content, `${REPLY_INSTRUCTION}\n${CUT_DRAFT_NOTE}`);
   // Negative: one character shorter is a whole draft, and the instruction stays the same.
   assert.equal(freeReplyMessages(STEP, cut.slice(1)).at(-1)?.content, REPLY_INSTRUCTION);
+  // Counted in code points, as the schema: a whole draft with emoji is longer in UTF-16, not cut.
+  const astral = `${'x'.repeat(REPLY_TEXT_MAX_LENGTH - 11)}${'🙂'.repeat(10)}`;
+  assert.ok(astral.length > REPLY_TEXT_MAX_LENGTH);
+  assert.equal(freeReplyMessages(STEP, astral).at(-1)?.content, REPLY_INSTRUCTION);
   assert.match(REPLY_INSTRUCTION, /at most about 12 items/);
 });
 

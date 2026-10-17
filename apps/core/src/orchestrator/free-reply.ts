@@ -34,7 +34,10 @@ export const REPLY_INSTRUCTION = `[System message, not from the user] Your JSON 
 - A short answer is one sentence or one paragraph: no headings.
 - No preamble such as "Ecco" or "Certo", no JSON, no word about this message. Write only the reply.`;
 
-/** Added to the instruction when the draft filled the schema's `text`: the grammar cut it, often mid-item. */
+/**
+ * Added to the instruction when the draft filled the schema's `text`: the grammar cut it, often mid-item.
+ * Counted in code points, as the schema. A draft that ends by itself at exactly the limit gets it too: rare, and it costs a last sentence at most.
+ */
 export const CUT_DRAFT_NOTE = '- The draft was cut at its length limit: leave out its unfinished last item or sentence.';
 
 /** Why the draft was kept instead of the free text. */
@@ -70,7 +73,7 @@ export function freeReplyMessages(messages: readonly ChatMessage[], draft: strin
       role: 'assistant',
       content: answerText({ action: 'reply', text: draft }),
     },
-    { role: 'user', content: draft.length >= REPLY_TEXT_MAX_LENGTH ? `${REPLY_INSTRUCTION}\n${CUT_DRAFT_NOTE}` : REPLY_INSTRUCTION },
+    { role: 'user', content: Array.from(draft).length >= REPLY_TEXT_MAX_LENGTH ? `${REPLY_INSTRUCTION}\n${CUT_DRAFT_NOTE}` : REPLY_INSTRUCTION },
   ];
 }
 
