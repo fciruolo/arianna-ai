@@ -1,3 +1,4 @@
+import type { PlanComplexity } from '@arianna/agents';
 import { SKILL_ID } from '@arianna/config';
 import { isAtMost, type Label } from '@arianna/policy';
 
@@ -92,6 +93,8 @@ export interface Card {
   turn: number | null;
   /** Its step is in the queue, not yet taken by a worker (D-235): "Ferma" stops it there. */
   queued: boolean;
+  /** The size a plan gave it (D-235): S, M or L; null when none (a card written by hand, a commitment). */
+  complexity: PlanComplexity | null;
   /** A body or criteria are written. */
   hasBody: boolean;
   links: number;
@@ -158,6 +161,7 @@ interface TaskRow {
   started: boolean;
   queuedJob: string | null;
   queuedAt: Date | null;
+  complexity: PlanComplexity | null;
   hasBody: boolean;
   links: number;
   files: number;
@@ -192,7 +196,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
   const since = addDays(today, -DONE_DAYS);
   const tasks = await sql<TaskRow[]>`
     SELECT t.id::text, t.title, t.status, t.project, t.assignee, t.due_at AS "dueAt", t.label, t.waiting_reason AS "waitingReason", t.note,
-      t.priority, t.planned_on::text AS planned, ${startedSql(sql)} AS started,
+      t.priority, t.planned_on::text AS planned, t.complexity, ${startedSql(sql)} AS started,
       (SELECT j.id::text FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedJob",
       (SELECT j.run_at FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedAt",
       (t.goal IS NOT NULL OR t.done_criteria IS NOT NULL) AS "hasBody",
@@ -244,6 +248,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       started: task.started,
       turn: turns.get(task.id) ?? null,
       queued: task.queuedJob !== null,
+      complexity: task.complexity,
       hasBody: task.hasBody,
       links: task.links,
       files: task.files,
@@ -274,6 +279,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       started: false,
       turn: null,
       queued: false,
+      complexity: null,
       hasBody: false,
       links: 0,
       files: 0,

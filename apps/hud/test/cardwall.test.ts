@@ -10,6 +10,7 @@ import {
   blockedText,
   cardErrorText,
   cardMarks,
+  complexityBadge,
   COMMITMENT_MOVE_TEXT,
   dataUrlBase64,
   defaultState,
@@ -387,6 +388,12 @@ test('what a card shows: priority, state, planned day, marks, order', () => {
   assert.equal(plannedText(card({ planned: '2026-10-11' }), '2026-10-10'), 'Domani');
   assert.equal(plannedText(card({}), '2026-10-10'), undefined);
   assert.deepEqual(cardMarks(card({})), []);
+  // The size a plan gave (D-235): the letter, said in Italian for the tooltip; none without a size, or from an older core.
+  assert.deepEqual(complexityBadge(card({ complexity: 'S' })), { text: 'S', title: 'Complessità: piccola' });
+  assert.deepEqual(complexityBadge(card({ complexity: 'M' })), { text: 'M', title: 'Complessità: media' });
+  assert.deepEqual(complexityBadge(card({ complexity: 'L' })), { text: 'L', title: 'Complessità: grande' });
+  assert.equal(complexityBadge(card({ complexity: null })), undefined);
+  assert.equal(complexityBadge(card({})), undefined);
   assert.deepEqual(
     cardMarks(card({ hasBody: true, checklist: { done: 2, total: 5 }, links: 1, files: 3 })).map((mark) => [mark.icon, mark.text]),
     [

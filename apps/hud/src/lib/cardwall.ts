@@ -59,6 +59,8 @@ export interface Card {
   turn: number | null;
   /** Its step is in the queue, not yet taken (D-235); absent from an older core. */
   queued?: boolean;
+  /** The size a plan gave it (D-235); null or absent (an older core): none. */
+  complexity?: 'S' | 'M' | 'L' | null;
   hasBody: boolean;
   links: number;
   files: number;
@@ -620,6 +622,15 @@ export function cardMarks(card: Pick<Card, 'hasBody' | 'checklist' | 'links' | '
   if (card.links > 0) marks.push({ icon: 'link', text: String(card.links), title: card.links === 1 ? '1 link' : `${String(card.links)} link` });
   if (card.files > 0) marks.push({ icon: 'attach', text: String(card.files), title: card.files === 1 ? '1 allegato' : `${String(card.files)} allegati` });
   return marks;
+}
+
+const COMPLEXITY_WORD = { S: 'piccola', M: 'media', L: 'grande' } as const;
+
+/** The size badge of a card (D-235): the letter, and what it means for the tooltip and a screen reader; undefined without a size. */
+export function complexityBadge(card: Pick<Card, 'complexity'>): { text: 'S' | 'M' | 'L'; title: string } | undefined {
+  const size = card.complexity;
+  if (size !== 'S' && size !== 'M' && size !== 'L') return undefined;
+  return { text: size, title: `Complessità: ${COMPLEXITY_WORD[size]}` };
 }
 
 /** The cards `card` may wait for: other open tasks, not already among its dependencies. */

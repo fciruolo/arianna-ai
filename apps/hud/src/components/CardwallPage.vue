@@ -10,6 +10,7 @@ import {
   type Card,
   cardErrorText,
   cardMarks,
+  complexityBadge,
   type CardWall,
   dropAction,
   dueText,
@@ -423,6 +424,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
                 <span v-if="priorityText(card.priority) !== undefined" class="chip inline-flex items-center gap-1" :class="PRIORITY_CLASS[card.priority]"><Icon name="priority" :size="11" />{{ priorityText(card.priority) }}</span>
                 <span v-if="card.kind === 'commitment'" class="chip text-accent">Impegno</span>
                 <span v-if="card.column === 'failed'" class="chip text-danger">Fallito</span>
+                <span v-if="complexityBadge(card) !== undefined" class="chip font-semibold text-ink tabular-nums" :title="complexityBadge(card)?.title"><span aria-hidden="true">{{ complexityBadge(card)?.text }}</span><span class="sr-only">{{ complexityBadge(card)?.title }}</span></span>
                 <span class="chip text-muted">{{ card.project ?? 'Generale' }}</span>
                 <span class="chip text-muted">{{ assigneeText(card.assignee, agentName) }}</span>
                 <span v-if="plannedText(card, today) !== undefined" class="chip inline-flex items-center gap-1 text-muted" title="Data esecuzione"><Icon name="calendar" :size="11" />{{ plannedText(card, today) }}</span>
