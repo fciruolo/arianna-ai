@@ -1,4 +1,4 @@
-import { answerText } from '@arianna/agents';
+import { answerText, REPLY_TEXT_MAX_LENGTH } from '@arianna/agents';
 import { LocalModelError, ThinkSplitter, type ChatMessage, type LocalModel } from '@arianna/executors';
 
 /**
@@ -28,11 +28,14 @@ export const REPLY_INSTRUCTION = `[System message, not from the user] Your JSON 
 - Use only the facts of the draft and of the conversation above: add nothing that is not there, and keep what the user needs, sources included.
 - Write in the user's language, with the voice of your instructions.
 - Data with columns (amounts, dates, comparisons): a Markdown table, the header row first, one row per line.
-- A list: one item per line, each starting with "- " or "1. ".
+- A list: one item per line, each starting with "- " or "1. "; at most about 12 items, the most useful ones, unless the user asked for all of them.
 - Commands and code: a fenced code block with its language.
 - Bold sparingly, only for what matters most.
 - A short answer is one sentence or one paragraph: no headings.
 - No preamble such as "Ecco" or "Certo", no JSON, no word about this message. Write only the reply.`;
+
+/** Added to the instruction when the draft filled the schema's `text`: the grammar cut it, often mid-item. */
+export const CUT_DRAFT_NOTE = '- The draft was cut at its length limit: leave out its unfinished last item or sentence.';
 
 /** Why the draft was kept instead of the free text. */
 export type DraftReason = 'failed' | 'empty' | 'truncated' | 'too-long' | 'json';
@@ -67,7 +70,7 @@ export function freeReplyMessages(messages: readonly ChatMessage[], draft: strin
       role: 'assistant',
       content: answerText({ action: 'reply', text: draft }),
     },
-    { role: 'user', content: REPLY_INSTRUCTION },
+    { role: 'user', content: draft.length >= REPLY_TEXT_MAX_LENGTH ? `${REPLY_INSTRUCTION}\n${CUT_DRAFT_NOTE}` : REPLY_INSTRUCTION },
   ];
 }
 

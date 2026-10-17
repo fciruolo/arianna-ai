@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { REPLY_TEXT_MAX_LENGTH } from '@arianna/agents';
 import { LocalModelError, type ChatRequest, type ChatResult, type LocalModel } from '@arianna/executors';
 
-import { freeReplyMessages, MAX_REPLY_CHARS, REPLY_INSTRUCTION, REPLY_MAX_TOKENS, writeFreeReply } from '../src/orchestrator/free-reply.ts';
+import { CUT_DRAFT_NOTE, freeReplyMessages, MAX_REPLY_CHARS, REPLY_INSTRUCTION, REPLY_MAX_TOKENS, writeFreeReply } from '../src/orchestrator/free-reply.ts';
 
 const STEP = [
   { role: 'system' as const, content: 'You are Arianna.' },
@@ -62,6 +63,15 @@ test('freeReplyMessages (D-251): the step, byte for byte, then the draft as the 
   });
   assert.match(REPLY_INSTRUCTION, /Markdown table/);
   assert.match(REPLY_INSTRUCTION, /add nothing that is not there/);
+});
+
+test('freeReplyMessages (D-251): a draft cut at the limit of the schema asks to leave out its unfinished last item', () => {
+  // Seen live: «34. `git pack-` —», the draft cut at 2000 characters and copied as it was.
+  const cut = 'x'.repeat(REPLY_TEXT_MAX_LENGTH);
+  assert.equal(freeReplyMessages(STEP, cut).at(-1)?.content, `${REPLY_INSTRUCTION}\n${CUT_DRAFT_NOTE}`);
+  // Negative: one character shorter is a whole draft, and the instruction stays the same.
+  assert.equal(freeReplyMessages(STEP, cut.slice(1)).at(-1)?.content, REPLY_INSTRUCTION);
+  assert.match(REPLY_INSTRUCTION, /at most about 12 items/);
 });
 
 test('writeFreeReply (D-251): the free text with its line breaks, no schema, thinking off, tokens counted', async () => {

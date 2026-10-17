@@ -220,6 +220,9 @@ export interface ReadAnswer {
   thought?: string;
 }
 
+/** Longest `text` of a reply: a longer one is cut by the grammar, mid-word (D-251 tells the free reply). */
+export const REPLY_TEXT_MAX_LENGTH = 2000;
+
 /** Name of the schema in the request. */
 export const RESPONSE_SCHEMA_NAME = 'orchestrator_step';
 
@@ -262,7 +265,7 @@ export function responseSchema(tools: readonly ToolId[], thought = true, delegat
   return {
     anyOf: [
       ...calls,
-      option({ action: { const: 'reply' }, text: text(2000) }, ['action', 'text']),
+      option({ action: { const: 'reply' }, text: text(REPLY_TEXT_MAX_LENGTH) }, ['action', 'text']),
       option({ action: { const: 'plan' }, steps: { type: 'array', items: text(200), minItems: 1, maxItems: 10 } }, ['action', 'steps']),
       option({ action: { const: 'refuse' }, reason: text(500) }, ['action', 'reason']),
     ],
