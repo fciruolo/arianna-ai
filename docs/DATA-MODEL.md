@@ -123,7 +123,7 @@ CREATE TABLE messages (
   agent           text,                                     -- chi ha scritto un messaggio assistant se non è Arianna (coder); NULL: Arianna
   model           text,                                     -- modello cloud che ha scritto la risposta del task (Claude in una chat di sistema, D-064); NULL: modello locale.
                                                             -- solo assistant senza agent; il trigger messages_model_work lo rifiuta fuori da una conversazione work (L1)
-  thought         text,                                     -- il pensiero prima della risposta (D-249, 0076): solo assistant, <= 32000 caratteri, '' se non mostrato; mai in incognito
+  thought         text,                                     -- il pensiero prima della risposta (D-249, 0078): solo assistant, <= 32000 caratteri, '' se non mostrato; mai in incognito
   thought_ms      integer                                   -- quanto ha pensato, in ms; NULL insieme a thought
 );
 
@@ -347,7 +347,7 @@ CREATE TABLE task_turns (
   label       privacy_label NOT NULL,                      -- massimo di ciò che il passo ha letto; <= clearance del task, mai L3
   answer      jsonb NOT NULL,                              -- {"action": ...} senza thought
   thought     text,                                        -- ragionamento (D-051): dal 2026-10-17 si vede in chat e si salva con la risposta (D-249)
-  thought_ms  integer,                                     -- quanto ha pensato il passo, in ms (D-249, 0076)
+  thought_ms  integer,                                     -- quanto ha pensato il passo, in ms (D-249, 0078)
   result      text,                                        -- risultato o errore dello strumento, come lo legge il modello
   message_id  bigint REFERENCES messages(id),              -- risposta in chat che ha chiuso il task
   created_at  timestamptz NOT NULL DEFAULT now(),

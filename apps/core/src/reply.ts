@@ -73,7 +73,7 @@ const STREAMED_TAIL = 16_384;
 export const MAX_NOTICE_BYTES = 7_000;
 /** One live piece of thinking is cut here (D-249): a summary of Codex or a long block of Claude. */
 export const MAX_THOUGHT_PIECE = 4_000;
-/** The thinking stored with a message (D-249), as the column allows (0076). */
+/** The thinking stored with a message (D-249), as the column allows (0078). */
 export const MAX_THOUGHT = 32_000;
 
 /** Cut to `max` code points, with an ellipsis. */

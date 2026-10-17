@@ -15,7 +15,7 @@ export interface Turn {
   label: Label;
   answer: Answer;
   thought: string | null;
-  /** How long the model thought in that step, in ms (D-249); null before 0076 or without a thought. */
+  /** How long the model thought in that step, in ms (D-249); null before 0078 or without a thought. */
   thoughtMs: number | null;
   /** Tool result or error, as the model reads it at the next step. */
   result: string | null;
