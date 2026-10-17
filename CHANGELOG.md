@@ -4,11 +4,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
-### Aggiunto
-
-- Immagini e file nella chat privata: incolla con ⌘V, trascina sul campo o «Allega file» nel menu «+»; PNG, JPEG, WebP e GIF fino a 10 MB, testi .txt, .md, .csv e .json fino a 256 KiB, al massimo 4 per messaggio, con l'anteprima piccola nella bolla (D-247).
-- Ruolo «Guarda le immagini allegate» (`vision`) in Impostazioni → Modelli: Qwen3.5 9B legge le immagini sul Mac e passa ad Arianna la sua lettura; si carica solo quando c'è un'immagine da leggere e si scarica subito dopo (D-247).
-
 ### Corretto
 
 - Nella chat diretta col Designer gli stili di Open Design come «x-ai», «stripe», «vercel» o «figma» non fermano più il messaggio verso Claude: il controllo dei dati personali non legge più i testi dei cataloghi adottati, che prendeva per nomi di persona (41 stili su 152) (D-250).
@@ -17,9 +12,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
+- L'esenzione dal secondo controllo vale solo per il testo esatto che il core compone dai file adottati, nel suo frammento: un carattere diverso o lo stesso testo altrove si controlla come prima; il messaggio dell'utente, le regole, le note e la chat si controllano sempre (D-250).
+
+## [0.139.0] - 2026-10-17
+
+### Aggiunto
+
+- Immagini e file nella chat privata: incolla con ⌘V, trascina sul campo o «Allega file» nel menu «+»; PNG, JPEG, WebP e GIF fino a 10 MB, testi .txt, .md, .csv e .json fino a 256 KiB, al massimo 4 per messaggio, con l'anteprima piccola nella bolla (D-247).
+- Ruolo «Guarda le immagini allegate» (`vision`) in Impostazioni → Modelli: Qwen3.5 9B legge le immagini sul Mac e passa ad Arianna la sua lettura; si carica solo quando c'è un'immagine da leggere e si scarica subito dopo (D-247).
+
+### Sicurezza
+
 - Ogni allegato è Privato (L2) e va solo in una conversazione privata con Arianna o con il modello locale: in una conversazione di lavoro, con Claude o ChatGPT, in incognito o nella coda dei messaggi è rifiutato prima dell'invio, con il testo che resta nel campo; il database lo rifiuta anche lui (migrazione 0074) (D-247).
 - Gli allegati stanno in `data/attachments` (0600, fuori da git), mai SVG, serviti con sandbox e nosniff; «Elimina» li cancella con la conversazione, quelli incollati e mai mandati spariscono dopo un giorno (D-247).
-- L'esenzione dal secondo controllo vale solo per il testo esatto che il core compone dai file adottati, nel suo frammento: un carattere diverso o lo stesso testo altrove si controlla come prima; il messaggio dell'utente, le regole, le note e la chat si controllano sempre (D-250).
 
 ## [0.138.0] - 2026-10-17
 
