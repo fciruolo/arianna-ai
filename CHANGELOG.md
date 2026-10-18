@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.144.0] - 2026-10-18
+
 ### Aggiunto
 
 - Pagina «Routine» nella barra a sinistra (gruppo Personale): appuntamenti ricorrenti con giorni, ora e cosa mettere nel resoconto, ciascuno come una carta con prossima esecuzione, ultimo esito, «Prova adesso», pausa, modifica e «Togli» (D-254).
