@@ -164,6 +164,12 @@ function confirmArchive(id: string): void {
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
+              <!-- The chat of a routine (D-110, risposta 3; D-254): an «R», the reports arrive here at its time. -->
+              <span
+                v-if="conversation.routine === true"
+                class="grid size-[18px] shrink-0 place-items-center rounded border border-line-strong font-mono text-[11px] leading-none font-semibold text-muted"
+                title="Conversazione di una routine: qui arrivano i suoi resoconti"
+              ><span aria-hidden="true">R</span><span class="sr-only">, routine</span></span>
               <span v-if="conversation.id === beside" class="sr-only">, affiancata</span>
               <!-- D-150: from md to 3xl (a laptop) only the coloured dot, so the title keeps the room; the word in the title and for screen readers. -->
               <span class="hidden shrink-0 md:inline-flex 3xl:hidden"><LabelBadge :label="conversation.clearance" dot /></span>

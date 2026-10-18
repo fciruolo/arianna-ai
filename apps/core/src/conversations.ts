@@ -113,6 +113,11 @@ export interface Conversation {
    * of the user: dashboard.ts writes its one question and purges it after.
    */
   dashboardOf: string | null;
+  /**
+   * The conversation of a routine not removed (D-110 d, D-254): the left bar
+   * marks it with an «R». A routine's conversation is otherwise like any other.
+   */
+  routine: boolean;
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
@@ -215,6 +220,7 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   c.question_attached AS "questionAttached",
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.side_of::text AS "sideOf", c.side_message_id::text AS "sideMessageId", c.dashboard_of::text AS "dashboardOf",
+  EXISTS (SELECT FROM routines r WHERE r.conversation_id = c.id AND r.status <> 'retired') AS routine,
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
   CASE WHEN c.agent IS NULL THEN NULL
@@ -453,6 +459,13 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
+      // A routine whose conversation is archived pauses (D-110 d, D-254); restoring the conversation does not resume it.
+      if (archived) {
+        const paused = await tx<{ id: string }[]>`
+          UPDATE routines SET status = 'paused', paused_by = 'archived', next_run_at = NULL
+          WHERE conversation_id = ${id} AND status = 'active' RETURNING id::text`;
+        for (const routine of paused) await appendEvent(tx, { kind: 'routine.paused', label: 'L0', payload: { routineId: routine.id, conversationId: id, by: 'archived' } });
+      }
     }
     return reload(tx, id);
   });
@@ -570,6 +583,11 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
       }
       const refreshes = await tx<{ id: string }[]>`SELECT id::text FROM conversations WHERE dashboard_of = ${id} AND purged_at IS NULL ORDER BY id FOR UPDATE`;
       for (const refresh of refreshes) await tx`SELECT erase_conversation(${refresh.id}::uuid)`;
+      // Its routine is removed and keeps no text of the user (D-254): the title goes with the conversation's.
+      const routines = await tx<{ id: string }[]>`
+        UPDATE routines SET status = 'retired', paused_by = NULL, next_run_at = NULL, title = 'Routine cancellata'
+        WHERE conversation_id = ${id} RETURNING id::text`;
+      for (const routine of routines) await appendEvent(tx, { kind: 'routine.retired', label: 'L0', payload: { routineId: routine.id, conversationId: id, by: 'purged' } });
       const [row] = await tx<{ purged: PurgeResult }[]>`SELECT purge_conversation(${id}::uuid) AS purged`;
       const purged = row?.purged ?? { tasks: 0, failed: [], expired: [], system: [] };
       // The state changes the purge made, logged as the engine logs its own.

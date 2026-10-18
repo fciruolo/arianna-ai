@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Pagina «Routine» nella barra a sinistra (gruppo Personale): appuntamenti ricorrenti con giorni, ora e cosa mettere nel resoconto, ciascuno come una carta con prossima esecuzione, ultimo esito, «Prova adesso», pausa, modifica e «Togli» (D-254).
+- All'ora di una routine Arianna scrive il resoconto nella sua chat, preparato dal codice senza modello: da fare, decisioni in attesa, card in corso, fatto e fallito dall'ultimo resoconto, pensieri da riordinare; una card Segreta è solo contata (D-254).
+- Dopo il resoconto, se la routine lo chiede, tre righe di sintesi del modello locale senza strumenti; se il modello non è pronto entro 20 minuti il resoconto resta senza, e lo dice (D-254).
+- Le scadenze nel resoconto le calcola il codice rispetto al giorno del resoconto: «scaduta da 9 giorni (9 ott)», «scade oggi», «scade domani», «scade fra 4 giorni» (D-254).
+- La sintesi del modello locale riceve i totali come numeri e le scadenze già calcolate; un controllo del codice boccia ogni numero che non è nei dati (per esempio «9 da fare» quando sono 16) e un «scade oggi» detto di una voce che non scade oggi, senza bocciare ore, anni e frasi corrette: una seconda prova, poi «Sintesi non disponibile» (D-254).
+- Se il Mac era spento all'ora della routine, entro due ore il resoconto arriva con le scuse per il ritardo; oltre, una sola riga dice che è stata saltata (D-254).
+- Le chat delle routine hanno una «R» nella lista delle conversazioni; archiviare la chat mette in pausa la routine (D-254).
+
 ## [0.143.0] - 2026-10-18
 
 ### Aggiunto

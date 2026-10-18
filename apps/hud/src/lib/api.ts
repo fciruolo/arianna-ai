@@ -35,6 +35,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard.ts';
+import type { Routine, RoutineForm } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -423,6 +424,35 @@ export async function listSides(conversationId: string): Promise<SideThread[]> {
 /** The side thread of an answer, created the first time and found again after (D-232). */
 export async function openSide(conversationId: string, messageId: string): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/sides`, { messageId })).conversation;
+}
+
+/** The routines (D-110 tappa A, D-254), oldest first. */
+export async function loadRoutines(): Promise<Routine[]> {
+  return (await call<{ routines: Routine[] }>('GET', '/api/routines')).routines;
+}
+
+/** A new routine from the form: active at once, in the time zone of this Mac. */
+export async function createRoutine(form: RoutineForm): Promise<Routine> {
+  return (await call<{ routine: Routine }>('POST', '/api/routines', form)).routine;
+}
+
+export async function updateRoutine(id: string, form: Partial<RoutineForm>): Promise<Routine> {
+  return (await call<{ routine: Routine }>('PATCH', `/api/routines/${encodeURIComponent(id)}`, form)).routine;
+}
+
+/** «In pausa» or «Attiva». */
+export async function setRoutineActive(id: string, active: boolean): Promise<Routine> {
+  return (await call<{ routine: Routine }>('POST', `/api/routines/${encodeURIComponent(id)}/${active ? 'resume' : 'pause'}`, {})).routine;
+}
+
+/** «Togli». */
+export async function retireRoutine(id: string): Promise<void> {
+  await call('POST', `/api/routines/${encodeURIComponent(id)}/retire`, {});
+}
+
+/** «Prova adesso»: the report now, in the routine's chat. */
+export async function tryRoutine(id: string): Promise<void> {
+  await call('POST', `/api/routines/${encodeURIComponent(id)}/run`, {});
 }
 
 /** Dashboard (D-248): the tiles, after the refreshes that ended are settled. */
