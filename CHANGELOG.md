@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.141.0] - 2026-10-18
+
 ### Cambiato
 
 - Le risposte di Arianna col modello locale si scrivono in testo libero: tabelle, elenchi e blocchi di codice vanno a capo come con Claude invece di arrivare su una riga sola; il JSON resta solo per decidere cosa fare (D-251).
