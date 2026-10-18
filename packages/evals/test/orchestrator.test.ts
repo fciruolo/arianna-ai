@@ -13,6 +13,7 @@ import { createOrchestratorGroup } from '../src/orchestrator-group.ts';
 import {
   caseTail,
   createOrchestratorEvaluator,
+  exampleMarkers,
   matchesExpectation,
   speedOf,
   summarize,
@@ -187,6 +188,19 @@ describe('matchesExpectation', () => {
     assert.ok(!matchesExpectation(call('kb.search', { query: ' old query ' }), fresh), 'the same query repeated');
     const exact = expect({ accept: [{ action: 'call', tool: 'task.update', args: { task_id: { equals: 'T-12' } } }] });
     assert.ok(!matchesExpectation(call('task.update', { task_id: 'T12' }), exact));
+  });
+
+  it('fails any answer that quotes an example of the prompt as a fact, the thought included (D-253)', () => {
+    const tools: ToolId[] = ['kb.search', 'kb.read', 'user.ask'];
+    const leaked = summarize({ thought: 'La pagina kb/esempio/polizza-casa.md dice ES-0001.', action: 'call', tool: 'kb.read', arguments: { path: 'kb/private/casa/x.md' } }, tools);
+    assert.deepEqual(leaked.examples, ['kb/esempio/', 'ES-000']);
+    assert.ok(!matchesExpectation(leaked, expect({ accept: [{ action: 'call', tool: 'kb.read' }] })));
+    assert.ok(!matchesExpectation(summarize({ thought: 'Ho trovato.', action: 'reply', text: 'Paghi 123,45 euro.' }, tools), expect({})));
+    // Negative: an answer about the real result passes, and its report has no examples field.
+    const clean = summarize({ thought: 'Leggo la pagina trovata.', action: 'call', tool: 'kb.read', arguments: { path: 'kb/private/casa/x.md' } }, tools);
+    assert.equal(clean.examples, undefined);
+    assert.ok(matchesExpectation(clean, expect({ accept: [{ action: 'call', tool: 'kb.read' }] })));
+    assert.deepEqual(exampleMarkers('nonsense'), []);
   });
 
   it('refuses a forbidden answer, and anything that breaks the schema', () => {

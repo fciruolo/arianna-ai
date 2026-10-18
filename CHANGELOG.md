@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Le risposte del modello locale non cominciano più con un «Ecco» o un «Ecco la tabella:» di troppo: l'istruzione chiede di partire dalla risposta e una ripulitura prudente toglie solo la riga che annuncia, mai una frase come «Ecco perché la polizza scade il 3 marzo» (D-253).
+- Il pensiero dal vivo dell'orchestratore locale non cita più come trovati gli esempi del prompt (la polizza 7720 di `polizza-incendio.md`): gli esempi sono segnati come inventati, sotto `kb/esempio/`, e gli eval dei modelli bocciano una risposta che li nomina (D-253).
+
 ## [0.142.0] - 2026-10-18
 
 ### Aggiunto

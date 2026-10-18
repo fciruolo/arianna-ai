@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { REPLY_TEXT_MAX_LENGTH } from '@arianna/agents';
 import { LocalModelError, type ChatRequest, type ChatResult, type LocalModel } from '@arianna/executors';
 
-import { CUT_DRAFT_NOTE, freeReplyMessages, MAX_REPLY_CHARS, REPLY_INSTRUCTION, REPLY_MAX_TOKENS, writeFreeReply } from '../src/orchestrator/free-reply.ts';
+import { CUT_DRAFT_NOTE, freeReplyMessages, MAX_REPLY_CHARS, PreambleFilter, REPLY_INSTRUCTION, REPLY_MAX_TOKENS, stripPreamble, writeFreeReply } from '../src/orchestrator/free-reply.ts';
 
 const STEP = [
   { role: 'system' as const, content: 'You are Arianna.' },
@@ -132,6 +132,67 @@ test('writeFreeReply (D-251): a server that refuses the thinking option is asked
     model.requests.map((sent) => sent.thinking),
     [false, undefined],
   );
+});
+
+test('stripPreamble (D-253): an empty opening goes, the content stays', () => {
+  const removed: [string, string][] = [
+    [`Ecco la tabella delle spese:\n\n${TABLE}`, TABLE],
+    [`Ecco la risposta:\n${TABLE}`, TABLE],
+    ['Ecco:\n- Affitto 800 €', '- Affitto 800 €'],
+    ['Ecco\n\nPaghi 87 euro al mese.', 'Paghi 87 euro al mese.'],
+    ['Ecco qui!\nPaghi 87 euro.', 'Paghi 87 euro.'],
+    ['Certo! Ecco i comandi più usati:\n1. git status', '1. git status'],
+    [`Certo!\n\n${TABLE}`, TABLE],
+    [`\n  ecco la tabella:\n${TABLE}`, TABLE],
+    ['Ecco: paghi 87 euro al mese.', 'Paghi 87 euro al mese.'],
+    [`Certo!\nEcco la tabella:\n${TABLE}`, TABLE],
+  ];
+  for (const [text, expected] of removed) assert.equal(stripPreamble(text), expected, text);
+  const kept = [
+    'Ecco perché la polizza scade il 3 marzo.',
+    'Ecco perché:\nla polizza scade il 3 marzo.',
+    'Ecco come fare:\n1. Apri le impostazioni.',
+    'Ecco le spese di ottobre: 87 euro di condominio.',
+    'Ecco cosa ho trovato:\n- la bolletta',
+    'Eccolo:\nil contratto di via Roma.',
+    'Ecco la tabella:',
+    'Ecco',
+    'Certo, paghi 87 euro al mese.',
+    'Ecco la tabella delle spese. Totale: 900 €\n| a |',
+    'Ecco le 3 fatture scadute entro il 5 marzo, per 870 euro:\n- A\n- B',
+    TABLE,
+    `\n${TABLE}\n`,
+  ];
+  for (const text of kept) assert.equal(stripPreamble(text), text, text);
+});
+
+test('PreambleFilter (D-253): streamed, the same text as stripPreamble, and anything else passes at once', () => {
+  const run = (text: string, size: number): { out: string; firstAt: number } => {
+    const filter = new PreambleFilter();
+    let out = '';
+    let firstAt = -1;
+    const pieces = text.match(new RegExp(`[\\s\\S]{1,${String(size)}}`, 'g')) ?? [];
+    pieces.forEach((piece, index) => {
+      out += filter.feed(piece);
+      if (firstAt < 0 && out !== '') firstAt = index;
+    });
+    return { out: out + filter.end(), firstAt };
+  };
+  const texts = [`Ecco la tabella delle spese:\n\n${TABLE}`, 'Ecco: paghi 87 euro.', 'Ecco perché la polizza scade il 3 marzo.', 'Ecco la tabella:', `\n${TABLE}\n`, 'Certo!\nCiao.', `Certo!\nEcco la tabella:\n${TABLE}`, 'Certo!\nEcco perché.'];
+  for (const text of texts) for (const size of [1, 3, 7, 100]) assert.equal(run(text, size).out.trim(), stripPreamble(text.trim()), `${text} / ${String(size)}`);
+  // A table or a sentence that cannot be a preamble is not held back.
+  assert.equal(run(TABLE, 1).firstAt, 0);
+  assert.equal(run('Paghi 87 euro.', 2).firstAt, 0);
+});
+
+test('writeFreeReply (D-253): «Ecco la tabella:» on its own line is neither shown nor stored', async () => {
+  const pieces: string[] = [];
+  const written = await request(fake([{ text: `Ecco la tabella delle spese:\n\n${TABLE}` }]), { onText: (piece) => pieces.push(piece) });
+  assert.equal(written.text, TABLE);
+  assert.equal(pieces.join(''), TABLE);
+  assert.match(REPLY_INSTRUCTION, /Start with the answer itself/);
+  // Negative: a sentence that starts with «Ecco» and says something is kept whole.
+  assert.equal((await request(fake([{ text: 'Ecco perché la polizza scade il 3 marzo.' }]))).text, 'Ecco perché la polizza scade il 3 marzo.');
 });
 
 test('writeFreeReply (D-251): a stopped step throws, as does an error that is not of the local model', async () => {
