@@ -492,6 +492,7 @@ describe('the report of a skill', () => {
     license: 'MIT',
     notice: 'Source: https://github.com/acme/skills, commit dddd, file commit/SKILL.md, license MIT. Third-party text.',
     text: '',
+    label: 'L0',
   };
   skill.text = `${skill.notice}\n\n---\n\nWrite short commit messages.\n`;
 

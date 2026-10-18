@@ -235,6 +235,34 @@ describe('update (ordinary)', () => {
     assert.equal(text(), before);
   });
 
+  it('a private skill of the user own Claude Code (D-255): refused to an agent in the cloud when added, kept when already there', () => {
+    const refusals = { coder: null, traduttore: null };
+    const asked: string[] = [];
+    const skilled = createSettingsPage({
+      home,
+      userHome,
+      dataDir: join(home, DATA_DIR),
+      running,
+      agentModels: () => AGENT_MODELS,
+      agentSkills: () => refusals,
+      // The coder works in the cloud, the traduttore on this machine; the skill `segreta` is private.
+      skillRefusal: (agent, id) => {
+        asked.push(`${agent}:${id}`);
+        return agent === 'coder' && id === 'local/claude-code/segreta' ? 'a private skill of yours' : null;
+      },
+    });
+    const before = text();
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['local/claude-code/segreta'] } } }), refused('invalid', /skills\.coder: local\/claude-code\/segreta: a private skill of yours/));
+    assert.equal(text(), before);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['local/claude-code/segreta'], coder: ['local/claude-code/condivisa'] } } });
+    assert.deepEqual(skilled.read().values?.skills, { traduttore: ['local/claude-code/segreta'], coder: ['local/claude-code/condivisa'] });
+    // A list with an id already there is not asked again (a mark taken back later is left to the delivery).
+    asked.length = 0;
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['local/claude-code/condivisa', 'anthropics/skills/pdf'] } } });
+    assert.deepEqual(asked, ['coder:anthropics/skills/pdf']);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: [], traduttore: [] } } });
+  });
+
   it('the skills of a disabled agent (D-161): assigned before it is turned on, still valid once on', () => {
     mkdirSync(join(home, 'agents'), { recursive: true });
     const coder = loadAgent(join(REPO, 'agents'), 'coder');

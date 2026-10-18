@@ -235,6 +235,8 @@ export interface SettingsPageOptions {
   agentModels: () => Record<string, readonly CloudModel[]>;
   /** Agent → why it may receive no skills, null when it may (D-161); absent, no agent may. */
   agentSkills?: () => Record<string, string | null>;
+  /** Why `skill` may not be assigned to `agent` (D-255: a private skill of the user's own to an agent in the cloud); null when it may. Asked for the ids added only. */
+  skillRefusal?: (agent: string, skill: string) => string | null;
   /** After each write, for the event log. */
   onChanged?: (change: SettingsChange) => void;
   now?: () => number;
@@ -369,7 +371,12 @@ function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudMo
  * changed since), and the agents the page does not offer keep theirs. The
  * models stay as they are.
  */
-function skillsFromBody(value: unknown, refusals: Record<string, string | null>, current: Settings['agents']): NonNullable<Settings['agents']> {
+function skillsFromBody(
+  value: unknown,
+  refusals: Record<string, string | null>,
+  current: Settings['agents'],
+  skillRefusal?: (agent: string, skill: string) => string | null,
+): NonNullable<Settings['agents']> {
   const table = record(value, 'skills');
   const agents = new Map(Object.entries(structuredClone(current ?? {})));
   for (const [agent, raw] of Object.entries(table)) {
@@ -387,6 +394,12 @@ function skillsFromBody(value: unknown, refusals: Record<string, string | null>,
       if (!Object.hasOwn(refusals, agent)) invalid(`${where}: no such agent`);
       const refused = refusals[agent];
       if (refused !== null && refused !== undefined) invalid(`${where}: ${refused}`);
+      // Only the ids added: one assigned before and changed since (a mark taken back) is left to the delivery, which skips it.
+      for (const id of skills) {
+        if (before.includes(id)) continue;
+        const own = skillRefusal?.(agent, id) ?? null;
+        if (own !== null) invalid(`${where}: ${id}: ${own}`);
+      }
     }
     const { model } = agents.get(agent) ?? {};
     if (skills.length === 0 && model === undefined) agents.delete(agent);
@@ -1018,7 +1031,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         else next.agents = agents;
       }
       if (given.skills !== undefined) {
-        const agents = skillsFromBody(given.skills, options.agentSkills?.() ?? {}, next.agents);
+        const agents = skillsFromBody(given.skills, options.agentSkills?.() ?? {}, next.agents, options.skillRefusal);
         if (Object.keys(agents).length === 0) delete next.agents;
         else next.agents = agents;
       }
