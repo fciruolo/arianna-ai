@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.142.1] - 2026-10-18
+
 ### Corretto
 
 - Le risposte del modello locale non cominciano più con un «Ecco» o un «Ecco la tabella:» di troppo: l'istruzione chiede di partire dalla risposta e una ripulitura prudente toglie solo la riga che annuncia, mai una frase come «Ecco perché la polizza scade il 3 marzo» (D-253).
