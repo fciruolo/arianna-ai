@@ -394,6 +394,53 @@ test('the routes of the page: create, change, pause, resume, «Prova adesso», �
   }
 });
 
+test('the calendar of the page (D-257): the times of the week with the outcome; a range too long refused', async () => {
+  const live = await startLiveFeed(db().sql);
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, projects: () => [], routines: createRoutineService(env()) });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  try {
+    // A routine every day in UTC, with its run of 3 minutes ago written.
+    const { id, due } = await dueRoutine(3, ['notes']);
+    await runDue(env(), id);
+    const paused = await createRoutine(db().sql, { title: 'Pausa finta', days: [1, 2, 3, 4, 5, 6, 7], at: '06:00', timezone: 'UTC', sources: ['todo'] });
+    await pauseRoutine(db().sql, paused.id);
+    const gone = await createRoutine(db().sql, { title: 'Tolta finta', days: [1, 2, 3, 4, 5, 6, 7], at: '07:00', timezone: 'UTC', sources: ['todo'] });
+    await retireRoutine(db().sql, gone.id);
+    const day = due.toISOString().slice(0, 10);
+    const next = new Date(Date.parse(`${day}T00:00:00Z`) + 2 * 86_400_000).toISOString().slice(0, 10);
+    const response = await fetch(`${base}/api/routines/calendar?from=${day}&to=${next}&tz=UTC`);
+    assert.equal(response.status, 200);
+    const week = (await response.json()) as { days: { date: string }[]; entries: { routineId: string; at: string; run: { status: string } | null; planned: boolean }[] };
+    assert.equal(week.days.length, 2);
+    const mine = week.entries.filter((item) => item.routineId === id);
+    const written = mine.find((item) => item.at === due.toISOString());
+    assert.equal(written?.run?.status, 'done');
+    // The test moved the run before the routine was born: it stands apart from the times of the rule.
+    assert.equal(written.planned, false);
+    // Tomorrow's time is there, still to run.
+    assert.ok(mine.some((item) => item.planned && item.run === null && Date.parse(item.at) > due.getTime()));
+    assert.ok(week.entries.some((item) => item.routineId === paused.id));
+    assert.ok(!week.entries.some((item) => item.routineId === gone.id));
+    // Ids only: the titles stay in the list of the page.
+    assert.ok(!JSON.stringify(week).includes('finta'));
+    const far = new Date(Date.parse(`${day}T00:00:00Z`) + 15 * 86_400_000).toISOString().slice(0, 10);
+    assert.equal((await fetch(`${base}/api/routines/calendar?from=${day}&to=${far}&tz=UTC`)).status, 400);
+    assert.equal((await fetch(`${base}/api/routines/calendar?from=${day}&to=${next}&tz=Europe%2FNowhere`)).status, 400);
+    assert.equal((await fetch(`${base}/api/routines/calendar?to=${next}`)).status, 400);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+  const bare = await startLiveFeed(db().sql);
+  const without = await startApiServer({ sql: db().sql, live: bare, host: '127.0.0.1', port: 0, projects: () => [] });
+  try {
+    assert.equal((await fetch(`http://127.0.0.1:${String(without.port)}/api/routines/calendar?from=2026-10-19&to=2026-10-26&tz=UTC`)).status, 404);
+  } finally {
+    await without.close();
+    await bare.close();
+  }
+});
+
 test('«Elimina per sempre» of its conversation takes the routine and its runs with it', async () => {
   const { id, conversationId } = await dueRoutine(1, ['notes']);
   await runDue(env(), id);

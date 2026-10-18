@@ -35,6 +35,7 @@ import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, Settings
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard.ts';
+import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineForm } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -453,6 +454,12 @@ export async function retireRoutine(id: string): Promise<void> {
 /** «Prova adesso»: the report now, in the routine's chat. */
 export async function tryRoutine(id: string): Promise<void> {
   await call('POST', `/api/routines/${encodeURIComponent(id)}/run`, {});
+}
+
+/** The calendar of the routines (D-257): their times in the days asked, on the wall clock of `timezone`. */
+export async function loadRoutineCalendar(from: string, to: string, timezone?: string): Promise<CalendarWeek> {
+  const query = new URLSearchParams(timezone === undefined ? { from, to } : { from, to, tz: timezone });
+  return call<CalendarWeek>('GET', `/api/routines/calendar?${query.toString()}`);
 }
 
 /** Dashboard (D-248): the tiles, after the refreshes that ended are settled. */

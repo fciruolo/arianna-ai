@@ -72,6 +72,7 @@ import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '..
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
 import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
+import { parseCalendarQuery, readCalendar } from '../routine-calendar.ts';
 import { RoutineError, type RoutineService } from '../routines.ts';
 import {
   alerts as financeAlerts,
@@ -2402,7 +2403,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
-    ...routineRoutes(routines),
+    ...routineRoutes(routines, sql),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards, stopCard),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
@@ -2938,13 +2939,19 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
  * form (closed choices and one line of title), pause, resume, «Togli» and
  * «Prova adesso», which writes the report in the routine's chat now.
  */
-function routineRoutes(routines: RoutineService | undefined): Route[] {
+function routineRoutes(routines: RoutineService | undefined, sql: Sql): Route[] {
   const need = (): RoutineService => {
     if (routines === undefined) throw new HttpError(404, 'not found');
     return routines;
   };
   return [
     route('GET', '/api/routines', async () => ({ body: { routines: await need().list() } })),
+    // The calendar (D-257): the times of the routines in at most two weeks, by id only (the titles come from the list).
+    route('GET', '/api/routines/calendar', async (_request, url) => {
+      need();
+      const query = parseCalendarQuery({ from: url.searchParams.get('from'), to: url.searchParams.get('to'), timezone: url.searchParams.get('tz') });
+      return { body: await readCalendar(sql, query) };
+    }),
     route('POST', '/api/routines', async (request) => ({ status: 201, body: { routine: await need().create(await readJson(request)) } })),
     route('PATCH', '/api/routines/:id', async (request, _url, params) => {
       const id = idParam(params, 'id');

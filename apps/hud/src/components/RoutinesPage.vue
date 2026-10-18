@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { ApiError, createRoutine, loadRoutines, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
 import {
@@ -30,8 +30,10 @@ import {
   type RoutineForm,
   type RoutineSource,
 } from '../lib/routines.ts';
+import { readView, VIEW_CALENDAR_TEXT, VIEW_LIST_TEXT, writeView, type RoutinesView } from '../lib/routine-calendar.ts';
 import Icon from './Icon.vue';
 import PageHeader from './PageHeader.vue';
+import RoutineCalendar from './RoutineCalendar.vue';
 
 /**
  * The page «Routine» (D-110 tappa A, D-254): each routine is a card, as a
@@ -63,6 +65,39 @@ const ALL_SOURCES: readonly RoutineSource[] = SOURCE_CHOICES.map((item) => item.
 const ownZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const problemOfForm = computed(() => formProblem(form.value));
+
+/** Elenco or Calendario (D-257), remembered in this browser only. */
+const storage = (() => {
+  try {
+    return typeof window === 'undefined' ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+})();
+const view = ref<RoutinesView>(readView(storage));
+watch(view, (value) => writeView(storage, value));
+const formElement = ref<HTMLFormElement | null>(null);
+
+/** The form in sight, after a click in the calendar far below it. */
+function showForm(): void {
+  void nextTick(() => {
+    formElement.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    formElement.value?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+  });
+}
+
+/** A free hour of the calendar: a new routine on that day of the week, at that hour. */
+function startNewAt(prefilled: RoutineForm): void {
+  editing.value = 'new';
+  form.value = prefilled;
+  formError.value = null;
+  showForm();
+}
+
+function editFromCalendar(routine: Routine): void {
+  startEdit(routine);
+  showForm();
+}
 
 async function load(): Promise<void> {
   try {
@@ -177,6 +212,14 @@ onBeforeUnmount(() => {
         <PageHeader :title="ROUTINES_TITLE" title-id="routines-title">
           {{ ROUTINES_INTRO }}
           <template #actions>
+            <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Vista">
+              <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" :class="view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'list'" @click="view = 'list'">
+                <Icon name="view-list" :size="14" />{{ VIEW_LIST_TEXT }}
+              </button>
+              <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="view === 'calendar' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'calendar'" @click="view = 'calendar'">
+                <Icon name="calendar" :size="14" />{{ VIEW_CALENDAR_TEXT }}
+              </button>
+            </div>
             <button v-if="editing !== 'new'" type="button" class="btn btn-primary px-2.5 py-1 text-[13.5px]" @click="startNew">
               <Icon name="new" :size="14" />{{ NEW_TEXT }}
             </button>
@@ -190,6 +233,7 @@ onBeforeUnmount(() => {
         <!-- The form: a new routine, or the one being changed. -->
         <form
           v-if="editing !== null"
+          ref="formElement"
           class="flex flex-col gap-3.5 rounded-xl border border-line-strong bg-surface-2 px-4 py-3.5"
           :aria-label="editing === 'new' ? NEW_TEXT : 'Modifica la routine'"
           @submit.prevent="save"
@@ -246,7 +290,9 @@ onBeforeUnmount(() => {
           </div>
         </form>
 
-        <div v-if="loaded && routines.length === 0 && editing === null && problem === null" class="rounded-xl border border-dashed border-line-strong px-5 py-9 text-center text-muted">
+        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :version="version" @edit="editFromCalendar" @create="startNewAt" />
+
+        <div v-else-if="loaded && routines.length === 0 && editing === null && problem === null" class="rounded-xl border border-dashed border-line-strong px-5 py-9 text-center text-muted">
           <b class="mb-1.5 block text-[16px] text-ink">{{ ROUTINES_EMPTY_TITLE }}</b>
           {{ ROUTINES_EMPTY_TEXT }}
           <div class="mt-4"><button type="button" class="btn px-3 py-1 text-[14px]" @click="startNew">{{ NEW_TEXT }}</button></div>
