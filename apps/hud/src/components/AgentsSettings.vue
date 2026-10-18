@@ -35,7 +35,8 @@ import {
 import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SeriesValues, type SettingsView } from '../lib/settings.ts';
 import { useSkillTranslations } from '../lib/skill-translations.ts';
 import { activationAsk, redoSafetyReport, safetyDot, safetyPill, type SafetyView } from '../lib/safety-report.ts';
-import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, translationsNoteText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
+import { skillOriginText } from '../lib/claude-skills.ts';
+import { filterSkills, skillRefusalText, skillsErrorText, translationsNoteText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -1047,7 +1048,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
                   <span v-if="skillCatalog !== null && skillOf(id) === undefined" class="text-[13px] text-warn">Non è più fra le skill scaricate: non arriva all’agente finché non torna.</span>
                   <template v-else-if="skillOf(id)">
                     <span v-if="assignedText(id)" class="text-[13px] text-muted">{{ assignedText(id) }}</span>
-                    <span class="text-[12.5px] text-muted">{{ skillLicenseText(skillOf(id)?.license ?? null) }}</span>
+                    <span class="text-[12.5px] text-muted">{{ skillOriginText(skillOf(id) ?? { source: '', license: null }) }}</span>
                   </template>
                 </span>
                 <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Togli ${skillOf(id)?.name ?? id}`" @click="unassignSkill(current.id, id)">Togli</button>
@@ -1070,7 +1071,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
                   <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span class="truncate text-[14px] font-medium">{{ item.name }}</span>
                     <span v-if="skillText(item)" class="text-[13px] text-muted">{{ skillText(item) }}</span>
-                    <span class="text-[12.5px] text-muted">{{ skillLicenseText(item.license) }}</span>
+                    <span class="text-[12.5px] text-muted">{{ skillOriginText(item) }}</span>
                   </span>
                   <button type="button" class="btn shrink-0 px-2 py-0.5 text-[13px]" :aria-label="`Assegna ${item.name}`" @click="assignSkill(current.id, item.id)">Assegna</button>
                 </li>

@@ -88,7 +88,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         slug: 'skill-e-stili',
         title: 'Skill e stili',
         behaviour: 'action',
-        lead: 'Testi pronti, scritti da altri, che gli agenti possono consultare: gli stili per il Designer e le skill, istruzioni per un lavoro preciso. Si scarica solo il testo, niente programmi.',
+        lead: 'Testi pronti, scritti da altri, che gli agenti possono consultare: gli stili per il Designer e le skill, istruzioni per un lavoro preciso. Si scarica solo il testo, niente programmi. Qui importi anche le tue skill di Claude Code, private finché non le rendi condivisibili.',
         example: 'segui la raccolta «anthropics/skills», poi nella scheda Skill del Coder assegna quella per la revisione del codice.',
       },
       // The catalog of agents (D-079): roles from GitHub, right after the skills (choice of the user, 2026-10-13).

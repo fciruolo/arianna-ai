@@ -47,6 +47,8 @@ export interface SkillSummary {
   license: string | null;
   /** Scripts and resources of the skill in its repository: never downloaded; null when not known. */
   otherFiles: number | null;
+  /** L0 for the catalogs; L2 or L1 for the user's own skills of Claude Code (D-255; absent from an older core). */
+  label?: string;
 }
 
 export interface SkillListing {
