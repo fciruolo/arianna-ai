@@ -1422,7 +1422,7 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
 | 4 | Rifiniture: avatar "Tu" con tutte le pose, movimento ridotto, colori del tema, passeggiata se la vuoi | 3-5 |
 | 5 | Mappe come dati: `office.json`, validatore con i test, caricamento da `apps/hud/themes/` e `data/themes/` con ripiego, disegno dal tileset; mappa `base` con tileset generato da `build.ts` | 6-9 |
 | 6 | Mappe `corsia` e `salotto`: tessere e arredi originali, ancoraggi, prova a occhio | 5-8 |
-| 7 | Decori stagionali sulla mappa base (dopo la tappa 4 di D-103) | 2-3 |
+| 7 | Decori stagionali sulla mappa base (dopo la tappa 4 di D-103): **fatta, D-252** (2026-10-18), in 2D e in 3D | 2-3 |
 | | **Totale** | **32-50** |
 
 - **Rispetto alla Fase 3.** Le tappe 1-4 (19-30 ore) superano le 12-18 ore previste per pixel-agents, perché avatar e interazione sono lavoro nuovo.

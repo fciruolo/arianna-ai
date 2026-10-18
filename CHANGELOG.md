@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- L'ufficio pixel si veste per le feste, in 2D e in 3D: con la festa del giorno (o una festa scelta a mano) compaiono alberelli e lucine a Natale, zucche e ragnatele ad Halloween, maschere, stelle filanti e coriandoli a Carnevale, cesti, bandierine e uova a Pasqua, ombrelloni e palloni in Estate, pentole d'oro, bandierine e trifogli a San Patrizio; con il movimento ridotto le lucine restano ferme (D-252).
+
 ## [0.141.1] - 2026-10-18
 
 ### Corretto
