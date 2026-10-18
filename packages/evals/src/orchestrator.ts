@@ -2,7 +2,7 @@
 // docs/EVALS.md): one model call per case, with schema-constrained decoding.
 // The model answers with one JSON object: call a tool, reply, plan, or refuse,
 // after a free `thought` (D-051).
-import { CODER_ONLY, chatMessages, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
+import { CODER_ONLY, chatMessages, EXAMPLE_MARKERS, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { profileBlock, type ProfileFact } from '@arianna/policy';
 
@@ -55,6 +55,11 @@ export interface OrchestratorActual {
   /** The text of a reply or the reason of a refusal, kept only when the evaluator asks (the finance group checks the figures). */
   text?: string;
   schemaOk: boolean;
+  /**
+   * The markers of the prompt's invented examples found anywhere in the answer, its thought included (D-253): the
+   * model took an example for a result. Only the fixed markers, never the thought; absent when there are none.
+   */
+  examples?: string[];
   /** How fast the model answered, when the evaluator times it (D-199): numbers only. */
   speed?: CaseSpeed;
 }
@@ -92,6 +97,18 @@ export interface OrchestratorExpectation {
 
 /** What the measures look at, from the model's answer. */
 export function summarize(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY, planner: Planner = 'self', keepText = false): OrchestratorActual {
+  const actual = summarizeAnswer(value, tools, thought, delegates, planner, keepText);
+  const examples = exampleMarkers(value);
+  return examples.length === 0 ? actual : { ...actual, examples };
+}
+
+/** The markers of the invented examples (D-253) that an answer quotes, in its thought or anywhere else. */
+export function exampleMarkers(value: unknown): string[] {
+  const text = (JSON.stringify(value) as string | undefined) ?? '';
+  return EXAMPLE_MARKERS.filter((marker) => text.includes(marker));
+}
+
+function summarizeAnswer(value: unknown, tools: readonly ToolId[], thought: boolean, delegates: readonly DelegateTarget[], planner: Planner, keepText: boolean): OrchestratorActual {
   const schemaOk = validate(responseSchema(tools, thought, delegates, planner), value).length === 0;
   const record = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   const action = record.action;
@@ -124,11 +141,13 @@ function matches(actual: OrchestratorActual, outcome: Outcome): boolean {
   return true;
 }
 
-/** `compare` of the orchestrator group: schema conformity, one accepted answer, no forbidden one. */
+/** `compare` of the orchestrator group: schema conformity, no example quoted as a fact, one accepted answer, no forbidden one. */
 export function matchesExpectation(actual: unknown, expect: unknown): boolean {
   const answer = actual as OrchestratorActual;
   const expectation = expect as OrchestratorExpectation;
   if (!answer.schemaOk) return false;
+  // An example of the prompt quoted as a fact is wrong in every case (D-253).
+  if ((answer.examples ?? []).length > 0) return false;
   if (expectation.accept !== undefined && !expectation.accept.some((outcome) => matches(answer, outcome))) return false;
   return !(expectation.forbid ?? []).some((outcome) => matches(answer, outcome));
 }

@@ -148,7 +148,7 @@ import type { GodApi } from '../god/api.ts';
 import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
 import { GodError } from '../god/work.ts';
-import type { SkillsCatalog } from '../skills-catalog.ts';
+import { isPublicSkill, type SkillsCatalog } from '../skills-catalog.ts';
 import type { AgentsCatalog } from '../agents-catalog.ts';
 import { cleanBody } from '../git-catalog.ts';
 import { HubError } from '../hub-http.ts';
@@ -1454,6 +1454,11 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined, reports?: Safet
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
   };
+  const needClaude = (): NonNullable<SkillsCatalog['claude']> => {
+    const claude = need().claude;
+    if (claude === undefined) throw new HttpError(404, 'not found');
+    return claude;
+  };
   return [
     route('GET', '/api/skills-catalog', () => Promise.resolve({ body: need().status() })),
     route('POST', '/api/skills-catalog/sources', async (request) => {
@@ -1482,10 +1487,27 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined, reports?: Safet
       return { body: need().discard(body.source) };
     }),
     route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
+    // The user's own skills of Claude Code (D-255): read again from their folder only on «Importa»/«Aggiorna»,
+    // «Togli» deletes the copy; each one private (L2) until marked shareable (L1).
+    route('GET', '/api/skills-catalog/claude', () => Promise.resolve({ body: needClaude().status() })),
+    route('POST', '/api/skills-catalog/claude/import', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: needClaude().import() };
+    }),
+    route('POST', '/api/skills-catalog/claude/remove', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: needClaude().remove() };
+    }),
+    route('POST', '/api/skills-catalog/claude/share', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['skill', 'shared', 'sha256']);
+      return { body: needClaude().share(body.skill, body.shared, body.sha256) };
+    }),
     // D-196: the safety report of this version of the skill travels with its text; a GET never starts a reading.
     route('GET', '/api/skills-catalog/skill', (_request, url) => {
       const skill = need().text(url.searchParams.get('id') ?? '');
-      const safety = reports?.textView(skillSafetyText(skill));
+      // A report is for third-party text: never one for the user's own skills (D-255).
+      const safety = isPublicSkill(skill) ? reports?.textView(skillSafetyText(skill)) : undefined;
       return Promise.resolve({ body: { skill: safety === undefined ? skill : { ...skill, safety } } });
     }),
     // Opening a skill makes its report, once per version (a POST: a page elsewhere cannot spend the quota); `redo` is «Rifai il rapporto».
@@ -1493,7 +1515,9 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined, reports?: Safet
       const body = await readJson(request);
       onlyFields(body, ['id', 'redo']);
       if (reports === undefined) throw new HttpError(404, 'not found');
-      const text = skillSafetyText(need().text(body.id));
+      const skill = need().text(body.id);
+      if (!isPublicSkill(skill)) throw new HttpError(409, 'no safety report for your own skills: they never go to Opus');
+      const text = skillSafetyText(skill);
       return { body: { safety: body.redo === true ? reports.redoText(text) : reports.ensureText(text) } };
     }),
   ];

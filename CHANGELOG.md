@@ -12,6 +12,30 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Se il Mac era spento all'ora della routine, entro due ore il resoconto arriva con le scuse per il ritardo; oltre, una sola riga dice che è stata saltata (D-254).
 - Le chat delle routine hanno una «R» nella lista delle conversazioni; archiviare la chat mette in pausa la routine (D-254).
 
+## [0.143.0] - 2026-10-18
+
+### Aggiunto
+
+- Le tue skill personali di Claude Code nel catalogo delle skill: «Importa le mie skill» in Impostazioni → Skill e stili (e `pnpm skills:catalog import-claude`) copia solo i `SKILL.md` e le licenze, mai script né collegamenti simbolici; «Aggiorna» rilegge la cartella, «Togli» cancella la copia (D-255).
+
+### Sicurezza
+
+- Le skill personali di Claude Code entrano Private (L2): arrivano solo agli agenti che lavorano su questo computer finché non le segni «condivisibili» una per una; un testo cambiato torna privato, e il secondo controllo dei dati personali le legge sempre (D-255).
+- Le skill personali non vanno mai a Opus per il rapporto di sicurezza né a Sonnet per la traduzione delle descrizioni, e gli eventi le nominano solo come «local/claude-code» (D-255).
+
+## [0.142.1] - 2026-10-18
+
+### Corretto
+
+- Le risposte del modello locale non cominciano più con un «Ecco» o un «Ecco la tabella:» di troppo: l'istruzione chiede di partire dalla risposta e una ripulitura prudente toglie solo la riga che annuncia, mai una frase come «Ecco perché la polizza scade il 3 marzo» (D-253).
+- Il pensiero dal vivo dell'orchestratore locale non cita più come trovati gli esempi del prompt (la polizza 7720 di `polizza-incendio.md`): gli esempi sono segnati come inventati, sotto `kb/esempio/`, e gli eval dei modelli bocciano una risposta che li nomina (D-253).
+
+## [0.142.0] - 2026-10-18
+
+### Aggiunto
+
+- L'ufficio pixel si veste per le feste, in 2D e in 3D: con la festa del giorno (o una festa scelta a mano) compaiono alberelli e lucine a Natale, zucche e ragnatele ad Halloween, maschere, stelle filanti e coriandoli a Carnevale, cesti, bandierine e uova a Pasqua, ombrelloni e palloni in Estate, pentole d'oro, bandierine e trifogli a San Patrizio; con il movimento ridotto le lucine restano ferme (D-252).
+
 ## [0.141.1] - 2026-10-18
 
 ### Corretto

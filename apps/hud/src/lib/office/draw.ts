@@ -7,6 +7,7 @@ import { SKIN_INK, type OfficeSkin } from './skins.ts';
 import { springfieldConsole, springfieldCouch, springfieldFloor, springfieldItem, springfieldSign, springfieldStripe } from './springfield.ts';
 import { quahogBar, quahogCouch, quahogFloor, quahogItem, quahogSign, quahogWainscot } from './quahog.ts';
 import type { Bubble } from './snapshot.ts';
+import { FEAST_STYLE, feastFace, feastProp, feastSpeck, type FeastDecor } from './feasts.ts';
 
 /**
  * Drawing the office on a canvas (D-106): furniture from code, characters
@@ -53,6 +54,8 @@ export interface Scene {
   boardNear: boolean;
   /** The place of the theme (D-216): absent or `base`, the office as it always was. */
   skin?: OfficeSkin;
+  /** The decorations of the feast of the theme (D-252): absent or null, none. */
+  decor?: FeastDecor | null;
 }
 
 const FRAME_W = 16;
@@ -172,6 +175,10 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   rug(anchors.pause.room, C['rug-neutral']);
   rug(anchors.decisions.room, C['rug-neutral']);
   rug(anchors.archive.room, C['rug-neutral']);
+  // The things of the feast on the floor (D-252): confetti, clovers, eggs, balls.
+  const decor = scene.decor ?? null;
+  const style = decor === null ? null : FEAST_STYLE[decor.feast];
+  if (decor !== null && style !== null && style.scatter !== null) for (const speck of decor.specks) feastSpeck(rect, style.scatter, speck.tone, speck.c * TILE + speck.dx, speck.r * TILE + speck.dy);
   /**
    * A door (D-229): an opening in the wall, the floor seen through it, the
    * wall's top over it as a lintel, the jambs where the wall goes on and the
@@ -281,6 +288,8 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
     }
   }
   for (const [c, r] of boards) board(c * TILE, r * TILE, c, r);
+  // The garland of the feast along the walls (D-252).
+  if (decor !== null && style !== null && style.garland !== null) for (const face of decor.faces) feastFace(rect, C, style.garland, face, face.c * TILE, face.r * TILE, scene.now, scene.reduceMotion, decor.feast);
   // The entrance: a door in the wall below it, a mat on the floor.
   const [ec, er] = anchors.entrance;
   if (isWall(tileAt(map, ec, er + 1))) {
@@ -481,6 +490,9 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       const y = r * TILE;
       if (skin !== 'base' && (kind === 'coffee' || kind === 'cabinet')) {
         items.push({ y: y + 14, draw: () => { skinItem(kind, x, y); } });
+      } else if (kind === 'plant' && decor !== null && style !== null && decor.propKeys.has(`${String(c)},${String(r)}`)) {
+        // The thing of the feast in place of the plant (D-252).
+        items.push({ y: y + 14, draw: () => { feastProp(rect, style.prop, x, y); } });
       } else if (kind === 'plant') {
         items.push({ y: y + 14, draw: () => { pixels(PLANT, x + 2, y + 2, { g: C.plant, G: C['plant-dark'], p: C.pot, P: C['pot-dark'] }); } });
       } else if (kind === 'coffee') {

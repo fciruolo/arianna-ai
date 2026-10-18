@@ -173,7 +173,7 @@ export interface OrchestratorOptions {
   /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
   trialModel?: (modelId: string) => LocalModel;
   /** The skills block of an agent's delivery (D-161), with the style and skills of a Designer card (D-163); absent, no agent reads skills. */
-  skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+  skills?: (agent: string, maxBytes: number, card?: CardDesign, ceiling?: Label) => AgentSkills;
   /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
   advise?: Advise;
   /** The IM files of the approved projects for `im.add` (D-167, P4b); absent, the tool answers with an error. */
@@ -1123,18 +1123,20 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true, character }), ...(profile === undefined ? [] : [profile])];
       // Real lines of the character drawn by the core for this answer (D-224), L0, after the history.
       const lines = linesPart(env.settings(), task.assignee, tailClearance, task.conversationId ?? `task:${task.id}`, character);
-      const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label));
-      // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
-      let context: Context = contextOf(task, label);
       // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
       // prompt, a block of L0 data within the local limit; never for Arianna, never for a card
-      // closing untrusted_content (skillsPart). They pass the gateway with the rest.
-      const skills = task.assignee === ORCHESTRATOR_AGENT ? undefined : await skillsPart(env, { task, step }, agent, task.assignee, SKILLS_DELIVERY_BYTES.local);
+      // closing untrusted_content (skillsPart). The user's own skills of Claude Code (D-255) within
+      // the step's clearance, in a fragment of their own: they count in the label of the step.
+      const skills = task.assignee === ORCHESTRATOR_AGENT ? [] : await skillsPart(env, { task, step }, agent, task.assignee, SKILLS_DELIVERY_BYTES.local, tailClearance);
+      const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label), ...skills.map((part) => part.label));
+      // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
+      let context: Context = contextOf(task, label);
+      // The skills pass the gateway with the rest.
       const decision = await passGateway(
         sql,
         [
           ...history.map((part) => ({ value: part.value.content, label: part.label, source: part.source })),
-          ...(skills === undefined ? [] : [{ value: skills.text, label: skills.label, source: skills.source }]),
+          ...skills.map((part) => ({ value: part.text, label: part.label, source: part.source })),
           ...tail.map((part) => ({ value: part.text, label: part.label, source: part.source })),
           ...(lines === undefined ? [] : [{ value: lines.text, label: lines.label, source: lines.source }]),
         ],
@@ -1143,10 +1145,10 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         { taskId: task.id, runId },
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
-      const skillsCount = skills === undefined ? 0 : 1;
+      const skillsCount = skills.length;
       const linesCount = lines === undefined ? 0 : 1;
       if (decision.texts.length !== history.length + skillsCount + tail.length + linesCount) throw new Error('the gateway allowed a different number of texts');
-      const allowedSkills = skills === undefined ? undefined : decision.texts[history.length];
+      const allowedSkills = skills.length === 0 ? undefined : decision.texts.slice(history.length, history.length + skillsCount).join('\n\n');
       const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount, history.length + skillsCount + tail.length));
       // The assignee plays a person of the series in this step (D-225), as the gateway let its block out:
       // a chat reply may be written once more, livelier.

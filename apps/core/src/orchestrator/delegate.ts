@@ -61,6 +61,7 @@ import { BRIEF_MARK, CHAT_WINDOW_RULE, chatWindowParts, readsChat } from './chat
 import type { Advise } from './advisor.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-share.ts';
+import { eventSkillId } from '../skills-catalog.ts';
 import { recordVariantDesign } from '../studio.ts';
 
 /**
@@ -103,8 +104,10 @@ export interface DelegateEnv {
    * third-party data within `maxBytes` (undefined for none), and how many
    * were asked and left out. With `card`, the style and skills chosen on a
    * Designer card join the block (D-163). Absent, no agent reads skills.
+   * The user's own skills of Claude Code (D-255) come as `own`, only those
+   * within `ceiling` (the highest label this delivery may carry).
    */
-  skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+  skills?: (agent: string, maxBytes: number, card?: CardDesign, ceiling?: Label) => AgentSkills;
   /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
   advise?: Advise;
 }
@@ -118,6 +121,8 @@ export interface CardDesign {
 /** The skills of one delivery (D-161): the block, and how many were left out (the catalog wrote why, as events). */
 export interface AgentSkills {
   block: string | undefined;
+  /** The user's own skills of Claude Code (D-255): a fragment of their own at their label, never exempt from the second check. */
+  own?: { block: string; label: Label };
   skipped: number;
   /** Of the card's choice (D-163): the style left out, and the skills left out. */
   styleSkipped?: string;
@@ -907,6 +912,9 @@ export function godDossierPart(container: string, path: string, label: Label): B
 /**
  * The skills of the agent (D-161) after its prompt: public text (L0) that is
  * not trusted, a block of data delimited, never an instruction to Arianna.
+ * Then the user's own skills of Claude Code within `ceiling` (D-255), as a
+ * second fragment at their label (`user-skills:<agent>`): a private one (L2)
+ * never reaches a delivery to the cloud, whose ceiling is at most L1.
  * None for a card that closes untrusted_content, whatever the settings say.
  * On a Designer card, the style and the skills the user chose on it join the
  * block (D-163); what is no longer in the catalog, or does not fit, is left
@@ -918,10 +926,11 @@ export async function skillsPart(
   agent: LoadedAgent,
   name: string,
   maxBytes: number,
-): Promise<BriefFragment | undefined> {
-  if (env.skills === undefined || name === ORCHESTRATOR_AGENT || !agent.card.trifecta.untrusted_content) return undefined;
+  ceiling: Label,
+): Promise<BriefFragment[]> {
+  if (env.skills === undefined || name === ORCHESTRATOR_AGENT || !agent.card.trifecta.untrusted_content) return [];
   const card = await cardDesignOf(env.sql, at.task, name);
-  const { block, skipped, styleSkipped, cardSkipped = [] } = env.skills(name, maxBytes, card);
+  const { block, own, skipped, styleSkipped, cardSkipped = [] } = env.skills(name, maxBytes, card, ceiling);
   // What did not fit, or is no longer in the catalog: one line of the delegation's activity (the catalog wrote the events).
   if (skipped > 0) await show(env.sql, at.task, at.step, 'delegate', `${name} · ${SKILLS_SKIPPED} · ${String(skipped)}`);
   if (styleSkipped !== undefined) await show(env.sql, at.task, at.step, 'delegate', `${name} · ${STYLE_SKIPPED} · ${styleSkipped}`);
@@ -934,8 +943,15 @@ export async function skillsPart(
       payload: { agent: name, ...(styleSkipped === undefined ? {} : { style: styleSkipped }), skills: [...cardSkipped] },
     }).catch(() => undefined);
   }
-  return block === undefined || block === '' ? undefined : { text: block, label: 'L0', source: `skills:${name}` };
+  return [
+    ...(block === undefined || block === '' ? [] : [{ text: block, label: 'L0' as const, source: `skills:${name}` }]),
+    // Never above the ceiling asked, whatever the callback says: a private skill never rides a cloud brief.
+    ...(own === undefined || own.block === '' || !isAtMost(own.label, ceiling) ? [] : [{ text: own.block, label: own.label, source: `${USER_SKILLS_SOURCE}${name}` }]),
+  ];
 }
+
+/** The source of the fragment of the user's own skills of an agent (D-255): `user-skills:<agent>`, never the catalog's `skills:`. */
+export const USER_SKILLS_SOURCE = 'user-skills:';
 
 /** The event of a card whose chosen style or skills did not reach the delivery (D-163). */
 export const CARD_DESIGN_SKIPPED = 'card.design-skipped';
@@ -1133,7 +1149,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const message: BriefFragment = { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) };
-  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
+  // Never above what this agent reads in the cloud and the task's clearance: a private skill of the user's own stays here (D-255).
+  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud, minLabel(task.clearance, cloudCeiling(agent.card)));
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   // The tail of the agent's prompt (D-107, tappa A3: its persona): more pieces of the brief the gateway judges,
   // within the cloud ceiling of its card and the task's clearance; a resumed session read them when it started.
@@ -1150,7 +1167,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         : [];
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
-    ...(skills === undefined ? [] : [skills]),
+    ...skills,
     ...tail,
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
     { text: REPORT_LANGUAGE_TEXT, label: 'L0' as const, source: 'arianna:report-language' },
@@ -1246,7 +1263,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // The notes of the project the agent may read (D-166): told in every brief, a resumed session included (the copy is new at each run).
   const projectNotes = await projectNotesFor(env, { task, step, runId }, delegation.agent, container, executor);
   // A style or skills chosen with this message (the Studio, D-184): a resumed session never saw the opening, so they go with the message.
-  const chosen = session !== undefined && skills !== undefined && (await cardDesignOf(sql, task, delegation.agent)) !== undefined ? [skills] : [];
+  const chosen = session !== undefined && skills.length > 0 && (await cardDesignOf(sql, task, delegation.agent)) !== undefined ? skills : [];
   // The facts the user shared with this delegation (D-114, tappa C), next to the brief: the approved text, each on its own.
   const shared = await sharedFactFragments(sql, delegation.id);
   const asked: BriefFragment[] = [...chosen, ...(projectNotes === undefined ? [] : [projectNotes.fragment]), message, ...shared];
@@ -1289,7 +1306,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         // named in the brief, so its mockups stay "not known" (D-185). The register is an extra: it never fails the work.
         if (delegation.agent === DESIGNER_AGENT && task.assignee === DESIGNER_AGENT && changed.length > 0) {
           try {
-            const design = (await cardDesignOf(sql, task, delegation.agent)) ?? { style: null, skills: [] };
+            const chosen = (await cardDesignOf(sql, task, delegation.agent)) ?? { style: null, skills: [] };
+            // The register sits in the project, read by the Designer in the cloud: the user's own skills by their source alone (D-255).
+            const design = { style: chosen.style, skills: [...new Set(chosen.skills.map(eventSkillId))] };
             await recordVariantDesign(path, changed.map((item) => item.path), design, startedAt);
           } catch {
             // Without the entry the Studio says "not known".
@@ -1453,7 +1472,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
   // The skills of the agent join its instructions (D-161), as data within a smaller limit.
-  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local);
+  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local, stepClearance);
   // The tail of its prompt (D-107, tappa A3): its persona within its clearance and the task's, at the end of the system message.
   // Then the profile «Su di te» (D-114, tappa B) within the same clearance, on this machine only: the agent answers
   // without tools, so past its limit it reads the topics alone. It counts in the label of what it reads and reports.
@@ -1465,7 +1484,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const lines = linesPart(env.settings(), delegation.agent, stepClearance, task.conversationId ?? `task:${task.id}`, character);
   const partsWith = (window: readonly BriefFragment[]): BriefFragment[] => [
     prompt,
-    ...(skills === undefined ? [] : [skills]),
+    ...skills,
     ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     ...history,
     ...window,
@@ -1499,7 +1518,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const brief = texts.at(-1) ?? '';
   const allowedTail = promptTail(texts.slice(-1 - tail.length, -1));
   const between = texts.slice(1, -1 - tail.length);
-  const allowedSkills = skills === undefined ? undefined : between.shift();
+  const allowedSkills = skills.length === 0 ? undefined : between.splice(0, skills.length).join('\n\n');
   const instructions = `${decision.texts[0] ?? ''}${allowedSkills === undefined ? '' : `\n\n${allowedSkills}`}`;
   const middle = between;
   // The fixed text of the direct chat joins the instructions; each earlier exchange is a turn of the chat.

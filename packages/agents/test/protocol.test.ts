@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_PERSONA, personaBlock, personaParts, type Persona } from '../src/persona.ts';
-import { answerText, chatMessages, CODER_ONLY, offerable, readAnswer, responseSchema, systemPrompt, TOOL_ARGS, toolResult } from '../src/protocol.ts';
+import { answerText, chatMessages, CODER_ONLY, EXAMPLE_MARKERS, offerable, readAnswer, responseSchema, systemPrompt, TOOL_ARGS, toolResult } from '../src/protocol.ts';
 import { TOOLS, type ToolId } from '../src/tools.ts';
 
 describe('orchestrator protocol', () => {
@@ -63,6 +63,25 @@ describe('orchestrator protocol', () => {
     const paths = [...prompt.matchAll(/kb\/[\w/.-]+\.md/g)].map((match) => match[0]);
     assert.ok(paths.length > 5);
     for (const path of paths) assert.equal(existsSync(new URL(`../../../${path}`, import.meta.url)), false, path);
+  });
+
+  it('marks its examples as invented, so the model cannot take them for results (D-253)', () => {
+    const prompt = systemPrompt('', ['kb.search']);
+    const block = /<examples>\n([\s\S]*)\n<\/examples>/.exec(prompt)?.[1];
+    assert.ok(block !== undefined);
+    // Every page of the examples lives in kb/esempio/, a folder that kb/ does not have.
+    const paths = [...block.matchAll(/kb\/[\w/.-]+\.md/g)].map((match) => match[0]);
+    assert.ok(paths.length > 5);
+    for (const path of paths) assert.ok(path.startsWith('kb/esempio/'), path);
+    assert.equal(existsSync(new URL('../../../kb/esempio', import.meta.url)), false);
+    // Each marker the evals look for is in the examples, and none is outside them.
+    for (const marker of EXAMPLE_MARKERS) {
+      assert.ok(block.includes(marker), marker);
+      assert.ok(!prompt.replace(block, '').includes(marker), marker);
+    }
+    assert.match(block, /Never mention them, not even in your reasoning/);
+    // Negative: the values the model quoted as found in the live test are gone.
+    assert.doesNotMatch(prompt, /polizza-incendio|7720|Studio Neri/);
   });
 
   it('shows the examples only to an agent that searches the knowledge base', () => {

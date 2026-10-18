@@ -108,6 +108,7 @@ import UsagePage from './UsagePage.vue';
 import FormField from './FormField.vue';
 import InstallationReadiness from './InstallationReadiness.vue';
 import SkillsCatalog from './SkillsCatalog.vue';
+import ClaudeSkills from './ClaudeSkills.vue';
 import AgentsCatalog from './AgentsCatalog.vue';
 import Icon from './Icon.vue';
 import ProfileFacts from './ProfileFacts.vue';
@@ -945,6 +946,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
           <DesignCatalog />
           <OdNews />
           <SkillsCatalog @changed="agentsPage?.skillsCatalogChanged()" />
+          <!-- The user's own skills of Claude Code (D-255): copied on a click, private until marked shareable -->
+          <ClaudeSkills @changed="agentsPage?.skillsCatalogChanged()" />
         </div>
         <!-- The catalog of agents (D-079): roles from GitHub -->
         <AgentsCatalog v-else-if="active === 'agents-catalog'" />

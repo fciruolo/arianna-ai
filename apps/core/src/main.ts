@@ -77,7 +77,7 @@ import { createAdvisor } from './orchestrator/advisor.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
 import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-reports.ts';
-import { createSkillsCatalog, OPEN_DESIGN_SOURCE, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
+import { createSkillsCatalog, eventSkillId, isPublicSkill, OPEN_DESIGN_SOURCE, ownSkillRefusal, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { cloudModelAreas, createChangeWatcher, lastBinaryVersion, modelsArea, packageVersion, readAreas, shortCommit, sourcesArea, stateFile } from './install-changes.ts';
 import { modelStatus } from './model-files.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
@@ -92,7 +92,7 @@ import { createRoutineService, createRoutineSummarizer, createRoutineTicker } fr
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
-import { delegationRoute, localAgentModel, mentionableAgents } from './orchestrator/delegate.ts';
+import { briefCeiling, delegationRoute, localAgentModel, mentionableAgents } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
@@ -484,6 +484,8 @@ const skillsCatalog = createSkillsCatalog({
     return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
   },
   refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
+  // The user's own skills of Claude Code (D-255): copied only on the user's «Importa», private until marked shareable.
+  claudeConfig: { env: process.env, home: userHomeOf() },
 });
 // The catalog of agents (D-079): role files of the GitHub repositories the user follows, as text
 // in data/catalogs/agents, downloaded one at a time only when the user presses the button. A role
@@ -519,11 +521,13 @@ const orchestrator = createOrchestrator({
   advise,
   // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
   // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
-  skills: (agent, maxBytes, card) => {
-    const delivery = skillsCatalog.skillTexts(agent, card?.skills ?? [], maxBytes, card?.style ?? undefined);
-    const cardSkipped = delivery.refused !== undefined ? [...(card?.skills ?? [])] : delivery.skipped.map((item) => item.id).filter((id) => card?.skills.includes(id) === true);
+  skills: (agent, maxBytes, card, ceiling) => {
+    const delivery = skillsCatalog.skillTexts(agent, card?.skills ?? [], maxBytes, card?.style ?? undefined, ceiling);
+    // The card's skills left out go in its history: the user's own by their source alone (D-255).
+    const cardSkipped = (delivery.refused !== undefined ? [...(card?.skills ?? [])] : delivery.skipped.map((item) => item.id).filter((id) => card?.skills.includes(id) === true)).map(eventSkillId);
     return {
       block: delivery.block,
+      ...(delivery.own === undefined ? {} : { own: delivery.own }),
       skipped: delivery.skipped.length,
       ...(delivery.styleSkipped === undefined ? {} : { styleSkipped: delivery.styleSkipped.slug }),
       ...(cardSkipped.length === 0 ? {} : { cardSkipped }),
@@ -638,6 +642,11 @@ const settingsPage = createSettingsPage({
   // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
   // Computed at each request, with the disabled cards too: skills are assigned before turning an agent on.
   agentSkills: () => skillRefusals(agents, userAgents.disabled()),
+  // A private skill of the user's own goes only to an agent that reads it on this machine (D-255).
+  skillRefusal: (agent, id) => {
+    const card = agents.get(agent)?.card ?? userAgents.disabled().get(agent)?.card;
+    return card === undefined ? null : ownSkillRefusal(skillsCatalog.labelOf(id), briefCeiling(card));
+  },
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
     // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.
@@ -846,7 +855,8 @@ const styleExamples = createStyleExamples({
   ask: askCloudText,
   onEvent: catalogEvent,
 });
-const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
+// Public descriptions only (L0): the user's own skills of Claude Code are never sent to translate (D-255).
+const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills.filter(isPublicSkill), ask: askCloudText, onEvent: catalogEvent });
 // The real lines of the people of the series (D-224): Sonnet, from the name of the character and of the series alone
 // (L0), a hundred at a time on the user's click; the core draws a few for each answer of an agent that wears one.
 const seriesLines = createSeriesLines({ dir: join(config.paths.data, 'characters'), ask: askCloudText, onEvent: catalogEvent, wikiquote: createWikiquoteClient() });
@@ -880,7 +890,10 @@ const safetyReports = createSafetyReports({
     const ids = Object.hasOwn(all, name) ? (all[name]?.skills ?? []) : [];
     const skills = ids.flatMap((id) => {
       try {
-        const text = skillSafetyText(skillsCatalog.text(id));
+        const skill = skillsCatalog.text(id);
+        // A report is for third-party text: the user's own skills are never sent to Opus for one (D-255).
+        if (!isPublicSkill(skill)) return [];
+        const text = skillSafetyText(skill);
         return [{ id, name: text.name, text: text.text }];
       } catch {
         // A skill no longer in the catalog reaches nobody: nothing to read.

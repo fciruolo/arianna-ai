@@ -23,7 +23,7 @@ import {
 } from 'three';
 
 import type { ColorName, Colors } from './draw.ts';
-import { EYE_HEIGHT, pickedTile, SPRITE_HEIGHT, SPRITE_WIDTH, type World } from './world3d.ts';
+import { EYE_HEIGHT, pickedTile, SPRITE_HEIGHT, SPRITE_WIDTH, type Ink, type World } from './world3d.ts';
 
 /**
  * The 3D view of the office with three.js (D-230), loaded only by the page
@@ -118,6 +118,17 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
     }
     return known;
   };
+  // The fixed colours of the decorations of a feast (D-252): set once, the theme never changes them.
+  const inks = new Map<Ink, MeshBasicMaterial>();
+  const inkMaterial = (value: Ink): MeshBasicMaterial => {
+    let known = inks.get(value);
+    if (known === undefined) {
+      known = new MeshBasicMaterial({ vertexColors: true, color: colorOf(value) });
+      inks.set(value, known);
+    }
+    return known;
+  };
+  const isInk = (value: ColorName | Ink): value is Ink => value.startsWith('#');
   const floorMaterials = new Map<ColorName, MeshBasicMaterial>();
   const floorMaterial = (name: ColorName): MeshBasicMaterial => {
     let known = floorMaterials.get(name);
@@ -153,10 +164,10 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
     solid.add(mesh);
   }
   // Walls, lintels and furniture: one instanced mesh of unit boxes per colour.
-  const byColor = new Map<ColorName, World['blocks']>();
+  const byColor = new Map<ColorName | Ink, World['blocks']>();
   for (const block of world.blocks) byColor.set(block.color, [...(byColor.get(block.color) ?? []), block]);
   for (const [name, blocks] of byColor) {
-    const mesh = new InstancedMesh(cube, material(name), blocks.length);
+    const mesh = new InstancedMesh(cube, isInk(name) ? inkMaterial(name) : material(name), blocks.length);
     blocks.forEach((block, index) => {
       matrix.makeScale(block.w, block.h, block.d).setPosition(block.x, block.y + block.h / 2, block.z);
       mesh.setMatrixAt(index, matrix);
@@ -316,7 +327,7 @@ export function createOfficeScene(canvas: HTMLCanvasElement, world: World): Offi
         item.sprite.material.dispose();
       }
       figures.clear();
-      for (const item of [...materials.values(), ...floorMaterials.values()]) item.dispose();
+      for (const item of [...materials.values(), ...floorMaterials.values(), ...inks.values()]) item.dispose();
       for (const child of solid.children) if (child instanceof InstancedMesh) child.dispose();
       cube.dispose();
       plane.dispose();

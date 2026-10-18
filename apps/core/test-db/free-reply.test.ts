@@ -35,7 +35,7 @@ const OPTIONS = {
 };
 
 const DRAFT = '| Voce | Importo | |---|---| | Affitto | 800 € | | Luce | 60 € |';
-const TABLE = 'Ecco le spese:\n\n| Voce | Importo |\n|---|---|\n| Affitto | 800 € |\n| Luce | 60 € |';
+const TABLE = 'Le spese della casa:\n\n| Voce | Importo |\n|---|---|\n| Affitto | 800 € |\n| Luce | 60 € |';
 
 /** JSON answers for the calls with the schema, free texts for those without, each in order. */
 function scripted(answers: Answer[], free: (string | LocalModelError)[] = []): LocalModel & { requests: ChatRequest[] } {
@@ -166,6 +166,28 @@ test('a reply is written again as free text: the stored message keeps its line b
   assert.deepEqual(turn?.answer, { action: 'reply', text: TABLE });
   const [usage] = await db().sql<{ tokens: string }[]>`SELECT sum(tokens_in)::text AS tokens FROM runs WHERE task_id = ${task.id}`;
   assert.equal(usage?.tokens, '200');
+});
+
+test('a free text that opens with an empty «Ecco …:» line is stored and streamed without it (D-253)', async () => {
+  const { task } = await ask('Quanto spendo al mese per la casa?');
+  const model = scripted([{ action: 'reply', text: DRAFT }], [`Ecco la tabella:\n\n${TABLE}`]);
+  const live = await startLiveFeed(db().sql);
+  const received: LiveMessage[] = [];
+  const stop = await live.subscribe({
+    send: (message) => received.push(message),
+  });
+  const streamed = () =>
+    received
+      .flatMap((message) => (message.type === 'delta' && message.taskId === task.id && message.part === undefined ? [message.text] : []))
+      .join('');
+  try {
+    assert.deepEqual(await drain(task.id, orchestrator(model)), ['answered']);
+    await waitFor(() => streamed() === TABLE);
+  } finally {
+    stop();
+    await live.close();
+  }
+  assert.equal(await stored(task.id), TABLE);
 });
 
 test('the draft of the JSON is stored when the free text fails or is empty (D-251)', async () => {

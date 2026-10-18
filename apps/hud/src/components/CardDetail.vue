@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
+import { cloudSkills } from '../lib/claude-skills.ts';
 import {
   addCardDependency,
   addCardLink,
@@ -179,7 +180,8 @@ async function loadCatalogs(): Promise<void> {
   if (!isDesigner.value || catalogsLoaded.value) return;
   const [styles, skills] = await Promise.allSettled([listDesignStyles(), listSkills()]);
   styleCatalog.value = styles.status === 'fulfilled' ? styles.value.styles.map((style) => ({ id: style.slug, name: style.name })) : [];
-  skillCatalog.value = skills.status === 'fulfilled' ? skills.value.skills.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source })) : [];
+  // The Designer works in the cloud: a private skill of the user's own is never offered (D-255).
+  skillCatalog.value = skills.status === 'fulfilled' ? cloudSkills(skills.value.skills).map((skill) => ({ id: skill.id, name: skill.name, source: skill.source })) : [];
   catalogsLoaded.value = true;
 }
 watch(isDesigner, () => void loadCatalogs());

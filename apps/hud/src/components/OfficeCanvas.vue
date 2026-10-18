@@ -8,6 +8,7 @@ import { sheetUrl } from '../lib/api.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import { drawOffice, readColors, type Colors, type Figure } from '../lib/office/draw.ts';
 import { skinColors, type OfficeSkin } from '../lib/office/skins.ts';
+import { feastDecor, type OfficeFeast } from '../lib/office/feasts.ts';
 import {
   archivePoint,
   archiveTiles,
@@ -80,6 +81,8 @@ const props = defineProps<{
   map: OfficeMap;
   /** The place of the theme (D-216): colours and furniture; the map is `map`. */
   skin?: OfficeSkin | undefined;
+  /** The feast of the theme in use (D-252): its decorations; null or absent, none. Read when the canvas starts, as the map. */
+  feast?: OfficeFeast | null | undefined;
   snapshot: OfficeSnapshot;
   sheets: Record<string, CharacterChoice | undefined>;
   /** The plan (default) or the walk in 3D (D-230). */
@@ -88,6 +91,8 @@ const props = defineProps<{
 const emit = defineEmits<{ talk: [agentId: string]; decisions: []; archive: []; cardwall: []; escape: []; view: [mode: OfficeViewMode] }>();
 
 const W = props.map.width * TILE;
+// The decorations of the feast (D-252): where they go is fixed for this map, worked out once.
+const decor = props.feast === null || props.feast === undefined ? null : feastDecor(props.map, props.feast);
 const H = props.map.height * TILE;
 const canvas = ref<HTMLCanvasElement | null>(null);
 const wrap = ref<HTMLElement | null>(null);
@@ -505,6 +510,7 @@ function render(): void {
     decisionsWaiting: props.snapshot.decisions.total > 0,
     boardNear: near === 'cardwall',
     skin: props.skin ?? 'base',
+    decor,
   });
   const hintElement = hint.value;
   if (hintElement !== null) {
@@ -745,7 +751,7 @@ async function enter3d(): Promise<void> {
   const element = canvas3d.value;
   if (attempt !== entering || props.mode !== '3d' || element === null) return;
   try {
-    scene3d = module.createOfficeScene(element, buildWorld(props.map, props.skin ?? 'base'));
+    scene3d = module.createOfficeScene(element, buildWorld(props.map, props.skin ?? 'base', decor));
   } catch {
     status3d.value = 'webgl-error';
     return;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import { cloudSkills } from '../lib/claude-skills.ts';
 import { ApiError, deleteMockup, exportMockupPptx, listDesignStyles, listMockups, listSkills, listStyleSamples, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
 import type { StyleSummary } from '../lib/design-catalog.ts';
 import type { SkillSummary } from '../lib/skills-catalog.ts';
@@ -313,7 +314,8 @@ function useDesign(next: StudioDesign, save: boolean): void {
 async function loadCatalogs(): Promise<void> {
   const [styles, skills, sampled] = await Promise.allSettled([listDesignStyles(), listSkills(), listStyleSamples()]);
   styleEntries.value = styles.status === 'fulfilled' ? styles.value.styles : [];
-  skillEntries.value = skills.status === 'fulfilled' ? skills.value.skills : [];
+  // The Designer works in the cloud: a private skill of the user's own is never offered (D-255).
+  skillEntries.value = skills.status === 'fulfilled' ? cloudSkills(skills.value.skills) : [];
   samples.value = sampled.status === 'fulfilled' ? sampled.value.samples : {};
   styleCatalog.value = styleEntries.value.map((style) => ({ id: style.slug, name: style.name }));
   skillCatalog.value = skillEntries.value.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source }));
