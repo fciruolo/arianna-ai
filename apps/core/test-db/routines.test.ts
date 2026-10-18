@@ -29,6 +29,7 @@ import {
   runNow,
   SUMMARY_QUEUE,
   SUMMARY_UNAVAILABLE_TEXT,
+  SUMMARY_UNCHECKED_TEXT,
   updateRoutine,
   type RoutineEnv,
   type RoutineInput,
@@ -135,7 +136,7 @@ test('todo: the open cards of the user by due date; a card done or of an agent i
   const [message] = await messagesOf(conversationId);
   const body = message?.body ?? '';
   assert.match(body, /Da fare \(3\):/);
-  assert.match(body, /- Pagare la bolletta finta · scade il/);
+  assert.match(body, /- Pagare la bolletta finta · scade domani/);
   assert.ok(body.indexOf('Pagare la bolletta finta') < body.indexOf('Telefonare al fornitore finto'), 'by due date first');
   assert.ok(!body.includes('Card di un agente finta'));
   assert.ok(!body.includes('Cosa già fatta finta'));
@@ -313,7 +314,8 @@ test('the summary: the report only goes to the local model, the lines come back 
   });
   assert.equal(await summarizer.step(), 'done');
   assert.equal(seen.length, 1);
-  assert.match(seen[0] ?? '', /"report":"Resoconto di /);
+  assert.match(seen[0] ?? '', /\{"oggi":"[a-zì]+ \d+ [a-z]+ \d{4}","resoconto":\{"da_fare":\{"totale":\d+,"elencate":\[/);
+  assert.match(seen[0] ?? '', /"titolo":"Rinnovare il dominio finto"/);
   const messages = await messagesOf(conversationId);
   assert.equal(messages.length, 2);
   assert.equal(messages[1]?.body, 'In sintesi:\n- La cosa più urgente è rinnovare il dominio finto.');
@@ -425,4 +427,38 @@ test('waiting: a wait of an incognito conversation is not even counted', async (
   const { id, conversationId } = await dueRoutine(1, ['waiting']);
   await runDue(env(), id);
   assert.match((await messagesOf(conversationId))[0]?.body ?? '', /Decisioni in attesa: nessuna\./);
+});
+
+test('a summary with numbers not in the data is tried once more, then given up saying why', async () => {
+  const { id, conversationId } = await dueRoutine(1, ['notes'], { summary: true });
+  await runDue(env(), id);
+  const asked: string[] = [];
+  const wrong = createRoutineSummarizer({
+    sql: db().sql,
+    model: () =>
+      fakeModel((request) => {
+        asked.push(request.messages[1]?.content ?? '');
+        return { lines: ['Hai 4321 pensieri da riordinare.'] };
+      }),
+    busy: () => Promise.resolve(false),
+  });
+  assert.equal(await wrong.step(), 'failed');
+  assert.equal(asked.length, 2);
+  assert.match(asked[1] ?? '', /usando solo i numeri dei dati/);
+  const messages = await messagesOf(conversationId);
+  assert.equal(messages[messages.length - 1]?.body, SUMMARY_UNCHECKED_TEXT);
+  assert.equal((await loadRoutine(db().sql, id))?.lastRun?.summaryState, 'failed');
+
+  // Wrong the first time, right the second: the second is written.
+  const other = await dueRoutine(1, ['notes'], { summary: true });
+  await runDue(env(), other.id);
+  let calls = 0;
+  const second = createRoutineSummarizer({
+    sql: db().sql,
+    model: () => fakeModel(() => ((calls += 1) === 1 ? { lines: ['Hai 4321 pensieri.'] } : { lines: ['Nessuna urgenza nei pensieri.'] })),
+    busy: () => Promise.resolve(false),
+  });
+  assert.equal(await second.step(), 'done');
+  const last = await messagesOf(other.conversationId);
+  assert.equal(last[last.length - 1]?.body, 'In sintesi:\n- Nessuna urgenza nei pensieri.');
 });

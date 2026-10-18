@@ -191,6 +191,13 @@ export function daysText(days: readonly IsoDay[]): string {
   return `${names.slice(0, -1).join(', ')} e ${names[names.length - 1] ?? ''}`;
 }
 
+/** "sabato 18 ottobre 2026", the local day of `instant` in the zone of the routine. */
+export function dayText(instant: Date, timezone: string): string {
+  const wall = wallOf(instant.getTime(), timezone);
+  const months = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+  return `${DAY_LONG[isoDayOf(wall.year, wall.month, wall.day)]} ${String(wall.day)} ${months[wall.month - 1] ?? ''} ${String(wall.year)}`;
+}
+
 /** "lunedì 20 ottobre alle 18:00", in the zone of the routine. */
 export function whenText(instant: Date, timezone: string): string {
   const wall = wallOf(instant.getTime(), timezone);
