@@ -81,6 +81,7 @@ import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import { activeTheme, applyTheme } from './lib/themes.ts';
+import { officeFeast } from './lib/office/feasts.ts';
 import type { Activity, Approval, CharacterChoice, Conversation, Message } from './lib/types.ts';
 import { canSplit, paneId, splitFits, splitFromSearch, splittable, withSplit, type Pane } from './lib/split.ts';
 import { createChatStore } from './store.ts';
@@ -1297,6 +1298,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         :cards-version="cardsVersion"
         :decide="store.decide"
         :theme="activeTheme(store.themes.value)?.id"
+        :feast="officeFeast(activeTheme(store.themes.value))"
         @open="openConversation"
         :direct-agents="directAgents.filter((entry) => entry.container === undefined).map((entry) => entry.agent)"
         @draft="(mode, project) => openDraft({ mode, project })"

@@ -6,6 +6,7 @@ import { pasadenaBookcase3d, pasadenaLift3d } from './pasadena.ts';
 import { inRoom, isWall, isWalkable, TILE, tileAt, type OfficeMap, type Point, type Room, type TileKind } from './map.ts';
 import type { Actor, Facing } from './motion.ts';
 import type { OfficeSkin } from './skins.ts';
+import { FEAST_INK, FEAST_STYLE, type FeastDecor, type FeastProp } from './feasts.ts';
 import type { OfficeSnapshot } from './snapshot.ts';
 import { archiveCount, islandName } from './view.ts';
 import type { Label } from '../types.ts';
@@ -46,6 +47,9 @@ const MONITOR_SIDE = 0.32;
 /** The farthest a name tag shows, in tiles. */
 export const TAG_DISTANCE = 12;
 
+/** A fixed colour of a thing (the decorations of the feasts, D-252): the same in light and dark. */
+export type Ink = `#${string}`;
+
 /** A box of the world: its centre on the floor (x, z), its size, from height y up by h. */
 export interface Block {
   x: number;
@@ -54,7 +58,7 @@ export interface Block {
   d: number;
   y: number;
   h: number;
-  color: ColorName;
+  color: ColorName | Ink;
 }
 
 export interface FloorTile {
@@ -94,7 +98,7 @@ export function openSide(map: Pick<OfficeMap, 'width' | 'height' | 'tiles'>, c: 
   return SIDES.find(({ dc, dr }) => isWalkable(map, c + dc, r + dr)) ?? null;
 }
 
-const box = (x: number, z: number, w: number, d: number, y: number, h: number, color: ColorName): Block => ({ x, z, w, d, y, h, color });
+const box = (x: number, z: number, w: number, d: number, y: number, h: number, color: ColorName | Ink): Block => ({ x, z, w, d, y, h, color });
 
 /** A thin panel on the face of the wall tile (c, r) towards `side`, from y up by h. */
 function panel(c: number, r: number, side: { dc: number; dr: number }, inset: number, y: number, h: number, color: ColorName): Block {
@@ -236,10 +240,141 @@ function wallRuns(map: OfficeMap, skin: OfficeSkin): Block[] {
   return runs;
 }
 
-/** From the map to the world: floor under every tile that is not a wall, walls, lintels, furniture, screens. */
-export function buildWorld(map: OfficeMap, skin: OfficeSkin): World {
+const ink = (value: string): Ink => value as Ink;
+const K = FEAST_INK;
+
+/** The thing of the feast standing on a plant tile in 3D (D-252), as lib/office/feasts.ts draws it in 2D. */
+export function feastProp3d(prop: FeastProp, x: number, z: number): Block[] {
+  switch (prop) {
+    case 'tree':
+      return [
+        box(x, z, 0.36, 0.36, 0, 0.2, ink(K.potRed)),
+        box(x, z, 0.1, 0.1, 0.2, 0.12, ink(K.trunk)),
+        box(x, z, 0.8, 0.8, 0.32, 0.28, ink(K.green)),
+        box(x, z, 0.6, 0.6, 0.6, 0.26, ink(K.greenDark)),
+        box(x, z, 0.4, 0.4, 0.86, 0.22, ink(K.green)),
+        box(x, z, 0.2, 0.2, 1.08, 0.16, ink(K.greenDark)),
+        box(x, z, 0.12, 0.12, 1.24, 0.12, ink(K.gold)),
+        box(x - 0.36, z + 0.2, 0.08, 0.08, 0.4, 0.08, ink(K.red)),
+        box(x + 0.3, z - 0.1, 0.08, 0.08, 0.66, 0.08, ink(K.blue)),
+        box(x + 0.1, z + 0.22, 0.08, 0.08, 0.9, 0.08, ink(K.gold)),
+      ];
+    case 'pumpkin':
+      return [
+        box(x, z, 0.56, 0.5, 0, 0.4, ink(K.orange)),
+        box(x, z, 0.1, 0.1, 0.4, 0.1, ink(K.stem)),
+        box(x - 0.12, z + 0.25, 0.1, 0.02, 0.24, 0.08, ink(K.glow)),
+        box(x + 0.12, z + 0.25, 0.1, 0.02, 0.24, 0.08, ink(K.glow)),
+        box(x, z + 0.25, 0.3, 0.02, 0.08, 0.06, ink(K.glow)),
+      ];
+    case 'mask':
+      return [
+        box(x, z, 0.3, 0.3, 0, 0.04, ink(K.stand)),
+        box(x, z, 0.05, 0.05, 0.04, 0.86, ink(K.stand)),
+        box(x, z, 0.46, 0.06, 0.88, 0.18, ink(K.gold)),
+        box(x - 0.1, z + 0.035, 0.1, 0.01, 0.94, 0.06, ink(K.eyes)),
+        box(x + 0.1, z + 0.035, 0.1, 0.01, 0.94, 0.06, ink(K.eyes)),
+        box(x + 0.2, z, 0.05, 0.05, 1.06, 0.26, ink(K.purple)),
+      ];
+    case 'basket':
+      return [
+        box(x, z, 0.6, 0.45, 0, 0.24, ink(K.wicker)),
+        box(x - 0.15, z, 0.12, 0.12, 0.24, 0.15, ink(K.pastel[0])),
+        box(x, z, 0.12, 0.12, 0.24, 0.17, ink(K.pastel[1])),
+        box(x + 0.15, z, 0.12, 0.12, 0.24, 0.15, ink(K.pastel[2])),
+        box(x - 0.27, z, 0.04, 0.04, 0.24, 0.3, ink(K.wickerDark)),
+        box(x + 0.27, z, 0.04, 0.04, 0.24, 0.3, ink(K.wickerDark)),
+        box(x, z, 0.58, 0.04, 0.54, 0.04, ink(K.wickerDark)),
+      ];
+    case 'umbrella':
+      return [
+        box(x, z, 0.5, 0.5, 0, 0.03, ink(K.gold)),
+        box(x, z, 0.05, 0.05, 0.03, 1.27, ink(K.trunk)),
+        box(x, z, 1, 1, 1.3, 0.05, ink(K.red)),
+        box(x, z, 0.7, 0.7, 1.35, 0.05, ink(K.white)),
+        box(x, z, 0.36, 0.36, 1.4, 0.05, ink(K.red)),
+      ];
+    case 'gold':
+      return [
+        box(x, z, 0.5, 0.5, 0, 0.3, ink(K.iron)),
+        box(x, z, 0.42, 0.42, 0.3, 0.05, ink(K.gold)),
+        box(x, z, 0.04, 0.04, 0.35, 0.4, ink(K.stem)),
+        box(x - 0.1, z, 0.16, 0.06, 0.72, 0.16, ink(K.green)),
+        box(x + 0.1, z, 0.16, 0.06, 0.72, 0.16, ink(K.green)),
+        box(x, z, 0.16, 0.06, 0.86, 0.16, ink(K.greenDark)),
+      ];
+  }
+}
+
+/** A small box on the south face of the wall tile (c, r): `offset` from the middle along the wall. */
+function onFace(c: number, r: number, offset: number, width: number, y: number, h: number, color: Ink): Block {
+  return box(c + 0.5 + offset, r + 1.03, width, 0.06, y, h, color);
+}
+
+/** The decorations of the feast in 3D (D-252): the garland on the faces, the small things on the floor. */
+function feastBlocks(decor: FeastDecor): Block[] {
+  const style = FEAST_STYLE[decor.feast];
+  const blocks: Block[] = [];
+  const colors = decor.feast === 'san-patrizio' ? K.irish : decor.feast === 'pasqua' ? K.pastel : K.bright;
+  for (const face of decor.faces) {
+    const { c, r } = face;
+    switch (style.garland) {
+      case 'lights':
+        blocks.push(onFace(c, r, 0, 1, 1.4, 0.02, ink(K.wire)));
+        for (let i = 0; i < 3; i++) blocks.push(onFace(c, r, -0.32 + i * 0.32, 0.08, 1.3, 0.08, ink(colors[(c * 3 + i) % colors.length] ?? K.gold)));
+        break;
+      case 'bunting':
+        blocks.push(onFace(c, r, 0, 1, 1.4, 0.02, ink(K.iron)));
+        for (let i = 0; i < 2; i++) {
+          const color = ink(colors[(c * 2 + i) % colors.length] ?? K.gold);
+          blocks.push(onFace(c, r, -0.25 + i * 0.5, 0.3, 1.32, 0.08, color), onFace(c, r, -0.25 + i * 0.5, 0.12, 1.24, 0.08, color));
+        }
+        break;
+      case 'streamers':
+        blocks.push(onFace(c, r, 0, 1, 1.38, 0.04, ink(c % 2 === 0 ? K.bright[0] : K.bright[2])), onFace(c, r, 0, 1, 1.28, 0.04, ink(c % 2 === 0 ? K.bright[1] : K.bright[3])));
+        break;
+      case 'webs':
+        for (const [end, sign] of [[face.first, -1], [face.last, 1]] as const) {
+          if (!end) continue;
+          for (let i = 0; i < 3; i++) blocks.push(onFace(c, r, sign * (0.5 - (0.3 - i * 0.1) / 2), 0.3 - i * 0.1, 1.44 - i * 0.07, 0.03, ink(K.white)));
+        }
+        break;
+      case null:
+        break;
+    }
+  }
+  for (const speck of decor.specks) {
+    const x = speck.c + (speck.dx + 1) / TILE;
+    const z = speck.r + (speck.dy + 1) / TILE;
+    switch (style.scatter) {
+      case 'confetti':
+        blocks.push(box(x, z, 0.07, 0.05, 0, 0.01, ink(K.bright[speck.tone % K.bright.length] ?? K.red)));
+        break;
+      case 'clover':
+        blocks.push(box(x, z, 0.14, 0.14, 0, 0.02, ink(K.green)));
+        break;
+      case 'egg':
+        blocks.push(box(x, z, 0.1, 0.13, 0, 0.1, ink(K.pastel[speck.tone % K.pastel.length] ?? K.gold)));
+        break;
+      case 'ball':
+        blocks.push(box(x, z, 0.18, 0.18, 0, 0.18, ink(K.red)), box(x, z, 0.19, 0.19, 0.07, 0.04, ink(K.white)));
+        break;
+      case null:
+        break;
+    }
+  }
+  return blocks;
+}
+
+/**
+ * From the map to the world: floor under every tile that is not a wall,
+ * walls, lintels, furniture, screens; with a feast (D-252) its decorations,
+ * its thing in place of every other plant.
+ */
+export function buildWorld(map: OfficeMap, skin: OfficeSkin, decor: FeastDecor | null = null): World {
   const floors: FloorTile[] = [];
   const blocks: Block[] = wallRuns(map, skin);
+  const props = new Set(decor === null ? [] : decor.props.map(([c, r]) => `${String(c)},${String(r)}`));
   for (let r = 0; r < map.height; r++) {
     for (let c = 0; c < map.width; c++) {
       const kind = tileAt(map, c, r);
@@ -253,9 +388,11 @@ export function buildWorld(map: OfficeMap, skin: OfficeSkin): World {
       }
       // A checked floor for Base, as in 2D; the tiles of the Sacro Cuore and the carpet of the Dunder Mifflin are one colour.
       floors.push({ c, r, alt: skin === 'base' && (c + r) % 2 === 1 });
-      blocks.push(...tileBlocks(map, kind, c, r, skin));
+      if (decor !== null && kind === 'plant' && props.has(`${String(c)},${String(r)}`)) blocks.push(...feastProp3d(FEAST_STYLE[decor.feast].prop, c + 0.5, r + 0.5));
+      else blocks.push(...tileBlocks(map, kind, c, r, skin));
     }
   }
+  if (decor !== null) blocks.push(...feastBlocks(decor));
   const { anchors } = map;
   const monitors: Monitor[] = [];
   for (const island of [anchors.private, ...anchors.islands]) {

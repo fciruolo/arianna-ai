@@ -13,6 +13,7 @@ import pasadenaMapText from '../office/maps/pasadena.json?raw';
 import { listDelegations } from '../lib/api.ts';
 import { boardPoint } from '../lib/office/map.ts';
 import { officeMapOf, officeView, skinOfTheme } from '../lib/office/skins.ts';
+import type { OfficeFeast } from '../lib/office/feasts.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
 import { roomClaims } from '../lib/office/rooms.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
@@ -51,6 +52,8 @@ const props = defineProps<{
   directAgents?: string[] | undefined;
   /** The theme in use (D-103): Scrubs and The Office have a place of their own (D-216); undefined is Base. */
   theme?: string | undefined;
+  /** The feast of the theme in use (D-252): the office wears its decorations; null without one. */
+  feast?: OfficeFeast | null | undefined;
 }>();
 const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string]; talk: [agent: string, project?: string] }>();
 
@@ -246,10 +249,11 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           <p v-if="view.notice !== null" class="mb-2 text-[13px] text-muted">{{ view.notice }}</p>
           <!-- A new place is a new canvas (D-216): the map, the anchors and the paths are read when it starts. -->
           <OfficeCanvas
-            :key="`${skin}:${view.map.id}`"
+            :key="`${skin}:${feast ?? ''}:${view.map.id}`"
             ref="office"
             :map="view.map"
             :skin="skin"
+            :feast="feast ?? null"
             :snapshot="snapshot"
             :sheets="sheets"
             :mode="viewMode"
