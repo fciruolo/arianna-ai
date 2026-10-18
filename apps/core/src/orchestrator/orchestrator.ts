@@ -73,6 +73,8 @@ import {
   WAITING_SHARE,
 } from './profile-share.ts';
 import type { ImToolEnv } from './im-tool.ts';
+import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
+import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
@@ -207,6 +209,9 @@ export interface OrchestratorOptions {
  * prompt of a user without such a profile stays the same byte for byte.
  * `profile.share` (D-114, tappa C) only with `shares` (the profile holds a
  * fact) and where `task.delegate` is offered: it gives a fact to a delegation.
+ * `routine.propose` (D-256) only with `routines`: a conversation of Arianna,
+ * never incognito nor the secretary's; the tool itself writes a routine only
+ * in a private one (routineProposalAllowed).
  */
 export function orchestratorTools(
   agent: LoadedAgent,
@@ -216,11 +221,16 @@ export function orchestratorTools(
   secretary = false,
   profile = false,
   shares = false,
+  routines = false,
 ): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
       !(incognito && (INCOGNITO_OFF_TOOLS as readonly string[]).includes(tool)) &&
-      ((isLocalTool(tool) && (tool !== UPDATE || cards) && (tool !== PROFILE_READ || profile) && (tool !== PROFILE_SHARE || (delegation && !secretary && shares))) ||
+      ((isLocalTool(tool) &&
+        (tool !== UPDATE || cards) &&
+        (tool !== PROFILE_READ || profile) &&
+        (tool !== PROFILE_SHARE || (delegation && !secretary && shares)) &&
+        (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary))) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -1047,6 +1057,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       if (ctx.approval?.kind === 'im') return imDecisionAnswer(sql, ctx, options.ims);
       // The user decided a fact Arianna proposed (D-114, tappa D): written with the decision, the answer here.
       if (ctx.approval?.kind === 'fact') return proposeDecisionAnswer(sql, ctx);
+      // The user decided a routine Arianna proposed (D-256): active or discarded with the decision, the answer here.
+      if (ctx.approval?.kind === 'routine') return routineDecisionAnswer(sql, ctx);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       // An addressed message (D-107, tappa B2) is never answered by Claude in a system chat: the agents named answer it.
@@ -1069,6 +1081,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ??
           (await shareReplay(sql, ctx, done)) ??
           (await proposeReplay(sql, ctx, done)) ??
+          (await routineReplay(sql, ctx, done)) ??
           (await executorReplay(done, delegations));
         if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
@@ -1107,6 +1120,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
+      // routine.propose (D-256): offered to Arianna in every conversation but incognito and the secretary's, so that
+      // the fixed prompt stays the same in a private and a work conversation (the prefix cache, D-075); the core
+      // writes a routine only in a private conversation of the user with her (routineProposalAllowed), else an error.
+      const routinesOffered = !incognito && !secretary && task.conversationId !== null && task.assignee === ORCHESTRATOR_AGENT;
+      const routines = routinesOffered && (await routineProposalAllowed(sql, task.conversationId));
       // The cloud agents profile.share may give a fact to, with what a brief to each carries (D-114, tappa C).
       const shareTargets = new Map<string, Label>();
       for (const target of delegates) {
@@ -1168,6 +1186,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         secretary,
         readsProfile && profile?.topicsOnly === true,
         profile !== undefined && shareTargets.size > 0,
+        routinesOffered,
       );
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
       const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
@@ -1300,6 +1319,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           ...(options.ims === undefined ? {} : { ims: options.ims }),
           profileClearance: tailClearance,
           shareTargets,
+          routines,
         });
         // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
         if (ran.context !== undefined) context = ran.context;
@@ -1313,6 +1333,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PROPOSE });
           return { ...ran, approvalId: await requestPropose(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.propose }) };
         }
+        // A routine (D-256): written off with the turn and its approval; nothing runs before the user approves it.
+        if (ran.routine !== undefined) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_ROUTINE });
+          const written = await writeRoutineProposal(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.routine });
+          return { ...ran, approvalId: written.approvalId };
+        }
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
           return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.confirm }) };
@@ -1322,7 +1348,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       });
       if (result.approvalId !== undefined) {
         // The IM number only: the title stays in the approval. A fact: the tool's name only (D-213).
-        if (result.share !== undefined || result.propose !== undefined) await show(task, step, 'wait', tool);
+        if (result.share !== undefined || result.propose !== undefined || result.routine !== undefined) await show(task, step, 'wait', tool);
         else await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
@@ -1347,12 +1373,14 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'profile.read': 'read',
   'profile.share': 'wait',
   'profile.propose': 'write',
+  'routine.propose': 'wait',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   // The finance tools and profile.read show only their name (D-183, D-114): what the model looks for stays in the turn.
-  if (tool.startsWith('finance.') || PROFILE_TOOLS.includes(tool)) return tool;
+  // routine.propose too (D-256): its title is the user's text, it stays in the approval.
+  if (tool.startsWith('finance.') || PROFILE_TOOLS.includes(tool) || tool === ROUTINE_PROPOSE) return tool;
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);

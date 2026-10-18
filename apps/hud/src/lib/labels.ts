@@ -97,6 +97,8 @@ export const ACTION_TEXT: Record<string, string> = {
   // «Su di te» (D-114, tappe C e D).
   share_fact: 'Gli do questo dato?',
   'profile.propose': 'Lo ricordo?',
+  // The routines (D-256).
+  'routine.propose': 'Attivo questa routine?',
 };
 
 /** The ways a card of an agent may run, as the user chooses them (D-159). */

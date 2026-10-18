@@ -4,12 +4,14 @@ import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import type { Queryable, Sql } from './db/client.ts';
+import { recordDecisionIn } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { completeJob, enqueueJob, failJob, type Job } from './jobs.ts';
 import { machineBusy } from './model-evals.ts';
 import { listNotes } from './notes.ts';
 import { ORGANIZE_MODEL, modelUnavailable, organizeRetryDelayMs } from './organize.ts';
+import { decideRoutineProposal, isRoutineSource, MAX_ROUTINE_TITLE, ROUTINE_CONVERSATION_PREFIX, ROUTINE_SOURCES, type RoutineSource } from './routine-proposals.ts';
 import { dayText, daysText, MONTHS, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
 import { shortText } from './waiting.ts';
 
@@ -30,17 +32,17 @@ import { shortText } from './waiting.ts';
  * behind (the Mac was off) delivers within two hours, saying sorry for the
  * delay, and beyond that writes one line that it was missed, without making
  * up the days before (D-110, risposta 7). Only the chat in this tappa: no
- * call (B), no email (C), no routine.propose (A2).
+ * call (B), no email (C). A routine proposed in the chat by `routine.propose`
+ * (A2, D-256, routine-proposals.ts) waits on the page and in the chat for
+ * «Attiva» or «Scarta».
  */
 
-export const ROUTINE_SOURCES = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'] as const;
-export type RoutineSource = (typeof ROUTINE_SOURCES)[number];
+export { isRoutineSource, MAX_ROUTINE_TITLE, ROUTINE_CONVERSATION_PREFIX, ROUTINE_SOURCES, type RoutineSource } from './routine-proposals.ts';
 export type RoutineStatus = 'proposed' | 'active' | 'paused' | 'retired';
 export type RunStatus = 'done' | 'missed-offline' | 'skipped' | 'failed';
 export type RunReason = 'late' | 'blocked' | 'archived' | 'purged' | 'error';
 export type SummaryState = 'none' | 'queued' | 'done' | 'unavailable' | 'failed';
 
-export const MAX_ROUTINE_TITLE = 80;
 /** Lines shown per list; the rest are counted ("e altre N"). */
 export const REPORT_MAX_ITEMS = 7;
 /** Longest title of a card in the report, in characters. */
@@ -57,8 +59,6 @@ const SUMMARY_TIMEOUT_MS = 120_000;
 const SUMMARY_MAX_TOKENS = 600;
 export const SUMMARY_MAX_LINES = 3;
 export const SUMMARY_MAX_LINE = 200;
-/** The prefix of the title of a routine's conversation. */
-export const ROUTINE_CONVERSATION_PREFIX = 'Routine · ';
 /** The fallback of «since» for done and failed before the first report of the schedule. */
 const FIRST_SINCE_MS = 24 * 3_600_000;
 
@@ -122,10 +122,6 @@ export interface RoutineInput {
   timezone?: string;
   sources?: RoutineSource[];
   summary?: boolean;
-}
-
-export function isRoutineSource(value: unknown): value is RoutineSource {
-  return typeof value === 'string' && (ROUTINE_SOURCES as readonly string[]).includes(value);
 }
 
 /**
@@ -245,7 +241,8 @@ function toRoutine(row: RoutineRow): Routine {
 
 /** The routines not removed, oldest first: the page shows them as cards. */
 export async function listRoutines(sql: Queryable): Promise<Routine[]> {
-  const rows = await sql<RoutineRow[]>`${ROUTINE_SELECT(sql)} WHERE r.status <> 'retired' AND c.purged_at IS NULL ORDER BY r.created_at, r.id`;
+  // The proposals to approve first (D-256), then the others, oldest first.
+  const rows = await sql<RoutineRow[]>`${ROUTINE_SELECT(sql)} WHERE r.status <> 'retired' AND c.purged_at IS NULL ORDER BY (r.status = 'proposed') DESC, r.created_at, r.id`;
   return rows.map(toRoutine);
 }
 
@@ -316,6 +313,8 @@ async function mustLoad(sql: Queryable, id: string): Promise<Routine> {
 export async function updateRoutine(sql: Sql, id: string, input: RoutineInput, now = new Date()): Promise<Routine> {
   await sql.begin(async (tx) => {
     const row = await lockRoutine(tx, id);
+    // A proposal stays as the user saw it in the chat (D-256): approved or discarded, then changed.
+    if (row.status === 'proposed') throw new RoutineError('conflict', 'a proposed routine is approved or discarded first');
     const rule: RoutineRule = { days: input.days ?? row.days.filter(isIsoDay), at: input.at ?? row.at, timezone: input.timezone ?? row.timezone };
     const next = row.status === 'active' ? nextOrFail(rule, now) : null;
     const title = input.title ?? row.title;
@@ -366,10 +365,48 @@ export async function resumeRoutine(sql: Sql, id: string, now = new Date()): Pro
   return mustLoad(sql, id);
 }
 
-/** «Togli»: the routine never runs again; its conversation stays, as the user left it. */
+/**
+ * A routine proposed in the chat (D-256), decided from the page: «Attiva»
+ * (approved) or «Scarta» (rejected). The approval still pending in the chat
+ * is decided with it, as from the chat (the task there answers); without one
+ * (expired, or its conversation deleted) the routine is decided alone.
+ */
+export async function decideRoutine(sql: Sql, id: string, state: 'approved' | 'rejected'): Promise<Routine> {
+  await sql.begin(async (tx) => {
+    // The approval first, then the routine: the order of a decision from the chat (decideApproval, then the routine).
+    const pending = await pendingProposal(tx, id);
+    const row = await lockRoutine(tx, id);
+    if (row.status !== 'proposed') throw new RoutineError('conflict', 'only a proposed routine is approved or discarded');
+    await decideProposalIn(tx, id, pending, state);
+  });
+  return mustLoad(sql, id);
+}
+
+/** The approval of a proposed routine still pending in the chat, locked; undefined for any other routine. */
+async function pendingProposal(tx: Queryable, id: string): Promise<string | undefined> {
+  if (!UUID.test(id)) return undefined;
+  const [pending] = await tx<{ id: string }[]>`
+    SELECT id::text FROM approvals WHERE kind = 'routine' AND state = 'pending' AND detail ->> 'routineId' = ${id}
+    ORDER BY requested_at DESC LIMIT 1 FOR UPDATE`;
+  return pending?.id;
+}
+
+async function decideProposalIn(tx: Queryable, id: string, pending: string | undefined, state: 'approved' | 'rejected'): Promise<void> {
+  // The engine's decision applies the routine's too (decideRoutineProposal), and resumes the asking task.
+  // Either way the next run is computed from the real time, as a decision from the chat does.
+  if (pending !== undefined) await recordDecisionIn(tx, pending, state, 'web');
+  else await decideRoutineProposal(tx, id, state, null);
+}
+
+/** «Togli»: the routine never runs again; its conversation stays, as the user left it. A proposal is discarded. */
 export async function retireRoutine(sql: Sql, id: string): Promise<void> {
   await sql.begin(async (tx) => {
+    const pending = await pendingProposal(tx, id);
     const row = await lockRoutine(tx, id);
+    if (row.status === 'proposed') {
+      await decideProposalIn(tx, id, pending, 'rejected');
+      return;
+    }
     await tx`UPDATE routines SET status = 'retired', paused_by = NULL, next_run_at = NULL WHERE id = ${id}`;
     await appendEvent(tx, { kind: 'routine.retired', label: 'L0', payload: { routineId: id, conversationId: row.conversationId, by: 'user' } });
   });
@@ -719,6 +756,8 @@ export async function runNow(env: RoutineEnv, routineId: string): Promise<{ runI
   const now = env.now?.() ?? new Date();
   const routine = await loadRoutineRow(env.sql, routineId);
   if (routine === undefined || routine.status === 'retired' || routine.conversationPurged) throw new RoutineError('not-found', 'routine not found');
+  // A proposal has no chat to write in yet (D-256): it shows once approved.
+  if (routine.status === 'proposed') throw new RoutineError('conflict', 'a proposed routine is approved first');
   if (routine.conversationArchived) throw new RoutineError('conflict', 'the conversation of the routine is archived');
   const rule = ruleOf(routine);
   const data = await readReport(env.sql, env, routine.sources.filter(isRoutineSource), await sinceOf(env.sql, routineId, now));
@@ -1364,6 +1403,8 @@ export interface RoutineService {
   pause(id: string): Promise<Routine>;
   resume(id: string): Promise<Routine>;
   retire(id: string): Promise<void>;
+  /** «Attiva» / «Scarta» of a routine proposed in the chat (D-256). */
+  decide(id: string, state: 'approved' | 'rejected'): Promise<Routine>;
   /** «Prova adesso». */
   runNow(id: string): Promise<{ runId: string; messageId: string | null }>;
 }
@@ -1377,6 +1418,7 @@ export function createRoutineService(env: RoutineEnv): RoutineService {
     pause: (id) => pauseRoutine(env.sql, id),
     resume: (id) => resumeRoutine(env.sql, id, now()),
     retire: (id) => retireRoutine(env.sql, id),
+    decide: (id, state) => decideRoutine(env.sql, id, state),
     runNow: (id) => runNow(env, id),
   };
 }

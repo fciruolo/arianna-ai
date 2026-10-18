@@ -18,6 +18,7 @@ import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
 import { runFinanceTool } from '../finance-tools.ts';
+import { checkRoutineProposal, proposalLabelOk, WAITING_ROUTINE, type RoutineProposal } from '../routine-proposals.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { checkProposal, listUserFacts, MAX_FACTS } from '../user-facts.ts';
 import { updateCard } from './cards.ts';
@@ -38,6 +39,7 @@ import { WAITING_PROPOSE, WAITING_SHARE, type FactProposal } from './profile-sha
  * `finance.*` read the expense tracker and mark the task (finance-tools.ts, D-183).
  * `profile.read` reads one fact of «Su di te» within the step's clearance (D-114, tappa B).
  * `profile.share` asks the user to let one fact out to an agent, `profile.propose` to remember one (D-114, tappe C e D).
+ * `routine.propose` proposes a routine, written off until the user approves it (D-256).
  */
 export const LOCAL_TOOLS = [
   'kb.search',
@@ -52,6 +54,7 @@ export const LOCAL_TOOLS = [
   'profile.read',
   'profile.share',
   'profile.propose',
+  'routine.propose',
 ] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
@@ -82,6 +85,11 @@ export interface ToolEnv {
    * carries (`briefCeiling`). Without it the tool shares with nobody.
    */
   shareTargets?: ReadonlyMap<string, Label>;
+  /**
+   * The step may propose a routine (D-256): a private conversation of the
+   * user with Arianna (routineProposalAllowed). Without it the tool proposes nothing.
+   */
+  routines?: boolean;
 }
 
 export interface ToolResult {
@@ -96,6 +104,8 @@ export interface ToolResult {
   share?: ShareFactDetail;
   /** `profile.propose`: the fact the user confirms in the web chat (D-114, tappa D). */
   propose?: FactProposal;
+  /** `routine.propose`: the routine the user approves in the web chat, written off with the turn (D-256). */
+  routine?: RoutineProposal;
 }
 
 /** Longest page text shown to the model in one result. */
@@ -129,6 +139,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await shareFact(args, env);
       case 'profile.propose':
         return await proposeFact(args, env);
+      case 'routine.propose':
+        return proposeRoutine(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };
@@ -238,6 +250,22 @@ async function proposeFact(args: Record<string, unknown>, env: ToolEnv): Promise
   if (current !== undefined && current.text === checked.text) return { text: `error: profile.propose: the profile already holds '${current.topic}' with this text`, label: FACT_TOPIC_LABEL };
   if (current === undefined && facts.length >= MAX_FACTS) return { text: `error: profile.propose: the profile is full (${String(MAX_FACTS)} facts): tell the user`, label: 'L0' };
   return { text: WAITING_PROPOSE, label: 'L0', propose: { topic: current?.topic ?? checked.topic, text: checked.text, replaces: current !== undefined } };
+}
+
+/**
+ * `routine.propose` (D-110, tappa A2; D-256): the closed fields checked by
+ * code (checkRoutineProposal), nothing written here: the orchestrator writes
+ * the routine `proposed` and its approval with the turn. Only where the step
+ * may (a private conversation with Arianna), never from a context above
+ * Privato or that has read finance data (the title would carry it).
+ */
+function proposeRoutine(args: Record<string, unknown>, env: ToolEnv): ToolResult {
+  if (env.routines !== true) return { text: 'error: routine.propose: a routine is proposed only in a private conversation with Arianna: tell the user to ask there, or to create it in the page Routine', label: 'L0' };
+  if (isFinanceContext(env.context)) return { text: 'error: routine.propose: this conversation has read finance data: the user creates the routine in the page Routine', label: 'L0' };
+  if (!proposalLabelOk(env.context.effective)) return { text: 'error: routine.propose: this conversation holds data above Privato: the user creates the routine in the page Routine', label: 'L0' };
+  const checked = checkRoutineProposal(args);
+  if ('error' in checked) return { text: `error: routine.propose: ${checked.error}`, label: 'L0' };
+  return { text: WAITING_ROUTINE, label: 'L0', routine: checked };
 }
 
 /** The project of the conversation's workspace (a container, or `container:part`, D-145), when it has one. */

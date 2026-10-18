@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- In una conversazione privata con Arianna basta chiedere «ogni lunedì e giovedì alle 9 fammi il resoconto…»: Arianna propone la routine con giorni, ora e fonti scelti da un elenco chiuso, e in chat compare la scheda con «Attiva» e «Scarta»; niente parte prima di «Attiva» (D-256).
+- La pagina «Routine» mostra in cima le routine proposte in chat, con «Da approvare» e gli stessi due pulsanti; la chat della routine compare nella lista solo dopo «Attiva» (D-256).
+
 ## [0.144.0] - 2026-10-18
 
 ### Aggiunto

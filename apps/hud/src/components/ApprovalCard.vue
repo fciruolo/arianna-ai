@@ -26,6 +26,7 @@ import {
   type PlanDraft,
 } from '../lib/plan-approval.ts';
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
+import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
@@ -156,6 +157,8 @@ const title = computed(() => ACTION_TEXT[props.approval.action] ?? props.approva
 const share = computed(() => factShare(props.approval));
 /** A fact Arianna would remember (D-114, tappa D). */
 const proposal = computed(() => factProposal(props.approval));
+/** A routine Arianna proposes (D-256): nothing runs before «Attiva». */
+const routine = computed(() => routineProposal(props.approval, Intl.DateTimeFormat().resolvedOptions().timeZone));
 const isDeclassify = computed(() => props.approval.kind === 'declassify' && share.value === undefined);
 /** A workspace approval names the repository and the files with uncommitted changes. */
 const workspace = computed(() => {
@@ -233,6 +236,17 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         </p>
         <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ proposal.text }}</p>
         <p class="text-xs text-muted">{{ proposal.note }}</p>
+      </template>
+      <template v-else-if="routine !== undefined">
+        <p>
+          Routine: <strong>{{ routine.title }}</strong>
+        </p>
+        <p class="text-[14px]">{{ routine.when }}<template v-if="routine.zone !== null"> · {{ routine.zone }}</template> · nella sua chat</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span v-for="source in routine.sources" :key="source" class="pill">{{ source }}</span>
+          <span v-if="routine.summary" class="pill">+ sintesi locale</span>
+        </div>
+        <p class="text-xs text-muted">{{ ROUTINE_NOTE }}</p>
       </template>
       <template v-else-if="isDeclassify && text !== undefined">
         <p>Approvando, questo testo esatto viene declassato e può uscire dalla macchina. Nient'altro.</p>
@@ -372,9 +386,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

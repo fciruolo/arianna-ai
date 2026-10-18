@@ -450,6 +450,11 @@ export async function retireRoutine(id: string): Promise<void> {
   await call('POST', `/api/routines/${encodeURIComponent(id)}/retire`, {});
 }
 
+/** «Attiva» or «Scarta» of a routine Arianna proposed in the chat (D-256): the card in the chat is decided with it. */
+export async function decideRoutine(id: string, approve: boolean): Promise<Routine> {
+  return (await call<{ routine: Routine }>('POST', `/api/routines/${encodeURIComponent(id)}/${approve ? 'approve' : 'discard'}`, {})).routine;
+}
+
 /** «Prova adesso»: the report now, in the routine's chat. */
 export async function tryRoutine(id: string): Promise<void> {
   await call('POST', `/api/routines/${encodeURIComponent(id)}/run`, {});
