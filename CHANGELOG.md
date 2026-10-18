@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.143.0] - 2026-10-18
+
+### Aggiunto
+
+- Le tue skill personali di Claude Code nel catalogo delle skill: «Importa le mie skill» in Impostazioni → Skill e stili (e `pnpm skills:catalog import-claude`) copia solo i `SKILL.md` e le licenze, mai script né collegamenti simbolici; «Aggiorna» rilegge la cartella, «Togli» cancella la copia (D-255).
+
+### Sicurezza
+
+- Le skill personali di Claude Code entrano Private (L2): arrivano solo agli agenti che lavorano su questo computer finché non le segni «condivisibili» una per una; un testo cambiato torna privato, e il secondo controllo dei dati personali le legge sempre (D-255).
+- Le skill personali non vanno mai a Opus per il rapporto di sicurezza né a Sonnet per la traduzione delle descrizioni, e gli eventi le nominano solo come «local/claude-code» (D-255).
+
 ## [0.142.1] - 2026-10-18
 
 ### Corretto

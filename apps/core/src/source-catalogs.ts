@@ -77,6 +77,11 @@ export function folderOf(id: string): string {
   return id.replace('/', '__');
 }
 
+/** The slug of a skill from its folder (the repository's name for a SKILL.md at the root). */
+export function skillSlug(folder: string): string {
+  return folder.toLowerCase().replace(/[._]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
+}
+
 /** The license a license file states, when it is a common one; null for any other text. */
 export function detectLicense(text: string): string | null {
   const head = text.slice(0, 4000);

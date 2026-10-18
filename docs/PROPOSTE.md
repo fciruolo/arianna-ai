@@ -382,7 +382,7 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 | Attività: cosa è cambiato | Modelli, skill e connessioni nuovi o tolti, come osservazioni | Pagina «Cosa è cambiato» locale, solo nomi e versioni | costruita: D-233, ramo `task/cosa-e-cambiato`, Impostazioni → Cosa è cambiato | nessuno | 5-8 h |
 | Consenso del browser per azione | Consenso per conversazione e per clic, «Share result», «Take over» | Regole del browser di D-095 tappa 3 | nuova: domanda 12 | alta | +4-6 h in D-095 |
 | Campo di scrittura più ricco | Menu «+» unico, scorciatoie ai modelli preferiti, bozze per sessione | Menu «+», tasti per i modelli, bozza per conversazione | costruita: D-231, ramo `task/campo-piu-bozze`, menu «+» nel campo della chat | nessuno | 4-6 h |
-| Importare la configurazione di Claude | Un agente sposta plugin e skill di Claude Cowork | Skill personali di Claude Code nel catalogo D-161 | nuova: domanda 14 | media | 4-6 h |
+| Importare la configurazione di Claude | Un agente sposta plugin e skill di Claude Cowork | Skill personali di Claude Code nel catalogo D-161 | costruita: D-255, ramo `task/d255-skill-claude-code`, «Le tue skill di Claude Code» in Impostazioni → Skill e stili e `pnpm skills:catalog import-claude`; private (L2) finché non le segni condivisibili | media | 4-6 h |
 | Den, organizzazioni, SSO, analisi d'organizzazione | Piano di controllo per team | Un utente solo | fuori: fuori scopo | — | — |
 | 50+ fornitori con chiavi, modello gratuito «Auto», AI Gateway | Modelli via API con chiavi o crediti | Solo binari ufficiali con abbonamento e modello locale | fuori: D-002, «Mai token OAuth» | alta | — |
 | Connettori Google Workspace, Microsoft 365, Slack (Workbot) | OAuth verso servizi cloud, risposte su Slack | Nessun canale esterno con dati L2 | fuori: regola privacy, D-110 (Telegram spento) | alta | — |
@@ -398,7 +398,7 @@ Conteggio: 10 già ci sono, 5 in coda, 11 nuove (domande 4-14), 5 righe fuori pe
 - **Implementiamo, in coda:** 4 «Ferma», coda dei messaggi e modifica mentre Arianna risponde (6-10 h); 6 «Cruscotto» personale con riquadri fissati dalla chat e aggiornati dalle routine (15-25 h, scelta diversa dalla consigliata); 7 vista affiancata con «Affianca» (6-10 h, scelta diversa dalla consigliata; costruita sul ramo `task/affianca`, D-234, in attesa della prova); 8 «Chiedi a lato» (5-8 h; costruita sul ramo `task/chiedi-a-lato`, D-232, in attesa della prova); 9 immagini e file incollati in chat, sempre Privati (L2) e letti solo dal modello locale (10-16 h più la scelta di un modello che legge le immagini; scelta diversa dalla consigliata); 10 pagina «Consumi» (6-10 h; costruita sul ramo `task/consumi`, D-210, in attesa della prova); 11 pagina «Cosa è cambiato» (5-8 h, scelta diversa dalla consigliata); 13 campo di scrittura con menu «+», tasti per i modelli preferiti e bozza per conversazione (4-6 h).
 - **Dopo D-110:** 5 calendario delle routine con creazione da un'ora libera (8-12 h); il Cruscotto (6) si aggiorna con le routine, quindi la parte di aggiornamento aspetta anch'essa D-110.
 - **In D-095 tappa 3:** 12 regole di consenso del browser (per conversazione, per azione, «Condividi il risultato», «Prendi il controllo»).
-- **Più avanti:** 14 importare le skill di Claude Code nel catalogo.
+- **Più avanti:** 14 importare le skill di Claude Code nel catalogo (scelta il 2026-10-18; costruita sul ramo `task/d255-skill-claude-code`, D-255, in attesa della prova).
 
 ---
 

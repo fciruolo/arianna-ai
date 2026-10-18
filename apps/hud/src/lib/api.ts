@@ -13,6 +13,7 @@ import type { NewsPair } from './design-news.ts';
 import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
+import type { ClaudeSkillsStatus } from './claude-skills.ts';
 import type { AgentRoleListing, AgentRoleText, AgentsStatus } from './agents-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ClientDashboard } from './client-dashboard.ts';
@@ -841,6 +842,26 @@ export async function listSkills(): Promise<SkillListing> {
 /** The text of one skill (`owner/repo/slug`), with source, commit and license at the head. */
 export async function loadSkill(id: string): Promise<SkillText> {
   return (await call<{ skill: SkillText }>('GET', `/api/skills-catalog/skill?id=${encodeURIComponent(id)}`)).skill;
+}
+
+/** The user's own skills of Claude Code (D-255): what was copied, with the label of each. */
+export async function loadClaudeSkills(): Promise<ClaudeSkillsStatus> {
+  return call<ClaudeSkillsStatus>('GET', '/api/skills-catalog/claude');
+}
+
+/** «Importa»/«Aggiorna»: the core reads the skills folder of Claude Code again and replaces the copy. */
+export async function importClaudeSkills(): Promise<ClaudeSkillsStatus> {
+  return call<ClaudeSkillsStatus>('POST', '/api/skills-catalog/claude/import', {});
+}
+
+/** «Togli»: deletes the copy; the folder of Claude Code stays as it is. */
+export async function removeClaudeSkills(): Promise<ClaudeSkillsStatus> {
+  return call<ClaudeSkillsStatus>('POST', '/api/skills-catalog/claude/remove', {});
+}
+
+/** Marks one skill shareable with the agents in the cloud (L1), or private again (L2). */
+export async function shareClaudeSkill(skill: string, shared: boolean, sha256?: string): Promise<ClaudeSkillsStatus> {
+  return call<ClaudeSkillsStatus>('POST', '/api/skills-catalog/claude/share', { skill, shared, ...(sha256 === undefined ? {} : { sha256 }) });
 }
 
 /** The catalog of agents (D-079): the sources followed with their versions, the queue, the space and the suggestions. */

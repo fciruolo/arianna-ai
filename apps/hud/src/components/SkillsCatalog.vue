@@ -13,6 +13,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { addSkillSource, adoptSkillSource, discardSkillSource, listSkills, loadSkill, loadSkillsCatalog, removeSkillSource, updateSkillSource } from '../lib/api.ts';
 import { useSkillTranslations } from '../lib/skill-translations.ts';
 import { filterSkills, otherFilesText, shouldPollSkills, skillLicenseText, skillsErrorText, translationsNoteText, type SkillListing, type SkillsStatus, type SkillText } from '../lib/skills-catalog.ts';
+import { isOwnSkill } from '../lib/claude-skills.ts';
 import { redoSafetyReport } from '../lib/safety-report.ts';
 import { safetyPoll } from '../lib/safety-poll.ts';
 import { skillSourceRow } from '../lib/source-list.ts';
@@ -92,7 +93,8 @@ const query = ref('');
 const browsing = ref(false);
 // The Italian descriptions (D-185), as in the Studio: asked when the list is read, the English one meanwhile.
 const { status: translations, text: skillText, open: openTranslations } = useSkillTranslations();
-const shown = computed(() => filterSkills(listing.value?.skills ?? [], query.value, translations.value?.translations));
+// The user's own skills of Claude Code have their own card (D-255): never shown here as third-party text.
+const shown = computed(() => filterSkills((listing.value?.skills ?? []).filter((item) => !isOwnSkill(item)), query.value, translations.value?.translations));
 const total = computed(() => status.value?.sources.reduce((sum, source) => sum + (source.adopted?.skills ?? 0), 0) ?? 0);
 async function loadList(): Promise<void> {
   try {
