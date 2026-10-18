@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.141.1] - 2026-10-18
+
 ### Corretto
 
 - Il cardwall mostra la complessità delle card nate da un piano: un piccolo segno S, M o L sulla card, con «Complessità: piccola/media/grande» al passaggio del mouse (D-235).
