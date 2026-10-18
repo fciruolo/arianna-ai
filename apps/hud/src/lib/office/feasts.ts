@@ -57,6 +57,8 @@ export interface FeastDecor {
   feast: OfficeFeast;
   /** Plant tiles that hold the feast's thing instead of the plant (every other one, from the first). */
   props: Point[];
+  /** The same tiles as keys "c,r", worked out once for the drawing of every frame. */
+  propKeys: ReadonlySet<string>;
   /** Wall faces with the garland (none for a feast without one): walls, windows and shelves, never the cardwall. */
   faces: FeastFace[];
   specks: FeastSpeck[];
@@ -99,8 +101,11 @@ export function feastDecor(map: OfficeMap, feast: OfficeFeast): FeastDecor {
       }
     }
   }
-  return { feast, props, faces, specks };
+  return { feast, props, propKeys: new Set(props.map(([c, r]) => `${String(c)},${String(r)}`)), faces, specks };
 }
+
+/** A fixed colour of a thing: the same in light and dark, never from the theme (the 3D view takes it as it is). */
+export type Ink = `#${string}`;
 
 /** Fixed colours of the decorations, the same in light and dark: they are things, not the page. */
 export const FEAST_INK = {
@@ -123,15 +128,15 @@ export const FEAST_INK = {
   wicker: '#c8914a',
   wickerDark: '#9a6a30',
   white: '#f4f1e8',
-  iron: '#2b2b2b',
-  ironLight: '#4a4a4a',
+  iron: '#55555f',
+  ironLight: '#8a8a96',
   /** Lights, streamers and confetti. */
   bright: ['#d94a3d', '#f2c94c', '#4f8fe0', '#7fd19a'],
   /** Eggs and the bunting of Easter. */
   pastel: ['#f2a7c3', '#8fc6ef', '#f5d76e', '#9ed99a'],
   /** The bunting of Saint Patrick: green, white, orange as the flag, and gold. */
   irish: ['#2f9e5b', '#f4f1e8', '#f08a2c', '#f2c94c'],
-} as const;
+} as const satisfies Record<string, Ink | readonly Ink[]>;
 
 const K = FEAST_INK;
 
@@ -212,9 +217,9 @@ const GOLD = [
   'gGgg.g.gGgg',
   'ggggg.ggggg',
   '.ggg.s.ggg.',
-  '.....s.....',
-  '..yyyyyyy..',
-  '.kkkkkkkkk.',
+  '...yYyYy...',
+  '..yyYyyYy..',
+  '.KKKKKKKKK.',
   '.kKkkkkkKk.',
   '.kkkkkkkkk.',
   '..kkkkkkk..',
@@ -238,7 +243,7 @@ export function feastProp(rect: Rect, prop: FeastProp, x: number, y: number): vo
       pixels(rect, BASKET, x + 2, y + 5, { h: K.wicker, H: K.wickerDark, p: K.pastel[0], b: K.pastel[1], y: K.pastel[2] });
       return;
     case 'gold':
-      pixels(rect, GOLD, x + 2, y + 1, { g: K.green, G: K.greenDark, s: K.stem, y: K.gold, k: K.iron, K: K.ironLight });
+      pixels(rect, GOLD, x + 2, y + 1, { g: K.green, G: K.greenDark, s: K.stem, y: K.gold, Y: K.glow, k: K.iron, K: K.ironLight });
       return;
     case 'umbrella': {
       // The canopy in red and white stripes, wider than the tile, over its pole and a little sand.
@@ -315,10 +320,14 @@ export function feastSpeck(rect: Rect, scatter: Exclude<FeastScatter, null>, ton
       rect(K.green, x + 2, y + 1, 1, 1);
       rect(K.greenDark, x + 1, y + 1, 1, 2);
       return;
-    case 'egg':
-      rect(K.pastel[tone % K.pastel.length] ?? K.gold, x, y, 2, 3);
-      rect(K.white, x, y + 1, 2, 1);
+    case 'egg': {
+      // An egg of 3×4 pixels, narrow on top, with a white band.
+      const color = K.pastel[tone % K.pastel.length] ?? K.gold;
+      rect(color, x + 1, y, 1, 1);
+      rect(color, x, y + 1, 3, 3);
+      rect(K.white, x, y + 2, 3, 1);
       return;
+    }
     case 'ball':
       rect(K.red, x, y, 3, 1);
       rect(K.white, x, y + 1, 3, 1);

@@ -179,7 +179,6 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
   const decor = scene.decor ?? null;
   const style = decor === null ? null : FEAST_STYLE[decor.feast];
   if (decor !== null && style !== null && style.scatter !== null) for (const speck of decor.specks) feastSpeck(rect, style.scatter, speck.tone, speck.c * TILE + speck.dx, speck.r * TILE + speck.dy);
-  const props = new Set(decor === null ? [] : decor.props.map(([c, r]) => `${String(c)},${String(r)}`));
   /**
    * A door (D-229): an opening in the wall, the floor seen through it, the
    * wall's top over it as a lintel, the jambs where the wall goes on and the
@@ -491,7 +490,7 @@ export function drawOffice(ctx: CanvasRenderingContext2D, scene: Scene): void {
       const y = r * TILE;
       if (skin !== 'base' && (kind === 'coffee' || kind === 'cabinet')) {
         items.push({ y: y + 14, draw: () => { skinItem(kind, x, y); } });
-      } else if (kind === 'plant' && style !== null && props.has(`${String(c)},${String(r)}`)) {
+      } else if (kind === 'plant' && decor !== null && style !== null && decor.propKeys.has(`${String(c)},${String(r)}`)) {
         // The thing of the feast in place of the plant (D-252).
         items.push({ y: y + 14, draw: () => { feastProp(rect, style.prop, x, y); } });
       } else if (kind === 'plant') {

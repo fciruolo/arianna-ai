@@ -1314,7 +1314,7 @@ L'anteprima `docs/mockups/ufficio.html` lo mostra:
 - **Corrispondenza fra temi e mappe nel repository:**
   - "Corsia" usa la mappa `corsia`;
   - "Salotto animato" e "Cartoon giallo" usano la stessa mappa `salotto`, ognuno con i suoi colori;
-  - gli stagionali usano `base` con decori.
+  - gli stagionali usano `base` con decori (D-252: i decori li disegna il codice con `feastDecor` di `apps/hud/src/lib/office/feasts.ts`, non sono dati della mappa).
 - **Formato** (schema chiuso, versione 1), in due forme chiuse:
 
   ```json
@@ -1338,7 +1338,7 @@ L'anteprima `docs/mockups/ufficio.html` lo mostra:
   }
   ```
 
-  La seconda forma, per gli stagionali, è `{ "format": 1, "base": "base", "decor": [{ "tile": 3, "at": [4, 1] }] }`: la mappa base più arredi decorativi non solidi, senza `rows`.
+  La seconda forma, per gli stagionali, è `{ "format": 1, "base": "base", "decor": [{ "tile": 3, "at": [4, 1] }] }`: la mappa base più arredi decorativi non solidi, senza `rows`. **Sostituita da D-252:** le feste non hanno una mappa né decori come dati; i decori li sceglie e disegna il codice (`feastDecor`) sulla mappa di Base, in 2D e in 3D.
   - **`room`** è `[c0, r0, c1, r1]`, estremi inclusi.
   - **`desk`** è `[c, r, larghezza]`: le tessere della scrivania sono solide. Il posto dell'agente è la tessera sopra il centro, con il personaggio rivolto in basso, e gli altri posti sono le tessere libere accanto.
   - `rooms` dà a una stanza un tipo da un **vocabolario chiuso** (`ufficio`, `studio`, `reparto`, `sala-attesa`, `cucina`, `salotto`, `ingresso`). Serve all'etichetta generica quando un'isola è vuota. Il nome sull'isola viene sempre dal progetto, mai dalla mappa.

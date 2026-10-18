@@ -70,6 +70,7 @@ test('each feast has its own thing, and the decorations sit where the map allows
     const style = FEAST_STYLE[feast];
     assert.equal(decor.props.length, Math.ceil(plants / 2), feast);
     for (const [c, r] of decor.props) assert.equal(tileAt(BASE, c, r), 'plant', feast);
+    assert.deepEqual([...decor.propKeys], decor.props.map(([c, r]) => `${String(c)},${String(r)}`), feast);
     assert.equal(decor.faces.length > 0, style.garland !== null, feast);
     for (const face of decor.faces) {
       const kind = tileAt(BASE, face.c, face.r);
@@ -79,7 +80,7 @@ test('each feast has its own thing, and the decorations sit where the map allows
     assert.equal(decor.specks.length > 0, style.scatter !== null, feast);
     for (const speck of decor.specks) {
       assert.equal(tileAt(BASE, speck.c, speck.r), 'floor', feast);
-      assert.ok(speck.dx >= 0 && speck.dx + 3 <= 16 && speck.dy >= 0 && speck.dy + 3 <= 16, feast);
+      assert.ok(speck.dx >= 0 && speck.dx + 3 <= 16 && speck.dy >= 0 && speck.dy + 4 <= 16, feast);
     }
     assert.deepEqual(feastDecor(BASE, feast), decor, `${feast}: the same at every call`);
   }
@@ -104,6 +105,8 @@ function scene(feast: OfficeFeast | null, mode: 'dark' | 'light', now = 0, reduc
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 test('without a feast the office is drawn as it was; every feast draws it differently, in light and dark', () => {
+  // Here only "no decor" against "decor: null"; the real guarantee that Base stays as it was is the
+  // sha256 fingerprint of the base office in office-skins.test.ts, drawn without any feast.
   for (const mode of ['dark', 'light'] as const) {
     const plain = { ...scene(null, mode) };
     delete plain.decor;
