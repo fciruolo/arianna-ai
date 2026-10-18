@@ -177,6 +177,9 @@ export function latestDue(rule: RoutineRule, from: Date, now: Date): Date | unde
   return last;
 }
 
+/** The months in words, January first. */
+export const MONTHS: readonly string[] = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
 const DAY_SHORT: Record<IsoDay, string> = { 1: 'lun', 2: 'mar', 3: 'mer', 4: 'gio', 5: 'ven', 6: 'sab', 7: 'dom' };
 const DAY_LONG: Record<IsoDay, string> = { 1: 'lunedì', 2: 'martedì', 3: 'mercoledì', 4: 'giovedì', 5: 'venerdì', 6: 'sabato', 7: 'domenica' };
 
@@ -194,15 +197,13 @@ export function daysText(days: readonly IsoDay[]): string {
 /** "sabato 18 ottobre 2026", the local day of `instant` in the zone of the routine. */
 export function dayText(instant: Date, timezone: string): string {
   const wall = wallOf(instant.getTime(), timezone);
-  const months = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
-  return `${DAY_LONG[isoDayOf(wall.year, wall.month, wall.day)]} ${String(wall.day)} ${months[wall.month - 1] ?? ''} ${String(wall.year)}`;
+  return `${DAY_LONG[isoDayOf(wall.year, wall.month, wall.day)]} ${String(wall.day)} ${MONTHS[wall.month - 1] ?? ''} ${String(wall.year)}`;
 }
 
 /** "lunedì 20 ottobre alle 18:00", in the zone of the routine. */
 export function whenText(instant: Date, timezone: string): string {
   const wall = wallOf(instant.getTime(), timezone);
-  const months = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
   const day = DAY_LONG[isoDayOf(wall.year, wall.month, wall.day)];
   const clock = `${String(wall.hour).padStart(2, '0')}:${String(wall.minute).padStart(2, '0')}`;
-  return `${day} ${String(wall.day)} ${months[wall.month - 1] ?? ''} alle ${clock}`;
+  return `${day} ${String(wall.day)} ${MONTHS[wall.month - 1] ?? ''} alle ${clock}`;
 }

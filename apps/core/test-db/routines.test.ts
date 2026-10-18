@@ -29,6 +29,7 @@ import {
   runNow,
   SUMMARY_QUEUE,
   SUMMARY_UNAVAILABLE_TEXT,
+  SUMMARY_NO_FACTS_TEXT,
   SUMMARY_UNCHECKED_TEXT,
   updateRoutine,
   type RoutineEnv,
@@ -141,7 +142,7 @@ test('todo: the open cards of the user by due date; a card done or of an agent i
   assert.ok(!body.includes('Card di un agente finta'));
   assert.ok(!body.includes('Cosa già fatta finta'));
   assert.ok(!body.includes('Busta segreta finta'));
-  assert.match(body, /- 1 riservata, solo contata/);
+  assert.match(body, /\+ 1 riservata, solo contata/);
   assert.equal(message?.label, 'L2');
   await closeCard(soon, 'done');
 });
@@ -461,4 +462,22 @@ test('a summary with numbers not in the data is tried once more, then given up s
   assert.equal(await second.step(), 'done');
   const last = await messagesOf(other.conversationId);
   assert.equal(last[last.length - 1]?.body, 'In sintesi:\n- Nessuna urgenza nei pensieri.');
+});
+
+test('a report that does not read back as data is never given to the model', async () => {
+  const routine = await createRoutine(db().sql, { title: 'Formato finto', days: [1], at: '09:00', timezone: 'UTC', sources: ['notes'] });
+  const [message] = await db().sql<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${routine.conversationId}, 'assistant', 'web', 'L2', 'Un testo che non è un resoconto.') RETURNING id::text`;
+  const [run] = await db().sql<{ id: string }[]>`
+    INSERT INTO routine_runs (routine_id, scheduled_for, trigger, status, message_id, summary_state)
+    VALUES (${routine.id}, now(), 'manual', 'done', ${message?.id ?? null}, 'queued') RETURNING id::text`;
+  await db().sql`
+    INSERT INTO jobs (queue, payload, key, max_attempts)
+    VALUES (${SUMMARY_QUEUE}, ${db().sql.json({ runId: run?.id ?? '', routineId: routine.id, conversationId: routine.conversationId, deadline: new Date(Date.now() + 20 * MINUTE).toISOString() })}, ${`routine-summary:${run?.id ?? ''}`}, 8)`;
+  let calls = 0;
+  const summarizer = createRoutineSummarizer({ sql: db().sql, model: () => fakeModel(() => ((calls += 1), { lines: ['Niente.'] })), busy: () => Promise.resolve(false) });
+  assert.equal(await summarizer.step(), 'failed');
+  assert.equal(calls, 0);
+  const messages = await messagesOf(routine.conversationId);
+  assert.equal(messages[messages.length - 1]?.body, SUMMARY_NO_FACTS_TEXT);
 });

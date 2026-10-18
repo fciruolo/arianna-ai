@@ -10,7 +10,7 @@ import { completeJob, enqueueJob, failJob, type Job } from './jobs.ts';
 import { machineBusy } from './model-evals.ts';
 import { listNotes } from './notes.ts';
 import { ORGANIZE_MODEL, modelUnavailable, organizeRetryDelayMs } from './organize.ts';
-import { dayText, daysText, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
+import { dayText, daysText, MONTHS, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
 import { shortText } from './waiting.ts';
 
 /**
@@ -413,6 +413,14 @@ interface TaskRow {
 /** Up to the clearance of the routine's conversation (L2) a card is named, above it only counted. */
 const REPORT_CLEARANCE: Label = 'L2';
 
+/**
+ * A title as the report writes it: one line, without «·», which in the report
+ * only separates a title from its deadline (reportFacts reads it back).
+ */
+export function reportTitle(title: string): string {
+  return shortText(title.replace(/·/g, '-'), REPORT_TITLE_MAX);
+}
+
 function listOf(rows: readonly TaskRow[]): ReportList {
   const visible: ReportItem[] = [];
   let secret = 0;
@@ -422,7 +430,7 @@ function listOf(rows: readonly TaskRow[]): ReportList {
       secret += 1;
       continue;
     }
-    visible.push({ title: shortText(row.title, REPORT_TITLE_MAX), label, due: row.dueAt });
+    visible.push({ title: reportTitle(row.title), label, due: row.dueAt });
   }
   return { shown: visible.slice(0, REPORT_MAX_ITEMS), more: Math.max(0, visible.length - REPORT_MAX_ITEMS), secret };
 }
@@ -514,9 +522,10 @@ function plural(count: number, one: string, many: string): string {
 }
 
 function listLines(list: ReportList, timezone: string, today: Date, withDue: boolean): string[] {
-  const lines = list.shown.map((item) => `- ${item.title}${withDue && item.due !== null ? ` · ${dueText(item.due, timezone, today)}` : ''}`);
-  if (list.more > 0) lines.push(`- ${plural(list.more, 'e un’altra', 'e altre {n}')}`);
-  if (list.secret > 0) lines.push(`- ${plural(list.secret, '1 riservata, solo contata', '{n} riservate, solo contate')}`);
+  const lines = list.shown.map((item) => `- ${reportTitle(item.title)}${withDue && item.due !== null ? ` · ${dueText(item.due, timezone, today)}` : ''}`);
+  // Counts start with «+ », titles with «- »: a title never reads as a count.
+  if (list.more > 0) lines.push(`+ ${plural(list.more, 'e un’altra', 'e altre {n}')}`);
+  if (list.secret > 0) lines.push(`+ ${plural(list.secret, '1 riservata, solo contata', '{n} riservate, solo contate')}`);
   return lines;
 }
 
@@ -664,7 +673,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
     const allowed = await toChat(env.sql, text, 'L0', source);
     return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
       const messageId = allowed === undefined ? null : await insertMessage(tx, routine.conversationId, allowed, 'L0', routineId);
-      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'missed-offline', reason: null, messageId, summary: false });
+      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'missed-offline', reason: null, messageId, summary: false, at: now });
       await appendEvent(tx, { kind: 'routine.missed', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId } });
       return { kind: 'missed', runId };
     });
@@ -678,7 +687,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
     // The run is recorded as failed and the routine moves on: no retry every 30 seconds for two hours.
     env.onError?.(error);
     return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
-      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'error', messageId: null, summary: false });
+      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'error', messageId: null, summary: false, at: now });
       await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'failed', reason: 'error' } });
       return { kind: 'failed', runId };
     });
@@ -690,12 +699,12 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
   return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
     if (allowed === undefined) {
       const messageId = blockedLine === undefined ? null : await insertMessage(tx, routine.conversationId, blockedLine, 'L0', routineId);
-      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'blocked', messageId, summary: false });
+      const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'blocked', messageId, summary: false, at: now });
       await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'failed', reason: 'blocked' } });
       return { kind: 'failed', runId };
     }
     const messageId = await insertMessage(tx, routine.conversationId, allowed, label, routineId);
-    const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'done', reason: late ? 'late' : null, messageId, summary: routine.summary });
+    const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'done', reason: late ? 'late' : null, messageId, summary: routine.summary, at: now });
     if (routine.summary) await enqueueSummary(tx, { runId, routineId, conversationId: routine.conversationId, from: now });
     await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'done', ...(late ? { late: true } : {}) } });
     return { kind: 'done', runId, late };
@@ -725,7 +734,7 @@ export async function runNow(env: RoutineEnv, routineId: string): Promise<{ runI
     const text = allowed ?? blockedLine;
     const messageId = text === undefined ? null : await insertMessage(tx, routine.conversationId, text, allowed === undefined ? 'L0' : label, routineId);
     const done = allowed !== undefined;
-    const runId = await insertRun(tx, { routineId, scheduledFor: now, trigger: 'manual', status: done ? 'done' : 'failed', reason: done ? null : 'blocked', messageId, summary: done && routine.summary });
+    const runId = await insertRun(tx, { routineId, scheduledFor: now, trigger: 'manual', status: done ? 'done' : 'failed', reason: done ? null : 'blocked', messageId, summary: done && routine.summary, at: now });
     if (done && routine.summary) await enqueueSummary(tx, { runId, routineId, conversationId: routine.conversationId, from: now });
     await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'manual', status: done ? 'done' : 'failed', ...(done ? {} : { reason: 'blocked' }) } });
     return { runId, messageId };
@@ -757,11 +766,11 @@ async function claimRun(sql: Sql, routineId: string, conversationId: string, exp
 
 async function insertRun(
   tx: Queryable,
-  run: { routineId: string; scheduledFor: Date; trigger: 'schedule' | 'manual'; status: RunStatus; reason: RunReason | null; messageId: string | null; summary: boolean },
+  run: { routineId: string; scheduledFor: Date; trigger: 'schedule' | 'manual'; status: RunStatus; reason: RunReason | null; messageId: string | null; summary: boolean; at: Date },
 ): Promise<string> {
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO routine_runs (routine_id, scheduled_for, trigger, status, reason, message_id, summary_state)
-    VALUES (${run.routineId}, ${run.scheduledFor}, ${run.trigger}, ${run.status}, ${run.reason}, ${run.messageId}, ${run.summary ? 'queued' : 'none'})
+    INSERT INTO routine_runs (routine_id, scheduled_for, trigger, status, reason, message_id, summary_state, created_at)
+    VALUES (${run.routineId}, ${run.scheduledFor}, ${run.trigger}, ${run.status}, ${run.reason}, ${run.messageId}, ${run.summary ? 'queued' : 'none'}, ${run.at})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO routine_runs returned no row');
   return row.id;
@@ -858,7 +867,10 @@ export const SUMMARY_PROMPT = [
 /** What the second try is told when the first had numbers that are not in the data. */
 export const SUMMARY_RETRY_NOTE = 'La risposta precedente conteneva numeri o scadenze che non sono nei dati. Riscrivila usando solo i numeri dei dati, i «totale» per i conteggi e le «scadenza» così come sono.';
 
-export const SUMMARY_UNCHECKED_TEXT = 'Sintesi non disponibile: il modello locale ha scritto numeri che il resoconto non ha.';
+export const SUMMARY_UNCHECKED_TEXT = 'Sintesi non disponibile: il modello locale ha scritto cose che il resoconto non dice.';
+
+/** The report could not be read back as data (a format not known): the model is not asked. */
+export const SUMMARY_NO_FACTS_TEXT = 'Sintesi non disponibile: non ho potuto leggere i dati del resoconto.';
 
 export interface FactItem {
   titolo: string;
@@ -891,7 +903,9 @@ const DUE_SUFFIX = / · ((?:scade|scaduta) [^·]+)$/;
 /**
  * The facts of a report, read back from the text reportText wrote (the
  * report is the only thing the summary may know, and its text is written by
- * this file): the totals of each list, its items, the deadlines.
+ * this file): the totals of each list, its items, the deadlines. A title is
+ * always after «- » and has no «·» (reportTitle), counts start with «+ »: no
+ * title reads as a count, a deadline or a heading.
  */
 export function reportFacts(body: string): ReportFacts {
   const facts: ReportFacts = {};
@@ -914,16 +928,16 @@ export function reportFacts(body: string): ReportFacts {
     } else if ((match = /^Pensieri da riordinare: (nessuno|\d+)\.$/.exec(line)) !== null) {
       list = undefined;
       facts.pensieri_da_riordinare = match[1] === 'nessuno' ? 0 : Number(match[1]);
+    } else if (list !== undefined && line.startsWith('+ ')) {
+      const count = line.slice(2);
+      if (count === 'e un’altra') list.altre_non_elencate = 1;
+      else if ((match = /^e altre (\d+)$/.exec(count)) !== null) list.altre_non_elencate = Number(match[1]);
+      else if (count === '1 riservata, solo contata') list.riservate_solo_contate = 1;
+      else if ((match = /^(\d+) riservate, solo contate$/.exec(count)) !== null) list.riservate_solo_contate = Number(match[1]);
     } else if (list !== undefined && line.startsWith('- ')) {
       const item = line.slice(2);
-      if (item === 'e un’altra') list.altre_non_elencate = 1;
-      else if ((match = /^e altre (\d+)$/.exec(item)) !== null) list.altre_non_elencate = Number(match[1]);
-      else if (item === '1 riservata, solo contata') list.riservate_solo_contate = 1;
-      else if ((match = /^(\d+) riservate, solo contate$/.exec(item)) !== null) list.riservate_solo_contate = Number(match[1]);
-      else {
-        const due = DUE_SUFFIX.exec(item);
-        list.elencate.push(due === null ? { titolo: item } : { titolo: item.slice(0, due.index), scadenza: due[1] ?? '' });
-      }
+      const due = DUE_SUFFIX.exec(item);
+      list.elencate.push(due === null ? { titolo: item } : { titolo: item.slice(0, due.index), scadenza: due[1] ?? '' });
     } else if (line.trim() !== '') {
       list = undefined;
     }
@@ -936,14 +950,20 @@ export function summaryInput(facts: ReportFacts, today: string): string {
   return JSON.stringify({ oggi: today, resoconto: facts });
 }
 
+/**
+ * Numbers in words the check reads, only those without another meaning in a
+ * sentence («sei» is also «tu sei», «otto» and «venti» are names and winds).
+ */
 const NUMBER_WORDS: Record<string, number> = {
-  due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6, sette: 7, otto: 8, nove: 9, dieci: 10, undici: 11, dodici: 12, tredici: 13,
-  quattordici: 14, quindici: 15, sedici: 16, diciassette: 17, diciotto: 18, diciannove: 19, venti: 20, trenta: 30,
+  due: 2, tre: 3, quattro: 4, cinque: 5, sette: 7, nove: 9, dieci: 10, undici: 11, dodici: 12, tredici: 13,
+  quattordici: 14, quindici: 15, sedici: 16, diciassette: 17, diciotto: 18, diciannove: 19, trenta: 30,
 };
 
-/** The numbers of a text, in digits or in words (due … venti, trenta), as plain numbers. */
+const NUMBER = /\d+(?:[.,]\d+)?/g;
+
+/** The numbers of a text, in digits or in the words of NUMBER_WORDS, as plain numbers. */
 export function numbersIn(text: string): number[] {
-  const numbers = (text.match(/\d+(?:[.,]\d+)?/g) ?? []).map((value) => Number(value.replace(',', '.')));
+  const numbers = (text.match(NUMBER) ?? []).map((value) => Number(value.replace(',', '.')));
   for (const word of text.toLowerCase().match(/\p{L}+/gu) ?? []) {
     const value = NUMBER_WORDS[word];
     if (value !== undefined) numbers.push(value);
@@ -951,22 +971,28 @@ export function numbersIn(text: string): number[] {
   return numbers;
 }
 
-const MONTH_AFTER = /^\s*(?:gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic)/i;
+/** A month after a number, whole or short, as a word: «9 ottobre», «9 ott», never «settimane» or «novità». */
+const MONTH_AFTER = new RegExp(`^\\s*(?:${[...MONTHS, ...MONTHS_SHORT].join('|')})(?![\\p{L}])`, 'iu');
 
-/** The numbers a summary may write: as a count or as a day of a date. */
-function allowedNumbers(facts: ReportFacts, today: string): { counts: Set<number>; dates: Set<number> } {
+const LISTS = (facts: ReportFacts): (FactList | undefined)[] => [facts.da_fare, facts.in_corso, facts.fatto_dall_ultimo_resoconto, facts.fallito_dall_ultimo_resoconto];
+
+/** The numbers a summary may write: as a count, as a day of a date, as a year. */
+function allowedNumbers(facts: ReportFacts, today: string): { counts: Set<number>; dates: Set<number>; years: Set<number> } {
   const counts = new Set<number>();
-  const dates = new Set(numbersIn(today));
-  const lists = [facts.da_fare, facts.in_corso, facts.fatto_dall_ultimo_resoconto, facts.fallito_dall_ultimo_resoconto];
-  for (const list of lists) {
+  const dates = new Set<number>();
+  const years = new Set<number>();
+  for (const value of numbersIn(today)) (value >= 1000 ? years : dates).add(value);
+  for (const list of LISTS(facts)) {
     if (list === undefined) continue;
-    // The total and the reserved ones; never «altre_non_elencate», which is not how many there are.
+    // The total, the reserved ones, the items listed; never «altre_non_elencate», which is not how many there are.
     counts.add(list.totale);
     counts.add(list.riservate_solo_contate);
+    counts.add(list.elencate.length);
     for (const item of list.elencate) {
       for (const value of numbersIn(item.titolo)) {
         counts.add(value);
         dates.add(value);
+        years.add(value);
       }
       const due = item.scadenza ?? '';
       const days = /(?:da|fra) (\d+) giorni/.exec(due);
@@ -978,33 +1004,63 @@ function allowedNumbers(facts: ReportFacts, today: string): { counts: Set<number
   if (facts.in_corso !== undefined) counts.add(facts.in_corso.da_verificare);
   if (facts.decisioni_in_attesa !== undefined) counts.add(facts.decisioni_in_attesa);
   if (facts.pensieri_da_riordinare !== undefined) counts.add(facts.pensieri_da_riordinare);
-  return { counts, dates };
+  return { counts, dates, years };
 }
 
+/** Significant words of a title: four letters or more, by their first five. */
+function stems(text: string): string[] {
+  return (text.toLowerCase().match(/\p{L}{4,}/gu) ?? []).map((word) => word.slice(0, 5));
+}
+
+/** A sentence names an item when it has at least half of its significant words (at least one). */
+function names(sentence: string, title: string): boolean {
+  const wanted = stems(title);
+  if (wanted.length === 0) return false;
+  const have = new Set(stems(sentence));
+  return wanted.filter((stem) => have.has(stem)).length * 2 >= wanted.length;
+}
+
+/** «scade oggi», «scadono oggi», «in scadenza oggi», «oggi scade». */
+const DUE_TODAY = /\b(?:scad(?:e|ono)\s+(?:proprio\s+)?oggi|in\s+scadenza\s+oggi|oggi\s+scad(?:e|ono))\b/i;
+
 /**
- * The deterministic check of a summary (D-254): a number followed by a month
- * is the day of a date of the data (a deadline, today); any other number, in
- * digits or in words, is a count of the data (a total, the days of a
- * deadline, a number in a title), never the number of «altre» not listed.
- * «Oggi» is said of a deadline only when one is due today. False sends the
- * summary back once, then gives it up.
+ * The deterministic check of a summary (D-254):
+ * - a number followed by a month is the day of a date of the data (a deadline, today);
+ * - a year is the year of today or a number of a title;
+ * - an hour («alle 18», «le 9:30») is free, and so is «le N cose più urgenti» up to the lines allowed;
+ * - any other number, in digits or in the words of NUMBER_WORDS, is a count of the data: a total, the
+ *   items listed, the days of a deadline, a number in a title; never the number of «altre» not listed;
+ * - a sentence that says «scade oggi» of an item it names must be about an item due today.
+ * False sends the summary back once, then gives it up.
  */
 export function summaryChecked(lines: readonly string[], facts: ReportFacts, today: string): boolean {
-  const { counts, dates } = allowedNumbers(facts, today);
-  const text = lines.join('\n');
-  for (const match of text.matchAll(/\d+(?:[.,]\d+)?/g)) {
+  const { counts, dates, years } = allowedNumbers(facts, today);
+  const text = lines
+    .join('\n')
+    // Hours are not data of the report: never checked.
+    .replace(/\b(?:alle|le|ore)\s+\d{1,2}[:.]\d{2}\b|\balle\s+\d{1,2}\b/gi, ' ')
+    // «le 3 cose più urgenti»: how many the model picks, up to the lines it may write.
+    .replace(/\b(?:le|i|gli)\s+(\d+|due|tre)\s+(?:cose|voci|card|carte|attività|task|impegni)\s+più(?![\p{L}])/giu, (match, count: string) =>
+      (Number(count) || NUMBER_WORDS[count.toLowerCase()] || 99) <= SUMMARY_MAX_LINES ? ' ' : match);
+  for (const match of text.matchAll(NUMBER)) {
     const value = Number(match[0].replace(',', '.'));
-    const isDate = MONTH_AFTER.test(text.slice((match.index) + match[0].length));
-    if (!(isDate ? dates : counts).has(value)) return false;
+    if (MONTH_AFTER.test(text.slice(match.index + match[0].length))) {
+      if (!dates.has(value)) return false;
+    } else if (value >= 1000 && Number.isInteger(value)) {
+      if (!years.has(value) && !counts.has(value)) return false;
+    } else if (!counts.has(value)) return false;
   }
   for (const word of text.toLowerCase().match(/\p{L}+/gu) ?? []) {
     const value = NUMBER_WORDS[word];
     if (value !== undefined && !counts.has(value)) return false;
   }
-  const dueToday = [facts.da_fare, facts.in_corso, facts.fatto_dall_ultimo_resoconto, facts.fallito_dall_ultimo_resoconto]
-    .flatMap((list) => list?.elencate ?? [])
-    .some((item) => item.scadenza === 'scade oggi');
-  return dueToday || !/\bscad(?:e|ono|enza|ut[aoie])\b[^.;]*\boggi\b|\boggi\b[^.;]*\bscad/i.test(text);
+  // «scade oggi» only of what is due today: sentence by sentence, about the items it names.
+  const items = LISTS(facts).flatMap((list) => list?.elencate ?? []);
+  for (const sentence of text.split(/[.;!?\n]+/)) {
+    if (!DUE_TODAY.test(sentence)) continue;
+    if (items.some((item) => item.scadenza !== 'scade oggi' && names(sentence, item.titolo))) return false;
+  }
+  return true;
 }
 
 /** The lines of the model, or why they are not usable. */
@@ -1037,7 +1093,7 @@ export interface SummaryEnv {
   timeoutMs?: number;
 }
 
-export type SummaryOutcome = { ok: true } | { ok: false; reason: 'gone' | 'blocked' | 'unavailable' | 'timeout' | 'truncated' | 'bad-response' | 'model-error' | 'interrupted' | 'unchecked' };
+export type SummaryOutcome = { ok: true } | { ok: false; reason: 'gone' | 'blocked' | 'unavailable' | 'timeout' | 'truncated' | 'bad-response' | 'model-error' | 'interrupted' | 'unchecked' | 'no-facts' };
 
 /**
  * One summary: the report message of the run (titles and counts only, never
@@ -1055,6 +1111,8 @@ export async function summarizeRun(env: SummaryEnv, runId: string, signal: Abort
   if (run === undefined || run.state !== 'queued' || run.purged || run.body === null || run.label === null) return { ok: false, reason: 'gone' };
   const label = run.label;
   const facts = reportFacts(run.body);
+  // A report not read back as data (a format not known): the model is not asked.
+  if (Object.keys(facts).length === 0) return { ok: false, reason: 'no-facts' };
   const today = dayText(run.at, run.timezone);
   const input = summaryInput(facts, today);
   const decision = await passGateway(
@@ -1065,12 +1123,13 @@ export async function summarizeRun(env: SummaryEnv, runId: string, signal: Abort
   );
   if (decision.decision !== 'allow') return { ok: false, reason: 'blocked' };
   const timeoutMs = env.timeoutMs ?? SUMMARY_TIMEOUT_MS;
-  const timeout = AbortSignal.timeout(timeoutMs);
   const data = decision.texts.join('\n');
   let lines: string[] | undefined;
   // Two tries at most: the second is told that the first had numbers outside the data.
   for (let attempt = 0; attempt < 2 && lines === undefined; attempt += 1) {
     let read: ReturnType<typeof readSummary>;
+    // Each try has its own time: a slow first one does not leave the second without.
+    const timeout = AbortSignal.timeout(timeoutMs);
     try {
       const result = await env.model().chat({
         model: ORGANIZE_MODEL,
@@ -1244,7 +1303,7 @@ export function createRoutineSummarizer(options: SummarizerOptions): Summarizer 
     }
     await failJob(sql, job.id, worker, outcome.reason, null);
     // Numbers not in the data twice: given up, saying why (D-254).
-    await settleSummary(sql, runId, 'failed', true, outcome.reason === 'unchecked' ? SUMMARY_UNCHECKED_TEXT : undefined);
+    await settleSummary(sql, runId, 'failed', true, outcome.reason === 'unchecked' ? SUMMARY_UNCHECKED_TEXT : outcome.reason === 'no-facts' ? SUMMARY_NO_FACTS_TEXT : undefined);
     return 'failed';
   }
 

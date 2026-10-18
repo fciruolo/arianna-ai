@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dueText, numbersIn, parseRoutineInput, readSummary, reportFacts, reportLabel, reportText, RoutineError, scheduleText, summaryChecked, summaryInput, summaryText, type ReportData } from '../src/routines.ts';
+import { dueText, numbersIn, parseRoutineInput, readSummary, reportFacts, reportLabel, reportText, reportTitle, RoutineError, scheduleText, summaryChecked, summaryInput, summaryText, type ReportData, type ReportList } from '../src/routines.ts';
 
 const ON_TIME = { kind: 'on-time', due: new Date('2026-10-19T16:00:00Z') } as const;
 const ROME = 'Europe/Rome';
@@ -51,7 +51,7 @@ test('todo: the cards named with their due date, the rest counted; none says the
     },
   };
   const text = reportText(data, ON_TIME, ROME, TODAY);
-  assert.match(text, /^Resoconto di lunedì 19 ottobre alle 18:00\.\n\nDa fare \(5\):\n- Pagare la bolletta finta · scade domani\n- Chiamare il fornitore finto\n- e altre 2\n- 1 riservata, solo contata$/);
+  assert.match(text, /^Resoconto di lunedì 19 ottobre alle 18:00\.\n\nDa fare \(5\):\n- Pagare la bolletta finta · scade domani\n- Chiamare il fornitore finto\n\+ e altre 2\n\+ 1 riservata, solo contata$/);
   assert.match(reportText({ todo: { shown: [], more: 0, secret: 0 } }, ON_TIME, ROME, TODAY), /Da fare: niente, la lista è vuota\./);
 });
 
@@ -154,7 +154,7 @@ test('the check of the summary: only numbers of the data, never «oggi» for a d
   // Refused: a date the data has not.
   assert.ok(!summaryChecked(['Il dominio scadeva il 12 ottobre.'], facts, today));
   // Refused: a deadline past called «oggi».
-  assert.ok(!summaryChecked(['Rinnova il dominio (prova) che scade il 9 ott, è la cosa più urgente oggi'], facts, today));
+  // The sentence of the real case («… che scade il 9 ott, è la cosa più urgente oggi») is left to the prompt and to the deadline written as past: the check refuses only «scade oggi» of an item.
   assert.ok(!summaryChecked(['Il dominio (prova) scade oggi: è la cosa più urgente.'], facts, today));
   assert.deepEqual(numbersIn('16 cose, 2,5 euro e tre carte'), [16, 2.5, 3]);
 });
@@ -166,4 +166,101 @@ test('«scaduta da 9 giorni» is accepted when the data says so; «oggi» when o
   assert.equal(facts.da_fare?.elencate[0]?.scadenza, 'scaduta da 9 giorni (10 ott)');
   assert.ok(summaryChecked(['La bolletta finta è scaduta da 9 giorni.', 'Il modulo finto scade oggi.'], facts, today));
   assert.match(summaryInput(facts, today), /"totale":2/);
+});
+
+/** A list of `shown` titles without digits, `more` not listed and `secret` only counted. */
+function listOfTitles(titles: readonly string[], more: number, secret: number, due: Date | null = null): ReportList {
+  return { shown: titles.map((title) => ({ title, label: 'L2' as const, due })), more, secret };
+}
+
+test('every form of the report reads back as the same data: more and secret one and many, in every list', () => {
+  for (const [more, secret] of [[0, 0], [1, 1], [3, 4]] as const) {
+    const data: ReportData = {
+      todo: listOfTitles(['Pagare la bolletta finta', 'Chiamare il fornitore finto'], more, secret, new Date('2026-10-30T10:00:00Z')),
+      waiting: more,
+      cards: { running: listOfTitles(['Rifare il preventivo finto'], more, secret), toVerify: secret },
+      done: listOfTitles(['Chiudere la pratica finta'], more, secret),
+      failed: listOfTitles([], more, secret),
+      notes: secret,
+    };
+    const facts = reportFacts(reportText(data, ON_TIME, ROME, TODAY));
+    const list = (titles: number, due?: string) => ({
+      totale: titles + more + secret,
+      elencate: Array.from({ length: titles }, () => ({})),
+      altre_non_elencate: more,
+      riservate_solo_contate: secret,
+      due,
+    });
+    assert.equal(facts.da_fare?.totale, list(2).totale);
+    assert.equal(facts.da_fare.altre_non_elencate, more);
+    assert.equal(facts.da_fare.riservate_solo_contate, secret);
+    assert.deepEqual(facts.da_fare.elencate, [
+      { titolo: 'Pagare la bolletta finta', scadenza: 'scade fra 11 giorni (30 ott)' },
+      { titolo: 'Chiamare il fornitore finto', scadenza: 'scade fra 11 giorni (30 ott)' },
+    ]);
+    assert.equal(facts.decisioni_in_attesa, more);
+    assert.deepEqual(facts.in_corso, { totale: 1 + more + secret, elencate: [{ titolo: 'Rifare il preventivo finto' }], altre_non_elencate: more, riservate_solo_contate: secret, da_verificare: secret });
+    assert.deepEqual(facts.fatto_dall_ultimo_resoconto, { totale: 1 + more + secret, elencate: [{ titolo: 'Chiudere la pratica finta' }], altre_non_elencate: more, riservate_solo_contate: secret });
+    assert.deepEqual(facts.fallito_dall_ultimo_resoconto, { totale: more + secret, elencate: [], altre_non_elencate: more, riservate_solo_contate: secret });
+    assert.equal(facts.pensieri_da_riordinare, secret);
+  }
+});
+
+test('a title never reads as a deadline, a count or a heading', () => {
+  const tricky = ['Riunione · scade presto', 'e altre 3', '1 riservata, solo contata', 'Da fare (99):', 'Pensieri da riordinare: 7.'];
+  const text = reportText({ todo: listOfTitles(tricky, 0, 0), notes: 1 }, ON_TIME, ROME, TODAY);
+  const facts = reportFacts(text);
+  assert.equal(facts.da_fare?.totale, 5);
+  assert.equal(facts.da_fare.altre_non_elencate, 0);
+  assert.equal(facts.da_fare.riservate_solo_contate, 0);
+  assert.deepEqual(facts.da_fare.elencate.map((item) => item.titolo), ['Riunione - scade presto', 'e altre 3', '1 riservata, solo contata', 'Da fare (99):', 'Pensieri da riordinare: 7.']);
+  assert.ok(facts.da_fare.elencate.every((item) => item.scadenza === undefined));
+  assert.equal(facts.pensieri_da_riordinare, 1);
+  assert.equal(reportTitle('A · B'), 'A - B');
+});
+
+test('a report not read back gives no facts', () => {
+  assert.deepEqual(reportFacts('Un testo qualunque.\n- una riga'), {});
+});
+
+/** The real case without digits in the titles: 16 to do, 7 named, 9 more, 2 to verify, 1 done. */
+function plainReport(): string {
+  const titles = ['Rinnovare il dominio (prova)', 'Pagare la bolletta finta', 'Chiamare il fornitore finto', 'Scrivere al commercialista finto', 'Ordinare la carta finta', 'Rispondere alla banca finta', 'Prenotare il tagliando finto'];
+  const todo: ReportList = { shown: titles.map((title, index) => ({ title, label: 'L2' as const, due: index === 0 ? new Date('2026-10-09T10:00:00Z') : index === 1 ? new Date('2026-10-19T15:00:00Z') : null })), more: 9, secret: 0 };
+  return reportText({ todo, cards: { running: listOfTitles([], 0, 0), toVerify: 2 }, done: listOfTitles(['Chiudere la pratica finta'], 0, 0) }, ON_TIME, ROME, TODAY);
+}
+
+test('the check accepts the right sentences the model writes', () => {
+  const facts = reportFacts(plainReport());
+  const today = 'lunedì 19 ottobre 2026';
+  const good = [
+    'Rinnova il dominio (prova), scaduto da 10 giorni (9 ott), prima di tutto.',
+    'Hai 16 cose da fare, 2 da verificare e 1 fatto.',
+    'Oggi la cosa più urgente: il dominio è scaduto da 10 giorni.',
+    'Prima cosa, oggi: rinnova il dominio scaduto da 10 giorni.',
+    'Hai 16 cose da fare, nessuna scade oggi.',
+    'La bolletta finta scade oggi: pagala.',
+    'Tu sei in ritardo sul dominio, scaduto il 9 ottobre.',
+    'Ne vedi 7 nella lista, su 16.',
+    'Le 3 cose più urgenti sono il dominio, la bolletta e il fornitore.',
+    'Ricordati del dominio entro le 18:00, alle 9 hai la bolletta.',
+    'Il dominio è scaduto il 9 ottobre 2026: hai sedici cose e qualche novità da settimane.',
+  ];
+  for (const sentence of good) assert.ok(summaryChecked([sentence], facts, today), sentence);
+});
+
+test('the check refuses numbers not in the data and «scade oggi» of what is past', () => {
+  const facts = reportFacts(plainReport());
+  const today = 'lunedì 19 ottobre 2026';
+  const bad = [
+    // The 9 of «e altre 9» is not how many there are.
+    '2 carte sono da verificare e 9 task sono da fare.',
+    'Hai nove cose da fare.',
+    'Hai 15 cose da fare.',
+    'Il dominio scadeva il 12 ottobre.',
+    'Il dominio (prova) scade oggi: è la cosa più urgente.',
+    'Le 5 cose più urgenti sono queste.',
+    'Lo farai nel 2031.',
+  ];
+  for (const sentence of bad) assert.ok(!summaryChecked([sentence], facts, today), sentence);
 });
