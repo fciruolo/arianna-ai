@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { type Answer, type LoadedAgent } from '@arianna/agents';
-import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
+import { defaultCloudModels, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { ApprovalChoiceError, listApprovals, loadApproval } from '../src/approvals.ts';
@@ -26,6 +26,7 @@ import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { createTask, loadTask, moveTask, type Task } from '../src/tasks.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
+import { configWithLocalModel } from './support/config.ts';
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -34,7 +35,7 @@ const HOME = join(ROOT, 'data', 'test-tmp', `card-plans-${randomUUID()}`);
 const REPO = join(HOME, 'repos', 'site');
 const FIXTURES = join(ROOT, 'packages', 'executors', 'test', 'fixtures');
 const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
-const BASE = loadConfig();
+const BASE = configWithLocalModel();
 const PROJECTS = ['site'];
 const agents = new Map<string, LoadedAgent>(committedAgents(ROOT));
 const OPTIONS = {
