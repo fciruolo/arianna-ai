@@ -72,6 +72,13 @@ export function isThoughtsPath(pathname: string): boolean {
   return pathname === THOUGHTS_PATH || pathname === `${THOUGHTS_PATH}/`;
 }
 
+/** The routines (D-110 tappa A, D-254): recurring reports in their own chats. */
+export const ROUTINES_PATH = '/routine';
+
+export function isRoutinesPath(pathname: string): boolean {
+  return pathname === ROUTINES_PATH || pathname === `${ROUTINES_PATH}/`;
+}
+
 /** The Dashboard (D-248): the answers pinned from the chat. */
 export const DASHBOARD_PATH = '/dashboard';
 /** Its first address, before the user renamed the page (2026-10-17): it leads to the new one. */

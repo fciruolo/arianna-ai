@@ -113,6 +113,8 @@ export interface Conversation {
   sideMessageId?: string | null;
   /** Dashboard (D-248): the conversation a refresh of a tile is for; the page never opens one. */
   dashboardOf?: string | null;
+  /** The conversation of a routine (D-110, D-254): the left bar marks it with an «R». Optional: a core without routines sends none. */
+  routine?: boolean;
 }
 
 /** A side thread of a conversation (D-232): the answer it is about and its own conversation. */

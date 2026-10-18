@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -41,6 +41,8 @@ const emit = defineEmits<{
   secretary: [];
   god: [];
   thoughts: [];
+  /** The routines (D-110 tappa A, D-254). */
+  routines: [];
   /** The Dashboard (D-248). */
   dashboard: [];
   knowledge: [];
@@ -75,6 +77,8 @@ const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> 
   // The Studio (I-19, D-184): the Designer's mockups, isolated, with comments and exports.
   studio: { label: 'Studio', icon: 'studio' },
   thoughts: { label: 'Pensieri', icon: 'thoughts' },
+  // The routines (D-110 tappa A, D-254): recurring reports, each in its own chat marked «R».
+  routines: { label: 'Routine', icon: 'routine', title: 'Appuntamenti ricorrenti: il resoconto arriva nella chat della routine' },
   knowledge: { label: 'Conoscenza', icon: 'knowledge' },
   // The finances (I-18, D-183): private, they never leave this Mac.
   finance: { label: 'Finanze', icon: 'finance' },
@@ -118,6 +122,7 @@ function go(area: NavArea): void {
     case 'cardwall': emit('cardwall'); break;
     case 'studio': emit('studio'); break;
     case 'thoughts': emit('thoughts'); break;
+    case 'routines': emit('routines'); break;
     case 'knowledge': emit('knowledge'); break;
     case 'finance': emit('finance'); break;
     case 'god': emit('god'); break;

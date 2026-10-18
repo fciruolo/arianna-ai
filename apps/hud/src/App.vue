@@ -30,6 +30,7 @@ import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import DashboardPage from './components/DashboardPage.vue';
+import RoutinesPage from './components/RoutinesPage.vue';
 import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
@@ -63,6 +64,8 @@ import {
   isThoughtsPath,
   isDashboardPath,
   DASHBOARD_PATH,
+  isRoutinesPath,
+  ROUTINES_PATH,
   isVoiceTrialPath,
   knowledgeFocus,
   knowledgePathFor,
@@ -86,7 +89,7 @@ import { canSplit, paneId, splitFits, splitFromSearch, splittable, withSplit, ty
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, mentionable, refusedDraft, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, routinesVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, mentionable, refusedDraft, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -422,9 +425,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -499,6 +502,11 @@ function openGodChat(workspace: string): void {
 /** The Dashboard (D-248): the answers pinned from the chat. */
 function openDashboard(): void {
   openPage('dashboard', DASHBOARD_PATH, 'Dashboard');
+}
+
+/** The routines (D-110 tappa A, D-254). */
+function openRoutines(): void {
+  openPage('routines', ROUTINES_PATH, 'Routine');
 }
 
 /** The thoughts (D-090). */
@@ -691,6 +699,10 @@ function followMain(): void {
   if (legacy !== undefined) {
     window.history.replaceState(window.history.state, '', settingsPathFor(legacy));
     openSettings(legacy);
+    return;
+  }
+  if (isRoutinesPath(window.location.pathname)) {
+    openRoutines();
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
@@ -1026,6 +1038,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @create="openNew"
       @secretary="openSecretary"
       @thoughts="openThoughts"
+      @routines="openRoutines"
       @dashboard="openDashboard"
       @god="openGod"
       @knowledge="openKnowledge()"
@@ -1089,6 +1102,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Dashboard</b></template>
+          <template v-else-if="page === 'routines'">Arianna / <b class="font-medium text-ink">Routine</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
@@ -1208,6 +1222,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <DashboardPage v-else-if="page === 'dashboard'" @open="openConversation" @chat="openChat()" />
+      <RoutinesPage v-else-if="page === 'routines'" :version="routinesVersion" @open="openConversation" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />

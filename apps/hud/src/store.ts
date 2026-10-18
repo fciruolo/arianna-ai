@@ -77,6 +77,8 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
   const approvals = ref<Approval[]>([]);
   /** Goes up when a card of the cardwall or a commitment may have changed (I-13, D-152): the page reads the wall again. */
   const cardsVersion = ref(0);
+  /** Grows at every event of a routine (D-254): the page «Routine» reads them again. */
+  const routinesVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
   /** A message the core refused: the page puts it back in the field, never lost (D-219). */
@@ -1195,6 +1197,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
     if (CARD_EVENTS.has(event.kind)) cardsVersion.value += 1;
+    if (event.kind.startsWith('routine.')) routinesVersion.value += 1;
     switch (event.kind) {
       case 'conversation.model':
       case 'conversation.pinned':
@@ -1458,7 +1461,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     window.clearTimeout(soonTimer);
   }
 
-  return { onLive, listenLive, seeAlso, reloadConversation, openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { onLive, listenLive, seeAlso, reloadConversation, openStudioChat, cardsVersion, routinesVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, mentionable, refusedDraft, queue, stopAnswer, editQueued, removeQueued, sendQueuedNow, resumeQueue, models, projects, directAgents, offInterlocutors, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, themes, refreshThemes, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, chooseCharacter, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
