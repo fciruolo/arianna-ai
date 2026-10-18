@@ -88,6 +88,7 @@ import { conversationOfTask, createNoticeBoard, createNotifier } from './notific
 import { createImWatcher } from './im-watch.ts';
 import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
 import { createSecretaryTicker } from './reminders.ts';
+import { createRoutineService, createRoutineSummarizer, createRoutineTicker } from './routines.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
@@ -756,6 +757,21 @@ const organizer = createNoteOrganizer({
   fetchSites: () => settings.current().capture.fetchSites,
   onError: report,
 });
+// The routines (D-110 tappa A, D-254): the report written by code in each routine's chat at its
+// time, then three lines of the local model without tools, which wait for oMLX as the notes do (D-100).
+const routineEnv = { sql, home: config.home, rules };
+const routines = createRoutineService(routineEnv);
+const routineSummarizer = createRoutineSummarizer({
+  sql,
+  model: localModel,
+  modelReady: () =>
+    organizeModelReady(
+      settings.current().local.endpoints,
+      (id) => localServers.isAvailable(id),
+      (id) => localServers.isSettling(id),
+    ),
+  onError: report,
+});
 // "Genera personaggio" (D-123): the model of [sprites], read at each request; the brief passes the gateway.
 const sprites = createSpriteGenerator({
   model: () => settings.current().sprites.model,
@@ -1124,6 +1140,7 @@ const server = await startApiServer({
   services,
   designCatalog,
   skillsCatalog,
+  routines,
   agentsCatalog: agentsCatalogApi,
   styleExamples,
   skillTranslations,
@@ -1292,6 +1309,7 @@ try {
 // New notes left by pnpm kb:capture or by a previous run: queued again, at most MAX_RESUMED.
 const { resumed } = await organizer.start();
 if (resumed > 0) console.log(`Notes: ${String(resumed)} queued to be organized`);
+await routineSummarizer.start();
 
 // The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing];
 // with the voice off nothing rings.
@@ -1350,6 +1368,12 @@ const stopNotices = await live.subscribe(notifier.subscriber);
 const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, ims: { projects: projectContainers, env: { home: config.home, rules } }, onError: report });
 secretaryTicker.start();
 
+// The routines (D-110 tappa A, D-254): every 30 seconds the ones whose time has come; after the
+// Mac slept or the core was off, within two hours the report says sorry for the delay, beyond it
+// one line says the run was missed. Started after the notifier, as the secretary's.
+const routineTicker = createRoutineTicker({ ...routineEnv, onError: report });
+routineTicker.start();
+
 // The IM between meetings (D-167, P4b): the closing asked in the secretary
 // conversation once the meeting is over, and the items of a card in "Fatto".
 // The subtasks of GOD move on every 15 seconds (D-127).
@@ -1381,6 +1405,7 @@ async function shutdown(): Promise<void> {
   await services.stopAll();
   settings.close();
   secretaryTicker.stop();
+  routineTicker.stop();
   imWatcher.stop();
   clearInterval(godTicker);
   clearInterval(changesTicker);
@@ -1399,6 +1424,7 @@ async function shutdown(): Promise<void> {
   await modelActions.stop();
   localReload.stop();
   await organizer.stop();
+  await routineSummarizer.stop();
   await Promise.all(workers.map((one) => one.stop()));
   memory.stop();
   await localServers.stop();

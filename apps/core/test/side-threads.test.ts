@@ -35,6 +35,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     sideOf: null,
     sideMessageId: null,
     dashboardOf: null,
+    routine: false,
     seriesCharacter: null,
     createdAt: new Date(0),
     lastMessageAt: null,

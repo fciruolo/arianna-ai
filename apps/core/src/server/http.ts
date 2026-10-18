@@ -72,6 +72,7 @@ import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '..
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
 import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
+import { RoutineError, type RoutineService } from '../routines.ts';
 import {
   alerts as financeAlerts,
   createAccount as createFinanceAccount,
@@ -283,6 +284,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** The routines (D-110 tappa A, D-254): the page «Routine» and «Prova adesso»; without it the routes answer 404. */
+  routines?: RoutineService;
   /** The catalog of agents (D-079): sources, download, adopt, discard, read a role; without it the routes answer 404. */
   agentsCatalog?: AgentsCatalog;
   /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
@@ -597,6 +600,7 @@ interface RouteOptions {
   attachments?: ApiServerOptions['attachments'];
   designCatalog?: DesignCatalog | undefined;
   skillsCatalog?: SkillsCatalog | undefined;
+  routines?: RoutineService | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -2356,7 +2360,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog, routines }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2374,6 +2378,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
+    ...routineRoutes(routines),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards, stopCard),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
@@ -2900,6 +2905,47 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * The routines (D-110 tappa A, D-254): the cards of the page «Routine», the
+ * form (closed choices and one line of title), pause, resume, «Togli» and
+ * «Prova adesso», which writes the report in the routine's chat now.
+ */
+function routineRoutes(routines: RoutineService | undefined): Route[] {
+  const need = (): RoutineService => {
+    if (routines === undefined) throw new HttpError(404, 'not found');
+    return routines;
+  };
+  return [
+    route('GET', '/api/routines', async () => ({ body: { routines: await need().list() } })),
+    route('POST', '/api/routines', async (request) => ({ status: 201, body: { routine: await need().create(await readJson(request)) } })),
+    route('PATCH', '/api/routines/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      return { body: { routine: await need().update(id, await readJson(request)) } };
+    }),
+    route('POST', '/api/routines/:id/pause', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { routine: await need().pause(id) } };
+    }),
+    route('POST', '/api/routines/:id/resume', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { routine: await need().resume(id) } };
+    }),
+    route('POST', '/api/routines/:id/retire', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      await need().retire(id);
+      return { body: { retired: id } };
+    }),
+    route('POST', '/api/routines/:id/run', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { status: 201, body: await need().runNow(id) };
     }),
   ];
 }
@@ -4192,6 +4238,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
+  if (error instanceof RoutineError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
   if (error instanceof TrialError || error instanceof CloneError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
   if (error instanceof CallError) {
     const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409, 'agent-off': 409 }[error.code];
@@ -4353,6 +4400,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     attachments: options.attachments,
     designCatalog: options.designCatalog,
     skillsCatalog: options.skillsCatalog,
+    routines: options.routines,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...profileRoutes(sql));
