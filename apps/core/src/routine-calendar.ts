@@ -17,6 +17,8 @@ export const CALENDAR_MAX_DAYS = 14;
 
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY = 86_400_000;
+/** A time just gone of an active routine stays drawn while the ticker writes its run (it looks every 30 seconds). */
+export const CALENDAR_GRACE_MS = 5 * 60_000;
 
 export interface CalendarQuery {
   /** First local day, "YYYY-MM-DD", included. */
@@ -173,7 +175,8 @@ export function calendarOf(query: CalendarQuery, routines: readonly CalendarRout
       const key = runKey(routine.id, at);
       const run = scheduled.get(key);
       // The past is what ran: a time gone by without a run is not drawn (after a change of the rule it was never its time).
-      if (run === undefined && at.getTime() <= now.getTime()) continue;
+      const gone = routine.status === 'active' ? now.getTime() - CALENDAR_GRACE_MS : now.getTime();
+      if (run === undefined && at.getTime() <= gone) continue;
       if (run !== undefined) used.add(key);
       entries.push({ routineId: routine.id, at, ...place(at, query.timezone), run: run === undefined ? null : { status: run.status, reason: run.reason, trigger: run.trigger }, planned: true });
     }

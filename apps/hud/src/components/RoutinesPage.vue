@@ -77,6 +77,8 @@ const storage = (() => {
 const view = ref<RoutinesView>(readView(storage));
 watch(view, (value) => writeView(storage, value));
 const formElement = ref<HTMLFormElement | null>(null);
+/** The routine just saved: the calendar brings its block in sight. */
+const focus = ref<string | null>(null);
 
 /** The form in sight, after a click in the calendar far below it. */
 function showForm(): void {
@@ -146,10 +148,10 @@ async function save(): Promise<void> {
   const sent: RoutineForm = { ...form.value, title: form.value.title.trim() };
   try {
     if (editing.value === 'new') {
-      await createRoutine(sent);
+      focus.value = (await createRoutine(sent)).id;
       say('Routine creata: il primo resoconto arriva all’ora scelta.');
     } else if (editing.value !== null) {
-      await updateRoutine(editing.value, sent);
+      focus.value = (await updateRoutine(editing.value, sent)).id;
       say('Routine salvata.');
     }
     closeForm();
@@ -290,7 +292,7 @@ onBeforeUnmount(() => {
           </div>
         </form>
 
-        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :version="version" @edit="editFromCalendar" @create="startNewAt" />
+        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :focus="focus" @edit="editFromCalendar" @create="startNewAt" @focused="focus = null" />
 
         <div v-else-if="loaded && routines.length === 0 && editing === null && problem === null" class="rounded-xl border border-dashed border-line-strong px-5 py-9 text-center text-muted">
           <b class="mb-1.5 block text-[16px] text-ink">{{ ROUTINES_EMPTY_TITLE }}</b>

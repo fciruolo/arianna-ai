@@ -169,3 +169,17 @@ test('the past is what ran: a time gone by without a run is not drawn, one with 
     ['2026-10-13 done', '2026-10-15 -', '2026-10-16 -'],
   );
 });
+
+test('an active routine just due stays drawn for 5 minutes while the ticker writes its run; a paused one does not', () => {
+  // Thursday 15 at 18:03 in Rome (16:03 UTC): the 18:00 of today has no run yet.
+  const at = new Date('2026-10-15T16:03:00Z');
+  const active = calendarOf(ROME_WEEK, [routine('a', [4], '18:00')], [], at);
+  assert.deepEqual(
+    active.entries.map((entry) => entry.date),
+    ['2026-10-15'],
+  );
+  const later = calendarOf(ROME_WEEK, [routine('a', [4], '18:00')], [], new Date('2026-10-15T16:06:00Z'));
+  assert.deepEqual(later.entries, []);
+  const paused = calendarOf(ROME_WEEK, [routine('a', [4], '18:00', 'Europe/Rome', { status: 'paused' })], [], at);
+  assert.deepEqual(paused.entries, []);
+});

@@ -11,13 +11,15 @@ import {
   CALENDAR_LOAD_ERROR,
   dayHead,
   dayTitle,
-  FIRST_VISIBLE_HOUR,
+  focusEntry,
   formAt,
+  hourFor,
   HOURS,
   isoDayOf,
   layoutDay,
   nowIn,
   nowLine,
+  startHour,
   stepAnchor,
   TODAY_TEXT,
   visibleDays,
@@ -38,8 +40,9 @@ import type { Routine, RoutineForm } from '../lib/routines.ts';
  * already has. A click on a block opens the routine, on a free hour a new one
  * at that day and hour.
  */
-const props = defineProps<{ routines: Routine[]; version: number }>();
-const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm] }>();
+/** `focus`: a routine just saved, to bring in sight once its times are read. */
+const props = defineProps<{ routines: Routine[]; focus: string | null }>();
+const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm]; focused: [] }>();
 
 /** Pixels of one hour of the grid. */
 const ROW = 44;
@@ -55,9 +58,13 @@ let media: MediaQueryList | undefined;
 let clock: ReturnType<typeof setInterval> | undefined;
 let alive = true;
 let asked = 0;
+/** The first `from` of the week whose opening scroll was done: once per week shown. */
+let scrolledFor: string | null = null;
 
 const range = computed(() => weekRange(anchor.value));
-const today = computed(() => nowIn(zone, now.value));
+/** The zone the times are in: the browser's, or the Mac's when the core did not know the browser's. */
+const viewZone = computed(() => week.value?.timezone ?? zone);
+const today = computed(() => nowIn(viewZone.value, now.value));
 const byId = computed(() => new Map(props.routines.map((routine) => [routine.id, routine])));
 const allDays = computed<CalendarDay[]>(() => {
   if (week.value !== null && week.value.from === range.value.from) return week.value.days;
@@ -84,6 +91,8 @@ async function load(): Promise<void> {
     if (!alive || ask !== asked) return;
     week.value = found;
     problem.value = null;
+    await nextTick();
+    afterLoad();
   } catch {
     if (alive && ask === asked) problem.value = CALENDAR_LOAD_ERROR;
   }
@@ -96,14 +105,40 @@ function step(direction: -1 | 1): void {
 function goToday(): void {
   now.value = new Date();
   anchor.value = today.value.date;
+  scrolledFor = null;
   void nextTick(scrollToStart);
 }
 
+function scrollToHour(hour: number): void {
+  if (scroller.value !== null) scroller.value.scrollTop = hour * ROW;
+}
+
+/** The opening scroll: 06, or the current hour and the first block when they come before. */
 function scrollToStart(): void {
-  const element = scroller.value;
-  if (element === null) return;
-  const hour = line.value === null ? FIRST_VISIBLE_HOUR : Math.max(FIRST_VISIBLE_HOUR, Math.floor(line.value.minute / 60) - 2);
-  element.scrollTop = Math.min(hour, 18) * ROW;
+  const shown = new Set(days.value.map((day) => day.date));
+  const first = entries.value.filter((entry) => shown.has(entry.date)).reduce<number | null>((least, entry) => (least === null ? entry.minute : Math.min(least, entry.minute)), null);
+  scrollToHour(startHour(line.value?.minute ?? null, first));
+}
+
+/** After the times are read: the routine just saved in sight, else the opening scroll once per week. */
+function afterLoad(): void {
+  const focus = props.focus;
+  if (focus !== null) {
+    const found = focusEntry(entries.value, focus, now.value);
+    emit('focused');
+    if (found !== undefined) {
+      if (narrow.value && anchor.value !== found.date) anchor.value = found.date;
+      scrolledFor = range.value.from;
+      void nextTick(() => {
+        scrollToHour(hourFor(found.minute));
+      });
+      return;
+    }
+  }
+  if (scrolledFor !== range.value.from) {
+    scrolledFor = range.value.from;
+    scrollToStart();
+  }
 }
 
 function open(entry: CalendarEntry): void {
@@ -140,7 +175,6 @@ onMounted(() => {
   }
   clock = setInterval(() => (now.value = new Date()), 60_000);
   void load();
-  void nextTick(scrollToStart);
 });
 onBeforeUnmount(() => {
   alive = false;
@@ -249,7 +283,7 @@ onBeforeUnmount(() => {
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-danger" aria-hidden="true" />fallita</span>
       <span class="inline-flex items-center gap-1"><span class="inline-block h-2.5 w-4 rounded-sm border border-line-strong opacity-55" aria-hidden="true" />in pausa</span>
       <span class="inline-flex items-center gap-1"><span class="inline-block h-2.5 w-4 rounded-sm border border-dashed border-accent/70" aria-hidden="true" />proposta</span>
-      <span>Ore in {{ zone }}.</span>
+      <span>Ore in {{ viewZone }}.</span>
       <span class="md:hidden">{{ CALENDAR_HINT }}</span>
     </p>
   </section>

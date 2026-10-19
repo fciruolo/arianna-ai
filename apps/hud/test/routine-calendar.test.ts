@@ -11,13 +11,16 @@ import {
   blockText,
   dayHead,
   dayTitle,
+  focusEntry,
   formAt,
+  hourFor,
   layoutDay,
   mondayOf,
   nowIn,
   nowLine,
   outcomeOf,
   readView,
+  startHour,
   stepAnchor,
   VIEW_KEY,
   visibleDays,
@@ -151,4 +154,23 @@ test('the view is remembered in the browser, and a broken storage falls back to 
     writeView(broken, 'calendar');
   });
   assert.equal(readView(undefined), 'list');
+});
+
+test('the hour the grid opens on: 06, earlier for the current hour or an early block, never before 00', () => {
+  assert.equal(startHour(null, null), 6);
+  assert.equal(startHour(14 * 60, 18 * 60), 6);
+  // At 02:52 a routine at 02:49 (the trial of the user): both in sight.
+  assert.equal(startHour(2 * 60 + 52, 2 * 60 + 49), 1);
+  assert.equal(startHour(null, 4 * 60 + 30), 3);
+  assert.equal(startHour(5 * 60 + 10, null), 4);
+  assert.equal(startHour(0, 10), 0);
+  assert.equal(hourFor(18 * 60), 17);
+  assert.equal(hourFor(20), 0);
+});
+
+test('after a save the view goes to the next time of that routine, else to its first', () => {
+  const list = [entry('a', '2026-10-19', '09:00'), entry('b', '2026-10-20', '07:00'), entry('a', '2026-10-21', '09:00')];
+  assert.equal(focusEntry(list, 'a', new Date('2026-10-20T00:00:00Z'))?.date, '2026-10-21');
+  assert.equal(focusEntry(list, 'a', new Date('2026-10-30T00:00:00Z'))?.date, '2026-10-19');
+  assert.equal(focusEntry(list, 'c', new Date('2026-10-20T00:00:00Z')), undefined);
 });

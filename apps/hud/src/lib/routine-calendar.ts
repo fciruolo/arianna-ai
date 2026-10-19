@@ -212,6 +212,29 @@ export function formAt(date: string, hour: number): RoutineForm {
   return { ...emptyForm(), days: [isoDayOf(date)], at: `${String(hour).padStart(2, '0')}:00` };
 }
 
+/**
+ * The hour the grid opens on: 06, or earlier when the current hour (on the
+ * week of today) or the first block of the columns drawn comes before, with
+ * an hour of margin above; never before 00.
+ */
+export function startHour(nowMinute: number | null, firstBlockMinute: number | null): number {
+  let hour = FIRST_VISIBLE_HOUR;
+  if (nowMinute !== null) hour = Math.min(hour, Math.floor(nowMinute / 60) - 1);
+  if (firstBlockMinute !== null) hour = Math.min(hour, Math.floor(firstBlockMinute / 60) - 1);
+  return Math.max(0, hour);
+}
+
+/** The hour to scroll to for a block: an hour of margin above it. */
+export function hourFor(minute: number): number {
+  return Math.max(0, Math.floor(minute / 60) - 1);
+}
+
+/** The time of a routine to show after it is saved: its first still to come in the entries, else its first. */
+export function focusEntry(entries: readonly CalendarEntry[], routineId: string, now: Date): CalendarEntry | undefined {
+  const own = entries.filter((entry) => entry.routineId === routineId);
+  return own.find((entry) => new Date(entry.at).getTime() >= now.getTime()) ?? own[0];
+}
+
 /** The line of the current hour, when today is among the columns drawn. */
 export function nowLine(days: readonly CalendarDay[], now: { date: string; minute: number }): { column: number; minute: number } | null {
   const column = days.findIndex((day) => day.date === now.date);

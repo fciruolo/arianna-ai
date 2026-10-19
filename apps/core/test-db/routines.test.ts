@@ -427,6 +427,9 @@ test('the calendar of the page (D-257): the times of the week with the outcome; 
     assert.equal((await fetch(`${base}/api/routines/calendar?from=${day}&to=${far}&tz=UTC`)).status, 400);
     assert.equal((await fetch(`${base}/api/routines/calendar?from=${day}&to=${next}&tz=Europe%2FNowhere`)).status, 400);
     assert.equal((await fetch(`${base}/api/routines/calendar?to=${next}`)).status, 400);
+    assert.equal((await fetch(`${base}/api/routines/calendar?from=2026-02-30&to=2026-03-02&tz=UTC`)).status, 400);
+    assert.equal((await fetch(`${base}/api/routines/calendar?from=${day}&to=${day}&tz=UTC`)).status, 400);
+    assert.equal((await fetch(`${base}/api/routines/calendar?from=${next}&to=${day}&tz=UTC`)).status, 400);
   } finally {
     await server.close();
     await live.close();
