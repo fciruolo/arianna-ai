@@ -3,6 +3,7 @@
 // scenario is the first line of the prompt, `scenario: <name>`: the adapter
 // passes no environment of its own, so the prompt is the only way in.
 // It writes what it received to `.fake-claude.json` in its working directory.
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -16,7 +17,10 @@ const flag = (name: string): string | undefined => {
 // Arianna's MCP server (D-261): a file path instead of the empty JSON; read as the binary would, while the run lasts.
 const mcpFlag = flag('--mcp-config') ?? '';
 const mcpConfig: unknown = mcpFlag.startsWith('{') ? undefined : JSON.parse(readFileSync(mcpFlag, 'utf8'));
-writeFileSync(join(process.cwd(), '.fake-claude.json'), JSON.stringify({ argv, env: process.env, prompt, mcpConfig }));
+// The token is written as its sha256: a record in the working directory must not carry it (the canary looks for it there).
+const hashTokens = (text: string): string => text.replace(/Bearer ([A-Za-z0-9_-]+)/g, (_, token: string) => `Bearer sha256:${createHash('sha256').update(token).digest('hex')}`);
+const recordedMcp: unknown = mcpConfig === undefined ? undefined : JSON.parse(hashTokens(JSON.stringify(mcpConfig)));
+writeFileSync(join(process.cwd(), '.fake-claude.json'), JSON.stringify({ argv, env: process.env, prompt, mcpConfig: recordedMcp }));
 const sessionRef = flag('--resume') ?? '00000000-0000-4000-8000-000000000001';
 const tools = (flag('--tools') ?? '').split(',').filter((tool) => tool !== '');
 

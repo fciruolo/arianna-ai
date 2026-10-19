@@ -2,7 +2,7 @@
 // stream (fixtures/fake-claude.ts). The real binary runs in `pnpm eval:live`.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -552,7 +552,10 @@ describe('claude executor with Arianna\'s MCP server (D-261)', () => {
     assert.equal(result.text, 'found it');
     const got = received(path);
     // The binary read the file while the run lasted; the token only there, never in argv or the environment.
-    assert.deepEqual(got.mcpConfig, JSON.parse(config));
+    // The fake records the token as its sha256, never as it is.
+    const hashed = config.replace(/Bearer ([A-Za-z0-9_-]+)/, (_, token: string) => `Bearer sha256:${createHash('sha256').update(token).digest('hex')}`);
+    assert.notEqual(hashed, config);
+    assert.deepEqual(got.mcpConfig, JSON.parse(hashed));
     assert.equal(got.argv[got.argv.indexOf('--mcp-config') + 1], mcp.path);
     assert.equal(got.argv[got.argv.indexOf('--tools') + 1], 'Read,Grep');
     assert.equal(got.argv[got.argv.indexOf('--allowedTools') + 1], 'Read,Grep,mcp__arianna__kb_search,mcp__arianna__list_skills');
