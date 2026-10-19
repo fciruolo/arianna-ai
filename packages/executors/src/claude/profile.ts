@@ -109,8 +109,12 @@ function globEscape(path: string): string {
  * - no network: an empty allowlist that refuses instead of asking, no local
  *   binding (on macOS the loopback services, database and local model
  *   included, stay out of reach), no Unix sockets.
+ *
+ * With Arianna's MCP server (`mcp`, D-261), which runs without `--safe-mode`,
+ * also every hook off (`disableAllHooks`) and no auto memory
+ * (`autoMemoryEnabled: false`), two of the things `--safe-mode` turned off.
  */
-export function claudeSettings(paths: SandboxPaths): string {
+export function claudeSettings(paths: SandboxPaths, options: { mcp?: boolean } = {}): string {
   const workspace = checkFolders('workspace', [paths.workspace]);
   const readable = checkFolders('readable', paths.readable);
   const denied = checkFolders('denied', paths.denied);
@@ -123,6 +127,7 @@ export function claudeSettings(paths: SandboxPaths): string {
       // `//` starts an absolute path; the rule covers every file tool that writes.
       deny: [`Edit(/${globEscape(git)}/**)`, `Edit(/${globEscape(git)})`],
     },
+    ...(options.mcp === true ? { disableAllHooks: true, autoMemoryEnabled: false } : {}),
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
@@ -152,17 +157,25 @@ export function claudeSettings(paths: SandboxPaths): string {
  *   `--allowedTools` one by one, by exact name (`mcp__arianna__<tool>`, never
  *   a wildcard), and not to `--tools`, which on 2.1.303 lists "the built-in
  *   set" only: the server's tools exist because the server lists them, and
- *   are allowed only by name. Not settled: the 2.1.303 binary, read with
- *   `strings`, drops under `--safe-mode` every `--mcp-config` server whose
- *   type is not `sdk` ("ignored (safe mode)"), so with both flags the server
- *   would not connect and the `init` check stops the run (`mcp_servers`):
- *   failing closed until a live run settles it (D-261).
+ *   are allowed only by name.
+ * - Without Arianna's server, `--safe-mode`. With it, not: the 2.1.303
+ *   binary, read with `strings`, drops under `--safe-mode` every
+ *   `--mcp-config` server whose type is not `sdk` ("ignored (safe mode)").
+ *   What `--safe-mode` turned off is closed one by one instead (D-261):
+ *   `--setting-sources ''` loads no settings file (user, project, local: the
+ *   skills, agents, output styles, plugins and hooks they bring; `--restricted`
+ *   does the same, said twice), `claudeSettings` turns hooks and auto memory
+ *   off, `MCP_LAUNCH_ENV` the rest (CLAUDE.md, memories, workflows, bundled
+ *   skills, the plugins' MCP servers, claude.ai connectors, tool search); and
+ *   the `init` check stops the run if anything of the user's profile came in
+ *   all the same (agents, output style, memory paths, skills, plugins).
  * - `--settings` carries the sandbox and the read block (`claudeSettings`).
  * - `--no-session-persistence` when the session must not be saved (D-136):
  *   never together with `--resume`.
  * - `--add-dir` only for the read-only copy of a project's notes (D-166), a
  *   folder the sandbox reads too. `--add-dir` may load a CLAUDE.md of its
- *   folder even under `--safe-mode`: the copy never holds one (`checkCoderNote`).
+ *   folder even under `--safe-mode`: the copy never holds one (`checkCoderNote`);
+ *   with Arianna's server `CLAUDE_CODE_DISABLE_CLAUDE_MDS` closes it too.
  * - Never `--bare`: it needs an API key, and Arianna uses the subscription (D-002).
  */
 export function claudeArgs(options: ProfileOptions): string[] {
@@ -205,9 +218,10 @@ export function claudeArgs(options: ProfileOptions): string[] {
     mcp?.config ?? NO_MCP,
     '--strict-mcp-config',
     '--settings',
-    claudeSettings(options.sandbox),
+    claudeSettings(options.sandbox, { mcp: mcp !== undefined }),
     '--restricted',
-    '--safe-mode',
+    // An empty value of its own, never read as the next flag.
+    ...(mcp === undefined ? ['--safe-mode'] : ['--setting-sources', '']),
     '--disable-slash-commands',
     '--no-chrome',
   );
@@ -251,6 +265,27 @@ function checkMcp(mcp: McpProfile | undefined): McpProfile | undefined {
   return { config, tools: checkMcpTools(tools) };
 }
 
+/**
+ * Set for a run with Arianna's MCP server, which runs without `--safe-mode`
+ * (D-261): each one turns off something `--safe-mode` did, read in the
+ * 2.1.303 binary. `ENABLE_TOOL_SEARCH=false`: with MCP tools the binary may
+ * defer them behind a `ToolSearch` tool of its own (on by default for the
+ * first-party API), one more tool outside the closed list; off, they load up
+ * front and `init` lists exactly the tools allowed.
+ */
+export const MCP_LAUNCH_ENV: Readonly<Record<string, string>> = Object.freeze({
+  CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+  CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+  CLAUDE_CODE_DISABLE_ORG_MEMORY: '1',
+  CLAUDE_CODE_DISABLE_WORKFLOWS: '1',
+  CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: '1',
+  CLAUDE_CODE_DISABLE_CLAUDE_API_SKILL: '1',
+  CLAUDE_CODE_DISABLE_CLAUDE_CODE_SKILL: '1',
+  CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: '1',
+  ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+  ENABLE_TOOL_SEARCH: 'false',
+});
+
 /** The only variables the binary inherits: it finds its login from HOME, and nothing else leaks in. */
 const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR'] as const;
 
@@ -268,11 +303,7 @@ export function claudeEnv(from: NodeJS.ProcessEnv, options: { mcp?: boolean } = 
   }
   env.LANG = 'en_US.UTF-8';
   env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
-  // With MCP tools the binary may defer them behind a `ToolSearch` tool of its
-  // own (tool search, on by default for the first-party API): one more tool,
-  // outside the closed list. `false` (a documented variable of Claude Code)
-  // loads them up front, so that `init` lists exactly the tools allowed (D-261).
-  if (options.mcp === true) env.ENABLE_TOOL_SEARCH = 'false';
+  if (options.mcp === true) Object.assign(env, MCP_LAUNCH_ENV);
   return env;
 }
 
@@ -286,7 +317,22 @@ export interface InitReport {
   skills?: unknown;
   slash_commands?: unknown;
   plugins?: unknown;
+  /** Checked with Arianna's MCP server only (D-261), where `--safe-mode` is off. */
+  agents?: unknown;
+  output_style?: unknown;
+  memory_paths?: unknown;
+  plugin_errors?: unknown;
+  mcp_server_errors?: unknown;
 }
+
+/**
+ * The agents built into the binary, as `init` names them (2.1.288 recorded
+ * the first four; the other two are built in too). Any other is the user's
+ * or a project's, loaded because `--safe-mode` is off (D-261).
+ */
+export const CLAUDE_BUILTIN_AGENTS = ['claude', 'Explore', 'general-purpose', 'Plan', 'statusline-setup', 'claude-code-guide'] as const;
+/** The output style of a session with none of the user's. */
+const DEFAULT_OUTPUT_STYLE = 'default';
 
 /** None; or, with Arianna's server, that one alone and connected (other fields of the entry may come and go). */
 function mcpServersHold(servers: unknown[], arianna: boolean): boolean {
@@ -312,7 +358,10 @@ const isEmptyList = (value: unknown): boolean => value === undefined || (Array.i
  * With `mcp` (D-261) the only server is Arianna's, connected, and the tools
  * are the built-in ones plus exactly the server's tools allowed: another
  * server, a server's tool not given (a `ToolSearch` that defers them
- * included) or a server that failed to connect breaks the profile.
+ * included) or a server that failed to connect breaks the profile. Since
+ * such a run has no `--safe-mode`, also: an agent not built in, an output
+ * style other than the default (the field is required), memory paths, plugin
+ * errors (a plugin tried to load) and MCP server errors.
  */
 export function profileViolations(init: InitReport, expected: { cwd: string; tools: readonly ClaudeTool[]; mcp?: readonly McpToolName[] }): string[] {
   const violations: string[] = [];
@@ -321,7 +370,13 @@ export function profileViolations(init: InitReport, expected: { cwd: string; too
   const expectedTools = [...expected.tools, ...(expected.mcp ?? []).map(mcpToolId)].sort();
   if (tools === undefined || tools.join(',') !== expectedTools.join(',')) violations.push('tools');
   // Required, not just empty: a binary that renamed the field would silence the alarm.
-  if (!Array.isArray(init.mcp_servers) || !mcpServersHold(init.mcp_servers as unknown[], expected.mcp !== undefined)) violations.push('mcp_servers');
+  if (
+    !Array.isArray(init.mcp_servers) ||
+    !mcpServersHold(init.mcp_servers as unknown[], expected.mcp !== undefined) ||
+    (expected.mcp !== undefined && !isEmptyList(init.mcp_server_errors))
+  ) {
+    violations.push('mcp_servers');
+  }
   if (init.permissionMode !== 'dontAsk') violations.push('permissionMode');
   // `none`: the subscription login. Any other source is an API key, billed apart (D-002).
   if (init.apiKeySource !== 'none') violations.push('apiKeySource');
@@ -334,6 +389,15 @@ export function profileViolations(init: InitReport, expected: { cwd: string; too
     (!Array.isArray(plugins) || !plugins.every((plugin) => typeof plugin === 'object' && plugin !== null && (plugin as { path?: unknown }).path === 'builtin'))
   ) {
     violations.push('plugins');
+  }
+  if (expected.mcp !== undefined) {
+    // Plugins that did not load still tried: the user's profile is in.
+    if (!isEmptyList(init.plugin_errors) && !violations.includes('plugins')) violations.push('plugins');
+    const agents = init.agents;
+    if (agents !== undefined && (!Array.isArray(agents) || !agents.every((agent) => (CLAUDE_BUILTIN_AGENTS as readonly unknown[]).includes(agent)))) violations.push('agents');
+    if (init.output_style !== DEFAULT_OUTPUT_STYLE) violations.push('output_style');
+    const memory = init.memory_paths;
+    if (memory !== undefined && !(typeof memory === 'object' && memory !== null && !Array.isArray(memory) && Object.keys(memory).length === 0)) violations.push('memory_paths');
   }
   return violations;
 }

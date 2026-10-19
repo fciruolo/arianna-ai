@@ -125,6 +125,11 @@ switch (scenario) {
     out({ ...init, mcp_servers: [{ name: 'arianna', status: 'failed' }] });
     hang();
     break;
+  case 'arianna-mcp-user-agent':
+    // Without --safe-mode: a personal agent of the user's profile came in.
+    out({ ...init, agents: [...(init.agents as unknown[]), 'my-agent'] });
+    hang();
+    break;
   case 'arianna-mcp-tool-search':
     // Deferred tools behind a search tool of the binary's own.
     out({ ...init, tools: [...tools, 'ToolSearch'] });

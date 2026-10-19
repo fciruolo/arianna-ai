@@ -13,11 +13,13 @@ export {
   type ClaudeStart,
 } from './claude/run.ts';
 export {
+  CLAUDE_BUILTIN_AGENTS,
   CLAUDE_MODELS,
   CLAUDE_TOOLS,
   claudeArgs,
   claudeEnv,
   claudeSettings,
+  MCP_LAUNCH_ENV,
   MODEL_NAME,
   profileViolations,
   SESSION_REF,

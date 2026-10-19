@@ -18,6 +18,7 @@ import {
   claudeSettings,
   createClaudeExecutor,
   nodeToolchain,
+  MCP_LAUNCH_ENV,
   openRepository,
   prepareMcp,
   prepareWorkspace,
@@ -559,6 +560,10 @@ describe('claude executor with Arianna\'s MCP server (D-261)', () => {
     assert.ok(bearer.length >= 43);
     assert.ok(!got.argv.some((arg) => arg.includes(bearer)) && !Object.values(got.env).some((value) => value.includes(bearer)));
     assert.equal(got.env.ENABLE_TOOL_SEARCH, 'false');
+    // What --safe-mode turned off, closed one by one (it would drop the server).
+    for (const [key, value] of Object.entries(MCP_LAUNCH_ENV)) assert.equal(got.env[key], value, key);
+    assert.ok(!got.argv.includes('--safe-mode'));
+    assert.equal(got.argv[got.argv.indexOf('--setting-sources') + 1], '');
     // The call is reported by name: nothing of its arguments nor of its result.
     assert.deepEqual(
       events.filter((event) => event.type === 'tool'),
@@ -572,6 +577,7 @@ describe('claude executor with Arianna\'s MCP server (D-261)', () => {
     for (const [scenario, field] of [
       ['arianna-mcp-failed', 'mcp_servers'],
       ['arianna-mcp-tool-search', 'tools'],
+      ['arianna-mcp-user-agent', 'agents'],
     ] as const) {
       const mcp = await prepared();
       const error = await failure((await start(scenario, { mcp })).run.result);
@@ -587,6 +593,8 @@ describe('claude executor with Arianna\'s MCP server (D-261)', () => {
     const got = received(path);
     assert.equal(got.argv[got.argv.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
     assert.equal(got.env.ENABLE_TOOL_SEARCH, undefined);
+    for (const key of Object.keys(MCP_LAUNCH_ENV)) assert.equal(got.env[key], undefined, key);
+    assert.ok(got.argv.includes('--safe-mode') && !got.argv.includes('--setting-sources'));
     assert.equal(got.mcpConfig, undefined);
   });
 

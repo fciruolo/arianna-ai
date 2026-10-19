@@ -9,8 +9,10 @@ import { after, describe, it } from 'node:test';
 import { resolveHome } from '@arianna/config';
 import {
   claudeArgs,
+  CLAUDE_BUILTIN_AGENTS,
   claudeEnv,
   ClaudeStream,
+  MCP_LAUNCH_ENV,
   MCP_TOOL_NAMES,
   mcpToolId,
   nodeToolchain,
@@ -115,7 +117,11 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
   it('names the file instead of the empty configuration and allows each tool by exact name', () => {
     const args = claudeArgs({ model: 'sonnet', tools: ['Read', 'Grep'], sandbox: SANDBOX, mcp });
     assert.equal(value(args, '--mcp-config'), mcp.config);
-    assert.ok(args.includes('--strict-mcp-config') && args.includes('--restricted') && args.includes('--safe-mode'));
+    assert.ok(args.includes('--strict-mcp-config') && args.includes('--restricted') && args.includes('--disable-slash-commands') && args.includes('--no-chrome'));
+    // --safe-mode would drop the server: no settings file instead, an empty value of its own.
+    assert.ok(!args.includes('--safe-mode'));
+    assert.equal(args.filter((arg) => arg === '--setting-sources').length, 1);
+    assert.equal(value(args, '--setting-sources'), '');
     assert.equal(value(args, '--tools'), 'Read,Grep');
     assert.equal(value(args, '--allowedTools'), 'Read,Grep,mcp__arianna__kb_search,mcp__arianna__list_skills');
     assert.ok(!(value(args, '--allowedTools') ?? '').includes('*'));
@@ -127,7 +133,22 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     const without = claudeArgs({ model: 'sonnet', tools: ['Read', 'Grep'], sandbox: SANDBOX });
     assert.equal(value(without, '--mcp-config'), '{"mcpServers":{}}');
     assert.equal(value(without, '--allowedTools'), 'Read,Grep');
-    const strip = (list: string[]) => list.filter((_, index) => index !== list.indexOf('--mcp-config') + 1 && index !== list.indexOf('--allowedTools') + 1);
+    assert.ok(without.includes('--safe-mode') && !without.includes('--setting-sources'));
+    // Hooks and auto memory off in the settings of a run with the server only.
+    const settings = (list: string[]) => JSON.parse(value(list, '--settings') ?? '{}') as Record<string, unknown>;
+    assert.equal(settings(args).disableAllHooks, true);
+    assert.equal(settings(args).autoMemoryEnabled, false);
+    assert.equal(settings(without).disableAllHooks, undefined);
+    assert.equal(settings(without).autoMemoryEnabled, undefined);
+    assert.deepEqual(settings(args).sandbox, settings(without).sandbox);
+    assert.deepEqual(settings(args).permissions, settings(without).permissions);
+    // The rest is the profile without the server.
+    const strip = (list: string[]) =>
+      list.filter(
+        (arg, index) =>
+          ![list.indexOf('--mcp-config') + 1, list.indexOf('--allowedTools') + 1, list.indexOf('--settings') + 1, ...(list.includes('--setting-sources') ? [list.indexOf('--setting-sources') + 1] : [])].includes(index) &&
+          !['--safe-mode', '--setting-sources'].includes(arg),
+      );
     assert.deepEqual(strip(args), strip(without));
     assert.ok(!claudeArgs({ model: 'sonnet', tools: [], sandbox: SANDBOX }).includes('--allowedTools'));
   });
@@ -149,10 +170,25 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     }
   });
 
-  it('turns tool search off only for a run with the server', () => {
-    assert.equal(claudeEnv({ PATH: 'p' }, { mcp: true }).ENABLE_TOOL_SEARCH, 'false');
-    assert.equal(claudeEnv({ PATH: 'p' }).ENABLE_TOOL_SEARCH, undefined);
-    assert.equal(claudeEnv({ PATH: 'p', ENABLE_TOOL_SEARCH: 'true' }).ENABLE_TOOL_SEARCH, undefined);
+  it('turns off what --safe-mode did, and tool search, only for a run with the server', () => {
+    const env = claudeEnv({ PATH: 'p', HOME: 'h' }, { mcp: true });
+    assert.equal(env.ENABLE_TOOL_SEARCH, 'false');
+    for (const key of [
+      'CLAUDE_CODE_DISABLE_CLAUDE_MDS',
+      'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+      'CLAUDE_CODE_DISABLE_ORG_MEMORY',
+      'CLAUDE_CODE_DISABLE_WORKFLOWS',
+      'CLAUDE_CODE_DISABLE_BUNDLED_SKILLS',
+      'CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS',
+    ]) {
+      assert.equal(env[key], '1', key);
+    }
+    assert.equal(env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
+    assert.deepEqual(Object.keys(env).sort(), [...Object.keys(claudeEnv({ PATH: 'p', HOME: 'h' })), ...Object.keys(MCP_LAUNCH_ENV)].sort());
+    // Without the server, as before; and a variable of the core never overrides one of these.
+    assert.deepEqual(Object.keys(claudeEnv({ PATH: 'p' })).sort(), ['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'LANG', 'PATH']);
+    assert.equal(claudeEnv({ PATH: 'p', ENABLE_TOOL_SEARCH: 'true', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '0' }).ENABLE_TOOL_SEARCH, undefined);
+    assert.equal(claudeEnv({ PATH: 'p', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '0' }, { mcp: true }).CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
   });
 
   it('accepts Arianna\'s server alone and connected, with exactly the tools given', () => {
@@ -165,6 +201,8 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
       skills: [],
       slash_commands: [],
       plugins: [{ path: 'builtin' }],
+      agents: [...CLAUDE_BUILTIN_AGENTS],
+      output_style: 'default',
     };
     const expected = { cwd: '/w', tools: ['Read'] as const, mcp: mcp.tools };
     assert.deepEqual(profileViolations(init, expected), []);
@@ -186,6 +224,31 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     ]) {
       assert.deepEqual(profileViolations({ ...init, tools }, expected), ['tools'], tools.join(','));
     }
+    // Without --safe-mode, the user's profile coming in all the same.
+    for (const [extra, field] of [
+      [{ agents: [...CLAUDE_BUILTIN_AGENTS, 'reviewer'] }, 'agents'],
+      [{ agents: 'Plan' }, 'agents'],
+      [{ output_style: 'Explanatory' }, 'output_style'],
+      [{ output_style: undefined }, 'output_style'],
+      [{ memory_paths: { auto: 'fake/memory' } }, 'memory_paths'],
+      [{ memory_paths: [] }, 'memory_paths'],
+      [{ skills: ['my-skill'] }, 'skills'],
+      [{ slash_commands: ['/mine'] }, 'slash_commands'],
+      [{ plugins: [{ path: 'fake/plugins/mail' }] }, 'plugins'],
+      [{ plugin_errors: [{ plugin: 'mail', type: 'generic-error' }] }, 'plugins'],
+      [{ mcp_server_errors: [{ name: 'gmail' }] }, 'mcp_servers'],
+    ] as const) {
+      assert.deepEqual(profileViolations({ ...init, ...extra }, expected), [field], JSON.stringify(extra));
+    }
+    // Positive: fewer built-in agents, none, no agents field, empty memory paths and errors.
+    for (const extra of [{ agents: ['Explore'] }, { agents: [] }, { agents: undefined }, { memory_paths: {} }, { plugin_errors: [] }, { mcp_server_errors: [] }]) {
+      assert.deepEqual(profileViolations({ ...init, ...extra }, expected), [], JSON.stringify(extra));
+    }
+    // Without the server these stay to --safe-mode, as before.
+    assert.deepEqual(
+      profileViolations({ ...init, tools: ['Read'], mcp_servers: [], agents: ['reviewer'], output_style: 'Explanatory', memory_paths: { auto: 'x' } }, { cwd: '/w', tools: ['Read'] }),
+      [],
+    );
     // Without the server, as before: none at all, and its tools are strangers.
     assert.deepEqual(profileViolations({ ...init, tools: ['Read'] }, { cwd: '/w', tools: ['Read'] }), ['mcp_servers']);
     assert.deepEqual(profileViolations({ ...init, mcp_servers: [] }, { cwd: '/w', tools: ['Read'] }), ['tools']);
