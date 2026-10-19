@@ -18,6 +18,13 @@ export const VOICE_SYSTEM_PROMPT = [
   'I messaggi precedenti della conversazione sono il contesto: possono venire dalla chat scritta.',
 ].join(' ');
 
+/**
+ * After the profile «Su di te» in a call (D-260), L0: the facts help to
+ * understand the user, but whoever is near the phone hears what is said.
+ */
+export const VOICE_PROFILE_RULE =
+  'Usa i fatti sull’utente qui sopra solo per capirlo: non dirli ad alta voce e non ripeterli se l’utente non te li chiede, perché chi è vicino al telefono sente.';
+
 export const DELEGATION_PREFIX = 'DELEGA:';
 /**
  * What the voice reads of the conversation (D-072): the latest messages when

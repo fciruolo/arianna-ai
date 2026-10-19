@@ -14,9 +14,10 @@ import { passGateway } from '../gateway.ts';
 import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
-import { minLabel, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
+import { minLabel, profilePart, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
 import type { RoutineCallScript } from '../routines.ts';
 import { loadTask } from '../tasks.ts';
+import { listUserFacts } from '../user-facts.ts';
 import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT, ROUTINE_NOTE_TEXT } from './outgoing.ts';
 import { gateAnswer, ROUTINE_CALL_TEXT } from './routine-call.ts';
 import type { VoiceService } from './service.ts';
@@ -40,6 +41,7 @@ import {
   type CallReadiness,
   type Speaker,
   type VoicePrompt,
+  VOICE_PROFILE_RULE,
 } from './turns.ts';
 
 /**
@@ -392,6 +394,25 @@ export function createCalls(options: CallsOptions): Calls {
   };
 
   /**
+   * The profile «Su di te» in a call (D-260), as in the written chat of the
+   * same speaker (D-114b): within `clearance`, the lower of the card's and the
+   * conversation's, so in a private call every fact, in a work call the texts
+   * of the shareable ones and the topics of the others, nothing for an L0
+   * card. No tool in a call: past its limit the topics alone. At the end of
+   * the tail, after the persona, so the warm-up reads it during the greeting
+   * (D-072); with it a fixed L0 rule: never say a fact aloud unasked. Never
+   * for a cloud agent: its bridge asks no model.
+   */
+  const voiceProfile = async (clearance: Label): Promise<TailPart[]> => {
+    const profile = profilePart(await listUserFacts(sql), clearance);
+    if (profile === undefined) return [];
+    return [
+      { text: profile.text, label: profile.label, source: profile.source },
+      { text: VOICE_PROFILE_RULE, label: 'L0', source: 'voice:profile-rule' },
+    ];
+  };
+
+  /**
    * What the voice model reads: the anchored window (D-072), allowed by the
    * gateway like the orchestrator does; undefined when the gateway blocks it.
    */
@@ -408,19 +429,21 @@ export function createCalls(options: CallsOptions): Calls {
       const agent = options.agents?.().get(speaker.agent);
       if (agent === undefined) return undefined;
       const ceiling = briefCeiling(agent.card);
+      const clearance = minLabel(conversation.clearance, ceiling);
       prompt = voicePrompt(
         history.filter((message) => isAtMost(message.label, ceiling)),
         'L0',
         session.anchor,
         { content: agentVoiceSystem(agent.prompt), label: promptLabelOf(agent) },
-        voiceTail(speaker.agent, minLabel(conversation.clearance, ceiling), conversation.character),
+        [...voiceTail(speaker.agent, clearance, conversation.character), ...(await voiceProfile(clearance))],
       );
       if (!isAtMost(prompt.label, ceiling)) return undefined;
       target = { kind: 'executor', id: 'local', locality: 'local' };
     } else {
       // Arianna's persona within her card and the conversation; without her card, the fixed sentences alone (default-deny).
       const ceiling = options.agents?.().get(ORCHESTRATOR_AGENT)?.card.maxLabel ?? 'L0';
-      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor, undefined, voiceTail(ORCHESTRATOR_AGENT, minLabel(conversation.clearance, ceiling), conversation.character));
+      const clearance = minLabel(conversation.clearance, ceiling);
+      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor, undefined, [...voiceTail(ORCHESTRATOR_AGENT, clearance, conversation.character), ...(await voiceProfile(clearance))]);
       target = { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' };
     }
     const effective = maxLabel(conversation.effectiveLabel, prompt.label);

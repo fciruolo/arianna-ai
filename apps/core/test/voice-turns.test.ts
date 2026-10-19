@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Message } from '../src/conversations.ts';
-import { agentCallText, agentVoiceSystem, AGENT_VOICE_FRAME, CALL_TEXT, callReadiness, delegationRequest, greetingFor, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voiceMessages, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { profilePart } from '../src/prompt-tail.ts';
+import { agentCallText, agentVoiceSystem, AGENT_VOICE_FRAME, CALL_TEXT, callReadiness, delegationRequest, greetingFor, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voiceMessages, voicePrompt, VOICE_PROFILE_RULE, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 
 const message = (role: Message['role'], body: string, label: Message['label'] = 'L1', id = '1'): Message => ({
@@ -229,4 +230,28 @@ test('voicePrompt with a tail (D-107, tappa A3): its label counts, and voiceMess
   assert.equal(voiceMessages(voicePrompt(history, 'L0'), texts.slice(0, 3))[0]?.content, VOICE_SYSTEM_PROMPT);
   assert.equal(voiceMessages(prompt, [...texts.slice(0, 3), ''])[0]?.content, VOICE_SYSTEM_PROMPT);
   assert.equal(voicePrompt(history, 'L0').label, 'L0');
+});
+
+test('voicePrompt with the profile of a call (D-260): a private fact raises the label, a work block does not; the rule closes the system message', () => {
+  const facts = [
+    { topic: 'città', text: 'Vive a Borgo Finto', label: 'L2' },
+    { topic: 'lavoro', text: 'Sviluppatore web freelance', label: 'L1' },
+  ];
+  const rule = { text: VOICE_PROFILE_RULE, label: 'L0' as const, source: 'voice:profile-rule' };
+  const history = [message('user', 'ciao', 'L1')];
+  const privateBlock = profilePart(facts, 'L2');
+  assert.ok(privateBlock !== undefined);
+  const privately = voicePrompt(history, 'L1', undefined, undefined, [privateBlock, rule]);
+  assert.equal(privately.label, 'L2');
+  const texts = [...privately.messages.map((part) => part.content), ...privately.tail.map((part) => part.content)];
+  const system = voiceMessages(privately, texts)[0]?.content ?? '';
+  assert.ok(system.includes('Vive a Borgo Finto') && system.endsWith(VOICE_PROFILE_RULE));
+
+  // A work call: the shareable text, the private one a topic only; the label stays Interno.
+  const workBlock = profilePart(facts, 'L1');
+  assert.ok(workBlock !== undefined);
+  assert.ok(workBlock.text.includes('Sviluppatore web freelance') && !workBlock.text.includes('Vive a Borgo Finto'));
+  assert.equal(voicePrompt(history, 'L1', undefined, undefined, [workBlock, rule]).label, 'L1');
+  // An L0 card or task reads no fact at all.
+  assert.equal(profilePart(facts, 'L0'), undefined);
 });

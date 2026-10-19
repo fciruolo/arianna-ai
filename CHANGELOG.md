@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Su di te nelle chiamate: in una chiamata su una conversazione privata Arianna (e un agente locale nella sua chat diretta, entro la sua scheda) conosce tutti i fatti che hai scritto di te, in una di lavoro solo quelli «Condivisibili», come nella chat scritta; non li dice ad alta voce se non glieli chiedi, e la risposta prende l'etichetta dei fatti letti; agli agenti nel cloud non arriva nessun fatto (D-260).
+
 ## [0.148.1] - 2026-10-19
 
 ### Corretto

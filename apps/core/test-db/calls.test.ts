@@ -7,6 +7,7 @@ import { request as httpRequest } from 'node:http';
 import { personaBlock, personaParts, type LoadedAgent, type Persona } from '@arianna/agents';
 import { DEFAULT_VOICE } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
+import { MAX_PROFILE_BLOCK } from '@arianna/policy';
 
 import { archiveConversation, ChatError, createConversation, listMessages } from '../src/conversations.ts';
 import { startLiveFeed } from '../src/live.ts';
@@ -15,7 +16,7 @@ import { createCalls, liveCall, listCalls, loadCall, type Calls } from '../src/v
 import { AGENT_OFF_TEXT } from '../src/voice/outgoing.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 import { callWhenDone, scheduleCall } from '../src/voice/ringer.ts';
-import { AGENT_VOICE_FRAME, agentCallText, CALL_TEXT, HISTORY_MESSAGES, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { AGENT_VOICE_FRAME, agentCallText, CALL_TEXT, HISTORY_MESSAGES, VOICE_PROFILE_RULE, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import { createTestDatabase, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
@@ -772,4 +773,161 @@ test('the persona of the speaker closes the system message of a call, within its
     personas = {};
     nextReply = 'Ciao! Tutto bene.';
   }
+});
+
+// D-260: the profile «Su di te» in a call, as in the written chat of the same speaker (D-114b). Invented facts only.
+
+const PROFILE_HEADER = 'Facts the user wrote about themselves';
+const CITY = 'Vive a Borgo Finto';
+const JOB = 'Sviluppatore web freelance';
+const ARIANNA_CARD = {
+  card: { name: 'arianna', description: 'Arianna di prova', maxLabel: 'L2', executors: ['local'], tools: [], limits: { maxSteps: 5, maxMinutes: 5, maxCost: 0 } },
+  prompt: 'Sei Arianna.',
+} as unknown as LoadedAgent;
+
+async function withFacts(facts: readonly { topic: string; text: string; label: 'L1' | 'L2' }[], work: () => Promise<void>): Promise<void> {
+  directAgents.set('arianna', ARIANNA_CARD);
+  try {
+    for (const fact of facts) await db().sql`INSERT INTO user_facts (topic, text, label) VALUES (${fact.topic}, ${fact.text}, ${fact.label}::privacy_label)`;
+    await work();
+  } finally {
+    directAgents.delete('arianna');
+    directAgents.set('traduttore', localAgent('L2'));
+    await db().sql`SELECT user_fact_delete(id) FROM user_facts`;
+    nextReply = 'Ciao! Tutto bene.';
+  }
+}
+
+const TWO_FACTS = [
+  { topic: 'città', text: CITY, label: 'L2' },
+  { topic: 'lavoro', text: JOB, label: 'L1' },
+] as const;
+
+/** The last row of gateway_log now: what is logged after it belongs to the test that reads it. */
+async function lastLogged(): Promise<number> {
+  const [row] = await db().sql<{ id: number }[]>`SELECT coalesce(max(id), 0)::int AS id FROM gateway_log`;
+  return row?.id ?? 0;
+}
+
+/** The highest label the gateway logged for the local reads of a model after the row `after`. */
+async function localReadLabel(after: number): Promise<string | undefined> {
+  const [row] = await db().sql<{ label: string | null }[]>`
+    SELECT max(label)::text AS label FROM gateway_log WHERE target_kind = 'executor' AND locality = 'local' AND decision = 'allow' AND id > ${after}`;
+  return row?.label ?? undefined;
+}
+
+test('a private call reads every fact, the private ones too, already in the warm-up, with the rule not to say them aloud; the reply is Solo locale (D-260)', async () => {
+  await withFacts(TWO_FACTS, async () => {
+    const conversation = await createConversation(db().sql, { mode: 'private' });
+    const since = await lastLogged();
+    const before = asked.length;
+    const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+    await until(() => asked.length > before);
+    const warm = lastAsked();
+    assert.equal(warm.maxTokens, 1);
+    const system = warm.messages[0]?.content ?? '';
+    assert.ok(system.startsWith(VOICE_SYSTEM_PROMPT));
+    assert.ok(system.includes(PROFILE_HEADER) && system.includes(`- città: ${CITY}`) && system.includes(`- lavoro: ${JOB}`));
+    // At the end of the tail, the rule last: the system message stays the same turn after turn.
+    assert.ok(system.endsWith(VOICE_PROFILE_RULE));
+    // The conversation has no message yet: only the private fact makes the warm-up's read Solo locale.
+    assert.equal(await localReadLabel(since), 'L2');
+
+    nextReply = 'Certo, ci penso io.';
+    await directCalls().turn(call.id, tokenOf(call.id), 'Mi aiuti con la spesa?');
+    assert.deepEqual(lastAsked().messages[0], warm.messages[0]);
+    await directCalls().end(call.id, 'hangup');
+  });
+});
+
+test('a work call reads the shareable facts only: the private one is a topic without its text, the reply stays Interno (D-260)', async () => {
+  await withFacts(TWO_FACTS, async () => {
+    const conversation = await createConversation(db().sql, { mode: 'work' });
+    const since = await lastLogged();
+    const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+    nextReply = 'Va bene.';
+    await directCalls().turn(call.id, tokenOf(call.id), 'Che lavoro faccio?');
+    const system = lastAsked().messages[0]?.content ?? '';
+    assert.ok(system.includes(`- lavoro: ${JOB}`));
+    assert.ok(!system.includes(CITY));
+    assert.match(system, /- città: \[private: not available in this conversation\]/);
+    // No tool in a call: neither profile.read nor profile.share is suggested.
+    assert.doesNotMatch(system, /profile\.(read|share)/);
+    assert.equal(await localReadLabel(since), 'L1');
+    const [reply] = (await listMessages(db().sql, conversation.id, { limit: 10 })).filter((message) => message.role === 'assistant');
+    assert.equal(reply?.label, 'L1');
+    await directCalls().end(call.id, 'hangup');
+  });
+});
+
+test('past 1500 characters a call reads the topics alone; without facts, or for Arianna without her card, the prompt has no profile (D-260)', async () => {
+  // A fact holds at most 300 characters: six long ones and the city pass 1500 together.
+  const long = 'Testo inventato. '.repeat(17);
+  const topics = ['storia', 'famiglia', 'casa', 'sport', 'viaggi', 'musica'];
+  await withFacts(
+    [{ topic: 'città', text: CITY, label: 'L2' }, ...topics.map((topic) => ({ topic, text: long, label: 'L2' as const }))],
+    async () => {
+      const conversation = await createConversation(db().sql, { mode: 'private' });
+      const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+      await directCalls().turn(call.id, tokenOf(call.id), 'Ciao');
+      const system = lastAsked().messages[0]?.content ?? '';
+      const block = system.slice(system.indexOf(PROFILE_HEADER), system.length - VOICE_PROFILE_RULE.length).trim();
+      assert.ok(block.length <= MAX_PROFILE_BLOCK);
+      assert.ok(block.includes('only their topics'));
+      assert.ok(['città', ...topics].every((topic) => block.includes(`- ${topic}`)));
+      assert.ok(!block.includes(CITY) && !block.includes('Testo inventato'));
+      await directCalls().end(call.id, 'hangup');
+
+      // Arianna's call on a core that has not given her card: no fact (default-deny).
+      const plain = await createConversation(db().sql, { mode: 'private' });
+      const started = await calls.start(plain.id, { sdp: SDP, type: 'offer' });
+      await calls.turn(started.call.id, tokenOf(started.call.id), 'Ciao');
+      assert.ok(!(lastAsked().messages[0]?.content ?? '').includes(PROFILE_HEADER));
+      await calls.end(started.call.id, 'hangup');
+    },
+  );
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  directAgents.set('arianna', ARIANNA_CARD);
+  try {
+    const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+    await directCalls().turn(call.id, tokenOf(call.id), 'Ciao');
+    const system = lastAsked().messages[0]?.content ?? '';
+    assert.ok(!system.includes(PROFILE_HEADER) && !system.includes(VOICE_PROFILE_RULE));
+    await directCalls().end(call.id, 'hangup');
+  } finally {
+    directAgents.delete('arianna');
+  }
+});
+
+test('a local agent in a call reads the facts its card admits; the Coder through its bridge never gets one (D-260)', async () => {
+  await withFacts(TWO_FACTS, async () => {
+    // The translator reads Solo locale: in its private chat every fact.
+    const conversation = await createConversation(db().sql, { mode: 'private', agent: TRANSLATOR });
+    const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+    await directCalls().turn(call.id, tokenOf(call.id), 'Come si dice gatto?');
+    const system = lastAsked().messages[0]?.content ?? '';
+    assert.ok(system.startsWith(AGENT_VOICE_FRAME) && system.includes(`- città: ${CITY}`) && system.endsWith(VOICE_PROFILE_RULE));
+    await directCalls().end(call.id, 'hangup');
+
+    // A card that reads Pubblico only: no fact, not even a topic.
+    directAgents.set('traduttore', { card: { ...localAgent('L1').card, maxLabel: 'L0' }, prompt: 'Traduci.' } as unknown as LoadedAgent);
+    const work = await createConversation(db().sql, { mode: 'work', agent: { name: 'traduttore', modes: ['work'], project: false } });
+    const before = asked.length;
+    const low = await directCalls().start(work.id, { sdp: SDP, type: 'offer' });
+    await until(() => asked.length > before);
+    assert.ok(!(lastAsked().messages[0]?.content ?? '').includes(PROFILE_HEADER));
+    await directCalls().end(low.call.id, 'hangup');
+    directAgents.set('traduttore', localAgent('L2'));
+
+    // The Coder: no model reads anything, its brief is the user's words alone.
+    const coder = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], agent: CODER });
+    const asking = asked.length;
+    const bridged = await directCalls().start(coder.id, { sdp: SDP, type: 'offer' });
+    await directCalls().turn(bridged.call.id, tokenOf(bridged.call.id), 'Sistema il footer');
+    assert.equal(asked.length, asking);
+    const [delegation] = await db().sql<{ brief: string }[]>`
+      SELECT d.brief FROM task_delegations d JOIN tasks t ON t.id = d.task_id WHERE t.conversation_id = ${coder.id}`;
+    assert.equal(delegation?.brief, 'Sistema il footer');
+    await directCalls().end(bridged.call.id, 'hangup');
+  });
 });
