@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.146.0] - 2026-10-19
+
 ### Aggiunto
 
 - Vista «Calendario» nella pagina «Routine»: la settimana con le ore di ogni routine (in pausa tenue, proposta tratteggiata), l'esito delle esecuzioni già fatte, la linea dell'ora attuale, frecce e «Oggi»; su telefono un giorno alla volta. La scelta fra «Elenco» e «Calendario» resta in questo browser (D-257).
