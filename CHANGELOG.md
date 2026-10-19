@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.145.0] - 2026-10-19
+
 ### Aggiunto
 
 - In una conversazione privata con Arianna basta chiedere «ogni lunedì e giovedì alle 9 fammi il resoconto…»: Arianna propone la routine con giorni, ora e fonti scelti da un elenco chiuso, e in chat compare la scheda con «Attiva» e «Scarta»; niente parte prima di «Attiva» (D-256).
