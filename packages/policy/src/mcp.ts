@@ -15,3 +15,21 @@ export function mcpClearance(taskClearance: Label, cardCeiling: Label): Label {
   const candidates = [taskClearance, cardCeiling, MCP_CEILING].map((label: unknown) => (isLabel(label) ? label : LABELS[0]));
   return candidates.reduce((min, label) => (isAtMost(label, min) ? label : min));
 }
+
+/**
+ * The knowledge of the projects (D-145) under kb/, live and archived (D-198):
+ * L1 notes of one client, never for a run that works for another.
+ */
+export const MCP_PROJECT_FOLDERS: readonly string[] = ['kb/progetti', 'kb/archivio/progetti'];
+
+/**
+ * True for a page path an MCP tool may read: under kb/, not in the knowledge
+ * of a project. Compared ignoring letter case and Unicode form, as the disk
+ * may (`kb/Progetti/…` is the same folder on macOS).
+ */
+export function isMcpKbPath(path: unknown): boolean {
+  if (typeof path !== 'string') return false;
+  const folded = path.trim().normalize('NFC').toLowerCase();
+  if (!folded.startsWith('kb/')) return false;
+  return !MCP_PROJECT_FOLDERS.some((folder) => folded === folder || folded.startsWith(`${folder}/`));
+}

@@ -19,7 +19,7 @@ import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `mcp-${randomUUID()}`);
-const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n\n[[folder]]\npath = "kb/private"\nlabel = "L2"\n');
+const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n\n[[folder]]\npath = "kb/private"\nlabel = "L2"\n\n[[folder]]\npath = "kb/progetti"\nlabel = "L1"\n');
 const RUN = randomUUID();
 const TASK = randomUUID();
 
@@ -30,6 +30,8 @@ let token: string;
 before(async () => {
   mkdirSync(join(HOME, 'kb', 'work'), { recursive: true });
   mkdirSync(join(HOME, 'kb', 'private'), { recursive: true });
+  mkdirSync(join(HOME, 'kb', 'Progetti', 'cliente-b', 'Workplan'), { recursive: true });
+  writeFileSync(join(HOME, 'kb', 'Progetti', 'cliente-b', 'Workplan', 'piano.md'), '---\ntitle: Piano del cliente B\n---\nPiano inventato del router del cliente B.\n');
   writeFileSync(join(HOME, 'kb', 'work', 'router.md'), '---\ntitle: Router finto\n---\nIl router sceglie l’esecutore in base all’etichetta.\n');
   writeFileSync(join(HOME, 'kb', 'private', 'caldaia.md'), '---\ntitle: Caldaia\n---\nNota privata inventata sulla caldaia.\n');
   server = createMcpServer({
@@ -100,6 +102,14 @@ test('an L2 page is refused with the fixed text: one blocked row, the same answe
   const rows = (await logRows()).slice(before);
   assert.equal(rows.length, 2);
   for (const row of rows) assert.deepEqual({ decision: row.decision, rule: row.rule, label: row.label, summary: row.summary }, { decision: 'block', rule: 'cloud-label', label: 'L2', summary: null });
+});
+
+test('the knowledge of a project, L1 by its rule, is refused in any letter case: never read nor found (D-145)', async () => {
+  for (const path of ['kb/Progetti/cliente-b/Workplan/piano.md', 'kb/progetti/cliente-b/Workplan/piano.md']) {
+    assert.deepEqual(await call('kb_read', { path }), { isError: true, text: DENIED_TEXT }, path);
+  }
+  const found = await call('kb_search', { query: 'cliente router', limit: 20 });
+  assert.doesNotMatch(found.text, /cliente-b|Progetti/i);
 });
 
 test('a search finds the L1 page and never the private one', async () => {

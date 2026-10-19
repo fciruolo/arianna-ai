@@ -1,7 +1,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { MCP_CEILING, mcpClearance, type Label } from '../src/index.ts';
+import { isMcpKbPath, MCP_CEILING, mcpClearance, type Label } from '../src/index.ts';
+
+test('isMcpKbPath: pages of kb/ outside the projects', () => {
+  for (const path of ['kb/work/router.md', 'kb/inbox/nota.md', 'kb/archivio/work/vecchia.md', 'kb/progettini/a.md']) assert.equal(isMcpKbPath(path), true, path);
+});
+
+test('isMcpKbPath: never the knowledge of a project, in any case, nor anything outside kb/', () => {
+  for (const path of [
+    'kb/progetti/cliente/Workplan/piano.md',
+    'kb/Progetti/cliente/Workplan/piano.md',
+    'KB/PROGETTI/cliente/a.md',
+    'kb/archivio/progetti/cliente/a.md',
+    'kb/Archivio/Progetti/cliente/a.md',
+    'kb/progetti',
+    'projects/cliente/Workplan/a.md',
+    'arianna/SPEC.md',
+    '../kb/work/a.md',
+    '',
+    undefined,
+    7,
+  ]) {
+    assert.equal(isMcpKbPath(path), false, String(path));
+  }
+});
 
 test('the MCP ceiling is L1, the ceiling of every cloud executor', () => {
   assert.equal(MCP_CEILING, 'L1');

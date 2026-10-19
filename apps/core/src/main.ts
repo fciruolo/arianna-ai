@@ -509,8 +509,15 @@ const mcpServer = createMcpServer({
   },
   version: packageVersion(config.home) ?? '0.0.0',
 });
-const mcpUrl = (await mcpServer.start()).url;
-console.log(`MCP server for cloud runs on ${mcpUrl}`);
+// A server that cannot start leaves the core up: runs get no MCP session (`open` refuses), undefined here.
+let mcpUrl: string | undefined;
+try {
+  mcpUrl = (await mcpServer.start()).url;
+  console.log(`MCP server for cloud runs on ${mcpUrl}`);
+} catch (error) {
+  console.error('MCP server not started: cloud runs go without Arianna’s tools');
+  report(error);
+}
 // The catalog of agents (D-079): role files of the GitHub repositories the user follows, as text
 // in data/catalogs/agents, downloaded one at a time only when the user presses the button. A role
 // becomes an agent only through a disabled card the user confirms; its text stays L0 third-party data.

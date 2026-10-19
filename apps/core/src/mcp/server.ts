@@ -41,11 +41,14 @@ export class McpSessionError extends Error {
 /** The path of the endpoint; any other answers 404, the OAuth discovery paths included. */
 export const MCP_PATH = '/mcp';
 const TOKEN_BYTES = 32;
+/** Messages of one session, of any method (initialize, ping, tools/list, tools/call); past it 429. */
+export const MAX_MESSAGES = 100;
 
 interface OpenSession {
   input: McpSessionInput;
   hash: Buffer;
   usage: RunUsage;
+  messages: number;
 }
 
 function hashOf(token: string): Buffer {
@@ -99,19 +102,23 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     });
   });
 
+  /** Forgets every expired session: a run that ended without its revoke leaves no token behind. */
+  function prune(): void {
+    const at = now().getTime();
+    for (const [runId, session] of sessions) {
+      if (session.input.expiresAt.getTime() <= at) sessions.delete(runId);
+    }
+  }
+
   /** The open, unexpired session of this bearer token; constant time on the hash. */
   function sessionOf(header: string | undefined): OpenSession | undefined {
+    prune();
     const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header ?? '');
     if (match?.[1] === undefined) return undefined;
     const hash = hashOf(match[1]);
     let found: OpenSession | undefined;
     for (const session of sessions.values()) {
       if (timingSafeEqual(session.hash, hash)) found = session;
-    }
-    if (found === undefined) return undefined;
-    if (found.input.expiresAt.getTime() <= now().getTime()) {
-      sessions.delete(found.input.runId);
-      return undefined;
     }
     return found;
   }
@@ -135,6 +142,12 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     const session = sessionOf(request.headers.authorization);
     if (session === undefined) {
       send(response, 401);
+      return;
+    }
+    session.messages += 1;
+    if (session.messages > MAX_MESSAGES) {
+      send(response, 429);
+      request.resume();
       return;
     }
     const body = await readBody(request);
@@ -174,11 +187,13 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       return { url: `http://${host}${MCP_PATH}` };
     },
     open(input) {
+      // Not started (or closed): a run gets no token for a server nobody answers on.
+      if (host === undefined) throw new McpSessionError('the MCP server is not started');
       checkInput(input);
-      const open = sessions.get(input.runId);
-      if (open !== undefined && open.input.expiresAt.getTime() > now().getTime()) throw new McpSessionError('this run already has an MCP session');
+      prune();
+      if (sessions.has(input.runId)) throw new McpSessionError('this run already has an MCP session');
       const token = randomBytes(TOKEN_BYTES).toString('base64url');
-      sessions.set(input.runId, { input: Object.freeze({ ...input, tools: Object.freeze([...input.tools]) }), hash: hashOf(token), usage: { calls: 0, bytes: 0 } });
+      sessions.set(input.runId, { input: Object.freeze({ ...input, tools: Object.freeze([...input.tools]) }), hash: hashOf(token), usage: { calls: 0, bytes: 0 }, messages: 0 });
       return { token };
     },
     revoke(runId) {
@@ -189,9 +204,11 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       if (host === undefined) return;
       host = undefined;
       server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => {
+      await new Promise<void>((resolve) => {
+        server.close(() => {
           resolve();
-        }));
+        });
+      });
     },
   };
 }

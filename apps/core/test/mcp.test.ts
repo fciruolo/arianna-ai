@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, it } from 'node:test';
 
-import { canRead, fakePiiCheck, gatewayCheck, markLogged, secretMatcher, type Context, type Decision, type Label, type Labeled } from '@arianna/policy';
+import { canRead, fakePiiCheck, gatewayCheck, markLogged, piiExemptions, secretMatcher, type Context, type Decision, type Label, type Labeled } from '@arianna/policy';
 
 import { KbError, type Kb, type KbPage } from '../src/orchestrator/kb.ts';
 import { DEFAULT_VERSION, handleMessage, MAX_BODY, type McpHandlers } from '../src/mcp/protocol.ts';
-import { createMcpServer, McpSessionError, type McpServer } from '../src/mcp/server.ts';
+import { createMcpServer, MAX_MESSAGES, McpSessionError, type McpServer } from '../src/mcp/server.ts';
 import {
   callTool,
   DENIED_TEXT,
@@ -121,12 +121,15 @@ function fakeSkills(refused: string | null = null): McpSkills {
 interface Harness {
   deps: McpToolDeps;
   gated: { labels: Label[]; decision: string; summary: string }[];
+  /** What each call offered the gateway, fragment by fragment. */
+  payloads: (readonly Labeled<string>[])[];
   events: McpCallEvent[];
 }
 
 function harness(skills: McpSkills = fakeSkills()): Harness {
   const gated: Harness['gated'] = [];
   const events: McpCallEvent[] = [];
+  const payloads: Harness['payloads'] = [];
   const deps: McpToolDeps = {
     kb: fakeKb,
     skills,
@@ -134,6 +137,7 @@ function harness(skills: McpSkills = fakeSkills()): Harness {
       const decision = gatewayCheck(payload, context, { kind: 'executor', id: executor, locality: 'cloud' }, secretMatcher([]), fakePiiCheck(payload));
       if (decision.decision === 'allow') markLogged(decision);
       gated.push({ labels: payload.map((fragment) => fragment.label), decision: decision.decision, summary: meta.summary });
+      payloads.push(payload);
       return Promise.resolve(decision);
     },
     event: (event) => {
@@ -141,7 +145,7 @@ function harness(skills: McpSkills = fakeSkills()): Harness {
       return Promise.resolve();
     },
   };
-  return { deps, gated, events };
+  return { deps, gated, payloads, events };
 }
 
 function session(extra: Partial<McpSessionInput> = {}): McpSessionInput {
@@ -257,6 +261,47 @@ describe('tools', () => {
     for (let index = 0; index < MAX_CALLS; index += 1) assert.equal((await callTool(session(), run, 'kb_read', { path: 'kb/public/readme.md' }, deps))?.isError, false);
     assert.equal(textOf(await callTool(session(), run, 'kb_read', { path: 'kb/public/readme.md' }, deps)), LIMIT_TEXT);
     assert.equal(events.at(-1)?.decision, 'limit');
+    // Past the limit, an unknown tool is refused as well, and the event is written once per run.
+    assert.equal(textOf(await callTool(session(), run, 'kb_write', {}, deps)), LIMIT_TEXT);
+    assert.equal(textOf(await callTool(session(), run, 'kb_read', { path: 'kb/public/readme.md' }, deps)), LIMIT_TEXT);
+    assert.equal(events.filter((event) => event.decision === 'limit').length, 1);
+  });
+
+  it('unknown tools and bad arguments count towards the limit', async () => {
+    const { deps } = harness();
+    const run = usage();
+    for (let index = 0; index < MAX_CALLS / 2; index += 1) {
+      assert.equal(await callTool(session(), run, 'kb_write', {}, deps), undefined);
+      assert.equal(textOf(await callTool(session(), run, 'kb_read', { path: 1 }, deps)), INVALID_TEXT);
+    }
+    assert.equal(run.calls, MAX_CALLS);
+    assert.equal(textOf(await callTool(session(), run, 'kb_read', { path: 'kb/public/readme.md' }, deps)), LIMIT_TEXT);
+  });
+
+  it('D-250: only a text of the catalogs alone, in its own source, skips the second scanner', async () => {
+    const { deps, payloads } = harness();
+    // An L0 session sees only the catalog skill: the whole list is exempt, as the text of a catalog skill.
+    await callTool(session({ clearance: 'L0' }), usage(), 'list_skills', {}, deps);
+    await callTool(session(), usage(), 'get_skill', { id: 'acme/skills/testing' }, deps);
+    for (const payload of payloads.splice(0)) {
+      assert.deepEqual(piiExemptions(payload), [true]);
+      assert.equal(payload[0]?.source, 'skills:coder');
+    }
+    // A list with a shareable skill of the user's own, its text, a page: read by the second scanner, whole.
+    await callTool(session(), usage(), 'list_skills', {}, deps);
+    await callTool(session(), usage(), 'get_skill', { id: 'local/claude-code/shared' }, deps);
+    await callTool(session(), usage(), 'kb_read', { path: 'kb/public/readme.md' }, deps);
+    await callTool(session(), usage(), 'kb_search', { query: 'fake' }, deps);
+    assert.equal(payloads.length, 4);
+    for (const payload of payloads) assert.deepEqual(piiExemptions(payload), [false], payload[0]?.source);
+    assert.match(payloads[0]?.[0]?.value ?? '', /acme\/skills\/testing[\s\S]*local\/claude-code\/shared|local\/claude-code\/shared[\s\S]*acme\/skills\/testing/);
+    assert.equal(payloads[0]?.[0]?.label, 'L1');
+  });
+
+  it('a refusal offers an empty L2 fragment with a source that names it', async () => {
+    const { deps, payloads } = harness();
+    await callTool(session(), usage(), 'kb_read', { path: 'kb/private/casa.md' }, deps);
+    assert.deepEqual(payloads, [[{ value: '', label: 'L2', source: 'mcp:kb_read:denied' }]]);
   });
 
   it('an answer over 24 KB and a run over 200 KB are refused', async () => {
@@ -383,6 +428,18 @@ describe('server', () => {
   it('a batch is refused', async () => {
     const answer = await post(url, { body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }]), token: open() });
     assert.equal(answer.status, 400);
+  });
+
+  it(`at most ${String(MAX_MESSAGES)} messages per session, of any method: then 429`, async () => {
+    const token = open();
+    const ping = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    for (let index = 0; index < MAX_MESSAGES; index += 1) assert.equal((await post(url, { body: index % 2 === 0 ? ping : LIST, token })).status, 200);
+    assert.deepEqual(await post(url, { body: ping, token }), { status: 429, body: '' });
+  });
+
+  it('a server not started opens no session', () => {
+    const idle = createMcpServer({ ...harness().deps, version: '0' });
+    assert.throws(() => idle.open(session()), /not started/);
   });
 
   it('close revokes every session', async () => {

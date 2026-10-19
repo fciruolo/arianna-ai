@@ -11,6 +11,7 @@ import {
   fakePiiCheck,
   forgetCatalogTexts,
   gatewayCheck as gatewayCheckWithPii,
+  isMcpKbPath,
   markCatalogText,
   mcpClearance,
   payloadText,
@@ -187,8 +188,10 @@ interface McpInput {
   mcp: {
     taskClearance: Label;
     cardCeiling: Label;
-    target: 'claude' | 'codex';
-    index: { label: unknown; text: string }[];
+    /** Only claude runs have MCP sessions (D-261): any other target fails the case. */
+    target: 'claude';
+    /** A page with its `path` (checked with `isMcpKbPath`), or a skill without one. */
+    index: { label: unknown; text: string; path?: string }[];
     canary?: string;
   };
 }
@@ -201,10 +204,12 @@ export interface McpOutcome {
 }
 
 function evaluateMcp(input: McpInput['mcp']): McpOutcome {
+  if ((input.target as string) !== 'claude') throw new Error('"mcp.target": only claude runs have MCP sessions');
   const clearance = mcpClearance(input.taskClearance, input.cardCeiling);
   const context = createContext(clearance);
   const sent: string[] = [];
   const results = input.index.map((entry) => {
+    if (entry.path !== undefined && !isMcpKbPath(entry.path)) return 'deny';
     const label = isLabel(entry.label) ? entry.label : 'L2';
     const read = recordRead(context, label);
     if (!read.allowed) return 'deny';
