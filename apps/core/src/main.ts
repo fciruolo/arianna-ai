@@ -54,6 +54,7 @@ import { eraseConversation } from './erase.ts';
 import { attachmentsDir, pruneAttachments } from './attachments.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
+import { createMcpServer } from './mcp/server.ts';
 import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
@@ -487,6 +488,29 @@ const skillsCatalog = createSkillsCatalog({
   // The user's own skills of Claude Code (D-255): copied only on the user's «Importa», private until marked shareable.
   claudeConfig: { env: process.env, home: userHomeOf() },
 });
+// Arianna's MCP server (D-261): a few read-only tools (her skills, the knowledge base) for an agent
+// in the cloud while it runs, on its own listener on 127.0.0.1. A run reaches it only with a session
+// opened for it (`mcpServer.open`, at most L1, `mcpClearance`) and revoked when it ends; each answer
+// passes the gateway towards the run's executor. `mcpUrl` is what the run's MCP configuration names.
+const mcpServer = createMcpServer({
+  kb,
+  skills: {
+    list: () => skillsCatalog.list(),
+    text: (id) => skillsCatalog.text(id),
+    assigned: (agent) => {
+      const all = settings.current().agents;
+      return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
+    },
+    refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
+  },
+  gate: (payload, context, executor, meta) => passGateway(sql, payload, context, { kind: 'executor', id: executor, locality: 'cloud' }, meta),
+  event: async ({ runId, taskId, agent, tool, decision, bytes }) => {
+    await appendEvent(sql, { kind: 'mcp.call', label: 'L0', runId, taskId, agent, payload: { runId, tool, decision, bytes } }).catch(report);
+  },
+  version: packageVersion(config.home) ?? '0.0.0',
+});
+const mcpUrl = (await mcpServer.start()).url;
+console.log(`MCP server for cloud runs on ${mcpUrl}`);
 // The catalog of agents (D-079): role files of the GitHub repositories the user follows, as text
 // in data/catalogs/agents, downloaded one at a time only when the user presses the button. A role
 // becomes an agent only through a disabled card the user confirms; its text stays L0 third-party data.
@@ -1441,6 +1465,7 @@ async function shutdown(): Promise<void> {
   stopNotices();
   await telegram.close();
   await server.close();
+  await mcpServer.close();
   ringer.stop();
   await calls.close();
   await voice.close();

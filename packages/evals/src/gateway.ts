@@ -12,7 +12,9 @@ import {
   forgetCatalogTexts,
   gatewayCheck as gatewayCheckWithPii,
   markCatalogText,
+  mcpClearance,
   payloadText,
+  recordRead,
   piiUnavailable,
   secretMatcher,
   type PiiCheck,
@@ -175,6 +177,46 @@ function evaluateCoderNotes(input: CoderNotesInput['coderNotes']): CoderNotesOut
   return { given, held, leaked };
 }
 
+/**
+ * A tool of Arianna's MCP server called by a cloud run (D-261), as the core
+ * runs it: the session's clearance is `mcpClearance(task, card)`; each entry
+ * of the index is a page the tool would read, refused when above the
+ * clearance, otherwise read and passed through the gateway towards `target`.
+ */
+interface McpInput {
+  mcp: {
+    taskClearance: Label;
+    cardCeiling: Label;
+    target: 'claude' | 'codex';
+    index: { label: unknown; text: string }[];
+    canary?: string;
+  };
+}
+
+/** The session's clearance; per entry `deny` (never read), `allow` or the gateway's rule; whether the canary would leave. */
+export interface McpOutcome {
+  clearance: Label;
+  results: string[];
+  leaked: boolean;
+}
+
+function evaluateMcp(input: McpInput['mcp']): McpOutcome {
+  const clearance = mcpClearance(input.taskClearance, input.cardCeiling);
+  const context = createContext(clearance);
+  const sent: string[] = [];
+  const results = input.index.map((entry) => {
+    const label = isLabel(entry.label) ? entry.label : 'L2';
+    const read = recordRead(context, label);
+    if (!read.allowed) return 'deny';
+    const decision = gatewayCheck([{ value: entry.text, label, source: 'mcp:kb_read' }], read.context, { kind: 'executor', id: input.target, locality: 'cloud' }, secretMatcher([]));
+    if (decision.decision === 'block') return decision.rule;
+    sent.push(...decision.texts);
+    return 'allow';
+  });
+  const canary = input.canary;
+  return { clearance, results, leaked: canary !== undefined && canary !== '' && sent.some((text) => text.includes(canary)) };
+}
+
 const WORKSPACE_RULES = [
   { path: 'repos', label: 'L1' as const },
   { path: 'repos/site/private', label: 'L2' as const },
@@ -212,7 +254,8 @@ function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome
   return outcomeOf(checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules }));
 }
 
-export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome | CoderNotesOutcome {
+export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome | CoderNotesOutcome | McpOutcome {
+  if (typeof raw === 'object' && raw !== null && 'mcp' in raw) return evaluateMcp((raw as McpInput).mcp);
   if (typeof raw === 'object' && raw !== null && 'workspace' in raw) return evaluateWorkspace((raw as WorkspaceInput).workspace);
   if (typeof raw === 'object' && raw !== null && 'coderNotes' in raw) return evaluateCoderNotes((raw as CoderNotesInput).coderNotes);
   if (typeof raw === 'object' && raw !== null && 'project' in raw) {

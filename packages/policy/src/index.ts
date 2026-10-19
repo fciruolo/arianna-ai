@@ -24,6 +24,7 @@ export {
   type ReadResult,
 } from './context.ts';
 export { PolicyError } from './errors.ts';
+export { MCP_CEILING, mcpClearance } from './mcp.ts';
 export { PERSONA_LABEL, personaFits } from './persona.ts';
 export {
   DEFAULT_FACT_LABEL,
