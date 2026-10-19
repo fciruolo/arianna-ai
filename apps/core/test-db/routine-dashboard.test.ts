@@ -206,11 +206,18 @@ test('the split keeps the choice of tiles; a routine removed or proposed never c
   await clearDashboard();
   const { sql, owner } = db();
   const spese = await tile('Spese del mese');
-  const routine = await createRoutine(sql, { title: 'Due giorni finti', days: [1, 3], at: '08:00', timezone: 'UTC', sources: ['dashboard'], dashboardTiles: [spese.id] });
+  const routine = await createRoutine(sql, {
+    title: 'Due giorni finti', days: [1, 3], at: '08:00', timezone: 'UTC', sources: ['dashboard'], dashboardTiles: [spese.id],
+    channel: 'call', voiceMaxLabel: 'L1', retryMinutes: 15,
+  });
   const { created } = await splitRoutine(sql, routine.id, { day: 3, to: 4, at: '09:00' });
   assert.deepEqual(created.dashboardTiles, [spese.id]);
+  // The call of D-259 goes with the tiles: both kept by the split.
+  assert.deepEqual([created.channel, created.voiceMaxLabel, created.retryMinutes], ['call', 'L1', 15]);
   await retireRoutine(sql, created.id);
   await assert.rejects(owner`UPDATE routines SET dashboard_tiles = NULL WHERE id = ${created.id}`, /a routine removed stays as it was/);
+  // The guards of 0081 and 0082 hold together on a routine removed.
+  await assert.rejects(owner`UPDATE routines SET retry_minutes = 30 WHERE id = ${created.id}`, /a routine removed stays as it was/);
   // The database: a choice only with the source, never empty; a proposal never chooses tiles.
   await assert.rejects(owner`UPDATE routines SET sources = '{todo}' WHERE id = ${routine.id}`, /routines_dashboard_tiles/);
   await assert.rejects(owner`UPDATE routines SET dashboard_tiles = '{}' WHERE id = ${routine.id}`, /routines_dashboard_tiles/);

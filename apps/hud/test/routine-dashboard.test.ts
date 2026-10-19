@@ -51,7 +51,7 @@ test('«Tutti» and one tile at a time, in the order of the Dashboard', () => {
 test('what the form sends: the choice only with the source, as chosen (the core drops the tiles no longer there)', () => {
   const form = { ...emptyForm(), title: '  Mattina ', sources: ['todo' as const, 'dashboard' as const], dashboardTiles: ['a', 'gone'] };
   // Also before the tiles are loaded: the choice is never emptied by the page.
-  assert.deepEqual(formBody(form), { title: 'Mattina', days: form.days, at: form.at, sources: ['todo', 'dashboard'], summary: true, dashboardTiles: ['a', 'gone'] });
+  assert.deepEqual(formBody(form), { title: 'Mattina', days: form.days, at: form.at, sources: ['todo', 'dashboard'], summary: true, channel: 'chat', voiceMaxLabel: 'L2', retryMinutes: null, dashboardTiles: ['a', 'gone'] });
   assert.equal(formBody({ ...form, dashboardTiles: null }).dashboardTiles, null);
   assert.ok(!('dashboardTiles' in formBody({ ...form, sources: ['todo'] })));
 });
