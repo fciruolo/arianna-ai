@@ -4,12 +4,13 @@
  * same title, sources, summary, zone and state (active or paused), only on
  * the day of arrival and at the new time, in a new chat «Routine · <titolo>»
  * as a routine created from the page. One transaction: either both change or
- * neither. The events name ids only, never the title.
+ * neither. Its «Annulla» (`unsplitRoutine`) is one transaction too. The
+ * events name ids only, never the title.
  */
-import type { Sql } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
-import { loadRoutine, ROUTINE_CONVERSATION_PREFIX, RoutineError, type Routine, type RoutineStatus } from './routines.ts';
-import { isClock, isIsoDay, nextRun, type IsoDay, type RoutineRule } from './routine-schedule.ts';
+import { loadRoutine, lockRoutine, ROUTINE_CONVERSATION_PREFIX, RoutineError, UUID, type Routine, type RoutineRow } from './routines.ts';
+import { dueOrNext, isClock, isIsoDay, nextRun, type IsoDay, type RoutineRule } from './routine-schedule.ts';
 
 export interface SplitInput {
   /** The day the first routine gives up: one of its days, not its only one. */
@@ -39,18 +40,34 @@ export function keptDays(days: readonly IsoDay[], day: IsoDay): IsoDay[] {
   return kept;
 }
 
-interface LockedRow {
-  title: string;
-  conversationId: string;
-  days: number[];
+export interface UnsplitInput {
+  /** The routine born from the split, to remove. */
+  created: string;
+  /** Days and time of the first routine before the split, to give back. */
+  days: IsoDay[];
   at: string;
-  timezone: string;
-  sources: string[];
-  summary: boolean;
-  status: RoutineStatus;
-  pausedBy: 'user' | 'archived' | null;
-  archived: boolean;
-  purged: boolean;
+}
+
+export function parseUnsplitInput(body: Record<string, unknown>): UnsplitInput {
+  const unknown = Object.keys(body).filter((key) => !['created', 'days', 'at'].includes(key));
+  if (unknown.length > 0) throw new RoutineError('invalid', `unknown field(s): ${unknown.join(', ')}`);
+  if (typeof body.created !== 'string' || !UUID.test(body.created)) throw new RoutineError('invalid', 'created must be the id of a routine');
+  if (!Array.isArray(body.days) || body.days.length === 0 || !body.days.every(isIsoDay)) throw new RoutineError('invalid', 'days must be a list of 1-7');
+  if (!isClock(body.at)) throw new RoutineError('invalid', 'at must be HH:MM');
+  return { created: body.created, days: [...new Set(body.days)].sort((a, b) => a - b), at: body.at };
+}
+
+/**
+ * Whether the first routine is still as the split left it: the days given
+ * back are its days plus exactly one, at the same time. Anything else is a
+ * change made after the split, which «Annulla» must not undo.
+ */
+export function leftBySplit(current: { days: readonly IsoDay[]; at: string }, before: { days: readonly IsoDay[]; at: string }): boolean {
+  if (current.at !== before.at) return false;
+  const now = new Set(current.days);
+  const back = new Set(before.days);
+  if (![...now].every((day) => back.has(day))) return false;
+  return back.size === now.size + 1;
 }
 
 function next(rule: RoutineRule, now: Date): Date {
@@ -59,23 +76,29 @@ function next(rule: RoutineRule, now: Date): Date {
   return found;
 }
 
+/** The routine locked, then its conversation held (FOR SHARE) so an archive or an erase waits for us. */
+async function lockWithChat(tx: Queryable, id: string): Promise<RoutineRow> {
+  const row = await lockRoutine(tx, id);
+  await tx`SELECT 1 FROM conversations WHERE id = ${row.conversationId} FOR SHARE`;
+  const [chat] = await tx<{ archived: boolean; purged: boolean }[]>`
+    SELECT archived_at IS NOT NULL AS archived, purged_at IS NOT NULL AS purged FROM conversations WHERE id = ${row.conversationId}`;
+  if (chat === undefined || chat.purged) throw new RoutineError('not-found', 'routine not found');
+  if (chat.archived || row.pausedBy === 'archived') throw new RoutineError('conflict', 'the chat of the routine is archived: resume the routine first');
+  return row;
+}
+
 /** The split, atomic: the first routine (without `day`) and the new one. */
 export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now = new Date()): Promise<{ routine: Routine; created: Routine }> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new RoutineError('not-found', 'routine not found');
   const createdId = await sql.begin(async (tx) => {
-    await tx`SELECT 1 FROM routines WHERE id = ${id} FOR UPDATE`;
-    const [row] = await tx<LockedRow[]>`
-      SELECT r.title, r.conversation_id::text AS "conversationId", r.days::int[] AS days, r.at, r.timezone, r.sources, r.summary, r.status,
-        r.paused_by AS "pausedBy", c.archived_at IS NOT NULL AS archived, c.purged_at IS NOT NULL AS purged
-      FROM routines r JOIN conversations c ON c.id = r.conversation_id WHERE r.id = ${id}`;
-    if (row === undefined || row.status === 'retired' || row.purged) throw new RoutineError('not-found', 'routine not found');
+    const row = await lockWithChat(tx, id);
     if (row.status === 'proposed') throw new RoutineError('conflict', 'a proposed routine is approved first');
-    if (row.archived || row.pausedBy === 'archived') throw new RoutineError('conflict', 'the chat of the routine is archived');
     const days = keptDays(row.days.filter(isIsoDay), input.day);
     const active = row.status === 'active';
     const keptRule: RoutineRule = { days, at: row.at, timezone: row.timezone };
     const newRule: RoutineRule = { days: [input.to], at: input.at, timezone: row.timezone };
-    await tx`UPDATE routines SET days = ${days}::smallint[], next_run_at = ${active ? next(keptRule, now) : null} WHERE id = ${id}`;
+    // A run due and not yet taken by the ticker stays when it is still a time of the days kept.
+    const kept = active ? (dueOrNext(keptRule, row.nextRunAt, now) ?? next(keptRule, now)) : null;
+    await tx`UPDATE routines SET days = ${days}::smallint[], next_run_at = ${kept} WHERE id = ${id}`;
     await appendEvent(tx, { kind: 'routine.updated', label: 'L0', payload: { routineId: id, conversationId: row.conversationId, fields: ['days'] } });
     const [conversation] = await tx<{ id: string }[]>`
       INSERT INTO conversations (mode, clearance, title) VALUES ('private', 'L2'::privacy_label, ${ROUTINE_CONVERSATION_PREFIX + row.title})
@@ -94,4 +117,35 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
   const [routine, created] = await Promise.all([loadRoutine(sql, id), loadRoutine(sql, createdId)]);
   if (routine === undefined || created === undefined) throw new RoutineError('not-found', 'routine not found');
   return { routine, created };
+}
+
+/**
+ * «Annulla» of a split, atomic: the routine born from the split of `id` is
+ * removed (its chat archived, with nothing in it but what the routine wrote)
+ * and the first gets back its days and time. Refused (409) when `created` was
+ * not split from `id`, or when the first routine changed after the split.
+ */
+export async function unsplitRoutine(sql: Sql, id: string, input: UnsplitInput, now = new Date()): Promise<Routine> {
+  await sql.begin(async (tx) => {
+    const row = await lockWithChat(tx, id);
+    const born = await lockRoutine(tx, input.created);
+    const [origin] = await tx<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM events
+      WHERE kind = 'routine.created' AND payload->>'routineId' = ${input.created} AND payload->>'splitFrom' = ${id}`;
+    if ((origin?.n ?? 0) === 0) throw new RoutineError('conflict', 'that routine was not split from this one');
+    if (!leftBySplit({ days: row.days.filter(isIsoDay), at: row.at }, input)) {
+      throw new RoutineError('conflict', 'the routine changed after it was split: change it from the page');
+    }
+    const rule: RoutineRule = { days: input.days, at: input.at, timezone: row.timezone };
+    const nextRunAt = row.status === 'active' ? (dueOrNext(rule, row.nextRunAt, now) ?? next(rule, now)) : null;
+    await tx`UPDATE routines SET days = ${input.days}::smallint[], at = ${input.at}, next_run_at = ${nextRunAt} WHERE id = ${id}`;
+    await appendEvent(tx, { kind: 'routine.updated', label: 'L0', payload: { routineId: id, conversationId: row.conversationId, fields: ['at', 'days'] } });
+    await tx`UPDATE routines SET status = 'retired', paused_by = NULL, next_run_at = NULL WHERE id = ${input.created}`;
+    await appendEvent(tx, { kind: 'routine.retired', label: 'L0', payload: { routineId: input.created, conversationId: born.conversationId, by: 'unsplit' } });
+    const archived = await tx`UPDATE conversations SET archived_at = now() WHERE id = ${born.conversationId} AND archived_at IS NULL AND purged_at IS NULL RETURNING id`;
+    if (archived.length > 0) await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: born.conversationId, archived: true } });
+  });
+  const routine = await loadRoutine(sql, id);
+  if (routine === undefined) throw new RoutineError('not-found', 'routine not found');
+  return routine;
 }

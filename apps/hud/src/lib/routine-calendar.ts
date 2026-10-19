@@ -269,6 +269,8 @@ export const SNAP_MINUTES = 15;
 export const MOVED_TEXT = 'Spostata';
 export const UNDO_TEXT = 'Annulla';
 export const MOVE_ERROR = 'Non riesco a spostare la routine.';
+/** The 409 of an «Annulla» refused by the core: the first routine changed after the split, or the chat was archived. */
+export const MOVE_CONFLICT = 'Non posso annullare: la routine è cambiata dopo lo spostamento (o la sua chat è archiviata). Sistemala dalla pagina.';
 
 /** A press that moved less than the threshold: the click that opens the routine. */
 export function isClick(dx: number, dy: number): boolean {
@@ -330,12 +332,28 @@ export function allDaysText(plan: { to: IsoDay; merges: boolean }): string {
   return plan.merges ? `Tutti i giorni (${dayName(plan.to)} c’è già: si unisce)` : 'Tutti i giorni';
 }
 
-/** "Solo giovedì": the day of arrival. */
-export function onlyDayText(to: IsoDay): string {
-  return `Solo ${dayName(to)}`;
+/** "Solo lunedì" when only the time changes, "Solo questo lunedì → giovedì" when the day changes too. */
+export function onlyDayText(from: IsoDay, to: IsoDay): string {
+  return from === to ? `Solo ${dayName(to)}` : `Solo questo ${dayName(from)} → ${dayName(to)}`;
 }
 
-/** The question beside the block: "Spostare alle 07:45 di giovedì:". */
-export function moveQuestion(plan: { to: IsoDay; at: string }): string {
-  return `Spostare alle ${plan.at} di ${dayName(plan.to)}:`;
+/** Words added when the drop is on a time of this week already gone: the change shows from next week. */
+export const LATER_TEXT = 'dalla settimana prossima';
+
+/** The question beside the block: "Spostare alle 07:45 di giovedì:", "… (dalla settimana prossima):". */
+export function moveQuestion(plan: { to: IsoDay; at: string; later?: boolean }): string {
+  return `Spostare alle ${plan.at} di ${dayName(plan.to)}${plan.later === true ? ` (${LATER_TEXT})` : ''}:`;
 }
+
+/** Whether a drop lands on a time already gone (an earlier day, or earlier today). */
+export function pastSlot(date: string, minute: number, today: { date: string; minute: number }): boolean {
+  return date < today.date || (date === today.date && minute <= today.minute);
+}
+
+/** «Spostata», or «Spostata · dalla settimana prossima». */
+export function movedText(later: boolean): string {
+  return later ? `${MOVED_TEXT} · ${LATER_TEXT}` : MOVED_TEXT;
+}
+
+/** How long a finger rests on a block before it drags (on a phone the grid scrolls otherwise). */
+export const LONG_PRESS_MS = 300;

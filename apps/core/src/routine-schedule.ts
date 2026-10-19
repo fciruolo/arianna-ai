@@ -159,6 +159,17 @@ export function nextRun(rule: RoutineRule, after: Date): Date | undefined {
 }
 
 /**
+ * The next run after a change of the rule (D-257): the run already due and
+ * not yet taken by the ticker (`due` at or before `now`) stays when it is
+ * still a time of the new rule, so a change a few seconds before the ticker
+ * does not lose it; otherwise the first run after `now`.
+ */
+export function dueOrNext(rule: RoutineRule, due: Date | null, now: Date): Date | undefined {
+  if (due !== null && due.getTime() <= now.getTime() && nextRun(rule, new Date(due.getTime() - 1))?.getTime() === due.getTime()) return due;
+  return nextRun(rule, now);
+}
+
+/**
  * The latest run from `from` (included) up to `now` (included): what was due
  * when the core finds a routine behind, after the Mac was off. Undefined
  * when none fell in between. Only the last one counts: the days before are

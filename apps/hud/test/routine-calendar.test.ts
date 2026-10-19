@@ -30,7 +30,7 @@ import {
   type CalendarDay,
   type CalendarEntry,
 } from '../src/lib/routine-calendar.ts';
-import { allDaysText, canDrag, clockOf, DRAG_THRESHOLD, dragTarget, isClick, moveAllDays, movePlan, moveQuestion, onlyDayText } from '../src/lib/routine-calendar.ts';
+import { allDaysText, canDrag, clockOf, DRAG_THRESHOLD, dragTarget, isClick, moveAllDays, movedText, movePlan, moveQuestion, onlyDayText, pastSlot } from '../src/lib/routine-calendar.ts';
 
 test('a press that barely moves is a click; past the threshold it is a drag', () => {
   assert.equal(isClick(0, 0), true);
@@ -77,7 +77,16 @@ test('after the drop: one day moves, more days ask; «Tutti i giorni» replaces 
   assert.deepEqual(moveAllDays([1, 3, 5], 3, 5), { days: [1, 5], merges: true });
   assert.equal(allDaysText({ to: 4, merges: false }), 'Tutti i giorni');
   assert.equal(allDaysText({ to: 5, merges: true }), 'Tutti i giorni (venerdì c’è già: si unisce)');
-  assert.equal(onlyDayText(4), 'Solo giovedì');
+  assert.equal(onlyDayText(4, 4), 'Solo giovedì');
+  assert.equal(onlyDayText(1, 4), 'Solo questo lunedì → giovedì');
+  assert.equal(moveQuestion({ to: 1, at: '07:00', later: true }), 'Spostare alle 07:00 di lunedì (dalla settimana prossima):');
+  const today = { date: '2026-10-21', minute: 600 };
+  assert.equal(pastSlot('2026-10-20', 900, today), true);
+  assert.equal(pastSlot('2026-10-21', 540, today), true);
+  assert.equal(pastSlot('2026-10-21', 615, today), false);
+  assert.equal(pastSlot('2026-10-22', 0, today), false);
+  assert.equal(movedText(false), 'Spostata');
+  assert.equal(movedText(true), 'Spostata · dalla settimana prossima');
   assert.equal(moveQuestion({ to: 4, at: '07:45' }), 'Spostare alle 07:45 di giovedì:');
 });
 

@@ -36,6 +36,7 @@ import {
   type RoutineInput,
   type RoutineSource,
 } from '../src/routines.ts';
+import type { IsoDay } from '../src/routine-schedule.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { createTask, moveTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -496,6 +497,110 @@ test('«Solo <giorno>» of the calendar (D-257): the routine gives a day to a ne
     assert.deepEqual((await loadRoutine(db().sql, first.id))?.days, [1, 5]);
     const [count] = await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM routines WHERE title = 'Divisa finta'`;
     assert.equal(count?.n, 2);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+});
+
+test('the split (D-257): 409 for a proposal and an archived chat; only the time changed; events without the title', async () => {
+  const sql = db().sql;
+  const service = createRoutineService(env());
+  // A proposal (D-256 writes them; here by hand).
+  const [chat] = await sql<{ id: string }[]>`INSERT INTO conversations (mode, clearance, title) VALUES ('private', 'L2', 'Routine · Proposta divisa') RETURNING id::text`;
+  assert.ok(chat !== undefined);
+  const [proposed] = await sql<{ id: string }[]>`
+    INSERT INTO routines (title, conversation_id, days, at, timezone, sources, status) VALUES ('Proposta divisa', ${chat.id}, '{1,2}', '09:00', 'UTC', '{todo}', 'proposed') RETURNING id::text`;
+  assert.ok(proposed !== undefined);
+  await assert.rejects(service.split(proposed.id, { day: 1, at: '10:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
+  // An archived chat.
+  const archived = await createRoutine(sql, { title: 'Archiviata divisa', days: [1, 2], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+  await archiveConversation(sql, archived.conversationId, true);
+  await assert.rejects(service.split(archived.id, { day: 1, at: '10:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
+  // Same day, only the time.
+  const timed = await createRoutine(sql, { title: 'Ora segreta divisa', days: [1, 3], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+  const { routine, created } = await service.split(timed.id, { day: 3, to: 3, at: '11:30' });
+  assert.deepEqual([...routine.days], [1]);
+  assert.equal(routine.at, '09:00');
+  assert.deepEqual([...created.days], [3]);
+  assert.equal(created.at, '11:30');
+  const events = await sql<{ kind: string; payload: unknown }[]>`
+    SELECT kind, payload FROM events
+    WHERE (kind IN ('routine.updated', 'routine.created') AND payload->>'routineId' IN (${timed.id}, ${created.id}))
+       OR (kind = 'conversation.created' AND payload->>'conversationId' = ${created.conversationId})`;
+  assert.deepEqual(new Set(events.map((event) => event.kind)), new Set(['routine.created', 'routine.updated', 'conversation.created']));
+  for (const event of events) assert.ok(!JSON.stringify(event.payload).includes('segreta'));
+});
+
+test('the split is atomic: a failure after the first change leaves everything as it was', async () => {
+  const sql = db().sql;
+  const owner = db().owner;
+  const first = await createRoutine(sql, { title: 'Rompi divisa', days: [2, 4], at: '08:00', timezone: 'UTC', sources: ['todo'] });
+  const before = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM conversations WHERE title = 'Routine · Rompi divisa'`;
+  await owner.unsafe(`
+    CREATE FUNCTION test_break_split() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.title = 'Rompi divisa' THEN RAISE EXCEPTION 'broken on purpose'; END IF;
+      RETURN NEW;
+    END $$;
+    CREATE TRIGGER test_break_split BEFORE INSERT ON routines FOR EACH ROW EXECUTE FUNCTION test_break_split();`);
+  try {
+    await assert.rejects(createRoutineService(env()).split(first.id, { day: 4, at: '09:00' }));
+  } finally {
+    await owner.unsafe('DROP TRIGGER test_break_split ON routines; DROP FUNCTION test_break_split();');
+  }
+  assert.deepEqual([...((await loadRoutine(sql, first.id))?.days ?? [])], [2, 4]);
+  const after = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM conversations WHERE title = 'Routine · Rompi divisa'`;
+  assert.equal(after[0]?.n, before[0]?.n);
+});
+
+test('a run due and not yet taken by the ticker survives a split and a small change', async () => {
+  const { id, due } = await dueRoutine(0, ['todo']);
+  const today = (due.getUTCDay() === 0 ? 7 : due.getUTCDay()) as IsoDay;
+  const other = (today === 7 ? 1 : today + 1) as IsoDay;
+  const soon = new Date(due.getTime() + 20_000);
+  // Another day goes: today's run, due 20 seconds ago, stays.
+  const { routine } = await createRoutineService(env(soon)).split(id, { day: other, to: other, at: '05:00' });
+  assert.equal(routine.nextRunAt?.toISOString(), due.toISOString());
+  // A change of the sources only: it stays too.
+  const changed = await updateRoutine(db().sql, id, { sources: ['notes'] }, soon);
+  assert.equal(changed.nextRunAt?.toISOString(), due.toISOString());
+  // Today goes: the next run moves on.
+  const { routine: moved } = await createRoutineService(env(soon)).split(id, { day: today, to: today, at: '05:00' });
+  assert.ok((moved.nextRunAt?.getTime() ?? 0) > soon.getTime());
+});
+
+test('«Annulla» of a split (D-257): one step back; refused when not split from it or changed since', async () => {
+  const sql = db().sql;
+  const service = createRoutineService(env());
+  const first = await createRoutine(sql, { title: 'Annulla divisa', days: [1, 3, 5], at: '18:00', timezone: 'UTC', sources: ['todo'] });
+  const { created } = await service.split(first.id, { day: 3, to: 4, at: '07:00' });
+  const back = await service.unsplit(first.id, { created: created.id, days: [1, 3, 5], at: '18:00' });
+  assert.deepEqual([...back.days], [1, 3, 5]);
+  assert.equal(back.at, '18:00');
+  assert.equal(back.status, 'active');
+  assert.equal(await loadRoutine(sql, created.id).then((routine) => routine?.status), 'retired');
+  const [chat] = await sql<{ archived: boolean }[]>`SELECT archived_at IS NOT NULL AS archived FROM conversations WHERE id = ${created.conversationId}`;
+  assert.equal(chat?.archived, true);
+  // Twice: the routine split off is gone.
+  await assert.rejects(service.unsplit(first.id, { created: created.id, days: [1, 3, 5], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'not-found');
+  // Not split from it.
+  const stranger = await createRoutine(sql, { title: 'Estranea divisa', days: [2], at: '10:00', timezone: 'UTC', sources: ['todo'] });
+  await assert.rejects(service.unsplit(first.id, { created: stranger.id, days: [1, 3, 5, 6], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
+  // Changed after the split.
+  const again = await service.split(first.id, { day: 5, at: '20:00' });
+  await updateRoutine(sql, first.id, { at: '18:45' });
+  await assert.rejects(service.unsplit(first.id, { created: again.created.id, days: [1, 3, 5], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
+  assert.equal(await loadRoutine(sql, again.created.id).then((routine) => routine?.status), 'active');
+  // Through the route: 200, and 400 for a bad body.
+  const live = await startLiveFeed(sql);
+  const server = await startApiServer({ sql, live, host: '127.0.0.1', port: 0, projects: () => [], routines: service });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    await updateRoutine(sql, first.id, { at: '18:00' });
+    assert.equal((await post(`/api/routines/${first.id}/unsplit`, { created: again.created.id, days: 'x', at: '18:00' })).status, 400);
+    assert.equal((await post(`/api/routines/${first.id}/unsplit`, { created: again.created.id, days: [1, 3, 5], at: '18:00' })).status, 200);
   } finally {
     await server.close();
     await live.close();

@@ -5,12 +5,13 @@ import { createContext, isAtMost, maxLabel, type Label, type LabelRules } from '
 
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { parseSplitInput, parseUnsplitInput, splitRoutine, unsplitRoutine } from './routine-split.ts';
 import { passGateway } from './gateway.ts';
 import { completeJob, enqueueJob, failJob, type Job } from './jobs.ts';
 import { machineBusy } from './model-evals.ts';
 import { listNotes } from './notes.ts';
 import { ORGANIZE_MODEL, modelUnavailable, organizeRetryDelayMs } from './organize.ts';
-import { dayText, daysText, MONTHS, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
+import { dayText, daysText, dueOrNext, MONTHS, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
 import { shortText } from './waiting.ts';
 
 /**
@@ -175,7 +176,7 @@ export function scheduleText(rule: Pick<RoutineRule, 'days' | 'at'>): string {
   return `${daysText(rule.days)} alle ${rule.at}`;
 }
 
-interface RoutineRow {
+export interface RoutineRow {
   id: string;
   title: string;
   conversationId: string;
@@ -255,9 +256,9 @@ export async function loadRoutine(sql: Queryable, id: string): Promise<Routine |
   return row === undefined ? undefined : toRoutine(row);
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function lockRoutine(tx: Queryable, id: string): Promise<RoutineRow> {
+export async function lockRoutine(tx: Queryable, id: string): Promise<RoutineRow> {
   if (!UUID.test(id)) throw new RoutineError('not-found', 'routine not found');
   await tx`SELECT 1 FROM routines WHERE id = ${id} FOR UPDATE`;
   const [row] = await tx<RoutineRow[]>`${ROUTINE_SELECT(tx)} WHERE r.id = ${id}`;
@@ -317,7 +318,8 @@ export async function updateRoutine(sql: Sql, id: string, input: RoutineInput, n
   await sql.begin(async (tx) => {
     const row = await lockRoutine(tx, id);
     const rule: RoutineRule = { days: input.days ?? row.days.filter(isIsoDay), at: input.at ?? row.at, timezone: input.timezone ?? row.timezone };
-    const next = row.status === 'active' ? nextOrFail(rule, now) : null;
+    // A run due and not yet taken by the ticker stays when it is still a time of the rule (D-257).
+    const next = row.status === 'active' ? (dueOrNext(rule, row.nextRunAt, now) ?? nextOrFail(rule, now)) : null;
     const title = input.title ?? row.title;
     await tx`
       UPDATE routines SET title = ${title}, days = ${rule.days}::smallint[], at = ${rule.at}, timezone = ${rule.timezone},
@@ -1366,6 +1368,9 @@ export interface RoutineService {
   retire(id: string): Promise<void>;
   /** «Prova adesso». */
   runNow(id: string): Promise<{ runId: string; messageId: string | null }>;
+  /** «Solo <giorno>» of the calendar (D-257) and its «Annulla». */
+  split(id: string, body: Record<string, unknown>): Promise<{ routine: Routine; created: Routine }>;
+  unsplit(id: string, body: Record<string, unknown>): Promise<Routine>;
 }
 
 export function createRoutineService(env: RoutineEnv): RoutineService {
@@ -1378,5 +1383,7 @@ export function createRoutineService(env: RoutineEnv): RoutineService {
     resume: (id) => resumeRoutine(env.sql, id, now()),
     retire: (id) => retireRoutine(env.sql, id),
     runNow: (id) => runNow(env, id),
+    split: (id, body) => splitRoutine(env.sql, id, parseSplitInput(body), now()),
+    unsplit: (id, body) => unsplitRoutine(env.sql, id, parseUnsplitInput(body), now()),
   };
 }

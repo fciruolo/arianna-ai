@@ -73,7 +73,6 @@ import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, s
 import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
 import { parseCalendarQuery, readCalendar } from '../routine-calendar.ts';
-import { parseSplitInput, splitRoutine } from '../routine-split.ts';
 import { RoutineError, type RoutineService } from '../routines.ts';
 import {
   alerts as financeAlerts,
@@ -2977,9 +2976,12 @@ function routineRoutes(routines: RoutineService | undefined, sql: Sql): Route[] 
     // «Solo <giorno>» of the calendar (D-257): the routine gives up a day to a new one, in one transaction.
     route('POST', '/api/routines/:id/split', async (request, _url, params) => {
       const id = idParam(params, 'id');
-      need();
-      const input = parseSplitInput(await readJson(request));
-      return { status: 201, body: await splitRoutine(sql, id, input) };
+      return { status: 201, body: await need().split(id, await readJson(request)) };
+    }),
+    // Its «Annulla»: the routine split off goes, the first gets its days and time back, in one transaction.
+    route('POST', '/api/routines/:id/unsplit', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      return { body: { routine: await need().unsplit(id, await readJson(request)) } };
     }),
     route('POST', '/api/routines/:id/run', async (request, _url, params) => {
       const id = idParam(params, 'id');

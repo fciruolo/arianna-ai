@@ -467,6 +467,11 @@ export async function splitRoutine(id: string, day: number, to: number, at: stri
   return call<{ routine: Routine; created: Routine }>('POST', `/api/routines/${encodeURIComponent(id)}/split`, { day, to, at });
 }
 
+/** «Annulla» of a split (D-257): the routine split off goes and the first gets back `days` and `at`, in one step. */
+export async function unsplitRoutine(id: string, created: string, days: number[], at: string): Promise<Routine> {
+  return (await call<{ routine: Routine }>('POST', `/api/routines/${encodeURIComponent(id)}/unsplit`, { created, days, at })).routine;
+}
+
 /** Dashboard (D-248): the tiles, after the refreshes that ended are settled. */
 export async function loadTiles(): Promise<DashboardTile[]> {
   return (await call<{ tiles: DashboardTile[] }>('GET', '/api/dashboard/tiles')).tiles;
