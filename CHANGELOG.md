@@ -10,6 +10,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Nel calendario un clic su un'ora libera apre «Nuova routine» con quel giorno e quell'ora; un clic su una routine la apre in modifica (D-257).
 - Nel calendario le routine si spostano trascinandole, a passi di 15 minuti e anche su un altro giorno; per una routine di più giorni Arianna chiede «Tutti i giorni» o «Solo <giorno>», che la divide in due; «Spostata · Annulla» rimette com'era, anche una divisione, in un solo passo; Esc annulla il trascinamento, su telefono parte con una pressione lunga (D-257).
 
+## [0.145.0] - 2026-10-19
+
+### Aggiunto
+
+- In una conversazione privata con Arianna basta chiedere «ogni lunedì e giovedì alle 9 fammi il resoconto…»: Arianna propone la routine con giorni, ora e fonti scelti da un elenco chiuso, e in chat compare la scheda con «Attiva» e «Scarta»; niente parte prima di «Attiva» (D-256).
+- La pagina «Routine» mostra in cima le routine proposte in chat, con «Da approvare» e gli stessi due pulsanti; la chat della routine compare nella lista solo dopo «Attiva» (D-256).
+
 ## [0.144.0] - 2026-10-18
 
 ### Aggiunto

@@ -95,9 +95,11 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
     const [created] = await tx<{ id: string }[]>`
       INSERT INTO routines (title, conversation_id, days, at, timezone, sources, summary, status, paused_by, next_run_at, approved_at)
       VALUES (${row.title}, ${conversation.id}, ${[input.to]}::smallint[], ${input.at}, ${row.timezone}, ${row.sources}::text[], ${row.summary},
-        ${active ? 'active' : 'paused'}, ${active ? null : 'user'}, ${active ? next(newRule, now) : null}, now())
+        'active', NULL, ${next(newRule, now)}, now())
       RETURNING id::text`;
     if (created === undefined) throw new Error('INSERT INTO routines returned no row');
+    // A routine is born active (routines_proposal_guard, D-256): from a paused one it is paused at once, in the same transaction.
+    if (!active) await tx`UPDATE routines SET status = 'paused', paused_by = 'user', next_run_at = NULL WHERE id = ${created.id}`;
     await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: conversation.id, mode: 'private', routine: true } });
     // The day given up, as a number only: «Annulla» gives back exactly this, never what the page sends.
     await appendEvent(tx, { kind: 'routine.created', label: 'L0', payload: { routineId: created.id, conversationId: conversation.id, splitFrom: id, splitDays: [input.day] } });

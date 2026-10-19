@@ -1212,6 +1212,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
       case 'conversation.created':
       case 'conversation.title':
       case 'conversation.archived':
+      case 'routine.approved': // A routine proposed in the chat and approved (D-256): its chat shows in the list from now on.
         work.push(refreshAllConversations());
         break;
       case 'conversation.purged':

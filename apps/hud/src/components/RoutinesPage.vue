@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, createRoutine, loadRoutines, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
+import { ApiError, createRoutine, decideRoutine, loadRoutines, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
 import {
+  APPROVE_TEXT,
   DAY_LETTERS,
+  DISCARD_TEXT,
   dateText,
   emptyForm,
   formOf,
   formProblem,
   lastRunText,
   NEW_TEXT,
+  PROPOSED_BADGE,
+  PROPOSED_HINT,
   RETIRE_CONFIRM_TEXT,
   ROUTINES_EMPTY_TEXT,
   ROUTINES_EMPTY_TITLE,
@@ -40,8 +44,10 @@ import RoutineCalendar from './RoutineCalendar.vue';
  * row of a Notion database seen as cards: title and when, what goes in the
  * report, in the chat, active or paused, the next run and the last outcome,
  * «Prova adesso». The form has closed choices only, besides the title; the
- * routine is born at the first save, active. The page reads the routines
- * again when the core says one changed (`version`).
+ * routine is born at the first save, active. A routine Arianna proposed in
+ * the chat (D-256) shows first, «Da approvare», with «Attiva» and «Scarta»
+ * only, as its card in the chat. The page reads the routines again when the
+ * core says one changed (`version`).
  */
 const props = defineProps<{ version: number }>();
 const emit = defineEmits<{ open: [conversationId: string] }>();
@@ -190,6 +196,10 @@ function toggleActive(routine: Routine): void {
   void act(routine, () => setRoutineActive(routine.id, active), active ? 'Routine attiva.' : 'Routine in pausa.', 'Non riesco a cambiare la routine.');
 }
 
+function decide(routine: Routine, approve: boolean): void {
+  void act(routine, () => decideRoutine(routine.id, approve), approve ? 'Routine attiva: il primo resoconto arriva all’ora scelta.' : 'Proposta scartata.', 'Non riesco a decidere la routine.');
+}
+
 function tryNow(routine: Routine): void {
   void act(routine, () => tryRoutine(routine.id), 'Resoconto scritto nella chat della routine.', 'Non riesco a scrivere il resoconto.');
 }
@@ -320,7 +330,9 @@ onBeforeUnmount(() => {
                 <h2 class="truncate text-[15.5px] font-semibold">{{ routine.title }}</h2>
                 <p class="text-[13.5px] text-muted">{{ scheduleText(routine) }}<template v-if="routine.timezone !== ownZone"> · {{ routine.timezone }}</template></p>
               </div>
+              <span v-if="routine.status === 'proposed'" class="shrink-0 rounded-full border border-warn/60 px-2.5 py-0.5 text-[12.5px] font-medium text-warn">{{ PROPOSED_BADGE }}</span>
               <button
+                v-else
                 type="button"
                 class="shrink-0 rounded-full border px-2.5 py-0.5 text-[12.5px] font-medium"
                 :class="routine.status === 'active' ? 'border-ok/60 text-ok' : 'border-line-strong text-muted'"
@@ -343,12 +355,19 @@ onBeforeUnmount(() => {
                 <span class="pill"><Icon name="chat" :size="12" />in chat</span>
                 <span v-if="routine.summary" class="pill">+ sintesi locale</span>
               </div>
+              <p v-if="routine.status === 'proposed'" class="text-muted">{{ PROPOSED_HINT }}</p>
               <p v-if="routine.status === 'active' && routine.nextRunAt !== null"><span class="text-muted">Prossima:</span> {{ dateText(routine.nextRunAt, routine.timezone) }}</p>
               <p v-else-if="routine.pausedBy === 'archived'" class="text-muted">La sua chat è archiviata: «Attiva» la ripristina.</p>
               <p v-if="lastRunText(routine.lastRun, routine.timezone) !== null" class="text-muted">{{ lastRunText(routine.lastRun, routine.timezone) }}</p>
             </div>
 
-            <footer class="flex flex-wrap items-center gap-2 border-t border-dashed border-line px-3.5 py-2 text-[13px]">
+            <footer v-if="routine.status === 'proposed'" class="flex flex-wrap items-center gap-2 border-t border-dashed border-line px-3.5 py-2 text-[13px]">
+              <button type="button" class="btn btn-primary px-2.5 py-0.5 text-[13px]" :disabled="busy.has(routine.id)" @click="decide(routine, true)">
+                <Icon name="approve" :size="13" />{{ APPROVE_TEXT }}
+              </button>
+              <button type="button" class="btn px-2.5 py-0.5 text-[13px]" :disabled="busy.has(routine.id)" @click="decide(routine, false)">{{ DISCARD_TEXT }}</button>
+            </footer>
+            <footer v-else class="flex flex-wrap items-center gap-2 border-t border-dashed border-line px-3.5 py-2 text-[13px]">
               <button type="button" class="btn px-2.5 py-0.5 text-[13px]" :title="TRY_HINT" :disabled="busy.has(routine.id) || routine.conversationArchived" @click="tryNow(routine)">
                 <Icon name="play" :size="13" />{{ TRY_TEXT }}
               </button>

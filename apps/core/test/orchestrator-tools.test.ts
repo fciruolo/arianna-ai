@@ -72,6 +72,14 @@ test('profile.share only with facts and a delegation, never in the secretary or 
   assert.ok(!orchestratorTools(arianna, true, true, true).includes('profile.propose'));
 });
 
+test('routine.propose only where the step may propose a routine, never in incognito nor the secretary (D-256)', () => {
+  assert.ok(arianna !== undefined);
+  assert.ok(!orchestratorTools(arianna, true, true).includes('routine.propose'));
+  assert.ok(orchestratorTools(arianna, true, true, false, false, false, false, true).includes('routine.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true, true, false, false, false, true).includes('routine.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true, false, true, false, false, true).includes('routine.propose'));
+});
+
 test('a card that does not list task.update never gets it, with cards or not', () => {
   assert.ok(arianna !== undefined);
   const without = { ...arianna, card: { ...arianna.card, tools: arianna.card.tools.filter((tool) => tool !== 'task.update') } };

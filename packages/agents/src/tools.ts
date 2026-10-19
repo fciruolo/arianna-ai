@@ -68,6 +68,9 @@ export const TOOLS = {
   'profile.share': { description: "Ask the user to let one fact of the profile out to an agent, once, with the next delegation", opens: [], localOnly: true },
   // A fact Arianna heard in the conversation (D-114, tappa D): written "Solo in casa" only after the user confirms it.
   'profile.propose': { description: "Propose a fact for the user's profile, written as private only after the user confirms it", opens: [], localOnly: true },
+  // A routine of the user (D-110, tappa A2; D-256): closed fields only, written off ("proposed") by the core; it
+  // runs only after the user approves it in the web chat or on the page «Routine». Never a free recurring prompt.
+  'routine.propose': { description: 'Propose a recurring report (days, time, closed sources), active only after the user approves it', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only

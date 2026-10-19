@@ -2983,6 +2983,17 @@ function routineRoutes(routines: RoutineService | undefined, sql: Sql): Route[] 
       const id = idParam(params, 'id');
       return { body: { routine: await need().unsplit(id, await readJson(request)) } };
     }),
+    // A routine proposed in the chat (D-256): «Attiva» and «Scarta» of the page, as the card in the chat.
+    route('POST', '/api/routines/:id/approve', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { routine: await need().decide(id, 'approved') } };
+    }),
+    route('POST', '/api/routines/:id/discard', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { routine: await need().decide(id, 'rejected') } };
+    }),
     route('POST', '/api/routines/:id/run', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);

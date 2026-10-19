@@ -58,6 +58,17 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'profile.share': object({ topic: text(60), agent: text(60), reason: text(200) }, ['topic', 'agent', 'reason']),
   // MAX_FACT_TEXT of apps/core/src/user-facts.ts.
   'profile.propose': object({ topic: text(60), text: text(300) }, ['topic', 'text']),
+  // MAX_ROUTINE_TITLE and ROUTINE_SOURCES of apps/core/src/routine-proposals.ts (D-256): closed fields, never a prompt.
+  'routine.propose': object(
+    {
+      title: text(80),
+      days: { type: 'array', minItems: 1, maxItems: 7, items: { type: 'integer', enum: [1, 2, 3, 4, 5, 6, 7] } },
+      at: text(5),
+      sources: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string', enum: ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'] } },
+      summary: { type: 'boolean' },
+    },
+    ['title', 'days', 'at', 'sources'],
+  ),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -106,6 +117,8 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
     'Ask the user to give one fact about themselves to an agent you will delegate to: "topic" exactly as the list of facts names it, "agent" the agent, "reason" one short line on why the agent needs it. When a work for an agent needs a fact that the list shows as private (its text not here), call this first: do not ask the user what it is, and do not delegate before it. Also for a fact an agent asked for with "Mi serve:" in its report. The core shows the exact text to the user, who decides; approved, the core adds it to your next task.delegate to that agent, once: never write the fact in the brief yourself. Refused, go on without it and say in the brief that the user did not share it.',
   'profile.propose':
     'Propose to remember a stable fact the user just told you about themselves (where they live, their job, a preference): "topic" one or two general words (the place, the job, the children: never names or numbers in the topic); if the list of facts already has a topic for this same thing, use exactly that topic, so that its text is replaced; "text" the fact in the user\'s words. The user confirms it in the chat; it is saved as private ("Solo in casa"). Never for health, documents or credentials, never for something said in passing or about other people.',
+  'routine.propose':
+    'Propose a routine: a report that Arianna writes by herself in a chat of its own on fixed days at a fixed time, again and again ("ogni lunedì alle 9 fammi il resoconto", "tutte le sere alle 18 dimmi cosa ho da fare"). Only when the user asks for something recurring; for a report now, or once, never. "title" is a short name of one line (at most 80 characters), in the user\'s words; "days" are ISO days, 1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday, 6 Saturday, 7 Sunday ("ogni giorno": all seven; "nei giorni feriali": 1 to 5); "at" is the time as HH:MM, 24 hours ("alle 9": "09:00"); "sources" are what goes in the report, only from this list: "todo" (the user\'s open cards), "waiting" (decisions waiting for the user), "cards" (cards at work), "done-since" (cards done since the last report), "failed-since" (cards failed since the last report), "notes" (new thoughts to sort): for a general report ("cosa ho da fare e cosa aspetta me") use "todo" and "waiting"; "summary" adds three lines of the local model (default true). The report is written by the core and arrives only in the chat, never by phone or email: say so if the user asked for those. Nothing starts until the user approves the routine in the chat: call it once, and never say it is active before.',
   'commitment.add':
     'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':

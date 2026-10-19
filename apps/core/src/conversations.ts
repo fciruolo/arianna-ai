@@ -393,6 +393,8 @@ export async function listConversations(
     `SELECT * FROM (
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
        WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND NOT c.secretary AND c.side_of IS NULL AND c.dashboard_of IS NULL AND ($2 OR c.origin = $3)
+         -- The chat of a routine proposed and never approved (D-256): it shows once the routine is active.
+         AND NOT EXISTS (SELECT FROM routines r WHERE r.conversation_id = c.id AND r.approved_at IS NULL)
      ) listed
      ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,

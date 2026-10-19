@@ -60,6 +60,11 @@ export const TRY_TEXT = 'Prova adesso';
 export const TRY_HINT = 'Scrive subito il resoconto nella chat della routine, senza spostare il prossimo';
 export const RETIRE_CONFIRM_TEXT = 'Togliere la routine? Non partirà più; la sua chat resta, con i resoconti già scritti.';
 export const TITLE_MAX = 80;
+/** A routine Arianna proposed in the chat (D-256): nothing runs before «Attiva». */
+export const PROPOSED_BADGE = 'Da approvare';
+export const PROPOSED_HINT = 'Proposta da Arianna in chat: non parte finché non la attivi.';
+export const APPROVE_TEXT = 'Attiva';
+export const DISCARD_TEXT = 'Scarta';
 
 export const DAY_LETTERS: readonly { day: IsoDay; letter: string; name: string }[] = [
   { day: 1, letter: 'L', name: 'lunedì' },
@@ -113,7 +118,7 @@ export function dateText(iso: string, timezone: string): string {
 export function statusText(routine: Pick<Routine, 'status' | 'pausedBy'>): string {
   if (routine.status === 'active') return 'Attiva';
   if (routine.status === 'paused') return routine.pausedBy === 'archived' ? 'In pausa: chat archiviata' : 'In pausa';
-  if (routine.status === 'proposed') return 'Proposta, da approvare';
+  if (routine.status === 'proposed') return PROPOSED_BADGE;
   return 'Tolta';
 }
 
@@ -166,7 +171,7 @@ export function toggled<T>(chosen: readonly T[], item: T, all: readonly T[]): T[
 /** The message of a refusal of the core, for the page. */
 export function routineErrorText(status: number, fallback: string): string {
   if (status === 404) return 'La routine non c’è più.';
-  if (status === 409) return 'La chat della routine è archiviata: riattiva la routine per ripristinarla.';
+  if (status === 409) return 'La routine è cambiata nel frattempo (archiviata, già decisa o da approvare): ricarica la pagina.';
   if (status === 400) return 'Controlla i campi: qualcosa non va.';
   return fallback;
 }

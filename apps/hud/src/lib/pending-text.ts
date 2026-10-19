@@ -74,6 +74,8 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
       const count = Array.isArray(detail.cards) ? detail.cards.length : 0;
       return typeof detail.title === 'string' && count > 0 ? `Creare ${String(count)} card per «${detail.title}»` : 'Creare le card di un piano';
     }
+    case 'routine':
+      return typeof detail.title === 'string' ? `Attivare la routine «${detail.title}»` : 'Attivare una routine';
     case 'fact':
       return typeof detail.topic === 'string' ? `Ricordare «${detail.topic}» in «Su di te»` : 'Ricordare un dato in «Su di te»';
     case 'executor':

@@ -12,6 +12,7 @@ import { contextOf, outputSource } from './finance-mark.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
 import { claimStep, completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue, type StepLane } from './jobs.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
+import { decideRoutineProposal, proposedRoutineId } from './routine-proposals.ts';
 import {
   checkUsage,
   endRun,
@@ -463,7 +464,7 @@ export async function processStepJob(
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
           WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id}
-            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact') OR (kind = 'declassify' AND action = 'share_fact'))`;
+            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           // A card «Piano» (D-235) closes in Fatto here, as the decision would have closed it waiting.
@@ -559,6 +560,9 @@ export async function recordDecisionIn(
   if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
   // A fact Arianna proposed (D-114, tappa D): written "Solo in casa" with the decision.
   if (decided.kind === 'fact' && state === 'approved') await applyFactProposal(tx, decided);
+  // A routine proposed in the chat (D-256): active with its next run, or retired, with the decision.
+  const routineId = proposedRoutineId(decided);
+  if (routineId !== undefined) await decideRoutineProposal(tx, routineId, state, decided.id);
   // The card «Piano» of «/progetta» (D-235) closes in Fatto with the decision: nothing more to run.
   if (await closePlanningCard(tx, decided)) return decided;
   if (decided.taskId !== null) {
