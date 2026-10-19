@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.148.1] - 2026-10-19
+
 ### Corretto
 
 - Routine con la chiamata: un «sì» detto da solo, che il riconoscimento della voce scrive spesso in inglese o in russo («See ya.», «Сиє.»), ora apre la lettura dei titoli; la domanda chiede «sì grazie, oppure no grazie», due parole che la voce trascrive bene (D-259).
