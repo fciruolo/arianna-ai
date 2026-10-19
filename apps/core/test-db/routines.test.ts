@@ -94,7 +94,7 @@ async function closeCard(id: string, to: 'done' | 'failed'): Promise<void> {
 
 test('a routine is born active with its own private conversation, marked in the list', async () => {
   const now = new Date('2026-10-19T08:00:00Z');
-  const routine = await createRoutine(db().sql, { title: 'Buongiorno', days: [1, 2, 3, 4, 5], at: '18:00', timezone: 'Europe/Rome', sources: ['todo', 'waiting'] }, now);
+  const routine = await createRoutine(db().sql, { title: 'Buongiorno', days: [1, 2, 3, 4, 5], at: '18:00', timezone: 'Europe/Rome', sources: ['todo', 'waiting'], summary: false }, now);
   assert.equal(routine.status, 'active');
   assert.equal(routine.nextRunAt?.toISOString(), '2026-10-19T16:00:00.000Z');
   const [conversation] = await db().sql<{ mode: string; clearance: string; title: string; origin: string }[]>`
@@ -282,7 +282,7 @@ test('the ticker runs what is due; a routine paused or removed does not run', as
 
 test('a change of the rule moves the next run and the conversation title follows the routine', async () => {
   const now = new Date('2026-10-19T08:00:00Z');
-  const routine = await createRoutine(db().sql, { title: 'Sera finta', days: [1], at: '18:00', timezone: 'Europe/Rome', sources: ['todo'] }, now);
+  const routine = await createRoutine(db().sql, { title: 'Sera finta', days: [1], at: '18:00', timezone: 'Europe/Rome', sources: ['todo'], summary: false }, now);
   const changed = await updateRoutine(db().sql, routine.id, { title: 'Mattina finta', at: '09:00', days: [2] }, now);
   assert.equal(changed.nextRunAt?.toISOString(), '2026-10-20T07:00:00.000Z');
   const [conversation] = await db().sql<{ title: string }[]>`SELECT title FROM conversations WHERE id = ${routine.conversationId}`;
@@ -290,6 +290,19 @@ test('a change of the rule moves the next run and the conversation title follows
   const [event] = await db().sql<{ payload: { fields: string[] } }[]>`SELECT payload FROM events WHERE kind = 'routine.updated' AND payload ->> 'routineId' = ${routine.id}`;
   assert.deepEqual(event?.payload.fields, ['at', 'days', 'title']);
 });
+
+/**
+ * The summarizer takes the oldest job of the whole queue. A routine created
+ * with a fake clock (the tests above use 19 October 2026) is due for real once
+ * that time is past, and the ticker test runs every routine due: a summary it
+ * queues would be taken instead of the test's own. Those routines have no
+ * summary; a summary test still closes what is left in the queue first (the
+ * app role cannot delete a job). Test-only: their runs stay 'queued', the app
+ * settles a summary with settleSummary.
+ */
+async function emptySummaryQueue(): Promise<void> {
+  await db().sql`UPDATE jobs SET status = 'done', locked_at = NULL, locked_by = NULL WHERE queue = ${SUMMARY_QUEUE} AND status IN ('queued', 'running')`;
+}
 
 function fakeModel(answer: (request: ChatRequest) => unknown): LocalModel {
   return {
@@ -302,6 +315,7 @@ function fakeModel(answer: (request: ChatRequest) => unknown): LocalModel {
 }
 
 test('the summary: the report only goes to the local model, the lines come back with its label', async () => {
+  await emptySummaryQueue();
   await card('Rinnovare il dominio finto');
   const { id, conversationId } = await dueRoutine(1, ['todo'], { summary: true });
   await runDue(env(), id);
@@ -327,6 +341,7 @@ test('the summary: the report only goes to the local model, the lines come back 
 });
 
 test('the summary waits while the model is not ready, and after 20 minutes the report stays without it', async () => {
+  await emptySummaryQueue();
   const { id, conversationId } = await dueRoutine(1, ['notes'], { summary: true });
   await runDue(env(), id);
   let calls = 0;
@@ -347,6 +362,7 @@ test('the summary waits while the model is not ready, and after 20 minutes the r
 });
 
 test('a summary whose model does not answer goes back to the queue', async () => {
+  await emptySummaryQueue();
   const { id } = await dueRoutine(1, ['notes'], { summary: true });
   await runDue(env(), id);
   const summarizer = createRoutineSummarizer({ sql: db().sql, model: () => fakeModel(() => new LocalModelError('unavailable', 'down')), busy: () => Promise.resolve(false) });
@@ -698,6 +714,7 @@ test('waiting: a wait of an incognito conversation is not even counted', async (
 });
 
 test('a summary with numbers not in the data is tried once more, then given up saying why', async () => {
+  await emptySummaryQueue();
   const { id, conversationId } = await dueRoutine(1, ['notes'], { summary: true });
   await runDue(env(), id);
   const asked: string[] = [];
@@ -732,6 +749,7 @@ test('a summary with numbers not in the data is tried once more, then given up s
 });
 
 test('a report that does not read back as data is never given to the model', async () => {
+  await emptySummaryQueue();
   const routine = await createRoutine(db().sql, { title: 'Formato finto', days: [1], at: '09:00', timezone: 'UTC', sources: ['notes'] });
   const [message] = await db().sql<{ id: string }[]>`
     INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${routine.conversationId}, 'assistant', 'web', 'L2', 'Un testo che non è un resoconto.') RETURNING id::text`;
