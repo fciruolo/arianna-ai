@@ -5,10 +5,17 @@
 // written for one run and removed after it. The token lives only in that file,
 // never in the arguments (`ps` shows them to every user of the machine); the
 // core revokes it when the run ends.
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
+import { lstat, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
 import { RUN_ID } from './workspace.ts';
+
+/** The folder of the configuration files under `data/` (0700): ARIANNA_HOME, closed to sandboxed commands. */
+export const MCP_DIR = 'mcp';
+/** The name of a configuration file: `<runId>.mcp.json`. */
+const CONFIG_FILE = /^([a-z0-9][a-z0-9-]{0,63})\.mcp\.json$/;
 
 /** The server's name in the configuration: the binary prefixes its tools with it (`mcp__arianna__…`). */
 export const MCP_SERVER_NAME = 'arianna';
@@ -98,4 +105,76 @@ export async function releaseMcp(prepared: PreparedMcp): Promise<void> {
   const known = preparedMcp(prepared);
   if (known === undefined) throw new TypeError('mcp: not a configuration made by prepareMcp');
   await rm(known.path, { force: true });
+}
+
+/**
+ * Removes the configuration files a core that stopped mid-run left in `dir`
+ * (their tokens died with it), at the start of the core: only names of the
+ * form `<runId>.mcp.json`, a link removed as a link, never followed; a
+ * folder or anything else is left. A missing `dir` is nothing to do.
+ * Returns how many it removed.
+ */
+export async function removeStaleMcp(dir: string): Promise<number> {
+  if (typeof dir !== 'string' || !isAbsolute(dir) || resolve(dir) !== dir || dir === sep) throw new TypeError('mcp: dir must be an absolute, normalized folder other than the root');
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+  let removed = 0;
+  for (const name of names) {
+    const match = CONFIG_FILE.exec(name);
+    if (match?.[1] === undefined || !RUN_ID.test(match[1])) continue;
+    const path = join(dir, name);
+    const stats = await lstat(path).catch(() => undefined);
+    if (stats === undefined || !(stats.isFile() || stats.isSymbolicLink())) continue;
+    await rm(path, { force: true });
+    removed += 1;
+  }
+  return removed;
+}
+
+/**
+ * Where Claude Code reads the settings an administrator manages on macOS, as
+ * named by the binary (2.1.303): the files of /Library/Application
+ * Support/ClaudeCode and the MDM profiles. A run with the server has no
+ * `--safe-mode`, and `--setting-sources ''` does not turn these off: their
+ * hooks or servers would run inside it.
+ */
+export function claudeManagedPaths(user: string = currentUser()): string[] {
+  const root = '/Library/Application Support/ClaudeCode';
+  const plist = 'com.anthropic.claudecode.plist';
+  return [
+    join(root, 'managed-settings.json'),
+    join(root, 'managed-settings.d'),
+    join(root, 'managed-mcp.json'),
+    join('/Library/Managed Preferences', plist),
+    ...(user === '' ? [] : [join('/Library/Managed Preferences', user, plist)]),
+  ];
+}
+
+function currentUser(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * True when any of `paths` exists (a link counts, even broken): the run then
+ * goes without the server (D-261). Existence only: never read. A path that
+ * cannot be checked for another reason counts as there.
+ */
+export function claudeManagedSettingsPresent(paths: readonly string[] = claudeManagedPaths()): boolean {
+  return paths.some((path) => {
+    try {
+      lstatSync(path);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR';
+    }
+  });
 }

@@ -2,7 +2,7 @@
 // file of one run, the arguments and the `init` check with and without it.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
@@ -19,7 +19,10 @@ import {
   prepareMcp,
   preparedMcp,
   profileViolations,
+  claudeManagedPaths,
+  claudeManagedSettingsPresent,
   releaseMcp,
+  removeStaleMcp,
   type McpEndpoint,
 } from '@arianna/executors';
 
@@ -63,6 +66,48 @@ describe('mcp configuration (D-261)', () => {
     assert.equal(existsSync(prepared.path), false);
     await releaseMcp(prepared);
     await assert.rejects(releaseMcp({ path: prepared.path, tools: ['kb_read'] }), /not a configuration made by prepareMcp/);
+  });
+
+  it('at the start removes the files a stopped core left, and nothing else (D-261)', async () => {
+    const dir = join(DIR, 'stale');
+    assert.equal(await removeStaleMcp(dir), 0);
+    const left = await prepareMcp(dir, 'run-stale', endpoint());
+    // The folder is made private.
+    assert.equal(statSync(dir).mode & 0o777, 0o700);
+    const outside = join(DIR, 'outside.txt');
+    writeFileSync(outside, 'kept');
+    symlinkSync(outside, join(dir, 'run-link.mcp.json'));
+    writeFileSync(join(dir, 'notes.json'), 'kept');
+    writeFileSync(join(dir, 'Upper.mcp.json'), 'kept');
+    mkdirSync(join(dir, 'run-folder.mcp.json'));
+    assert.equal(await removeStaleMcp(dir), 2);
+    assert.equal(existsSync(left.path), false);
+    // The link is gone, not what it pointed to.
+    assert.equal(readFileSync(outside, 'utf8'), 'kept');
+    assert.equal(existsSync(join(dir, 'run-link.mcp.json')), false);
+    for (const name of ['notes.json', 'Upper.mcp.json', 'run-folder.mcp.json']) assert.ok(existsSync(join(dir, name)), name);
+    await assert.rejects(removeStaleMcp('relative/dir'), /absolute/);
+  });
+
+  it('tells managed settings of Claude Code by their existence alone, a broken link too', () => {
+    const paths = claudeManagedPaths('someone');
+    assert.ok(paths.includes('/Library/Application Support/ClaudeCode/managed-settings.json'));
+    assert.ok(paths.includes('/Library/Application Support/ClaudeCode/managed-settings.d'));
+    assert.ok(paths.includes('/Library/Application Support/ClaudeCode/managed-mcp.json'));
+    assert.ok(paths.includes('/Library/Managed Preferences/someone/com.anthropic.claudecode.plist'));
+    assert.ok(!claudeManagedPaths('').some((path) => path.includes('//')));
+    const dir = join(DIR, 'managed');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'managed-settings.json');
+    const link = join(dir, 'managed-mcp.json');
+    assert.equal(claudeManagedSettingsPresent([file, link, join(dir, 'missing', 'deeper')]), false);
+    // Not a folder on the way: nothing there either.
+    writeFileSync(join(dir, 'plain'), '');
+    assert.equal(claudeManagedSettingsPresent([join(dir, 'plain', 'managed-settings.json')]), false);
+    writeFileSync(file, '{}');
+    assert.equal(claudeManagedSettingsPresent([file]), true);
+    symlinkSync(join(dir, 'nowhere'), link);
+    assert.equal(claudeManagedSettingsPresent([link]), true);
   });
 
   it('accepts only a loopback url on /mcp, a long base64url token and a list of the known tools', async () => {
@@ -228,6 +273,8 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     for (const [extra, field] of [
       [{ agents: [...CLAUDE_BUILTIN_AGENTS, 'reviewer'] }, 'agents'],
       [{ agents: 'Plan' }, 'agents'],
+      // Required with the server: a field gone is no proof that no agent came in.
+      [{ agents: undefined }, 'agents'],
       [{ output_style: 'Explanatory' }, 'output_style'],
       [{ output_style: undefined }, 'output_style'],
       [{ memory_paths: { auto: 'fake/memory' } }, 'memory_paths'],
@@ -240,8 +287,8 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     ] as const) {
       assert.deepEqual(profileViolations({ ...init, ...extra }, expected), [field], JSON.stringify(extra));
     }
-    // Positive: fewer built-in agents, none, no agents field, empty memory paths and errors.
-    for (const extra of [{ agents: ['Explore'] }, { agents: [] }, { agents: undefined }, { memory_paths: {} }, { plugin_errors: [] }, { mcp_server_errors: [] }]) {
+    // Positive: fewer built-in agents, none, empty or absent memory paths (2.1.303 has none), empty errors.
+    for (const extra of [{ agents: ['Explore'] }, { agents: [] }, { memory_paths: {} }, { memory_paths: undefined }, { plugin_errors: [] }, { mcp_server_errors: [] }]) {
       assert.deepEqual(profileViolations({ ...init, ...extra }, expected), [], JSON.stringify(extra));
     }
     // Without the server these stay to --safe-mode, as before.

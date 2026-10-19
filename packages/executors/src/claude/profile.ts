@@ -394,8 +394,10 @@ export function profileViolations(init: InitReport, expected: { cwd: string; too
     // Plugins that did not load still tried: the user's profile is in.
     if (!isEmptyList(init.plugin_errors) && !violations.includes('plugins')) violations.push('plugins');
     const agents = init.agents;
-    if (agents !== undefined && (!Array.isArray(agents) || !agents.every((agent) => (CLAUDE_BUILTIN_AGENTS as readonly unknown[]).includes(agent)))) violations.push('agents');
+    // Required: a binary that renamed the field would let a user's agent in unseen.
+    if (!Array.isArray(agents) || !agents.every((agent) => (CLAUDE_BUILTIN_AGENTS as readonly unknown[]).includes(agent))) violations.push('agents');
     if (init.output_style !== DEFAULT_OUTPUT_STYLE) violations.push('output_style');
+    // Optional: 2.1.303 does not report it at all (tried live); when present it must be empty.
     const memory = init.memory_paths;
     if (memory !== undefined && !(typeof memory === 'object' && memory !== null && !Array.isArray(memory) && Object.keys(memory).length === 0)) violations.push('memory_paths');
   }

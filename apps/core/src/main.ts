@@ -25,7 +25,7 @@ import {
   workParts,
   type TelegramConfig,
 } from '@arianna/config';
-import { createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, removeConversationWorkspace, WORKTREES_DIR, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
+import { claudeManagedSettingsPresent, createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, MCP_DIR, removeConversationWorkspace, removeStaleMcp, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
@@ -78,7 +78,7 @@ import { createAdvisor } from './orchestrator/advisor.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
 import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-reports.ts';
-import { createSkillsCatalog, eventSkillId, isPublicSkill, OPEN_DESIGN_SOURCE, ownSkillRefusal, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
+import { assignedSkills, createSkillsCatalog, eventSkillId, isPublicSkill, OPEN_DESIGN_SOURCE, ownSkillRefusal, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { cloudModelAreas, createChangeWatcher, lastBinaryVersion, modelsArea, packageVersion, readAreas, shortCommit, sourcesArea, stateFile } from './install-changes.ts';
 import { modelStatus } from './model-files.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
@@ -480,10 +480,7 @@ const skillsCatalog = createSkillsCatalog({
   onEvent: (kind, payload) => {
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
   },
-  assigned: (agent) => {
-    const all = settings.current().agents;
-    return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
-  },
+  assigned: (agent) => assignedSkills(settings.current(), agent),
   refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
   // The user's own skills of Claude Code (D-255): copied only on the user's «Importa», private until marked shareable.
   claudeConfig: { env: process.env, home: userHomeOf() },
@@ -497,10 +494,7 @@ const mcpServer = createMcpServer({
   skills: {
     list: () => skillsCatalog.list(),
     text: (id) => skillsCatalog.text(id),
-    assigned: (agent) => {
-      const all = settings.current().agents;
-      return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
-    },
+    assigned: (agent) => assignedSkills(settings.current(), agent),
     refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
   },
   gate: (payload, context, executor, meta) => passGateway(sql, payload, context, { kind: 'executor', id: executor, locality: 'cloud' }, meta),
@@ -509,6 +503,9 @@ const mcpServer = createMcpServer({
   },
   version: packageVersion(config.home) ?? '0.0.0',
 });
+// The files of the runs' tokens (D-261), 0700 under data/: those a stopped core left go now, their tokens died with it.
+const mcpDir = join(config.paths.data, MCP_DIR);
+await removeStaleMcp(mcpDir).catch(report);
 // A server that cannot start leaves the core up: runs get no MCP session (`open` refuses), undefined here.
 let mcpUrl: string | undefined;
 try {
@@ -550,8 +547,9 @@ const orchestrator = createOrchestrator({
   sql,
   agents,
   advise,
-  // D-261: the Coder's runs on claude get Arianna's tools; the configuration files next to the worktrees, closed to the sandbox.
-  mcp: { server: mcpServer, url: mcpUrl, dir: join(config.paths.data, WORKTREES_DIR) },
+  // D-261: the Coder's runs on claude get Arianna's tools; the files of their tokens in data/mcp, closed to the sandbox.
+  // A machine whose Claude Code settings an administrator manages runs them without (only whether the files exist).
+  mcp: { server: mcpServer, url: mcpUrl, dir: mcpDir, managed: () => claudeManagedSettingsPresent() },
   // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
   // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
   skills: (agent, maxBytes, card, ceiling) => {

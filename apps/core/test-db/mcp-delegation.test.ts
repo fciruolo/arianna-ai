@@ -37,7 +37,7 @@ const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n\n[[fol
 const OPTIONS = { allowedActions: () => [] as readonly string[], agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }) };
 const BASE = loadConfig();
 const REPO = join(HOME, 'repos', 'site');
-const CONFIG_DIR = join(HOME, 'data', 'worktrees');
+const CONFIG_DIR = join(HOME, 'data', 'mcp');
 
 const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 });
 const loaded = committedAgents(ROOT);
@@ -114,6 +114,7 @@ interface Mcp {
   server?: Pick<McpServer, 'open' | 'revoke'>;
   dir?: string;
   scenario?: string;
+  incognito?: boolean;
 }
 
 function orchestrator(model: LocalModel, mcp: Mcp): StepExecutor {
@@ -141,7 +142,7 @@ function orchestrator(model: LocalModel, mcp: Mcp): StepExecutor {
     settings,
     rules: RULES,
     claude,
-    mcp: { server: mcp.server ?? watched, url: mcp.url, dir: mcp.dir ?? CONFIG_DIR },
+    mcp: { server: mcp.server ?? watched, url: mcp.url, dir: mcp.dir ?? CONFIG_DIR, managed: () => false },
   });
 }
 
@@ -166,7 +167,7 @@ const REPLY: Answer = { action: 'reply', text: 'Fatto.' };
 async function delegate(setup: Mcp, status = 'ok'): Promise<{ taskId: string; runId: string; argv: string[]; prompt: string; mcp: { status: number; names: string[] } }> {
   rmSync(join(REPO, '.fake-claude-mcp.json'), { force: true });
   writeFileSync(join(REPO, '.fake-claude-mcp.json'), JSON.stringify({ status: 0, names: [] }));
-  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'] });
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], ...(setup.incognito === true ? { incognito: true } : {}) });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Come funziona il router?');
   assert.deepEqual(await drain(task.id, orchestrator(scripted([DELEGATE, REPLY]), setup)), ['continued', 'continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
@@ -278,4 +279,15 @@ test('a session the server refuses, or a file that cannot be written: the run go
   assert.deepEqual(await unavailable(unwritable.taskId), [{ executor: 'claude', reason: 'config' }]);
   assert.equal(opened.length, 1);
   assert.deepEqual(revoked, [unwritable.runId]);
+});
+
+test('incognito (D-136): no session of the server, no file, no event, the run as before', async () => {
+  opened.length = 0;
+  revoked.length = 0;
+  const { taskId, argv, prompt, mcp } = await delegate({ url, incognito: true });
+  assert.deepEqual([opened.length, revoked.length], [0, 0]);
+  assert.deepEqual(mcp, { status: 0, names: [] });
+  assert.ok(argv.includes('--safe-mode'));
+  assert.ok(!prompt.includes('mcp__arianna__'));
+  assert.deepEqual(await unavailable(taskId), []);
 });

@@ -103,12 +103,16 @@ export {
 } from './local/watchdog.ts';
 export {
   checkMcpTools,
+  claudeManagedPaths,
+  claudeManagedSettingsPresent,
+  MCP_DIR,
   MCP_SERVER_NAME,
   MCP_TOOL_NAMES,
   mcpToolId,
   prepareMcp,
   preparedMcp,
   releaseMcp,
+  removeStaleMcp,
   type McpEndpoint,
   type McpToolName,
   type PreparedMcp,

@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-import { ORCHESTRATOR_AGENT, SKILL_ID, SKILLS_DELIVERY_BYTES } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, SKILL_ID, SKILLS_DELIVERY_BYTES, type AriannaConfig } from '@arianna/config';
 import { CATALOG_SOURCE, isAtMost, markCatalogText, maxLabel, type Label } from '@arianna/policy';
 
 import { CLAUDE_SOURCE, createClaudeSkills, type ClaudeSkills } from './claude-skills.ts';
@@ -731,6 +731,12 @@ function inside(root: string, path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** The skills `[agents.<id>] skills` assigns to an agent (D-161); own keys only (`constructor` is no agent). */
+export function assignedSkills(settings: Pick<AriannaConfig, 'agents'>, agent: string): readonly string[] {
+  const all = settings.agents;
+  return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
 }
 
 /** Why an agent may receive no skills, from its card (D-161); null when it may. */

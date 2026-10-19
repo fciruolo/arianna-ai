@@ -61,7 +61,7 @@ import { BRIEF_MARK, CHAT_WINDOW_RULE, chatWindowParts, readsChat } from './chat
 import type { Advise } from './advisor.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-share.ts';
-import { eventSkillId } from '../skills-catalog.ts';
+import { assignedSkills, eventSkillId } from '../skills-catalog.ts';
 import { recordVariantDesign } from '../studio.ts';
 import { delegationMcpTools } from '../mcp/run-tools.ts';
 import type { McpServer } from '../mcp/server.ts';
@@ -117,7 +117,7 @@ export interface DelegateEnv {
    * `claude`: the server, its URL (undefined when it did not start) and the
    * folder of the runs' configuration files. Absent, no run gets it.
    */
-  mcp?: { server: Pick<McpServer, 'open' | 'revoke'>; url: string | undefined; dir: string };
+  mcp?: { server: Pick<McpServer, 'open' | 'revoke'>; url: string | undefined; dir: string; managed: () => boolean };
 }
 
 /** The style of Open Design and the skills chosen on a Designer card (D-163). */
@@ -1083,11 +1083,6 @@ export function stepFor(ctx: StepContext, executor: CloudExecutor): StepContext 
   return copy;
 }
 
-/** The skills `[agents.<id>] skills` assigns to an agent (D-161); own keys only. */
-function assignedSkills(settings: Pick<AriannaConfig, 'agents'>, agent: string): readonly string[] {
-  return Object.hasOwn(settings.agents, agent) ? (settings.agents[agent]?.skills ?? []) : [];
-}
-
 /**
  * The MCP server of a delegated step on `claude` (D-261): undefined without
  * the server, or when the agent gets none of its tools (`delegationMcpTools`);
@@ -1097,7 +1092,7 @@ export function delegationMcp(env: Pick<DelegateEnv, 'mcp' | 'settings'>, task: 
   if (env.mcp === undefined) return undefined;
   const tools = delegationMcpTools(agent, card, assignedSkills(env.settings(), agent));
   if (tools.length === 0) return undefined;
-  return { server: env.mcp.server, url: env.mcp.url, dir: env.mcp.dir, agent, clearance: mcpClearance(task.clearance, cloudCeiling(card)), tools };
+  return { server: env.mcp.server, url: env.mcp.url, dir: env.mcp.dir, managed: env.mcp.managed, agent, clearance: mcpClearance(task.clearance, cloudCeiling(card)), tools };
 }
 
 /**
@@ -1211,7 +1206,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const stream = replyStream(reply);
   // Arianna's MCP server for the run (D-261): the Coder alone, on claude alone; Codex has no MCP of hers. Each attempt opens
   // its own session and revokes it at its end (runClaudeStep), a new start after a lost session included.
-  const mcp = plan.executor === 'claude' ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
+  // Never in incognito (D-136): no session, no file, no event, nothing of the run left behind.
+  const mcp = plan.executor === 'claude' && persistSession ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,

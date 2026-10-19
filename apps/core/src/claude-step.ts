@@ -58,7 +58,7 @@ export interface ClaudeStepMcp {
   server: Pick<McpServer, 'open' | 'revoke'>;
   /** The server's URL; undefined when the server did not start, and the run goes without it. */
   url: string | undefined;
-  /** Absolute folder of the configuration file, one sandboxed commands cannot read (`data/worktrees`). */
+  /** Absolute folder of the configuration file, one sandboxed commands cannot read (`data/mcp`). */
   dir: string;
   /** The agent's card id: its assigned skills are the ones the server lists. */
   agent: string;
@@ -66,6 +66,12 @@ export interface ClaudeStepMcp {
   clearance: Label;
   /** Not empty: a step with no tool gets no `mcp`. */
   tools: readonly McpToolName[];
+  /**
+   * Whether an administrator manages Claude Code's settings on this machine
+   * (`claudeManagedSettingsPresent`): their hooks and servers would run in a
+   * run without `--safe-mode`, so the run goes without the server.
+   */
+  managed: () => boolean;
 }
 
 /** The event of a run that was to have the MCP server and goes without it (D-261): why, in a word, never a text. */
@@ -185,12 +191,13 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
  */
 async function openMcp(sql: Sql, step: StepContext, mcp: ClaudeStepMcp, timeoutMs: number | undefined): Promise<PreparedMcp | undefined> {
   const ids = { taskId: step.task.id, runId: step.runId };
-  const without = async (reason: 'server' | 'session' | 'config'): Promise<undefined> => {
+  const without = async (reason: 'server' | 'managed' | 'session' | 'config'): Promise<undefined> => {
     await appendEvent(sql, { ...ids, kind: MCP_UNAVAILABLE_EVENT, label: 'L0', payload: { executor: 'claude', reason } }).catch(() => undefined);
     return undefined;
   };
   const url = mcp.url;
   if (url === undefined) return without('server');
+  if (mcp.managed()) return without('managed');
   let token: string;
   try {
     const expiresAt = new Date(Date.now() + (timeoutMs ?? CLAUDE_DEFAULT_TIMEOUT_MS) + MCP_SESSION_MARGIN_MS);

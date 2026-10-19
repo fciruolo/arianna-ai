@@ -51,7 +51,7 @@ test('delegationMcp: none without the server or tools; the clearance within the 
   const server = { open: () => ({ token: 'x' }), revoke: () => undefined };
   const dir = join('/', 'tmp', 'mcp');
   const env = (agents: Record<string, { skills?: string[] }>) => ({
-    mcp: { server, url: 'http://127.0.0.1:1/mcp', dir },
+    mcp: { server, url: 'http://127.0.0.1:1/mcp', dir, managed: () => false },
     settings: () => ({ agents }) as never,
   });
   assert.equal(delegationMcp({ settings: env({}).settings }, { clearance: 'L1' }, 'coder', cardOf('coder')), undefined);
@@ -64,7 +64,7 @@ test('delegationMcp: none without the server or tools; the clearance within the 
   assert.deepEqual(coder.tools, ['list_skills', 'get_skill', 'kb_search', 'kb_read']);
   assert.equal(delegationMcp(env({}), { clearance: 'L0' }, 'coder', cardOf('coder'))?.clearance, 'L0');
   // A server that did not start: the step still gets it, and runs without it with an event (runClaudeStep).
-  assert.equal(delegationMcp({ ...env({}), mcp: { server, url: undefined, dir } }, { clearance: 'L1' }, 'coder', cardOf('coder'))?.url, undefined);
+  assert.equal(delegationMcp({ ...env({}), mcp: { server, url: undefined, dir, managed: () => false } }, { clearance: 'L1' }, 'coder', cardOf('coder'))?.url, undefined);
 });
 
 test('the line of the brief names the tools given, and only those', () => {
