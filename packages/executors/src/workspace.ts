@@ -20,7 +20,8 @@ import { checkProject, checkWorkspace, isAllowlisted, type Label, type LabelRule
 const run = promisify(execFile);
 
 export const WORKTREES_DIR = 'worktrees';
-const RUN_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/** What names the files and folders of a run (`data/worktrees/<runId>`, the MCP configuration of D-261). */
+export const RUN_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const REF = /^[A-Za-z0-9][A-Za-z0-9._/@^~-]{0,199}$/;
 
 export class WorkspaceError extends Error {

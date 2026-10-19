@@ -4,12 +4,13 @@
 // output: the stream and stderr can quote the brief or the files.
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { realpath, stat } from 'node:fs/promises';
+import { lstat, realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
+import { preparedMcp, releaseMcp, type McpToolName, type PreparedMcp } from '../mcp.ts';
 import { preparedNotes } from '../notes.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { claudeArgs, claudeEnv, type ClaudeModel, type ClaudeTool } from './profile.ts';
@@ -115,6 +116,14 @@ export interface ClaudeLaunch {
    * (`--add-dir`) and by sandboxed commands; never written.
    */
   notes?: unknown;
+  /**
+   * From `prepareMcp` (D-261): Arianna's MCP server for this run, its tools
+   * allowed by exact name. The file must be where sandboxed commands cannot
+   * read it (under ARIANNA_HOME, outside the workspace and the notes). A
+   * started or resumed run removes it when it ends (`releaseMcp`), whatever
+   * the outcome; `check` never does. The token is revoked by the core.
+   */
+  mcp?: PreparedMcp;
 }
 
 export interface ClaudeStart extends Omit<ClaudeLaunch, 'sessionRef'> {
@@ -236,6 +245,8 @@ interface Checked {
   cwd: string;
   args: string[];
   limits: { timeoutMs: number; maxTurns: number };
+  /** The tools of Arianna's MCP server, when the run has it (D-261). */
+  mcp?: readonly McpToolName[];
 }
 
 export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExecutor {
@@ -251,6 +262,8 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       throw new ClaudeError('invalid-options', 'claude: the session was not saved (persistSession false), so it cannot be resumed');
     }
     const modelName = options.modelName?.(launch.model);
+    const mcp = launch.mcp === undefined ? undefined : preparedMcp(launch.mcp);
+    if (launch.mcp !== undefined && mcp === undefined) throw new ClaudeError('invalid-options', 'claude: the MCP configuration was not made by prepareMcp');
     // D-166: the copy of the project's notes opened, the container of a part closed whole.
     const profile = (workspace: string, extra: { notes?: string; container?: string } = {}) => ({
       model: launch.model,
@@ -264,6 +277,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       ...(extra.notes === undefined ? {} : { addDirs: [extra.notes] }),
       ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
       ...(launch.persistSession === undefined ? {} : { persistSession: launch.persistSession }),
+      ...(mcp === undefined ? {} : { mcp: { config: mcp.path, tools: mcp.tools } }),
     });
     const build = (workspace: string, extra?: { notes?: string; container?: string }): string[] => {
       try {
@@ -297,8 +311,26 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       }
       notes = copy.path;
     }
+    if (mcp !== undefined) {
+      // The file holds the token: a sandboxed command must not reach it, nor a file tool.
+      const open = [path, ...folders.readable, ...(notes === undefined ? [] : [notes])];
+      if (!folders.denied.some((folder) => covers(folder, mcp.path)) || open.some((folder) => covers(folder, mcp.path))) {
+        throw new ClaudeError('invalid-options', 'claude: the MCP configuration must be in a folder sandboxed commands cannot read');
+      }
+      try {
+        // Still the file prepareMcp wrote: not gone, not a link put in its place.
+        if (!(await lstat(mcp.path)).isFile() || (await realpath(mcp.path)) !== mcp.path) throw new Error('replaced');
+      } catch (cause) {
+        throw new ClaudeError('invalid-options', 'claude: the MCP configuration is gone or was replaced', { cause });
+      }
+    }
     const container = workspaceContainer(launch.workspace);
-    return { cwd: path, args: build(path, { ...(notes === undefined ? {} : { notes }), ...(container === undefined ? {} : { container }) }), limits };
+    return {
+      cwd: path,
+      args: build(path, { ...(notes === undefined ? {} : { notes }), ...(container === undefined ? {} : { container }) }),
+      limits,
+      ...(mcp === undefined ? {} : { mcp: mcp.tools }),
+    };
   }
 
   const launch = (start: ClaudeStart, sessionRef?: string): ClaudeRun => {
@@ -313,6 +345,15 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
   };
 
   async function run(start: ClaudeStart, sessionRef: string | undefined, cancelled: AbortSignal): Promise<ClaudeResult> {
+    try {
+      return await checkAndExecute(start, sessionRef, cancelled);
+    } finally {
+      // D-261: the configuration lives for one run, whatever its outcome; the core revokes the token.
+      if (start.mcp !== undefined && preparedMcp(start.mcp) !== undefined) await releaseMcp(start.mcp).catch(() => undefined);
+    }
+  }
+
+  async function checkAndExecute(start: ClaudeStart, sessionRef: string | undefined, cancelled: AbortSignal): Promise<ClaudeResult> {
     const checked = await check({ ...start, ...(sessionRef === undefined ? {} : { sessionRef }) });
     // Spent here, once: a second launch needs a second decision and a second row in gateway_log.
     const allowed = spendAllowed(start.brief);
@@ -323,7 +364,12 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       ...checked,
       prompt: allowed.texts.join('\n\n'),
       label: maxLabel(allowed.label, 'L1'),
-      stream: new ClaudeStream({ cwd: checked.cwd, tools: start.tools, ...(sessionRef === undefined ? {} : { sessionRef }) }),
+      stream: new ClaudeStream({
+        cwd: checked.cwd,
+        tools: start.tools,
+        ...(checked.mcp === undefined ? {} : { mcp: checked.mcp }),
+        ...(sessionRef === undefined ? {} : { sessionRef }),
+      }),
       onEvent: start.onEvent,
       signals: [cancelled, ...(start.signal === undefined ? [] : [start.signal])],
     });
@@ -349,7 +395,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       });
 
       // Its own process group: stopping the run stops whatever the binary started.
-      const child = spawn(file, argv, { cwd: job.cwd, env: claudeEnv(options.env ?? process.env), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+      const child = spawn(file, argv, { cwd: job.cwd, env: claudeEnv(options.env ?? process.env, { mcp: job.mcp !== undefined }), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
 
       const signalGroup = (signal: NodeJS.Signals) => {
         if (child.pid === undefined) return;

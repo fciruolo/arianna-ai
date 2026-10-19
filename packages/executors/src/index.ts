@@ -13,16 +13,19 @@ export {
   type ClaudeStart,
 } from './claude/run.ts';
 export {
+  CLAUDE_BUILTIN_AGENTS,
   CLAUDE_MODELS,
   CLAUDE_TOOLS,
   claudeArgs,
   claudeEnv,
   claudeSettings,
+  MCP_LAUNCH_ENV,
   MODEL_NAME,
   profileViolations,
   SESSION_REF,
   type ClaudeModel,
   type ClaudeTool,
+  type McpProfile,
 } from './claude/profile.ts';
 export { ClaudeStream, fileEditOf, FILE_EDIT_TOOLS, type ClaudeEvent, type FileEditPart, type FileEditTool, type ClaudeUsage, type StreamFailure, type StreamResult } from './claude/stream.ts';
 export { bashCommandOf, clipTerminal, HIDDEN_LINE, MAX_RAW_TERMINAL_BYTES, MAX_TERMINAL_BYTES, MAX_TERMINAL_LINES, rawTerminal, terminalShown, terminalText, toolResultText, type ClippedText, type ShownText } from './claude/terminal.ts';
@@ -97,6 +100,18 @@ export {
   type WatchdogOptions,
   type WatchdogState,
 } from './local/watchdog.ts';
+export {
+  checkMcpTools,
+  MCP_SERVER_NAME,
+  MCP_TOOL_NAMES,
+  mcpToolId,
+  prepareMcp,
+  preparedMcp,
+  releaseMcp,
+  type McpEndpoint,
+  type McpToolName,
+  type PreparedMcp,
+} from './mcp.ts';
 export {
   MAX_CODER_NOTES,
   MAX_CODER_NOTES_BYTES,

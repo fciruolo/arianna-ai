@@ -9,12 +9,14 @@ import { join } from 'node:path';
 const argv = process.argv.slice(2);
 const prompt = readFileSync(0, 'utf8');
 const scenario = /^scenario: ([a-z0-9-]+)/.exec(prompt)?.[1] ?? 'ok';
-writeFileSync(join(process.cwd(), '.fake-claude.json'), JSON.stringify({ argv, env: process.env, prompt }));
-
 const flag = (name: string): string | undefined => {
   const index = argv.indexOf(name);
   return index === -1 ? undefined : argv[index + 1];
 };
+// Arianna's MCP server (D-261): a file path instead of the empty JSON; read as the binary would, while the run lasts.
+const mcpFlag = flag('--mcp-config') ?? '';
+const mcpConfig: unknown = mcpFlag.startsWith('{') ? undefined : JSON.parse(readFileSync(mcpFlag, 'utf8'));
+writeFileSync(join(process.cwd(), '.fake-claude.json'), JSON.stringify({ argv, env: process.env, prompt, mcpConfig }));
 const sessionRef = flag('--resume') ?? '00000000-0000-4000-8000-000000000001';
 const tools = (flag('--tools') ?? '').split(',').filter((tool) => tool !== '');
 
@@ -34,7 +36,10 @@ const partials = lines.filter((message) => message.type === 'stream_event');
 const recorded = lines.filter((message) => message.type !== 'stream_event');
 const [init, assistant, rateLimit, result] = recorded as [Message, Assistant, RateLimit, Message];
 init.cwd = process.cwd();
-init.tools = tools;
+// The server's tools exist because it lists them; here, those allowed by name.
+const mcpTools = mcpConfig === undefined ? [] : (flag('--allowedTools') ?? '').split(',').filter((tool) => tool.startsWith('mcp__'));
+init.tools = [...tools, ...mcpTools];
+if (mcpConfig !== undefined) init.mcp_servers = [{ name: 'arianna', status: 'connected' }];
 for (const message of lines) message.session_id = sessionRef;
 
 const out = (message: unknown) => process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -115,6 +120,31 @@ switch (scenario) {
   case 'mcp':
     out({ ...init, mcp_servers: [{ name: 'gmail', status: 'connected' }] });
     hang();
+    break;
+  case 'arianna-mcp-failed':
+    out({ ...init, mcp_servers: [{ name: 'arianna', status: 'failed' }] });
+    hang();
+    break;
+  case 'arianna-mcp-user-agent':
+    // Without --safe-mode: a personal agent of the user's profile came in.
+    out({ ...init, agents: [...(init.agents as unknown[]), 'my-agent'] });
+    hang();
+    break;
+  case 'arianna-mcp-tool-search':
+    // Deferred tools behind a search tool of the binary's own.
+    out({ ...init, tools: [...tools, 'ToolSearch'] });
+    hang();
+    break;
+  case 'arianna-mcp-call':
+    // A call to a tool of the server: its arguments and its result must not reach the events.
+    out(init);
+    out({
+      ...assistant,
+      message: { ...assistant.message, id: 'msg_1', content: [{ type: 'tool_use', id: 'm1', name: 'mcp__arianna__kb_search', input: { query: 'SECRET-QUERY-7f3a' } }] },
+    });
+    out({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'm1', content: 'SECRET-RESULT-9c1d' }] } });
+    out(answer('found it', 'msg_2'));
+    out({ ...result, num_turns: 2, result: 'found it' });
     break;
   case 'api-key':
     out({ ...init, apiKeySource: 'ANTHROPIC_API_KEY' });
