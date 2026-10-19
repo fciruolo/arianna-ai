@@ -444,6 +444,64 @@ test('the calendar of the page (D-257): the times of the week with the outcome; 
   }
 });
 
+test('«Solo <giorno>» of the calendar (D-257): the routine gives a day to a new one, atomically; the refusals', async () => {
+  const live = await startLiveFeed(db().sql);
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, projects: () => [], routines: createRoutineService(env()) });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const split = (id: string, body: unknown) => fetch(`${base}/api/routines/${id}/split`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const first = await createRoutine(db().sql, { title: 'Divisa finta', days: [1, 3, 5], at: '18:00', timezone: 'Europe/Rome', sources: ['todo', 'notes'], summary: false });
+    const response = await split(first.id, { day: 3, to: 4, at: '07:15' });
+    assert.equal(response.status, 201);
+    const { routine, created } = (await response.json()) as {
+      routine: { days: number[]; at: string; status: string };
+      created: { id: string; title: string; days: number[]; at: string; timezone: string; sources: string[]; summary: boolean; status: string; conversationId: string; nextRunAt: string | null };
+    };
+    assert.deepEqual(routine.days, [1, 5]);
+    assert.equal(routine.at, '18:00');
+    assert.equal(created.title, 'Divisa finta');
+    assert.deepEqual(created.days, [4]);
+    assert.equal(created.at, '07:15');
+    assert.equal(created.timezone, 'Europe/Rome');
+    assert.deepEqual(created.sources, ['todo', 'notes']);
+    assert.equal(created.summary, false);
+    assert.equal(created.status, 'active');
+    assert.ok(created.nextRunAt !== null);
+    assert.notEqual(created.conversationId, first.conversationId);
+    const [chat] = await db().sql<{ title: string; mode: string }[]>`SELECT title, mode FROM conversations WHERE id = ${created.conversationId}`;
+    assert.equal(chat?.title, 'Routine · Divisa finta');
+    assert.equal(chat.mode, 'private');
+    // The events name ids only.
+    const events = await db().sql<{ payload: unknown }[]>`SELECT payload FROM events WHERE kind = 'routine.created' AND payload->>'routineId' = ${created.id}`;
+    assert.equal(events.length, 1);
+    assert.ok(!JSON.stringify(events[0]?.payload).includes('Divisa'));
+
+    // A paused routine gives a paused one.
+    const paused = await createRoutine(db().sql, { title: 'Pausa divisa', days: [2, 6], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+    await pauseRoutine(db().sql, paused.id);
+    const fromPaused = (await (await split(paused.id, { day: 6, at: '10:00' })).json()) as { created: { status: string; nextRunAt: string | null; days: number[] } };
+    assert.equal(fromPaused.created.status, 'paused');
+    assert.equal(fromPaused.created.nextRunAt, null);
+    assert.deepEqual(fromPaused.created.days, [6]);
+
+    // Refused: its only day, a day it does not have, a bad clock, a routine removed; nothing changes.
+    const single = await createRoutine(db().sql, { title: 'Unica divisa', days: [2], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+    assert.equal((await split(single.id, { day: 2, at: '10:00' })).status, 400);
+    assert.equal((await split(first.id, { day: 3, at: '10:00' })).status, 400);
+    assert.equal((await split(first.id, { day: 1, at: '25:00' })).status, 400);
+    assert.equal((await split(first.id, { day: 1, to: 0, at: '10:00' })).status, 400);
+    await retireRoutine(db().sql, single.id);
+    assert.equal((await split(single.id, { day: 2, at: '10:00' })).status, 404);
+    assert.equal((await split('00000000-0000-4000-8000-000000000000', { day: 2, at: '10:00' })).status, 404);
+    assert.deepEqual((await loadRoutine(db().sql, first.id))?.days, [1, 5]);
+    const [count] = await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM routines WHERE title = 'Divisa finta'`;
+    assert.equal(count?.n, 2);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+});
+
 test('«Elimina per sempre» of its conversation takes the routine and its runs with it', async () => {
   const { id, conversationId } = await dueRoutine(1, ['notes']);
   await runDue(env(), id);

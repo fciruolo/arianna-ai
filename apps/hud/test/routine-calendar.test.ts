@@ -30,6 +30,56 @@ import {
   type CalendarDay,
   type CalendarEntry,
 } from '../src/lib/routine-calendar.ts';
+import { allDaysText, canDrag, clockOf, DRAG_THRESHOLD, dragTarget, isClick, moveAllDays, movePlan, moveQuestion, onlyDayText } from '../src/lib/routine-calendar.ts';
+
+test('a press that barely moves is a click; past the threshold it is a drag', () => {
+  assert.equal(isClick(0, 0), true);
+  assert.equal(isClick(2, 2), true);
+  assert.equal(isClick(DRAG_THRESHOLD, 0), false);
+  assert.equal(isClick(0, -10), false);
+});
+
+test('the drag lands in steps of 15 minutes, inside the day, on the nearest column', () => {
+  const start = { column: 2, minute: 18 * 60 };
+  // 44 px an hour: 11 px is 15 minutes.
+  assert.deepEqual(dragTarget(start, 0, 11, 44, 120, 7), { column: 2, minute: 18 * 60 + 15 });
+  assert.deepEqual(dragTarget(start, 0, 4, 44, 120, 7), { column: 2, minute: 18 * 60 });
+  assert.deepEqual(dragTarget(start, 0, -44 * 3 - 6, 44, 120, 7), { column: 2, minute: 14 * 60 + 45 });
+  assert.deepEqual(dragTarget(start, 130, 0, 44, 120, 7), { column: 3, minute: 18 * 60 });
+  assert.deepEqual(dragTarget(start, -1000, 0, 44, 120, 7), { column: 0, minute: 18 * 60 });
+  assert.deepEqual(dragTarget(start, 1000, 0, 44, 120, 7), { column: 6, minute: 18 * 60 });
+  assert.deepEqual(dragTarget(start, 0, 5000, 44, 120, 7), { column: 2, minute: 23 * 60 + 45 });
+  assert.deepEqual(dragTarget(start, 0, -5000, 44, 120, 7), { column: 2, minute: 0 });
+  // One day on a phone: only up and down.
+  assert.deepEqual(dragTarget({ column: 0, minute: 600 }, 300, 22, 44, 300, 1), { column: 0, minute: 630 });
+  assert.equal(clockOf(7 * 60 + 45), '07:45');
+  assert.equal(clockOf(0), '00:00');
+});
+
+test('what can be dragged: a time to come of an active or paused routine, in its zone', () => {
+  const now = new Date('2026-10-20T00:00:00Z');
+  const future = entry('a', '2026-10-21', '09:00');
+  const zone = 'Europe/Rome';
+  assert.equal(canDrag(future, { status: 'active', timezone: zone }, zone, now), true);
+  assert.equal(canDrag(future, { status: 'paused', timezone: zone }, zone, now), true);
+  assert.equal(canDrag(future, { status: 'proposed', timezone: zone }, zone, now), false);
+  assert.equal(canDrag(future, undefined, zone, now), false);
+  assert.equal(canDrag(future, { status: 'active', timezone: 'America/New_York' }, zone, now), false);
+  assert.equal(canDrag(entry('a', '2026-10-19', '09:00'), { status: 'active', timezone: zone }, zone, now), false);
+  assert.equal(canDrag({ ...future, run: { status: 'done', reason: null, trigger: 'manual' }, planned: false }, { status: 'active', timezone: zone }, zone, now), false);
+});
+
+test('after the drop: one day moves, more days ask; «Tutti i giorni» replaces the day and says when it merges', () => {
+  assert.deepEqual(movePlan({ days: [3], at: '18:00' }, 3, 3, '18:00'), { kind: 'none' });
+  assert.deepEqual(movePlan({ days: [3], at: '18:00' }, 3, 5, '07:45'), { kind: 'move', days: [5], at: '07:45' });
+  assert.deepEqual(movePlan({ days: [1, 3, 5], at: '18:00' }, 3, 3, '19:00'), { kind: 'choose', from: 3, to: 3, at: '19:00', all: [1, 3, 5], merges: false });
+  assert.deepEqual(movePlan({ days: [1, 3, 5], at: '18:00' }, 3, 4, '18:00'), { kind: 'choose', from: 3, to: 4, at: '18:00', all: [1, 4, 5], merges: false });
+  assert.deepEqual(moveAllDays([1, 3, 5], 3, 5), { days: [1, 5], merges: true });
+  assert.equal(allDaysText({ to: 4, merges: false }), 'Tutti i giorni');
+  assert.equal(allDaysText({ to: 5, merges: true }), 'Tutti i giorni (venerdì c’è già: si unisce)');
+  assert.equal(onlyDayText(4), 'Solo giovedì');
+  assert.equal(moveQuestion({ to: 4, at: '07:45' }), 'Spostare alle 07:45 di giovedì:');
+});
 
 function entry(routineId: string, date: string, time: string, extra: Partial<CalendarEntry> = {}): CalendarEntry {
   const [hour = 0, minute = 0] = time.split(':').map(Number);

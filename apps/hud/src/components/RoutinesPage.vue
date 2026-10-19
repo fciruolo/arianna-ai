@@ -96,6 +96,12 @@ function startNewAt(prefilled: RoutineForm): void {
   showForm();
 }
 
+/** A routine dragged in the calendar: the list again, and its block in sight. */
+function moved(routineId: string): void {
+  focus.value = routineId;
+  void load();
+}
+
 function editFromCalendar(routine: Routine): void {
   startEdit(routine);
   showForm();
@@ -292,7 +298,7 @@ onBeforeUnmount(() => {
           </div>
         </form>
 
-        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :focus="focus" @edit="editFromCalendar" @create="startNewAt" @focused="focus = null" />
+        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :focus="focus" @edit="editFromCalendar" @create="startNewAt" @focused="focus = null" @changed="moved" />
 
         <div v-else-if="loaded && routines.length === 0 && editing === null && problem === null" class="rounded-xl border border-dashed border-line-strong px-5 py-9 text-center text-muted">
           <b class="mb-1.5 block text-[16px] text-ink">{{ ROUTINES_EMPTY_TITLE }}</b>

@@ -462,6 +462,11 @@ export async function loadRoutineCalendar(from: string, to: string, timezone?: s
   return call<CalendarWeek>('GET', `/api/routines/calendar?${query.toString()}`);
 }
 
+/** «Solo <giorno>» of the calendar (D-257): the routine gives `day` to a new one on `to` at `at`, in one step. */
+export async function splitRoutine(id: string, day: number, to: number, at: string): Promise<{ routine: Routine; created: Routine }> {
+  return call<{ routine: Routine; created: Routine }>('POST', `/api/routines/${encodeURIComponent(id)}/split`, { day, to, at });
+}
+
 /** Dashboard (D-248): the tiles, after the refreshes that ended are settled. */
 export async function loadTiles(): Promise<DashboardTile[]> {
   return (await call<{ tiles: DashboardTile[] }>('GET', '/api/dashboard/tiles')).tiles;

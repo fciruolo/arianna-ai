@@ -1,27 +1,38 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, loadRoutineCalendar } from '../lib/api.ts';
+import { ApiError, loadRoutineCalendar, retireRoutine, splitRoutine, updateRoutine } from '../lib/api.ts';
 import {
   addDays,
+  allDaysText,
   BLOCK_MINUTES,
   blockLook,
   blockText,
   CALENDAR_HINT,
   CALENDAR_LOAD_ERROR,
+  canDrag,
+  clockOf,
   dayHead,
   dayTitle,
+  dragTarget,
   focusEntry,
   formAt,
   hourFor,
   HOURS,
+  isClick,
   isoDayOf,
   layoutDay,
+  MOVE_ERROR,
+  MOVED_TEXT,
+  movePlan,
+  moveQuestion,
   nowIn,
   nowLine,
+  onlyDayText,
   startHour,
   stepAnchor,
   TODAY_TEXT,
+  UNDO_TEXT,
   visibleDays,
   weekRange,
   weekTitle,
@@ -29,7 +40,7 @@ import {
   type CalendarEntry,
   type CalendarWeek,
 } from '../lib/routine-calendar.ts';
-import type { Routine, RoutineForm } from '../lib/routines.ts';
+import type { IsoDay, Routine, RoutineForm } from '../lib/routines.ts';
 
 /**
  * The view «Calendario» of the page «Routine» (D-257): the week Monday to
@@ -38,11 +49,14 @@ import type { Routine, RoutineForm } from '../lib/routines.ts';
  * outcome and the line of the current hour. The times come from the core,
  * computed with the zone of each routine; the titles from the list the page
  * already has. A click on a block opens the routine, on a free hour a new one
- * at that day and hour.
+ * at that day and hour. A block still to come drags to another hour (steps of
+ * 15 minutes) or day: a routine of one day moves, one of more days asks
+ * «Tutti i giorni» or «Solo <giorno>» (a new routine split off in the core);
+ * «Spostata · Annulla» puts it back for a few seconds.
  */
 /** `focus`: a routine just saved, to bring in sight once its times are read. */
 const props = defineProps<{ routines: Routine[]; focus: string | null }>();
-const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm]; focused: [] }>();
+const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm]; focused: []; changed: [routineId: string] }>();
 
 /** Pixels of one hour of the grid. */
 const ROW = 44;
@@ -60,6 +74,38 @@ let alive = true;
 let asked = 0;
 /** The first `from` of the week whose opening scroll was done: once per week shown. */
 let scrolledFor: string | null = null;
+
+/** A block being dragged: where it started and where it would land. */
+interface Drag {
+  entry: CalendarEntry;
+  routine: Routine;
+  pointer: number;
+  x: number;
+  y: number;
+  start: { column: number; minute: number };
+  columnPx: number;
+  moving: boolean;
+  target: { column: number; minute: number };
+}
+const drag = ref<Drag | null>(null);
+/** A drag just ended: the click that follows the release must not open the routine. */
+let dragged = false;
+/** The question after a drop on a routine of more days, beside the block. */
+interface Choice {
+  routine: Routine;
+  from: IsoDay;
+  to: IsoDay;
+  at: string;
+  all: IsoDay[];
+  merges: boolean;
+  column: number;
+  minute: number;
+}
+const choice = ref<Choice | null>(null);
+const moving = ref(false);
+/** «Spostata · Annulla»: what puts the routine back, for a few seconds. */
+const undo = ref<{ routineId: string; run: () => Promise<unknown> } | null>(null);
+let undoTimer: ReturnType<typeof setTimeout> | undefined;
 
 const range = computed(() => weekRange(anchor.value));
 /** The zone the times are in: the browser's, or the Mac's when the core did not know the browser's. */
@@ -142,8 +188,124 @@ function afterLoad(): void {
 }
 
 function open(entry: CalendarEntry): void {
+  if (dragged) {
+    dragged = false;
+    return;
+  }
   const routine = byId.value.get(entry.routineId);
   if (routine !== undefined) emit('edit', routine);
+}
+
+function draggable(entry: CalendarEntry): boolean {
+  return !moving.value && canDrag(entry, byId.value.get(entry.routineId), viewZone.value, now.value);
+}
+
+function pressBlock(event: PointerEvent, entry: CalendarEntry, column: number): void {
+  const routine = byId.value.get(entry.routineId);
+  if (event.button !== 0 || routine === undefined || !draggable(entry)) return;
+  const element = event.currentTarget as HTMLElement;
+  const columnPx = element.parentElement?.offsetWidth ?? 0;
+  element.setPointerCapture(event.pointerId);
+  choice.value = null;
+  const start = { column, minute: entry.minute };
+  drag.value = { entry, routine, pointer: event.pointerId, x: event.clientX, y: event.clientY, start, columnPx, moving: false, target: start };
+}
+
+function moveBlock(event: PointerEvent): void {
+  const current = drag.value;
+  if (current === null || current.pointer !== event.pointerId) return;
+  const dx = event.clientX - current.x;
+  const dy = event.clientY - current.y;
+  if (!current.moving && isClick(dx, dy)) return;
+  current.moving = true;
+  current.target = dragTarget(current.start, dx, dy, ROW, current.columnPx, days.value.length);
+}
+
+function releaseBlock(event: PointerEvent): void {
+  const current = drag.value;
+  if (current === null || current.pointer !== event.pointerId) return;
+  drag.value = null;
+  if (!current.moving) return;
+  dragged = true;
+  setTimeout(() => (dragged = false), 0);
+  const from = isoDayOf(current.entry.date);
+  const to = days.value[current.target.column]?.isoDay ?? from;
+  const at = clockOf(current.target.minute);
+  const plan = movePlan(current.routine, from, to, at);
+  if (plan.kind === 'none') return;
+  if (plan.kind === 'move') {
+    void applyMove(current.routine, plan.days, plan.at);
+    return;
+  }
+  choice.value = { routine: current.routine, from: plan.from, to: plan.to, at: plan.at, all: plan.all, merges: plan.merges, column: current.target.column, minute: current.target.minute };
+  void nextTick(() => {
+    scroller.value?.querySelector('[data-move-choice]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+}
+
+function cancelDrag(): void {
+  drag.value = null;
+}
+
+function offerUndo(routineId: string, run: () => Promise<unknown>): void {
+  clearTimeout(undoTimer);
+  undo.value = { routineId, run };
+  undoTimer = setTimeout(() => (undo.value = null), 7000);
+}
+
+async function work(routineId: string, task: () => Promise<unknown>): Promise<boolean> {
+  moving.value = true;
+  try {
+    await task();
+    problem.value = null;
+    emit('changed', routineId);
+    return true;
+  } catch {
+    problem.value = MOVE_ERROR;
+    return false;
+  } finally {
+    moving.value = false;
+  }
+}
+
+/** A routine of one day, or «Tutti i giorni»: the existing change, so the next run follows. */
+async function applyMove(routine: Routine, days: IsoDay[], at: string): Promise<void> {
+  const before = { days: [...routine.days], at: routine.at };
+  if (await work(routine.id, () => updateRoutine(routine.id, { days, at }))) offerUndo(routine.id, () => updateRoutine(routine.id, before));
+}
+
+function chooseAll(): void {
+  const current = choice.value;
+  choice.value = null;
+  if (current !== null) void applyMove(current.routine, current.all, current.at);
+}
+
+/** «Solo <giorno>»: the core splits the routine; «Annulla» gives the day back and removes the new one. */
+function chooseOnly(): void {
+  const current = choice.value;
+  choice.value = null;
+  if (current === null) return;
+  const routine = current.routine;
+  const before = [...routine.days];
+  let createdId: string | null = null;
+  void work(routine.id, async () => {
+    createdId = (await splitRoutine(routine.id, current.from, current.to, current.at)).created.id;
+  }).then((done) => {
+    const created = createdId;
+    if (done && created !== null) {
+      offerUndo(routine.id, async () => {
+        await updateRoutine(routine.id, { days: before });
+        await retireRoutine(created);
+      });
+    }
+  });
+}
+
+function undoMove(): void {
+  const current = undo.value;
+  undo.value = null;
+  clearTimeout(undoTimer);
+  if (current !== null) void work(current.routineId, current.run);
 }
 
 function blocksOf(day: CalendarDay) {
@@ -179,6 +341,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   alive = false;
   clearInterval(clock);
+  clearTimeout(undoTimer);
   media?.removeEventListener('change', onMedia);
 });
 </script>
@@ -243,6 +406,8 @@ onBeforeUnmount(() => {
                 block.look.status === 'proposed' ? 'border-dashed border-accent/70 bg-surface' : block.look.status === 'paused' ? 'border-line-strong bg-surface opacity-55' : 'border-accent/60 bg-accent/15',
                 block.look.past && block.look.outcome === null ? 'opacity-55' : '',
                 block.look.trial ? 'border-dotted' : '',
+                draggable(block.entry) ? 'cursor-grab touch-none' : '',
+                drag?.moving && drag.entry === block.entry ? 'opacity-40' : '',
               ]"
               :style="{
                 top: `${String((block.start / 60) * ROW + 1)}px`,
@@ -253,6 +418,10 @@ onBeforeUnmount(() => {
               :title="block.label"
               :aria-label="block.label"
               @click="open(block.entry)"
+              @pointerdown="pressBlock($event, block.entry, column)"
+              @pointermove="moveBlock"
+              @pointerup="releaseBlock"
+              @pointercancel="cancelDrag"
             >
               <span
                 v-if="block.look.outcome !== null"
@@ -263,6 +432,30 @@ onBeforeUnmount(() => {
               <span class="shrink-0 font-mono text-muted">{{ block.entry.time }}</span>
               <span class="truncate text-ink">{{ block.title }}</span>
             </button>
+            <!-- Where the dragged block would land. -->
+            <div
+              v-if="drag !== null && drag.moving && drag.target.column === column"
+              class="pointer-events-none absolute inset-x-0.5 z-20 flex items-center gap-1 rounded-md border border-dashed border-accent bg-accent/25 px-1.5 text-[11.5px]"
+              :style="{ top: `${String((drag.target.minute / 60) * ROW + 1)}px`, height: `${String((BLOCK_MINUTES / 60) * ROW - 2)}px` }"
+              aria-hidden="true"
+            >
+              <span class="font-mono text-ink">{{ clockOf(drag.target.minute) }}</span>
+            </div>
+            <!-- After a drop on a routine of more days: all its days, or only this one. -->
+            <div
+              v-if="choice !== null && choice.column === column"
+              class="absolute z-30 flex w-[min(240px,90vw)] flex-col gap-1 rounded-lg border border-line-strong bg-surface p-2 text-[12.5px] shadow-lg"
+              :class="column >= days.length - 2 && days.length > 2 ? 'right-1' : 'left-1'"
+              :style="{ top: `${String(((choice.minute + BLOCK_MINUTES) / 60) * ROW + 2)}px` }"
+              role="dialog"
+              data-move-choice
+              :aria-label="moveQuestion(choice)"
+            >
+              <span class="text-muted">{{ moveQuestion(choice) }}</span>
+              <button type="button" class="btn justify-start px-2 py-0.5 text-[12.5px]" @click="chooseAll">{{ allDaysText(choice) }}</button>
+              <button type="button" class="btn justify-start px-2 py-0.5 text-[12.5px]" @click="chooseOnly">{{ onlyDayText(choice.to) }}</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-left text-muted hover:text-ink" @click="choice = null">{{ UNDO_TEXT }}</button>
+            </div>
             <!-- The line of the current hour. -->
             <div
               v-if="line !== null && line.column === column"
@@ -286,5 +479,9 @@ onBeforeUnmount(() => {
       <span>Ore in {{ viewZone }}.</span>
       <span class="md:hidden">{{ CALENDAR_HINT }}</span>
     </p>
+    <div v-if="undo !== null" class="fixed bottom-16 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-3.5 py-2 text-[14px] text-bg" role="status">
+      {{ MOVED_TEXT }}
+      <button type="button" class="font-semibold underline" @click="undoMove">{{ UNDO_TEXT }}</button>
+    </div>
   </section>
 </template>

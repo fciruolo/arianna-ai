@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Vista «Calendario» nella pagina «Routine»: la settimana con le ore di ogni routine (in pausa tenue, proposta tratteggiata), l'esito delle esecuzioni già fatte, la linea dell'ora attuale, frecce e «Oggi»; su telefono un giorno alla volta. La scelta fra «Elenco» e «Calendario» resta in questo browser (D-257).
 - Nel calendario un clic su un'ora libera apre «Nuova routine» con quel giorno e quell'ora; un clic su una routine la apre in modifica (D-257).
+- Nel calendario le routine si spostano trascinandole, a passi di 15 minuti e anche su un altro giorno; per una routine di più giorni Arianna chiede «Tutti i giorni» o «Solo <giorno>», che la divide in due; «Spostata · Annulla» rimette com'era (D-257).
 
 ## [0.144.0] - 2026-10-18
 

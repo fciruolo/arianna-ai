@@ -37,7 +37,7 @@ export const VIEW_LIST_TEXT = 'Elenco';
 export const VIEW_CALENDAR_TEXT = 'Calendario';
 export const TODAY_TEXT = 'Oggi';
 export const CALENDAR_LOAD_ERROR = 'Non riesco a leggere il calendario delle routine.';
-export const CALENDAR_HINT = 'Clic su un’ora libera: una routine nuova a quell’ora. Clic su un blocco: la modifichi.';
+export const CALENDAR_HINT = 'Clic su un’ora libera: una routine nuova a quell’ora. Clic su un blocco: la modifichi; trascinalo per spostarla.';
 
 /** How tall a block is, in minutes of the grid: a routine has a time, not a length. */
 export const BLOCK_MINUTES = 30;
@@ -256,4 +256,86 @@ export function writeView(storage: Pick<Storage, 'setItem'> | undefined, view: R
   } catch {
     // A private window or blocked storage: the view is simply not remembered.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dragging a block (D-257): a routine moves to another hour or day.
+// ---------------------------------------------------------------------------
+
+/** Pixels a pointer moves before a press is a drag, not a click. */
+export const DRAG_THRESHOLD = 4;
+/** Minutes of a step of the drag. */
+export const SNAP_MINUTES = 15;
+export const MOVED_TEXT = 'Spostata';
+export const UNDO_TEXT = 'Annulla';
+export const MOVE_ERROR = 'Non riesco a spostare la routine.';
+
+/** A press that moved less than the threshold: the click that opens the routine. */
+export function isClick(dx: number, dy: number): boolean {
+  return Math.hypot(dx, dy) < DRAG_THRESHOLD;
+}
+
+/**
+ * Where a block dragged by (dx, dy) pixels lands: steps of 15 minutes inside
+ * the day (the last step 23:45), the nearest column among those drawn.
+ */
+export function dragTarget(start: { column: number; minute: number }, dx: number, dy: number, rowPx: number, columnPx: number, columns: number): { column: number; minute: number } {
+  const raw = start.minute + (dy / rowPx) * 60;
+  const minute = Math.min(24 * 60 - SNAP_MINUTES, Math.max(0, Math.round(raw / SNAP_MINUTES) * SNAP_MINUTES));
+  const shift = columnPx > 0 ? Math.round(dx / columnPx) : 0;
+  const column = Math.min(columns - 1, Math.max(0, start.column + shift));
+  return { column, minute };
+}
+
+/** "07:45" from the minutes of the day. */
+export function clockOf(minute: number): string {
+  return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Only a time still to come of an active or paused routine moves, and only
+ * when the calendar is in the zone of the routine (the days of the rule are
+ * its days): not a proposal, not a run already written, not a trial.
+ */
+export function canDrag(entry: CalendarEntry, routine: Pick<Routine, 'status' | 'timezone'> | undefined, zone: string, now: Date): boolean {
+  if (routine === undefined || (routine.status !== 'active' && routine.status !== 'paused')) return false;
+  if (!entry.planned || entry.run !== null) return false;
+  if (routine.timezone !== zone) return false;
+  return new Date(entry.at).getTime() > now.getTime();
+}
+
+/** The days of the routine with `from` replaced by `to` («Tutti i giorni»), and whether `to` was already there. */
+export function moveAllDays(days: readonly IsoDay[], from: IsoDay, to: IsoDay): { days: IsoDay[]; merges: boolean } {
+  const merges = from !== to && days.includes(to);
+  const next = [...new Set(days.map((day) => (day === from ? to : day)))].sort((a, b) => a - b);
+  return { days: next, merges };
+}
+
+/** After the drop: nothing changed, a routine of one day just moves, one of more days asks. */
+export type MovePlan = { kind: 'none' } | { kind: 'move'; days: IsoDay[]; at: string } | { kind: 'choose'; from: IsoDay; to: IsoDay; at: string; all: IsoDay[]; merges: boolean };
+
+export function movePlan(routine: Pick<Routine, 'days' | 'at'>, from: IsoDay, to: IsoDay, at: string): MovePlan {
+  if (from === to && at === routine.at) return { kind: 'none' };
+  if (routine.days.length <= 1) return { kind: 'move', days: [to], at };
+  const all = moveAllDays(routine.days, from, to);
+  return { kind: 'choose', from, to, at, all: all.days, merges: all.merges };
+}
+
+function dayName(day: IsoDay): string {
+  return DAY_LETTERS.find((item) => item.day === day)?.name ?? '';
+}
+
+/** "Tutti i giorni", or "Tutti i giorni (giovedì c’è già: si unisce)". */
+export function allDaysText(plan: { to: IsoDay; merges: boolean }): string {
+  return plan.merges ? `Tutti i giorni (${dayName(plan.to)} c’è già: si unisce)` : 'Tutti i giorni';
+}
+
+/** "Solo giovedì": the day of arrival. */
+export function onlyDayText(to: IsoDay): string {
+  return `Solo ${dayName(to)}`;
+}
+
+/** The question beside the block: "Spostare alle 07:45 di giovedì:". */
+export function moveQuestion(plan: { to: IsoDay; at: string }): string {
+  return `Spostare alle ${plan.at} di ${dayName(plan.to)}:`;
 }
