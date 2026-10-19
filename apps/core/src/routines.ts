@@ -673,7 +673,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
   if (lateness > MISSED_AFTER_MS) {
     const text = `Ho saltato la routine di ${whenText(due, rule.timezone)}: il Mac era spento o Arianna non era attiva. La prossima è ${whenText(next, rule.timezone)}.`;
     const allowed = await toChat(env.sql, text, 'L0', source);
-    return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
+    return claimRun(env.sql, routine, expected, next, async (tx) => {
       const messageId = allowed === undefined ? null : await insertMessage(tx, routine.conversationId, allowed, 'L0', routineId);
       const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'missed-offline', reason: null, messageId, summary: false, at: now });
       await appendEvent(tx, { kind: 'routine.missed', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId } });
@@ -688,7 +688,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
   } catch (error) {
     // The run is recorded as failed and the routine moves on: no retry every 30 seconds for two hours.
     env.onError?.(error);
-    return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
+    return claimRun(env.sql, routine, expected, next, async (tx) => {
       const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'error', messageId: null, summary: false, at: now });
       await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'failed', reason: 'error' } });
       return { kind: 'failed', runId };
@@ -698,7 +698,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
   const text = reportText(data, late ? { kind: 'late', due } : { kind: 'on-time', due }, rule.timezone, now);
   const allowed = await toChat(env.sql, text, label, source);
   const blockedLine = allowed === undefined ? await toChat(env.sql, REPORT_BLOCKED_TEXT, 'L0', source) : undefined;
-  return claimRun(env.sql, routineId, routine.conversationId, expected, next, async (tx) => {
+  return claimRun(env.sql, routine, expected, next, async (tx) => {
     if (allowed === undefined) {
       const messageId = blockedLine === undefined ? null : await insertMessage(tx, routine.conversationId, blockedLine, 'L0', routineId);
       const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'failed', reason: 'blocked', messageId, summary: false, at: now });
@@ -751,19 +751,30 @@ async function loadRoutineRow(sql: Queryable, id: string): Promise<RoutineRow | 
 
 /**
  * Writes a run of the schedule once: under the lock of the routine, only
- * while `next_run_at` is still the one read; then the next run. Another core
- * (or a tick that overlapped) finds it moved and writes nothing.
+ * while `next_run_at` is still the one read and the rule, sources and summary
+ * are still those the report was written from (`seen`); then the next run.
+ * Another core (or a tick that overlapped) finds it moved and writes nothing.
+ * A change from the page in between (D-257: a move, a split, an «Annulla»
+ * that kept the run due) makes the claim give up too: the next tick reads
+ * the routine again and runs it with the new rule, never twice.
  */
-async function claimRun(sql: Sql, routineId: string, conversationId: string, expected: Date, next: Date, write: (tx: Queryable) => Promise<RunOutcome>): Promise<RunOutcome> {
+export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversationId' | 'days' | 'at' | 'timezone' | 'sources' | 'summary'>, expected: Date, next: Date, write: (tx: Queryable) => Promise<RunOutcome>): Promise<RunOutcome> {
   return sql.begin(async (tx) => {
     // Closed meanwhile: nothing is written; the next tick pauses or removes the routine.
-    if (!(await holdConversation(tx, conversationId))) return { kind: 'none' } satisfies RunOutcome;
-    const [row] = await tx<{ id: string }[]>`
-      SELECT id::text FROM routines WHERE id = ${routineId} AND status = 'active' AND next_run_at = ${expected} FOR UPDATE`;
+    if (!(await holdConversation(tx, seen.conversationId))) return { kind: 'none' } satisfies RunOutcome;
+    const [row] = await tx<{ days: number[]; at: string; timezone: string; sources: string[]; summary: boolean }[]>`
+      SELECT days::int[] AS days, at, timezone, sources, summary FROM routines
+      WHERE id = ${seen.id} AND status = 'active' AND next_run_at = ${expected} FOR UPDATE`;
     if (row === undefined) return { kind: 'none' } satisfies RunOutcome;
-    await tx`UPDATE routines SET next_run_at = ${next} WHERE id = ${routineId}`;
+    if (!sameRule(row, seen)) return { kind: 'none' } satisfies RunOutcome;
+    await tx`UPDATE routines SET next_run_at = ${next} WHERE id = ${seen.id}`;
     return write(tx);
   });
+}
+
+/** The rule, sources and summary of two readings of a routine, the same. */
+function sameRule(a: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'summary'>, b: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'summary'>): boolean {
+  return a.days.join() === b.days.join() && a.at === b.at && a.timezone === b.timezone && a.sources.join() === b.sources.join() && a.summary === b.summary;
 }
 
 async function insertRun(

@@ -24,6 +24,8 @@ import {
   layoutDay,
   LONG_PRESS_MS,
   MOVE_CONFLICT,
+  SPLIT_CONFLICT,
+  UNDO_CONFLICT,
   MOVE_ERROR,
   movedText,
   movePlan,
@@ -114,7 +116,7 @@ interface Choice {
 const choice = ref<Choice | null>(null);
 const moving = ref(false);
 /** «Spostata · Annulla»: what puts the routine back, for a few seconds. */
-const undo = ref<{ routineId: string; text: string; run: () => Promise<unknown> } | null>(null);
+const undo = ref<{ routineId: string; text: string; run: () => Promise<unknown>; conflict: string } | null>(null);
 let undoTimer: ReturnType<typeof setTimeout> | undefined;
 
 const range = computed(() => weekRange(anchor.value));
@@ -314,13 +316,14 @@ function cancelDrag(): void {
   stopDrag();
 }
 
-function offerUndo(routineId: string, text: string, run: () => Promise<unknown>): void {
+function offerUndo(routineId: string, text: string, run: () => Promise<unknown>, conflict = MOVE_CONFLICT): void {
   clearTimeout(undoTimer);
-  undo.value = { routineId, text, run };
+  undo.value = { routineId, text, run, conflict };
   undoTimer = setTimeout(() => (undo.value = null), 7000);
 }
 
-async function work(routineId: string, task: () => Promise<unknown>): Promise<boolean> {
+/** Runs a change of the calendar; a 409 of the core says `conflict`, anything else the plain error. */
+async function work(routineId: string, task: () => Promise<unknown>, conflict = MOVE_CONFLICT): Promise<boolean> {
   moving.value = true;
   try {
     await task();
@@ -328,7 +331,7 @@ async function work(routineId: string, task: () => Promise<unknown>): Promise<bo
     emit('changed', routineId);
     return true;
   } catch (error) {
-    problem.value = error instanceof ApiError && error.status === 409 ? MOVE_CONFLICT : MOVE_ERROR;
+    problem.value = error instanceof ApiError && error.status === 409 ? conflict : MOVE_ERROR;
     return false;
   } finally {
     moving.value = false;
@@ -357,16 +360,15 @@ function chooseOnly(): void {
   choice.value = null;
   if (current === null) return;
   const routine = current.routine;
-  const before = { days: [...routine.days], at: routine.at };
   void (async () => {
     moving.value = true;
     try {
       const { created } = await splitRoutine(routine.id, current.from, current.to, current.at);
       problem.value = null;
       emit('changed', created.id);
-      offerUndo(routine.id, movedText(current.later), () => unsplitRoutine(routine.id, created.id, before.days, before.at));
-    } catch {
-      problem.value = MOVE_ERROR;
+      offerUndo(routine.id, movedText(current.later), () => unsplitRoutine(routine.id, created.id), UNDO_CONFLICT);
+    } catch (error) {
+      problem.value = error instanceof ApiError && error.status === 409 ? SPLIT_CONFLICT : MOVE_ERROR;
     } finally {
       moving.value = false;
     }
@@ -377,7 +379,7 @@ function undoMove(): void {
   const current = undo.value;
   undo.value = null;
   clearTimeout(undoTimer);
-  if (current !== null) void work(current.routineId, current.run);
+  if (current !== null) void work(current.routineId, current.run, current.conflict);
 }
 
 function blocksOf(day: CalendarDay) {

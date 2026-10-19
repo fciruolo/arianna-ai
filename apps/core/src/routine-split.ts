@@ -43,31 +43,19 @@ export function keptDays(days: readonly IsoDay[], day: IsoDay): IsoDay[] {
 export interface UnsplitInput {
   /** The routine born from the split, to remove. */
   created: string;
-  /** Days and time of the first routine before the split, to give back. */
-  days: IsoDay[];
-  at: string;
 }
 
+/** What «Annulla» sends: the id of the routine split off. The days to give back are the core's, never the page's. */
 export function parseUnsplitInput(body: Record<string, unknown>): UnsplitInput {
-  const unknown = Object.keys(body).filter((key) => !['created', 'days', 'at'].includes(key));
+  const unknown = Object.keys(body).filter((key) => key !== 'created');
   if (unknown.length > 0) throw new RoutineError('invalid', `unknown field(s): ${unknown.join(', ')}`);
   if (typeof body.created !== 'string' || !UUID.test(body.created)) throw new RoutineError('invalid', 'created must be the id of a routine');
-  if (!Array.isArray(body.days) || body.days.length === 0 || !body.days.every(isIsoDay)) throw new RoutineError('invalid', 'days must be a list of 1-7');
-  if (!isClock(body.at)) throw new RoutineError('invalid', 'at must be HH:MM');
-  return { created: body.created, days: [...new Set(body.days)].sort((a, b) => a - b), at: body.at };
+  return { created: body.created };
 }
 
-/**
- * Whether the first routine is still as the split left it: the days given
- * back are its days plus exactly one, at the same time. Anything else is a
- * change made after the split, which «Annulla» must not undo.
- */
-export function leftBySplit(current: { days: readonly IsoDay[]; at: string }, before: { days: readonly IsoDay[]; at: string }): boolean {
-  if (current.at !== before.at) return false;
-  const now = new Set(current.days);
-  const back = new Set(before.days);
-  if (![...now].every((day) => back.has(day))) return false;
-  return back.size === now.size + 1;
+/** The days given back: those of the routine now plus those the split took (from the event), in order. */
+export function daysBack(current: readonly IsoDay[], given: readonly unknown[]): IsoDay[] {
+  return [...new Set([...current, ...given.filter(isIsoDay)])].sort((a, b) => a - b);
 }
 
 function next(rule: RoutineRule, now: Date): Date {
@@ -111,7 +99,8 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
       RETURNING id::text`;
     if (created === undefined) throw new Error('INSERT INTO routines returned no row');
     await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: conversation.id, mode: 'private', routine: true } });
-    await appendEvent(tx, { kind: 'routine.created', label: 'L0', payload: { routineId: created.id, conversationId: conversation.id, splitFrom: id } });
+    // The day given up, as a number only: «Annulla» gives back exactly this, never what the page sends.
+    await appendEvent(tx, { kind: 'routine.created', label: 'L0', payload: { routineId: created.id, conversationId: conversation.id, splitFrom: id, splitDays: [input.day] } });
     return created.id;
   });
   const [routine, created] = await Promise.all([loadRoutine(sql, id), loadRoutine(sql, createdId)]);
@@ -121,25 +110,39 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
 
 /**
  * «Annulla» of a split, atomic: the routine born from the split of `id` is
- * removed (its chat archived, with nothing in it but what the routine wrote)
- * and the first gets back its days and time. Refused (409) when `created` was
- * not split from `id`, or when the first routine changed after the split.
+ * removed (its chat archived) and the first gets back the day it gave up, as
+ * written in the event of the split. Refused (409) when `created` is `id` or
+ * was not split from it, when the first routine changed after the split, and
+ * when the routine split off changed or already ran (its chat has reports
+ * then, and removing it would not be a plain «Annulla»). The two routines are
+ * locked in the order of their ids, as every other transaction would.
  */
 export async function unsplitRoutine(sql: Sql, id: string, input: UnsplitInput, now = new Date()): Promise<Routine> {
+  if (input.created === id) throw new RoutineError('conflict', 'a routine is not split from itself');
   await sql.begin(async (tx) => {
-    const row = await lockWithChat(tx, id);
-    const born = await lockRoutine(tx, input.created);
-    const [origin] = await tx<{ n: number }[]>`
+    const rows = new Map<string, RoutineRow>();
+    for (const key of [id, input.created].sort()) rows.set(key, key === id ? await lockWithChat(tx, key) : await lockRoutine(tx, key));
+    const row = rows.get(id);
+    const born = rows.get(input.created);
+    if (row === undefined || born === undefined) throw new RoutineError('not-found', 'routine not found');
+    const [origin] = await tx<{ eventId: string; splitDays: unknown }[]>`
+      SELECT id::text AS "eventId", payload->'splitDays' AS "splitDays" FROM events
+      WHERE kind = 'routine.created' AND payload->>'routineId' = ${input.created} AND payload->>'splitFrom' = ${id}
+      ORDER BY id LIMIT 1`;
+    if (origin === undefined || !Array.isArray(origin.splitDays)) throw new RoutineError('conflict', 'that routine was not split from this one');
+    // Any change of either routine after the split (the split's own events come before or with it).
+    const [later] = await tx<{ n: number }[]>`
       SELECT count(*)::int AS n FROM events
-      WHERE kind = 'routine.created' AND payload->>'routineId' = ${input.created} AND payload->>'splitFrom' = ${id}`;
-    if ((origin?.n ?? 0) === 0) throw new RoutineError('conflict', 'that routine was not split from this one');
-    if (!leftBySplit({ days: row.days.filter(isIsoDay), at: row.at }, input)) {
-      throw new RoutineError('conflict', 'the routine changed after it was split: change it from the page');
-    }
-    const rule: RoutineRule = { days: input.days, at: input.at, timezone: row.timezone };
+      WHERE id > ${origin.eventId}::bigint AND kind LIKE 'routine.%'
+        AND ((kind = 'routine.updated' AND payload->>'routineId' = ${id}) OR (payload->>'routineId' = ${input.created} AND kind <> 'routine.created'))`;
+    if ((later?.n ?? 0) > 0) throw new RoutineError('conflict', 'one of the two routines changed after the split: change them from the page');
+    const [ran] = await tx<{ n: number }[]>`SELECT count(*)::int AS n FROM routine_runs WHERE routine_id = ${input.created}`;
+    if ((ran?.n ?? 0) > 0) throw new RoutineError('conflict', 'the routine split off already ran: remove it from the page');
+    const days = daysBack(row.days.filter(isIsoDay), origin.splitDays as unknown[]);
+    const rule: RoutineRule = { days, at: row.at, timezone: row.timezone };
     const nextRunAt = row.status === 'active' ? (dueOrNext(rule, row.nextRunAt, now) ?? next(rule, now)) : null;
-    await tx`UPDATE routines SET days = ${input.days}::smallint[], at = ${input.at}, next_run_at = ${nextRunAt} WHERE id = ${id}`;
-    await appendEvent(tx, { kind: 'routine.updated', label: 'L0', payload: { routineId: id, conversationId: row.conversationId, fields: ['at', 'days'] } });
+    await tx`UPDATE routines SET days = ${days}::smallint[], next_run_at = ${nextRunAt} WHERE id = ${id}`;
+    await appendEvent(tx, { kind: 'routine.updated', label: 'L0', payload: { routineId: id, conversationId: row.conversationId, fields: ['days'] } });
     await tx`UPDATE routines SET status = 'retired', paused_by = NULL, next_run_at = NULL WHERE id = ${input.created}`;
     await appendEvent(tx, { kind: 'routine.retired', label: 'L0', payload: { routineId: input.created, conversationId: born.conversationId, by: 'unsplit' } });
     const archived = await tx`UPDATE conversations SET archived_at = now() WHERE id = ${born.conversationId} AND archived_at IS NULL AND purged_at IS NULL RETURNING id`;

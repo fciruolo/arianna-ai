@@ -269,8 +269,12 @@ export const SNAP_MINUTES = 15;
 export const MOVED_TEXT = 'Spostata';
 export const UNDO_TEXT = 'Annulla';
 export const MOVE_ERROR = 'Non riesco a spostare la routine.';
-/** The 409 of an «Annulla» refused by the core: the first routine changed after the split, or the chat was archived. */
-export const MOVE_CONFLICT = 'Non posso annullare: la routine è cambiata dopo lo spostamento (o la sua chat è archiviata). Sistemala dalla pagina.';
+/** The 409 of a move refused by the core (its chat archived, or no longer a routine that moves). */
+export const MOVE_CONFLICT = 'Non posso spostarla: la sua chat è archiviata o la routine non si può più spostare. Riattivala dalla pagina.';
+/** The 409 of «Solo <giorno>»: a proposal to approve first, or its chat archived. */
+export const SPLIT_CONFLICT = 'Non posso dividerla: è una proposta da approvare o la sua chat è archiviata.';
+/** The 409 of «Annulla»: one of the two routines changed, or the new one already ran, after the move. */
+export const UNDO_CONFLICT = 'Non posso annullare: una delle due routine è cambiata o ha già girato dopo lo spostamento. Sistemale dalla pagina.';
 
 /** A press that moved less than the threshold: the click that opens the routine. */
 export function isClick(dx: number, dy: number): boolean {

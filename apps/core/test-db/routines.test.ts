@@ -16,6 +16,7 @@ import { captureNote } from '../src/capture.ts';
 import { startLiveFeed } from '../src/live.ts';
 import { archiveConversation, listConversations, purgeConversation } from '../src/conversations.ts';
 import {
+  claimRun,
   createRoutine,
   createRoutineService,
   createRoutineSummarizer,
@@ -570,12 +571,15 @@ test('a run due and not yet taken by the ticker survives a split and a small cha
   assert.ok((moved.nextRunAt?.getTime() ?? 0) > soon.getTime());
 });
 
-test('«Annulla» of a split (D-257): one step back; refused when not split from it or changed since', async () => {
+test('«Annulla» of a split (D-257): one step back with the day from the event; the refusals', async () => {
   const sql = db().sql;
   const service = createRoutineService(env());
+  const conflict = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict';
   const first = await createRoutine(sql, { title: 'Annulla divisa', days: [1, 3, 5], at: '18:00', timezone: 'UTC', sources: ['todo'] });
   const { created } = await service.split(first.id, { day: 3, to: 4, at: '07:00' });
-  const back = await service.unsplit(first.id, { created: created.id, days: [1, 3, 5], at: '18:00' });
+  // The page sends only the id: the days come from the event of the split.
+  await assert.rejects(async () => service.unsplit(first.id, { created: created.id, days: [1, 2, 3, 4, 5, 6, 7] }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'invalid');
+  const back = await service.unsplit(first.id, { created: created.id });
   assert.deepEqual([...back.days], [1, 3, 5]);
   assert.equal(back.at, '18:00');
   assert.equal(back.status, 'active');
@@ -583,28 +587,78 @@ test('«Annulla» of a split (D-257): one step back; refused when not split from
   const [chat] = await sql<{ archived: boolean }[]>`SELECT archived_at IS NOT NULL AS archived FROM conversations WHERE id = ${created.conversationId}`;
   assert.equal(chat?.archived, true);
   // Twice: the routine split off is gone.
-  await assert.rejects(service.unsplit(first.id, { created: created.id, days: [1, 3, 5], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'not-found');
-  // Not split from it.
+  await assert.rejects(service.unsplit(first.id, { created: created.id }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'not-found');
+  // Itself, and a routine not split from it.
+  await assert.rejects(service.unsplit(first.id, { created: first.id }), conflict);
   const stranger = await createRoutine(sql, { title: 'Estranea divisa', days: [2], at: '10:00', timezone: 'UTC', sources: ['todo'] });
-  await assert.rejects(service.unsplit(first.id, { created: stranger.id, days: [1, 3, 5, 6], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
-  // Changed after the split.
+  await assert.rejects(service.unsplit(first.id, { created: stranger.id }), conflict);
+  // The first changed after the split.
   const again = await service.split(first.id, { day: 5, at: '20:00' });
   await updateRoutine(sql, first.id, { at: '18:45' });
-  await assert.rejects(service.unsplit(first.id, { created: again.created.id, days: [1, 3, 5], at: '18:00' }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'conflict');
+  await assert.rejects(service.unsplit(first.id, { created: again.created.id }), conflict);
   assert.equal(await loadRoutine(sql, again.created.id).then((routine) => routine?.status), 'active');
-  // Through the route: 200, and 400 for a bad body.
+  // The routine split off changed (paused), or already ran.
+  const third = await createRoutine(sql, { title: 'Terza divisa', days: [2, 4], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+  const pausedSplit = await service.split(third.id, { day: 4, at: '10:00' });
+  await pauseRoutine(sql, pausedSplit.created.id);
+  await assert.rejects(service.unsplit(third.id, { created: pausedSplit.created.id }), conflict);
+  const fourth = await createRoutine(sql, { title: 'Quarta divisa', days: [2, 4], at: '09:00', timezone: 'UTC', sources: ['todo'], summary: false });
+  const ranSplit = await service.split(fourth.id, { day: 4, at: '10:00' });
+  await service.runNow(ranSplit.created.id);
+  await assert.rejects(service.unsplit(fourth.id, { created: ranSplit.created.id }), conflict);
+  // The chat of the first archived.
+  const fifth = await createRoutine(sql, { title: 'Quinta divisa', days: [2, 4], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+  const archivedSplit = await service.split(fifth.id, { day: 4, at: '10:00' });
+  await archiveConversation(sql, fifth.conversationId, true);
+  await assert.rejects(service.unsplit(fifth.id, { created: archivedSplit.created.id }), conflict);
+  // Through the route: 400 for a bad body, 409, 200.
   const live = await startLiveFeed(sql);
   const server = await startApiServer({ sql, live, host: '127.0.0.1', port: 0, projects: () => [], routines: service });
   const base = `http://127.0.0.1:${String(server.port)}`;
   const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   try {
-    await updateRoutine(sql, first.id, { at: '18:00' });
-    assert.equal((await post(`/api/routines/${first.id}/unsplit`, { created: again.created.id, days: 'x', at: '18:00' })).status, 400);
-    assert.equal((await post(`/api/routines/${first.id}/unsplit`, { created: again.created.id, days: [1, 3, 5], at: '18:00' })).status, 200);
+    const sixth = await createRoutine(sql, { title: 'Sesta divisa', days: [1, 6], at: '09:00', timezone: 'UTC', sources: ['todo'] });
+    const split = (await (await post(`/api/routines/${sixth.id}/split`, { day: 6, at: '11:00' })).json()) as { created: { id: string } };
+    assert.equal((await post(`/api/routines/${sixth.id}/unsplit`, { created: 'x' })).status, 400);
+    assert.equal((await post(`/api/routines/${first.id}/unsplit`, { created: again.created.id })).status, 409);
+    assert.equal((await post(`/api/routines/${sixth.id}/unsplit`, { created: split.created.id })).status, 200);
+    assert.deepEqual([...((await loadRoutine(sql, sixth.id))?.days ?? [])], [1, 6]);
   } finally {
     await server.close();
     await live.close();
   }
+});
+
+test('a run of the ticker in flight gives up when the routine changes under it, and runs once with the new rule', async () => {
+  const sql = db().sql;
+  const { id, due } = await dueRoutine(0, ['todo']);
+  const today = (due.getUTCDay() === 0 ? 7 : due.getUTCDay()) as IsoDay;
+  const other = (today === 7 ? 1 : today + 1) as IsoDay;
+  // What runDue read before the change.
+  const seen = await loadRoutine(sql, id);
+  assert.ok(seen !== undefined);
+  const soon = new Date(due.getTime() + 20_000);
+  await createRoutineService(env(soon)).split(id, { day: other, to: other, at: '05:00' });
+  assert.equal((await loadRoutine(sql, id))?.nextRunAt?.toISOString(), due.toISOString());
+  let wrote = false;
+  const claimed = await claimRun(sql, seen, due, new Date(due.getTime() + 86_400_000), () => {
+    wrote = true;
+    return Promise.resolve({ kind: 'none' });
+  });
+  assert.deepEqual(claimed, { kind: 'none' });
+  assert.equal(wrote, false);
+  // The next tick reads the new rule and writes the run once.
+  assert.equal((await runDue(env(soon), id)).kind, 'done');
+  assert.equal((await runDue(env(soon), id)).kind, 'none');
+  const runs = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM routine_runs WHERE routine_id = ${id} AND trigger = 'schedule'`;
+  assert.equal(runs[0]?.n, 1);
+  // A change of the sources only, in flight: the claim gives up too.
+  const later = await dueRoutine(0, ['todo']);
+  const before = await loadRoutine(sql, later.id);
+  assert.ok(before !== undefined);
+  await updateRoutine(sql, later.id, { sources: ['notes'] }, new Date(later.due.getTime() + 20_000));
+  assert.deepEqual(await claimRun(sql, before, later.due, new Date(later.due.getTime() + 86_400_000), () => Promise.resolve({ kind: 'none' })), { kind: 'none' });
+  assert.equal((await runDue(env(new Date(later.due.getTime() + 20_000)), later.id)).kind, 'done');
 });
 
 test('«Elimina per sempre» of its conversation takes the routine and its runs with it', async () => {

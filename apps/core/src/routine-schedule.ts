@@ -162,10 +162,13 @@ export function nextRun(rule: RoutineRule, after: Date): Date | undefined {
  * The next run after a change of the rule (D-257): the run already due and
  * not yet taken by the ticker (`due` at or before `now`) stays when it is
  * still a time of the new rule, so a change a few seconds before the ticker
- * does not lose it; otherwise the first run after `now`.
+ * does not lose it; otherwise the first run after `now`. A run due longer
+ * ago than `maxAgeMs` (the Mac was off for hours) is not kept: as before
+ * D-257 the change moves to the next run, and the ticker's recovery within two
+ * hours (D-254) only applies to a routine left as it was.
  */
-export function dueOrNext(rule: RoutineRule, due: Date | null, now: Date): Date | undefined {
-  if (due !== null && due.getTime() <= now.getTime() && nextRun(rule, new Date(due.getTime() - 1))?.getTime() === due.getTime()) return due;
+export function dueOrNext(rule: RoutineRule, due: Date | null, now: Date, maxAgeMs = 2 * 3_600_000): Date | undefined {
+  if (due !== null && due.getTime() <= now.getTime() && now.getTime() - due.getTime() <= maxAgeMs && nextRun(rule, new Date(due.getTime() - 1))?.getTime() === due.getTime()) return due;
   return nextRun(rule, now);
 }
 
