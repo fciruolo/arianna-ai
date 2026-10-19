@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue';
 
-import { RING_TEXT, type Callee } from '../lib/calls.ts';
+import { RING_TEXT, type CallReason, type Callee } from '../lib/calls.ts';
 import type { CharacterChoice } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
@@ -12,7 +12,7 @@ import PixelAgent from './PixelAgent.vue';
  * and Rifiuta. The ring is made here with the
  * Web Audio API: no sound file, nothing fetched.
  */
-const props = defineProps<{ reason: 'waiting' | 'task-done' | 'scheduled'; title: string; callee: Callee; choice: CharacterChoice | undefined }>();
+const props = defineProps<{ reason: CallReason; title: string; callee: Callee; choice: CharacterChoice | undefined }>();
 const emit = defineEmits<{ answer: []; decline: [] }>();
 
 let context: AudioContext | undefined;

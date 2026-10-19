@@ -3,9 +3,17 @@ import type { OutgoingRules } from '@arianna/config';
 import type { Queryable, Sql } from '../db/client.ts';
 import { ChatError } from '../conversations.ts';
 import { appendEvent } from '../events.ts';
+import { queueRoutineCall } from '../routines.ts';
 import { loadTask } from '../tasks.ts';
 import { CALL_COLUMNS, CallError, loadCall, writeNote, type Call } from './calls.ts';
-import { AGENT_OFF_TEXT, FAILED_TEXT, mayCall, OUTGOING_TEXT, startOfDay, type CallReason } from './outgoing.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, mayCall, OUTGOING_TEXT, ROUTINE_NOTE_TEXT, startOfDay, type CallReason } from './outgoing.ts';
+
+/**
+ * A call of a routine (D-259) waits for the voice, or for a call in progress,
+ * this long after its time; then it is skipped with a note, so a routine of
+ * ten o'clock never rings at one when the voice comes back (D-110 g).
+ */
+export const ROUTINE_CALL_WAIT_MS = 10 * 60_000;
 
 /**
  * The calls Arianna makes (D-066, choice 8): a task waiting for the user for
@@ -59,6 +67,16 @@ async function nextCandidate(sql: Queryable, now: Date, waitingMinutes: number, 
     [due],
   );
   if (scheduled !== undefined) return { kind: 'row', call: scheduled };
+  // A routine's call (D-259), at its time by the real clock (the run wrote it with now()), of a routine still active.
+  const [routine] = await sql.unsafe<Call[]>(
+    `SELECT ${CALL_COLUMNS} FROM calls WHERE id = (
+       SELECT k.id FROM calls k JOIN conversations c ON c.id = k.conversation_id
+         JOIN routine_runs x ON x.id = k.routine_run_id JOIN routines r ON r.id = x.routine_id
+       WHERE k.status = 'scheduled' AND k.reason = 'routine' AND k.scheduled_at <= now() AND r.status = 'active' AND r.channel = 'call'
+         AND (k.routine_attempt = 1 OR r.retry_minutes IS NOT NULL) AND ${OPEN_CONVERSATION}
+       ORDER BY k.scheduled_at LIMIT 1)`,
+  );
+  if (routine !== undefined) return { kind: 'row', call: routine };
   // A task the user asked to hear about, now finished (or failed).
   const [done] = await sql.unsafe<Call[]>(
     `SELECT ${CALL_COLUMNS} FROM calls WHERE id = (
@@ -92,17 +110,69 @@ export function createRinger(options: RingerOptions): Ringer {
 
   async function missIfUnanswered(callId: string): Promise<void> {
     const rows = await sql.begin(async (tx) => {
-      const changed = await tx<{ conversationId: string; reason: CallReason; failed: boolean }[]>`
+      const changed = await tx<{ conversationId: string; reason: CallReason; failed: boolean; runId: string | null; attempt: number | null }[]>`
         UPDATE calls SET status = 'missed', end_reason = 'no-answer', ended_at = now()
         WHERE id = ${callId} AND status = 'ringing'
         RETURNING conversation_id::text AS "conversationId", reason,
-          EXISTS (SELECT FROM tasks t WHERE t.id = calls.task_id AND t.status = 'failed') AS failed`;
+          EXISTS (SELECT FROM tasks t WHERE t.id = calls.task_id AND t.status = 'failed') AS failed,
+          routine_run_id::text AS "runId", routine_attempt AS attempt`;
+      const notes: { conversationId: string; text: string }[] = [];
       for (const row of changed) {
         await appendEvent(tx, { kind: 'call.ended', label: 'L0', payload: { callId, conversationId: row.conversationId, status: 'missed', reason: 'no-answer' } });
+        if (row.reason === 'routine') {
+          notes.push({ conversationId: row.conversationId, text: await routineMissed(tx, row.conversationId, row.runId, row.attempt) });
+          continue;
+        }
+        notes.push({ conversationId: row.conversationId, text: row.reason === 'task-done' && row.failed ? FAILED_TEXT.missed : OUTGOING_TEXT[row.reason].missed });
+      }
+      return notes;
+    });
+    for (const note of rows) await writeNote(sql, note.conversationId, note.text, callId);
+  }
+
+  /**
+   * A first call of a routine not answered (D-259): one second ring after
+   * `retry_minutes`, when the routine asks and is still active (D-110,
+   * risposta 6), in the same transaction; the note says so. Declined with
+   * «Rifiuta», never: the user said no.
+   */
+  async function routineMissed(tx: Queryable, conversationId: string, runId: string | null, attempt: number | null): Promise<string> {
+    if (runId === null || attempt !== 1) return attempt === 2 ? ROUTINE_NOTE_TEXT.retryMissed : OUTGOING_TEXT.routine.missed;
+    const [routine] = await tx<{ id: string; minutes: number | null }[]>`
+      SELECT r.id::text, r.retry_minutes AS minutes FROM routine_runs x JOIN routines r ON r.id = x.routine_id
+      WHERE x.id = ${runId} AND r.status = 'active'`;
+    if (routine?.minutes === null || routine === undefined) return OUTGOING_TEXT.routine.missed;
+    const queued = await queueRoutineCall(tx, { routineId: routine.id, conversationId, runId, attempt: 2, at: new Date(Date.now() + routine.minutes * 60_000) });
+    return queued === undefined ? OUTGOING_TEXT.routine.missed : ROUTINE_NOTE_TEXT.retry(routine.minutes);
+  }
+
+  /**
+   * The calls of routines that cannot ring any more (D-259): waited past
+   * ROUTINE_CALL_WAIT_MS (the voice not ready, another call in progress) are
+   * skipped with a note; those of a routine no longer active, or of a chat
+   * archived or deleted, are cancelled without one. Before the voice check: a
+   * voice that never comes up still leaves the note.
+   */
+  async function settleRoutineCalls(): Promise<void> {
+    const rows = await sql.begin(async (tx) => {
+      // Cancelled: the routine no longer active or no longer with the call, a second ring no longer asked, the chat closed.
+      const changed = await tx<{ id: string; conversationId: string; endReason: 'expired' | 'cancelled' }[]>`
+        UPDATE calls k SET status = 'skipped', ended_at = now(),
+          end_reason = CASE WHEN r.status <> 'active' OR r.channel <> 'call' OR (k.routine_attempt = 2 AND r.retry_minutes IS NULL)
+            OR c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL THEN 'cancelled' ELSE 'expired' END
+        FROM routine_runs x, routines r, conversations c
+        WHERE k.routine_run_id = x.id AND r.id = x.routine_id AND c.id = k.conversation_id
+          AND k.status = 'scheduled' AND k.reason = 'routine'
+          AND (r.status <> 'active' OR r.channel <> 'call' OR (k.routine_attempt = 2 AND r.retry_minutes IS NULL)
+               OR c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL
+               OR k.scheduled_at < now() - make_interval(secs => ${ROUTINE_CALL_WAIT_MS / 1000}))
+        RETURNING k.id::text, k.conversation_id::text AS "conversationId", k.end_reason AS "endReason"`;
+      for (const row of changed) {
+        await appendEvent(tx, { kind: 'call.ended', label: 'L0', payload: { callId: row.id, conversationId: row.conversationId, status: 'skipped', reason: row.endReason } });
       }
       return changed;
     });
-    for (const row of rows) await writeNote(sql, row.conversationId, row.reason === 'task-done' && row.failed ? FAILED_TEXT.missed : OUTGOING_TEXT[row.reason].missed, callId);
+    for (const row of rows) if (row.endReason === 'expired') await writeNote(sql, row.conversationId, ROUTINE_NOTE_TEXT.expired, row.id);
   }
 
   async function refusedByAgent(conversationId: string): Promise<boolean | 'later'> {
@@ -128,6 +198,7 @@ export function createRinger(options: RingerOptions): Ringer {
       const rules = options.rules();
       const at = now();
       const real = new Date();
+      await settleRoutineCalls();
       // The voice cannot take a call now (starting, failed, not installed): nothing rings, the candidate waits.
       if (!options.voiceUp()) return undefined;
       // One call at a time: wait for the one in progress.
@@ -143,7 +214,9 @@ export function createRinger(options: RingerOptions): Ringer {
       // Counted by when they rang (answered, missed or failed alike), not by when they were scheduled.
       const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM calls WHERE rang_at >= ${startOfDay(real)}`;
-      const allowed = mayCall(at, rules, count, reason);
+      // A routine's second ring, and its call late after the Mac was off, keep the quiet hours (D-110, risposte 6 e 7).
+      const quiet = reason === 'routine' && candidate.kind === 'row' && (await routineKeepsQuiet(sql, candidate.call));
+      const allowed = mayCall(at, rules, count, reason, { quiet });
       // With no page open and no push, nobody can hear it ring: Arianna writes at once.
       const notify = options.notify?.();
       const deaf = allowed.ok && options.clientsOnline() === 0 && notify === undefined;
@@ -191,7 +264,20 @@ export function createRinger(options: RingerOptions): Ringer {
       if (call === undefined) return undefined;
 
       if (!verdict.ok) {
-        await writeNote(sql, call.conversationId, agentOff ? AGENT_OFF_TEXT : failed ? FAILED_TEXT.skipped : OUTGOING_TEXT[reason].skipped, call.id);
+        // Nobody could hear it ring (no page, no push): as a call not answered, the second ring too.
+        const deafRoutine = reason === 'routine' && verdict.reason === 'no-answer';
+        const text = deafRoutine
+          ? await sql.begin((tx) => routineMissed(tx, call.conversationId, call.routineRunId, call.routineAttempt))
+          : reason === 'routine'
+            ? verdict.reason === 'quiet-hours'
+              ? ROUTINE_NOTE_TEXT.quiet
+              : OUTGOING_TEXT.routine.skipped
+            : agentOff
+              ? AGENT_OFF_TEXT
+              : failed
+                ? FAILED_TEXT.skipped
+                : OUTGOING_TEXT[reason].skipped;
+        await writeNote(sql, call.conversationId, text, call.id);
         return call;
       }
       // No chat open: the push is the only way to ring.
@@ -221,6 +307,14 @@ export function createRinger(options: RingerOptions): Ringer {
       timers.clear();
     },
   };
+}
+
+/** The second ring of a routine, or its call after a run late: Arianna's choice, under the quiet hours. */
+async function routineKeepsQuiet(sql: Queryable, call: Call): Promise<boolean> {
+  if (call.routineAttempt === 2) return true;
+  if (call.routineRunId === null) return false;
+  const [run] = await sql<{ late: boolean }[]>`SELECT reason = 'late' AS late FROM routine_runs WHERE id = ${call.routineRunId}`;
+  return run?.late === true;
 }
 
 /**

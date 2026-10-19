@@ -144,6 +144,22 @@ test('routine.propose: a routine proposed, off and hidden; «Attiva» in the cha
   assert.match((await lastReply(task.id))?.body ?? '', new RegExp(`^Fatto: la routine «${TITLE}» è attiva, lun e gio alle 09:00\\. Il primo resoconto arriva (lunedì|giovedì) `));
 });
 
+test('routine.propose with the call (D-259): the routine is born off with the channel call, the defaults of the voice, and says it calls', async () => {
+  const { task } = await ask('private', 'chiamami ogni lunedì e giovedì alle 9 per il resoconto');
+  assert.deepEqual(await drain(task.id, scripted([{ ...PROPOSE, arguments: { ...PROPOSE.arguments, channel: 'call' } }])), ['waiting-approval']);
+  const approvalId = await waitingApproval(task.id);
+  const [approval] = await db().sql<{ detail: Record<string, unknown> }[]>`SELECT detail FROM approvals WHERE id = ${approvalId}`;
+  assert.equal(approval?.detail.channel, 'call');
+  const id = await routineOf(approvalId);
+  const proposed = await loadRoutine(db().sql, id);
+  assert.deepEqual([proposed?.status, proposed?.channel, proposed?.voiceMaxLabel, proposed?.retryMinutes], ['proposed', 'call', 'L2', null]);
+  // A proposal stays as the user saw it: not even the ceiling of the voice changes before «Attiva».
+  await assert.rejects(db().sql`UPDATE routines SET voice_max_label = 'L0' WHERE id = ${id}`);
+  await recordDecision(db().sql, approvalId, 'approved', 'web');
+  assert.deepEqual(await drain(task.id, scripted([])), ['answered']);
+  assert.match((await lastReply(task.id))?.body ?? '', /, e a quell’ora ti chiamo\. /);
+});
+
 test('«Scarta» in the chat: the routine is retired and never shows; nothing runs', async () => {
   const { task } = await ask('private');
   assert.deepEqual(await drain(task.id, scripted([PROPOSE])), ['waiting-approval']);

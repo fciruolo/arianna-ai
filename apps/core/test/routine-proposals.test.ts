@@ -14,7 +14,7 @@ const GOOD = { title: 'Resoconto del lunedì e giovedì', days: [4, 1], at: '09:
 
 test('a proposal with closed fields is taken: days sorted, sources in their order, summary on, the zone of this Mac', () => {
   const checked = checkRoutineProposal(GOOD, 'Europe/Rome');
-  assert.deepEqual(checked, { title: 'Resoconto del lunedì e giovedì', days: [1, 4], at: '09:00', timezone: 'Europe/Rome', sources: ['todo', 'waiting'], summary: true });
+  assert.deepEqual(checked, { title: 'Resoconto del lunedì e giovedì', days: [1, 4], at: '09:00', timezone: 'Europe/Rome', sources: ['todo', 'waiting'], summary: true, channel: 'chat' });
   assert.deepEqual(checkRoutineProposal({ ...GOOD, at: '9:30', summary: false, channel: 'chat' }, 'UTC'), {
     title: GOOD.title,
     days: [1, 4],
@@ -22,7 +22,11 @@ test('a proposal with closed fields is taken: days sorted, sources in their orde
     timezone: 'UTC',
     sources: ['todo', 'waiting'],
     summary: false,
+    channel: 'chat',
   });
+  // The call (D-259): the model may propose it, the routine is born off all the same.
+  const call = checkRoutineProposal({ ...GOOD, channel: 'call' }, 'UTC');
+  assert.ok(!('error' in call) && call.channel === 'call');
 });
 
 test('a field outside the closed list is refused: never a free prompt, never another channel', () => {
@@ -30,8 +34,15 @@ test('a field outside the closed list is refused: never a free prompt, never ano
   assert.ok('error' in prompt && /unknown field\(s\) prompt/.test(prompt.error) && /never a prompt/.test(prompt.error));
   const timezone = checkRoutineProposal({ ...GOOD, timezone: 'Asia/Tokyo' });
   assert.ok('error' in timezone && /unknown field\(s\) timezone/.test(timezone.error));
-  const call = checkRoutineProposal({ ...GOOD, channel: 'call' });
-  assert.ok('error' in call && /only in its chat/.test(call.error));
+  for (const channel of ['telegram', 'email', 'phone', 1]) {
+    const other = checkRoutineProposal({ ...GOOD, channel });
+    assert.ok('error' in other && /channel must be "chat" or "call"/.test(other.error), String(channel));
+  }
+  // The ceiling of the voice and the second ring are the user's, on the page: never the model's.
+  for (const field of ['voiceMaxLabel', 'retryMinutes']) {
+    const other = checkRoutineProposal({ ...GOOD, channel: 'call', [field]: 'L2' });
+    assert.ok('error' in other && new RegExp(`unknown field\\(s\\) ${field}`).test(other.error));
+  }
 });
 
 test('wrong values are refused with an error the model reads', () => {
@@ -89,6 +100,8 @@ test('the answer once decided is written by code', () => {
     routineAnswerText(routine, 'approved'),
     'Fatto: la routine «Resoconto» è attiva, lun e gio alle 09:00. Il primo resoconto arriva lunedì 19 ottobre alle 09:00, nella sua chat «Routine · Resoconto». La cambi o la metti in pausa nella pagina Routine.',
   );
+  // With the call (D-259) the answer says Arianna calls at that time.
+  assert.match(routineAnswerText({ ...routine, channel: 'call' }, 'approved'), /«Routine · Resoconto», e a quell’ora ti chiamo\. /);
   assert.match(routineAnswerText(routine, 'rejected'), /^Va bene: la routine non parte/);
   assert.match(routineAnswerText(undefined, 'expired'), /^Va bene/);
   assert.match(routineAnswerText({ ...routine, status: 'retired', nextRunAt: null }, 'approved'), /^Non sono riuscita/);

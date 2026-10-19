@@ -38,8 +38,26 @@ test('the form refuses what is not in the lists', () => {
   assert.ok(invalid({ ...good, timezone: 'Europe/Nowhere' }));
   // No free prompt, no other channel: unknown fields are refused.
   assert.ok(invalid({ ...good, prompt: 'dimmi le email' }));
-  assert.ok(invalid({ ...good, channel: 'call' }));
+  assert.ok(invalid({ ...good, channel: 'telegram' }));
   assert.ok(invalid({ title: 'Sera' }));
+});
+
+test('the call (D-259): channel chat or call, the voice up to Privato, one second ring of 5-60 minutes', () => {
+  const good = { title: 'Sera', days: [1], at: '18:00', sources: ['todo'] };
+  assert.deepEqual(parseRoutineInput({ ...good, channel: 'call', voiceMaxLabel: 'L1', retryMinutes: 15 }, false), { ...good, channel: 'call', voiceMaxLabel: 'L1', retryMinutes: 15 });
+  assert.deepEqual(parseRoutineInput({ retryMinutes: null }, true), { retryMinutes: null });
+  for (const label of ['L0', 'L1', 'L2']) assert.ok(!invalid({ ...good, voiceMaxLabel: label }));
+  assert.ok(invalid({ ...good, voiceMaxLabel: 'L3' }));
+  assert.ok(invalid({ ...good, voiceMaxLabel: 'Privato' }));
+  for (const minutes of [10, 15, 30]) assert.ok(!invalid({ ...good, retryMinutes: minutes }));
+  // Only the choices of the page, so the page always shows what a routine has.
+  assert.ok(invalid({ ...good, retryMinutes: 5 }));
+  assert.ok(invalid({ ...good, retryMinutes: 45 }));
+  assert.ok(invalid({ ...good, retryMinutes: 4 }));
+  assert.ok(invalid({ ...good, retryMinutes: 61 }));
+  assert.ok(invalid({ ...good, retryMinutes: 15.5 }));
+  assert.ok(invalid({ ...good, retryMinutes: '15' }));
+  assert.ok(invalid({ ...good, channel: 'phone' }));
 });
 
 test('todo: the cards named with their due date, the rest counted; none says the list is empty', () => {

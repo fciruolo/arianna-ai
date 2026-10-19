@@ -93,10 +93,10 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
       RETURNING id::text`;
     if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
     const [created] = await tx<{ id: string }[]>`
-      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, status, paused_by, next_run_at, approved_at)
+      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, channel, voice_max_label, retry_minutes, status, paused_by, next_run_at, approved_at)
       VALUES (${row.title}, ${conversation.id}, ${[input.to]}::smallint[], ${input.at}, ${row.timezone}, ${row.sources}::text[],
         (SELECT dashboard_tiles FROM routines WHERE id = ${id}), ${row.summary},
-        'active', NULL, ${next(newRule, now)}, now())
+        ${row.channel}, ${row.voiceMaxLabel}::privacy_label, ${row.retryMinutes}, 'active', NULL, ${next(newRule, now)}, now())
       RETURNING id::text`;
     if (created === undefined) throw new Error('INSERT INTO routines returned no row');
     // A routine is born active (routines_proposal_guard, D-256): from a paused one it is paused at once, in the same transaction.

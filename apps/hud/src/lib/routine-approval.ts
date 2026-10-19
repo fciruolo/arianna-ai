@@ -17,6 +17,8 @@ export interface RoutineProposalCard {
   zone: string | null;
   sources: string[];
   summary: boolean;
+  /** Arianna also calls at that time (D-259). */
+  call: boolean;
 }
 
 const SOURCES: readonly RoutineSource[] = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes', 'dashboard'];
@@ -35,7 +37,7 @@ function isSource(value: unknown): value is RoutineSource {
 /** The card of a `routine.propose` approval (kind `routine`), or undefined when it is not a whole one. */
 export function routineProposal(approval: { kind: string; detail: Record<string, unknown> }, ownZone?: string): RoutineProposalCard | undefined {
   if (approval.kind !== 'routine') return undefined;
-  const { title, days, at, timezone, sources, summary } = approval.detail;
+  const { title, days, at, timezone, sources, summary, channel } = approval.detail;
   if (typeof title !== 'string' || typeof at !== 'string' || !Array.isArray(days) || !Array.isArray(sources)) return undefined;
   const validDays = days.filter(isDay);
   const validSources = sources.filter(isSource);
@@ -46,5 +48,6 @@ export function routineProposal(approval: { kind: string; detail: Record<string,
     zone: typeof timezone === 'string' && timezone !== ownZone ? timezone : null,
     sources: validSources.map((source) => (source === 'dashboard' ? PROPOSAL_DASHBOARD_TEXT : SOURCE_TEXT[source])),
     summary: summary !== false,
+    call: channel === 'call',
   };
 }

@@ -51,6 +51,13 @@ export interface RoutineProposal {
   timezone: string;
   sources: RoutineSource[];
   summary: boolean;
+  /**
+   * In the chat, or in the chat and with a call (D-259): the model may propose
+   * the call too, since the routine is born off and only the user's «Attiva»
+   * starts it. The ceiling of what is said aloud and the second ring are not
+   * the model's: the defaults (Privato, no second ring), changed on the page.
+   */
+  channel: 'chat' | 'call';
 }
 
 /** One line of title, as the page checks it: spaces and new lines collapsed, no other control characters, at most 80 characters. */
@@ -72,9 +79,11 @@ export function routineTitle(value: unknown): string | { error: string } {
 export function checkRoutineProposal(args: Record<string, unknown>, timezone = systemTimeZone()): RoutineProposal | { error: string } {
   const unknown = Object.keys(args).filter((key) => !PROPOSAL_FIELDS.includes(key));
   if (unknown.length > 0) {
-    return { error: `unknown field(s) ${unknown.join(', ')}: a routine has only title, days, at, sources and summary, never a prompt or instructions of its own` };
+    return { error: `unknown field(s) ${unknown.join(', ')}: a routine has only title, days, at, sources, summary and channel, never a prompt or instructions of its own` };
   }
-  if (args.channel !== undefined && args.channel !== 'chat') return { error: 'a routine writes only in its chat for now: tell the user that calls and email are not available yet' };
+  if (args.channel !== undefined && args.channel !== 'chat' && args.channel !== 'call') {
+    return { error: 'channel must be "chat" or "call" (a call on the voice of this Mac, with the report in the chat too): email, Telegram and the real phone are not available' };
+  }
   const title = routineTitle(args.title);
   if (typeof title !== 'string') return title;
   const days = args.days;
@@ -94,6 +103,7 @@ export function checkRoutineProposal(args: Record<string, unknown>, timezone = s
     timezone,
     sources: ROUTINE_SOURCES.filter((source) => chosen.has(source)),
     summary: args.summary ?? true,
+    channel: args.channel === 'call' ? 'call' : 'chat',
   };
 }
 
@@ -136,11 +146,11 @@ export async function writeRoutineProposal(
     RETURNING id::text`;
   if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
   const [routine] = await tx<{ id: string }[]>`
-    INSERT INTO routines (title, conversation_id, days, at, timezone, sources, summary, status)
-    VALUES (${proposal.title}, ${conversation.id}, ${proposal.days}::smallint[], ${proposal.at}, ${proposal.timezone}, ${proposal.sources}::text[], ${proposal.summary}, 'proposed')
+    INSERT INTO routines (title, conversation_id, days, at, timezone, sources, summary, channel, status)
+    VALUES (${proposal.title}, ${conversation.id}, ${proposal.days}::smallint[], ${proposal.at}, ${proposal.timezone}, ${proposal.sources}::text[], ${proposal.summary}, ${proposal.channel}, 'proposed')
     RETURNING id::text`;
   if (routine === undefined) throw new Error('INSERT INTO routines returned no row');
-  const detail = { routineId: routine.id, title: proposal.title, days: proposal.days, at: proposal.at, timezone: proposal.timezone, sources: proposal.sources, summary: proposal.summary, step: options.step };
+  const detail = { routineId: routine.id, title: proposal.title, days: proposal.days, at: proposal.at, timezone: proposal.timezone, sources: proposal.sources, summary: proposal.summary, channel: proposal.channel, step: options.step };
   const [approval] = await tx<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
     VALUES (${options.taskId}, 'routine', ${ROUTINE_PROPOSE}, ${tx.json(detail)}, ${maxLabel(options.label, PROPOSAL_CEILING)}::privacy_label)
@@ -194,10 +204,11 @@ export async function decideRoutineProposal(
 
 /** What the chat reads once the user decided a proposed routine, written by code. */
 export function routineAnswerText(
-  routine: { title: string; days: readonly IsoDay[]; at: string; timezone: string; status: string; nextRunAt: Date | null } | undefined,
+  routine: { title: string; days: readonly IsoDay[]; at: string; timezone: string; status: string; nextRunAt: Date | null; channel?: string } | undefined,
   state: string,
 ): string {
   if (state !== 'approved') return 'Va bene: la routine non parte. Se cambi idea, chiedimela di nuovo o creala nella pagina Routine.';
   if (routine?.status !== 'active' || routine.nextRunAt === null) return 'Non sono riuscita ad attivare la routine: guardala nella pagina Routine.';
-  return `Fatto: la routine «${routine.title}» è attiva, ${daysText(routine.days)} alle ${routine.at}. Il primo resoconto arriva ${whenText(routine.nextRunAt, routine.timezone)}, nella sua chat «${ROUTINE_CONVERSATION_PREFIX}${routine.title}». La cambi o la metti in pausa nella pagina Routine.`;
+  const call = routine.channel === 'call' ? ', e a quell’ora ti chiamo' : '';
+  return `Fatto: la routine «${routine.title}» è attiva, ${daysText(routine.days)} alle ${routine.at}. Il primo resoconto arriva ${whenText(routine.nextRunAt, routine.timezone)}, nella sua chat «${ROUTINE_CONVERSATION_PREFIX}${routine.title}»${call}. La cambi o la metti in pausa nella pagina Routine.`;
 }

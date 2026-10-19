@@ -33,6 +33,16 @@ test('mayCall: the rules of the user; a scheduled call skips quiet hours and wee
   assert.deepEqual(mayCall(saturday(11), { ...rules, quietWeekend: false }, 0, 'waiting'), { ok: true });
 });
 
+test('mayCall for a routine (D-259): its first ring skips quiet hours and weekend; the second ring and a late one keep the quiet hours, never the weekend', () => {
+  assert.deepEqual(mayCall(monday(22), rules, 0, 'routine'), { ok: true });
+  assert.deepEqual(mayCall(saturday(10), rules, 0, 'routine'), { ok: true });
+  assert.deepEqual(mayCall(monday(22), rules, 0, 'routine', { quiet: true }), { ok: false, reason: 'quiet-hours' });
+  assert.deepEqual(mayCall(monday(10), rules, 0, 'routine', { quiet: true }), { ok: true });
+  assert.deepEqual(mayCall(saturday(11), rules, 0, 'routine', { quiet: true }), { ok: true });
+  assert.deepEqual(mayCall(monday(10), rules, 3, 'routine'), { ok: false, reason: 'daily-limit' });
+  assert.deepEqual(mayCall(monday(10), rules, 3, 'routine', { quiet: true }), { ok: false, reason: 'daily-limit' });
+});
+
 test('VAPID: the header is a JWT signed ES256 for the origin of the push service, verifiable with the public key', () => {
   const keys = generateVapidKeys();
   assert.equal(Buffer.from(keys.publicKey, 'base64url').length, 65);

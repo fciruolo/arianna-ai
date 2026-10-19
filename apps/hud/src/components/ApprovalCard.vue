@@ -241,7 +241,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         <p>
           Routine: <strong>{{ routine.title }}</strong>
         </p>
-        <p class="text-[14px]">{{ routine.when }}<template v-if="routine.zone !== null"> · {{ routine.zone }}</template> · nella sua chat</p>
+        <p class="text-[14px]">{{ routine.when }}<template v-if="routine.zone !== null"> · {{ routine.zone }}</template> · {{ routine.call ? 'nella sua chat e con una chiamata' : 'nella sua chat' }}</p>
         <div class="flex flex-wrap gap-1.5">
           <span v-for="source in routine.sources" :key="source" class="pill">{{ source }}</span>
           <span v-if="routine.summary" class="pill">+ sintesi locale</span>

@@ -16,6 +16,7 @@ import { ORGANIZE_MODEL, modelUnavailable, organizeRetryDelayMs } from './organi
 import { decideRoutineProposal, isRoutineSource, MAX_ROUTINE_TITLE, ROUTINE_CONVERSATION_PREFIX, ROUTINE_SOURCES, type RoutineSource } from './routine-proposals.ts';
 import { dayText, daysText, dueOrNext, MONTHS, isClock, isIsoDay, isTimeZone, latestDue, nextRun, systemTimeZone, wallOf, whenText, type IsoDay, type RoutineRule } from './routine-schedule.ts';
 import { shortText } from './waiting.ts';
+import { isVoiceLabel, routineDetails, routineGreeting, type RoutineCallOpening } from './voice/routine-call.ts';
 
 /**
  * Routines (D-110, tappa A; D-254): recurring appointments of the user with
@@ -44,6 +45,10 @@ export type RoutineStatus = 'proposed' | 'active' | 'paused' | 'retired';
 export type RunStatus = 'done' | 'missed-offline' | 'skipped' | 'failed';
 export type RunReason = 'late' | 'blocked' | 'archived' | 'purged' | 'error';
 export type SummaryState = 'none' | 'queued' | 'done' | 'unavailable' | 'failed';
+/** How the report reaches the user (D-259): in the chat, or in the chat and with a call on the voice of this Mac. */
+export type RoutineChannel = 'chat' | 'call';
+/** The second ring, in minutes after a call not answered (D-110, risposta 6): the choices of the page. */
+export const RETRY_CHOICES: readonly number[] = [10, 15, 30];
 
 /** Lines shown per list; the rest are counted ("e altre N"). */
 export const REPORT_MAX_ITEMS = 7;
@@ -113,7 +118,11 @@ export interface Routine {
    */
   dashboardTiles: string[] | null;
   summary: boolean;
-  channel: 'chat';
+  channel: RoutineChannel;
+  /** The titles said aloud after the «sì», up to this label (never L3). */
+  voiceMaxLabel: Label;
+  /** One second ring after these minutes, or null for none. */
+  retryMinutes: number | null;
   status: RoutineStatus;
   pausedBy: 'user' | 'archived' | null;
   nextRunAt: Date | null;
@@ -133,6 +142,9 @@ export interface RoutineInput {
   /** null: every tile; a list: those tiles (D-258). Only with the source `dashboard`. */
   dashboardTiles?: string[] | null;
   summary?: boolean;
+  channel?: RoutineChannel;
+  voiceMaxLabel?: Label;
+  retryMinutes?: number | null;
 }
 
 /** The most tiles a routine names (the database checks it too). */
@@ -143,7 +155,7 @@ export const MAX_ROUTINE_TILES = 200;
  * else (D-110 b). `partial`: a change, where every field may be missing.
  */
 export function parseRoutineInput(body: Record<string, unknown>, partial: boolean): RoutineInput {
-  const allowed = ['title', 'days', 'at', 'timezone', 'sources', 'dashboardTiles', 'summary'];
+  const allowed = ['title', 'days', 'at', 'timezone', 'sources', 'dashboardTiles', 'summary', 'channel', 'voiceMaxLabel', 'retryMinutes'];
   const unknown = Object.keys(body).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) throw new RoutineError('invalid', `unknown field(s): ${unknown.join(', ')}`);
   const input: RoutineInput = {};
@@ -184,6 +196,23 @@ export function parseRoutineInput(body: Record<string, unknown>, partial: boolea
     if (typeof body.summary !== 'boolean') throw new RoutineError('invalid', 'summary must be true or false');
     input.summary = body.summary;
   }
+  // The call (D-259): the channel, the ceiling of the titles said aloud (never L3), the second ring.
+  if (body.channel !== undefined) {
+    if (body.channel !== 'chat' && body.channel !== 'call') throw new RoutineError('invalid', 'channel must be chat or call');
+    input.channel = body.channel;
+  }
+  if (body.voiceMaxLabel !== undefined) {
+    if (!isVoiceLabel(body.voiceMaxLabel)) throw new RoutineError('invalid', 'voiceMaxLabel must be L0, L1 or L2');
+    input.voiceMaxLabel = body.voiceMaxLabel;
+  }
+  if (body.retryMinutes !== undefined) {
+    const minutes = body.retryMinutes;
+    // The choices of the page only, so the page always shows what a routine has (the database allows 5-60).
+    if (minutes !== null && !RETRY_CHOICES.includes(minutes as number)) {
+      throw new RoutineError('invalid', `retryMinutes must be null or one of ${RETRY_CHOICES.join(', ')}`);
+    }
+    input.retryMinutes = minutes as number | null;
+  }
   return input;
 }
 
@@ -203,7 +232,9 @@ export interface RoutineRow {
   /** The tiles chosen still in the Dashboard, in its order; null for every tile (or without the source). */
   dashboardTiles: string[] | null;
   summary: boolean;
-  channel: 'chat';
+  channel: RoutineChannel;
+  voiceMaxLabel: Label;
+  retryMinutes: number | null;
   status: RoutineStatus;
   pausedBy: 'user' | 'archived' | null;
   nextRunAt: Date | null;
@@ -229,7 +260,7 @@ const TILES_CHOSEN = (sql: Queryable) => sql`
 const ROUTINE_SELECT = (sql: Queryable) => sql`
   SELECT r.id::text, r.title, r.conversation_id::text AS "conversationId", r.days::int[] AS days, r.at, r.timezone, r.sources,
     ${TILES_CHOSEN(sql)}, r.summary,
-    r.channel, r.status, r.paused_by AS "pausedBy", r.next_run_at AS "nextRunAt", r.created_at AS "createdAt", r.updated_at AS "updatedAt",
+    r.channel, r.voice_max_label AS "voiceMaxLabel", r.retry_minutes AS "retryMinutes", r.status, r.paused_by AS "pausedBy", r.next_run_at AS "nextRunAt", r.created_at AS "createdAt", r.updated_at AS "updatedAt",
     c.archived_at IS NOT NULL AS "conversationArchived", c.purged_at IS NOT NULL AS "conversationPurged",
     l.id::text AS "runId", l.scheduled_for AS "runScheduledFor", l.trigger AS "runTrigger", l.status AS "runStatus", l.reason AS "runReason",
     l.summary_state AS "runSummaryState", l.created_at AS "runCreatedAt"
@@ -249,6 +280,8 @@ function toRoutine(row: RoutineRow): Routine {
     dashboardTiles: row.dashboardTiles === null ? null : [...row.dashboardTiles],
     summary: row.summary,
     channel: row.channel,
+    voiceMaxLabel: row.voiceMaxLabel,
+    retryMinutes: row.retryMinutes,
     status: row.status,
     pausedBy: row.pausedBy,
     nextRunAt: row.nextRunAt,
@@ -320,9 +353,9 @@ export async function createRoutine(sql: Sql, input: RoutineInput, now = new Dat
       RETURNING id::text`;
     if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
     const [row] = await tx<{ id: string }[]>`
-      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, status, next_run_at, approved_at)
+      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, channel, voice_max_label, retry_minutes, status, next_run_at, approved_at)
       VALUES (${title}, ${conversation.id}, ${days}::smallint[], ${at}, ${timezone}, ${sources}::text[], ${tiles === 'keep' ? null : tiles}::uuid[],
-        ${input.summary ?? true}, 'active', ${next}, now())
+        ${input.summary ?? true}, ${input.channel ?? 'chat'}, ${input.voiceMaxLabel ?? 'L2'}::privacy_label, ${input.retryMinutes ?? null}, 'active', ${next}, now())
       RETURNING id::text`;
     if (row === undefined) throw new Error('INSERT INTO routines returned no row');
     await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: conversation.id, mode: 'private', routine: true } });
@@ -377,7 +410,9 @@ export async function updateRoutine(sql: Sql, id: string, input: RoutineInput, n
     await tx`
       UPDATE routines SET title = ${title}, days = ${rule.days}::smallint[], at = ${rule.at}, timezone = ${rule.timezone},
         sources = ${sources}::text[], dashboard_tiles = ${tiles === 'keep' ? tx`dashboard_tiles` : tx`${tiles}::uuid[]`},
-        summary = ${input.summary ?? row.summary}, next_run_at = ${next}
+        summary = ${input.summary ?? row.summary},
+        channel = ${input.channel ?? row.channel}, voice_max_label = ${input.voiceMaxLabel ?? row.voiceMaxLabel}::privacy_label,
+        retry_minutes = ${input.retryMinutes === undefined ? row.retryMinutes : input.retryMinutes}, next_run_at = ${next}
       WHERE id = ${id}`;
     if (input.title !== undefined && input.title !== row.title) {
       await tx`UPDATE conversations SET title = ${ROUTINE_CONVERSATION_PREFIX + title} WHERE id = ${row.conversationId} AND purged_at IS NULL`;
@@ -775,7 +810,7 @@ async function insertMessage(tx: Queryable, conversationId: string, text: string
 
 /** What one run did, for the ticker and the tests. */
 export type RunOutcome =
-  | { kind: 'done'; runId: string; late: boolean }
+  | { kind: 'done'; runId: string; late: boolean; callId?: string }
   | { kind: 'missed'; runId: string }
   | { kind: 'failed'; runId: string }
   | { kind: 'paused' }
@@ -853,7 +888,9 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
     if (routine.summary) await enqueueSummary(tx, { runId, routineId, conversationId: routine.conversationId, from: now });
     const tiles = await refreshTiles(tx, env, data, routineId);
     await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'done', ...(late ? { late: true } : {}), ...tiles } });
-    return { kind: 'done', runId, late };
+    // The channel `call` (D-259): the report is in the chat already; the ringer rings it under [voice.outgoing].
+    const callId = routine.channel === 'call' ? await queueRoutineCall(tx, { routineId, conversationId: routine.conversationId, runId, attempt: 1 }) : undefined;
+    return { kind: 'done', runId, late, ...(callId === undefined ? {} : { callId }) };
   });
 }
 
@@ -917,12 +954,12 @@ async function loadRoutineRow(sql: Queryable, id: string): Promise<RoutineRow | 
  * that kept the run due) makes the claim give up too: the next tick reads
  * the routine again and runs it with the new rule, never twice.
  */
-export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversationId' | 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>, expected: Date, next: Date, write: (tx: TransactionSql) => Promise<RunOutcome>): Promise<RunOutcome> {
+export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversationId' | 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary' | 'channel'>, expected: Date, next: Date, write: (tx: TransactionSql) => Promise<RunOutcome>): Promise<RunOutcome> {
   return sql.begin(async (tx) => {
     // Closed meanwhile: nothing is written; the next tick pauses or removes the routine.
     if (!(await holdConversation(tx, seen.conversationId))) return { kind: 'none' } satisfies RunOutcome;
-    const [row] = await tx<{ days: number[]; at: string; timezone: string; sources: string[]; summary: boolean; dashboardTiles: string[] | null }[]>`
-      SELECT days::int[] AS days, at, timezone, sources, summary, ${TILES_CHOSEN(tx)} FROM routines r
+    const [row] = await tx<{ days: number[]; at: string; timezone: string; sources: string[]; summary: boolean; dashboardTiles: string[] | null; channel: RoutineChannel }[]>`
+      SELECT days::int[] AS days, at, timezone, sources, summary, ${TILES_CHOSEN(tx)}, channel FROM routines r
       WHERE id = ${seen.id} AND status = 'active' AND next_run_at = ${expected} FOR UPDATE`;
     if (row === undefined) return { kind: 'none' } satisfies RunOutcome;
     if (!sameRule(row, seen)) return { kind: 'none' } satisfies RunOutcome;
@@ -931,12 +968,72 @@ export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversa
   });
 }
 
-/** The rule, sources and summary of two readings of a routine, the same. */
-function sameRule(a: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>, b: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>): boolean {
+/** The rule, sources, tiles, summary and channel of two readings of a routine, the same. */
+type RuleFields = Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary' | 'channel'>;
+function sameRule(a: RuleFields, b: RuleFields): boolean {
   return (
     a.days.join() === b.days.join() && a.at === b.at && a.timezone === b.timezone && a.sources.join() === b.sources.join() && a.summary === b.summary &&
-    (a.dashboardTiles === null) === (b.dashboardTiles === null) && (a.dashboardTiles ?? []).join() === (b.dashboardTiles ?? []).join()
+    (a.dashboardTiles === null) === (b.dashboardTiles === null) && (a.dashboardTiles ?? []).join() === (b.dashboardTiles ?? []).join() &&
+    a.channel === b.channel
   );
+}
+
+/**
+ * A call of a routine waiting for the ringer (D-259): `scheduled` from now, or
+ * from `at` for the second ring; one per run and attempt (calls_routine_once).
+ * The event names ids only, never the title. Undefined when it exists already.
+ */
+export async function queueRoutineCall(tx: Queryable, call: { routineId: string; conversationId: string; runId: string; attempt: 1 | 2; at?: Date }): Promise<string | undefined> {
+  const [row] = await tx<{ id: string }[]>`
+    INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at, routine_run_id, routine_attempt)
+    VALUES (${call.conversationId}, 'out', 'routine', 'scheduled', coalesce(${call.at ?? null}::timestamptz, now()), ${call.runId}, ${call.attempt})
+    ON CONFLICT DO NOTHING RETURNING id::text`;
+  if (row === undefined) return undefined;
+  await appendEvent(tx, {
+    kind: 'call.scheduled',
+    label: 'L0',
+    payload: { callId: row.id, conversationId: call.conversationId, reason: 'routine', routineId: call.routineId, runId: call.runId, attempt: call.attempt },
+  });
+  return row.id;
+}
+
+/**
+ * What a call of a routine says (D-259), read when the user answers: the
+ * sources of its routine as they are now, since the report before its run,
+ * the greeting with the counts and the titles for after the «sì», up to the
+ * routine's `voice_max_label`. The model of the call reads none of the chat
+ * (calls.ts reads only what is said in the call). The source `dashboard`
+ * (D-258) is left out: the call says nothing of the tiles. Undefined for a
+ * call of no routine.
+ */
+export interface RoutineCallScript {
+  greeting: { text: string; label: Label };
+  /** The greeting ends with the question: the next answer is the gate. */
+  asks: boolean;
+  details: { text: string; label: Label } | null;
+}
+
+export async function routineCallScript(env: ReportEnv & { sql: Sql }, callId: string, now = new Date()): Promise<RoutineCallScript | undefined> {
+  if (!UUID.test(callId)) return undefined;
+  const [row] = await env.sql<{ attempt: number; runReason: RunReason | null; scheduledFor: Date; runAt: Date; routineId: string; sources: string[]; timezone: string; ceiling: string }[]>`
+    SELECT k.routine_attempt AS attempt, x.reason AS "runReason", x.scheduled_for AS "scheduledFor", x.created_at AS "runAt",
+      r.id::text AS "routineId", r.sources, r.timezone, r.voice_max_label AS ceiling
+    FROM calls k JOIN routine_runs x ON x.id = k.routine_run_id JOIN routines r ON r.id = x.routine_id
+    WHERE k.id = ${callId} AND k.reason = 'routine'`;
+  if (row === undefined) return undefined;
+  const [before] = await env.sql<{ at: Date | null }[]>`
+    SELECT max(created_at) AS at FROM routine_runs
+    WHERE routine_id = ${row.routineId} AND trigger = 'schedule' AND status = 'done' AND created_at < ${row.runAt}`;
+  const since = before?.at ?? new Date(row.runAt.getTime() - FIRST_SINCE_MS);
+  const data = await readReport(env.sql, env, row.sources.filter(isRoutineSource).filter((source) => source !== 'dashboard'), since);
+  const ceiling: Label = isVoiceLabel(row.ceiling) ? row.ceiling : 'L0';
+  const opening: RoutineCallOpening = row.attempt === 2 ? { kind: 'retry' } : row.runReason === 'late' ? { kind: 'late', due: row.scheduledFor } : { kind: 'on-time' };
+  const greeting = routineGreeting(data, opening, ceiling, row.timezone, now);
+  return {
+    greeting: { text: greeting.text, label: greeting.label },
+    asks: greeting.asks,
+    details: greeting.asks ? routineDetails(data, ceiling, row.timezone, now) : null,
+  };
 }
 
 async function insertRun(

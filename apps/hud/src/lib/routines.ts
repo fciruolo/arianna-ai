@@ -10,6 +10,10 @@ export type RoutineStatus = 'proposed' | 'active' | 'paused' | 'retired';
 export type RunStatus = 'done' | 'missed-offline' | 'skipped' | 'failed';
 export type RunReason = 'late' | 'blocked' | 'archived' | 'purged' | 'error';
 export type SummaryState = 'none' | 'queued' | 'done' | 'unavailable' | 'failed';
+/** In the chat, or in the chat and with a call on the voice of this Mac (D-259). */
+export type RoutineChannel = 'chat' | 'call';
+/** What a call may read aloud after the «sì»: never Segreto (L3). */
+export type VoiceLabel = 'L0' | 'L1' | 'L2';
 
 export interface RunView {
   id: string;
@@ -33,7 +37,9 @@ export interface Routine {
   /** D-258: the tiles the source «Dashboard» refreshes; null is every tile, a list those chosen still in the Dashboard (maybe none left). */
   dashboardTiles: string[] | null;
   summary: boolean;
-  channel: 'chat';
+  channel: RoutineChannel;
+  voiceMaxLabel: VoiceLabel;
+  retryMinutes: number | null;
   status: RoutineStatus;
   pausedBy: 'user' | 'archived' | null;
   nextRunAt: string | null;
@@ -55,16 +61,19 @@ export interface RoutineForm {
   /** null: every tile of the Dashboard; a list: those tiles. Sent only with the source «Dashboard». */
   dashboardTiles: string[] | null;
   summary: boolean;
+  channel: RoutineChannel;
+  voiceMaxLabel: VoiceLabel;
+  retryMinutes: number | null;
 }
 
 export const ROUTINES_TITLE = 'Routine';
-export const ROUTINES_INTRO = 'Appuntamenti ricorrenti: all’ora scelta Arianna scrive il resoconto nella chat della routine, preparato dal codice. La sintesi la scrive il modello locale; niente esce verso il cloud.';
+export const ROUTINES_INTRO = 'Appuntamenti ricorrenti: all’ora scelta Arianna scrive il resoconto nella chat della routine, preparato dal codice, e se lo chiedi ti chiama sulla voce di questo Mac. La sintesi la scrive il modello locale; niente esce verso il cloud.';
 export const ROUTINES_EMPTY_TITLE = 'Nessuna routine';
 export const ROUTINES_EMPTY_TEXT = 'Crea la prima, per esempio «ogni giorno alle 18: resoconto». Il resoconto arriva in una chat sua, segnata con una R nella barra a sinistra.';
 export const ROUTINES_LOAD_ERROR = 'Non riesco a leggere le routine.';
 export const NEW_TEXT = 'Nuova routine';
 export const TRY_TEXT = 'Prova adesso';
-export const TRY_HINT = 'Scrive subito il resoconto nella chat della routine, senza spostare il prossimo';
+export const TRY_HINT = 'Scrive subito il resoconto nella chat della routine, senza chiamare e senza spostare il prossimo';
 export const RETIRE_CONFIRM_TEXT = 'Togliere la routine? Non partirà più; la sua chat resta, con i resoconti già scritti.';
 export const TITLE_MAX = 80;
 /** A routine Arianna proposed in the chat (D-256): nothing runs before «Attiva». */
@@ -133,6 +142,38 @@ export function toggledTile(form: RoutineForm, id: string, all: readonly TileCho
   return toggled(chosen, id, all.map((tile) => tile.id));
 }
 
+/** How the report arrives (D-259): the chat always, the call in addition. */
+export const CHANNEL_CHOICES: readonly { id: RoutineChannel; label: string; hint: string }[] = [
+  { id: 'chat', label: 'In chat', hint: 'Il resoconto arriva nella chat della routine' },
+  { id: 'call', label: 'Chiamata', hint: 'Il resoconto arriva in chat e Arianna ti chiama sulla voce di questo Mac' },
+];
+
+/** What the call reads aloud after your «sì»: up to this label; the rest is only counted. */
+export const VOICE_LABEL_CHOICES: readonly { id: VoiceLabel; label: string; hint: string }[] = [
+  { id: 'L0', label: 'Pubblico', hint: 'solo i titoli Pubblici' },
+  { id: 'L1', label: 'Interno', hint: 'i titoli Pubblici e Interni' },
+  { id: 'L2', label: 'Privato', hint: 'anche i titoli Privati; i Segreti mai, solo contati' },
+];
+
+/** The second ring if you do not answer: none by default (D-110, risposta 6). */
+export const RETRY_CHOICES: readonly { minutes: number | null; label: string }[] = [
+  { minutes: null, label: 'No' },
+  { minutes: 10, label: 'Dopo 10 minuti' },
+  { minutes: 15, label: 'Dopo 15 minuti' },
+  { minutes: 30, label: 'Dopo 30 minuti' },
+];
+
+export const CALL_NOTE =
+  'Al telefono prima i soli numeri («hai 5 cose da fare»); i titoli solo se rispondi «sì». La notifica dice soltanto «Arianna ti chiama». Rispetta le regole delle chiamate: massimo al giorno, e il secondo squillo non suona nelle ore di silenzio.';
+
+/** The channel on the card: «in chat», «chiamata · fino a Privato · richiama dopo 15 min». */
+export function channelText(routine: Pick<Routine, 'channel' | 'voiceMaxLabel' | 'retryMinutes'>): string {
+  if (routine.channel === 'chat') return 'in chat';
+  const label = VOICE_LABEL_CHOICES.find((choice) => choice.id === routine.voiceMaxLabel)?.label ?? 'Privato';
+  const retry = routine.retryMinutes === null ? '' : ` · richiama dopo ${String(routine.retryMinutes)} min`;
+  return `chiamata · titoli fino a ${label}${retry}`;
+}
+
 export const SOURCE_TEXT: Record<RoutineSource, string> = Object.fromEntries(SOURCE_CHOICES.map((choice) => [choice.id, choice.label])) as Record<RoutineSource, string>;
 
 const SHORT: Record<IsoDay, string> = { 1: 'lun', 2: 'mar', 3: 'mer', 4: 'gio', 5: 'ven', 6: 'sab', 7: 'dom' };
@@ -192,13 +233,33 @@ export function lastRunText(run: RunView | null, timezone: string): string | nul
 
 /** A new form: every day at 18:00, the todo and the decisions waiting, with the summary. */
 export function emptyForm(): RoutineForm {
-  return { title: '', days: [1, 2, 3, 4, 5, 6, 7], at: '18:00', sources: ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'], dashboardTiles: null, summary: true };
+  return {
+    title: '',
+    days: [1, 2, 3, 4, 5, 6, 7],
+    at: '18:00',
+    sources: ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'],
+    dashboardTiles: null,
+    summary: true,
+    channel: 'chat',
+    voiceMaxLabel: 'L2',
+    retryMinutes: null,
+  };
 }
 
 export function formOf(routine: Routine): RoutineForm {
   // A choice whose tiles were all removed stays empty: the user picks again, or «Tutti».
   const tiles = routine.dashboardTiles === null ? null : [...routine.dashboardTiles];
-  return { title: routine.title, days: [...routine.days], at: routine.at, sources: [...routine.sources], dashboardTiles: tiles, summary: routine.summary };
+  return {
+    title: routine.title,
+    days: [...routine.days],
+    at: routine.at,
+    sources: [...routine.sources],
+    dashboardTiles: tiles,
+    summary: routine.summary,
+    channel: routine.channel,
+    voiceMaxLabel: routine.voiceMaxLabel,
+    retryMinutes: routine.retryMinutes,
+  };
 }
 
 /**

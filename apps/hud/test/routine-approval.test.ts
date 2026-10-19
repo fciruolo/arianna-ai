@@ -16,7 +16,11 @@ test('the card of a proposed routine: title, days and time, what goes in the rep
     zone: null,
     sources: ['Da fare', 'Decisioni in attesa'],
     summary: true,
+    call: false,
   });
+  // A routine with the call (D-259): the card says so.
+  assert.equal(routineProposal({ kind: 'routine', detail: { ...DETAIL, channel: 'call' } }, 'Europe/Rome')?.call, true);
+  assert.equal(routineProposal({ kind: 'routine', detail: { ...DETAIL, channel: 'telegram' } }, 'Europe/Rome')?.call, false);
   assert.equal(routineProposal({ kind: 'routine', detail: { ...DETAIL, summary: false } }, 'UTC')?.zone, 'Europe/Rome');
   assert.equal(routineProposal({ kind: 'routine', detail: { ...DETAIL, summary: false } }, 'UTC')?.summary, false);
   assert.deepEqual([ROUTINE_YES, ROUTINE_NO], ['Attiva', 'Scarta']);

@@ -3,7 +3,7 @@ import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import * as api from './lib/api.ts';
 import type { ThemeListing } from './lib/themes.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
-import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
+import { callErrorText, draftCallee, type CallInfo, type CallReason } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, applyTerminal, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { keepRefused, removeDraft } from './lib/composer.ts';
@@ -133,7 +133,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
   /** A call still open on the core that this page does not hold (it was reloaded): it can be closed. */
   const strayCall = ref<CallInfo | null>(null);
   /** A call of Arianna ringing now (D-066): answer or decline. */
-  const incoming = ref<{ callId: string; conversationId: string; reason: 'waiting' | 'task-done' | 'scheduled' } | null>(null);
+  const incoming = ref<{ callId: string; conversationId: string; reason: CallReason } | null>(null);
   let connection: LiveConnection | undefined;
   /**
    * Incognito (D-136): the card shown in place of a conversation that closed,
@@ -1247,7 +1247,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
         const callId = payloadString(event, 'callId');
         const reason = payloadString(event, 'reason');
         if (callId !== undefined && conversationId !== undefined && callSession.value === null) {
-          incoming.value = { callId, conversationId, reason: reason === 'waiting' || reason === 'task-done' ? reason : 'scheduled' };
+          incoming.value = { callId, conversationId, reason: reason === 'waiting' || reason === 'task-done' || reason === 'routine' ? reason : 'scheduled' };
         }
         if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshCalls());
         break;

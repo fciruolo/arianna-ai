@@ -6,11 +6,14 @@ import type { Conversation, ConversationAgent, ConversationMode } from './types.
  * messages, the duration, the Italian texts. The call itself (WebRTC) is in
  * call-session.ts.
  */
+/** Why Arianna calls (D-066); `routine` is the call of a routine (D-259). */
+export type CallReason = 'waiting' | 'task-done' | 'scheduled' | 'routine';
+
 export interface CallInfo {
   id: string;
   conversationId: string;
   direction: 'in' | 'out';
-  reason: 'waiting' | 'task-done' | 'scheduled' | null;
+  reason: CallReason | null;
   taskId: string | null;
   status: 'scheduled' | 'ringing' | 'connecting' | 'active' | 'ended' | 'missed' | 'skipped' | 'failed';
   scheduledAt: string | null;
@@ -98,6 +101,7 @@ const SKIP_TEXT: Record<string, string> = {
   'daily-limit': 'massimo di chiamate al giorno',
   cancelled: 'annullata',
   'agent-off': 'l’agente non poteva rispondere',
+  expired: 'la voce non era pronta in tempo',
 };
 
 /**
@@ -144,8 +148,9 @@ export function callErrorText(message: string): string {
 }
 
 /** What the incoming call screen says about why Arianna calls. */
-export const RING_TEXT: Record<'waiting' | 'task-done' | 'scheduled', string> = {
+export const RING_TEXT: Record<CallReason, string> = {
   waiting: 'Un lavoro aspetta una tua risposta',
   'task-done': 'Ti chiama per il lavoro che avevi chiesto',
   scheduled: 'È l’ora della chiamata che avevi programmato',
+  routine: 'È l’ora della tua routine',
 };

@@ -15,8 +15,10 @@ import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
 import { minLabel, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
+import type { RoutineCallScript } from '../routines.ts';
 import { loadTask } from '../tasks.ts';
 import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
+import { gateAnswer, ROUTINE_CALL_TEXT } from './routine-call.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
 import {
@@ -51,14 +53,17 @@ import {
  * the words on as a message and reads its answer when it comes.
  */
 export type CallStatus = 'scheduled' | 'ringing' | 'connecting' | 'active' | 'ended' | 'missed' | 'skipped' | 'failed';
-export type CallEndReason = 'hangup' | 'time-limit' | 'disconnected' | 'voice-error' | 'core-restart' | 'no-answer' | 'quiet-hours' | 'daily-limit' | 'cancelled' | 'agent-off';
+export type CallEndReason = 'hangup' | 'time-limit' | 'disconnected' | 'voice-error' | 'core-restart' | 'no-answer' | 'quiet-hours' | 'daily-limit' | 'cancelled' | 'agent-off' | 'expired';
 
 export interface Call {
   id: string;
   conversationId: string;
   direction: 'in' | 'out';
-  reason: 'waiting' | 'task-done' | 'scheduled' | null;
+  reason: 'waiting' | 'task-done' | 'scheduled' | 'routine' | null;
   taskId: string | null;
+  /** The run of the routine a call of reason `routine` delivers (D-259), and 1 or 2 for the second ring. */
+  routineRunId: string | null;
+  routineAttempt: 1 | 2 | null;
   status: CallStatus;
   scheduledAt: Date | null;
   createdAt: Date;
@@ -84,7 +89,7 @@ export class CallError extends Error {
 
 export const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId", direction, reason, task_id::text AS "taskId", status,
   scheduled_at AS "scheduledAt", created_at AS "createdAt", answered_at AS "answeredAt", ended_at AS "endedAt",
-  end_reason AS "endReason", delegations,
+  end_reason AS "endReason", delegations, routine_run_id::text AS "routineRunId", routine_attempt AS "routineAttempt",
   (SELECT c.agent FROM conversations c WHERE c.id = calls.conversation_id) AS agent`;
 
 const LIVE: readonly CallStatus[] = ['ringing', 'connecting', 'active'];
@@ -129,6 +134,8 @@ export interface CallsOptions {
   cloud?: () => { claude: boolean; codex: boolean };
   /** The local model a local agent answers on now (the router's choice, as for its delegations), or undefined. */
   agentModel?: (card: AgentCard, clearance: Label, label: Label) => Promise<string | undefined>;
+  /** What the call of a routine says (D-259), read when the user answers; absent, a routine's call says the fixed greeting only. */
+  routineScript?: (callId: string) => Promise<RoutineCallScript | undefined>;
 }
 
 export interface Calls {
@@ -178,6 +185,28 @@ interface Session {
   warming: AbortController | undefined;
   /** Who answers (D-158): fixed for the whole call. */
   speaker: Speaker;
+  /** The call of a routine (D-259): the gate of the «sì» before the titles. */
+  routine: RoutineGate | undefined;
+}
+
+/**
+ * The gate of a routine's call (D-259): `asked` after the greeting's
+ * question, `open` once the user said «sì» (the titles were said), `closed`
+ * after a «no» or a second unclear answer. For the whole call the model reads
+ * only what was said in it (`since`).
+ */
+interface RoutineGate {
+  gate: 'asked' | 'open' | 'closed';
+  details: { text: string; label: Label } | null;
+  /**
+   * When the call was answered, by the database clock: for the whole call
+   * the model reads only what was said in it (default-deny). The reports,
+   * their summaries (even one written during the call), earlier calls and
+   * the chat may hold titles above `voice_max_label`: never read here; after
+   * the «sì» the model knows only the titles the code said.
+   */
+  since: Date;
+  unclear: number;
 }
 
 function tokenMatches(session: Session, token: string | undefined): boolean {
@@ -281,6 +310,11 @@ export function createCalls(options: CallsOptions): Calls {
       const task = await loadTask(sql, taskId);
       if (task === undefined) return;
       if (task.status === 'done') {
+        // A routine's call (D-259): the task read the whole chat, the reports too; its answer is not said, only where it is.
+        if (sessions.get(callId)?.routine !== undefined) {
+          await say(callId, ROUTINE_CALL_TEXT.delegatedDone);
+          return;
+        }
         const [row] = await sql<{ id: string }[]>`
           SELECT id::text FROM messages WHERE task_id = ${taskId} AND role = 'assistant' ORDER BY id DESC LIMIT 1`;
         const message = row === undefined ? undefined : await loadMessage(sql, row.id);
@@ -358,7 +392,10 @@ export function createCalls(options: CallsOptions): Calls {
    * gateway like the orchestrator does; undefined when the gateway blocks it.
    */
   async function readPrompt(call: Call, conversation: Conversation, session: Session) {
-    const history = await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH });
+    const all = await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH });
+    // A routine's call (D-259): only what was said in this call, never the reports nor the chat around them.
+    const gate = session.routine;
+    const history = gate === undefined ? all : all.filter((message) => message.channel === 'voice' && message.ts.getTime() >= gate.since.getTime());
     const { speaker } = session;
     let prompt: VoicePrompt;
     let target: Target;
@@ -442,6 +479,7 @@ export function createCalls(options: CallsOptions): Calls {
       await bridgeTurn(call, conversation, session, speaker, words, emit);
       return;
     }
+    if (session.routine?.gate === 'asked' && (await routineGateTurn(call, conversation, session.routine, words, emit))) return;
 
     // A work conversation may go to the cloud later: no private data in it (as writeUserMessage).
     if (conversation.mode === 'work' && scanText(words).length > 0) {
@@ -591,6 +629,43 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /**
+   * The answer to «Vuoi che ti legga i titoli?» (D-259), by code: «sì» says
+   * the titles written by code, through the gateway towards the call; «no»
+   * says where the report is; a first unclear answer asks again. True when
+   * the turn is answered here; a second unclear answer closes the gate and
+   * the turn goes to the model, which still does not read the reports.
+   */
+  async function routineGateTurn(call: Call, conversation: Conversation, gate: RoutineGate, words: string, emit: (say: string) => void): Promise<boolean> {
+    const answer = gateAnswer(words);
+    if (answer === 'unclear' && gate.unclear === 0) {
+      gate.unclear += 1;
+      await storeUserTurn(call, words, conversation.clearance);
+      if (await storeReply(call, ROUTINE_CALL_TEXT.again, 'L0', conversation, conversation.effectiveLabel)) emit(ROUTINE_CALL_TEXT.again);
+      else emit(CALL_TEXT.notHere);
+      return true;
+    }
+    if (answer === 'unclear') {
+      gate.gate = 'closed';
+      return false;
+    }
+    await storeUserTurn(call, words, conversation.clearance);
+    if (answer === 'yes' && gate.details !== null) {
+      gate.gate = 'open';
+      const said = await allowSpoken(call, gate.details.text, gate.details.label, conversation, conversation.effectiveLabel);
+      if (said === undefined) {
+        emit(CALL_TEXT.notHere);
+        return true;
+      }
+      await insertReply(call, said, maxLabel(gate.details.label, conversation.effectiveLabel));
+      emit(said);
+      return true;
+    }
+    gate.gate = 'closed';
+    if (await storeReply(call, ROUTINE_CALL_TEXT.no, 'L0', conversation, conversation.effectiveLabel)) emit(ROUTINE_CALL_TEXT.no);
+    return true;
+  }
+
+  /**
    * A cloud agent in a call (D-158): no model answers for it. The words go the
    * way of a written message (scanner, then the gateway when its step runs)
    * and become its direct delegation; the call says it passed them on, and
@@ -684,7 +759,7 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
-  async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string, speaker: Speaker): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
+  async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string, speaker: Speaker, routine?: RoutineGate): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
     const { voice } = options.config();
     const ready = readiness(speaker);
     if (!ready.ready) {
@@ -692,7 +767,7 @@ export function createCalls(options: CallsOptions): Calls {
       throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
     }
     const token = randomBytes(32).toString('base64url');
-    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined, anchor: undefined, warming: undefined, speaker };
+    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined, anchor: undefined, warming: undefined, speaker, routine };
     sessions.set(call.id, session);
     try {
       const answer = await options.voice.request('POST', '/calls', {
@@ -861,7 +936,20 @@ export function createCalls(options: CallsOptions): Calls {
           if (allowed !== undefined) greeting = `${greeting} ${allowed}`;
         }
       }
-      return connect(call, offer, (await greetingOf(call, conversation, greeting, speaker)).slice(0, 2000), speaker);
+      // A routine (D-259): the counts written by code, then the question; the model reads only this call, whatever happens.
+      let routine: RoutineGate | undefined;
+      if (reason === 'routine') {
+        const [clock] = await sql<{ at: Date }[]>`SELECT now() AS at`;
+        const since = clock?.at ?? new Date();
+        const script = await options.routineScript?.(call.id).catch((error: unknown) => {
+          options.onError?.(error);
+          return undefined;
+        });
+        const said = script === undefined ? undefined : await allowSpoken(call, script.greeting.text, script.greeting.label, conversation, conversation.effectiveLabel);
+        if (script !== undefined && said !== undefined) greeting = said;
+        routine = { gate: script !== undefined && said !== undefined && script.asks && script.details !== null ? 'asked' : 'closed', details: script?.details ?? null, since, unclear: 0 };
+      }
+      return connect(call, offer, (await greetingOf(call, conversation, greeting, speaker)).slice(0, 2000), speaker, routine);
     },
 
     async decline(callId) {

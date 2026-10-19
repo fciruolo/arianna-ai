@@ -4,6 +4,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, createRoutine, decideRoutine, loadRoutines, loadTiles, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
 import {
   APPROVE_TEXT,
+  CALL_NOTE,
+  CHANNEL_CHOICES,
+  channelText,
   DASHBOARD_ALL_HINT,
   DASHBOARD_ALL_TEXT,
   DASHBOARD_EMPTY_TEXT,
@@ -21,6 +24,7 @@ import {
   PROPOSED_BADGE,
   PROPOSED_HINT,
   RETIRE_CONFIRM_TEXT,
+  RETRY_CHOICES,
   ROUTINES_EMPTY_TEXT,
   ROUTINES_EMPTY_TITLE,
   ROUTINES_INTRO,
@@ -37,6 +41,7 @@ import {
   toggledTile,
   TRY_HINT,
   TRY_TEXT,
+  VOICE_LABEL_CHOICES,
   type IsoDay,
   type Routine,
   type RoutineForm,
@@ -347,7 +352,40 @@ onBeforeUnmount(() => {
             <input v-model="form.summary" type="checkbox" class="mt-1" />
             <span><b class="font-medium text-ink">Sintesi del modello locale</b> <span class="text-muted">· tre righe dopo il resoconto; se il modello non è pronto entro 20 minuti, il resoconto resta senza</span></span>
           </label>
-          <p class="text-[12.5px] text-muted">Consegna: nella chat della routine. Le chiamate arriveranno con la tappa B.</p>
+          <fieldset class="flex flex-col gap-1.5 text-[13.5px]">
+            <legend class="mb-1 text-muted">Come arriva</legend>
+            <div class="flex w-fit overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Come arriva">
+              <button
+                v-for="(choice, index) in CHANNEL_CHOICES"
+                :key="choice.id"
+                type="button"
+                class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]"
+                :class="[form.channel === choice.id ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink', index > 0 ? 'border-l border-line-strong' : '']"
+                :aria-pressed="form.channel === choice.id"
+                :title="choice.hint"
+                @click="form.channel = choice.id"
+              >
+                <Icon :name="choice.id === 'call' ? 'phone' : 'chat'" :size="14" />{{ choice.label }}
+              </button>
+            </div>
+            <p class="text-[12.5px] text-muted">{{ CHANNEL_CHOICES.find((choice) => choice.id === form.channel)?.hint }}</p>
+          </fieldset>
+          <template v-if="form.channel === 'call'">
+            <fieldset class="flex flex-col gap-1.5 text-[13.5px]">
+              <legend class="mb-1 text-muted">Al telefono, dopo il tuo «sì», leggi i titoli fino a</legend>
+              <label v-for="choice in VOICE_LABEL_CHOICES" :key="choice.id" class="flex items-start gap-2">
+                <input v-model="form.voiceMaxLabel" type="radio" name="voice-max-label" class="mt-1" :value="choice.id" />
+                <span><b class="font-medium text-ink">{{ choice.label }}</b> <span class="text-muted">· {{ choice.hint }}</span></span>
+              </label>
+            </fieldset>
+            <label class="flex w-fit flex-col gap-1 text-[13.5px]">
+              <span class="text-muted">Se non rispondi, richiama</span>
+              <select v-model="form.retryMinutes" class="field px-2.5 py-1.5 text-[15px] text-ink">
+                <option v-for="choice in RETRY_CHOICES" :key="String(choice.minutes)" :value="choice.minutes">{{ choice.label }}</option>
+              </select>
+            </label>
+            <p class="text-[12.5px] text-muted">{{ CALL_NOTE }}</p>
+          </template>
           <p v-if="formError !== null" class="text-[13.5px] text-danger" role="alert">{{ formError }}</p>
           <div class="flex flex-wrap items-center justify-end gap-2">
             <span v-if="problemOfForm !== null" class="mr-auto text-[13px] text-muted">{{ problemOfForm }}</span>
@@ -400,7 +438,7 @@ onBeforeUnmount(() => {
             <div class="flex flex-col gap-2 px-3.5 py-3 text-[13.5px]">
               <div class="flex flex-wrap gap-1.5">
                 <span v-for="source in routine.sources" :key="source" class="pill">{{ source === 'dashboard' ? dashboardText(routine.dashboardTiles, tiles) : SOURCE_TEXT[source] }}</span>
-                <span class="pill"><Icon name="chat" :size="12" />in chat</span>
+                <span class="pill"><Icon :name="routine.channel === 'call' ? 'phone' : 'chat'" :size="12" />{{ channelText(routine) }}</span>
                 <span v-if="routine.summary" class="pill">+ sintesi locale</span>
               </div>
               <p v-if="routine.status === 'proposed'" class="text-muted">{{ PROPOSED_HINT }}</p>

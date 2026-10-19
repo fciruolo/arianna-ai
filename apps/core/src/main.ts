@@ -88,7 +88,7 @@ import { conversationOfTask, createNoticeBoard, createNotifier } from './notific
 import { createImWatcher } from './im-watch.ts';
 import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
 import { createSecretaryTicker } from './reminders.ts';
-import { createRoutineService, createRoutineSummarizer, createRoutineTicker } from './routines.ts';
+import { createRoutineService, createRoutineSummarizer, createRoutineTicker, routineCallScript } from './routines.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
@@ -622,6 +622,8 @@ const calls = createCalls({
   }),
   agentModel: (card, clearance, label) =>
     localAgentModel({ sql, settings: () => settings.current(), model: localModel, ...(claude === undefined ? {} : { claude }), ...(codex === undefined ? {} : { codex }) }, card, clearance, label),
+  // D-259: the call of a routine says its counts, then its titles after a «sì», written by code.
+  routineScript: (callId) => routineCallScript({ sql, home: config.home, rules }, callId),
 });
 callActive = () => calls.active();
 const closed = await calls.closeLeftovers();

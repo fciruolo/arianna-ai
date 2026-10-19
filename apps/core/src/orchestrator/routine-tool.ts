@@ -21,6 +21,7 @@ interface RoutineRow {
   timezone: string;
   status: string;
   nextRunAt: Date | null;
+  channel: string;
 }
 
 /** The answer once the user decided a proposed routine. It carries what the task read only. */
@@ -28,7 +29,7 @@ export async function routineDecisionAnswer(sql: Sql, ctx: StepContext, decided:
   const id = decided === undefined ? undefined : proposedRoutineId(decided);
   if (decided === undefined || id === undefined) return { kind: 'wait-user', reason: 'the proposed routine is no longer readable', usage: { steps: 0 } };
   const [row] = await sql<RoutineRow[]>`
-    SELECT title, days::int[] AS days, at, timezone, status, next_run_at AS "nextRunAt" FROM routines WHERE id = ${id}`;
+    SELECT title, days::int[] AS days, at, timezone, status, next_run_at AS "nextRunAt", channel FROM routines WHERE id = ${id}`;
   const routine = row === undefined ? undefined : { ...row, days: row.days.filter(isIsoDay) };
   return answer(sql, ctx.task, ctx.runId, routineAnswerText(routine, decided.state), ctx.task.effectiveLabel);
 }
