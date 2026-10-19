@@ -90,6 +90,7 @@ before(async () => {
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
     routineScript: (callId) => routineCallScript(env(), callId),
+    routineHangupMs: 200,
   });
   brokenCalls = createCalls({
     sql: db().sql,
@@ -252,7 +253,8 @@ test('declined with «Rifiuta»: the note, and no second ring', async () => {
   const ring = await ringer.tick();
   assert.ok(ring !== undefined);
   await calls.decline(ring.id);
-  assert.ok((await bodies(routine.conversationId)).includes(OUTGOING_TEXT.routine.missed));
+  assert.ok((await bodies(routine.conversationId)).includes(ROUTINE_NOTE_TEXT.declined));
+  assert.ok(!(await bodies(routine.conversationId)).includes(OUTGOING_TEXT.routine.missed));
   await wait(400);
   assert.equal((await callsOf(routine.conversationId)).length, 1);
   await settle();
@@ -321,26 +323,40 @@ test('answered: the counts first, the titles only after the «sì», up to the l
   await settle();
 });
 
-test('«no»: nothing read, and the model of the call never reads the reports of the routine', async () => {
+test('«no»: nothing read, «Trovi tutto in chat», and the call hangs up (D-110 f)', async () => {
   await settle();
   asked.length = 0;
   await createTask(db().sql, { title: 'Spesa nascosta finta', assignee: 'user', status: 'inbox', label: 'L0' });
   const routine = await dueRoutine(1, ['todo']);
   await runDue(env(), routine.id);
   const { call, token } = await answered(routine.conversationId);
+  voiceCalls.length = 0;
   const no = await calls.turn(call.id, token, 'no grazie');
   assert.equal(no.say, ROUTINE_CALL_TEXT.no);
-  // The «no» is answered by code: no turn of the model (the warm-up asks one token at most).
+  // The «no» is answered by code: no turn of the model (the warm-up asks one token at most), nothing of the report.
   assert.ok(asked.every((request) => request.maxTokens === 1));
-  // Another turn goes to the model: the report (with its titles) is not in what it reads, nor in the warm-up.
-  await calls.turn(call.id, token, 'che ore sono');
-  assert.ok(asked.some((request) => request.maxTokens !== 1));
-  for (const read of asked) {
-    assert.ok(!JSON.stringify(read.messages).includes('Spesa nascosta finta'));
-    assert.ok(!JSON.stringify(read.messages).includes('Resoconto di'));
-  }
-  await calls.end(call.id, 'hangup');
+  for (const read of asked) assert.ok(!JSON.stringify(read.messages).includes('Spesa nascosta finta'));
+  // Then the core hangs up, once the voice had time to say it.
+  await until('the hang-up', async () => (await loadCall(db().sql, call.id))?.status === 'ended');
+  const ended = await loadCall(db().sql, call.id);
+  assert.equal(ended?.endReason, 'hangup');
+  assert.ok(voiceCalls.some((item) => item.path === `/calls/${call.id}`));
   asked.length = 0;
+  await settle();
+});
+
+test('a routine\'s call ringing when the core restarts: missed, with the note, never a second ring', async () => {
+  await settle();
+  const routine = await dueRoutine(1, ['todo'], { retryMinutes: 15 });
+  await runDue(env(), routine.id);
+  const ring = await ringer.tick();
+  assert.equal(ring?.status, 'ringing');
+  await calls.closeLeftovers();
+  const closed = await loadCall(db().sql, ring.id);
+  assert.deepEqual([closed?.status, closed?.endReason], ['missed', 'core-restart']);
+  assert.ok((await bodies(routine.conversationId)).includes(OUTGOING_TEXT.routine.missed));
+  await wait(400);
+  assert.equal((await callsOf(routine.conversationId)).length, 1);
   await settle();
 });
 
@@ -445,8 +461,18 @@ test('the database keeps the channel, the ceiling of the voice and the second ri
   const changed = await updateRoutine(db().sql, routine.id, { channel: 'call', voiceMaxLabel: 'L0', retryMinutes: 30 });
   assert.deepEqual([changed.channel, changed.voiceMaxLabel, changed.retryMinutes], ['call', 'L0', 30]);
   assert.equal((await updateRoutine(db().sql, routine.id, { retryMinutes: null })).retryMinutes, null);
-  // A call of reason routine names its run; no other call does.
+  // A call of reason routine names its run; no other call does, a call of the user (no reason) neither.
   await assert.rejects(db().sql`INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at) VALUES (${routine.conversationId}, 'out', 'routine', 'scheduled', now())`);
+  const [anyRun] = await db().sql<{ id: string }[]>`SELECT id::text FROM routine_runs LIMIT 1`;
+  assert.ok(anyRun !== undefined);
+  await assert.rejects(
+    db().sql`INSERT INTO calls (conversation_id, direction, status, routine_run_id, routine_attempt) VALUES (${routine.conversationId}, 'in', 'connecting', ${anyRun.id}, 1)`,
+    /calls_routine_fields/,
+  );
+  await assert.rejects(
+    db().sql`INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at, routine_run_id, routine_attempt) VALUES (${routine.conversationId}, 'out', 'scheduled', 'scheduled', now(), ${anyRun.id}, 1)`,
+    /calls_routine_fields/,
+  );
   // «Solo <giorno>» of the calendar (D-257): the new routine calls as the first one did.
   const twoDays = await createRoutine(db().sql, { title: 'Due giorni finti', days: [1, 3], at: '07:00', timezone: 'UTC', sources: ['todo'], channel: 'call', voiceMaxLabel: 'L1', retryMinutes: 10 });
   const { created } = await splitRoutine(db().sql, twoDays.id, { day: 3, to: 4, at: '08:00' });

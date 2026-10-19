@@ -17,7 +17,7 @@ import { nameLabelOf, participantName } from '../participants.ts';
 import { minLabel, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
 import type { RoutineCallScript } from '../routines.ts';
 import { loadTask } from '../tasks.ts';
-import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT, ROUTINE_NOTE_TEXT } from './outgoing.ts';
 import { gateAnswer, ROUTINE_CALL_TEXT } from './routine-call.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
@@ -95,6 +95,8 @@ export const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId"
 const LIVE: readonly CallStatus[] = ['ringing', 'connecting', 'active'];
 /** How long the voice may take to open a call: the first one loads the models (GBs). */
 const OPEN_TIMEOUT_MS = 180_000;
+/** After the «no» of a routine's call, the time the voice has to say its last words (D-259). */
+const ROUTINE_HANGUP_MS = 8000;
 /** Past the limit, the time the voice has to say goodbye before the core closes the call itself. */
 const LIMIT_GRACE_MS = 30_000;
 
@@ -128,6 +130,8 @@ export interface CallsOptions {
   onError?: (error: unknown) => void;
   /** Tests shorten the waits. */
   pollMs?: number;
+  /** How long a routine's call waits after the «no» before hanging up (D-259); tests shorten it. */
+  routineHangupMs?: number;
   /** The active agents, read at each call: who answers in a direct chat (D-158). Absent, a direct chat has no calls. */
   agents?: () => ReadonlyMap<string, LoadedAgent>;
   /** The cloud executors on now, as the direct chats read them (D-111d). */
@@ -662,7 +666,19 @@ export function createCalls(options: CallsOptions): Calls {
     }
     gate.gate = 'closed';
     if (await storeReply(call, ROUTINE_CALL_TEXT.no, 'L0', conversation, conversation.effectiveLabel)) emit(ROUTINE_CALL_TEXT.no);
+    // D-110 (f): after the «no» Arianna says where the report is and hangs up, once the voice had time to say it.
+    if (answer === 'no') hangUpLater(call.id);
     return true;
+  }
+
+  /** Ends a routine's call after the last words were said (as the voice waits after its goodbye). */
+  function hangUpLater(callId: string): void {
+    const session = sessions.get(callId);
+    if (session === undefined) return;
+    const timer = setTimeout(() => {
+      if (sessions.get(callId) === session) finish(callId, 'ended', 'hangup').catch((error: unknown) => options.onError?.(error));
+    }, options.routineHangupMs ?? ROUTINE_HANGUP_MS);
+    timer.unref();
   }
 
   /**
@@ -964,7 +980,13 @@ export function createCalls(options: CallsOptions): Calls {
       });
       if (missed === undefined) throw new CallError('ended', 'the call is not ringing any more');
       const task = missed.taskId === null ? undefined : await loadTask(sql, missed.taskId);
-      const text = missed.reason === 'task-done' && task?.status === 'failed' ? FAILED_TEXT.missed : OUTGOING_TEXT[missed.reason ?? 'scheduled'].missed;
+      // A routine's call declined (D-259): said as such, and no second ring (only an unanswered one rings again).
+      const text =
+        missed.reason === 'routine'
+          ? ROUTINE_NOTE_TEXT.declined
+          : missed.reason === 'task-done' && task?.status === 'failed'
+            ? FAILED_TEXT.missed
+            : OUTGOING_TEXT[missed.reason ?? 'scheduled'].missed;
       await writeNote(sql, missed.conversationId, text, callId);
       return missed;
     },
@@ -978,17 +1000,24 @@ export function createCalls(options: CallsOptions): Calls {
     },
 
     async closeLeftovers() {
-      return sql.begin(async (tx) => {
-        const rows = await tx<{ id: string; conversationId: string; status: CallStatus }[]>`
+      const rows = await sql.begin(async (tx) => {
+        const closed = await tx<{ id: string; conversationId: string; status: CallStatus; reason: Call['reason'] }[]>`
           UPDATE calls SET status = CASE WHEN status = 'ringing' THEN 'missed' ELSE 'ended' END,
             end_reason = 'core-restart', ended_at = now()
           WHERE status IN ('ringing', 'connecting', 'active')
-          RETURNING id::text, conversation_id::text AS "conversationId", status`;
-        for (const row of rows) {
+          RETURNING id::text, conversation_id::text AS "conversationId", status, reason`;
+        for (const row of closed) {
           await appendEvent(tx, { kind: 'call.ended', label: 'L0', payload: { callId: row.id, conversationId: row.conversationId, status: row.status, reason: 'core-restart' } });
         }
-        return rows.length;
+        return closed;
       });
+      // A routine's call that was ringing (D-259): the note of a call not answered, without a second ring.
+      for (const row of rows) {
+        if (row.reason === 'routine' && row.status === 'missed') {
+          await writeNote(sql, row.conversationId, OUTGOING_TEXT.routine.missed, row.id).catch((error: unknown) => options.onError?.(error));
+        }
+      }
+      return rows.length;
     },
 
     async close() {

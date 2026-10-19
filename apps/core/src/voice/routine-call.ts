@@ -32,7 +32,7 @@ export const ROUTINE_CALL_TEXT = {
   question: 'Vuoi che ti legga i titoli?',
   inChat: 'Il resoconto completo è nella chat della routine.',
   nothing: 'Non c’è niente da segnalare.',
-  no: 'Va bene: trovi tutto nella chat della routine. Se vuoi altro dimmelo, altrimenti puoi chiudere.',
+  no: 'Va bene: trovi tutto nella chat della routine. Ciao!',
   again: 'Scusa, non ho capito: vuoi che ti legga i titoli? Dimmi sì o no.',
   end: 'Il resoconto completo è nella chat della routine. Vuoi altro?',
   /** The end of a delegation in a routine's call: the task read the whole chat, so its answer stays written. */
@@ -164,10 +164,21 @@ export function routineDetails(data: ReportData, ceiling: Label, timezone: strin
   return { text: `${sentences.join(' ')} ${ROUTINE_CALL_TEXT.end}`, label };
 }
 
-const YES = new Set(['si', 'certo', 'certamente', 'sicuro', 'ok', 'okay', 'dai', 'volentieri', 'dimmi', 'dimmeli', 'leggi', 'leggili', 'leggimeli', 'vai', 'bene', 'perfetto', 'esatto', 'yes']);
-const NO = new Set(['no', 'non', 'nessuno', 'niente', 'basta', 'dopo', 'stop', 'lascia', 'nope']);
+/** «bene» is a yes only in «va bene» (never «tutto bene»): see yesAt. */
+const YES = new Set(['si', 'certo', 'certamente', 'ok', 'okay', 'dai', 'volentieri', 'dimmi', 'dimmeli', 'leggi', 'leggili', 'leggimeli', 'vai', 'perfetto', 'esatto', 'yes']);
+/** A no, and a goodbye («ok, ciao»: the user is leaving, nothing is read). */
+const NO = new Set(['no', 'non', 'nessuno', 'niente', 'basta', 'dopo', 'stop', 'lascia', 'nope', 'ciao', 'arrivederci', 'addio']);
 /** Words that change nothing in a short answer («sì grazie», «va bene», «no grazie Arianna»). */
-const NEUTRAL = new Set(['grazie', 'pure', 'per', 'favore', 'va', 'allora', 'beh', 'ehm', 'mah', 'arianna', 'ciao', 'titoli', 'i', 'li', 'me', 'tutto', 'tutti', 'ora', 'adesso', 'stare', 'e', 'certo']);
+const NEUTRAL = new Set(['grazie', 'pure', 'per', 'favore', 'allora', 'beh', 'ehm', 'mah', 'arianna', 'titoli', 'i', 'li', 'me', 'tutto', 'tutti', 'ora', 'adesso', 'stare', 'e', 'certo']);
+
+/** Whether the token at `index` says yes: a yes word, or «va bene» (both words). */
+function yesAt(tokens: readonly string[], index: number): boolean {
+  const token = tokens[index] ?? '';
+  if (YES.has(token)) return true;
+  if (token === 'va') return tokens[index + 1] === 'bene';
+  if (token === 'bene') return tokens[index - 1] === 'va';
+  return false;
+}
 /** A longer sentence is a question of its own, never a «sì». */
 const MAX_ANSWER_WORDS = 6;
 
@@ -177,6 +188,8 @@ const MAX_ANSWER_WORDS = 6;
  * «no» (when in doubt, nothing is read); anything else is unclear.
  */
 export function gateAnswer(words: string): 'yes' | 'no' | 'unclear' {
+  // A question («sicuro?», «sì?», «tutto bene?») is never an answer.
+  if (words.includes('?')) return 'unclear';
   const tokens = words
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
@@ -186,7 +199,9 @@ export function gateAnswer(words: string): 'yes' | 'no' | 'unclear' {
     .split(/\s+/)
     .filter((token) => token !== '');
   if (tokens.length === 0 || tokens.length > MAX_ANSWER_WORDS) return 'unclear';
-  if (tokens.some((token) => NO.has(token))) return tokens.some((token) => YES.has(token) && token !== 'bene') ? 'unclear' : 'no';
-  if (tokens.some((token) => YES.has(token)) && tokens.every((token) => YES.has(token) || NEUTRAL.has(token))) return 'yes';
+  // A no beside a yes word is unclear; beside «va bene» it is a no («no, va bene così», «va bene, ciao»).
+  if (tokens.some((token) => NO.has(token))) return tokens.some((token) => YES.has(token)) ? 'unclear' : 'no';
+  const yes = tokens.map((_, index) => yesAt(tokens, index));
+  if (yes.some(Boolean) && tokens.every((token, index) => yes[index] === true || NEUTRAL.has(token))) return 'yes';
   return 'unclear';
 }

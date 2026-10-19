@@ -155,6 +155,15 @@ test('routine.propose with the call (D-259): the routine is born off with the ch
   assert.deepEqual([proposed?.status, proposed?.channel, proposed?.voiceMaxLabel, proposed?.retryMinutes], ['proposed', 'call', 'L2', null]);
   // A proposal stays as the user saw it: not even the ceiling of the voice changes before «Attiva».
   await assert.rejects(db().sql`UPDATE routines SET voice_max_label = 'L0' WHERE id = ${id}`);
+  // Nor is a proposal born with other defaults of the voice: those are the user's, on the page.
+  for (const fields of [db().sql`'L0'::privacy_label, NULL`, db().sql`'L2'::privacy_label, 15`]) {
+    const [chat] = await db().sql<{ id: string }[]>`INSERT INTO conversations (mode, clearance, title) VALUES ('private', 'L2', 'Routine · Finta') RETURNING id::text`;
+    await assert.rejects(
+      db().sql`INSERT INTO routines (title, conversation_id, days, at, timezone, sources, channel, voice_max_label, retry_minutes, status)
+        VALUES ('Finta', ${chat?.id ?? ''}, '{1}', '09:00', 'UTC', '{todo}', 'call', ${fields}, 'proposed')`,
+      /defaults of the voice/,
+    );
+  }
   await recordDecision(db().sql, approvalId, 'approved', 'web');
   assert.deepEqual(await drain(task.id, scripted([])), ['answered']);
   assert.match((await lastReply(task.id))?.body ?? '', /, e a quell’ora ti chiamo\. /);

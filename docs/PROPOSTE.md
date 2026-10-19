@@ -1662,7 +1662,7 @@ La routine non esegue istruzioni libere: "dimmi quali email importanti" diventa 
 - **Mac spento o addormentato.**
   - A core spento non succede nulla: nessun servizio esterno chiama al posto di Arianna.
   - All'avvio, o al primo giro dopo il risveglio, il ticker trova le esecuzioni perse:
-    - **entro 2 ore**, fa il resoconto in chat con la riga "in ritardo: il Mac era spento alle 10", **senza chiamare**;
+    - **entro 2 ore**, fa il resoconto in chat con la riga "in ritardo: il Mac era spento alle 10" e, per una routine con la chiamata, chiama con le scuse per il ritardo, fuori dalle fasce di silenzio (risposta 7, D-259; la proposta diceva "senza chiamare");
     - **oltre le 2 ore**, registra `missed-offline` e scrive una sola riga, senza recuperare più giorni.
 - **Chiamata in corso a quell'ora.** Una chiamata alla volta (`calls_one_live`): il resoconto va in chat e la chiamata aspetta il prossimo giro del ringer, al massimo 10 minuti, poi una nota.
 

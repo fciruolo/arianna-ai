@@ -83,6 +83,11 @@ test('the «sì» opens, the «no» closes, the rest is unclear', () => {
   for (const yes of ['Sì', 'sì.', 'Si, grazie', 'certo', 'va bene', 'Ok!', 'sì, leggili pure', 'dimmi', 'sì Arianna']) assert.equal(gateAnswer(yes), 'yes', yes);
   for (const no of ['No', 'no grazie', 'non ora', 'dopo', 'lascia stare', 'no, va bene così', 'basta']) assert.equal(gateAnswer(no), 'no', no);
   for (const other of ['', 'che tempo fa domani a Roma', 'sì no', 'forse', 'chi sei', 'aspetta un attimo che prendo la penna']) assert.equal(gateAnswer(other), 'unclear', other);
+  // Never a «sì» when in doubt: a question, a greeting, a goodbye, «bene» without «va».
+  for (const doubt of ['Ciao Arianna, tutto bene?', 'sicuro?', 'sì?', 'ok, ciao', 'sicuro', 'tutto bene', 'bene', 'va']) assert.notEqual(gateAnswer(doubt), 'yes', doubt);
+  assert.equal(gateAnswer('va bene, ciao'), 'no');
+  assert.equal(gateAnswer('ciao'), 'no');
+  assert.equal(gateAnswer('sì?'), 'unclear');
 });
 
 test('the deadline and the hello as they are said; the labels of the voice', () => {

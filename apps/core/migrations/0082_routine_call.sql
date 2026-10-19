@@ -25,9 +25,16 @@ ALTER TABLE routines ADD COLUMN retry_minutes smallint CHECK (retry_minutes BETW
 -- trigger of its own, so that routines_guard (0079) and routines_proposal_guard
 -- (0080) are not rewritten here: another migration may rewrite them for its own
 -- fields, and the two would undo each other. `channel` is in both of them already.
+-- A proposal is born with the defaults of the voice: they are the user's, on the page, never the model's.
 CREATE FUNCTION routines_call_guard() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status = 'proposed' AND (NEW.voice_max_label <> 'L2' OR NEW.retry_minutes IS NOT NULL) THEN
+      RAISE EXCEPTION 'routines: a proposed routine has the defaults of the voice (Privato, no second ring)' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
   IF (NEW.voice_max_label, NEW.retry_minutes) IS NOT DISTINCT FROM (OLD.voice_max_label, OLD.retry_minutes) THEN
     RETURN NEW;
   END IF;
@@ -40,7 +47,7 @@ BEGIN
   RETURN NEW;
 END
 $$;
-CREATE TRIGGER routines_call_guard BEFORE UPDATE ON routines FOR EACH ROW EXECUTE FUNCTION routines_call_guard();
+CREATE TRIGGER routines_call_guard BEFORE INSERT OR UPDATE ON routines FOR EACH ROW EXECUTE FUNCTION routines_call_guard();
 
 -- ---------------------------------------------------------------------------
 -- calls: the reason `routine`, with its run and the attempt (1, or 2 for the
@@ -52,8 +59,9 @@ ALTER TABLE calls ADD CONSTRAINT calls_reason_check CHECK (reason IN ('waiting',
 -- calls are deleted before the runs by erase_conversation (the runs go with their routine, by cascade).
 ALTER TABLE calls ADD COLUMN routine_run_id bigint REFERENCES routine_runs (id);
 ALTER TABLE calls ADD COLUMN routine_attempt smallint CHECK (routine_attempt IN (1, 2));
+-- IS NOT DISTINCT FROM: a call the user makes has no reason (NULL), and a NULL check would let it name a run.
 ALTER TABLE calls ADD CONSTRAINT calls_routine_fields CHECK (
-  (reason = 'routine') = (routine_run_id IS NOT NULL) AND (routine_run_id IS NULL) = (routine_attempt IS NULL)
+  (reason IS NOT DISTINCT FROM 'routine') = (routine_run_id IS NOT NULL) AND (routine_run_id IS NULL) = (routine_attempt IS NULL)
 );
 -- One call per run, and at most one second ring.
 CREATE UNIQUE INDEX calls_routine_once ON calls (routine_run_id, routine_attempt) WHERE routine_run_id IS NOT NULL;

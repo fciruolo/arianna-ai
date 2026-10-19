@@ -91,4 +91,6 @@ export const ROUTINE_NOTE_TEXT = {
   expired: 'Volevo chiamarti per la routine, ma la voce non era pronta o eri già al telefono: il resoconto è qui sopra.',
   retry: (minutes: number) => `Ti ho cercato al telefono per la routine, ma non hai risposto: il resoconto è qui sopra. Ti richiamo fra ${String(minutes)} minuti.`,
   retryMissed: 'Ti ho richiamato per la routine, ma non hai risposto: il resoconto è qui sopra.',
+  /** «Rifiuta»: the user said no to the call, so no second ring. */
+  declined: 'Hai rifiutato la chiamata della routine: il resoconto è qui sopra.',
 } as const;
