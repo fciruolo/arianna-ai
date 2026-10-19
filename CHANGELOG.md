@@ -9,6 +9,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Routine: la fonte «Aggiorna la Dashboard» aggiorna all'ora della routine tutti i riquadri o solo quelli scelti, con lo stesso «Aggiorna» del modello locale; il resoconto dice quanti sono in aggiornamento (D-258).
+- Routine con la chiamata: nella pagina «Routine» si sceglie «Chiamata» e all'ora della routine, oltre al resoconto in chat, Arianna ti chiama sulla voce di questo Mac (notifica «Arianna ti chiama»); prima dice solo i numeri, i titoli fino all'etichetta scelta (Pubblico, Interno o Privato) solo se rispondi «sì»; se non rispondi lascia una nota e, se lo chiedi, richiama una volta dopo 10, 15 o 30 minuti, mai nelle ore di silenzio; anche Arianna in chat può proporre una routine con la chiamata (D-259).
 
 ## [0.146.0] - 2026-10-19
 
