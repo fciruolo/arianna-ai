@@ -7,6 +7,8 @@ import { passwordOf, type DbLogin } from './logins.ts';
 export type Sql = postgres.Sql;
 /** A connection pool or an open transaction. */
 export type Queryable = postgres.Sql | postgres.TransactionSql;
+/** An open transaction: savepoints are there. */
+export type TransactionSql = postgres.TransactionSql;
 
 export interface ConnectOptions {
   /** Schema to work in instead of `public`; used by tests for isolation. */

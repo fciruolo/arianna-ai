@@ -36,7 +36,7 @@ import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, Proj
 import type { Note, NoteListing } from './thoughts.ts';
 import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard.ts';
 import type { CalendarWeek } from './routine-calendar.ts';
-import type { Routine, RoutineForm } from './routines.ts';
+import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -433,12 +433,12 @@ export async function loadRoutines(): Promise<Routine[]> {
 }
 
 /** A new routine from the form: active at once, in the time zone of this Mac. */
-export async function createRoutine(form: RoutineForm): Promise<Routine> {
-  return (await call<{ routine: Routine }>('POST', '/api/routines', form)).routine;
+export async function createRoutine(body: RoutineBody): Promise<Routine> {
+  return (await call<{ routine: Routine }>('POST', '/api/routines', body)).routine;
 }
 
-export async function updateRoutine(id: string, form: Partial<RoutineForm>): Promise<Routine> {
-  return (await call<{ routine: Routine }>('PATCH', `/api/routines/${encodeURIComponent(id)}`, form)).routine;
+export async function updateRoutine(id: string, body: Partial<RoutineBody>): Promise<Routine> {
+  return (await call<{ routine: Routine }>('PATCH', `/api/routines/${encodeURIComponent(id)}`, body)).routine;
 }
 
 /** «In pausa» or «Attiva». */

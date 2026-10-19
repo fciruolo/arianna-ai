@@ -21,7 +21,12 @@ import { daysText, isClock, isIsoDay, nextRun, systemTimeZone, whenText, type Is
  * the decision with it, and routines.ts re-exports what it shares.
  */
 
-export const ROUTINE_SOURCES = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'] as const;
+/**
+ * `dashboard` (D-258) refreshes the tiles of the Dashboard at the routine's
+ * time; from routine.propose it is always every tile (the model never chooses
+ * tiles: their titles are the user's text, and the choice is the page's).
+ */
+export const ROUTINE_SOURCES = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes', 'dashboard'] as const;
 export type RoutineSource = (typeof ROUTINE_SOURCES)[number];
 export const MAX_ROUTINE_TITLE = 80;
 /** The prefix of the title of a routine's conversation. */

@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Routine: la fonte «Aggiorna la Dashboard» aggiorna all'ora della routine tutti i riquadri o solo quelli scelti, con lo stesso «Aggiorna» del modello locale; il resoconto dice quanti sono in aggiornamento (D-258).
+
 ## [0.146.0] - 2026-10-19
 
 ### Aggiunto

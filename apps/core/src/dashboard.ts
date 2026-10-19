@@ -2,7 +2,7 @@ import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { isAtMost, maxLabel, scanText, type Label } from '@arianna/policy';
 
 import { ChatError, CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, isUuid, LOCAL_CHAT_AGENT, loadConversation, taskTitle, type Conversation } from './conversations.ts';
-import type { Queryable, Sql } from './db/client.ts';
+import type { Queryable, Sql, TransactionSql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { contextOf } from './finance-mark.ts';
@@ -429,46 +429,117 @@ export interface RefreshEnv {
  */
 export async function startRefresh(sql: Sql, id: string, env: RefreshEnv): Promise<DashboardTile> {
   if (!isUuid(id)) throw new ChatError('not-found', `tile ${id} does not exist`);
-  await sql.begin(async (tx) => {
-    const [tile] = await tx<{ label: Label; questionLabel: Label; question: string; refreshState: RefreshState; sourceConversationId: string }[]>`
-      SELECT label, question_label AS "questionLabel", question, refresh_state AS "refreshState", source_conversation_id::text AS "sourceConversationId"
-      FROM dashboard_tiles WHERE id = ${id} FOR UPDATE`;
-    if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
-    const refusal = refreshRefusal(tile);
-    if (refusal !== undefined) throw new ChatError(refusal.code, refusal.message);
-    const source = await loadConversation(tx, tile.sourceConversationId);
-    if (source === undefined) throw new ChatError('not-found', 'the conversation of the tile does not exist');
-    const agent = refreshAgentOf(source, env.financeAgents());
-    if (!env.agents().includes(agent)) throw new ChatError('invalid', `${agent} is not available: the tile cannot be refreshed now`);
-    const finance = source.finance || env.financeAgents().includes(agent);
-    const [conversation] = await tx<{ id: string }[]>`
-      INSERT INTO conversations (mode, clearance, agent, finance, effective_label, dashboard_of)
-      VALUES ('private', 'L2', ${agent}, ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label, ${source.id}) RETURNING id::text`;
-    if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
-    // The question at its own label, never lower than the user's text in its conversation: what the agent reads raises it.
-    const label = tile.questionLabel;
-    const task = await createTask(tx, {
-      title: taskTitle(tile.question),
-      conversationId: conversation.id,
-      label,
-      clearance: 'L2',
-      effectiveLabel: label,
-      assignee: agent,
-      status: 'ready',
-    });
-    if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
-    const [message] = await tx<{ id: string }[]>`
-      INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
-      VALUES (${conversation.id}, 'user', 'web', ${label}::privacy_label, ${tile.question}, ${task.id}) RETURNING id::text`;
-    if (message === undefined) throw new Error('INSERT INTO messages returned no row');
-    await tx`
-      UPDATE dashboard_tiles SET refresh_state = 'running', refresh_error = NULL, refresh_conversation_id = ${conversation.id}, refresh_started_at = now()
-      WHERE id = ${id}`;
-    await appendEvent(tx, { kind: 'dashboard.tile_refreshing', label: 'L0', payload: { tileId: id, conversationId: source.id } });
-  });
+  await sql.begin((tx) => startRefreshIn(tx, id, env));
   const tile = await loadTile(sql, id);
   if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
   return tile;
+}
+
+/**
+ * The refresh of startRefresh in the caller's transaction: the page's
+ * «Aggiorna», and a routine with the source `dashboard` (D-258), which
+ * names itself in the event (`routineId`, an id only).
+ */
+export async function startRefreshIn(tx: Queryable, id: string, env: RefreshEnv, by: { routineId?: string } = {}): Promise<void> {
+  if (!isUuid(id)) throw new ChatError('not-found', `tile ${id} does not exist`);
+  const [tile] = await tx<{ label: Label; questionLabel: Label; question: string; refreshState: RefreshState; sourceConversationId: string }[]>`
+    SELECT label, question_label AS "questionLabel", question, refresh_state AS "refreshState", source_conversation_id::text AS "sourceConversationId"
+    FROM dashboard_tiles WHERE id = ${id} FOR UPDATE`;
+  if (tile === undefined) throw new ChatError('not-found', `tile ${id} does not exist`);
+  const refusal = refreshRefusal(tile);
+  if (refusal !== undefined) throw new ChatError(refusal.code, refusal.message);
+  const source = await loadConversation(tx, tile.sourceConversationId);
+  if (source === undefined) throw new ChatError('not-found', 'the conversation of the tile does not exist');
+  const agent = refreshAgentOf(source, env.financeAgents());
+  if (!env.agents().includes(agent)) throw new ChatError('invalid', `${agent} is not available: the tile cannot be refreshed now`);
+  const finance = source.finance || env.financeAgents().includes(agent);
+  const [conversation] = await tx<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, agent, finance, effective_label, dashboard_of)
+    VALUES ('private', 'L2', ${agent}, ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label, ${source.id}) RETURNING id::text`;
+  if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
+  // The question at its own label, never lower than the user's text in its conversation: what the agent reads raises it.
+  const label = tile.questionLabel;
+  const task = await createTask(tx, {
+    title: taskTitle(tile.question),
+    conversationId: conversation.id,
+    label,
+    clearance: 'L2',
+    effectiveLabel: label,
+    assignee: agent,
+    status: 'ready',
+  });
+  if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
+  const [message] = await tx<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
+    VALUES (${conversation.id}, 'user', 'web', ${label}::privacy_label, ${tile.question}, ${task.id}) RETURNING id::text`;
+  if (message === undefined) throw new Error('INSERT INTO messages returned no row');
+  await tx`
+    UPDATE dashboard_tiles SET refresh_state = 'running', refresh_error = NULL, refresh_conversation_id = ${conversation.id}, refresh_started_at = now()
+    WHERE id = ${id}`;
+  await appendEvent(tx, {
+    kind: 'dashboard.tile_refreshing',
+    label: 'L0',
+    payload: { tileId: id, conversationId: source.id, ...(by.routineId === undefined ? {} : { routineId: by.routineId }) },
+  });
+}
+
+/** Why a routine does not refresh a tile now (D-258): Segreto, already being refreshed, or its agent not loaded. */
+export type RefreshSkip = 'secret' | 'busy' | 'unavailable';
+
+/** A tile a routine would refresh, in the order of the page, with why it is skipped now, if it is. */
+export interface RefreshCandidate {
+  id: string;
+  title: string;
+  label: Label;
+  skip: RefreshSkip | undefined;
+}
+
+/**
+ * The tiles a routine refreshes (D-258): every tile of the Dashboard
+ * (`ids` null) or those chosen that are still there (a tile removed is not
+ * found, without errors), each judged by the rules of startRefresh: a
+ * Segreto tile is never refreshed, a tile at work is skipped, a tile whose
+ * agent is not loaded (or without `env`) cannot be refreshed now.
+ */
+export async function refreshCandidates(sql: Queryable, ids: readonly string[] | null, env: RefreshEnv | undefined): Promise<RefreshCandidate[]> {
+  const chosen = ids === null ? null : ids.filter(isUuid);
+  if (chosen !== null && chosen.length === 0) return [];
+  const rows = await sql<{ id: string; title: string; label: Label; refreshState: RefreshState; agent: string | null; finance: boolean }[]>`
+    SELECT t.id::text, t.title, t.label, t.refresh_state AS "refreshState", c.agent, c.finance
+    FROM dashboard_tiles t JOIN conversations c ON c.id = t.source_conversation_id
+    WHERE ${chosen === null} OR t.id = ANY(${chosen ?? []}::uuid[])
+    ORDER BY t.position, t.created_at DESC, t.id`;
+  return rows.map((row) => {
+    const refusal = refreshRefusal(row);
+    let skip: RefreshSkip | undefined = refusal === undefined ? undefined : refusal.code === 'busy' ? 'busy' : 'secret';
+    if (skip === undefined && (env === undefined || !env.agents().includes(refreshAgentOf(row, env.financeAgents())))) skip = 'unavailable';
+    return { id: row.id, title: row.title, label: row.label, skip };
+  });
+}
+
+/**
+ * The refreshes of a routine (D-258), in the caller's transaction: each tile
+ * with startRefreshIn in a savepoint of its own, so a tile that changed since
+ * it was judged (now at work, removed) is left out and the others start.
+ * Returns how many started.
+ */
+export async function startRefreshesIn(
+  tx: TransactionSql,
+  ids: readonly string[],
+  env: RefreshEnv,
+  routineId: string,
+  onError?: (error: unknown) => void,
+): Promise<number> {
+  let started = 0;
+  for (const id of ids) {
+    try {
+      await tx.savepoint((inner) => startRefreshIn(inner, id, env, { routineId }));
+      started += 1;
+    } catch (error) {
+      if (!(error instanceof ChatError)) onError?.(error);
+    }
+  }
+  return started;
 }
 
 /**

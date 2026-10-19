@@ -5,7 +5,7 @@
  */
 
 export type IsoDay = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-export type RoutineSource = 'todo' | 'waiting' | 'cards' | 'done-since' | 'failed-since' | 'notes';
+export type RoutineSource = 'todo' | 'waiting' | 'cards' | 'done-since' | 'failed-since' | 'notes' | 'dashboard';
 export type RoutineStatus = 'proposed' | 'active' | 'paused' | 'retired';
 export type RunStatus = 'done' | 'missed-offline' | 'skipped' | 'failed';
 export type RunReason = 'late' | 'blocked' | 'archived' | 'purged' | 'error';
@@ -30,6 +30,8 @@ export interface Routine {
   at: string;
   timezone: string;
   sources: RoutineSource[];
+  /** D-258: the tiles the source «Dashboard» refreshes; null is every tile, a list those chosen still in the Dashboard (maybe none left). */
+  dashboardTiles: string[] | null;
   summary: boolean;
   channel: 'chat';
   status: RoutineStatus;
@@ -41,12 +43,17 @@ export interface Routine {
   lastRun: RunView | null;
 }
 
+/** The body of POST and PATCH /api/routines: the form, with the choice of tiles only with the source «Dashboard». */
+export type RoutineBody = Omit<RoutineForm, 'dashboardTiles'> & { dashboardTiles?: string[] | null };
+
 /** What the form sends: closed choices and one line of title, nothing else. */
 export interface RoutineForm {
   title: string;
   days: IsoDay[];
   at: string;
   sources: RoutineSource[];
+  /** null: every tile of the Dashboard; a list: those tiles. Sent only with the source «Dashboard». */
+  dashboardTiles: string[] | null;
   summary: boolean;
 }
 
@@ -83,7 +90,48 @@ export const SOURCE_CHOICES: readonly { id: RoutineSource; label: string; hint: 
   { id: 'done-since', label: 'Fatto', hint: 'Le card chiuse dall’ultimo resoconto' },
   { id: 'failed-since', label: 'Fallito', hint: 'Le card fallite dall’ultimo resoconto' },
   { id: 'notes', label: 'Pensieri', hint: 'Quanti pensieri aspettano di essere riordinati (solo il numero)' },
+  { id: 'dashboard', label: 'Aggiorna la Dashboard', hint: 'Aggiorna i riquadri col modello locale, come «Aggiorna»; il resoconto dice quanti sono in aggiornamento' },
 ];
+
+/** The source «Dashboard» on the card of a routine and in the form (D-258). */
+export const DASHBOARD_ALL_TEXT = 'Tutti i riquadri';
+export const DASHBOARD_ALL_HINT = 'Anche quelli che fisserai dopo';
+export const DASHBOARD_EMPTY_TEXT = 'La Dashboard è vuota: fissa una risposta dalla chat, poi sceglila qui.';
+export const DASHBOARD_SECRET_HINT = 'Segreto: non si aggiorna mai';
+export const DASHBOARD_GONE_TEXT = 'nessuno dei riquadri scelti c’è ancora';
+
+/** A tile as the form shows it: its title, and whether it is Segreto (never refreshed). */
+export interface TileChoice {
+  id: string;
+  title: string;
+  label: string;
+}
+
+/**
+ * What the card says of the source «Dashboard»: «Dashboard: tutti i
+ * riquadri», the titles of those chosen (two, then «e altri N»), or that
+ * none is left. Titles the page has not loaded are counted.
+ */
+export function dashboardText(tiles: string[] | null, known: readonly TileChoice[]): string {
+  if (tiles === null) return 'Dashboard: tutti i riquadri';
+  if (tiles.length === 0) return `Dashboard: ${DASHBOARD_GONE_TEXT}`;
+  const titles = tiles.map((id) => known.find((tile) => tile.id === id)?.title).filter((title): title is string => title !== undefined);
+  if (titles.length === 0) return `Dashboard: ${tiles.length === 1 ? '1 riquadro' : `${String(tiles.length)} riquadri`}`;
+  const shown = titles.slice(0, 2);
+  const more = tiles.length - shown.length;
+  return `Dashboard: ${shown.join(', ')}${more > 0 ? ` e ${more === 1 ? 'un altro' : `altri ${String(more)}`}` : ''}`;
+}
+
+/** «Tutti» on or off: on is every tile (null), off starts from the tiles there are now, so the user takes some away. */
+export function toggledAllTiles(form: RoutineForm, all: readonly TileChoice[]): string[] | null {
+  return form.dashboardTiles === null ? all.map((tile) => tile.id) : null;
+}
+
+/** One tile on or off in the choice, in the order of the Dashboard. */
+export function toggledTile(form: RoutineForm, id: string, all: readonly TileChoice[]): string[] {
+  const chosen = form.dashboardTiles ?? all.map((tile) => tile.id);
+  return toggled(chosen, id, all.map((tile) => tile.id));
+}
 
 export const SOURCE_TEXT: Record<RoutineSource, string> = Object.fromEntries(SOURCE_CHOICES.map((choice) => [choice.id, choice.label])) as Record<RoutineSource, string>;
 
@@ -144,11 +192,24 @@ export function lastRunText(run: RunView | null, timezone: string): string | nul
 
 /** A new form: every day at 18:00, the todo and the decisions waiting, with the summary. */
 export function emptyForm(): RoutineForm {
-  return { title: '', days: [1, 2, 3, 4, 5, 6, 7], at: '18:00', sources: ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'], summary: true };
+  return { title: '', days: [1, 2, 3, 4, 5, 6, 7], at: '18:00', sources: ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'], dashboardTiles: null, summary: true };
 }
 
 export function formOf(routine: Routine): RoutineForm {
-  return { title: routine.title, days: [...routine.days], at: routine.at, sources: [...routine.sources], summary: routine.summary };
+  // A choice whose tiles were all removed stays empty: the user picks again, or «Tutti».
+  const tiles = routine.dashboardTiles === null ? null : [...routine.dashboardTiles];
+  return { title: routine.title, days: [...routine.days], at: routine.at, sources: [...routine.sources], dashboardTiles: tiles, summary: routine.summary };
+}
+
+/**
+ * What the form sends: the choice of tiles only with the source «Dashboard».
+ * Never filtered here (the tiles may not be loaded yet): the core drops the
+ * ids of tiles no longer there.
+ */
+export function formBody(form: RoutineForm): RoutineBody {
+  const { dashboardTiles, ...rest } = form;
+  const body: RoutineBody = { ...rest, title: form.title.trim() };
+  return form.sources.includes('dashboard') ? { ...body, dashboardTiles } : body;
 }
 
 /** Why the form cannot be saved yet, or null. */
@@ -159,6 +220,7 @@ export function formProblem(form: RoutineForm): string | null {
   if (form.days.length === 0) return 'Scegli almeno un giorno.';
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(form.at)) return 'Scegli un’ora.';
   if (form.sources.length === 0) return 'Scegli almeno una cosa da mettere nel resoconto.';
+  if (form.sources.includes('dashboard') && form.dashboardTiles !== null && form.dashboardTiles.length === 0) return 'Scegli almeno un riquadro della Dashboard, o «Tutti».';
   return null;
 }
 

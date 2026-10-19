@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
-import type { Queryable, Sql } from './db/client.ts';
+import type { Queryable, Sql, TransactionSql } from './db/client.ts';
+import { refreshCandidates, startRefreshesIn, type RefreshCandidate, type RefreshEnv } from './dashboard.ts';
 import { recordDecisionIn } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { parseSplitInput, parseUnsplitInput, splitRoutine, unsplitRoutine } from './routine-split.ts';
@@ -70,6 +71,7 @@ export const SOURCE_TEXT: Record<RoutineSource, string> = {
   'done-since': 'Fatto',
   'failed-since': 'Fallito',
   notes: 'Pensieri',
+  dashboard: 'Dashboard',
 };
 
 export const SUMMARY_UNAVAILABLE_TEXT = 'Sintesi non disponibile: il modello locale non era pronto.';
@@ -104,6 +106,12 @@ export interface Routine {
   at: string;
   timezone: string;
   sources: RoutineSource[];
+  /**
+   * The tiles of the source `dashboard` (D-258): null is every tile of the
+   * Dashboard, a list those chosen that are still there (a tile removed is
+   * gone from it; the list may end up empty). Null without the source.
+   */
+  dashboardTiles: string[] | null;
   summary: boolean;
   channel: 'chat';
   status: RoutineStatus;
@@ -122,15 +130,20 @@ export interface RoutineInput {
   at?: string;
   timezone?: string;
   sources?: RoutineSource[];
+  /** null: every tile; a list: those tiles (D-258). Only with the source `dashboard`. */
+  dashboardTiles?: string[] | null;
   summary?: boolean;
 }
+
+/** The most tiles a routine names (the database checks it too). */
+export const MAX_ROUTINE_TILES = 200;
 
 /**
  * What the page sends, checked: closed lists and one line of title, nothing
  * else (D-110 b). `partial`: a change, where every field may be missing.
  */
 export function parseRoutineInput(body: Record<string, unknown>, partial: boolean): RoutineInput {
-  const allowed = ['title', 'days', 'at', 'timezone', 'sources', 'summary'];
+  const allowed = ['title', 'days', 'at', 'timezone', 'sources', 'dashboardTiles', 'summary'];
   const unknown = Object.keys(body).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) throw new RoutineError('invalid', `unknown field(s): ${unknown.join(', ')}`);
   const input: RoutineInput = {};
@@ -160,6 +173,13 @@ export function parseRoutineInput(body: Record<string, unknown>, partial: boolea
     const chosen = new Set(body.sources);
     input.sources = ROUTINE_SOURCES.filter((source) => chosen.has(source));
   }
+  if (body.dashboardTiles !== undefined) {
+    const tiles = body.dashboardTiles;
+    if (tiles !== null && (!Array.isArray(tiles) || tiles.length === 0 || tiles.length > MAX_ROUTINE_TILES || !tiles.every((id) => typeof id === 'string' && UUID.test(id)))) {
+      throw new RoutineError('invalid', `dashboardTiles must be null (every tile) or a list of 1-${String(MAX_ROUTINE_TILES)} tile ids`);
+    }
+    input.dashboardTiles = tiles === null ? null : [...new Set((tiles as string[]).map((id) => id.toLowerCase()))];
+  }
   if (body.summary !== undefined) {
     if (typeof body.summary !== 'boolean') throw new RoutineError('invalid', 'summary must be true or false');
     input.summary = body.summary;
@@ -180,6 +200,8 @@ export interface RoutineRow {
   at: string;
   timezone: string;
   sources: string[];
+  /** The tiles chosen still in the Dashboard, in its order; null for every tile (or without the source). */
+  dashboardTiles: string[] | null;
   summary: boolean;
   channel: 'chat';
   status: RoutineStatus;
@@ -198,8 +220,15 @@ export interface RoutineRow {
   runCreatedAt: Date | null;
 }
 
+/** The tiles chosen still in the Dashboard, in its order (an empty list when none is left); NULL for every tile. */
+const TILES_CHOSEN = (sql: Queryable) => sql`
+  CASE WHEN r.dashboard_tiles IS NULL THEN NULL ELSE coalesce((
+    SELECT array_agg(d.id::text ORDER BY d.position, d.created_at DESC, d.id) FROM dashboard_tiles d WHERE d.id = ANY (r.dashboard_tiles)
+  ), '{}'::text[]) END AS "dashboardTiles"`;
+
 const ROUTINE_SELECT = (sql: Queryable) => sql`
-  SELECT r.id::text, r.title, r.conversation_id::text AS "conversationId", r.days::int[] AS days, r.at, r.timezone, r.sources, r.summary,
+  SELECT r.id::text, r.title, r.conversation_id::text AS "conversationId", r.days::int[] AS days, r.at, r.timezone, r.sources,
+    ${TILES_CHOSEN(sql)}, r.summary,
     r.channel, r.status, r.paused_by AS "pausedBy", r.next_run_at AS "nextRunAt", r.created_at AS "createdAt", r.updated_at AS "updatedAt",
     c.archived_at IS NOT NULL AS "conversationArchived", c.purged_at IS NOT NULL AS "conversationPurged",
     l.id::text AS "runId", l.scheduled_for AS "runScheduledFor", l.trigger AS "runTrigger", l.status AS "runStatus", l.reason AS "runReason",
@@ -217,6 +246,7 @@ function toRoutine(row: RoutineRow): Routine {
     at: row.at,
     timezone: row.timezone,
     sources: row.sources.filter(isRoutineSource),
+    dashboardTiles: row.dashboardTiles === null ? null : [...row.dashboardTiles],
     summary: row.summary,
     channel: row.channel,
     status: row.status,
@@ -284,13 +314,15 @@ export async function createRoutine(sql: Sql, input: RoutineInput, now = new Dat
   const timezone = input.timezone ?? systemTimeZone();
   const next = nextOrFail({ days, at, timezone }, now);
   const id = await sql.begin(async (tx) => {
+    const tiles = await tilesToStore(tx, sources, input.dashboardTiles, null);
     const [conversation] = await tx<{ id: string }[]>`
       INSERT INTO conversations (mode, clearance, title) VALUES ('private', 'L2'::privacy_label, ${ROUTINE_CONVERSATION_PREFIX + title})
       RETURNING id::text`;
     if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
     const [row] = await tx<{ id: string }[]>`
-      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, summary, status, next_run_at, approved_at)
-      VALUES (${title}, ${conversation.id}, ${days}::smallint[], ${at}, ${timezone}, ${sources}::text[], ${input.summary ?? true}, 'active', ${next}, now())
+      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, status, next_run_at, approved_at)
+      VALUES (${title}, ${conversation.id}, ${days}::smallint[], ${at}, ${timezone}, ${sources}::text[], ${tiles === 'keep' ? null : tiles}::uuid[],
+        ${input.summary ?? true}, 'active', ${next}, now())
       RETURNING id::text`;
     if (row === undefined) throw new Error('INSERT INTO routines returned no row');
     await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: conversation.id, mode: 'private', routine: true } });
@@ -298,6 +330,26 @@ export async function createRoutine(sql: Sql, input: RoutineInput, now = new Dat
     return row.id;
   });
   return mustLoad(sql, id);
+}
+
+/**
+ * The choice of tiles to write (D-258): null without the source `dashboard`
+ * or for every tile; a list of the tiles chosen that are in the Dashboard
+ * now (at least one); 'keep' when the change does not touch the choice and
+ * the source stays (a list whose tiles were all removed stays as it is: the
+ * run finds none, without errors).
+ */
+async function tilesToStore(tx: Queryable, sources: readonly string[], chosen: string[] | null | undefined, current: string[] | null): Promise<string[] | null | 'keep'> {
+  if (!sources.includes('dashboard')) {
+    if (chosen !== undefined && chosen !== null) throw new RoutineError('invalid', 'dashboardTiles goes with the source dashboard');
+    return null;
+  }
+  if (chosen === undefined) return current === null ? null : 'keep';
+  if (chosen === null) return null;
+  const present = new Set((await tx<{ id: string }[]>`SELECT id::text FROM dashboard_tiles WHERE id = ANY (${chosen}::uuid[])`).map((row) => row.id));
+  const kept = chosen.filter((id) => present.has(id));
+  if (kept.length === 0) throw new RoutineError('invalid', 'none of the tiles chosen is in the Dashboard: choose others, or every tile');
+  return kept;
 }
 
 async function mustLoad(sql: Queryable, id: string): Promise<Routine> {
@@ -320,9 +372,12 @@ export async function updateRoutine(sql: Sql, id: string, input: RoutineInput, n
     // A run due and not yet taken by the ticker stays when it is still a time of the rule (D-257).
     const next = row.status === 'active' ? (dueOrNext(rule, row.nextRunAt, now) ?? nextOrFail(rule, now)) : null;
     const title = input.title ?? row.title;
+    const sources = input.sources ?? row.sources;
+    const tiles = await tilesToStore(tx, sources, input.dashboardTiles, row.dashboardTiles);
     await tx`
       UPDATE routines SET title = ${title}, days = ${rule.days}::smallint[], at = ${rule.at}, timezone = ${rule.timezone},
-        sources = ${input.sources ?? row.sources}::text[], summary = ${input.summary ?? row.summary}, next_run_at = ${next}
+        sources = ${sources}::text[], dashboard_tiles = ${tiles === 'keep' ? tx`dashboard_tiles` : tx`${tiles}::uuid[]`},
+        summary = ${input.summary ?? row.summary}, next_run_at = ${next}
       WHERE id = ${id}`;
     if (input.title !== undefined && input.title !== row.title) {
       await tx`UPDATE conversations SET title = ${ROUTINE_CONVERSATION_PREFIX + title} WHERE id = ${row.conversationId} AND purged_at IS NULL`;
@@ -440,6 +495,22 @@ export interface ReportData {
   failed?: ReportList;
   /** New thoughts of kb/inbox (`status: new`), the number only: their titles are the user's text. */
   notes?: number;
+  dashboard?: DashboardReport;
+}
+
+/**
+ * The tiles of the Dashboard a run refreshes (D-258): those it starts, named
+ * (never above L2: a Segreto tile is never refreshed), and those it skips,
+ * only counted: Segreto, already being refreshed, or not refreshable now
+ * (their agent is not loaded).
+ */
+export interface DashboardReport {
+  queued: ReportList;
+  /** Every tile of `queued`, the listed ones and the others, in the order of the page. */
+  ids: string[];
+  secret: number;
+  busy: number;
+  unavailable: number;
 }
 
 interface TaskRow {
@@ -486,6 +557,8 @@ async function movedSince(sql: Queryable, status: 'done' | 'failed', since: Date
 export interface ReportEnv {
   home: string;
   rules: LabelRules;
+  /** The agents a refresh of the Dashboard needs (D-258), as «Aggiorna» of the page; without them no tile is refreshable. */
+  dashboard?: RefreshEnv;
 }
 
 /**
@@ -494,7 +567,7 @@ export interface ReportEnv {
  * date and priority (SPEC "Todo list e cardwall"). `since`: the previous
  * report, for done and failed.
  */
-export async function readReport(sql: Queryable, env: ReportEnv, sources: readonly RoutineSource[], since: Date): Promise<ReportData> {
+export async function readReport(sql: Queryable, env: ReportEnv, sources: readonly RoutineSource[], since: Date, tiles: readonly string[] | null = null): Promise<ReportData> {
   const data: ReportData = {};
   if (sources.includes('todo')) {
     data.todo = listOf(
@@ -523,7 +596,25 @@ export async function readReport(sql: Queryable, env: ReportEnv, sources: readon
   if (sources.includes('done-since')) data.done = listOf(await movedSince(sql, 'done', since));
   if (sources.includes('failed-since')) data.failed = listOf(await movedSince(sql, 'failed', since));
   if (sources.includes('notes')) data.notes = countNewNotes(env);
+  if (sources.includes('dashboard')) data.dashboard = dashboardReport(await refreshCandidates(sql, tiles, env.dashboard));
   return data;
+}
+
+/** The tiles judged by refreshCandidates, as the report says them: the ones to start named, the others counted by why. */
+export function dashboardReport(candidates: readonly RefreshCandidate[]): DashboardReport {
+  const queued = candidates.filter((tile) => tile.skip === undefined && isAtMost(tile.label, REPORT_CLEARANCE));
+  const count = (skip: RefreshCandidate['skip']): number => candidates.filter((tile) => tile.skip === skip).length;
+  return {
+    queued: {
+      shown: queued.slice(0, REPORT_MAX_ITEMS).map((tile) => ({ title: reportTitle(tile.title), label: tile.label, due: null })),
+      more: Math.max(0, queued.length - REPORT_MAX_ITEMS),
+      secret: 0,
+    },
+    ids: queued.map((tile) => tile.id),
+    secret: count('secret'),
+    busy: count('busy'),
+    unavailable: count('unavailable'),
+  };
 }
 
 /** The new thoughts of kb/inbox up to L2, counted as the page of the thoughts lists them (D-090). */
@@ -612,7 +703,22 @@ export function reportText(data: ReportData, opening: ReportOpening, timezone: s
   if (data.notes !== undefined) {
     lines.push('', data.notes === 0 ? 'Pensieri da riordinare: nessuno.' : `Pensieri da riordinare: ${String(data.notes)}.`);
   }
+  if (data.dashboard !== undefined) lines.push('', ...dashboardLines(data.dashboard, timezone, today));
   return lines.join('\n');
+}
+
+/** Read back by reportFacts: the tiles started named after «- », the others counted after «+ ». */
+export const DASHBOARD_NONE_TEXT = 'Dashboard: nessun riquadro da aggiornare.';
+export const DASHBOARD_WHERE_TEXT = 'Le risposte nuove arrivano nella pagina Dashboard, scritte dal modello locale.';
+
+function dashboardLines(report: DashboardReport, timezone: string, today: Date): string[] {
+  const count = total(report.queued);
+  const lines = [count === 0 ? DASHBOARD_NONE_TEXT : `Dashboard, riquadri in aggiornamento (${String(count)}):`, ...listLines(report.queued, timezone, today, false)];
+  if (report.secret > 0) lines.push(`+ ${plural(report.secret, '1 Segreto, non si aggiorna', '{n} Segreti, non si aggiornano')}`);
+  if (report.busy > 0) lines.push(`+ ${plural(report.busy, '1 già in aggiornamento', '{n} già in aggiornamento')}`);
+  if (report.unavailable > 0) lines.push(`+ ${plural(report.unavailable, '1 non aggiornabile adesso', '{n} non aggiornabili adesso')}`);
+  if (count > 0) lines.push(DASHBOARD_WHERE_TEXT);
+  return lines;
 }
 
 /**
@@ -621,7 +727,7 @@ export function reportText(data: ReportData, opening: ReportOpening, timezone: s
  * Never above L2: what is above is only counted.
  */
 export function reportLabel(data: ReportData): Label {
-  const items = [data.todo, data.cards?.running, data.done, data.failed].flatMap((list) => list?.shown ?? []);
+  const items = [data.todo, data.cards?.running, data.done, data.failed, data.dashboard?.queued].flatMap((list) => list?.shown ?? []);
   return maxLabel('L2', ...items.map((item) => item.label));
 }
 
@@ -721,7 +827,7 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
   const late = lateness > LATE_AFTER_MS;
   let data: ReportData;
   try {
-    data = await readReport(env.sql, env, routine.sources.filter(isRoutineSource), await sinceOf(env.sql, routineId, now));
+    data = await readReport(env.sql, env, routine.sources.filter(isRoutineSource), await sinceOf(env.sql, routineId, now), routine.dashboardTiles);
   } catch (error) {
     // The run is recorded as failed and the routine moves on: no retry every 30 seconds for two hours.
     env.onError?.(error);
@@ -745,7 +851,8 @@ export async function runDue(env: RoutineEnv, routineId: string, now = env.now?.
     const messageId = await insertMessage(tx, routine.conversationId, allowed, label, routineId);
     const runId = await insertRun(tx, { routineId, scheduledFor: due, trigger: 'schedule', status: 'done', reason: late ? 'late' : null, messageId, summary: routine.summary, at: now });
     if (routine.summary) await enqueueSummary(tx, { runId, routineId, conversationId: routine.conversationId, from: now });
-    await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'done', ...(late ? { late: true } : {}) } });
+    const tiles = await refreshTiles(tx, env, data, routineId);
+    await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'schedule', status: 'done', ...(late ? { late: true } : {}), ...tiles } });
     return { kind: 'done', runId, late };
   });
 }
@@ -762,7 +869,7 @@ export async function runNow(env: RoutineEnv, routineId: string): Promise<{ runI
   if (routine.status === 'proposed') throw new RoutineError('conflict', 'a proposed routine is approved first');
   if (routine.conversationArchived) throw new RoutineError('conflict', 'the conversation of the routine is archived');
   const rule = ruleOf(routine);
-  const data = await readReport(env.sql, env, routine.sources.filter(isRoutineSource), await sinceOf(env.sql, routineId, now));
+  const data = await readReport(env.sql, env, routine.sources.filter(isRoutineSource), await sinceOf(env.sql, routineId, now), routine.dashboardTiles);
   const label = reportLabel(data);
   const text = reportText(data, { kind: 'trial', next: routine.status === 'active' ? routine.nextRunAt : null }, rule.timezone, now);
   const source = `routine:${routineId}`;
@@ -777,9 +884,22 @@ export async function runNow(env: RoutineEnv, routineId: string): Promise<{ runI
     const done = allowed !== undefined;
     const runId = await insertRun(tx, { routineId, scheduledFor: now, trigger: 'manual', status: done ? 'done' : 'failed', reason: done ? null : 'blocked', messageId, summary: done && routine.summary, at: now });
     if (done && routine.summary) await enqueueSummary(tx, { runId, routineId, conversationId: routine.conversationId, from: now });
-    await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'manual', status: done ? 'done' : 'failed', ...(done ? {} : { reason: 'blocked' }) } });
+    // «Prova adesso» refreshes the tiles too, as the run of the schedule: the report says they are being refreshed.
+    const tiles = done ? await refreshTiles(tx, env, data, routineId) : {};
+    await appendEvent(tx, { kind: 'routine.run', label: 'L0', payload: { routineId, conversationId: routine.conversationId, runId, trigger: 'manual', status: done ? 'done' : 'failed', ...(done ? {} : { reason: 'blocked' }), ...tiles } });
     return { runId, messageId };
   });
+}
+
+/**
+ * The refreshes of the tiles the report names as being refreshed (D-258),
+ * with the run, in its transaction: the same «Aggiorna» of the page. The
+ * event of the run carries how many started, a number only.
+ */
+async function refreshTiles(tx: TransactionSql, env: RoutineEnv, data: ReportData, routineId: string): Promise<{ tiles?: number }> {
+  if (data.dashboard === undefined) return {};
+  if (env.dashboard === undefined || data.dashboard.ids.length === 0) return { tiles: 0 };
+  return { tiles: await startRefreshesIn(tx, data.dashboard.ids, env.dashboard, routineId, env.onError) };
 }
 
 async function loadRoutineRow(sql: Queryable, id: string): Promise<RoutineRow | undefined> {
@@ -797,12 +917,12 @@ async function loadRoutineRow(sql: Queryable, id: string): Promise<RoutineRow | 
  * that kept the run due) makes the claim give up too: the next tick reads
  * the routine again and runs it with the new rule, never twice.
  */
-export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversationId' | 'days' | 'at' | 'timezone' | 'sources' | 'summary'>, expected: Date, next: Date, write: (tx: Queryable) => Promise<RunOutcome>): Promise<RunOutcome> {
+export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversationId' | 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>, expected: Date, next: Date, write: (tx: TransactionSql) => Promise<RunOutcome>): Promise<RunOutcome> {
   return sql.begin(async (tx) => {
     // Closed meanwhile: nothing is written; the next tick pauses or removes the routine.
     if (!(await holdConversation(tx, seen.conversationId))) return { kind: 'none' } satisfies RunOutcome;
-    const [row] = await tx<{ days: number[]; at: string; timezone: string; sources: string[]; summary: boolean }[]>`
-      SELECT days::int[] AS days, at, timezone, sources, summary FROM routines
+    const [row] = await tx<{ days: number[]; at: string; timezone: string; sources: string[]; summary: boolean; dashboardTiles: string[] | null }[]>`
+      SELECT days::int[] AS days, at, timezone, sources, summary, ${TILES_CHOSEN(tx)} FROM routines r
       WHERE id = ${seen.id} AND status = 'active' AND next_run_at = ${expected} FOR UPDATE`;
     if (row === undefined) return { kind: 'none' } satisfies RunOutcome;
     if (!sameRule(row, seen)) return { kind: 'none' } satisfies RunOutcome;
@@ -812,8 +932,11 @@ export async function claimRun(sql: Sql, seen: Pick<RoutineRow, 'id' | 'conversa
 }
 
 /** The rule, sources and summary of two readings of a routine, the same. */
-function sameRule(a: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'summary'>, b: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'summary'>): boolean {
-  return a.days.join() === b.days.join() && a.at === b.at && a.timezone === b.timezone && a.sources.join() === b.sources.join() && a.summary === b.summary;
+function sameRule(a: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>, b: Pick<RoutineRow, 'days' | 'at' | 'timezone' | 'sources' | 'dashboardTiles' | 'summary'>): boolean {
+  return (
+    a.days.join() === b.days.join() && a.at === b.at && a.timezone === b.timezone && a.sources.join() === b.sources.join() && a.summary === b.summary &&
+    (a.dashboardTiles === null) === (b.dashboardTiles === null) && (a.dashboardTiles ?? []).join() === (b.dashboardTiles ?? []).join()
+  );
 }
 
 async function insertRun(
@@ -909,6 +1032,7 @@ export const SUMMARY_PROMPT = [
   '- "oggi" is the day of the report.',
   '- Each list has "totale", the exact number of its items. "elencate" shows only some of them; "altre_non_elencate" and "riservate_solo_contate" are part of "totale" too. Never count the items yourself and never use "altre_non_elencate" as a total: when you give how many there are, use "totale".',
   '- "scadenza" is already computed against "oggi": "scaduta da N giorni" or "scaduta ieri" is past, overdue; "scade oggi" is today. Repeat it as it is. Never say that something is due today unless its "scadenza" is "scade oggi"; never compute dates or days yourself.',
+  '- "dashboard_in_aggiornamento" are tiles of the user\'s Dashboard being refreshed right now by the local model: their new answers are not known yet, so never say what they will say.',
   '- Every number you write must be one of the numbers in the data. No other number, no sum, no difference.',
   '- Write in Italian, speaking to the user (tu).',
   `- "lines": from 1 to ${String(SUMMARY_MAX_LINES)} short sentences, each at most ${String(SUMMARY_MAX_LINE)} characters: first the most urgent thing (an overdue item comes first), then what deserves attention.`,
@@ -944,6 +1068,14 @@ export interface ReportFacts {
   fatto_dall_ultimo_resoconto?: FactList;
   fallito_dall_ultimo_resoconto?: FactList;
   pensieri_da_riordinare?: number;
+  /** D-258: the tiles whose refresh this run started; their new answers are not known yet. */
+  dashboard_in_aggiornamento?: DashboardFacts;
+}
+
+export interface DashboardFacts extends FactList {
+  segreti_non_aggiornati: number;
+  gia_in_aggiornamento: number;
+  non_aggiornabili_adesso: number;
 }
 
 function emptyList(total: number): FactList {
@@ -977,6 +1109,12 @@ export function reportFacts(body: string): ReportFacts {
       list = emptyList(Number(match[2] ?? 0));
       if (match[1] === 'Fatto') facts.fatto_dall_ultimo_resoconto = list;
       else facts.fallito_dall_ultimo_resoconto = list;
+    } else if ((match = /^Dashboard(?:, riquadri in aggiornamento \((\d+)\):|: nessun riquadro da aggiornare\.)$/.exec(line)) !== null) {
+      const tiles: DashboardFacts = { ...emptyList(Number(match[1] ?? 0)), segreti_non_aggiornati: 0, gia_in_aggiornamento: 0, non_aggiornabili_adesso: 0 };
+      facts.dashboard_in_aggiornamento = tiles;
+      list = tiles;
+    } else if (list !== undefined && list === facts.dashboard_in_aggiornamento && line.startsWith('+ ') && dashboardCount(facts.dashboard_in_aggiornamento, line.slice(2))) {
+      // A count of the tiles skipped, read above.
     } else if ((match = /^Pensieri da riordinare: (nessuno|\d+)\.$/.exec(line)) !== null) {
       list = undefined;
       facts.pensieri_da_riordinare = match[1] === 'nessuno' ? 0 : Number(match[1]);
@@ -995,6 +1133,16 @@ export function reportFacts(body: string): ReportFacts {
     }
   }
   return facts;
+}
+
+/** «1 Segreto, non si aggiorna», «2 già in aggiornamento», «3 non aggiornabili adesso»: true when the line is one of them. */
+function dashboardCount(tiles: DashboardFacts, count: string): boolean {
+  let match: RegExpExecArray | null;
+  if ((match = /^(\d+) Segret[oi], non si aggiorna(?:no)?$/.exec(count)) !== null) tiles.segreti_non_aggiornati = Number(match[1]);
+  else if ((match = /^(\d+) già in aggiornamento$/.exec(count)) !== null) tiles.gia_in_aggiornamento = Number(match[1]);
+  else if ((match = /^(\d+) non aggiornabil[ei] adesso$/.exec(count)) !== null) tiles.non_aggiornabili_adesso = Number(match[1]);
+  else return false;
+  return true;
 }
 
 /** What the model reads: one JSON line with the day of the report and the facts. */
@@ -1026,7 +1174,13 @@ export function numbersIn(text: string): number[] {
 /** A month after a number, whole or short, as a word: «9 ottobre», «9 ott», never «settimane» or «novità». */
 const MONTH_AFTER = new RegExp(`^\\s*(?:${[...MONTHS, ...MONTHS_SHORT].join('|')})(?![\\p{L}])`, 'iu');
 
-const LISTS = (facts: ReportFacts): (FactList | undefined)[] => [facts.da_fare, facts.in_corso, facts.fatto_dall_ultimo_resoconto, facts.fallito_dall_ultimo_resoconto];
+const LISTS = (facts: ReportFacts): (FactList | undefined)[] => [
+  facts.da_fare,
+  facts.in_corso,
+  facts.fatto_dall_ultimo_resoconto,
+  facts.fallito_dall_ultimo_resoconto,
+  facts.dashboard_in_aggiornamento,
+];
 
 /** The numbers a summary may write: as a count, as a day of a date, as a year. */
 function allowedNumbers(facts: ReportFacts, today: string): { counts: Set<number>; dates: Set<number>; years: Set<number> } {
@@ -1056,6 +1210,8 @@ function allowedNumbers(facts: ReportFacts, today: string): { counts: Set<number
   if (facts.in_corso !== undefined) counts.add(facts.in_corso.da_verificare);
   if (facts.decisioni_in_attesa !== undefined) counts.add(facts.decisioni_in_attesa);
   if (facts.pensieri_da_riordinare !== undefined) counts.add(facts.pensieri_da_riordinare);
+  const tiles = facts.dashboard_in_aggiornamento;
+  if (tiles !== undefined) for (const value of [tiles.segreti_non_aggiornati, tiles.gia_in_aggiornamento, tiles.non_aggiornabili_adesso]) counts.add(value);
   return { counts, dates, years };
 }
 

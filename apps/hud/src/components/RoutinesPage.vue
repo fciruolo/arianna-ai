@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, createRoutine, decideRoutine, loadRoutines, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
+import { ApiError, createRoutine, decideRoutine, loadRoutines, loadTiles, retireRoutine, setRoutineActive, tryRoutine, updateRoutine } from '../lib/api.ts';
 import {
   APPROVE_TEXT,
+  DASHBOARD_ALL_HINT,
+  DASHBOARD_ALL_TEXT,
+  DASHBOARD_EMPTY_TEXT,
+  DASHBOARD_SECRET_HINT,
+  dashboardText,
   DAY_LETTERS,
   DISCARD_TEXT,
   dateText,
   emptyForm,
+  formBody,
   formOf,
   formProblem,
   lastRunText,
@@ -27,12 +33,15 @@ import {
   statusText,
   TITLE_MAX,
   toggled,
+  toggledAllTiles,
+  toggledTile,
   TRY_HINT,
   TRY_TEXT,
   type IsoDay,
   type Routine,
   type RoutineForm,
   type RoutineSource,
+  type TileChoice,
 } from '../lib/routines.ts';
 import { readView, VIEW_CALENDAR_TEXT, VIEW_LIST_TEXT, writeView, type RoutinesView } from '../lib/routine-calendar.ts';
 import Icon from './Icon.vue';
@@ -53,6 +62,8 @@ const props = defineProps<{ version: number }>();
 const emit = defineEmits<{ open: [conversationId: string] }>();
 
 const routines = ref<Routine[]>([]);
+/** The tiles of the Dashboard (D-258): their titles on the cards and in the choice of the source «Dashboard». */
+const tiles = ref<TileChoice[]>([]);
 const loaded = ref(false);
 const problem = ref<string | null>(null);
 /** The form open: 'new', or the id of the routine being changed. */
@@ -124,7 +135,25 @@ async function load(): Promise<void> {
   } finally {
     loaded.value = true;
   }
+  await loadTileChoices();
 }
+
+/** The tiles, for their titles: without them the cards count the tiles chosen, and the form offers «Tutti» only. */
+async function loadTileChoices(): Promise<void> {
+  try {
+    const list = await loadTiles();
+    if (alive) tiles.value = list.map((tile) => ({ id: tile.id, title: tile.title, label: tile.label }));
+  } catch {
+    // The page works without them.
+  }
+}
+
+/** Segreto: never refreshed, so never chosen (D-248, rule 5). */
+function secretTile(tile: TileChoice): boolean {
+  return tile.label === 'L3';
+}
+
+const refreshable = computed(() => tiles.value.filter((tile) => !secretTile(tile)));
 
 function say(text: string): void {
   notice.value = text;
@@ -157,7 +186,7 @@ async function save(): Promise<void> {
   if (problemOfForm.value !== null || saving.value) return;
   saving.value = true;
   formError.value = null;
-  const sent: RoutineForm = { ...form.value, title: form.value.title.trim() };
+  const sent = formBody(form.value);
   try {
     if (editing.value === 'new') {
       focus.value = (await createRoutine(sent)).id;
@@ -294,6 +323,25 @@ onBeforeUnmount(() => {
               />
               <span><b class="font-medium text-ink">{{ choice.label }}</b> <span class="text-muted">· {{ choice.hint }}</span></span>
             </label>
+            <!-- D-258: which tiles the source «Dashboard» refreshes. -->
+            <fieldset v-if="form.sources.includes('dashboard')" class="ml-6 flex flex-col gap-1 border-l border-line pl-3">
+              <legend class="sr-only">Riquadri da aggiornare</legend>
+              <label class="flex items-start gap-2">
+                <input type="checkbox" class="mt-1" :checked="form.dashboardTiles === null" @change="form.dashboardTiles = toggledAllTiles(form, refreshable)" />
+                <span><b class="font-medium text-ink">{{ DASHBOARD_ALL_TEXT }}</b> <span class="text-muted">· {{ DASHBOARD_ALL_HINT }}</span></span>
+              </label>
+              <p v-if="tiles.length === 0" class="text-[12.5px] text-muted">{{ DASHBOARD_EMPTY_TEXT }}</p>
+              <label v-for="tile in tiles" :key="tile.id" class="flex items-start gap-2" :class="form.dashboardTiles === null || secretTile(tile) ? 'text-muted' : ''">
+                <input
+                  type="checkbox"
+                  class="mt-1"
+                  :checked="!secretTile(tile) && (form.dashboardTiles === null || form.dashboardTiles.includes(tile.id))"
+                  :disabled="form.dashboardTiles === null || secretTile(tile)"
+                  @change="form.dashboardTiles = toggledTile(form, tile.id, refreshable)"
+                />
+                <span class="min-w-0 break-words">{{ tile.title }}<span v-if="secretTile(tile)" class="text-muted"> · {{ DASHBOARD_SECRET_HINT }}</span></span>
+              </label>
+            </fieldset>
           </fieldset>
           <label class="flex items-start gap-2 text-[13.5px]">
             <input v-model="form.summary" type="checkbox" class="mt-1" />
@@ -351,7 +399,7 @@ onBeforeUnmount(() => {
 
             <div class="flex flex-col gap-2 px-3.5 py-3 text-[13.5px]">
               <div class="flex flex-wrap gap-1.5">
-                <span v-for="source in routine.sources" :key="source" class="pill">{{ SOURCE_TEXT[source] }}</span>
+                <span v-for="source in routine.sources" :key="source" class="pill">{{ source === 'dashboard' ? dashboardText(routine.dashboardTiles, tiles) : SOURCE_TEXT[source] }}</span>
                 <span class="pill"><Icon name="chat" :size="12" />in chat</span>
                 <span v-if="routine.summary" class="pill">+ sintesi locale</span>
               </div>

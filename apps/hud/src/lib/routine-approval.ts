@@ -19,7 +19,10 @@ export interface RoutineProposalCard {
   summary: boolean;
 }
 
-const SOURCES: readonly RoutineSource[] = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes'];
+const SOURCES: readonly RoutineSource[] = ['todo', 'waiting', 'cards', 'done-since', 'failed-since', 'notes', 'dashboard'];
+
+/** A proposal never chooses tiles (D-258): its source «Dashboard» is every tile. */
+export const PROPOSAL_DASHBOARD_TEXT = 'Dashboard: tutti i riquadri';
 
 function isDay(value: unknown): value is IsoDay {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
@@ -41,7 +44,7 @@ export function routineProposal(approval: { kind: string; detail: Record<string,
     title,
     when: `${daysText(validDays)} alle ${at}`,
     zone: typeof timezone === 'string' && timezone !== ownZone ? timezone : null,
-    sources: validSources.map((source) => SOURCE_TEXT[source]),
+    sources: validSources.map((source) => (source === 'dashboard' ? PROPOSAL_DASHBOARD_TEXT : SOURCE_TEXT[source])),
     summary: summary !== false,
   };
 }

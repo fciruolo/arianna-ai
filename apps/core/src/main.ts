@@ -768,7 +768,17 @@ const organizer = createNoteOrganizer({
 });
 // The routines (D-110 tappa A, D-254): the report written by code in each routine's chat at its
 // time, then three lines of the local model without tools, which wait for oMLX as the notes do (D-100).
-const routineEnv = { sql, home: config.home, rules };
+// D-258: the source «Dashboard» starts «Aggiorna» of the tiles with the same agents as the page.
+const routineEnv = {
+  sql,
+  home: config.home,
+  rules,
+  onError: report,
+  dashboard: {
+    agents: () => [...agents.keys()],
+    financeAgents: () => [...agents].filter(([, agent]) => isFinanceCard(agent.card)).map(([name]) => name),
+  },
+};
 const routines = createRoutineService(routineEnv);
 const routineSummarizer = createRoutineSummarizer({
   sql,

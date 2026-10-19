@@ -1,8 +1,8 @@
 /**
  * «Solo <giorno>» of the calendar (D-257): a routine dragged on one of its
  * days becomes two. The first loses that day; a second one is born, with the
- * same title, sources, summary, zone and state (active or paused), only on
- * the day of arrival and at the new time, in a new chat «Routine · <titolo>»
+ * same title, sources (the tiles of the Dashboard too, D-258), summary, zone
+ * and state (active or paused), only on the day of arrival and at the new time, in a new chat «Routine · <titolo>»
  * as a routine created from the page. One transaction: either both change or
  * neither. Its «Annulla» (`unsplitRoutine`) is one transaction too. The
  * events name ids only, never the title.
@@ -93,8 +93,9 @@ export async function splitRoutine(sql: Sql, id: string, input: SplitInput, now 
       RETURNING id::text`;
     if (conversation === undefined) throw new Error('INSERT INTO conversations returned no row');
     const [created] = await tx<{ id: string }[]>`
-      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, summary, status, paused_by, next_run_at, approved_at)
-      VALUES (${row.title}, ${conversation.id}, ${[input.to]}::smallint[], ${input.at}, ${row.timezone}, ${row.sources}::text[], ${row.summary},
+      INSERT INTO routines (title, conversation_id, days, at, timezone, sources, dashboard_tiles, summary, status, paused_by, next_run_at, approved_at)
+      VALUES (${row.title}, ${conversation.id}, ${[input.to]}::smallint[], ${input.at}, ${row.timezone}, ${row.sources}::text[],
+        (SELECT dashboard_tiles FROM routines WHERE id = ${id}), ${row.summary},
         'active', NULL, ${next(newRule, now)}, now())
       RETURNING id::text`;
     if (created === undefined) throw new Error('INSERT INTO routines returned no row');
