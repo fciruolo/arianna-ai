@@ -236,7 +236,8 @@ function sandboxFolders(options: ClaudeExecutorOptions): { readable: string[]; d
   return { readable, denied };
 }
 
-const DEFAULT_TIMEOUT_MS = 15 * 60_000;
+/** The wall-clock cap of a run that gives none; the core's MCP session of a run (D-261) outlives it. */
+export const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_MAX_TURNS = 40;
 /** One line of the stream; a file read whole by a tool fits with room to spare. */
 const MAX_LINE_BYTES = 32 * 1024 * 1024;

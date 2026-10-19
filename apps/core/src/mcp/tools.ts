@@ -1,4 +1,5 @@
 import { TOOL_ARGS, validate, type JsonSchema } from '@arianna/agents';
+import { MCP_TOOL_NAMES, type McpToolName } from '@arianna/executors';
 import { CATALOG_SOURCE, createContext, isAtMost, isMcpKbPath, markCatalogText, maxLabel, MCP_CEILING, recordRead, spendAllowed, type Context, type Decision, type Label, type Labeled } from '@arianna/policy';
 
 import { MAX_READ } from '../orchestrator/tools.ts';
@@ -17,11 +18,10 @@ import type { McpCallResult, McpToolDescriptor } from './protocol.ts';
  * whatever its reason, is the same fixed text: it never says whether a page
  * or a skill exists.
  *
- * The same list is exported by `@arianna/executors` as `MCP_TOOL_NAMES`, for
- * the run's `--allowedTools`: once both are on main, this one imports it.
+ * The names are `MCP_TOOL_NAMES` of `@arianna/executors`, the same list the
+ * run's `--allowedTools` is built from.
  */
-export const MCP_TOOL_NAMES = ['list_skills', 'get_skill', 'kb_search', 'kb_read'] as const;
-export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
+export { MCP_TOOL_NAMES, type McpToolName };
 
 export function isMcpToolName(value: unknown): value is McpToolName {
   return (MCP_TOOL_NAMES as readonly unknown[]).includes(value);

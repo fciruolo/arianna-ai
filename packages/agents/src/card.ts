@@ -2,11 +2,14 @@ import { isAtMost, LABELS, type Label } from '@arianna/policy';
 
 import {
   APPROVAL_ACTIONS,
+  CLOUD_TOOLS,
+  isCloudToolId,
   isFinanceTool,
   isToolId,
   toolSpec,
   TRIFECTA_SIDES,
   type ApprovalAction,
+  type CloudToolId,
   type ToolId,
   type TrifectaSide,
 } from './tools.ts';
@@ -31,6 +34,12 @@ export interface AgentCard {
   cloudMaxLabel?: Label;
   executors: ExecutorKind[];
   tools: ToolId[];
+  /**
+   * The tools of Arianna's MCP server its runs on Claude Code get (D-261),
+   * apart from `tools`: only `CLOUD_TOOLS`, only with `claude` among the
+   * executors. Absent, none.
+   */
+  cloudTools?: CloudToolId[];
   trifecta: Record<TrifectaSide, boolean>;
   autonomy: Autonomy;
   /** The decision in docs/DECISIONS.md that raised the agent above A1. */
@@ -70,6 +79,7 @@ const KEYS = [
   'cloud_max_label',
   'executors',
   'tools',
+  'cloud_tools',
   'trifecta',
   'autonomy',
   'autonomy_decision',
@@ -90,7 +100,8 @@ const KEYS = [
  * - every approval a tool needs is listed in `approvals`;
  * - autonomy above A1 needs the decision that granted it;
  * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance);
- * - `executor_choice: ask` needs at least two executors to choose from (D-159).
+ * - `executor_choice: ask` needs at least two executors to choose from (D-159);
+ * - `cloud_tools` lists only tools of `CLOUD_TOOLS`, once each, and needs `claude` among the executors (D-261).
  */
 export function parseAgentCard(raw: unknown, name: string): AgentCard {
   const where = `agents/${name}.yaml`;
@@ -133,6 +144,17 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     return item;
   });
   unique(tools, `${where}: tools`);
+
+  // Arianna's MCP server serves runs of claude alone (D-261): on another executor the field would be a promise nobody keeps.
+  let cloudTools: CloudToolId[] | undefined;
+  if (card.cloud_tools !== undefined) {
+    cloudTools = list(card.cloud_tools, `${where}: cloud_tools`).map((item) => {
+      if (!isCloudToolId(item)) return fail(`cloud_tools: ${JSON.stringify(item)} is not one of ${CLOUD_TOOLS.join(', ')}`);
+      return item;
+    });
+    unique(cloudTools, `${where}: cloud_tools`);
+    if (!executors.includes('claude')) fail('cloud_tools without the claude executor: only its runs reach Arianna\'s MCP server');
+  }
 
   const trifectaTable = ownTable(card.trifecta, `${where}: trifecta`);
   const extra = Object.keys(trifectaTable).filter((key) => !(TRIFECTA_SIDES as readonly string[]).includes(key));
@@ -227,6 +249,7 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     prompt,
   };
   if (cloudMaxLabel !== undefined) result.cloudMaxLabel = cloudMaxLabel;
+  if (cloudTools !== undefined) result.cloudTools = cloudTools;
   if (autonomyDecision !== undefined) result.autonomyDecision = autonomyDecision;
   if (promptLabel !== undefined) result.promptLabel = promptLabel;
   if (executorChoice !== undefined) result.executorChoice = executorChoice;

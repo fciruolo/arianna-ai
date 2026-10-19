@@ -28,7 +28,7 @@ import {
   type PreparedNotes,
   type ProjectNoteInput,
 } from '@arianna/executors';
-import { isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
+import { isAtMost, maxLabel, mcpClearance, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision, type Step } from '@arianna/router';
 
 import { contextOf, outputSource, type Marked } from '../finance-mark.ts';
@@ -37,7 +37,7 @@ import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } 
 import { carryParts } from '../god/carry.ts';
 import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
-import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
+import { runClaudeStep, type BriefFragment, type ClaudeStepMcp } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
 import { CHAT_AGENT, characterOn, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
@@ -63,6 +63,8 @@ import { budgetOf, routerConfigOf } from './routing.ts';
 import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-share.ts';
 import { eventSkillId } from '../skills-catalog.ts';
 import { recordVariantDesign } from '../studio.ts';
+import { delegationMcpTools } from '../mcp/run-tools.ts';
+import type { McpServer } from '../mcp/server.ts';
 
 /**
  * A step delegated to the Coder on Claude Code (task 1.10, second part,
@@ -110,6 +112,12 @@ export interface DelegateEnv {
   skills?: (agent: string, maxBytes: number, card?: CardDesign, ceiling?: Label) => AgentSkills;
   /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
   advise?: Advise;
+  /**
+   * Arianna's MCP server (D-261), for the delegations of MCP_DELEGATES on
+   * `claude`: the server, its URL (undefined when it did not start) and the
+   * folder of the runs' configuration files. Absent, no run gets it.
+   */
+  mcp?: { server: Pick<McpServer, 'open' | 'revoke'>; url: string | undefined; dir: string };
 }
 
 /** The style of Open Design and the skills chosen on a Designer card (D-163). */
@@ -1075,6 +1083,23 @@ export function stepFor(ctx: StepContext, executor: CloudExecutor): StepContext 
   return copy;
 }
 
+/** The skills `[agents.<id>] skills` assigns to an agent (D-161); own keys only. */
+function assignedSkills(settings: Pick<AriannaConfig, 'agents'>, agent: string): readonly string[] {
+  return Object.hasOwn(settings.agents, agent) ? (settings.agents[agent]?.skills ?? []) : [];
+}
+
+/**
+ * The MCP server of a delegated step on `claude` (D-261): undefined without
+ * the server, or when the agent gets none of its tools (`delegationMcpTools`);
+ * the clearance is the task's within the card's cloud ceiling, never above L1.
+ */
+export function delegationMcp(env: Pick<DelegateEnv, 'mcp' | 'settings'>, task: Pick<Task, 'clearance'>, agent: string, card: AgentCard): ClaudeStepMcp | undefined {
+  if (env.mcp === undefined) return undefined;
+  const tools = delegationMcpTools(agent, card, assignedSkills(env.settings(), agent));
+  if (tools.length === 0) return undefined;
+  return { server: env.mcp.server, url: env.mcp.url, dir: env.mcp.dir, agent, clearance: mcpClearance(task.clearance, cloudCeiling(card)), tools };
+}
+
 /**
  * The cloud step: the plan is `cloud`. Every run of a task of an incognito
  * conversation, resumed ones included, runs `claude` with
@@ -1184,6 +1209,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   // One block per model message: separated, so that the chat reads them as paragraphs; the thinking and the text live too (D-249).
   const stream = replyStream(reply);
+  // Arianna's MCP server for the run (D-261): the Coder alone, on claude alone; Codex has no MCP of hers. Each attempt opens
+  // its own session and revokes it at its end (runClaudeStep), a new start after a lost session included.
+  const mcp = plan.executor === 'claude' ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
@@ -1219,6 +1247,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       ...common,
       model: plan.model,
       tools: claudeToolsOf(agent.card.tools),
+      ...(mcp === undefined ? {} : { mcp }),
       onLive: (piece) => stream.live(piece),
       onEvent: async (event) => {
         if (event.type === 'text') {

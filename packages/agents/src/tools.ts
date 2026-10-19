@@ -96,6 +96,20 @@ export function toolSpec(id: ToolId): ToolSpec {
   return TOOLS[id];
 }
 
+/**
+ * The tools a card may give its runs on Claude Code through Arianna's MCP
+ * server (`cloud_tools`, D-261): read only, served by the core within the
+ * run's clearance (never above L1), each answer through the gateway. Apart
+ * from `tools`, which the local steps use: a card listing them here does not
+ * give the knowledge base to its local steps, nor the other way round.
+ */
+export const CLOUD_TOOLS = ['kb.search', 'kb.read'] as const satisfies readonly ToolId[];
+export type CloudToolId = (typeof CLOUD_TOOLS)[number];
+
+export function isCloudToolId(value: unknown): value is CloudToolId {
+  return (CLOUD_TOOLS as readonly unknown[]).includes(value);
+}
+
 /** The tools that read finance data (D-183): a card listing one answers only in its own private conversation. */
 export const FINANCE_TOOLS = ['finance.summary', 'finance.search', 'finance.alerts'] as const satisfies readonly ToolId[];
 

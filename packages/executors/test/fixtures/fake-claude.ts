@@ -146,6 +146,26 @@ switch (scenario) {
     out(answer('found it', 'msg_2'));
     out({ ...result, num_turns: 2, result: 'found it' });
     break;
+  case 'arianna-mcp-live': {
+    // D-261: the run calls the server with the token of its configuration while it lasts (`tools/list`), and says what it got.
+    const server = (mcpConfig as { mcpServers?: { arianna?: { url: string; headers: Record<string, string> } } } | undefined)?.mcpServers?.arianna;
+    let status = 0;
+    let names: string[] = [];
+    if (server !== undefined) {
+      const response = await fetch(server.url, {
+        method: 'POST',
+        headers: { ...server.headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      });
+      status = response.status;
+      if (status === 200) names = ((await response.json()) as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name);
+    }
+    writeFileSync(join(process.cwd(), '.fake-claude-mcp.json'), JSON.stringify({ status, names }));
+    out(init);
+    out(answer('ok'));
+    out({ ...result, result: 'ok' });
+    break;
+  }
   case 'api-key':
     out({ ...init, apiKeySource: 'ANTHROPIC_API_KEY' });
     hang();

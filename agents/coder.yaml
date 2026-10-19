@@ -8,6 +8,9 @@ max_label: L2
 cloud_max_label: L1
 executors: [claude, codex, local]
 tools: [repo.read, repo.write, repo.test, task.update, user.ask]
+# D-261: on Claude Code only, through Arianna's MCP server, within L1 and the
+# task's clearance; the local steps do not read the knowledge base.
+cloud_tools: [kb.search, kb.read]
 trifecta:
   private_data: true
   # Repositories, dependencies and issue text are not trusted.

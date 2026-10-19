@@ -265,6 +265,35 @@ describe('parseAgentCard', () => {
     });
   });
 
+  describe('cloud_tools (D-261)', () => {
+    const cloud = (c: Record<string, unknown>): void => {
+      c.executors = ['claude', 'local'];
+      c.cloud_max_label = 'L1';
+    };
+
+    it('accepts kb.search and kb.read on a card with claude, apart from tools', () => {
+      const parsed = parseAgentCard(card((c) => ((c.tools = ['repo.read']), cloud(c), (c.cloud_tools = ['kb.search', 'kb.read']))), 'archivista');
+      assert.deepEqual(parsed.cloudTools, ['kb.search', 'kb.read']);
+      assert.deepEqual(parsed.tools, ['repo.read']);
+    });
+
+    it('is absent when the card does not say it', () => {
+      assert.equal(parseAgentCard(card(cloud), 'archivista').cloudTools, undefined);
+    });
+
+    it('rejects a tool outside CLOUD_TOOLS, one listed twice, or not a list', () => {
+      rejects(card((c) => (cloud(c), (c.cloud_tools = ['kb.write']))), /cloud_tools: "kb\.write" is not one of/);
+      rejects(card((c) => (cloud(c), (c.cloud_tools = ['repo.read']))), /cloud_tools/);
+      rejects(card((c) => (cloud(c), (c.cloud_tools = ['kb.read', 'kb.read']))), /twice/);
+      rejects(card((c) => (cloud(c), (c.cloud_tools = 'kb.read'))), /cloud_tools: expected a list/);
+    });
+
+    it('rejects cloud_tools without the claude executor', () => {
+      rejects(card((c) => (c.cloud_tools = ['kb.read'])), /without the claude executor/);
+      rejects(card((c) => ((c.executors = ['codex', 'local']), (c.cloud_max_label = 'L1'), (c.cloud_tools = ['kb.read']))), /without the claude executor/);
+    });
+  });
+
   describe('autonomy', () => {
     it('accepts A0 and A1 without a decision', () => {
       assert.equal(parseAgentCard(card((c) => (c.autonomy = 'A0')), 'archivista').autonomy, 'A0');

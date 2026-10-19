@@ -178,6 +178,8 @@ export interface OrchestratorOptions {
   skills?: (agent: string, maxBytes: number, card?: CardDesign, ceiling?: Label) => AgentSkills;
   /** Claude's opinion on the difficulty of an unsure step (D-207); absent, the rules alone decide. */
   advise?: Advise;
+  /** Arianna's MCP server for the Coder's runs on claude (D-261, DelegateEnv.mcp); absent, no run gets it. */
+  mcp?: DelegateEnv['mcp'];
   /** The IM files of the approved projects for `im.add` (D-167, P4b); absent, the tool answers with an error. */
   ims?: ImToolEnv;
   /**
@@ -473,6 +475,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.advise === undefined ? {} : { advise: options.advise }),
+    ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, StepPlan>();

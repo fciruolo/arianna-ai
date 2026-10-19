@@ -139,6 +139,8 @@ export function checkUserPermissions(card: AgentCard, origin: UserCardOrigin): U
   }
   if (!sameTrifecta(card.trifecta, USER_TRIFECTA)) fail('trifecta must be private_data false, untrusted_content true, external_comms false');
   if (card.cloudMaxLabel !== undefined) fail('cloud_max_label is not allowed');
+  // Arianna's MCP server (D-261): only Arianna's own cards give their cloud runs her tools.
+  if (card.cloudTools !== undefined) fail('cloud_tools is not allowed');
   if (origin === 'agency') {
     if (card.maxLabel !== 'L0') fail('a card of agency-agents stays at L0: its prompt is a third party\'s');
     if (card.promptLabel !== 'L0') fail('a card of agency-agents needs prompt_label L0');

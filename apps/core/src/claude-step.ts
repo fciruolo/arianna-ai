@@ -1,4 +1,8 @@
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import {
+  CLAUDE_DEFAULT_TIMEOUT_MS,
   ClaudeError,
   type ClaudeEvent,
   type ClaudeExecutor,
@@ -6,8 +10,12 @@ import {
   type ClaudeResult,
   type ClaudeTool,
   type ClaudeUsage,
+  type McpToolName,
+  prepareMcp,
+  type PreparedMcp,
   type PreparedNotes,
   type PreparedWorkspace,
+  releaseMcp,
 } from '@arianna/executors';
 import type { Context, Decision, Label } from '@arianna/policy';
 
@@ -15,6 +23,7 @@ import type { Sql } from './db/client.ts';
 import type { StepContext } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
+import type { McpServer } from './mcp/server.ts';
 import type { RunUsage } from './runs.ts';
 
 /** A piece of a run shown live in the chat (D-249). */
@@ -38,6 +47,31 @@ export interface BriefFragment {
   label: Label;
   source: string;
 }
+
+/**
+ * Arianna's MCP server for one run (D-261): a session opened for the run
+ * before it starts, its configuration file written in `dir`, both gone when
+ * the step ends however it ends (the session revoked, the file removed).
+ */
+export interface ClaudeStepMcp {
+  server: Pick<McpServer, 'open' | 'revoke'>;
+  /** The server's URL; undefined when the server did not start, and the run goes without it. */
+  url: string | undefined;
+  /** Absolute folder of the configuration file, one sandboxed commands cannot read (`data/worktrees`). */
+  dir: string;
+  /** The agent's card id: its assigned skills are the ones the server lists. */
+  agent: string;
+  /** `mcpClearance(task, card)`: at most L1. */
+  clearance: Label;
+  /** Not empty: a step with no tool gets no `mcp`. */
+  tools: readonly McpToolName[];
+}
+
+/** The event of a run that was to have the MCP server and goes without it (D-261): why, in a word, never a text. */
+export const MCP_UNAVAILABLE_EVENT = 'mcp.unavailable';
+
+/** Minutes a session outlives the run's own time cap: the revoke at the end comes first anyway. */
+const MCP_SESSION_MARGIN_MS = 5 * 60_000;
 
 export interface ClaudeStepInput {
   /** The run's session on the sending side: what the brief was written from. */
@@ -83,6 +117,8 @@ export interface ClaudeStepInput {
    * resumed (`--no-session-persistence`, D-136, incognito). Default true.
    */
   persistSession?: boolean;
+  /** Arianna's MCP server for this run (D-261); absent, the run has the profile without it (`--safe-mode`). */
+  mcp?: ClaudeStepMcp;
 }
 
 export type ClaudeStepResult =
@@ -129,6 +165,57 @@ const toUsage = (usage: ClaudeUsage | undefined): RunUsage =>
  */
 export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: StepContext, input: ClaudeStepInput): Promise<ClaudeStepResult> {
   const ids = { taskId: step.task.id, runId: step.runId };
+  const mcp = input.mcp === undefined ? undefined : await openMcp(sql, step, input.mcp, input.timeoutMs);
+  try {
+    return await runWith(sql, executor, step, input, mcp);
+  } finally {
+    // D-261: the token dies with the step, whatever its outcome; the file too (the run removes it, a refused check does not).
+    if (mcp !== undefined) {
+      input.mcp?.server.revoke(ids.runId);
+      await releaseMcp(mcp).catch(() => undefined);
+    }
+  }
+}
+
+/**
+ * The session and the configuration of the MCP server for this run, or
+ * undefined: a server that is not started, or a file that cannot be written,
+ * leaves the run without Arianna's tools, with an event that says which.
+ */
+async function openMcp(sql: Sql, step: StepContext, mcp: ClaudeStepMcp, timeoutMs: number | undefined): Promise<PreparedMcp | undefined> {
+  const ids = { taskId: step.task.id, runId: step.runId };
+  const without = async (reason: 'server' | 'session' | 'config'): Promise<undefined> => {
+    await appendEvent(sql, { ...ids, kind: MCP_UNAVAILABLE_EVENT, label: 'L0', payload: { executor: 'claude', reason } }).catch(() => undefined);
+    return undefined;
+  };
+  const url = mcp.url;
+  if (url === undefined) return without('server');
+  let token: string;
+  try {
+    const expiresAt = new Date(Date.now() + (timeoutMs ?? CLAUDE_DEFAULT_TIMEOUT_MS) + MCP_SESSION_MARGIN_MS);
+    ({ token } = mcp.server.open({ runId: step.runId, taskId: step.task.id, agent: mcp.agent, executor: 'claude', clearance: mcp.clearance, tools: mcp.tools, expiresAt }));
+  } catch {
+    return without('session');
+  }
+  const endpoint = { url, token, tools: mcp.tools };
+  try {
+    try {
+      return await prepareMcp(mcp.dir, step.runId, endpoint);
+    } catch (error) {
+      // A file of this same run left by a core that stopped mid-run (its token died with that core): only once
+      // prepareMcp has checked the folder and the run id, and the file is there.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      await rm(join(mcp.dir, `${step.runId}.mcp.json`), { force: true });
+      return await prepareMcp(mcp.dir, step.runId, endpoint);
+    }
+  } catch {
+    mcp.server.revoke(step.runId);
+    return without('config');
+  }
+}
+
+async function runWith(sql: Sql, executor: ClaudeExecutor, step: StepContext, input: ClaudeStepInput, mcp: PreparedMcp | undefined): Promise<ClaudeStepResult> {
+  const ids = { taskId: step.task.id, runId: step.runId };
   // The kind and the profile fields only: the message never quotes output.
   const failed = async (error: ClaudeError): Promise<ClaudeStepResult> => {
     await appendEvent(sql, {
@@ -153,6 +240,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     model: input.model,
     tools: input.tools,
     ...(input.persistSession === undefined ? {} : { persistSession: input.persistSession }),
+    ...(mcp === undefined ? {} : { mcp }),
     limits: { ...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }) },
   };
   // Before the gateway: no allow is logged for a run that cannot start.

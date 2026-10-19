@@ -2,6 +2,7 @@ export {
   CLAUDE_EXECUTOR,
   ClaudeError,
   createClaudeExecutor,
+  DEFAULT_TIMEOUT_MS as CLAUDE_DEFAULT_TIMEOUT_MS,
   nodeToolchain,
   type ClaudeErrorKind,
   type ClaudeExecutor,

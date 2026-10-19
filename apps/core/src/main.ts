@@ -25,7 +25,7 @@ import {
   workParts,
   type TelegramConfig,
 } from '@arianna/config';
-import { createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, removeConversationWorkspace, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
+import { createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, removeConversationWorkspace, WORKTREES_DIR, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
@@ -550,6 +550,8 @@ const orchestrator = createOrchestrator({
   sql,
   agents,
   advise,
+  // D-261: the Coder's runs on claude get Arianna's tools; the configuration files next to the worktrees, closed to the sandbox.
+  mcp: { server: mcpServer, url: mcpUrl, dir: join(config.paths.data, WORKTREES_DIR) },
   // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
   // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
   skills: (agent, maxBytes, card, ceiling) => {

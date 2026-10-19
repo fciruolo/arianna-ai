@@ -126,6 +126,10 @@ describe('checkUserPermissions', () => {
     ok({ executors: ['claude'] });
     no({ executors: ['claude'], cloudMaxLabel: 'L0' }, /cloud_max_label/);
   });
+  it('no cloud_tools (D-261)', () => {
+    no({ executors: ['claude'], cloudTools: ['kb.read'] }, /cloud_tools is not allowed/);
+    no({ executors: ['claude'], cloudTools: [] }, /cloud_tools is not allowed/);
+  });
   it('labels of a page card: L0 or L1, prompt L1', () => {
     ok({ maxLabel: 'L1', promptLabel: 'L1' });
     // A card of tappa T2 kept the template's L0, without prompt_label.
