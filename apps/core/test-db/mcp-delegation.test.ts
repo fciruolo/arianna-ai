@@ -20,6 +20,7 @@ import { processStepJob, STEP_QUEUE, type StepExecutor } from '../src/engine.ts'
 import { appendEvent } from '../src/events.ts';
 import { passGateway } from '../src/gateway.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { mcpToolsText } from '../src/mcp/run-tools.ts';
 import { createMcpServer, type McpServer } from '../src/mcp/server.ts';
 import type { McpSessionInput } from '../src/mcp/tools.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
@@ -162,7 +163,7 @@ async function drain(taskId: string, executor: StepExecutor): Promise<string[]> 
 const DELEGATE: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'coder', reason: 'per leggere il router', brief: 'Read how the router works and say it.' } };
 const REPLY: Answer = { action: 'reply', text: 'Fatto.' };
 
-async function delegate(setup: Mcp, status = 'ok'): Promise<{ taskId: string; runId: string; argv: string[]; mcp: { status: number; names: string[] } }> {
+async function delegate(setup: Mcp, status = 'ok'): Promise<{ taskId: string; runId: string; argv: string[]; prompt: string; mcp: { status: number; names: string[] } }> {
   rmSync(join(REPO, '.fake-claude-mcp.json'), { force: true });
   writeFileSync(join(REPO, '.fake-claude-mcp.json'), JSON.stringify({ status: 0, names: [] }));
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'] });
@@ -171,15 +172,18 @@ async function delegate(setup: Mcp, status = 'ok'): Promise<{ taskId: string; ru
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.ok(delegation?.runId !== undefined && delegation.runId !== null);
   assert.equal(delegation.status, status);
-  const { argv } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { argv: string[] };
+  const { argv, prompt } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { argv: string[]; prompt: string };
   const mcp = JSON.parse(readFileSync(join(REPO, '.fake-claude-mcp.json'), 'utf8')) as { status: number; names: string[] };
-  return { taskId: task.id, runId: delegation.runId, argv, mcp };
+  return { taskId: task.id, runId: delegation.runId, argv, prompt, mcp };
 }
 
 test('the Coder on claude: a session for the run, its token good while it runs, revoked and the file gone after', async () => {
   opened.length = 0;
   revoked.length = 0;
-  const { runId, argv, mcp } = await delegate({ url });
+  const { runId, argv, prompt, mcp } = await delegate({ url });
+  // The brief tells the tools of the open session, at its end, and nothing of the skills it does not have.
+  assert.ok(prompt.endsWith(mcpToolsText(['kb_search', 'kb_read'])));
+  assert.ok(!prompt.includes('mcp__arianna__list_skills'));
 
   // One session for the run, at most L1, with the tools of the card's cloud_tools alone.
   assert.equal(opened.length, 1);
@@ -210,7 +214,9 @@ test('the Coder on claude: a session for the run, its token good while it runs, 
 test('without the server the Coder runs as before, with --safe-mode, and an event says why', async () => {
   opened.length = 0;
   revoked.length = 0;
-  const { taskId, runId, argv, mcp } = await delegate({ url: undefined });
+  const { taskId, runId, argv, prompt, mcp } = await delegate({ url: undefined });
+  // No session, no line on the tools.
+  assert.ok(!prompt.includes('mcp__arianna__'));
   assert.equal(opened.length, 0);
   assert.deepEqual(revoked, []);
   assert.deepEqual(mcp, { status: 0, names: [] });
@@ -257,6 +263,7 @@ test('a session the server refuses, or a file that cannot be written: the run go
   });
   const refused = await delegate({ url, server: stopped });
   assert.ok(refused.argv.includes('--safe-mode'));
+  assert.ok(!refused.prompt.includes('mcp__arianna__'));
   assert.deepEqual(await unavailable(refused.taskId), [{ executor: 'claude', reason: 'session' }]);
 
   // The folder of the file is a file: the session opened is revoked at once.
@@ -267,6 +274,7 @@ test('a session the server refuses, or a file that cannot be written: the run go
   writeFileSync(blocker, '');
   const unwritable = await delegate({ url, dir: blocker });
   assert.ok(unwritable.argv.includes('--safe-mode'));
+  assert.ok(!unwritable.prompt.includes('mcp__arianna__'));
   assert.deepEqual(await unavailable(unwritable.taskId), [{ executor: 'claude', reason: 'config' }]);
   assert.equal(opened.length, 1);
   assert.deepEqual(revoked, [unwritable.runId]);

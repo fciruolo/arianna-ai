@@ -9,7 +9,7 @@ import type { AgentCard } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
 import { delegationMcp } from '../src/orchestrator/delegate.ts';
-import { delegationMcpTools, mcpToolsOf } from '../src/mcp/run-tools.ts';
+import { delegationMcpTools, mcpToolsOf, mcpToolsText } from '../src/mcp/run-tools.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
 const loaded = committedAgents(resolveHome({}));
@@ -65,4 +65,22 @@ test('delegationMcp: none without the server or tools; the clearance within the 
   assert.equal(delegationMcp(env({}), { clearance: 'L0' }, 'coder', cardOf('coder'))?.clearance, 'L0');
   // A server that did not start: the step still gets it, and runs without it with an event (runClaudeStep).
   assert.equal(delegationMcp({ ...env({}), mcp: { server, url: undefined, dir } }, { clearance: 'L1' }, 'coder', cardOf('coder'))?.url, undefined);
+});
+
+test('the line of the brief names the tools given, and only those', () => {
+  const kb = mcpToolsText(['kb_search', 'kb_read']);
+  assert.match(kb, /`mcp__arianna__kb_search` and `mcp__arianna__kb_read`/);
+  assert.doesNotMatch(kb, /skill/);
+  assert.doesNotMatch(mcpToolsText(['kb_read']), /kb_search/);
+  const skills = mcpToolsText(['list_skills', 'get_skill']);
+  assert.match(skills, /`mcp__arianna__list_skills` and `mcp__arianna__get_skill`/);
+  assert.doesNotMatch(skills, /kb_/);
+  assert.equal(mcpToolsText(['list_skills', 'get_skill', 'kb_search', 'kb_read']).split('\n').length, 2);
+  assert.equal(mcpToolsText([]), '');
+});
+
+test("the Coder's own prompt no longer names the server's tools: a local or Codex run never reads them", () => {
+  const coder = loaded.get('coder');
+  assert.ok(coder !== undefined);
+  assert.doesNotMatch(coder.prompt, /mcp__arianna__/);
 });

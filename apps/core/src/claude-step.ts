@@ -23,6 +23,7 @@ import type { Sql } from './db/client.ts';
 import type { StepContext } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
+import { MCP_TOOLS_SOURCE, mcpToolsText } from './mcp/run-tools.ts';
 import type { McpServer } from './mcp/server.ts';
 import type { RunUsage } from './runs.ts';
 
@@ -251,9 +252,11 @@ async function runWith(sql: Sql, executor: ClaudeExecutor, step: StepContext, in
     return failed(error);
   }
 
+  // The tools of the server, told only to a run whose session is open (D-261): after the brief, our fixed text.
+  const brief: readonly BriefFragment[] = mcp === undefined ? input.brief : [...input.brief, { text: mcpToolsText(mcp.tools), label: 'L0', source: MCP_TOOLS_SOURCE }];
   const decision = await passGateway(
     sql,
-    input.brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source })),
+    brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source })),
     input.context,
     { kind: 'executor', id: 'claude', locality: 'cloud' },
     { ...ids, ...(input.summary === undefined ? {} : { summary: input.summary }), ...(input.names === undefined ? {} : { names: input.names }) },
