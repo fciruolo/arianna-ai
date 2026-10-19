@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.150.0] - 2026-10-20
+
 ### Aggiunto
 
 - Server MCP di Arianna: quando il Coder lavora su Claude Code può cercare e leggere da solo le note Pubbliche e Interne della base di conoscenza (mai quelle Private, mai le note dei progetti) e rileggere le skill che gli hai assegnato; ogni risposta passa dal gateway con una riga nel registro, chiave valida solo per quel lavoro (D-261, task 1.10).
