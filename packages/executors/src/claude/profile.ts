@@ -5,6 +5,8 @@
 // canary evals check them again.
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
+import { checkMcpTools, MCP_SERVER_NAME, mcpToolId, type McpToolName } from '../mcp.ts';
+
 /**
  * Built-in tools a run may be given. Bash runs inside the sandbox of
  * `claudeSettings` (D-050). Never WebFetch or WebSearch: they run outside the
@@ -28,8 +30,15 @@ export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
 /** What `--resume` takes: the session id the binary returned, never a credential. */
 export const SESSION_REF = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** No MCP server until Arianna's own, with the tools the orchestrator defines (1.10, D-050). */
+/** No MCP server, unless the run is given Arianna's own (`ProfileOptions.mcp`, 1.10, D-261). */
 const NO_MCP = JSON.stringify({ mcpServers: {} });
+
+/** Arianna's MCP server for one run (D-261): the file `prepareMcp` wrote, and the tools allowed of it. */
+export interface McpProfile {
+  /** Absolute path of the configuration file; it holds the token, the arguments only its path. */
+  config: string;
+  tools: readonly McpToolName[];
+}
 
 /** Absolute, real folders the sandbox rules name (see `claudeSettings`). */
 export interface SandboxPaths {
@@ -61,6 +70,8 @@ export interface ProfileOptions {
    * copy of a project's notes (D-166). Each must be readable in `sandbox` too.
    */
   addDirs?: readonly string[];
+  /** Arianna's MCP server (D-261); absent: no MCP server at all, as before. */
+  mcp?: McpProfile;
 }
 
 function checkFolders(name: string, folders: unknown): readonly string[] {
@@ -136,7 +147,16 @@ export function claudeSettings(paths: SandboxPaths): string {
  *   directory and refuses `bypassPermissions`; `--safe-mode` turns off CLAUDE.md,
  *   skills, installed plugins, hooks and custom agents; `--strict-mcp-config`
  *   with an empty `--mcp-config` drops every MCP server, the personal connectors
- *   included.
+ *   included. With Arianna's server (D-261) `--mcp-config` names its file
+ *   instead, still with `--strict-mcp-config`; its tools are added to
+ *   `--allowedTools` one by one, by exact name (`mcp__arianna__<tool>`, never
+ *   a wildcard), and not to `--tools`, which on 2.1.303 lists "the built-in
+ *   set" only: the server's tools exist because the server lists them, and
+ *   are allowed only by name. Not settled: the 2.1.303 binary, read with
+ *   `strings`, drops under `--safe-mode` every `--mcp-config` server whose
+ *   type is not `sdk` ("ignored (safe mode)"), so with both flags the server
+ *   would not connect and the `init` check stops the run (`mcp_servers`):
+ *   failing closed until a live run settles it (D-261).
  * - `--settings` carries the sandbox and the read block (`claudeSettings`).
  * - `--no-session-persistence` when the session must not be saved (D-136):
  *   never together with `--resume`.
@@ -157,6 +177,7 @@ export function claudeArgs(options: ProfileOptions): string[] {
   if (options.modelName !== undefined && !new RegExp(`^(claude-)?${options.model}(?![A-Za-z0-9])`).test(options.modelName)) {
     throw new TypeError(`claude: the model name is not of the ${options.model} family`);
   }
+  const mcp = checkMcp(options.mcp);
   const addDirs = checkFolders('addDirs', options.addDirs ?? []);
   for (const folder of addDirs) {
     if (!options.sandbox.readable.includes(folder)) throw new TypeError('claude: a folder given to the file tools must be readable in the sandbox');
@@ -173,14 +194,15 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--tools',
     tools.join(','),
   ];
-  if (tools.length > 0) args.push('--allowedTools', tools.join(','));
+  const allowed = [...tools, ...(mcp?.tools.map(mcpToolId) ?? [])];
+  if (allowed.length > 0) args.push('--allowedTools', allowed.join(','));
   args.push(
     '--permission-mode',
     'dontAsk',
     '--permission-prompts',
     'none',
     '--mcp-config',
-    NO_MCP,
+    mcp?.config ?? NO_MCP,
     '--strict-mcp-config',
     '--settings',
     claudeSettings(options.sandbox),
@@ -217,6 +239,18 @@ function checkTools(tools: readonly ClaudeTool[]): readonly ClaudeTool[] {
   return tools;
 }
 
+function checkMcp(mcp: McpProfile | undefined): McpProfile | undefined {
+  if (mcp === undefined) return undefined;
+  // Types do not hold at runtime; the path is a file, never a JSON string or a flag.
+  const given: unknown = mcp;
+  if (typeof given !== 'object' || given === null) throw new TypeError('claude: mcp must be an object');
+  const { config, tools } = given as Record<string, unknown>;
+  if (typeof config !== 'string' || !isAbsolute(config) || resolve(config) !== config || config === sep) {
+    throw new TypeError('claude: the MCP configuration must be an absolute, normalized file');
+  }
+  return { config, tools: checkMcpTools(tools) };
+}
+
 /** The only variables the binary inherits: it finds its login from HOME, and nothing else leaks in. */
 const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR'] as const;
 
@@ -226,7 +260,7 @@ const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR'] as const;
  * proxy, no `NODE_OPTIONS`. Non-essential traffic (telemetry, error reports,
  * updates) is switched off.
  */
-export function claudeEnv(from: NodeJS.ProcessEnv): Record<string, string> {
+export function claudeEnv(from: NodeJS.ProcessEnv, options: { mcp?: boolean } = {}): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of INHERITED) {
     const value = from[key];
@@ -234,6 +268,11 @@ export function claudeEnv(from: NodeJS.ProcessEnv): Record<string, string> {
   }
   env.LANG = 'en_US.UTF-8';
   env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  // With MCP tools the binary may defer them behind a `ToolSearch` tool of its
+  // own (tool search, on by default for the first-party API): one more tool,
+  // outside the closed list. `false` (a documented variable of Claude Code)
+  // loads them up front, so that `init` lists exactly the tools allowed (D-261).
+  if (options.mcp === true) env.ENABLE_TOOL_SEARCH = 'false';
   return env;
 }
 
@@ -249,6 +288,19 @@ export interface InitReport {
   plugins?: unknown;
 }
 
+/** None; or, with Arianna's server, that one alone and connected (other fields of the entry may come and go). */
+function mcpServersHold(servers: unknown[], arianna: boolean): boolean {
+  if (!arianna) return servers.length === 0;
+  const [server] = servers;
+  return (
+    servers.length === 1 &&
+    typeof server === 'object' &&
+    server !== null &&
+    (server as { name?: unknown }).name === MCP_SERVER_NAME &&
+    (server as { status?: unknown }).status === 'connected'
+  );
+}
+
 const isEmptyList = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.length === 0);
 
 /**
@@ -256,14 +308,20 @@ const isEmptyList = (value: unknown): boolean => value === undefined || (Array.i
  * The flags are the protection, this is the alarm: a newer binary that
  * ignored one of them would show it here, and the run is stopped.
  * Names only, never values: the result goes to logs.
+ *
+ * With `mcp` (D-261) the only server is Arianna's, connected, and the tools
+ * are the built-in ones plus exactly the server's tools allowed: another
+ * server, a server's tool not given (a `ToolSearch` that defers them
+ * included) or a server that failed to connect breaks the profile.
  */
-export function profileViolations(init: InitReport, expected: { cwd: string; tools: readonly ClaudeTool[] }): string[] {
+export function profileViolations(init: InitReport, expected: { cwd: string; tools: readonly ClaudeTool[]; mcp?: readonly McpToolName[] }): string[] {
   const violations: string[] = [];
   if (init.cwd !== expected.cwd) violations.push('cwd');
   const tools = Array.isArray(init.tools) ? [...(init.tools as unknown[])].map(String).sort() : undefined;
-  if (tools === undefined || tools.join(',') !== [...expected.tools].sort().join(',')) violations.push('tools');
+  const expectedTools = [...expected.tools, ...(expected.mcp ?? []).map(mcpToolId)].sort();
+  if (tools === undefined || tools.join(',') !== expectedTools.join(',')) violations.push('tools');
   // Required, not just empty: a binary that renamed the field would silence the alarm.
-  if (!Array.isArray(init.mcp_servers) || init.mcp_servers.length > 0) violations.push('mcp_servers');
+  if (!Array.isArray(init.mcp_servers) || !mcpServersHold(init.mcp_servers as unknown[], expected.mcp !== undefined)) violations.push('mcp_servers');
   if (init.permissionMode !== 'dontAsk') violations.push('permissionMode');
   // `none`: the subscription login. Any other source is an API key, billed apart (D-002).
   if (init.apiKeySource !== 'none') violations.push('apiKeySource');

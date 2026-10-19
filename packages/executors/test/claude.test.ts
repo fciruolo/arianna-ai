@@ -2,8 +2,8 @@
 // stream (fixtures/fake-claude.ts). The real binary runs in `pnpm eval:live`.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -19,6 +19,7 @@ import {
   createClaudeExecutor,
   nodeToolchain,
   openRepository,
+  prepareMcp,
   prepareWorkspace,
   profileViolations,
   type ClaudeEvent,
@@ -102,7 +103,7 @@ async function start(scenario: string, extra: Partial<ClaudeStart> = {}, options
 }
 
 const received = (path: string) =>
-  JSON.parse(readFileSync(join(path, '.fake-claude.json'), 'utf8')) as { argv: string[]; env: Record<string, string>; prompt: string };
+  JSON.parse(readFileSync(join(path, '.fake-claude.json'), 'utf8')) as { argv: string[]; env: Record<string, string>; prompt: string; mcpConfig?: unknown };
 
 async function failure(promise: Promise<unknown>): Promise<ClaudeError> {
   try {
@@ -533,6 +534,89 @@ describe('claude executor', () => {
   it('a binary that cannot start is a spawn error', async () => {
     const { run } = await start('ok', {}, { command: { file: join(HOME, 'no-such-binary'), args: [] } });
     assert.equal((await failure(run.result)).kind, 'spawn');
+  });
+});
+
+describe('claude executor with Arianna\'s MCP server (D-261)', () => {
+  const mcpDir = join(DATA, 'mcp');
+  const mcpToken = () => randomBytes(32).toString('base64url');
+  const prepared = (tools: readonly ('kb_search' | 'kb_read' | 'list_skills' | 'get_skill')[] = ['kb_search']) =>
+    prepareMcp(mcpDir, randomUUID(), { url: 'http://127.0.0.1:7421/mcp', token: mcpToken(), tools });
+
+  it('launches with the file of the run, allows its tools by name, and removes the file at the end', async () => {
+    const mcp = await prepared(['kb_search', 'list_skills']);
+    const config = readFileSync(mcp.path, 'utf8');
+    const { run, events, path } = await start('arianna-mcp-call', { mcp });
+    const result = await run.result;
+    assert.equal(result.text, 'found it');
+    const got = received(path);
+    // The binary read the file while the run lasted; the token only there, never in argv or the environment.
+    assert.deepEqual(got.mcpConfig, JSON.parse(config));
+    assert.equal(got.argv[got.argv.indexOf('--mcp-config') + 1], mcp.path);
+    assert.equal(got.argv[got.argv.indexOf('--tools') + 1], 'Read,Grep');
+    assert.equal(got.argv[got.argv.indexOf('--allowedTools') + 1], 'Read,Grep,mcp__arianna__kb_search,mcp__arianna__list_skills');
+    const bearer = /Bearer ([A-Za-z0-9_-]+)/.exec(config)?.[1] ?? '';
+    assert.ok(bearer.length >= 43);
+    assert.ok(!got.argv.some((arg) => arg.includes(bearer)) && !Object.values(got.env).some((value) => value.includes(bearer)));
+    assert.equal(got.env.ENABLE_TOOL_SEARCH, 'false');
+    // The call is reported by name: nothing of its arguments nor of its result.
+    assert.deepEqual(
+      events.filter((event) => event.type === 'tool'),
+      [{ type: 'tool', name: 'mcp__arianna__kb_search' }],
+    );
+    assert.ok(!JSON.stringify(events).includes('SECRET-'));
+    assert.equal(existsSync(mcp.path), false);
+  });
+
+  it('stops a run whose server failed or whose tools are deferred, and removes the file all the same', async () => {
+    for (const [scenario, field] of [
+      ['arianna-mcp-failed', 'mcp_servers'],
+      ['arianna-mcp-tool-search', 'tools'],
+    ] as const) {
+      const mcp = await prepared();
+      const error = await failure((await start(scenario, { mcp })).run.result);
+      assert.equal(error.kind, 'profile', scenario);
+      assert.deepEqual(error.violations, [field], scenario);
+      assert.equal(existsSync(mcp.path), false, scenario);
+    }
+  });
+
+  it('without the server nothing changes: empty configuration, no tool search variable', async () => {
+    const { run, path } = await start('ok');
+    await run.result;
+    const got = received(path);
+    assert.equal(got.argv[got.argv.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
+    assert.equal(got.env.ENABLE_TOOL_SEARCH, undefined);
+    assert.equal(got.mcpConfig, undefined);
+  });
+
+  it('refuses a configuration not made by prepareMcp, gone, or readable by the run, before spending the brief', async () => {
+    const { prepared: workspaceOf, path } = await workspace();
+    const check = (mcp: unknown) => executor().check({ workspace: workspaceOf, model: 'sonnet', tools: ['Read'], mcp: mcp as never });
+    const invalid = (error: unknown) => error instanceof ClaudeError && error.kind === 'invalid-options';
+    const made = await prepared();
+    // Positive: check leaves the file for the run.
+    await check(made);
+    assert.equal(existsSync(made.path), true);
+    await assert.rejects(check({ path: made.path, tools: ['kb_search'] }), invalid);
+    // Inside the workspace a file tool would read the token.
+    const inside = await prepareMcp(path, 'inside', { url: 'http://127.0.0.1:7421/mcp', token: mcpToken(), tools: ['kb_read'] });
+    await assert.rejects(check(inside), invalid);
+    // Gone, or a link put in its place.
+    const gone = await prepared();
+    rmSync(gone.path);
+    await assert.rejects(check(gone), invalid);
+    const linked = await prepared();
+    rmSync(linked.path);
+    symlinkSync(made.path, linked.path);
+    await assert.rejects(check(linked), invalid);
+    // A refused launch spends nothing, and still removes the file it was given.
+    const decision = brief('scenario: ok');
+    const refused = await failure(executor().start({ brief: decision, workspace: workspaceOf, model: 'sonnet', tools: ['Read'], mcp: inside }).result);
+    assert.equal(refused.kind, 'invalid-options');
+    assert.equal(existsSync(inside.path), false);
+    assert.equal((await executor().start({ brief: decision, workspace: workspaceOf, model: 'sonnet', tools: ['Read'], mcp: made }).result).text, 'ok');
+    assert.equal(existsSync(made.path), false);
   });
 });
 

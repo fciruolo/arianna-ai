@@ -2,6 +2,7 @@
 // Pure: the process is driven by run.ts. Shapes taken from real runs of
 // 2.1.288 (test/fixtures/claude-stream.jsonl); unknown types are ignored, so a
 // newer binary that adds messages does not break a run.
+import type { McpToolName } from '../mcp.ts';
 import { profileViolations, type ClaudeTool, type InitReport } from './profile.ts';
 import { bashCommandOf, rawTerminal, toolResultText } from './terminal.ts';
 
@@ -33,7 +34,8 @@ const CLAUDE_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
 
 /**
  * What a run reports while it works. Tool inputs are left out, names are
- * enough to follow it; the exceptions are a change to a file (`edit`, after
+ * enough to follow it (a call to Arianna's MCP server too, D-261: its name,
+ * never its arguments nor its result); the exceptions are a change to a file (`edit`, after
  * its `tool`), which the core turns into a live diff for the chat (D-117), and
  * a command run with Bash and what it printed (`command`, `command-output`),
  * whole up to MAX_RAW_TERMINAL_BYTES, for the terminal of the run (D-095,
@@ -155,7 +157,7 @@ export class ClaudeStream {
   result: StreamResult | undefined;
   /** When the subscription will take requests again, if a refusal said so. */
   resetsAt: Date | undefined;
-  readonly #expected: { cwd: string; tools: readonly ClaudeTool[]; sessionRef?: string };
+  readonly #expected: { cwd: string; tools: readonly ClaudeTool[]; mcp?: readonly McpToolName[]; sessionRef?: string };
   /** Usage per model response: a response can come in several messages with the same id. */
   readonly #responses = new Map<string, { in: number; out: number }>();
   #final: ClaudeUsage | undefined;
@@ -166,8 +168,11 @@ export class ClaudeStream {
   /** Whether text came in pieces since the last whole text block (D-249). */
   #partial = false;
 
-  /** `sessionRef`: the session a resume asked for; the binary must continue that one, not start another. */
-  constructor(expected: { cwd: string; tools: readonly ClaudeTool[]; sessionRef?: string }) {
+  /**
+   * `sessionRef`: the session a resume asked for; the binary must continue that one, not start another.
+   * `mcp`: the tools of Arianna's MCP server the run was given (D-261).
+   */
+  constructor(expected: { cwd: string; tools: readonly ClaudeTool[]; mcp?: readonly McpToolName[]; sessionRef?: string }) {
     this.#expected = expected;
   }
 
