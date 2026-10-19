@@ -305,8 +305,11 @@ test('answered: the counts first, the titles only after the «sì», up to the l
   const routine = await dueRoutine(1, ['todo'], { voiceMaxLabel: 'L1' });
   await runDue(env(), routine.id);
   const { call, greeting, token } = await answered(routine.conversationId);
-  assert.match(greeting, /sono Arianna\. È l’ora della tua routine\. Hai \d+ cose da fare\. Vuoi che ti legga i titoli\?$/);
+  assert.match(greeting, /sono Arianna\. È l’ora della tua routine\. Hai \d+ cose da fare\. Vuoi che ti legga i titoli\? Rispondimi: sì grazie, oppure no grazie\.$/);
   for (const title of ['Bolletta', 'Visita', 'Contratto']) assert.ok(!greeting.includes(title), title);
+  // The greeting said is in the chat of the routine too, as a message of the call (the captions come from there).
+  const greeted = (await listMessages(db().sql, routine.conversationId, { limit: 50 })).filter((message) => message.channel === 'voice');
+  assert.deepEqual(greeted.map((message) => [message.role, message.body, message.label]), [['assistant', greeting, 'L2']]);
 
   // An unclear answer asks again; then «sì» reads the titles up to Interno, the others counted.
   assert.equal((await calls.turn(call.id, token, 'come stai')).say, ROUTINE_CALL_TEXT.again);
@@ -319,6 +322,24 @@ test('answered: the counts first, the titles only after the «sì», up to the l
   const said = await listMessages(db().sql, routine.conversationId, { limit: 50 });
   assert.ok(said.some((message) => message.channel === 'voice' && message.role === 'user' && message.body === 'Sì, grazie'));
   assert.ok(said.some((message) => message.channel === 'voice' && message.role === 'assistant' && message.body.includes('Bolletta interna finta')));
+  await calls.end(call.id, 'hangup');
+  await settle();
+});
+
+test('a lone «sì» as Parakeet writes it («See ya.») reads the titles at once, and both stay in the chat', async () => {
+  await settle();
+  await createTask(db().sql, { title: 'Lettera pubblica finta', assignee: 'user', status: 'inbox', label: 'L0' });
+  const routine = await dueRoutine(1, ['todo']);
+  await runDue(env(), routine.id);
+  const { call, token } = await answered(routine.conversationId);
+  const yes = await calls.turn(call.id, token, 'See ya.');
+  assert.match(yes.say, /Lettera pubblica finta/);
+  const said = (await listMessages(db().sql, routine.conversationId, { limit: 50 })).filter((message) => message.channel === 'voice');
+  assert.deepEqual(
+    said.map((message) => message.role),
+    ['assistant', 'user', 'assistant'],
+  );
+  assert.equal(said[1]?.body, 'See ya.');
   await calls.end(call.id, 'hangup');
   await settle();
 });
@@ -390,8 +411,9 @@ test('the model reads only this call: never an earlier call, a summary written m
     assert.ok(!text.includes('Visita riservata finta'), 'the model read a private title');
     assert.ok(!text.includes('Resoconto di'));
   }
-  // What the code said after the «sì» is in what the model reads: only the public title.
+  // What the code said after the «sì» is in what the model reads: only the public title; and the greeting with its question.
   assert.ok(asked.some((request) => JSON.stringify(request.messages).includes('Pane pubblico finto')));
+  assert.ok(asked.some((request) => JSON.stringify(request.messages).includes('Vuoi che ti legga i titoli?')));
   await calls.end(call.id, 'hangup');
   asked.length = 0;
   await settle();

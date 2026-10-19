@@ -82,6 +82,8 @@ class MlxSTT(SegmentedSTTService):
         except ModelError as error:
             yield ErrorFrame(error=f"stt {error.code}")
             return
+        # Closed codes only, never the words: how long the segment was and whether the model wrote anything (D-259).
+        log.info("stt: %.1f s, %s", len(audio) / 2 / STT_RATE, "text" if text else "empty")
         if text:
             # Final: the whole segment is written at once, so the turn need not wait for more (D-073).
             yield TranscriptionFrame(text, self._user_id, time_now_iso8601(), Language.IT, finalized=True)
@@ -176,6 +178,8 @@ class CoreBrain(FrameProcessor):
         answered = False
         try:
             async with self._session.post(url, json={"text": words}, headers=headers, timeout=TURN_TIMEOUT) as response:
+                # The status only: a refused turn (4xx, 5xx) was said as «ho perso il filo» with nothing in the log (D-259).
+                log.info("turn: %d", response.status)
                 if response.status == 200:
                     answered = True
                     async for line in response.content:
@@ -189,6 +193,17 @@ class CoreBrain(FrameProcessor):
         # No answer (an error, or the core refused): ask to repeat. A superseded turn is a 200 without lines.
         if not answered:
             await self.push_frame(TTSSpeakFrame("Scusa, ho perso il filo. Puoi ripetere?"))
+
+
+def watch_turns(aggregator: Any) -> None:
+    """The user's turns in the log, by event only (D-259): a «sì» that never reached
+    the core is then told apart from one the voice did not hear or did not write."""
+    for event in ("on_user_turn_started", "on_user_turn_stopped", "on_user_turn_stop_timeout"):
+
+        def handler(*_args: Any, name: str = event.removeprefix("on_user_turn_")) -> None:
+            log.info("user turn: %s", name)
+
+        aggregator.add_event_handler(event, handler)
 
 
 def context_messages(context: Any) -> list[Any]:
@@ -245,6 +260,7 @@ class Call:
             user_turn_strategies=UserTurnStrategies(stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=TURN_SILENCE)]),
         )
         user, assistant = LLMContextAggregatorPair(context, user_params=user_params)
+        watch_turns(user)
         pipeline = Pipeline([transport.input(), stt, user, brain, tts, transport.output(), assistant])
         worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=False, enable_usage_metrics=False))
         self._worker = worker

@@ -27,7 +27,7 @@ const DATA: ReportData = {
 
 test('the greeting says the counts only, never a title, and asks before reading', () => {
   const greeting = routineGreeting(DATA, { kind: 'on-time' }, 'L2', ROME, NOW);
-  assert.equal(greeting.text, 'Buongiorno, sono Arianna. È l’ora della tua routine. Hai 6 cose da fare, 2 decisioni in attesa e 3 pensieri da riordinare. Vuoi che ti legga i titoli?');
+  assert.equal(greeting.text, 'Buongiorno, sono Arianna. È l’ora della tua routine. Hai 6 cose da fare, 2 decisioni in attesa e 3 pensieri da riordinare. Vuoi che ti legga i titoli? Rispondimi: sì grazie, oppure no grazie.');
   assert.equal(greeting.label, 'L2');
   assert.ok(greeting.asks);
   for (const item of DATA.todo?.shown ?? []) assert.ok(!greeting.text.includes(item.title));
@@ -88,6 +88,15 @@ test('the «sì» opens, the «no» closes, the rest is unclear', () => {
   assert.equal(gateAnswer('va bene, ciao'), 'no');
   assert.equal(gateAnswer('ciao'), 'no');
   assert.equal(gateAnswer('sì?'), 'unclear');
+});
+
+test('a «sì» as Parakeet writes it: with a capital and a stop, doubled, thanked, or heard as English or Russian (D-259)', () => {
+  for (const yes of ['Sì.', 'Sì!', 'Si', 'Sí.', 'sì sì', 'Sì, sì.', 'Sì grazie', 'Sì, grazie.', 'Sì, certo.', 'Certo!', 'Va bene!', 'Ok.']) assert.equal(gateAnswer(yes), 'yes', yes);
+  // Measured on a lone «Sì.» and «Sì!» of Kokoro, transcribed by Parakeet v3.
+  for (const heard of ['See ya.', 'See yeah.', 'Si é', 'Сиє.', 'Sia Arianna.']) assert.equal(gateAnswer(heard), 'yes', heard);
+  for (const no of ['No.', 'No', 'No, grazie.', 'No grazie!']) assert.equal(gateAnswer(no), 'no', no);
+  // Only the whole answer: the same sounds beside other words, or asked, are not a «sì».
+  for (const doubt of ['See ya?', 'see you', 'sia chiaro', 'see legally', 'Сиє, ciao', 'see the titles of the day', 'see', 'sia', 'see you', 'Sia.']) assert.notEqual(gateAnswer(doubt), 'yes', doubt);
 });
 
 test('the deadline and the hello as they are said; the labels of the voice', () => {

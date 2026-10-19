@@ -29,11 +29,12 @@ export function isVoiceLabel(value: unknown): value is Label {
 export type RoutineCallOpening = { kind: 'on-time' } | { kind: 'late'; due: Date } | { kind: 'retry' };
 
 export const ROUTINE_CALL_TEXT = {
-  question: 'Vuoi che ti legga i titoli?',
+  // «sì, grazie» and «no, grazie» on purpose: Parakeet hears a lone «sì» as English or Russian («See ya.», «Сиє.»), two words it writes right (D-259).
+  question: 'Vuoi che ti legga i titoli? Rispondimi: sì grazie, oppure no grazie.',
   inChat: 'Il resoconto completo è nella chat della routine.',
   nothing: 'Non c’è niente da segnalare.',
   no: 'Va bene: trovi tutto nella chat della routine. Ciao!',
-  again: 'Scusa, non ho capito: vuoi che ti legga i titoli? Dimmi sì o no.',
+  again: 'Scusa, non ho capito. Se vuoi i titoli dimmi: sì grazie. Altrimenti: no grazie.',
   end: 'Il resoconto completo è nella chat della routine. Vuoi altro?',
   /** The end of a delegation in a routine's call: the task read the whole chat, so its answer stays written. */
   delegatedDone: 'Ho finito: il risultato è nella chat della routine.',
@@ -170,6 +171,15 @@ const YES = new Set(['si', 'certo', 'certamente', 'ok', 'okay', 'dai', 'volentie
 const NO = new Set(['no', 'non', 'nessuno', 'niente', 'basta', 'dopo', 'stop', 'lascia', 'nope', 'ciao', 'arrivederci', 'addio']);
 /** Words that change nothing in a short answer («sì grazie», «va bene», «no grazie Arianna»). */
 const NEUTRAL = new Set(['grazie', 'pure', 'per', 'favore', 'allora', 'beh', 'ehm', 'mah', 'arianna', 'titoli', 'i', 'li', 'me', 'tutto', 'tutti', 'ora', 'adesso', 'stare', 'e', 'certo']);
+/**
+ * A lone «sì» as Parakeet v3 writes it (D-259): it guesses the language of a
+ * short segment and hears it as English or Russian. Measured on Kokoro's «Sì.»
+ * and «Sì!»: «See ya.», «See yeah.», «Si é», «Сиє.»; «Sì, Arianna.» as «Sia
+ * Arianna.» («Si é» is a «sì» already). Only these, measured, and only as the
+ * whole answer: «see ya» is a goodbye in English, taken as «sì» on purpose,
+ * since a user leaving in Italian says «ciao», which Parakeet writes right.
+ */
+const HEARD_YES = new Set(['see ya', 'see yeah', 'сиє', 'sia arianna']);
 
 /** Whether the token at `index` says yes: a yes word, or «va bene» (both words). */
 function yesAt(tokens: readonly string[], index: number): boolean {
@@ -199,6 +209,7 @@ export function gateAnswer(words: string): 'yes' | 'no' | 'unclear' {
     .split(/\s+/)
     .filter((token) => token !== '');
   if (tokens.length === 0 || tokens.length > MAX_ANSWER_WORDS) return 'unclear';
+  if (HEARD_YES.has(tokens.filter((token) => token !== 'grazie').join(' '))) return 'yes';
   // A no beside a yes word is unclear; beside «va bene» it is a no («no, va bene così», «va bene, ciao»).
   if (tokens.some((token) => NO.has(token))) return tokens.some((token) => YES.has(token)) ? 'unclear' : 'no';
   const yes = tokens.map((_, index) => yesAt(tokens, index));

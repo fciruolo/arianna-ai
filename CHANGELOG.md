@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Routine con la chiamata: un «sì» detto da solo, che il riconoscimento della voce scrive spesso in inglese o in russo («See ya.», «Сиє.»), ora apre la lettura dei titoli; la domanda chiede «sì grazie, oppure no grazie», due parole che la voce trascrive bene (D-259).
+- Routine con la chiamata: il saluto con i conteggi e la domanda restano nella chat della routine come parole della chiamata, e il modello della chiamata sa cosa ha chiesto (D-259).
+- Chiamate: il log della voce dice, senza le parole, quando inizia e finisce un tuo turno, se la trascrizione è vuota e come risponde il core, così un turno perso si ritrova (D-259).
+
 ## [0.148.0] - 2026-10-19
 
 ### Aggiunto

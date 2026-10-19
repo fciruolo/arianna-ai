@@ -954,6 +954,8 @@ export function createCalls(options: CallsOptions): Calls {
       }
       // A routine (D-259): the counts written by code, then the question; the model reads only this call, whatever happens.
       let routine: RoutineGate | undefined;
+      // The label of what the greeting of a routine says, to keep it in the chat once said.
+      let greetingLabel: Label = 'L0';
       if (reason === 'routine') {
         const [clock] = await sql<{ at: Date }[]>`SELECT now() AS at`;
         const since = clock?.at ?? new Date();
@@ -962,10 +964,18 @@ export function createCalls(options: CallsOptions): Calls {
           return undefined;
         });
         const said = script === undefined ? undefined : await allowSpoken(call, script.greeting.text, script.greeting.label, conversation, conversation.effectiveLabel);
-        if (script !== undefined && said !== undefined) greeting = said;
+        if (script !== undefined && said !== undefined) {
+          greeting = said;
+          greetingLabel = script.greeting.label;
+        }
         routine = { gate: script !== undefined && said !== undefined && script.asks && script.details !== null ? 'asked' : 'closed', details: script?.details ?? null, since, unclear: 0 };
       }
-      return connect(call, offer, (await greetingOf(call, conversation, greeting, speaker)).slice(0, 2000), speaker, routine);
+      const spoken = (await greetingOf(call, conversation, greeting, speaker)).slice(0, 2000);
+      const connected = await connect(call, offer, spoken, speaker, routine);
+      // A routine's call (D-259): what Arianna says stays in its chat as `voice` messages, the greeting with the counts and the
+      // question too (already through the gateway): the captions show it, and the model, which reads only this call, knows what it asked.
+      if (reason === 'routine') await insertReply(call, spoken, maxLabel(maxLabel(greetingLabel, conversation.effectiveLabel), speaker.kind === 'arianna' ? 'L0' : speaker.nameLabel)).catch((error: unknown) => options.onError?.(error));
+      return connected;
     },
 
     async decline(callId) {
