@@ -379,7 +379,7 @@ Il pericolo principale non è l'attacco da fuori, ma un agente che legge un cont
 | Azioni distruttive | Un agente cancella file o fa un push forzato | Sandbox e worktree, approvazione per le azioni irreversibili, backup provati |
 | Furto di credenziali | Una chiave finisce in un prompt o in un log | Vault dei segreti, i modelli non vedono mai le chiavi, redazione automatica nei log |
 | Accesso remoto abusivo | Qualcuno raggiunge il pannello da internet | Nessuna porta pubblica, solo VPN, autenticazione con passkey, token di sessione brevi |
-| Catena di fornitura | Un pacchetto, un server MCP o una skill installati contengono codice ostile | Versioni bloccate, solo componenti fidati, ogni server MCP in un container senza accesso a dati privati |
+| Catena di fornitura | Un pacchetto, un server MCP o una skill installati contengono codice ostile | Versioni bloccate, solo componenti fidati, ogni server MCP di terzi in un container senza accesso a dati privati (il server MCP di Arianna è il core stesso e fa uscire solo ciò che passa dal gateway, D-261) |
 | Costi fuori controllo | Un agente in loop consuma la quota o l'energia | Tetti di passi, tempo e costo per task, avvisi sul consumo |
 | Uso scorretto degli abbonamenti | Strumenti che riusano i token di Claude o ChatGPT | Solo i binari ufficiali non modificati, uso personale, nessun token estratto o salvato |
 | Perdita del server | Guasto o furto della macchina | Backup cifrati con copia fuori sede e ripristino provato |
