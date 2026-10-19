@@ -22,8 +22,11 @@ export const VOICE_SYSTEM_PROMPT = [
  * After the profile «Su di te» in a call (D-260), L0: the facts help to
  * understand the user, but whoever is near the phone hears what is said.
  */
-export const VOICE_PROFILE_RULE =
-  'Usa i fatti sull’utente qui sopra solo per capirlo: non dirli ad alta voce e non ripeterli se l’utente non te li chiede, perché chi è vicino al telefono sente.';
+export const VOICE_PROFILE_RULE = [
+  'I fatti qui sopra parlano dell’utente, non di te: se ne usi uno dagli del tu («vivi a…», «lavori come…»), mai «io vivo» o «sono».',
+  'Dillo ad alta voce solo se la domanda chiede proprio quel fatto (per esempio «dove vivo?» per la città); per ogni altra domanda, anche sul tempo, sui posti o sulla giornata, non nominare nessun fatto, perché chi è vicino al telefono sente.',
+  'Non conosci il tempo né le notizie di oggi: se te li chiedono, dillo e non inventare.',
+].join(' ');
 
 export const DELEGATION_PREFIX = 'DELEGA:';
 /**
