@@ -158,8 +158,13 @@ test('omlxSettingsChecks: oMLX settings inside data/, no key or MCP on the comma
     { id: 'i', command: ['llama-server', '--api-key', 'k'] },
     { id: 'j' },
   ]);
+  // No GGUF anywhere here: one passing check per oMLX server (the GGUF test is below).
   assert.deepEqual(
-    checks.map((check) => [check.id, check.ok]),
+    checks.filter((check) => check.id.endsWith('.gguf')).map((check) => [check.id, check.ok]),
+    ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'k'].map((id) => [`local.${id}.gguf`, true]),
+  );
+  assert.deepEqual(
+    checks.filter((check) => !check.id.endsWith('.gguf')).map((check) => [check.id, check.ok]),
     [
       ['local.a.flags', true],
       ['local.a.base-path', true],
@@ -242,11 +247,66 @@ test('omlxSettingsChecks reads the settings of oMLX 0.7.1: keyless inference, Sp
   assert.equal(result('local.g.settings'), true);
   assert.equal(result('local.h.settings'), false);
   assert.ok(!checks.some((check) => check.id.startsWith('local.i.')));
+  // A proxy flag alone is enough.
+  const proxyAlone = omlxSettingsChecks(home, data, [{ id: 'p', command: serve('clean', '--http-proxy', 'http://proxy.example:3128') }]);
+  assert.equal(proxyAlone.find((check) => check.id === 'local.p.flags')?.ok, false);
+  assert.match(proxyAlone.find((check) => check.id === 'local.p.flags')?.detail ?? '', /^remove --http-proxy:/);
+  // What the wrapper of the app runs is oMLX too; modules that only look like it are not.
+  const modules = omlxSettingsChecks(home, data, [
+    { id: 'm1', command: ['python3', '-m', 'omlx.cli', 'serve', '--base-path', 'data/keyless'] },
+    { id: 'm2', command: ['/Applications/oMLX.app/Contents/Resources/python/bin/python3.12', '-m', 'omlx.cli', 'serve', '--api-key', 'k'] },
+    { id: 'm3', command: ['python', '-m', 'omlx.cli', 'serve'] },
+    { id: 'n1', command: ['python3', '-m', 'omlx.client', 'serve', '--api-key', 'k'] },
+    { id: 'n2', command: ['python3', '-m', 'notomlx.cli', 'serve', '--api-key', 'k'] },
+    { id: 'n3', command: ['mypython3', '-m', 'omlx.cli', 'serve', '--api-key', 'k'] },
+    { id: 'n4', command: ['python3', 'omlx.cli', 'serve', '--api-key', 'k'] },
+  ]);
+  assert.deepEqual([...new Set(modules.map((check) => check.id.split('.')[1]))], ['m1', 'm2', 'm3']);
+  assert.equal(modules.find((check) => check.id === 'local.m1.settings')?.ok, false);
+  assert.equal(modules.find((check) => check.id === 'local.m2.flags')?.ok, false);
   // The log level is checked for the wrapper too.
   assert.deepEqual(
     omlxLogChecks([{ id: 'h', command: ['/Applications/oMLX.app/Contents/MacOS/omlx-cli', 'serve', '--log-level', 'trace'] }]).map((check) => check.ok),
     [false],
   );
+});
+
+test('omlxSettingsChecks fails on GGUF files where oMLX 0.7.1 finds them, which it would serve through Splash: a count, never a name (D-221)', () => {
+  const home = join(HOME, 'omlx-gguf');
+  const data = join(home, 'data');
+  const file = (path: string): void => {
+    mkdirSync(join(home, path, '..'), { recursive: true });
+    writeFileSync(join(home, path), 'x');
+  };
+  // MLX models only: safetensors, and names that merely contain gguf.
+  file('data/models/qwen-mlx/model.safetensors');
+  file('data/models/qwen-mlx/gguf-notes.txt');
+  mkdirSync(join(home, 'data/models/folder.gguf'), { recursive: true });
+  // GGUF files: at the root of a model folder, deeper, upper case, in another --model-dir, in gguf/ of --base-path.
+  file('data/models-gguf/secret-model/secret-model-Q4.gguf');
+  file('data/models-gguf/secret-model/split/part-00001-of-00002.GGUF');
+  file('data/more/other.gguf');
+  file('data/omlx-gguf/gguf/staged/staged.gguf');
+  // Without --model-dir oMLX looks in <base-path>/models.
+  file('data/omlx-default/models/a/a.gguf');
+  const serve = (...extra: string[]): string[] => ['omlx', 'serve', ...extra];
+  const checks = omlxSettingsChecks(home, data, [
+    { id: 'a', command: serve('--model-dir', 'data/models', '--base-path', 'data/omlx') },
+    { id: 'b', command: serve('--model-dir', 'data/models-gguf', '--base-path', 'data/omlx') },
+    { id: 'c', command: serve('--model-dir=data/models, data/more', '--base-path', 'data/omlx') },
+    { id: 'd', command: serve('--model-dir', 'data/models', '--base-path', 'data/omlx-gguf') },
+    { id: 'e', command: serve('--base-path', 'data/omlx-default') },
+    // Without --base-path the model folders are still checked.
+    { id: 'f', command: serve('--model-dir', 'data/models-gguf') },
+  ]);
+  const gguf = (id: string): { ok: boolean; detail: string } | undefined => checks.find((check) => check.id === `local.${id}.gguf`);
+  assert.deepEqual(
+    ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => gguf(id)?.ok),
+    [true, false, false, false, false, false],
+  );
+  assert.match(gguf('b')?.detail ?? '', /^2 GGUF files in the model folders/);
+  assert.match(gguf('c')?.detail ?? '', /^1 GGUF file in the model folders/);
+  assert.ok(!checks.some((check) => /secret|staged|other|part-/.test(check.detail)));
 });
 
 test('a model of data/guard/models left in data/models fails the doctor: oMLX would list it (D-203)', () => {

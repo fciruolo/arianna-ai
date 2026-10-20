@@ -124,12 +124,17 @@ function logLevelOf(command: readonly string[]): string | null | undefined {
  * Whether a command starts oMLX: `omlx serve`, by path or through a launcher
  * (`uvx omlx serve`), or the wrapper inside the macOS app
  * (`/Applications/oMLX.app/Contents/MacOS/omlx-cli serve`), which 0.7 no
- * longer links into /opt/homebrew/bin: a command naming it must not escape
+ * longer links into /opt/homebrew/bin, or what that wrapper runs
+ * (`python3 -m omlx.cli serve`): a command naming any of them must not escape
  * the checks.
  */
 function startsOmlx(command: readonly string[]): boolean {
   const serve = command.indexOf('serve');
-  return serve > 0 && command.slice(0, serve).some((arg) => /(^|\/)omlx(-cli)?$/.test(arg));
+  if (serve <= 0) return false;
+  const before = command.slice(0, serve);
+  if (before.some((arg) => /(^|\/)omlx(-cli)?$/.test(arg))) return true;
+  const module = before.findIndex((arg, index) => arg === '-m' && before[index + 1] === 'omlx.cli');
+  return module > 0 && before.slice(0, module).some((arg) => /(^|\/)python(3(\.\d+)?)?$/.test(arg));
 }
 
 /**
@@ -233,6 +238,30 @@ function omlxSettingsProblems(base: string): string[] {
   return problems;
 }
 
+/** How deep countGguf looks: model folders hold a model per folder, sometimes one level more. */
+const GGUF_DEPTH = 4;
+
+/**
+ * The GGUF files under `root` (oMLX 0.7 serves every one through Splash,
+ * even with no Splash setting, finding the launcher in the Homebrew folders
+ * by itself), by name only: their content is never read. A missing folder
+ * counts none.
+ */
+function countGguf(root: string, depth = 0): number {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.name.toLowerCase().endsWith('.gguf') && !entry.isDirectory()) count += 1;
+    else if (entry.isDirectory() && depth < GGUF_DEPTH) count += countGguf(join(root, entry.name), depth + 1);
+  }
+  return count;
+}
+
 /**
  * Where every local oMLX keeps its settings, and what they say (D-221): a
  * `--base-path` inside data/ (without it oMLX uses its home folder, which
@@ -257,18 +286,31 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
       };
       const base = flagValue(command, '--base-path');
       const id = `local.${endpoint.id}.base-path`;
+      // oMLX reads --model-dir as a comma-separated list; without it, <base-path>/models.
+      const modelDir = flagValue(command, '--model-dir');
+      const modelDirs = typeof modelDir === 'string' ? modelDir.split(',').map((dir) => dir.trim()).filter((dir) => dir !== '') : [];
+      const ggufCheck = (basePath: string | undefined): DoctorCheck => {
+        const roots = [...modelDirs.map((dir) => resolve(home, dir)), ...(basePath === undefined ? [] : [join(basePath, 'gguf'), ...(modelDirs.length === 0 ? [join(basePath, 'models')] : [])])];
+        const count = roots.reduce((total, root) => total + countGguf(root), 0);
+        return {
+          id: `local.${endpoint.id}.gguf`,
+          ok: count === 0,
+          detail: count === 0 ? 'no GGUF file in the model folders' : `${String(count)} GGUF file${count === 1 ? '' : 's'} in the model folders or in gguf/ of --base-path: oMLX would serve ${count === 1 ? 'it' : 'them'} through Splash, a separate program; remove ${count === 1 ? 'it' : 'them'}`,
+        };
+      };
       if (base === undefined || base === null) {
-        return [flags, { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
+        return [flags, ggufCheck(undefined), { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
       }
       // Through links too: data/omlx pointing at the home folder of oMLX is not inside data/.
       const path = existsSync(resolve(home, base)) ? realpathSync(resolve(home, base)) : resolve(home, base);
       const inside = relative(existsSync(data) ? realpathSync(data) : resolve(data), path);
       if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
-        return [flags, { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
+        return [flags, ggufCheck(undefined), { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
       }
       const problems = omlxSettingsProblems(path);
       return [
         flags,
+        ggufCheck(path),
         { id, ok: true, detail: `--base-path ${base}` },
         {
           id: `local.${endpoint.id}.settings`,
