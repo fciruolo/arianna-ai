@@ -66,6 +66,8 @@ export interface ClaudeStepMcp {
   clearance: Label;
   /** Not empty: a step with no tool gets no `mcp`. */
   tools: readonly McpToolName[];
+  /** For `web_fetch` (D-262): the addresses the user wrote in the request of the task (`userAddressesOf`). */
+  userAddresses?: readonly string[];
   /**
    * Whether an administrator manages Claude Code's settings on this machine
    * (`claudeManagedSettingsPresent`): their hooks and servers would run in a
@@ -201,7 +203,7 @@ async function openMcp(sql: Sql, step: StepContext, mcp: ClaudeStepMcp, timeoutM
   let token: string;
   try {
     const expiresAt = new Date(Date.now() + (timeoutMs ?? CLAUDE_DEFAULT_TIMEOUT_MS) + MCP_SESSION_MARGIN_MS);
-    ({ token } = mcp.server.open({ runId: step.runId, taskId: step.task.id, agent: mcp.agent, executor: 'claude', clearance: mcp.clearance, tools: mcp.tools, expiresAt }));
+    ({ token } = mcp.server.open({ runId: step.runId, taskId: step.task.id, agent: mcp.agent, executor: 'claude', clearance: mcp.clearance, tools: mcp.tools, expiresAt, ...(mcp.userAddresses === undefined ? {} : { userAddresses: mcp.userAddresses }) }));
   } catch {
     return without('session');
   }

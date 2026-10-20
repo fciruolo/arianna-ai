@@ -87,6 +87,10 @@ function checkInput(input: McpSessionInput): void {
   if (!isLabel(input.clearance) || !isAtMost(input.clearance, MCP_CEILING)) throw new McpSessionError('the clearance of an MCP session is at most L1');
   if (!Array.isArray(input.tools) || !input.tools.every(isMcpToolName)) throw new McpSessionError('unknown MCP tool');
   if (!(input.expiresAt instanceof Date) || Number.isNaN(input.expiresAt.getTime())) throw new McpSessionError('a session needs an expiry');
+  const addresses: unknown = input.userAddresses;
+  if (addresses !== undefined && (!Array.isArray(addresses) || addresses.length > 200 || !addresses.every((address) => typeof address === 'string' && address !== '' && address.length <= 2_000))) {
+    throw new McpSessionError("the user's addresses of a session are at most 200 strings");
+  }
 }
 
 export function createMcpServer(deps: McpServerDeps): McpServer {
@@ -193,7 +197,8 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       prune();
       if (sessions.has(input.runId)) throw new McpSessionError('this run already has an MCP session');
       const token = randomBytes(TOKEN_BYTES).toString('base64url');
-      sessions.set(input.runId, { input: Object.freeze({ ...input, tools: Object.freeze([...input.tools]) }), hash: hashOf(token), usage: { calls: 0, bytes: 0 }, messages: 0 });
+      const frozen = { ...input, tools: Object.freeze([...input.tools]), ...(input.userAddresses === undefined ? {} : { userAddresses: Object.freeze([...input.userAddresses]) }) };
+      sessions.set(input.runId, { input: Object.freeze(frozen), hash: hashOf(token), usage: { calls: 0, bytes: 0, pages: 0 }, messages: 0 });
       return { token };
     },
     revoke(runId) {

@@ -184,6 +184,7 @@ interface Forms {
   projects: ProjectValues[];
   endpoints: EndpointForm[];
   fetchSites: string[];
+  coderSites: string[];
 }
 
 function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: SettingsView['agentModels'], agentSkills: SettingsView['agentSkills']): Forms {
@@ -207,10 +208,11 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     projects: values.projects.map((project) => ({ ...project })),
     endpoints: endpointsForm(values.endpoints),
     fetchSites: [...(values.fetchSites ?? [])],
+    coderSites: [...(values.coderSites ?? [])],
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -388,6 +390,7 @@ async function prepare(section: PrivacySection): Promise<void> {
   if (section === 'projects') values.projects = current.projects.map((project) => ({ ...project }));
   if (section === 'endpoints') values.endpoints = endpointsBody(current.endpoints, view.value?.values?.endpoints);
   if (section === 'fetchSites') values.fetchSites = [...current.fetchSites];
+  if (section === 'coderSites') values.coderSites = [...current.coderSites];
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -641,6 +644,14 @@ function addSite(): void {
   if (!forms.value.fetchSites.includes(site)) forms.value.fetchSites.push(site);
   newSite.value = '';
 }
+// Sites whose pages the Coder on Claude reads by itself (D-262): the same form, kept as the host name.
+const newCoderSite = ref('');
+function addCoderSite(): void {
+  const site = fetchSiteOf(newCoderSite.value);
+  if (site === undefined || forms.value === null) return;
+  if (!forms.value.coderSites.includes(site)) forms.value.coderSites.push(site);
+  newCoderSite.value = '';
+}
 const newProject = ref<ProjectValues>({ name: '', path: '', label: 'L1' });
 const projectAddable = computed(() => {
   const name = newProject.value.name.trim();
@@ -859,6 +870,8 @@ const bar = computed<Bar | null>(() => {
       return exits('projects');
     case 'links':
       return exits('fetchSites');
+    case 'coder-sites':
+      return exits('coderSites');
     case 'servers':
       return exits('endpoints');
     default:
@@ -1406,6 +1419,28 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                   </div>
                 </form>
                 <p class="text-[13px] text-muted">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi».</p>
+              </SettingsCard>
+
+              <!-- Siti per il Coder (D-262): the sites whose pages the Coder on Claude reads by itself -->
+              <SettingsCard v-if="active === 'coder-sites'" id="coder-sites" :busy="locked">
+                <div v-if="forms.coderSites.length > 0" class="flex flex-wrap gap-1.5">
+                  <span v-for="(site, index) in forms.coderSites" :key="site" class="inline-flex items-center gap-1 rounded-full border border-line-strong py-0.5 pr-1.5 pl-3 text-[14px]">
+                    {{ site }}
+                    <button type="button" class="rounded-full p-0.5 text-muted hover:text-danger" :aria-label="`Togli ${site}`" @click="forms.coderSites.splice(index, 1)"><Icon name="close" :size="13" /></button>
+                  </span>
+                </div>
+                <p v-else class="rounded-[10px] border border-dashed border-line-strong p-3.5 text-[14px] text-muted">
+                  <b class="font-semibold text-ink">Nessun sito.</b> Il Coder legge solo le pagine il cui indirizzo gli scrivi tu nella richiesta. Aggiungi per esempio developer.mozilla.org se vuoi che possa consultare quella documentazione da solo.
+                </p>
+                <form :class="grid" @submit.prevent="addCoderSite">
+                  <FormField id="coder-site-new" label="Aggiungi un sito" :span="2">
+                    <input id="coder-site-new" v-model="newCoderSite" :class="input" placeholder="per esempio nodejs.org" autocomplete="off" />
+                  </FormField>
+                  <div class="flex items-end sm:col-span-1">
+                    <button type="submit" class="btn w-full px-3 py-1.5 text-[14px]" :disabled="fetchSiteOf(newCoderSite) === undefined">Aggiungi</button>
+                  </div>
+                </form>
+                <p class="text-[13px] text-muted">Vale anche per i sottodomini (docs.nodejs.org). Su questi siti l’indirizzo lo sceglie Claude: Arianna ferma i dati personali e Privati, ma un dato di lavoro Interno potrebbe finire nell’indirizzo e arrivare a quel sito. Metti solo siti di cui ti fidi, per esempio documentazione, non siti dove chiunque pubblica. Al massimo 10 pagine per lavoro, mai nelle conversazioni Private; un link trovato in una pagina, fuori da questo elenco, il Coder non lo può aprire.</p>
               </SettingsCard>
 
               <!-- Telegram: off by the user's choice (D-110, question 12), not in the settings index, so unreachable; kept to turn back on -->

@@ -55,6 +55,7 @@ import { attachmentsDir, pruneAttachments } from './attachments.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
 import { createMcpServer } from './mcp/server.ts';
+import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
@@ -500,6 +501,15 @@ const mcpServer = createMcpServer({
   gate: (payload, context, executor, meta) => passGateway(sql, payload, context, { kind: 'executor', id: executor, locality: 'cloud' }, meta),
   event: async ({ runId, taskId, agent, tool, decision, bytes }) => {
     await appendEvent(sql, { kind: 'mcp.call', label: 'L0', runId, taskId, agent, payload: { runId, tool, decision, bytes } }).catch(report);
+  },
+  // web_fetch for the Coder (D-262): every address through the gateway towards a page target, one event per page
+  // with its site and outcome (never the address nor the text), labelled as the session.
+  web: {
+    sites: () => settings.current().web.coderSites,
+    read: ({ address, consent, context, meta }) => readPage({ sql, address, context, consent, meta }),
+    event: async ({ runId, taskId, agent, site, outcome, consent, label }) => {
+      await appendEvent(sql, { kind: 'mcp.web_fetch', label, runId, taskId, agent, payload: { runId, site, outcome, consent } }).catch(report);
+    },
   },
   version: packageVersion(config.home) ?? '0.0.0',
 });

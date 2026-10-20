@@ -37,7 +37,7 @@ after(() => {
 
 describe('mcp configuration (D-261)', () => {
   it('names the tools of the server exactly, never with a wildcard', () => {
-    assert.deepEqual(MCP_TOOL_NAMES.map(mcpToolId), ['mcp__arianna__list_skills', 'mcp__arianna__get_skill', 'mcp__arianna__kb_search', 'mcp__arianna__kb_read']);
+    assert.deepEqual(MCP_TOOL_NAMES.map(mcpToolId), ['mcp__arianna__list_skills', 'mcp__arianna__get_skill', 'mcp__arianna__kb_search', 'mcp__arianna__kb_read', 'mcp__arianna__web_fetch']);
     assert.throws(() => mcpToolId('*' as never), /unknown tool/);
   });
 
@@ -234,6 +234,30 @@ describe('claude profile with Arianna\'s MCP server (D-261)', () => {
     assert.deepEqual(Object.keys(claudeEnv({ PATH: 'p' })).sort(), ['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'LANG', 'PATH']);
     assert.equal(claudeEnv({ PATH: 'p', ENABLE_TOOL_SEARCH: 'true', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '0' }).ENABLE_TOOL_SEARCH, undefined);
     assert.equal(claudeEnv({ PATH: 'p', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '0' }, { mcp: true }).CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
+  });
+
+  it('web_fetch (D-262): allowed by exact name only when given, and the init must list it exactly then', () => {
+    const page = { config: mcp.config, tools: ['kb_read', 'web_fetch'] as const };
+    assert.equal(value(claudeArgs({ model: 'sonnet', tools: ['Read'], sandbox: SANDBOX, mcp: page }), '--allowedTools'), 'Read,mcp__arianna__kb_read,mcp__arianna__web_fetch');
+    assert.ok(!(value(claudeArgs({ model: 'sonnet', tools: ['Read'], sandbox: SANDBOX, mcp }), '--allowedTools') ?? '').includes('web_fetch'));
+    const init = {
+      cwd: '/w',
+      tools: ['Read', 'mcp__arianna__kb_read', 'mcp__arianna__web_fetch'],
+      mcp_servers: [{ name: 'arianna', status: 'connected' }],
+      permissionMode: 'dontAsk',
+      apiKeySource: 'none',
+      skills: [],
+      slash_commands: [],
+      plugins: [{ path: 'builtin' }],
+      agents: [...CLAUDE_BUILTIN_AGENTS],
+      output_style: 'default',
+    };
+    assert.deepEqual(profileViolations(init, { cwd: '/w', tools: ['Read'], mcp: page.tools }), []);
+    // Listed by the binary without being given, or given and missing: the run stops.
+    assert.deepEqual(profileViolations(init, { cwd: '/w', tools: ['Read'], mcp: ['kb_read'] }), ['tools']);
+    assert.deepEqual(profileViolations({ ...init, tools: ['Read', 'mcp__arianna__kb_read'] }, { cwd: '/w', tools: ['Read'], mcp: page.tools }), ['tools']);
+    // The binary's own WebFetch is never the server's tool.
+    assert.deepEqual(profileViolations({ ...init, tools: [...init.tools, 'WebFetch'] }, { cwd: '/w', tools: ['Read'], mcp: page.tools }), ['tools']);
   });
 
   it('accepts Arianna\'s server alone and connected, with exactly the tools given', () => {

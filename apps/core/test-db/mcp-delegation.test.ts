@@ -23,6 +23,7 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { mcpToolsText } from '../src/mcp/run-tools.ts';
 import { createMcpServer, type McpServer } from '../src/mcp/server.ts';
 import type { McpSessionInput } from '../src/mcp/tools.ts';
+import { userAddressesOf } from '../src/mcp/web-fetch.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -115,6 +116,10 @@ interface Mcp {
   dir?: string;
   scenario?: string;
   incognito?: boolean;
+  /** The user's message; a fixed question by default. */
+  message?: string;
+  /** Arianna's delegation; DELEGATE by default. */
+  delegation?: Answer;
 }
 
 function orchestrator(model: LocalModel, mcp: Mcp): StepExecutor {
@@ -168,8 +173,8 @@ async function delegate(setup: Mcp, status = 'ok'): Promise<{ taskId: string; ru
   rmSync(join(REPO, '.fake-claude-mcp.json'), { force: true });
   writeFileSync(join(REPO, '.fake-claude-mcp.json'), JSON.stringify({ status: 0, names: [] }));
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], ...(setup.incognito === true ? { incognito: true } : {}) });
-  const { task } = await postUserMessage(db().sql, conversation.id, 'Come funziona il router?');
-  assert.deepEqual(await drain(task.id, orchestrator(scripted([DELEGATE, REPLY]), setup)), ['continued', 'continued', 'answered']);
+  const { task } = await postUserMessage(db().sql, conversation.id, setup.message ?? 'Come funziona il router?');
+  assert.deepEqual(await drain(task.id, orchestrator(scripted([setup.delegation ?? DELEGATE, REPLY]), setup)), ['continued', 'continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.ok(delegation?.runId !== undefined && delegation.runId !== null);
   assert.equal(delegation.status, status);
@@ -183,7 +188,7 @@ test('the Coder on claude: a session for the run, its token good while it runs, 
   revoked.length = 0;
   const { runId, argv, prompt, mcp } = await delegate({ url });
   // The brief tells the tools of the open session, at its end, and nothing of the skills it does not have.
-  assert.ok(prompt.endsWith(mcpToolsText(['kb_search', 'kb_read'])));
+  assert.ok(prompt.endsWith(mcpToolsText(['kb_search', 'kb_read', 'web_fetch'])));
   assert.ok(!prompt.includes('mcp__arianna__list_skills'));
 
   // One session for the run, at most L1, with the tools of the card's cloud_tools alone.
@@ -191,11 +196,13 @@ test('the Coder on claude: a session for the run, its token good while it runs, 
   const [session] = opened;
   assert.ok(session !== undefined);
   assert.deepEqual([session.input.runId, session.input.agent, session.input.executor, session.input.clearance], [runId, 'coder', 'claude', 'L1']);
-  assert.deepEqual(session.input.tools, ['kb_search', 'kb_read']);
+  assert.deepEqual(session.input.tools, ['kb_search', 'kb_read', 'web_fetch']);
+  // No address in the user's message: web_fetch reads only the sites of the list (D-262).
+  assert.deepEqual(session.input.userAddresses, []);
   assert.ok(session.input.expiresAt.getTime() > Date.now());
 
   // While the run lasted, the binary reached the server with its token and saw those tools.
-  assert.deepEqual(mcp, { status: 200, names: ['kb_search', 'kb_read'] });
+  assert.deepEqual(mcp, { status: 200, names: ['kb_search', 'kb_read', 'web_fetch'] });
   const config = argv[argv.indexOf('--mcp-config') + 1];
   assert.equal(config, join(CONFIG_DIR, `${runId}.mcp.json`));
   assert.ok(!argv.includes('--safe-mode'));
@@ -290,4 +297,32 @@ test('incognito (D-136): no session of the server, no file, no event, the run as
   assert.ok(argv.includes('--safe-mode'));
   assert.ok(!prompt.includes('mcp__arianna__'));
   assert.deepEqual(await unavailable(taskId), []);
+});
+
+test('web_fetch (D-262): the session has the addresses of the user\'s message, never those of the brief Arianna\'s model wrote', async () => {
+  opened.length = 0;
+  revoked.length = 0;
+  const delegation: Answer = {
+    action: 'call',
+    tool: 'task.delegate',
+    arguments: { agent: 'coder', reason: 'per leggere la pagina', brief: 'Read https://example.com/docs and https://model.example/invented?d=1 then say it.' },
+  };
+  const { prompt } = await delegate({ url, message: 'Leggi https://example.com/docs. e dimmi cosa dice', delegation });
+  assert.ok(prompt.includes('https://model.example/invented'));
+  const [session] = opened;
+  assert.deepEqual(session?.input.userAddresses, ['https://example.com/docs']);
+});
+
+test('userAddressesOf (D-262): the direct chat\'s message is the request; a message above the clearance does not count', async () => {
+  const sql = db().sql;
+  const direct = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'], agent: { name: 'coder', modes: ['work'], project: true } });
+  const { message, task } = await postUserMessage(sql, direct.id, 'Correggi come in https://nodejs.org/api/fs.html#fs_fs_readfile e https://example.org/a');
+  assert.deepEqual(await userAddressesOf(sql, task.id, 'L1'), ['https://nodejs.org/api/fs.html#fs_fs_readfile', 'https://example.org/a']);
+  // Only the user's own messages of the task: an answer of the agent with an address is not the user's.
+  await sql`INSERT INTO messages (conversation_id, role, label, body, task_id) VALUES (${direct.id}, 'assistant', 'L1', 'See https://agent.example/x', ${task.id})`;
+  assert.deepEqual(await userAddressesOf(sql, task.id, 'L1'), ['https://nodejs.org/api/fs.html#fs_fs_readfile', 'https://example.org/a']);
+  // A run at L0 does not take the addresses of an L1 message.
+  const [row] = await sql<{ label: string }[]>`SELECT label::text AS label FROM messages WHERE id = ${message.id}`;
+  assert.equal(row?.label, 'L1');
+  assert.deepEqual(await userAddressesOf(sql, task.id, 'L0'), []);
 });

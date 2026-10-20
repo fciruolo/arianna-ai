@@ -167,6 +167,8 @@ export interface SettingsValues {
   endpoints: EndpointValues[];
   /** `[capture] fetch_sites` (D-154): sites whose links are downloaded by themselves. Optional: an older core sends none. */
   fetchSites?: string[];
+  /** `[web] coder_sites` (D-262): sites whose pages the Coder on Claude reads by itself. Optional: an older core sends none. */
+  coderSites?: string[];
 }
 
 export interface CatalogModel {
@@ -211,6 +213,7 @@ export interface PrivacyChanges {
   projects?: { added: ProjectValues[]; removed: ProjectValues[]; changed: { name: string; before: ProjectValues; after: ProjectValues }[] };
   endpoints?: { added: EndpointValues[]; removed: EndpointValues[]; changed: { id: string; before: EndpointValues; after: EndpointValues }[] };
   fetchSites?: { before: string[]; after: string[] };
+  coderSites?: { before: string[]; after: string[] };
 }
 
 export interface PrivacyExits {
@@ -220,6 +223,8 @@ export interface PrivacyExits {
   endpoints: { id: string; url: string; command: string[] | null }[];
   /** Optional: an older core sends none. */
   fetchSites?: string[];
+  /** Optional: an older core sends none. */
+  coderSites?: string[];
 }
 
 export interface PrivacyProposal {
@@ -234,7 +239,7 @@ export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' |
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
-export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints' | 'fetchSites';
+export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints' | 'fetchSites' | 'coderSites';
 export type Section = OrdinarySection | PrivacySection;
 
 /**
@@ -281,6 +286,7 @@ export const SECTION_TEXT: Record<string, string> = {
   projects: 'Progetti',
   endpoints: 'Server locali',
   fetchSites: 'Domini approvati',
+  coderSites: 'Siti per il Coder',
   paths: 'percorsi',
   database: 'database',
   server: 'server',
@@ -609,6 +615,11 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
     for (const site of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `Link di ${site} scaricati da soli` });
     for (const site of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `Link di ${site} non più scaricati da soli` });
   }
+  if (changes.coderSites !== undefined) {
+    const { before, after } = changes.coderSites;
+    for (const site of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `Il Coder può leggere da solo le pagine di ${site}` });
+    for (const site of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `Il Coder non legge più da solo le pagine di ${site}` });
+  }
   if (lines.length === 0) lines.push({ kind: 'change', text: 'Cambia solo l’ordine o la forma nel file: le uscite restano le stesse.' });
   return lines;
 }
@@ -640,6 +651,14 @@ export function exitLines(exits: PrivacyExits): string[] {
       ? 'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».'
       : `Arianna scarica da sola i link di: ${sites.join(', ')} (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.`,
   );
+  if (exits.coderSites !== undefined) {
+    const coder = exits.coderSites;
+    lines.push(
+      coder.length === 0
+        ? 'Il Coder legge solo le pagine che gli scrivi tu nella richiesta.'
+        : `Il Coder legge da solo le pagine di: ${coder.join(', ')} (anche i sottodomini), oltre a quelle che gli scrivi tu; l’indirizzo lo sceglie Claude e può portare a quel sito dati di lavoro Interni, mai Privati.`,
+    );
+  }
   return lines;
 }
 
@@ -736,7 +755,7 @@ export function writeError(status: number, message: string): { text: string; rel
 export function sectionChanged(section: Section, form: unknown, base: unknown): boolean {
   // An agent added with the defaults is no change: compared as sent.
   if (section === 'personas') return !sameValue(personasBody(form as Record<string, PersonaForm>), personasBody(base as Record<string, PersonaForm>));
-  if (section === 'executors' || section === 'fetchSites') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
+  if (section === 'executors' || section === 'fetchSites' || section === 'coderSites') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
   if (section === 'telegram') {
     const sorted = (value: TelegramForm): TelegramForm => ({ enabled: value.enabled, chats: [...value.chats].sort((a, b) => a - b) });
     return !sameValue(sorted(form as TelegramForm), sorted(base as TelegramForm));

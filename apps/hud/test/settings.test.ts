@@ -447,6 +447,20 @@ test('the card "Domini approvati" (D-154): an address or a name becomes the host
   assert.equal(sectionChanged('fetchSites', ['a.com', 'b.com'], ['b.com', 'a.com']), false);
 });
 
+test('the card "Siti per il Coder" (D-262): changes and exits in plain words, the order is no change', () => {
+  assert.deepEqual(changeLines({ coderSites: { before: ['nodejs.org'], after: ['developer.mozilla.org'] } }), [
+    { kind: 'add', text: 'Il Coder può leggere da solo le pagine di developer.mozilla.org' },
+    { kind: 'remove', text: 'Il Coder non legge più da solo le pagine di nodejs.org' },
+  ]);
+  const exits = { executors: [], projects: [], telegram: null, endpoints: [], fetchSites: [] };
+  assert.equal(exitLines({ ...exits, coderSites: [] }).at(-1), 'Il Coder legge solo le pagine che gli scrivi tu nella richiesta.');
+  assert.match(exitLines({ ...exits, coderSites: ['nodejs.org'] }).at(-1) ?? '', /^Il Coder legge da solo le pagine di: nodejs\.org \(anche i sottodomini\)/);
+  // An older core sends no list: no line about it.
+  assert.doesNotMatch(exitLines(exits).join('\n'), /Coder/);
+  assert.equal(sectionChanged('coderSites', ['a.com', 'b.com'], ['b.com', 'a.com']), false);
+  assert.equal(sectionChanged('coderSites', ['a.com'], []), true);
+});
+
 test('rules of the projects (D-174): an empty template is none, the projects stay as written, the limit is the core’s', () => {
   const form = projectRulesForm({ template: null, projects: { site: '' } });
   assert.deepEqual(form, { template: '', projects: { site: '' } });

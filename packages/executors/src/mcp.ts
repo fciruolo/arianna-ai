@@ -19,8 +19,8 @@ const CONFIG_FILE = /^([a-z0-9][a-z0-9-]{0,63})\.mcp\.json$/;
 
 /** The server's name in the configuration: the binary prefixes its tools with it (`mcp__arianna__…`). */
 export const MCP_SERVER_NAME = 'arianna';
-/** Every tool the server may expose; a run gets a subset. All read only. */
-export const MCP_TOOL_NAMES = ['list_skills', 'get_skill', 'kb_search', 'kb_read'] as const;
+/** Every tool the server may expose; a run gets a subset. All read only (`web_fetch`, D-262: one public page, through the core's gateway). */
+export const MCP_TOOL_NAMES = ['list_skills', 'get_skill', 'kb_search', 'kb_read', 'web_fetch'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 
 export interface McpEndpoint {

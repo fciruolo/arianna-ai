@@ -50,6 +50,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     secretary: { enabled: true, morning: '09:00', afternoon: '14:30', evening: '18:30', days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
     appearance: { theme: 'base', seasonal: true },
     capture: { fetchSites: [] },
+    web: { coderSites: [] },
     sprites: { model: 'opus' },
     participants: { leaveAfter: 10 },
   });

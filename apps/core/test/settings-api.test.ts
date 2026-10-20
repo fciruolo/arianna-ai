@@ -142,7 +142,7 @@ describe('/api/settings', () => {
     // D-107 E: the account of the local models and the swap level, numbers and catalog ids only.
     assert.deepEqual(reply.body.memory, MEMORY);
     assert.ok(Array.isArray(reply.body.catalog));
-    assert.deepEqual(reply.body.privacy, ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites']);
+    assert.deepEqual(reply.body.privacy, ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites']);
   });
 
   it('POST: an ordinary change is written; a stale fingerprint is 409', async () => {
@@ -213,6 +213,25 @@ describe('/api/settings/privacy', () => {
     assert.deepEqual((confirmed.body.values as { fetchSites: string[] }).fetchSites, ['x.com', 'youtube.com']);
     assert.match(readFileSync(file, 'utf8'), /^\[capture\]\nfetch_sites = \["x\.com", "youtube\.com"\]$/m);
     assert.deepEqual(changes, [{ sections: ['fetchSites'], privacy: true, confirmation: proposal.body.id }]);
+  });
+
+  it('the sites the Coder reads by itself (D-262): a privacy section, prepared, shown and confirmed; bad names refused', async () => {
+    const read = await fingerprint();
+    // Not through an ordinary save: a site in the list is an exit.
+    assert.equal((await call('POST', '/api/settings', { fingerprint: read, values: { coderSites: ['nodejs.org'] } })).status, 400);
+    for (const bad of [['https://nodejs.org'], ['nodejs.org/api'], ['localhost'], ['NODEJS.ORG'], ['10.0.0.1'], 'nodejs.org', Array.from({ length: 101 }, (_, index) => `s${String(index)}.com`)]) {
+      assert.equal((await call('POST', '/api/settings/privacy/prepare', { fingerprint: read, values: { coderSites: bad } })).status, 400, JSON.stringify(bad).slice(0, 60));
+    }
+    const proposal = await call('POST', '/api/settings/privacy/prepare', { fingerprint: read, values: { coderSites: ['nodejs.org', 'developer.mozilla.org', 'nodejs.org'] } });
+    assert.equal(proposal.status, 200);
+    assert.deepEqual(proposal.body.changes, { coderSites: { before: [], after: ['nodejs.org', 'developer.mozilla.org'] } });
+    assert.deepEqual((proposal.body.exits as { coderSites: string[] }).coderSites, ['nodejs.org', 'developer.mozilla.org']);
+    assert.equal(readFileSync(file, 'utf8'), renderSettings(START));
+    const confirmed = await call('POST', '/api/settings/privacy/confirm', { id: proposal.body.id });
+    assert.equal(confirmed.status, 200);
+    assert.deepEqual((confirmed.body.values as { coderSites: string[] }).coderSites, ['nodejs.org', 'developer.mozilla.org']);
+    assert.match(readFileSync(file, 'utf8'), /^\[web\]\ncoder_sites = \["nodejs\.org", "developer\.mozilla\.org"\]$/m);
+    assert.deepEqual(changes, [{ sections: ['coderSites'], privacy: true, confirmation: proposal.body.id }]);
   });
 
   it('prepare refuses an ordinary section and no change (400); confirm refuses extra fields (400)', async () => {

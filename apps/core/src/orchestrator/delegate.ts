@@ -64,6 +64,7 @@ import { FACT_ASK_TEXT, factRequestNote, sharedFactFragments } from './profile-s
 import { assignedSkills, eventSkillId } from '../skills-catalog.ts';
 import { recordVariantDesign } from '../studio.ts';
 import { delegationMcpTools } from '../mcp/run-tools.ts';
+import { userAddressesOf } from '../mcp/web-fetch.ts';
 import type { McpServer } from '../mcp/server.ts';
 
 /**
@@ -1207,7 +1208,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // Arianna's MCP server for the run (D-261): the Coder alone, on claude alone; Codex has no MCP of hers. Each attempt opens
   // its own session and revokes it at its end (runClaudeStep), a new start after a lost session included.
   // Never in incognito (D-136): no session, no file, no event, nothing of the run left behind.
-  const mcp = plan.executor === 'claude' && persistSession ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
+  const tooled = plan.executor === 'claude' && persistSession ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
+  // web_fetch (D-262): the addresses the user wrote in the request, never those of the brief Arianna's model wrote.
+  const mcp = tooled?.tools.includes('web_fetch') === true ? { ...tooled, userAddresses: await userAddressesOf(sql, task.id, tooled.clearance) } : tooled;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,

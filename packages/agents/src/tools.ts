@@ -112,8 +112,12 @@ export function toolSpec(id: ToolId): ToolSpec {
  * run's clearance (never above L1), each answer through the gateway. Apart
  * from `tools`, which the local steps use: a card listing them here does not
  * give the knowledge base to its local steps, nor the other way round.
+ * `web.fetch` (D-262) reads one public page through the core: only an
+ * address the user wrote in the request or a site of `[web] coder_sites`,
+ * each address through the gateway; the run already opens untrusted content
+ * and external communication by being in the cloud.
  */
-export const CLOUD_TOOLS = ['kb.search', 'kb.read'] as const satisfies readonly ToolId[];
+export const CLOUD_TOOLS = ['kb.search', 'kb.read', 'web.fetch'] as const satisfies readonly ToolId[];
 export type CloudToolId = (typeof CLOUD_TOOLS)[number];
 
 export function isCloudToolId(value: unknown): value is CloudToolId {

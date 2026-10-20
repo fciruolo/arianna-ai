@@ -178,6 +178,16 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Quando salvi un link di questi siti in Pensieri, Arianna scarica la pagina e il modello del Mac la riassume. Il sito riceve solo l’indirizzo del link.',
         example: 'con x.com nell’elenco, un post salvato diventa «Mario annuncia la nuova versione del suo tema, uscita il 3 novembre».',
       },
+      // Public pages the Coder on Claude reads by itself (D-262).
+      {
+        id: 'coder-sites',
+        slug: 'siti-per-il-coder',
+        title: 'Siti che il Coder può leggere',
+        behaviour: 'confirm',
+        privacy: true,
+        lead: 'Quando lavora con Claude, il Coder può leggere una pagina web solo se l’indirizzo glielo scrivi tu nella richiesta, oppure se è di uno di questi siti. Ogni pagina passa dal controllo di Arianna e resta nel registro.',
+        example: 'con nodejs.org nell’elenco, il Coder può aprire da solo la documentazione di Node mentre corregge il tuo progetto, senza che tu gli incolli il link.',
+      },
     ],
   },
   {
@@ -305,6 +315,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   'project-rules': ['projectRules'],
   servers: ['endpoints'],
   links: ['fetchSites'],
+  'coder-sites': ['coderSites'],
 };
 
 /** A section holds edits not saved in any of its parts. */

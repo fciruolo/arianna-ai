@@ -93,6 +93,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('secretary') ? ['secretary'] : []),
       ...(changed('appearance') ? ['appearance'] : []),
       ...(changed('capture') ? ['capture'] : []),
+      ...(changed('web') ? ['web'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),
