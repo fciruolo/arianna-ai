@@ -1210,7 +1210,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // Never in incognito (D-136): no session, no file, no event, nothing of the run left behind.
   const tooled = plan.executor === 'claude' && persistSession ? delegationMcp(env, task, delegation.agent, agent.card) : undefined;
   // web_fetch (D-262): the addresses the user wrote in the request, never those of the brief Arianna's model wrote.
-  const mcp = tooled?.tools.includes('web_fetch') === true ? { ...tooled, userAddresses: await userAddressesOf(sql, task.id, tooled.clearance) } : tooled;
+  // Not readable: none, the listed sites only (as any other MCP failure, the run goes on).
+  const mcp = tooled?.tools.includes('web_fetch') === true ? { ...tooled, userAddresses: await userAddressesOf(sql, task.id, tooled.clearance).catch(() => []) } : tooled;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,

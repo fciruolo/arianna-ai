@@ -95,10 +95,24 @@ describe('readPage', () => {
   });
 });
 
+describe('readPage, a post of X on a listed site', () => {
+  it('reads the post through its oEmbed; another site after it stays refused', async () => {
+    const consent: PageConsent = { from: 'sites', sites: ['x.com'] };
+    const post = 'https://x.com/someone/status/123';
+    const oembed = `https://publish.twitter.com/oembed?url=${encodeURIComponent(post)}`;
+    const read = (hops: string[]) => readPage({ sql: fakeSql([]), address: post, context: createContext('L1', 'L1'), consent, fetchLink: hopping(hops) });
+    assert.equal((await read([oembed])).ok, true);
+    assert.deepEqual(await read([oembed, 'https://example.net/?q=Rossi']), { ok: false, reason: 'blocked' });
+  });
+});
+
 describe('redirectConsent', () => {
   it('keeps public and sites, turns user into the site of the address', () => {
     assert.deepEqual(redirectConsent({ from: 'public' }, 'https://a.example/'), { from: 'public' });
     assert.deepEqual(redirectConsent({ from: 'sites', sites: ['b.example'] }, 'https://a.example/'), { from: 'sites', sites: ['b.example'] });
+    // A post of X on a listed site is read through its oEmbed: publish.twitter.com joins the list for the redirects only.
+    assert.deepEqual(redirectConsent({ from: 'sites', sites: ['x.com'] }, 'https://x.com/a/status/1'), { from: 'sites', sites: ['x.com', 'publish.twitter.com'] });
+    assert.deepEqual(redirectConsent({ from: 'sites', sites: ['x.com'] }, 'https://x.com/a'), { from: 'sites', sites: ['x.com'] });
     assert.deepEqual(redirectConsent({ from: 'user', addresses: ['https://www.a.example/x'] }, 'https://www.a.example/x'), { from: 'sites', sites: ['a.example'] });
     assert.deepEqual(redirectConsent({ from: 'user', addresses: ['https://x.com/a/status/1'] }, 'https://x.com/a/status/1'), { from: 'sites', sites: ['x.com', 'publish.twitter.com'] });
   });

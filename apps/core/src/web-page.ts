@@ -29,7 +29,9 @@ function addressFragment(address: string, label: Label) {
 
 /** The consent for the redirects of a first address allowed with `consent`. */
 export function redirectConsent(consent: PageConsent, first: string): PageConsent {
-  if (consent.from !== 'user') return consent;
+  if (consent.from === 'public') return consent;
+  // A post of X on a listed site: its oEmbed too, the only way it is read.
+  if (consent.from === 'sites') return xPostUrl(first) === undefined || consent.sites.includes('publish.twitter.com') ? consent : { from: 'sites', sites: [...consent.sites, 'publish.twitter.com'] };
   const site = siteOf(first);
   const sites = site === undefined ? [] : [site];
   if (xPostUrl(first) !== undefined) sites.push('publish.twitter.com');

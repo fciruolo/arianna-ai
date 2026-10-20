@@ -2,6 +2,7 @@ import { TOOL_ARGS, validate, type JsonSchema } from '@arianna/agents';
 import { MCP_TOOL_NAMES, type McpToolName } from '@arianna/executors';
 import { CATALOG_SOURCE, createContext, isAtMost, isMcpKbPath, markCatalogText, maxLabel, MCP_CEILING, recordRead, spendAllowed, type Context, type Decision, type Label, type Labeled } from '@arianna/policy';
 
+import { siteOf } from '../link-fetch.ts';
 import { MAX_READ } from '../orchestrator/tools.ts';
 import type { Kb } from '../orchestrator/kb.ts';
 import { ownSkillRefusal, type SkillListItem, type SkillText } from '../skills-catalog.ts';
@@ -274,7 +275,7 @@ async function webFetch(session: McpSessionInput, usage: RunUsage, args: Record<
     return { refused: true, text: NOT_ALLOWED_TEXT };
   }
   // The site the user wrote, or the listed site that covered it: never a subdomain the model chose, which may carry data.
-  const site = consent.from === 'sites' ? (consent.sites.find((listed) => onSite(address, listed)) ?? null) : new URL(address).hostname.toLowerCase().replace(/^www\./, '');
+  const site = consent.from === 'sites' ? (consent.sites.find((listed) => onSite(address, listed)) ?? null) : (siteOf(address) ?? null);
   if (!read.ok) {
     event(site, read.reason, from);
     return { refused: true, text: read.reason === 'blocked' ? ADDRESS_BLOCKED_TEXT : `${PAGE_FAILED_TEXT} (${read.reason}).` };
