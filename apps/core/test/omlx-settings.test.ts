@@ -72,6 +72,47 @@ test('an unreadable settings.json, a command that is not oMLX and a --base-path 
   assert.equal(existsSync(join(data, 'settings.json')), false);
 });
 
+test('links count as outside data/, dangling or not, and a linked settings.json is never read nor replaced (D-263)', () => {
+  const home = join(HOME, 'links');
+  const data = join(home, 'data');
+  mkdirSync(join(data, 'real'), { recursive: true });
+  mkdirSync(join(home, 'outside'), { recursive: true });
+  symlinkSync(join(home, 'outside'), join(data, 'linked'));
+  symlinkSync(join(data, 'real'), join(data, 'inner-link'));
+  symlinkSync(join(home, 'nowhere'), join(data, 'dangling'));
+  // A folder not created yet under a link, a dangling link and one under it, a link that stays inside data/.
+  for (const base of ['data/linked/not-yet', 'data/dangling', 'data/dangling/omlx', 'data/inner-link']) {
+    assert.equal(ensureOmlxHfCacheOff(home, data, serve(base)), 'outside-data', base);
+  }
+  assert.equal(existsSync(join(home, 'nowhere')), false);
+  assert.deepEqual(readdirSync(join(home, 'outside')), []);
+  assert.deepEqual(readdirSync(join(data, 'real')), []);
+  // A folder not there yet under a real one is fine.
+  assert.equal(ensureOmlxHfCacheOff(home, data, serve('data/real/not-yet')), 'written');
+  // settings.json as a link to a file outside data/: refused, the target untouched.
+  mkdirSync(join(data, 'omlx'), { recursive: true });
+  writeFileSync(join(home, 'outside', 'target.json'), '{"huggingface":{"hf_cache_enabled":true}}');
+  symlinkSync(join(home, 'outside', 'target.json'), join(data, 'omlx', 'settings.json'));
+  assert.equal(ensureOmlxHfCacheOff(home, data, serve('data/omlx')), 'unreadable');
+  assert.equal(readFileSync(join(home, 'outside', 'target.json'), 'utf8'), '{"huggingface":{"hf_cache_enabled":true}}');
+  // A folder named settings.json is not a file either.
+  mkdirSync(join(data, 'dir', 'settings.json'), { recursive: true });
+  assert.equal(ensureOmlxHfCacheOff(home, data, serve('data/dir')), 'unreadable');
+});
+
+test('a settings.json that cannot be written throws, and leaves no temporary file (D-263)', { skip: process.getuid?.() === 0 }, () => {
+  const home = join(HOME, 'read-only');
+  const data = join(home, 'data');
+  mkdirSync(join(data, 'omlx'), { recursive: true });
+  chmodSync(join(data, 'omlx'), 0o500);
+  try {
+    assert.throws(() => ensureOmlxHfCacheOff(home, data, serve('data/omlx')));
+    assert.deepEqual(readdirSync(join(data, 'omlx')), []);
+  } finally {
+    chmodSync(join(data, 'omlx'), 0o700);
+  }
+});
+
 test('startsOmlx: omlx, the wrapper of the app and python -m omlx.cli; look-alikes are not oMLX', () => {
   assert.equal(startsOmlx(['omlx', 'serve']), true);
   assert.equal(startsOmlx(['/Applications/oMLX.app/Contents/MacOS/omlx-cli', 'serve']), true);

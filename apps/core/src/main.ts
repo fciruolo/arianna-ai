@@ -373,6 +373,7 @@ const localServers = createLocalServers({
       event.type === 'state' ? event.state
       : event.type === 'error' ? `error ${event.message}`
       : event.type === 'open' ? 'open: a server started without the key (D-221) answers on its port; stop it, then "Riavvia oMLX"'
+      : event.type === 'refused' ? `not started: ${event.reason} (D-263); pnpm arianna:doctor says what`
       : event.type;
     console.log(`local ${event.endpoint}: ${detail}`);
     appendEvent(sql, { kind: 'local.server', label: 'L0', payload: { ...event } }).catch(report);

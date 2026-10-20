@@ -298,6 +298,22 @@ test('omlxSettingsChecks wants the Hugging Face cache of oMLX explicitly off; a 
   );
   assert.match(check('local.b.settings')?.detail ?? '', /huggingface\.hf_cache_enabled: reset them \(restarting oMLX from Arianna turns the Hugging Face cache off\)$/);
   assert.match(check('local.e.settings')?.detail ?? '', /^no settings\.json yet: the core writes it/);
+  // A settings.json that is a link is never read; a --base-path under a link, or a dangling one, is outside data/.
+  mkdirSync(join(home, 'outside'), { recursive: true });
+  writeFileSync(join(home, 'outside', 'target.json'), JSON.stringify({ huggingface: { hf_cache_enabled: false } }));
+  mkdirSync(join(data, 'linked-file'), { recursive: true });
+  symlinkSync(join(home, 'outside', 'target.json'), join(data, 'linked-file', 'settings.json'));
+  symlinkSync(join(home, 'outside'), join(data, 'linked-dir'));
+  symlinkSync(join(home, 'nowhere'), join(data, 'dangling'));
+  const links = omlxSettingsChecks(home, data, [
+    { id: 'l', command: serve('linked-file') },
+    { id: 'm', command: serve('linked-dir/not-yet') },
+    { id: 'n', command: serve('dangling') },
+  ]);
+  assert.equal(links.find((entry) => entry.id === 'local.l.settings')?.ok, false);
+  assert.match(links.find((entry) => entry.id === 'local.l.settings')?.detail ?? '', /settings\.json is a link or not a regular file/);
+  assert.equal(links.find((entry) => entry.id === 'local.m.base-path')?.ok, false);
+  assert.equal(links.find((entry) => entry.id === 'local.n.base-path')?.ok, false);
   assert.equal(check('local.a.flags')?.ok, true);
   assert.equal(check('local.f.flags')?.ok, false);
   assert.match(check('local.f.flags')?.detail ?? '', /^remove --hf-cache:/);

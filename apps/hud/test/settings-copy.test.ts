@@ -45,5 +45,8 @@ test('a server Arianna cannot restart says where to do it; a broken one says wha
   assert.equal(serverDown(server()), undefined);
   assert.match(serverDown(server({ id: 'voice', state: 'down' })) ?? '', /le chiamate non partono/);
   assert.match(serverDown(server({ state: 'failed' })) ?? '', /modelli sul Mac non rispondono/);
+  // D-263: not started by the core, and why.
+  assert.match(serverDown(server({ state: 'failed', refused: 'omlx-settings-unreadable' })) ?? '', /non è partito: il suo file settings\.json/);
+  assert.match(serverDown(server({ state: 'failed', refused: 'omlx-settings-unwritable' })) ?? '', /non riesce a scrivere il suo settings\.json/);
   for (const text of [restartBlocker(server({ managed: false })), serverDown(server({ state: 'down' }))]) assert.doesNotMatch(text ?? '', /nucleo/);
 });

@@ -189,6 +189,8 @@ export interface LocalServerStatus {
   managed: boolean;
   adopted: boolean;
   state: WatchdogState;
+  /** Why the core did not start it (D-263): a fixed code. */
+  refused?: string;
 }
 
 export interface SettingsView {

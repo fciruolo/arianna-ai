@@ -8,7 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { arch, platform, totalmem } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { flagValue, omlxBaseInsideData, startsOmlx } from './omlx-settings.ts';
+import { flagValue, omlxBaseInsideData, plainFileOrMissing, startsOmlx } from './omlx-settings.ts';
 import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type ModelCatalog, type Project } from '@arianna/config';
 
 import type { DoctorCheck } from './doctor.ts';
@@ -179,7 +179,10 @@ function isSet(value: unknown): boolean {
 function omlxSettingsProblems(base: string): string[] {
   const problems: string[] = [];
   const settingsFile = join(base, 'settings.json');
-  if (existsSync(settingsFile)) {
+  const settingsKind = plainFileOrMissing(settingsFile);
+  // A link could point anywhere: never read through it (D-263).
+  if (settingsKind === 'other') return ['settings.json is a link or not a regular file'];
+  if (settingsKind === 'file') {
     const data = readJsonObject(settingsFile);
     if (data === null) return ['settings.json cannot be read'];
     const section = (name: string): Record<string, unknown> => {
@@ -199,7 +202,9 @@ function omlxSettingsProblems(base: string): string[] {
     if (section('huggingface').hf_cache_enabled !== false) problems.push('huggingface.hf_cache_enabled');
   }
   const modelsFile = join(base, 'model_settings.json');
-  if (existsSync(modelsFile)) {
+  const modelsKind = plainFileOrMissing(modelsFile);
+  if (modelsKind === 'other') return [...problems, 'model_settings.json is a link or not a regular file'];
+  if (modelsKind === 'file') {
     const data = readJsonObject(modelsFile);
     if (data === null) return [...problems, 'model_settings.json cannot be read'];
     const models = typeof data.models === 'object' && data.models !== null ? Object.values(data.models as Record<string, unknown>) : [];
@@ -287,7 +292,7 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
           ok: problems.length === 0,
           detail:
             problems.length === 0
-              ? existsSync(join(path, 'settings.json'))
+              ? plainFileOrMissing(join(path, 'settings.json')) === 'file'
                 ? 'settings without skipped key, keyless inference, proxy, MCP, cluster or external engine, Hugging Face cache off'
                 : 'no settings.json yet: the core writes it, with the Hugging Face cache off, before it starts oMLX'
               : `oMLX settings in ${base} set ${problems.join(', ')}: reset them${problems.includes('huggingface.hf_cache_enabled') ? ' (restarting oMLX from Arianna turns the Hugging Face cache off)' : ''}`,

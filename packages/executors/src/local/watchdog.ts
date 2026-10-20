@@ -31,7 +31,9 @@ export type WatchdogEvent =
   | { type: 'error'; endpoint: string; message: string }
   | { type: 'exit'; endpoint: string; pid: number; code: number | null; signal: string | null; expected: boolean }
   | { type: 'restart'; endpoint: string; reason: RestartReason; attempt: number }
-  | { type: 'gave-up'; endpoint: string; restarts: number; windowMs: number };
+  | { type: 'gave-up'; endpoint: string; restarts: number; windowMs: number }
+  /** `beforeLaunch` refused to start the server; `reason` is a fixed code, never a path or data. State `failed`. */
+  | { type: 'refused'; endpoint: string; reason: string };
 
 export type RestartReason = 'exit' | 'unhealthy' | 'startup-failed';
 
@@ -61,6 +63,13 @@ export interface WatchdogOptions {
    * anybody on loopback could read what the core sends it.
    */
   refuseOpen?: boolean;
+  /**
+   * Runs before every launch of `command`, the first one and each restart:
+   * a returned code (fixed text, never a path or data) refuses the launch,
+   * with event `refused` and state `failed`; a throw counts as the code
+   * `before-launch-error`. Not run for a server that is adopted.
+   */
+  beforeLaunch?: () => string | undefined;
   /** File that receives the server's stdout and stderr; discarded otherwise. Logs may contain prompts: keep it in data/. */
   logFile?: string;
   intervalMs?: number;
@@ -84,8 +93,8 @@ const STARTUP_POLL_MS = 250;
 export class Watchdog {
   readonly id: string;
   readonly #url: string;
-  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen'>> &
-    Pick<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen'>;
+  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen' | 'beforeLaunch'>> &
+    Pick<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders' | 'refuseOpen' | 'beforeLaunch'>;
 
   #state: WatchdogState = 'idle';
   #running = false;
@@ -266,6 +275,18 @@ export class Watchdog {
     if (file === undefined) return;
     this.#needsLaunch = false;
     this.#failures = 0;
+    let refusal: string | undefined;
+    try {
+      refusal = this.#options.beforeLaunch?.();
+    } catch {
+      refusal = 'before-launch-error';
+    }
+    if (refusal !== undefined) {
+      this.#running = false;
+      this.#emit({ type: 'refused', endpoint: this.id, reason: refusal });
+      this.#setState('failed');
+      return;
+    }
     this.#setState('starting');
 
     const log = this.#options.logFile === undefined ? undefined : openSync(this.#options.logFile, 'a');
