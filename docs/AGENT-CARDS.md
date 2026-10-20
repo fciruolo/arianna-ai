@@ -32,7 +32,7 @@ Regole di validazione (task 1.9, D-034), ognuna con un caso positivo e uno negat
 
 - **Trifecta:** almeno un lato è `false`. Il trifecta dichiarato descrive l'agente quando lavora in locale. Un esecutore cloud apre da sé contenuti non fidati e comunicazione esterna (i suoi strumenti di shell e web, e l'essere un servizio cloud), qualunque sia la lista `tools`: lì dev'essere tolto il lato dei dati privati, con un tetto di etichetta al massimo L1 (`max_label` o `cloud_max_label`), che router e gateway impongono. Si assume che L0 e L1 non siano dati privati: i dati privati iniziano da L2.
 - **Coerenza col livello:** con `max_label: L2` l'agente legge dati privati, quindi `private_data` dev'essere `true`.
-- **Coerenza con gli strumenti:** ogni strumento del registro dichiara i lati che apre da solo (`web.search` e `web.fetch` aprono contenuti non fidati e comunicazione esterna, `channel.send` la comunicazione esterna); una scheda non può dichiarare tolto un lato che uno dei suoi strumenti apre.
+- **Coerenza con gli strumenti:** ogni strumento del registro dichiara i lati che apre da solo (`web.search` e `web.fetch` aprono contenuti non fidati e comunicazione esterna, `channel.send` la comunicazione esterna); una scheda non può dichiarare tolto un lato che uno dei suoi strumenti apre. Unica eccezione, `web.fetch` (D-262, flag `withoutPrivateData` nel registro): una scheda con soli esecutori locali può tenerlo con la comunicazione esterna tolta, perché il core lo offre solo a un passo che non ha letto dati Privati né di Finanze (contesto fino a Interno, mai in incognito) e ogni indirizzo passa dal gateway col consenso di pagina; i contenuti non fidati vanno dichiarati comunque.
 - **Strumenti cloud (D-261):** `cloud_tools` ammette solo `kb.search` e `kb.read`, senza doppioni, solo con `claude` fra gli esecutori; una scheda dell'utente (`data/agents`) non può dichiararlo.
 - **Cloud:** `max_label: L2` con un esecutore cloud in `executors` richiede `cloud_max_label` al massimo L1 (caso del Coder); `cloud_max_label` senza esecutori cloud o sopra `max_label` è un errore.
 - `max_label: L3` non esiste: nessun modello legge segreti.
@@ -50,7 +50,7 @@ Regole di validazione (task 1.9, D-034), ognuna con un caso positivo e uno negat
 | `task.create`, `task.plan`, `task.update`, `task.delegate`, `user.ask` | | `task.plan`: approvazione del piano in chat, di tipo `plan` (D-159) |
 | `repo.read`, `repo.write`, `repo.test` (nella cartella del progetto approvato, D-056 e D-058, o nella copia del run) | (`repo.test` non apre nulla solo perché la sandbox del task 1.6 blocca la rete anche all'esecutore locale) | |
 | `file.delete` | | `delete` |
-| `web.search`, `web.fetch` | contenuti non fidati, comunicazione esterna | |
+| `web.search`, `web.fetch` | contenuti non fidati, comunicazione esterna (`web.fetch`: il lato della comunicazione esterna può restare tolto in una scheda solo locale, D-262) | |
 | `channel.send` | comunicazione esterna | `send_external` |
 | `commitment.add`, `commitment.list`, `commitment.done` (la segretaria, D-144) | (privati per natura: solo in una scheda con `max_label` L2 che gira sul modello locale soltanto) | conferma dell'utente in chat, di tipo `commitment` |
 | `im.add` (gli IM del progetto, D-167 P4b) | (solo locale, come gli impegni: il file lo scrive il codice su questo computer) | nessuna da una conversazione di lavoro (la voce si toglie a mano e la risposta dice dove è andata); conferma dell'utente in chat, di tipo `im`, quando il passo ha letto più di quanto l'IM contiene |
