@@ -6,7 +6,7 @@ import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { after, afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -355,6 +355,19 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     await servers.sync([{ ...endpoint('omlx', port), command: ['arianna-no-such-binary'] }]);
     assert.equal(servers.status()[0]?.state, 'failed');
     assert.ok(events.some((event) => event.type === 'spawn-error' && event.code === 'ENOENT'));
+  });
+
+  it('turns the Hugging Face cache of oMLX off in <base-path>/settings.json before starting it, and only for oMLX (D-263)', async () => {
+    const port = await freePort();
+    create();
+    const base = join(tmpRoot, 'omlx-base');
+    const other = join(tmpRoot, 'other-base');
+    await servers.sync([
+      { ...endpoint('omlx', port), command: ['/arianna-no-such-dir/omlx', 'serve', '--base-path', relative(HOME, base)] },
+      { ...endpoint('other', await freePort()), command: ['arianna-no-such-binary', 'serve', '--base-path', relative(HOME, other)] },
+    ]);
+    assert.deepEqual(JSON.parse(readFileSync(join(base, 'settings.json'), 'utf8')), { huggingface: { hf_cache_enabled: false } });
+    assert.equal(existsSync(other), false);
   });
 
   it('writes data/<id>.pid while its server runs, and removes it when the core stops it', async () => {

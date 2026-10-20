@@ -138,7 +138,7 @@ test('omlxSettingsChecks: oMLX settings inside data/, no key or MCP on the comma
     mkdirSync(join(data, dir), { recursive: true });
     writeFileSync(join(data, dir, 'settings.json'), typeof content === 'string' ? content : JSON.stringify(content));
   };
-  settings('clean', { auth: { api_key: 'x', skip_api_key_verification: false, sub_keys: [] }, network: { http_proxy: '', https_proxy: '', no_proxy: '' }, mcp: { config_path: null }, server: { distributed_inference_enabled: false } });
+  settings('clean', { auth: { api_key: 'x', skip_api_key_verification: false, sub_keys: [] }, network: { http_proxy: '', https_proxy: '', no_proxy: '' }, mcp: { config_path: null }, server: { distributed_inference_enabled: false }, huggingface: { hf_cache_enabled: false } });
   settings('open', { auth: { skip_api_key_verification: true, sub_keys: [{ name: 'x' }] }, network: { https_proxy: 'http://proxy.example:3128', no_proxy: '*' }, mcp: { config_path: '/x/mcp.json' }, server: { distributed_inference_enabled: true } });
   settings('broken', '{not json');
   // A link inside data/ that leads outside it.
@@ -192,10 +192,10 @@ test('omlxSettingsChecks: oMLX settings inside data/, no key or MCP on the comma
     ],
   );
   const detail = (id: string): string => checks.find((check) => check.id === id)?.detail ?? '';
-  assert.equal(detail('local.b.settings'), 'oMLX settings in data/open set auth.skip_api_key_verification, auth.sub_keys, network.https_proxy, network.no_proxy, mcp.config_path, server.distributed_inference_enabled: reset them');
+  assert.equal(detail('local.b.settings'), 'oMLX settings in data/open set auth.skip_api_key_verification, auth.sub_keys, network.https_proxy, network.no_proxy, mcp.config_path, server.distributed_inference_enabled, huggingface.hf_cache_enabled: reset them (restarting oMLX from Arianna turns the Hugging Face cache off)');
   assert.match(detail('local.c.settings'), /cannot be read/);
   assert.match(detail('local.e.base-path'), /add --base-path data\/omlx/);
-  assert.equal(detail('local.h.flags'), 'remove --api-key, --mcp-config: the key comes from data/h.key, and oMLX needs no MCP servers nor proxy');
+  assert.equal(detail('local.h.flags'), 'remove --api-key, --mcp-config: the key comes from data/h.key, and oMLX needs no MCP servers, proxy or Hugging Face cache');
   // The value of a key never goes in a detail.
   assert.ok(!checks.some((check) => check.detail.includes("'k'")));
 });
@@ -208,14 +208,14 @@ test('omlxSettingsChecks reads the settings of oMLX 0.7.1: keyless inference, Sp
     writeFileSync(join(data, dir, file), typeof content === 'string' ? content : JSON.stringify(content));
   };
   // As 0.7.1 writes them: the new key present and off, Splash unset, no external engine.
-  write('clean', 'settings.json', { auth: { api_key: 'x', skip_api_key_verification: false, allow_unauthenticated_inference: false, sub_keys: [] }, integrations: { splash_path: null, web_search_provider: 'ddgs' }, server: { distributed_inference_enabled: false } });
+  write('clean', 'settings.json', { auth: { api_key: 'x', skip_api_key_verification: false, allow_unauthenticated_inference: false, sub_keys: [] }, integrations: { splash_path: null, web_search_provider: 'ddgs' }, server: { distributed_inference_enabled: false }, huggingface: { hf_cache_enabled: false } });
   write('clean', 'model_settings.json', { version: 1, models: { 'qwen-a': { external_engine: null }, 'qwen-b': {} } });
-  write('keyless', 'settings.json', { auth: { allow_unauthenticated_inference: true } });
-  write('splash', 'settings.json', { integrations: { splash_path: '/opt/homebrew/bin/splash' } });
+  write('keyless', 'settings.json', { auth: { allow_unauthenticated_inference: true }, huggingface: { hf_cache_enabled: false } });
+  write('splash', 'settings.json', { integrations: { splash_path: '/opt/homebrew/bin/splash' }, huggingface: { hf_cache_enabled: false } });
   write('engine', 'model_settings.json', { version: 1, models: { 'qwen-a': { external_engine: 'splash' }, 'qwen-b': { external_engine: 'splash' }, 'qwen-c': {} } });
   write('broken-models', 'model_settings.json', '[]');
   // 0.6.x and 0.7.x share «Disable all authentication»; an odd value counts as on.
-  write('odd', 'settings.json', { auth: { skip_api_key_verification: 'yes' }, server: { distributed_inference_enabled: 1 } });
+  write('odd', 'settings.json', { auth: { skip_api_key_verification: 'yes' }, server: { distributed_inference_enabled: 1 }, huggingface: { hf_cache_enabled: false } });
   const serve = (base: string, ...extra: string[]): string[] => ['omlx', 'serve', '--base-path', `data/${base}`, ...extra];
   const checks = omlxSettingsChecks(home, data, [
     { id: 'a', command: serve('clean') },
@@ -269,6 +269,38 @@ test('omlxSettingsChecks reads the settings of oMLX 0.7.1: keyless inference, Sp
     omlxLogChecks([{ id: 'h', command: ['/Applications/oMLX.app/Contents/MacOS/omlx-cli', 'serve', '--log-level', 'trace'] }]).map((check) => check.ok),
     [false],
   );
+});
+
+test('omlxSettingsChecks wants the Hugging Face cache of oMLX explicitly off; a settings.json not written yet passes, since the core writes it first (D-263)', () => {
+  const home = join(HOME, 'omlx-hf');
+  const data = join(home, 'data');
+  const write = (dir: string, content: unknown): void => {
+    mkdirSync(join(data, dir), { recursive: true });
+    writeFileSync(join(data, dir, 'settings.json'), JSON.stringify(content));
+  };
+  write('off', { huggingface: { hf_cache_enabled: false } });
+  write('on', { huggingface: { hf_cache_enabled: true } });
+  write('unset', { auth: { api_key: 'x' } });
+  write('odd', { huggingface: { hf_cache_enabled: 'false' } });
+  const serve = (base: string, ...extra: string[]): string[] => ['omlx', 'serve', '--base-path', `data/${base}`, ...extra];
+  const checks = omlxSettingsChecks(home, data, [
+    { id: 'a', command: serve('off', '--no-hf-cache') },
+    { id: 'b', command: serve('on') },
+    { id: 'c', command: serve('unset') },
+    { id: 'd', command: serve('odd') },
+    { id: 'e', command: serve('never-started') },
+    { id: 'f', command: serve('off', '--hf-cache') },
+  ]);
+  const check = (id: string): { ok: boolean; detail: string } | undefined => checks.find((entry) => entry.id === id);
+  assert.deepEqual(
+    ['a', 'b', 'c', 'd', 'e'].map((id) => check(`local.${id}.settings`)?.ok),
+    [true, false, false, false, true],
+  );
+  assert.match(check('local.b.settings')?.detail ?? '', /huggingface\.hf_cache_enabled: reset them \(restarting oMLX from Arianna turns the Hugging Face cache off\)$/);
+  assert.match(check('local.e.settings')?.detail ?? '', /^no settings\.json yet: the core writes it/);
+  assert.equal(check('local.a.flags')?.ok, true);
+  assert.equal(check('local.f.flags')?.ok, false);
+  assert.match(check('local.f.flags')?.detail ?? '', /^remove --hf-cache:/);
 });
 
 test('omlxSettingsChecks fails on GGUF files where oMLX 0.7.1 finds them, which it would serve through Splash: a count, never a name (D-221)', () => {

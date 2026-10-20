@@ -7,6 +7,7 @@ import type { LocalEndpointConfig } from '@arianna/config';
 import { authorization, ensureLocalKey, Watchdog, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
 import { cleanChildEnv } from './child-env.ts';
+import { ensureOmlxHfCacheOff } from './omlx-settings.ts';
 
 /**
  * The local inference servers (oMLX), started and watched by the core (D-071,
@@ -234,7 +235,16 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       if (orphan !== undefined) emit({ type: 'orphan', endpoint: endpoint.id, pid: orphan });
     }
     // stop() may have come while the orphan was stopping: a watchdog never started stays stopped.
-    if (!isClosed()) await watchdog.start();
+    if (isClosed()) return;
+    if (endpoint.command !== undefined) {
+      // D-263: no models from the Hugging Face cache of the home folder. Unreadable settings stay as they are, for the doctor.
+      try {
+        ensureOmlxHfCacheOff(options.home, options.dataDir, endpoint.command);
+      } catch {
+        // A settings.json that cannot be written does not stop the server; the doctor reports it.
+      }
+    }
+    await watchdog.start();
   }
 
   /**

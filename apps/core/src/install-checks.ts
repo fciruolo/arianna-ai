@@ -8,6 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { arch, platform, totalmem } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { flagValue, omlxBaseInsideData, startsOmlx } from './omlx-settings.ts';
 import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type ModelCatalog, type Project } from '@arianna/config';
 
 import type { DoctorCheck } from './doctor.ts';
@@ -121,23 +122,6 @@ function logLevelOf(command: readonly string[]): string | null | undefined {
 }
 
 /**
- * Whether a command starts oMLX: `omlx serve`, by path or through a launcher
- * (`uvx omlx serve`), or the wrapper inside the macOS app
- * (`/Applications/oMLX.app/Contents/MacOS/omlx-cli serve`), which 0.7 no
- * longer links into /opt/homebrew/bin, or what that wrapper runs
- * (`python3 -m omlx.cli serve`): a command naming any of them must not escape
- * the checks.
- */
-function startsOmlx(command: readonly string[]): boolean {
-  const serve = command.indexOf('serve');
-  if (serve <= 0) return false;
-  const before = command.slice(0, serve);
-  if (before.some((arg) => /(^|\/)omlx(-cli)?$/.test(arg))) return true;
-  const module = before.findIndex((arg, index) => arg === '-m' && before[index + 1] === 'omlx.cli');
-  return module > 0 && before.slice(0, module).some((arg) => /(^|\/)python(3(\.\d+)?)?$/.test(arg));
-}
-
-/**
  * The log level of every local oMLX server (D-136, stage 0): only the
  * levels that keep the prompts out of data/<id>.log pass. Without
  * `--log-level` the level comes from oMLX's own settings, outside
@@ -156,29 +140,15 @@ export function omlxLogChecks(endpoints: readonly { id: string; command?: readon
     });
 }
 
-/** The value of `flag` in a command, as logLevelOf reads `--log-level`. */
-function flagValue(command: readonly string[], flag: string): string | null | undefined {
-  let value: string | null | undefined;
-  for (const [index, arg] of command.entries()) {
-    if (arg === flag) {
-      const next = command[index + 1];
-      value = next === undefined || next.startsWith('-') ? null : next;
-    } else if (arg.startsWith(`${flag}=`)) {
-      const given = arg.slice(flag.length + 1);
-      value = given === '' ? null : given;
-    }
-  }
-  return value;
-}
-
 /**
  * Flags of `omlx serve` that the core must not meet (D-221): `--api-key`
  * shows the key to `ps` and replaces the one of data/<id>.key, so the core's
  * requests would be refused; `--mcp-config` lets oMLX start MCP servers; the
  * proxy flags replace the dead proxy the core gives it, and oMLX saves them
- * in its settings.json.
+ * in its settings.json; `--hf-cache` turns the Hugging Face cache of the home
+ * folder back on (D-263).
  */
-const OMLX_REFUSED_FLAGS = ['--api-key', '--mcp-config', '--http-proxy', '--https-proxy', '--no-proxy'];
+const OMLX_REFUSED_FLAGS = ['--api-key', '--mcp-config', '--http-proxy', '--https-proxy', '--no-proxy', '--hf-cache'];
 
 /** A JSON file as an object; null when it cannot be read or is not an object. */
 function readJsonObject(file: string): Record<string, unknown> | null {
@@ -225,6 +195,8 @@ function omlxSettingsProblems(base: string): string[] {
     if (isSet(section('mcp').config_path)) problems.push('mcp.config_path');
     if (isSet(section('server').distributed_inference_enabled)) problems.push('server.distributed_inference_enabled');
     if (isSet(section('integrations').splash_path)) problems.push('integrations.splash_path');
+    // On by default in oMLX: models of the Hugging Face cache in the home folder, outside data/ (D-263).
+    if (section('huggingface').hf_cache_enabled !== false) problems.push('huggingface.hf_cache_enabled');
   }
   const modelsFile = join(base, 'model_settings.json');
   if (existsSync(modelsFile)) {
@@ -281,8 +253,8 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
         ok: refused.length === 0,
         detail:
           refused.length === 0
-            ? 'no --api-key, --mcp-config or proxy'
-            : `remove ${refused.join(', ')}: the key comes from data/${endpoint.id}.key, and oMLX needs no MCP servers nor proxy`,
+            ? 'no --api-key, --mcp-config, proxy or --hf-cache'
+            : `remove ${refused.join(', ')}: the key comes from data/${endpoint.id}.key, and oMLX needs no MCP servers, proxy or Hugging Face cache`,
       };
       const base = flagValue(command, '--base-path');
       const id = `local.${endpoint.id}.base-path`;
@@ -301,10 +273,8 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
       if (base === undefined || base === null) {
         return [flags, ggufCheck(undefined), { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
       }
-      // Through links too: data/omlx pointing at the home folder of oMLX is not inside data/.
-      const path = existsSync(resolve(home, base)) ? realpathSync(resolve(home, base)) : resolve(home, base);
-      const inside = relative(existsSync(data) ? realpathSync(data) : resolve(data), path);
-      if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+      const path = omlxBaseInsideData(home, data, command);
+      if (path === undefined) {
         return [flags, ggufCheck(undefined), { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
       }
       const problems = omlxSettingsProblems(path);
@@ -317,8 +287,10 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
           ok: problems.length === 0,
           detail:
             problems.length === 0
-              ? 'settings without skipped key, keyless inference, proxy, MCP, cluster or external engine'
-              : `oMLX settings in ${base} set ${problems.join(', ')}: reset them`,
+              ? existsSync(join(path, 'settings.json'))
+                ? 'settings without skipped key, keyless inference, proxy, MCP, cluster or external engine, Hugging Face cache off'
+                : 'no settings.json yet: the core writes it, with the Hugging Face cache off, before it starts oMLX'
+              : `oMLX settings in ${base} set ${problems.join(', ')}: reset them${problems.includes('huggingface.hf_cache_enabled') ? ' (restarting oMLX from Arianna turns the Hugging Face cache off)' : ''}`,
         },
       ];
     });
