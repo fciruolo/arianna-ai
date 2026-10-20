@@ -2760,41 +2760,15 @@ Nessuna immagine è stata scaricata. Versioni lette il 2026-10-20 da packages.de
 
 **Totale:** 34-46 h senza il Coder, 38-52 h con il Coder (circa 5-7 giorni, in linea con la stima del 2026-10-05). Ogni passo ha il suo ramo, la sua prova e la sua voce di changelog.
 
-### Domande
+### Domande chiuse
 
-1. **Quale immagine usare per il browser?**
-   - Contesto: il browser gira in un contenitore Docker che ha bisogno di un'«immagine», cioè del sistema già pronto con Chromium dentro. Possiamo costruirla noi da Debian, solo con ciò che serve, oppure prenderne una fatta da altri. Più cose ci sono dentro, più cose possono rompersi o essere attaccate.
-   - Opzione consigliata: Immagine nostra da Debian — circa 500 MB, solo Chromium, schermo VNC e un ponte; aggiornamenti di Chromium da Debian, ma la ricostruiamo noi ogni 2-4 settimane (il doctor avvisa)
-   - Opzione: Immagine ufficiale di Playwright — pronta e aggiornata da Microsoft, ma 1,5-2 GB, il produttore la sconsiglia per siti non fidati e lo schermo VNC va aggiunto comunque
-   - Opzione: Desktop pronto di linuxserver — si installa e basta, ma è un desktop completo con amministratore senza password e un suo server web: molta più superficie
-   - Esempio: Debian pubblica la correzione di una falla di Chromium; con l'immagine nostra il doctor segnala «immagine vecchia di 32 giorni» e `pnpm browser:build` la rifà in pochi minuti.
+Risposte dell'utente del 2026-10-20 e 2026-10-21, con le domande a opzioni.
 
-2. **Il Coder riceve il browser subito o dopo?**
-   - Contesto: Arianna nelle conversazioni Pubbliche lavora solo con dati Pubblici, quindi il rischio è minimo. Il Coder invece lavora su progetti Interni (L1) e gira nel cloud: con un browser potrebbe, ingannato da una pagina, provare a portare fuori un pezzo di codice dentro un indirizzo o un modulo. Il gateway e il consenso di D-262 lo fermano, ma è la parte da provare con più cura.
-   - Opzione consigliata: Prima Arianna, il Coder dopo — browser ad Arianna nelle conversazioni Pubbliche e Interne; il Coder lo riceve in un passo successivo, dopo il canarino; circa 4-6 ore in meno ora
-   - Opzione: Tutti e due subito — il Coder può guardare in diretta una pagina di documentazione mentre lavora; un passo in più da provare prima dell'unione
-   - Opzione: Solo il Coder — utile per i progetti, ma si parte proprio dal caso più delicato
-   - Esempio: chiedi al Coder «sistema il layout come in https://docs.esempio.dev/griglia»; con la consigliata per ora usa `web_fetch` (solo testo), più avanti il browser vero.
-
-3. **Dopo quanto tempo senza azioni il browser si chiude da solo?**
-   - Contesto: il browser occupa circa 1 GB di RAM finché è aperto, e sul Mac la RAM serve anche ai modelli locali. Un tempo corto libera presto la memoria; uno lungo ti lascia guardare o riprendere con calma. Il tetto massimo per lavoro resta 30 minuti.
-   - Opzione consigliata: 5 minuti senza azioni — memoria liberata presto; se rientri tardi, l'agente riapre la pagina da capo (pochi secondi)
-   - Opzione: 15 minuti senza azioni — più comodo durante il controllo manuale, 1 GB occupato più a lungo
-   - Opzione: Solo a fine lavoro — mai chiuso prima, fino al tetto di 30 minuti
-   - Esempio: Arianna apre un listino alle 10:00, tu rispondi alle 10:08: con 5 minuti il browser è già chiuso e Arianna lo riapre; con 15 è ancora lì.
-
-4. **Chi può prendere il controllo dello schermo?**
-   - Contesto: con «Prendi il controllo» clicchi e scrivi nel browser dell'agente. La chat può essere aperta anche dal telefono via VPN; scrivere da lì è comodo ma più facile da sbagliare (per esempio scrivere un dato personale in un sito pubblico).
-   - Opzione consigliata: Da ogni chat aperta — controllo da Mac e telefono, sempre con l'avviso «non scrivere dati personali» e gli appunti spenti
-   - Opzione: Solo dalla chat sul Mac — più prudente; dal telefono si guarda soltanto
-   - Esempio: dal telefono vedi l'agente bloccato su un banner dei cookie; con la consigliata lo chiudi tu, con l'altra devi andare al Mac.
-
-5. **Nelle conversazioni Interne il browser segue i link delle pagine?**
-   - Contesto: in una conversazione Interna Arianna apre solo gli indirizzi che hai scritto tu (scelta di D-262). In un browser vero cliccare un link porta su altre pagine, spesso di altri siti. Lasciarlo cliccare dentro lo stesso sito è comodo; fuori sito, una pagina ostile potrebbe guidarlo dove vuole.
-   - Opzione consigliata: Clic solo nello stesso sito — dentro il sito dell'indirizzo che hai scritto l'agente naviga libero; un link verso un altro sito si ferma e te lo chiede
-   - Opzione: Nessun clic che cambia pagina — solo la pagina che hai scritto: più chiuso, ma spesso inutile (menu, «pagina 2»)
-   - Opzione: Come nelle Pubbliche — qualsiasi link; un indirizzo con dati di lavoro dentro lo ferma solo il gateway
-   - Esempio: scrivi «guarda https://negozio.example/listino»; con la consigliata Arianna può aprire «Listino pagina 2» sullo stesso sito, ma non il link a «partner.example».
+1. **Immagine e telecomando: «Debian nostra + Playwright»** (la consigliata, dopo una prima risposta libera «scegliamo quella migliore! playwright credo che venga usata da claude, giusto?»: spiegato che Claude Code non usa Playwright di suo, che molti agenti lo usano col server MCP di Playwright, e che immagine e libreria sono due scelte diverse). Immagine A costruita da noi; il core comanda Chromium con `playwright-core` (Apache-2.0, senza browser dentro, `chromium.connectOverCDP` sul canale `docker exec`), voce in DECISIONS. Cambia il punto 4.4: la voce per `playwright-core` serve subito.
+2. **Coder: «Prima Arianna, il Coder dopo»** (la consigliata): il passo 7 si fa dopo il canarino, in un lavoro a parte.
+3. **Chiusura: «15 minuti senza azioni»** (non la consigliata): tetto di 30 minuti per lavoro invariato.
+4. **Controllo: «Da ogni chat aperta»** (la consigliata): Mac e telefono, con l'avviso e gli appunti sempre spenti.
+5. **Link nelle Interne: «Clic solo nello stesso sito»** (la consigliata): dentro il sito di un indirizzo scritto dall'utente l'agente naviga; un link verso un altro sito si ferma e lo chiede all'utente.
 
 ### Cose non verificate
 
