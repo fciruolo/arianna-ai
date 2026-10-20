@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser dell'agente</title>
+<!-- Mockup di D-095 tappa 2: scheda «Browser» del pannello Computer. Dati inventati. Nessuna risorsa remota. -->
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --bubble: #2a8f84; --bubble-ink: #f1fbf9;
+  --glow: #4fd1c133; --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0;
+  --l0: #7cc796; --l1: #4fd1c1; --l2: #f2b34b; --l3: #e2614b;
+  --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
+  --font-hud: "Chakra Petch", "Eurostile", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #ffffff; --bubble: #3d7e75; --bubble-ink: #ffffff;
+    --glow: #23887c22; --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+    --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35;
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-sans); }
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--font-mono); }
+.hud { font-family: var(--font-hud); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: var(--muted) transparent; }
+
+.page { display: grid; grid-template-columns: minmax(0, 1fr) 600px; min-height: 100vh; }
+@media (max-width: 1100px) { .page { grid-template-columns: 1fr; } .chat { display: none; } }
+
+/* Fake chat on the left, dimmed */
+.chat { padding: 28px 32px; display: flex; flex-direction: column; gap: 14px; opacity: .72; }
+.chat h1 { margin: 0 0 6px; font-size: 16px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.bubble-user { align-self: flex-end; max-width: 70%; background: var(--bubble); color: var(--bubble-ink); padding: 10px 14px; border-radius: 14px 14px 4px 14px; }
+.bubble-agent { max-width: 80%; background: var(--surface); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px 14px 14px 4px; }
+.step { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+
+/* Label chips */
+.lab { font: 500 10px/1 var(--font-mono); padding: 3px 5px; border-radius: 4px; border: 1px solid currentColor; display: inline-block; }
+.lab.l0 { color: var(--l0); } .lab.l1 { color: var(--l1); } .lab.l2 { color: var(--l2); }
+
+/* Panel */
+.panel { background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 100vh; }
+.panel header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: flex-start; }
+.panel h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.close { margin-left: auto; width: 32px; height: 32px; border: 0; background: none; border-radius: 9px; color: var(--muted); cursor: pointer; }
+.close:hover { background: var(--surface-2); color: var(--ink); }
+.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.tab { border: 0; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; font-size: 14px; color: var(--muted); cursor: pointer; }
+.tab[aria-selected="true"] { border-color: var(--accent); color: var(--ink); font-weight: 600; }
+.body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; }
+
+/* Status bar */
+.bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.live { color: var(--ok); } .pill.live .dot { animation: pulse 1.6s infinite; }
+.pill.paused { color: var(--warn); } .pill.yours { color: var(--info); }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .pill.live .dot { animation: none; } }
+.btn { border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); padding: 8px 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.bar .btn { margin-left: auto; }
+
+.address { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; font: 12.5px/1.4 var(--font-mono); min-width: 0; }
+.address .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.address .lock { color: var(--ok); }
+
+/* HUD card with luminous corners */
+.card { position: relative; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); padding: 10px; }
+.card::before, .card::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--accent); }
+.card::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: 14px; }
+.card::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: 14px; }
+.card.mine::before, .card.mine::after { border-color: var(--info); }
+.card.paused::before, .card.paused::after { border-color: var(--warn); }
+
+/* Fake remote screen: a page drawn with CSS, fixed light colors because it is someone else's site */
+.screen { position: relative; aspect-ratio: 16 / 10; border-radius: 8px; overflow: hidden; background: #ffffff; color: #1d2430; font-family: Georgia, "Times New Roman", serif; }
+.site-top { background: #24476b; color: #fff; padding: 8px 14px; display: flex; align-items: center; gap: 14px; font: 600 13px/1 -apple-system, sans-serif; }
+.site-top span { opacity: .8; font-weight: 400; font-size: 11px; }
+.site-main { padding: 12px 16px; display: grid; grid-template-columns: 1fr 120px; gap: 14px; }
+.site-main h3 { margin: 0 0 6px; font-size: 17px; }
+.site-main p { margin: 0 0 6px; font-size: 11px; line-height: 1.45; color: #3a4452; }
+.site-table { width: 100%; border-collapse: collapse; font: 11px/1.3 -apple-system, sans-serif; }
+.site-table td, .site-table th { border-bottom: 1px solid #dfe4ea; padding: 4px 3px; text-align: left; }
+.site-table th { color: #5b6574; font-weight: 600; }
+.site-side { background: #f1f4f7; border-radius: 6px; padding: 8px; font: 10.5px/1.4 -apple-system, sans-serif; color: #44505f; }
+.site-side b { display: block; margin-bottom: 4px; color: #24476b; }
+.cookie { position: absolute; left: 12px; right: 12px; bottom: 10px; background: #1d2430; color: #fff; border-radius: 6px; padding: 7px 10px; font: 10.5px/1.3 -apple-system, sans-serif; display: flex; gap: 10px; align-items: center; }
+.cookie i { margin-left: auto; background: #f0c34a; color: #1d2430; font-style: normal; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.cursor { position: absolute; left: 61%; top: 54%; width: 14px; height: 18px; }
+.ring { position: absolute; left: calc(61% - 9px); top: calc(54% - 9px); width: 18px; height: 18px; border: 2px solid #23887c; border-radius: 50%; opacity: .7; }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #0a131680; }
+.overlay span { background: var(--surface); color: var(--ink); border: 1px solid var(--warn); border-radius: 9px; padding: 8px 12px; font: 600 13px/1.3 var(--font-sans); }
+.warnline { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--warn); border: 1px solid currentColor; border-radius: 9px; padding: 7px 10px; background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.screen-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+/* Visited pages */
+.visits { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.visit { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.visit:last-child { border-bottom: 0; }
+.visit .time { font: 12px var(--font-mono); color: var(--muted); }
+.visit .what { min-width: 0; }
+.visit .site { font: 12.5px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visit .meta { font-size: 12px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 500 11px/1 var(--font-sans); border-radius: 6px; padding: 3px 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+.out { font-size: 12px; font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.out.ok { color: var(--ok); } .out.block { color: var(--danger); } .out.user { color: var(--info); }
+details { font-size: 12.5px; color: var(--muted); }
+details summary { cursor: pointer; }
+details ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+
+/* State switcher for the mockup only */
+.demo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 9px; padding: 6px 8px; }
+.demo button { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.demo button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+</svg>
+
+<div class="page">
+  <main class="chat" aria-label="Conversazione (sfondo)">
+    <h1>Listino fornitori <span class="lab l0">L0</span></h1>
+    <div class="bubble-user">Guarda il listino di https://ferramenta-lume.example/listino e dimmi quanto costano le viti da 4 mm.</div>
+    <div class="step"><svg class="icon"><use href="#i-monitor"/></svg>Apro il browser · ferramenta-lume.example</div>
+    <div class="step"><svg class="icon"><use href="#i-check"/></svg>Ho letto ferramenta-lume.example — Listino 2026</div>
+    <div class="bubble-agent">Sto guardando la tabella delle viti. C'è un banner dei cookie sopra la seconda pagina: lo chiudo e proseguo.</div>
+  </main>
+
+  <aside class="panel" aria-labelledby="ct">
+    <header>
+      <div>
+        <h2 id="ct"><svg class="icon"><use href="#i-monitor"/></svg>Computer di Arianna</h2>
+        <p class="small muted" style="margin:4px 0 0">Browser isolato per questo lavoro · si chiude da solo dopo 5 minuti senza azioni</p>
+      </div>
+      <button class="close" aria-label="Chiudi il computer"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="tabs" role="tablist" aria-label="Viste del computer">
+      <button class="tab" role="tab" aria-selected="true">Browser</button>
+      <button class="tab" role="tab" aria-selected="false">Terminale</button>
+      <button class="tab" role="tab" aria-selected="false">File</button>
+      <button class="tab" role="tab" aria-selected="false">Attività</button>
+    </div>
+
+    <section class="body" role="tabpanel" aria-label="Browser">
+      <div class="demo" aria-label="Solo nel mockup: scegli lo stato">Solo mockup, stato:
+        <button data-state="live" aria-pressed="true">In diretta</button>
+        <button data-state="paused" aria-pressed="false">In pausa</button>
+        <button data-state="yours" aria-pressed="false">Controllo tuo</button>
+      </div>
+
+      <div class="bar">
+        <span id="pill" class="pill live"><span class="dot"></span><span id="pill-text">In diretta · guida Arianna</span></span>
+        <span class="lab l0" title="Contenuto della pagina: Pubblico, non fidato">L0</span>
+        <button id="take" class="btn primary"><svg class="icon"><use href="#i-hand"/></svg><span id="take-text">Prendi il controllo</span></button>
+      </div>
+
+      <div class="address" aria-label="Indirizzo della pagina">
+        <svg class="icon lock"><use href="#i-lock"/></svg>
+        <span class="url">https://ferramenta-lume.example/listino?pagina=2</span>
+        <span class="chip">tuo indirizzo</span>
+      </div>
+
+      <div id="warn" class="warnline" hidden>
+        <svg class="icon"><use href="#i-alert"/></svg>
+        <span>Stai usando il browser: non scrivere dati personali, la pagina è pubblica e il sito li riceve. Copia e incolla con il Mac sono spenti. Quando restituisci, Arianna rilegge la pagina.</span>
+      </div>
+
+      <div id="card" class="card">
+        <div class="screen" role="img" aria-label="Schermo in diretta del browser: pagina inventata di un listino di ferramenta">
+          <div class="site-top">Ferramenta Lume <span>Listino · Ordini · Contatti</span></div>
+          <div class="site-main">
+            <div>
+              <h3>Listino 2026 — pagina 2</h3>
+              <p>Prezzi IVA esclusa, validi fino al 31 dicembre. Confezioni da 100 pezzi.</p>
+              <table class="site-table">
+                <tr><th>Articolo</th><th>Misura</th><th>Prezzo</th></tr>
+                <tr><td>Vite truciolare</td><td>4 × 30</td><td>3,90 €</td></tr>
+                <tr><td>Vite truciolare</td><td>4 × 40</td><td>4,40 €</td></tr>
+                <tr><td>Vite autofilettante</td><td>4 × 25</td><td>5,10 €</td></tr>
+                <tr><td>Tassello nylon</td><td>6 mm</td><td>2,80 €</td></tr>
+              </table>
+            </div>
+            <div class="site-side"><b>Novità</b>Viti inox A2 in arrivo a novembre.<br><br><b>Orari</b>Lun–Ven 8–18</div>
+          </div>
+          <div class="cookie">Usiamo cookie tecnici. <i>Accetta</i></div>
+          <span class="ring" aria-hidden="true"></span>
+          <svg class="cursor" viewBox="0 0 14 18" aria-hidden="true"><path d="M1 1v14l4-4 3 6 2-1-3-6h5z" fill="#fff" stroke="#111" stroke-width="1.2"/></svg>
+          <div id="overlay" class="overlay" hidden><span>Arianna è in pausa: aspetta la tua risposta in chat</span></div>
+        </div>
+        <div class="screen-foot">
+          <span id="foot-left">Solo visione: tasti e clic non arrivano al browser</span>
+          <span class="mono">1280×800 · aggiornato ora</span>
+        </div>
+      </div>
+
+      <div>
+        <p class="hud" style="margin:4px 0 8px">Pagine visitate</p>
+        <div class="visits">
+          <div class="visit">
+            <span class="time">10:02</span>
+            <div class="what"><div class="site">ferramenta-lume.example/listino</div>
+              <div class="meta"><span class="chip">Consenso: tuo indirizzo</span><span class="lab l0">L0</span></div></div>
+            <span class="out ok"><svg class="icon"><use href="#i-check"/></svg>Letta</span>
+          </div>
+          <div class="visit">
+            <span class="time">10:03</span>
+            <div class="what"><div class="site">ferramenta-lume.example/listino?pagina=2</div>
+              <div class="meta"><span class="chip">Consenso: stesso sito</span><span class="lab l0">L0</span></div></div>
+            <span class="out ok"><svg class="icon"><use href="#i-check"/></svg>Letta</span>
+          </div>
+          <div class="visit">
+            <span class="time">10:03</span>
+            <div class="what"><div class="site">partner-viti.example</div>
+              <div class="meta"><span class="chip">Link trovato nella pagina, altro sito</span></div></div>
+            <span class="out block"><svg class="icon"><use href="#i-ban"/></svg>Fermata</span>
+          </div>
+          <div class="visit">
+            <span class="time">10:04</span>
+            <div class="what"><div class="site">ferramenta-lume.example/listino?pagina=2</div>
+              <div class="meta"><span class="chip">Controllo tuo · 3 clic, 0 tasti</span></div></div>
+            <span class="out user"><svg class="icon"><use href="#i-hand"/></svg>Tu</span>
+          </div>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">Risorse della pagina: 46 passate dal gateway, 2 fermate (indirizzi di tracciamento). Mai salvati testi né schermate.</p>
+      </div>
+
+      <details>
+        <summary><svg class="icon" style="vertical-align:-3px"><use href="#i-shield"/></svg> Perché è isolato</summary>
+        <ul>
+          <li>Il browser gira in un contenitore usa e getta, senza rete: ogni richiesta la fa Arianna, dopo il controllo del gateway.</li>
+          <li>Nessuna cartella del Mac è visibile dentro; niente download né caricamenti di file.</li>
+          <li>Lo schermo arriva solo a questa chat, con un gettone valido per questo lavoro.</li>
+          <li>Solo pagine pubbliche: nelle conversazioni Private il browser non c'è.</li>
+        </ul>
+      </details>
+    </section>
+  </aside>
+</div>
+
+<script>
+const states = {
+  live:   { pill: 'pill live',   text: 'In diretta · guida Arianna', btn: 'Prendi il controllo', primary: true,  icon: '#i-hand', warn: false, overlay: false, card: 'card',        foot: 'Solo visione: tasti e clic non arrivano al browser' },
+  paused: { pill: 'pill paused', text: 'In pausa',                   btn: 'Prendi il controllo', primary: true,  icon: '#i-hand', warn: false, overlay: true,  card: 'card paused', foot: 'Solo visione: Arianna aspetta te' },
+  yours:  { pill: 'pill yours',  text: 'Controllo tuo · Arianna in pausa', btn: 'Restituisci', primary: false, icon: '#i-undo', warn: true,  overlay: false, card: 'card mine',   foot: 'Tasti e clic vanno al browser · nulla di ciò che scrivi resta nel registro' },
+};
+let current = 'live';
+function show(name) {
+  current = name;
+  const s = states[name];
+  document.getElementById('pill').className = s.pill;
+  document.getElementById('pill-text').textContent = s.text;
+  const take = document.getElementById('take');
+  take.className = s.primary ? 'btn primary' : 'btn';
+  take.querySelector('use').setAttribute('href', s.icon);
+  document.getElementById('take-text').textContent = s.btn;
+  document.getElementById('warn').hidden = !s.warn;
+  document.getElementById('overlay').hidden = !s.overlay;
+  document.getElementById('card').className = s.card;
+  document.getElementById('foot-left').textContent = s.foot;
+  document.querySelectorAll('.demo button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.state === name)));
+}
+document.querySelectorAll('.demo button').forEach((b) => b.addEventListener('click', () => show(b.dataset.state)));
+document.getElementById('take').addEventListener('click', () => show(current === 'yours' ? 'live' : 'yours'));
+</script>
+</body>
+</html>
