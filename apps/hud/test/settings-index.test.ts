@@ -22,7 +22,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
       ['Modelli', 'Agenti', 'Personaggi', 'Su di te', 'Skill e stili', 'Catalogo agenti'],
       ['Voce e chiamate', 'Notifiche', 'Segretaria'],
       ['Progetti', 'Regole dei progetti'],
-      ['Claude e Codex', 'Link da riassumere'],
+      ['Claude e Codex', 'Link da riassumere', 'Siti che il Coder può leggere'],
       ['Server dei modelli', 'Aspetto e installazione'],
       ['Novità', 'Cosa è cambiato', 'Consumi', 'Sviluppo di Arianna'],
     ],
@@ -35,7 +35,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
 test('every entry that lets data out has the lock and asks for confirmation; the others do not', () => {
   assert.deepEqual(
     items.filter((entry) => entry.privacy === true).map((entry) => entry.title),
-    ['Progetti', 'Claude e Codex', 'Link da riassumere', 'Server dei modelli'],
+    ['Progetti', 'Claude e Codex', 'Link da riassumere', 'Siti che il Coder può leggere', 'Server dei modelli'],
   );
   for (const item of items) assert.equal(item.privacy === true, item.behaviour === 'confirm', item.title);
 });

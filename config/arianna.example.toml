@@ -305,6 +305,16 @@ port = 7420
 # [capture]
 # fetch_sites = ["x.com"]
 
+# Public pages the Coder reads (D-262): when it runs on Claude, the Coder
+# may read by itself, through Arianna, any page of these sites, besides the
+# addresses the user wrote in the request. A site covers its subdomains.
+# Reading a page sends its address to its site; every address passes the
+# gateway and is logged. Absent: no site. Changed from the settings page
+# with a confirmation. Applies without a restart.
+#
+# [web]
+# coder_sites = ["developer.mozilla.org"]
+
 # What the web chat says this installation is (D-089): development while the
 # database uses the development passwords or while mode = "development";
 # production only with real passwords and no such line. Applies without a

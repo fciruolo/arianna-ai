@@ -170,6 +170,30 @@ switch (scenario) {
     out({ ...result, result: 'ok' });
     break;
   }
+  case 'arianna-mcp-web': {
+    // D-262: the run asks web_fetch of the server for each address on a `fetch: ` line; `fetch-file: <address> <path>`
+    // adds the content of a file to the address, %-encoded, as a run without a sandbox could. It answers only how many came back.
+    const server = (mcpConfig as { mcpServers?: { arianna?: { url: string; headers: Record<string, string> } } } | undefined)?.mcpServers?.arianna;
+    const texts: string[] = [];
+    const urls = [
+      ...[...prompt.matchAll(/^fetch: (.+)$/gm)].map((match) => match[1] ?? ''),
+      ...[...prompt.matchAll(/^fetch-file: (\S+) (.+)$/gm)].map((match) => `${match[1] ?? ''}${encodeURIComponent(readFileSync(match[2] ?? '', 'utf8'))}`),
+    ];
+    for (const url of urls) {
+      if (server === undefined) break;
+      const response = await fetch(server.url, {
+        method: 'POST',
+        headers: { ...server.headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: texts.length + 1, method: 'tools/call', params: { name: 'web_fetch', arguments: { url } } }),
+      });
+      const body = (await response.json()) as { result?: { content?: { text?: string }[] } };
+      texts.push(body.result?.content?.[0]?.text ?? '');
+    }
+    out(init);
+    out(answer(`${String(texts.filter((text) => text !== '').length)} pages`));
+    out({ ...result, result: 'ok' });
+    break;
+  }
   case 'api-key':
     out({ ...init, apiKeySource: 'ANTHROPIC_API_KEY' });
     hang();

@@ -277,6 +277,12 @@ describe('parseAgentCard', () => {
       assert.deepEqual(parsed.tools, ['repo.read']);
     });
 
+    it('accepts web.fetch (D-262) in cloud_tools, never web.search', () => {
+      assert.deepEqual(parseAgentCard(card((c) => (cloud(c), (c.cloud_tools = ['kb.read', 'web.fetch']))), 'archivista').cloudTools, ['kb.read', 'web.fetch']);
+      rejects(card((c) => (cloud(c), (c.cloud_tools = ['web.search']))), /cloud_tools: "web\.search" is not one of kb\.search, kb\.read, web\.fetch/);
+      rejects(card((c) => ((c.executors = ['codex', 'local']), (c.cloud_max_label = 'L1'), (c.cloud_tools = ['web.fetch']))), /without the claude executor/);
+    });
+
     it('is absent when the card does not say it', () => {
       assert.equal(parseAgentCard(card(cloud), 'archivista').cloudTools, undefined);
     });

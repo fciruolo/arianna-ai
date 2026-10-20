@@ -10,7 +10,9 @@ executors: [claude, codex, local]
 tools: [repo.read, repo.write, repo.test, task.update, user.ask]
 # D-261: on Claude Code only, through Arianna's MCP server, within L1 and the
 # task's clearance; the local steps do not read the knowledge base.
-cloud_tools: [kb.search, kb.read]
+# D-262: web.fetch reads a public page the user wrote in the request or of a
+# site of [web] coder_sites, through the gateway, at most 10 per run.
+cloud_tools: [kb.search, kb.read, web.fetch]
 trifecta:
   private_data: true
   # Repositories, dependencies and issue text are not trusted.

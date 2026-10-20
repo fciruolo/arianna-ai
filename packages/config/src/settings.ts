@@ -83,6 +83,8 @@ export interface Settings {
   appearance?: AppearanceConfig;
   /** `[capture] fetch_sites` (D-154): written only when the file has it; absent, no site. */
   fetchSites?: string[];
+  /** `[web] coder_sites` (D-262): written only when the file has it; absent, no site. */
+  coderSites?: string[];
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -160,6 +162,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(raw.secretary === undefined ? {} : { secretary: structuredClone(config.secretary) }),
     ...(raw.appearance === undefined ? {} : { appearance: { ...config.appearance } }),
     ...(raw.capture === undefined ? {} : { fetchSites: [...config.capture.fetchSites] }),
+    ...(raw.web === undefined ? {} : { coderSites: [...config.web.coderSites] }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -308,6 +311,10 @@ function appearanceSection(appearance: AppearanceConfig | undefined): string[] {
 
 function captureSection(fetchSites: string[] | undefined): string[] {
   return fetchSites === undefined ? ['#', '# [capture]', '# fetch_sites = ["x.com"]'] : ['[capture]', `fetch_sites = ${list(fetchSites)}`];
+}
+
+function webSection(coderSites: string[] | undefined): string[] {
+  return coderSites === undefined ? ['#', '# [web]', '# coder_sites = ["developer.mozilla.org"]'] : ['[web]', `coder_sites = ${list(coderSites)}`];
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -610,6 +617,14 @@ export function renderSettings(settings: Settings): string {
     '# "Scarica e riassumi" button in Pensieri. Absent: no site. Changed from the',
     '# settings page with a confirmation. Applies without a restart.',
     ...captureSection(settings.fetchSites),
+    '',
+    '# Public pages the Coder reads (D-262): when it runs on Claude, the Coder',
+    '# may read by itself, through Arianna, any page of these sites, besides the',
+    '# addresses the user wrote in the request. A site covers its subdomains.',
+    '# Reading a page sends its address to its site; every address passes the',
+    '# gateway and is logged. Absent: no site. Changed from the settings page',
+    '# with a confirmation. Applies without a restart.',
+    ...webSection(settings.coderSites),
     '',
     '# What the web chat says this installation is (D-089): development while the',
     '# database uses the development passwords or while mode = "development";',

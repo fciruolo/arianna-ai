@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Il Coder su Claude Code può leggere una pagina web pubblica tramite Arianna: solo gli indirizzi che gli scrivi tu nella richiesta e le pagine dei siti che elenchi in Impostazioni → «Siti che il Coder può leggere» (vuoto all'inizio), al massimo 10 per lavoro; ogni indirizzo passa dal gateway e ogni pagina resta nel registro con sito ed esito (D-262).
+
 ## [0.150.0] - 2026-10-20
 
 ### Aggiunto

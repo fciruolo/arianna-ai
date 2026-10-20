@@ -7,6 +7,7 @@ import { flatPersonaText, otherSeriesNames, parsePersona, parseSeriesOverride, P
 import {
   CHARACTER_ID,
   checkAppearance,
+  checkCoderSites,
   checkFetchSites,
   checkSecretary,
   CLOUD_EXECUTORS,
@@ -81,7 +82,7 @@ import { knownSecrets } from '@arianna/vault';
  * not touch: an ordinary save can never open an exit.
  */
 export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
-export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
+export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
 type Section = OrdinarySection | PrivacySection | 'database' | 'server';
@@ -148,6 +149,8 @@ export interface SettingsValues {
   endpoints: EndpointSettings[];
   /** `[capture] fetch_sites` (D-154): the sites whose links are downloaded by themselves; empty when absent. */
   fetchSites: string[];
+  /** `[web] coder_sites` (D-262): the sites whose pages the Coder on Claude reads by itself; empty when absent. */
+  coderSites: string[];
 }
 
 export interface CatalogModel {
@@ -191,6 +194,7 @@ export interface PrivacyChanges {
   projects?: { added: ProjectSettings[]; removed: ProjectSettings[]; changed: { name: string; before: ProjectSettings; after: ProjectSettings }[] };
   endpoints?: { added: EndpointSettings[]; removed: EndpointSettings[]; changed: { id: string; before: EndpointSettings; after: EndpointSettings }[] };
   fetchSites?: { before: string[]; after: string[] };
+  coderSites?: { before: string[]; after: string[] };
 }
 
 /** After the change: who may receive what. */
@@ -204,6 +208,8 @@ export interface PrivacyExits {
   endpoints: { id: string; url: string; command: string[] | null }[];
   /** Sites whose links the core downloads by itself (D-154): each receives the address of its links. */
   fetchSites: string[];
+  /** Sites whose pages the Coder on Claude reads by itself (D-262): each receives the address of the pages read. */
+  coderSites: string[];
 }
 
 export interface PrivacyProposal {
@@ -642,6 +648,17 @@ function fetchSitesFromBody(value: unknown): string[] {
   }
 }
 
+/** `[web] coder_sites` from the page (D-262): the same rules as fetchSites. */
+function coderSitesFromBody(value: unknown): string[] {
+  const sites = strings(value, 'coderSites');
+  try {
+    return checkCoderSites(sites, 'coderSites');
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
+}
+
 function telegramFromBody(value: unknown, current: Settings['telegram']): Settings['telegram'] {
   if (value === null) return undefined;
   const telegram = record(value, 'telegram');
@@ -756,6 +773,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     projects: settings.projects.map((project) => ({ ...project })),
     endpoints: structuredClone(settings.endpoints),
     fetchSites: [...(settings.fetchSites ?? [])],
+    coderSites: [...(settings.coderSites ?? [])],
   };
 }
 
@@ -784,6 +802,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.cloud.executors;
     case 'fetchSites':
       return settings.fetchSites ?? [];
+    case 'coderSites':
+      return settings.coderSites ?? [];
     case 'database':
     case 'server':
     case 'roles':
@@ -824,6 +844,7 @@ function privacyChanges(before: SettingsValues, after: SettingsValues, sections:
     changes.projects = { added, removed, changed: changed.map(({ key, ...rest }) => ({ name: key, ...rest })) };
   }
   if (sections.includes('fetchSites')) changes.fetchSites = { before: before.fetchSites, after: after.fetchSites };
+  if (sections.includes('coderSites')) changes.coderSites = { before: before.coderSites, after: after.coderSites };
   if (sections.includes('endpoints')) {
     const { added, removed, changed } = listDiff(before.endpoints, after.endpoints, (endpoint) => endpoint.id);
     changes.endpoints = { added, removed, changed: changed.map(({ key, ...rest }) => ({ id: key, ...rest })) };
@@ -838,6 +859,7 @@ function exitsOf(values: SettingsValues): PrivacyExits {
     telegram: values.telegram === null ? null : { chats: values.telegram.chats.length },
     endpoints: values.endpoints.map(({ id, url, command }) => ({ id, url, command: command ?? null })),
     fetchSites: values.fetchSites,
+    coderSites: values.coderSites,
   };
 }
 
@@ -1072,6 +1094,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       if (given.projects !== undefined) next.projects = projectsFromBody(given.projects, options.userHome);
       if (given.endpoints !== undefined) next.endpoints = endpointsFromBody(given.endpoints);
       if (given.fetchSites !== undefined) next.fetchSites = fetchSitesFromBody(given.fetchSites);
+      if (given.coderSites !== undefined) next.coderSites = coderSitesFromBody(given.coderSites);
       const sections = check(settings, next, catalog, PRIVACY_SECTIONS);
       if (sections.length === 0) invalid('values: nothing changes');
       const privacy = sections as PrivacySection[];
