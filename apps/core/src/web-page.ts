@@ -51,15 +51,29 @@ export interface ReadPageInput {
 /** Downloads one page through the gateway. Never throws for a refusal: it is a reason (`blocked` for the gateway). */
 export async function readPage(input: ReadPageInput): Promise<FetchResult> {
   const { sql, address, context, consent } = input;
-  let first = true;
-  const authorize = async (next: string): Promise<string | undefined> => {
-    const page = first ? consent : redirectConsent(consent, address);
-    first = false;
+  const allowed = async (page: PageConsent, next: string): Promise<string | undefined> => {
     const target: Target = { kind: 'web', page };
     const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, input.meta);
     if (decision.decision !== 'allow') return undefined;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' ? spent.texts[0] : undefined;
+  };
+  // For a post of X the first address asked is its oEmbed, not the post: the consent is checked on the post first.
+  let first = true;
+  if (xPostUrl(address) !== undefined) {
+    let normalized: string;
+    try {
+      normalized = new URL(address).href;
+    } catch {
+      return { ok: false, reason: 'invalid-url' };
+    }
+    if ((await allowed(consent, normalized)) !== normalized) return { ok: false, reason: 'blocked' };
+    first = false;
+  }
+  const authorize = async (next: string): Promise<string | undefined> => {
+    const page = first ? consent : redirectConsent(consent, address);
+    first = false;
+    return allowed(page, next);
   };
   const download = input.fetchLink ?? fetchLink;
   return download(address, { authorize }, input.signal);

@@ -3,12 +3,14 @@ name: arianna
 description: Plans, assigns and reports; the user's main contact
 max_label: L2
 executors: [local]
-tools: [kb.read, kb.search, kb.write, task.create, task.plan, task.update, task.delegate, user.ask, commitment.add, commitment.list, commitment.done, commitment.move, commitment.report, im.add, profile.read, profile.share, profile.propose, routine.propose]
+tools: [kb.read, kb.search, kb.write, task.create, task.plan, task.update, task.delegate, user.ask, commitment.add, commitment.list, commitment.done, commitment.move, commitment.report, im.add, profile.read, profile.share, profile.propose, routine.propose, web.fetch]
 trifecta:
   private_data: true
   untrusted_content: true
   # Removed: delegations to cloud agents leave from a separate per-task context
-  # and pass the gateway (task.delegate opens nothing by itself).
+  # and pass the gateway (task.delegate opens nothing by itself). web.fetch
+  # (D-262) opens it only in a step that has read nothing above Internal (L1)
+  # nor finance data: there the private data side is closed instead.
   external_comms: false
 autonomy: A1
 difficulty: normal

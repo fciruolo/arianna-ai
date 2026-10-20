@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 
 import { listActivities } from '../lib/api.ts';
-import { activityText, errorText, relativeTimeText, stepsButtonText } from '../lib/italian.ts';
+import { activityLink, activityText, errorText, relativeTimeText, stepsButtonText } from '../lib/italian.ts';
 import type { SavedActivity } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
@@ -55,7 +55,8 @@ async function toggle(): Promise<void> {
           <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="(line.kind === 'error' || line.kind === 'stop') ? 'text-warn' : 'text-ok'" aria-hidden="true">{{
             (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓'
           }}</span>
-          <span class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
+          <a v-if="activityLink(line) !== undefined" :href="activityLink(line)" target="_blank" rel="noopener noreferrer" class="min-w-0 flex-1 break-words text-accent hover:underline">{{ activityText(line) }}</a>
+          <span v-else class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
           <time class="shrink-0 font-mono text-[12px] text-muted" :datetime="line.at" :title="new Date(line.at).toLocaleString('it-IT')">{{
             relativeTimeText(line.at, now)
           }}</time>

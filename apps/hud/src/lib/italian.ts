@@ -262,6 +262,8 @@ export function errorText(cause: unknown): string {
 // Errors of the orchestrator's tools (apps/core/src/orchestrator/kb.ts): fixed
 // texts around a path the model chose.
 const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
+  // web.fetch (D-262): the reason is already Italian, written by the core.
+  [/^web · (.+)$/, (reason) => `pagina non letta: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, '')}`],
   [/^(\S+) does not take delegated steps$/, (agent) => `${agentName(agent)} non accetta passi delegati`],
   [/^the user did not approve sending the brief to the cloud/, () => 'il brief non è stato approvato per il cloud'],
   [/^the user did not approve the budget for (\S+)/, (model) => `il budget per ${MODEL_TEXT[model] ?? model} non è stato approvato`],
@@ -292,6 +294,32 @@ function toolError(detail: string): string {
   return 'uno strumento ha restituito un errore';
 }
 
+/**
+ * A page read with `web.fetch` (D-262): the detail is `web · <address>`, or
+ * `web · <address> · <title>`. The address is a link only when it is whole
+ * (the core cuts a long detail with «…») and http or https.
+ */
+function webPage(detail: string): { site: string; title?: string; url?: string } | undefined {
+  const match = /^web · (\S+)(?: · (.+))?$/.exec(detail);
+  if (match === null) return undefined;
+  const [, address = '', title] = match;
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+  const site = url.hostname.replace(/^www\./, '');
+  const whole = !address.endsWith('…');
+  return { site, ...(title === undefined || title.trim() === '' ? {} : { title: title.trim() }), ...(whole ? { url: url.href } : {}) };
+}
+
+/** The link of an activity line: the page a `web.fetch` read (D-262); none for every other line. */
+export function activityLink(activity: Activity | SavedActivity): string | undefined {
+  return activity.kind === 'read' ? webPage(activity.detail)?.url : undefined;
+}
+
 /** One line of what a task is doing, in Italian (D-054), live or saved (D-083). */
 export function activityText(activity: Activity | SavedActivity): string {
   switch (activity.kind) {
@@ -301,8 +329,11 @@ export function activityText(activity: Activity | SavedActivity): string {
       return activity.detail === 'queued' ? 'In coda…' : 'Sto lavorando…';
     case 'search':
       return `Cerco nella knowledge base: «${activity.detail}»`;
-    case 'read':
+    case 'read': {
+      const page = webPage(activity.detail);
+      if (page !== undefined) return page.title === undefined ? `Ho letto ${page.site}` : `Ho letto ${page.site} — ${page.title}`;
       return `Leggo ${activity.detail}`;
+    }
     case 'write':
       return `Scrivo ${activity.detail}`;
     case 'card':

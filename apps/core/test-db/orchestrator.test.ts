@@ -761,7 +761,10 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
     await drain(work.id, other, coxed(other));
     assert.deepEqual(drawn.at(-1), { conversation: work.conversationId, named: false });
     assert.match(other.requests[0]?.messages.at(-1)?.content ?? '', /- Battuta vera 2\./);
-    assert.equal(systemOf(other.requests[0]).split('Character of the chat theme')[0], systemOf(first).split('Character of the chat theme')[0]);
+    // web.fetch (D-262) is offered only up to Internal: the one line the work conversation adds, last of the tools.
+    const withoutWeb = (system: string) => system.replace(/^- web\.fetch: .*\n/m, '');
+    assert.match(systemOf(other.requests[0]), /^- web\.fetch: /m);
+    assert.equal(withoutWeb(systemOf(other.requests[0])).split('Character of the chat theme')[0], systemOf(first).split('Character of the chat theme')[0]);
   } finally {
     configureSeriesLines(undefined);
   }

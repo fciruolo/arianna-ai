@@ -76,6 +76,7 @@ import type { ImToolEnv } from './im-tool.ts';
 import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
+import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -195,6 +196,8 @@ export interface OrchestratorOptions {
   freeReplies?: boolean;
   /** data/attachments (D-247): the images attached in a private chat, read by the `vision` model; without it they stay unread. */
   attachmentsDir?: string;
+  /** Tests: the downloader of `web.fetch` (D-262), with fake pages; without it the network of link-fetch.ts. */
+  fetchLink?: WebToolEnv['fetchLink'];
 }
 
 /**
@@ -214,6 +217,8 @@ export interface OrchestratorOptions {
  * `routine.propose` (D-256) only with `routines`: a conversation of Arianna,
  * never incognito nor the secretary's; the tool itself writes a routine only
  * in a private one (routineProposalAllowed).
+ * `web.fetch` (D-262) only with `web`: a step whose context is at most
+ * Internal, without finance data, not incognito (webFetchOffered).
  */
 export function orchestratorTools(
   agent: LoadedAgent,
@@ -224,6 +229,7 @@ export function orchestratorTools(
   profile = false,
   shares = false,
   routines = false,
+  web = false,
 ): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
@@ -232,7 +238,8 @@ export function orchestratorTools(
         (tool !== UPDATE || cards) &&
         (tool !== PROFILE_READ || profile) &&
         (tool !== PROFILE_SHARE || (delegation && !secretary && shares)) &&
-        (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary))) ||
+        (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary)) &&
+        (tool !== WEB_FETCH || (web && !incognito))) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -1190,6 +1197,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         readsProfile && profile?.topicsOnly === true,
         profile !== undefined && shareTargets.size > 0,
         routinesOffered,
+        // A public page (D-262): only while the step has read nothing above Internal, nor finance data.
+        webFetchOffered(context, incognito),
       );
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
       const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
@@ -1310,10 +1319,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         await show(task, step, 'error', `the same call as step ${String(earlier)}, not run again`);
         return waits ? { kind: 'wait-user', reason: REPEATING, usage } : { kind: 'continue', usage };
       }
+      // A page (D-262) is read before the transaction, for up to 15 s on the network: read again after a crash, it counts once more.
+      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
-        const ran = await runTool(tool, answer.arguments, {
+        const ran = fetched ?? await runTool(tool, answer.arguments, {
           sql: tx,
           kb: options.kb,
           task,
@@ -1356,8 +1367,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
       // An error of a profile tool names topics: the activity shows the tool alone (D-114b).
-      if (result.text.startsWith('error: ')) await show(task, step, 'error', PROFILE_TOOLS.includes(tool) ? tool : result.text.replace(/^error: [^:]+: /, ''));
-      else await show(task, step, TOOL_ACTIVITY[tool], toolDetail(tool, answer.arguments));
+      // A page (D-262): «web · <reason>», or «web · <address> · <title>» read by the chat as a link.
+      if (result.text.startsWith('error: ')) {
+        const reason = result.text.replace(/^error: [^:]+: /, '');
+        await show(task, step, 'error', PROFILE_TOOLS.includes(tool) ? tool : tool === WEB_FETCH ? `web · ${reason}` : reason);
+      } else await show(task, step, TOOL_ACTIVITY[tool], result.page === undefined ? toolDetail(tool, answer.arguments) : webDetail(result.page));
       return { kind: 'continue', usage };
     },
   };
@@ -1377,6 +1391,7 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'profile.share': 'wait',
   'profile.propose': 'write',
   'routine.propose': 'wait',
+  'web.fetch': 'read',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
@@ -1387,6 +1402,11 @@ function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);
+}
+
+/** The line of a page read (D-262): the address first, so that a long title is what the cut of the detail takes. */
+function webDetail(page: WebPage): string {
+  return page.title === undefined || page.title.trim() === '' ? `web · ${page.url}` : `web · ${page.url} · ${page.title}`;
 }
 
 /** A `task.plan` call of this task that ended in an error (D-164). */

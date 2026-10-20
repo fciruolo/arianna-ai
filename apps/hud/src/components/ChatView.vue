@@ -21,7 +21,7 @@ import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { releaseProject } from '../lib/note-release.ts';
 import { canAskAside } from '../lib/side-chat.ts';
-import { activityText, agentName, reasonText } from '../lib/italian.ts';
+import { activityLink, activityText, agentName, reasonText } from '../lib/italian.ts';
 import { agentLabelLine, agentShortName } from '../lib/character-names.ts';
 import { castLook, conversationCharacter } from '../lib/character-chat.ts';
 import AgentName from './AgentName.vue';
@@ -1387,7 +1387,8 @@ onBeforeUnmount(() => clearInterval(clock));
                       "
                       aria-hidden="true"
                     >{{ index === activityOf(message).length - 1 ? '▸' : (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓' }}</span>
-                    <span class="break-words">{{ activityText(line) }}</span>
+                    <a v-if="activityLink(line) !== undefined" :href="activityLink(line)" target="_blank" rel="noopener noreferrer" class="break-words text-accent hover:underline">{{ activityText(line) }}</a>
+                    <span v-else class="break-words">{{ activityText(line) }}</span>
                   </li>
                 </ul>
                 <LiveEdits v-if="editsOf(message).length > 0" :edits="editsOf(message)" />

@@ -71,6 +71,18 @@ describe('readPage', () => {
     assert.deepEqual(result, { ok: false, reason: 'blocked' });
   });
 
+  it('a post of X the user wrote: the post passes with its consent, then its oEmbed; another post does not', async () => {
+    const rows: unknown[][] = [];
+    const post = 'https://x.com/finto/status/123';
+    const oembed = `https://publish.twitter.com/oembed?url=${encodeURIComponent(post)}`;
+    const consent: PageConsent = { from: 'user', addresses: [post] };
+    const read = await readPage({ sql: fakeSql(rows), address: post, context: createContext('L1', 'L1'), consent, fetchLink: hopping([oembed]) });
+    assert.equal(read.ok, true);
+    assert.deepEqual(rows.map((values) => values[3]), ['web-page-user', 'web-page-sites']);
+    const other = await readPage({ sql: fakeSql([]), address: 'https://x.com/altro/status/9', context: createContext('L1', 'L1'), consent, fetchLink: hopping([oembed]) });
+    assert.deepEqual(other, { ok: false, reason: 'blocked' });
+  });
+
   it('in a public session the model may follow links anywhere', async () => {
     const result = await readPage({
       sql: fakeSql([]),

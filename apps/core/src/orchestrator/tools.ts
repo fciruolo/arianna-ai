@@ -25,6 +25,7 @@ import { updateCard } from './cards.ts';
 import { addImTool, clientProject, namesInText, type ImProposal, type ImToolEnv } from './im-tool.ts';
 import { KbError, type Kb } from './kb.ts';
 import { WAITING_PROPOSE, WAITING_SHARE, type FactProposal } from './profile-share.ts';
+import { webFetch, type WebPage, type WebToolEnv } from './web-tool.ts';
 
 /**
  * The tools the orchestrator runs itself, on this machine (task 1.10, D-053).
@@ -40,6 +41,7 @@ import { WAITING_PROPOSE, WAITING_SHARE, type FactProposal } from './profile-sha
  * `profile.read` reads one fact of «Su di te» within the step's clearance (D-114, tappa B).
  * `profile.share` asks the user to let one fact out to an agent, `profile.propose` to remember one (D-114, tappe C e D).
  * `routine.propose` proposes a routine, written off until the user approves it (D-256).
+ * `web.fetch` reads one public page through the gateway, in a context at most L1 (web-tool.ts, D-262).
  */
 export const LOCAL_TOOLS = [
   'kb.search',
@@ -55,6 +57,7 @@ export const LOCAL_TOOLS = [
   'profile.share',
   'profile.propose',
   'routine.propose',
+  'web.fetch',
 ] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
@@ -90,6 +93,13 @@ export interface ToolEnv {
    * user with Arianna (routineProposalAllowed). Without it the tool proposes nothing.
    */
   routines?: boolean;
+  /**
+   * What `web.fetch` needs (D-262): the pool, the run, the signal. Without it
+   * the tool reads nothing. `incognito`: the conversation is incognito, where
+   * the tool is never offered.
+   */
+  web?: WebToolEnv;
+  incognito?: boolean;
 }
 
 export interface ToolResult {
@@ -106,6 +116,8 @@ export interface ToolResult {
   propose?: FactProposal;
   /** `routine.propose`: the routine the user approves in the web chat, written off with the turn (D-256). */
   routine?: RoutineProposal;
+  /** `web.fetch`: the page read, for the line of the chat (D-262). */
+  page?: WebPage;
 }
 
 /** Longest page text shown to the model in one result. */
@@ -141,6 +153,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await proposeFact(args, env);
       case 'routine.propose':
         return proposeRoutine(args, env);
+      case 'web.fetch':
+        return await webFetch(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };

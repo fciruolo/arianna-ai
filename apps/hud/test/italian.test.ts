@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { ApiError, SpriteApiError } from '../src/lib/api.ts';
-import { activityText, errorText, reasonText, spriteErrorText, thoughtLineText, uploadErrorText } from '../src/lib/italian.ts';
+import { activityLink, activityText, errorText, reasonText, spriteErrorText, thoughtLineText, uploadErrorText } from '../src/lib/italian.ts';
 
 test('spriteErrorText: why a character was not drawn, in Italian, never the core words (D-123)', () => {
   const text = (code: string, message: string, resetsAt: string | null = null) => spriteErrorText(new SpriteApiError(400, message, code, resetsAt));
@@ -84,6 +84,25 @@ test('activity lines are written in Italian; an unknown tool error is never show
   // An error that ends the task (D-250): no other way is promised.
   assert.equal(line('stop', 'the gateway refused the brief (second scanner found personal data: FULLNAME)'), 'Errore: il gateway ha fermato il brief');
   assert.equal(line('stop', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore');
+});
+
+test('a page read with web.fetch (D-262): «Ho letto» the site and the title, with the link when whole', () => {
+  const line = (kind: 'read' | 'error', detail: string) => ({ conversationId: 'c', taskId: 't', step: 2, kind, detail });
+  assert.equal(activityText(line('read', 'web · https://www.example.com/listino · Listino prezzi')), 'Ho letto example.com — Listino prezzi');
+  assert.equal(activityLink(line('read', 'web · https://www.example.com/listino · Listino prezzi')), 'https://www.example.com/listino');
+  assert.equal(activityText(line('read', 'web · https://example.com/')), 'Ho letto example.com');
+  // Cut by the core: no link to a wrong address.
+  assert.equal(activityLink(line('read', 'web · https://example.com/molto-lung…')), undefined);
+  // Never a link that is no http(s), nor for a page of the knowledge base.
+  assert.equal(activityLink(line('read', 'web · javascript:alert(1) · x')), undefined);
+  assert.equal(activityText(line('read', 'kb/work/note.md')), 'Leggo kb/work/note.md');
+  assert.equal(activityLink(line('read', 'kb/work/note.md')), undefined);
+  assert.equal(activityLink(line('error', 'web · https://example.com/')), undefined);
+  assert.equal(
+    activityText(line('error', 'web · In una conversazione Interna leggo solo gli indirizzi che hai scritto tu.')),
+    'Errore: pagina non letta: in una conversazione Interna leggo solo gli indirizzi che hai scritto tu, provo un’altra strada',
+  );
+  assert.equal(activityText(line('error', 'web · il sito non ha risposto in tempo')), 'Errore: pagina non letta: il sito non ha risposto in tempo, provo un’altra strada');
 });
 
 test('delegation lines: hand-over, the Coder at work, its tools, the waits, its errors', () => {

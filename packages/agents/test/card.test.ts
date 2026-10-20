@@ -148,6 +148,27 @@ describe('parseAgentCard', () => {
       assert.deepEqual(parseAgentCard(card((c) => (c.tools = ['finance.alerts'])), 'archivista').tools, ['finance.alerts']);
     });
 
+    it('web.fetch (D-262): offered only where private data is closed, so a card reading L2 may list it', () => {
+      const raw = card((c) => {
+        c.tools = ['kb.read', 'web.fetch'];
+        c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
+      });
+      assert.deepEqual(parseAgentCard(raw, 'archivista').tools, ['kb.read', 'web.fetch']);
+      assert.equal(TOOLS['web.fetch'].withoutPrivateData, true);
+      // web.search has no such guarantee: still refused.
+      rejects(card((c) => {
+        c.tools = ['kb.read', 'web.search'];
+        c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
+      }), /web.search opens external_comms/);
+      // What it reads stays in the history: untrusted content must be declared.
+      rejects(card((c) => (c.tools = ['kb.read', 'web.fetch'])), /web.fetch opens untrusted_content/);
+      // Not on a card of the finances.
+      rejects(card((c) => {
+        c.tools = ['finance.summary', 'web.fetch'];
+        c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
+      }), /may not list web\.fetch/);
+    });
+
     it('rejects a tool that opens a side declared removed', () => {
       rejects(card((c) => (c.tools = ['kb.read', 'web.search'])), /web.search opens untrusted_content/);
       rejects(

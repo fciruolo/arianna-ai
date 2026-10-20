@@ -26,6 +26,15 @@ export interface ToolSpec {
    * runs on the local model alone may list it.
    */
   localOnly?: boolean;
+  /**
+   * The core offers the tool only in a step whose context holds nothing above
+   * Internal (L1) and no finance data (D-262): private data starts at L2, so in
+   * that step the private data side is closed, whatever the card declares. Its
+   * external communication may then be open on a card that declares it
+   * removed: in the steps that read private data the tool is not there. What
+   * it reads stays in the history, so its untrusted content is never excused.
+   */
+  withoutPrivateData?: boolean;
 }
 
 export const TOOLS = {
@@ -78,7 +87,8 @@ export const TOOLS = {
   'repo.test': { description: 'Run the project checks in the run worktree', opens: [] },
   'file.delete': { description: 'Delete a file outside the sandbox', opens: [], approval: 'delete' },
   'web.search': { description: 'Search the web', opens: ['untrusted_content', 'external_comms'] },
-  'web.fetch': { description: 'Fetch a web page', opens: ['untrusted_content', 'external_comms'] },
+  // Arianna's reader of public pages (D-262, P7): offered only where the step's context is at most L1.
+  'web.fetch': { description: 'Fetch a web page', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
   'channel.send': {
     description: 'Send a message on an external channel (Telegram, phone), through the gateway',
     opens: ['external_comms'],
