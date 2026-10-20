@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.151.0] - 2026-10-20
+
 ### Aggiunto
 
 - Arianna legge le pagine web pubbliche in chat (`web.fetch`): nelle conversazioni Pubbliche qualsiasi pagina, in quelle Interne solo gli indirizzi che hai scritto tu, mai in quelle Private, con dati di Finanze o in incognito; al più 5 pagine per risposta e 30 al giorno, il testo arriva come contenuto non fidato e il passo in chat mostra «Ho letto sito — titolo» con il link (D-262).
