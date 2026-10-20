@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Sicurezza
+
+- Il doctor legge le impostazioni di oMLX 0.7.1 (D-221): rifiuta «Allow inference without API key» (`auth.allow_unauthenticated_inference`, che apre la chat anche sul Mac), Splash (`integrations.splash_path` o un modello con `external_engine`, un programma a parte che riceverebbe i testi), i flag `--http-proxy`, `--https-proxy` e `--no-proxy`, e controlla anche un comando che lancia `omlx-cli` dall'app per Mac.
+
 ## [0.151.0] - 2026-10-20
 
 ### Aggiunto

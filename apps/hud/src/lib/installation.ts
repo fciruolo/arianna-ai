@@ -136,7 +136,7 @@ export const READINESS_TEXT: Record<ReadinessId, { title: string; ok: string; fi
   'model-server': {
     title: 'Il server dei modelli risponde solo ad Arianna',
     ok: 'Chiave di Arianna, impostazioni nella cartella dei dati.',
-    fix: 'Il comando del server dei modelli non dice --base-path data/omlx, contiene --api-key o --mcp-config, oppure le sue impostazioni saltano la chiave, usano un proxy, server MCP o il cluster. Correggilo in Server dei modelli, Avanzate; pnpm arianna:doctor dice cosa.',
+    fix: 'Il comando del server dei modelli non dice --base-path data/omlx, contiene --api-key, --mcp-config o un proxy, oppure le sue impostazioni saltano la chiave, rispondono senza chiave, usano un proxy, server MCP, il cluster o Splash. Correggilo in Server dei modelli, Avanzate; pnpm arianna:doctor dice cosa.',
   },
   programs: {
     title: 'Programmi necessari',

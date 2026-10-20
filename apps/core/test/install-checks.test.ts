@@ -187,12 +187,66 @@ test('omlxSettingsChecks: oMLX settings inside data/, no key or MCP on the comma
     ],
   );
   const detail = (id: string): string => checks.find((check) => check.id === id)?.detail ?? '';
-  assert.equal(detail('local.b.settings'), 'settings.json sets auth.skip_api_key_verification, auth.sub_keys, network.https_proxy, network.no_proxy, mcp.config_path, server.distributed_inference_enabled: reset in data/open/settings.json');
+  assert.equal(detail('local.b.settings'), 'oMLX settings in data/open set auth.skip_api_key_verification, auth.sub_keys, network.https_proxy, network.no_proxy, mcp.config_path, server.distributed_inference_enabled: reset them');
   assert.match(detail('local.c.settings'), /cannot be read/);
   assert.match(detail('local.e.base-path'), /add --base-path data\/omlx/);
-  assert.equal(detail('local.h.flags'), 'remove --api-key, --mcp-config: the key comes from data/h.key');
+  assert.equal(detail('local.h.flags'), 'remove --api-key, --mcp-config: the key comes from data/h.key, and oMLX needs no MCP servers nor proxy');
   // The value of a key never goes in a detail.
   assert.ok(!checks.some((check) => check.detail.includes("'k'")));
+});
+
+test('omlxSettingsChecks reads the settings of oMLX 0.7.1: keyless inference, Splash, proxy flags, the wrapper of the macOS app (D-221)', () => {
+  const home = join(HOME, 'omlx-071');
+  const data = join(home, 'data');
+  const write = (dir: string, file: string, content: unknown): void => {
+    mkdirSync(join(data, dir), { recursive: true });
+    writeFileSync(join(data, dir, file), typeof content === 'string' ? content : JSON.stringify(content));
+  };
+  // As 0.7.1 writes them: the new key present and off, Splash unset, no external engine.
+  write('clean', 'settings.json', { auth: { api_key: 'x', skip_api_key_verification: false, allow_unauthenticated_inference: false, sub_keys: [] }, integrations: { splash_path: null, web_search_provider: 'ddgs' }, server: { distributed_inference_enabled: false } });
+  write('clean', 'model_settings.json', { version: 1, models: { 'qwen-a': { external_engine: null }, 'qwen-b': {} } });
+  write('keyless', 'settings.json', { auth: { allow_unauthenticated_inference: true } });
+  write('splash', 'settings.json', { integrations: { splash_path: '/opt/homebrew/bin/splash' } });
+  write('engine', 'model_settings.json', { version: 1, models: { 'qwen-a': { external_engine: 'splash' }, 'qwen-b': { external_engine: 'splash' }, 'qwen-c': {} } });
+  write('broken-models', 'model_settings.json', '[]');
+  // 0.6.x and 0.7.x share «Disable all authentication»; an odd value counts as on.
+  write('odd', 'settings.json', { auth: { skip_api_key_verification: 'yes' }, server: { distributed_inference_enabled: 1 } });
+  const serve = (base: string, ...extra: string[]): string[] => ['omlx', 'serve', '--base-path', `data/${base}`, ...extra];
+  const checks = omlxSettingsChecks(home, data, [
+    { id: 'a', command: serve('clean') },
+    { id: 'b', command: serve('keyless') },
+    { id: 'c', command: serve('splash') },
+    { id: 'd', command: serve('engine') },
+    { id: 'e', command: serve('broken-models') },
+    { id: 'f', command: serve('odd') },
+    { id: 'g', command: serve('clean', '--https-proxy', 'http://proxy.example:3128', '--no-proxy=*') },
+    // The wrapper inside the app, which 0.7 no longer links into /opt/homebrew/bin, is still oMLX.
+    { id: 'h', command: ['/Applications/oMLX.app/Contents/MacOS/omlx-cli', 'serve', '--base-path', 'data/keyless'] },
+    // Not oMLX: a name that only ends like it.
+    { id: 'i', command: ['/usr/bin/notomlx-cli', 'serve', '--api-key', 'k'] },
+  ]);
+  const result = (id: string): boolean | undefined => checks.find((check) => check.id === id)?.ok;
+  const detail = (id: string): string => checks.find((check) => check.id === id)?.detail ?? '';
+  assert.equal(result('local.a.settings'), true);
+  assert.equal(result('local.a.flags'), true);
+  assert.equal(detail('local.b.settings'), 'oMLX settings in data/keyless set auth.allow_unauthenticated_inference: reset them');
+  assert.equal(detail('local.c.settings'), 'oMLX settings in data/splash set integrations.splash_path: reset them');
+  // How many models, never their names.
+  assert.equal(detail('local.d.settings'), 'oMLX settings in data/engine set external_engine of 2 models in model_settings.json: reset them');
+  assert.ok(!detail('local.d.settings').includes('qwen'));
+  assert.equal(result('local.e.settings'), false);
+  assert.match(detail('local.e.settings'), /model_settings\.json cannot be read/);
+  assert.equal(detail('local.f.settings'), 'oMLX settings in data/odd set auth.skip_api_key_verification, server.distributed_inference_enabled: reset them');
+  assert.equal(result('local.g.flags'), false);
+  assert.match(detail('local.g.flags'), /^remove --https-proxy, --no-proxy:/);
+  assert.equal(result('local.g.settings'), true);
+  assert.equal(result('local.h.settings'), false);
+  assert.ok(!checks.some((check) => check.id.startsWith('local.i.')));
+  // The log level is checked for the wrapper too.
+  assert.deepEqual(
+    omlxLogChecks([{ id: 'h', command: ['/Applications/oMLX.app/Contents/MacOS/omlx-cli', 'serve', '--log-level', 'trace'] }]).map((check) => check.ok),
+    [false],
+  );
 });
 
 test('a model of data/guard/models left in data/models fails the doctor: oMLX would list it (D-203)', () => {
