@@ -95,6 +95,7 @@ export {
   targetName,
   type Allowed,
   type LinkConsent,
+  type PageConsent,
   type ChannelId,
   type Decision,
   type GatewayRule,

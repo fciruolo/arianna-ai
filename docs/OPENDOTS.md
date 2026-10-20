@@ -121,7 +121,7 @@ Una alla volta; ognuna si propone con il dettaglio, l'utente sceglie, poi divent
 | P10 | **Computer dell'agente** (icona dello schermo di OpenDots, `ComputerPanel.tsx`): browser, file, terminale e attività dell'agente | dopo P4 | **Scelto dall'utente (2026-10-04): dopo le chiamate, "ampliamo il più possibile questa parte"**. Dentro: file modificati e chi ha fatto cosa (richieste del 2026-10-03), righe di attività salvate, poi browser e terminale dal vivo con il confinamento in container (P8). **Prima parte fatta (2026-10-05, da confermare):** chi ha fatto cosa e file modificati (D-082), righe di attività salvate e rileggibili (D-083); browser e terminale ancora da fare |
 | P5 | Pausa globale e revoca dei permessi che interrompono i run in corso | 1A/1B | Da proporre |
 | P6 | Editor delle pagine KB: Tiptap con comandi `/`, Markdown sicuro, salvataggio automatico con conflitti | 2 | Da proporre |
-| P7 | Lettore di pagine pubbliche isolato (Playwright senza JS, anti-SSRF) per il materiale L0 | 2/5 | Da proporre |
+| P7 | Lettore di pagine pubbliche isolato (Playwright senza JS, anti-SSRF) per il materiale L0 | 2/5 | **Proposta** (2026-10-20, D-262): strumento `web.fetch` sopra `link-fetch.ts` di D-154, senza Playwright; testo in `docs/PROPOSTE.md` |
 | P8 | Container per esecutore e agente web, sul modello del supervisor OpenBot | dopo 1.6 | Da proporre |
 | P9 | Schemi di Telegram ripresi da Slack: allowlist doppia, serie per thread, errori generici, avviso di pausa | 1B | Da proporre |
 

@@ -19,10 +19,25 @@ export type ChannelId = 'web' | 'telegram' | 'phone' | 'voice' | 'push';
  */
 export type LinkConsent = 'list' | 'click';
 
+/**
+ * Why a public page may be read (D-262, P7): the session is Public (`public`,
+ * any public address, the model may follow links), the address was written by
+ * the user in the conversation or in the brief (`user`, `addresses` as the
+ * caller read them), or its site is in the list of the user (`sites`, for the
+ * Coder: `[web] coder_sites`, and a redirect of a `user` address within its
+ * own site). The caller declares where the addresses and sites come from;
+ * the gateway guarantees one address, checked against them and scanned.
+ */
+export type PageConsent =
+  | { from: 'public' }
+  | { from: 'user'; addresses: readonly string[] }
+  | { from: 'sites'; sites: readonly string[] };
+
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
   | { kind: 'channel'; id: ChannelId }
-  | { kind: 'web' }
+  /** Without `page`: a query to a fixed service (catalogs, Hugging Face). With `page`: one public page to read (D-262). */
+  | { kind: 'web'; page?: PageConsent }
   /**
    * The address of a link saved by the user, to its own site (D-154). With
    * `list`, `sites` are the sites of the list the caller read: the address
@@ -45,9 +60,11 @@ export type GatewayRule =
   | 'pii'
   | 'pii-unavailable'
   | 'link-invalid'
+  | 'page-consent'
   | 'local'
   | 'cloud'
-  | 'link';
+  | 'link'
+  | 'page';
 
 /**
  * What the caller does after a block. `notify-reference`: a channel gets a
@@ -60,7 +77,7 @@ export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
 export type Decision =
   | {
       decision: 'allow';
-      rule: 'local' | 'cloud' | 'link';
+      rule: 'local' | 'cloud' | 'link' | 'page';
       label: Label;
       reason: string;
       /** The exact text checked for each fragment, frozen: this is what is sent. */
@@ -68,7 +85,7 @@ export type Decision =
     }
   | {
       decision: 'block';
-      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link'>;
+      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page'>;
       label: Label;
       reason: string;
       next: NextStep;
@@ -82,6 +99,8 @@ const CHANNELS: readonly string[] = ['web', 'telegram', 'phone', 'voice', 'push'
 /** Sites a `list` consent may name (the list of arianna.toml holds 100 at most, plus publish.twitter.com). */
 const MAX_LINK_SITES = 200;
 const MAX_LINK = 2_000;
+/** Addresses a `user` page consent may name: those written in one conversation or brief. */
+const MAX_PAGE_ADDRESSES = 200;
 const X_HOSTS = ['x.com', 'twitter.com', 'publish.twitter.com'];
 
 /**
@@ -107,33 +126,102 @@ function isSiteName(site: string): boolean {
   return labels.length >= 2 && labels.every((part) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(part)) && !/^\d+$/.test(labels.at(-1) ?? '');
 }
 
-/** A link target allows one address only: http(s), normalized, no credentials, no space; with `list`, on a site of the list. */
-function checkLink(payload: readonly Labeled<unknown>[], texts: readonly string[], label: Label, target: Extract<Target, { kind: 'link' }>): Decision {
+/** One address only: http(s), normalized, no credentials, no space. The URL, or the reason of the refusal. */
+function singleAddress(payload: readonly Labeled<unknown>[], texts: readonly string[]): URL | string {
   const [text] = texts;
-  if (payload.length !== 1 || typeof payload[0]?.value !== 'string' || text === undefined) {
-    return block('link-invalid', label, 'a link target takes exactly one address', 'stay-local');
-  }
+  if (payload.length !== 1 || typeof payload[0]?.value !== 'string' || text === undefined) return 'the target takes exactly one address';
   let url: URL;
   try {
     url = new URL(text);
   } catch {
-    return block('link-invalid', label, 'not an address', 'stay-local');
+    return 'not an address';
   }
-  if (text.length > MAX_LINK || /[\s\p{Cc}]/u.test(text) || url.href !== text) return block('link-invalid', label, 'not a single normalized address', 'stay-local');
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return block('link-invalid', label, 'only http and https addresses', 'stay-local');
-  if (url.username !== '' || url.password !== '') return block('link-invalid', label, 'no credentials in an address', 'stay-local');
-  if (target.consent === 'list') {
-    const host = url.hostname.toLowerCase().replace(/\.$/, '');
-    if (!target.sites.some((site) => host === site || host.endsWith(`.${site}`))) return block('link-invalid', label, 'the site is not in the list of the user', 'stay-local');
-  }
-  // Values in an address are often %-encoded: the scanner reads it as written and decoded (decodable: checked before).
+  if (text.length > MAX_LINK || /[\s\p{Cc}]/u.test(text) || url.href !== text) return 'not a single normalized address';
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'only http and https addresses';
+  if (url.username !== '' || url.password !== '') return 'no credentials in an address';
+  return url;
+}
+
+/** Whether the host of `url` is one of `sites` or a subdomain of one. */
+function onSites(url: URL, sites: readonly string[]): boolean {
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  return sites.some((site) => host === site || host.endsWith(`.${site}`));
+}
+
+/** Scanner matches in an address, read as written and decoded (decodable: checked before). */
+function addressFindings(text: string): Finding[] {
+  // Values in an address are often %-encoded.
   const masked = linkScanText(text);
-  const findings = [...scanText(masked), ...scanText(decodeURIComponent(masked))];
+  return [...scanText(masked), ...scanText(decodeURIComponent(masked))];
+}
+
+/** A link target allows one address only: http(s), normalized, no credentials, no space; with `list`, on a site of the list. */
+function checkLink(payload: readonly Labeled<unknown>[], texts: readonly string[], label: Label, target: Extract<Target, { kind: 'link' }>): Decision {
+  const url = singleAddress(payload, texts);
+  if (typeof url === 'string') return block('link-invalid', label, url, 'stay-local');
+  if (target.consent === 'list' && !onSites(url, target.sites)) return block('link-invalid', label, 'the site is not in the list of the user', 'stay-local');
+  const findings = addressFindings(url.href);
   if (findings.length > 0) {
     const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
     return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
   }
   return allow({ decision: 'allow', rule: 'link', label, reason: `${label} address to its site, ${target.consent} consent, scan clean`, texts }, target);
+}
+
+/** An address as compared with those of a `user` consent: normalized, without the fragment (never sent). */
+function pageKey(address: string): string | undefined {
+  try {
+    const url = new URL(address);
+    url.hash = '';
+    return url.href;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A page to read (D-262): one address as for a link, and the consent must
+ * cover it: a Public session (L0 context and L0 address), an address written
+ * by the user, or a site of the list. What the gateway cannot know is checked
+ * by the cloud rules before and the two scanners after.
+ */
+function checkPage(payload: readonly Labeled<unknown>[], texts: readonly string[], label: Label, context: Context, page: PageConsent): Decision | undefined {
+  const url = singleAddress(payload, texts);
+  if (typeof url === 'string') return block('link-invalid', label, url, 'stay-local');
+  switch (page.from) {
+    case 'public':
+      if (context.effective !== 'L0' || label !== 'L0') return block('page-consent', label, `any public page only from a public session, not ${maxLabel(context.effective, label)}`, 'stay-local');
+      break;
+    case 'user': {
+      const key = pageKey(url.href);
+      if (!page.addresses.some((address) => pageKey(address) === key)) return block('page-consent', label, 'the address was not written by the user', 'stay-local');
+      break;
+    }
+    case 'sites':
+      if (!onSites(url, page.sites)) return block('page-consent', label, 'the site is not in the list of the user', 'stay-local');
+      break;
+  }
+  const findings = addressFindings(url.href);
+  if (findings.length > 0) {
+    const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
+    return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
+  }
+  return undefined;
+}
+
+function isPageConsent(value: unknown): value is PageConsent {
+  if (typeof value !== 'object' || value === null) return false;
+  const page = value as Record<string, unknown>;
+  switch (page.from) {
+    case 'public':
+      return true;
+    case 'user':
+      return Array.isArray(page.addresses) && page.addresses.length > 0 && page.addresses.length <= MAX_PAGE_ADDRESSES && (page.addresses as unknown[]).every((address) => typeof address === 'string' && address !== '' && address.length <= MAX_LINK);
+    case 'sites':
+      return Array.isArray(page.sites) && page.sites.length > 0 && page.sites.length <= MAX_LINK_SITES && (page.sites as unknown[]).every((site) => typeof site === 'string' && isSiteName(site));
+    default:
+      return false;
+  }
 }
 
 /**
@@ -157,7 +245,7 @@ export function isTarget(value: unknown): value is Target {
     case 'channel':
       return CHANNELS.includes(target.id as string);
     case 'web':
-      return true;
+      return target.page === undefined || isPageConsent(target.page);
     case 'link':
       if (target.consent === 'click') return true;
       return (
@@ -185,7 +273,7 @@ export function localityOf(target: Target): Locality {
 
 /** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`; never the address nor the site of a link. */
 export function targetName(target: Target): string {
-  if (target.kind === 'web') return 'web-search';
+  if (target.kind === 'web') return target.page === undefined ? 'web-search' : `web-page-${target.page.from}`;
   if (target.kind === 'link') return `link-${target.consent}`;
   return target.id;
 }
@@ -247,7 +335,7 @@ export function spendAllowed(decision: unknown): Allowed | undefined {
 }
 
 function block(
-  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link'>,
+  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page'>,
   label: Label,
   reason: string,
   next: NextStep,
@@ -344,7 +432,7 @@ export function gatewayCheck(
   }
   Object.freeze(texts);
   // An address carries its values %-encoded: the vault and the scanner read it decoded too (D-154).
-  if (target.kind === 'link') {
+  if (target.kind === 'link' || (target.kind === 'web' && target.page !== undefined)) {
     for (const text of texts) {
       try {
         parts.push(decodeURIComponent(text));
@@ -380,6 +468,12 @@ export function gatewayCheck(
     return block('cloud-label', label, `${label} cannot go to a cloud target; at most L1`, onBlock);
   }
 
+  // A page (D-262): one address the consent covers, scanned as written and decoded.
+  if (target.kind === 'web' && target.page !== undefined) {
+    const refused = checkPage(payload, texts, label, context, target.page);
+    if (refused !== undefined) return refused;
+  }
+
   const findings = parts.flatMap((part) => scanText(part));
   if (findings.length > 0) {
     const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
@@ -402,5 +496,8 @@ export function gatewayCheck(
   const skipped = second.verdict === 'skipped' ? `, second check skipped on a development installation (${second.reason})` : '';
   const catalog = exempt.filter(Boolean).length;
   const unread = catalog === 0 ? '' : `, ${String(catalog)} catalog text${catalog === 1 ? '' : 's'} not read by the second check`;
+  if (target.kind === 'web' && target.page !== undefined) {
+    return allow({ decision: 'allow', rule: 'page', label, reason: `${label} page address, ${target.page.from} consent, scan clean${skipped}`, texts }, target);
+  }
   return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean${skipped}${unread}`, texts }, target);
 }

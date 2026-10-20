@@ -346,3 +346,78 @@ test('link: the sites of a list are host names, never a bare suffix', () => {
   }
   assert.equal(isTarget({ kind: 'link', consent: 'list', sites: ['x.com', 'publish.twitter.com'] }), true);
 });
+
+// D-262 (P7): one public page to read, with the consent that covers it.
+const PAGE_PUBLIC: Target = { kind: 'web', page: { from: 'public' } };
+const PAGE_USER: Target = { kind: 'web', page: { from: 'user', addresses: ['https://example.com/listino#prezzi', 'https://example.org/a?b=1'] } };
+const PAGE_SITES: Target = { kind: 'web', page: { from: 'sites', sites: ['developer.mozilla.org', 'github.com'] } };
+
+test('page: from a public session any public address; from an internal one never with the public consent', () => {
+  const decision = gatewayCheck([fragment('L0', 'https://example.net/qualsiasi')], createContext('L1', 'L0'), PAGE_PUBLIC);
+  assert.equal(decision.decision, 'allow');
+  assert.equal(decision.rule, 'page');
+  assert.equal(decision.texts[0], 'https://example.net/qualsiasi');
+  assert.deepEqual(brief([fragment('L0', 'https://example.net/a')], createContext('L1', 'L1'), PAGE_PUBLIC), { decision: 'block', rule: 'page-consent', next: 'stay-local' });
+  assert.deepEqual(brief([fragment('L1', 'https://example.net/a')], createContext('L1', 'L0'), PAGE_PUBLIC), { decision: 'block', rule: 'page-consent', next: 'stay-local' });
+  assert.equal(localityOf(PAGE_PUBLIC), 'cloud');
+  assert.equal(targetName(PAGE_PUBLIC), 'web-page-public');
+  assert.equal(targetName(PAGE_USER), 'web-page-user');
+  assert.equal(targetName(PAGE_SITES), 'web-page-sites');
+  assert.equal(targetName(WEB_SEARCH), 'web-search');
+});
+
+test('page: with the user consent only an address the user wrote, the fragment aside', () => {
+  const check = (address: string) => gatewayCheck([fragment('L1', address)], createContext('L1', 'L1'), PAGE_USER);
+  assert.equal(check('https://example.com/listino').decision, 'allow');
+  assert.equal(check('https://example.com/listino#altro').decision, 'allow');
+  assert.equal(check('https://example.org/a?b=1').decision, 'allow');
+  assert.equal(brief([fragment('L1', 'https://example.org/a?b=2')], createContext('L1', 'L1'), PAGE_USER).rule, 'page-consent');
+  assert.equal(brief([fragment('L1', 'https://example.net/?q=Rossi')], createContext('L1', 'L1'), PAGE_USER).rule, 'page-consent');
+});
+
+test('page: with the sites consent only an address on a site of the list or a subdomain', () => {
+  const check = (address: string) => gatewayCheck([fragment('L1', address)], createContext('L1', 'L1'), PAGE_SITES).decision;
+  assert.equal(check('https://developer.mozilla.org/it/docs/Web'), 'allow');
+  assert.equal(check('https://gist.github.com/a'), 'allow');
+  assert.equal(check('https://github.com.evil.example/a'), 'block');
+  assert.equal(check('https://example.com/'), 'block');
+});
+
+test('page: never from a private session, a finance session or with private text, whatever the consent', () => {
+  for (const target of [PAGE_PUBLIC, PAGE_USER, PAGE_SITES]) {
+    assert.equal(brief([fragment('L1', 'https://example.com/listino')], createContext('L2', 'L2'), target).rule, 'contaminated');
+    assert.equal(brief([fragment('L2', 'https://example.com/listino')], createContext('L2', 'L1'), target).rule, 'cloud-label');
+    assert.equal(brief([fragment('L3', 'https://example.com/listino')], createContext('L1', 'L1'), target).rule, 'secret');
+    assert.equal(brief([fragment('L1', 'https://example.com/listino')], createContext('L2', 'L2', { finance: true }), target).rule, 'finance');
+  }
+});
+
+test('page: one normalized address only; the scanner and the vault read it decoded', () => {
+  for (const value of ['Leggi https://example.com/listino', 'file:///etc/passwd', 'https://user:pw@example.com/listino', 'https://example.com', { url: 'https://example.com/listino' }]) {
+    assert.equal(brief([fragment('L0', value)], createContext('L0', 'L0'), PAGE_PUBLIC).rule, 'link-invalid', JSON.stringify(value));
+  }
+  assert.equal(brief([fragment('L0', 'https://example.com/a'), fragment('L0', 'https://example.com/b')], createContext('L0', 'L0'), PAGE_PUBLIC).rule, 'link-invalid');
+  assert.equal(brief([fragment('L0', 'https://example.com/paga?iban=%49%5460X0542811101000000123456')], createContext('L0', 'L0'), PAGE_PUBLIC).rule, 'scanner');
+  const secrets = secretMatcher([{ ref: 'vault://demo', value: 'fake-page-secret-0123456789abcdef' }]);
+  assert.equal(check([fragment('L0', 'https://example.com/?k=fake%2Dpage%2Dsecret%2D0123456789abcdef')], createContext('L0', 'L0'), PAGE_PUBLIC, secrets, piiUnavailable('off')).rule, 'secret');
+});
+
+test('page: the second scanner reads the address like any cloud exit', () => {
+  const address = 'https://example.com/?q=Mario%20Rossi';
+  const target: Target = { kind: 'web', page: { from: 'user', addresses: [address] } };
+  const payload = [fragment('L1', address)];
+  const start = address.indexOf('Mario');
+  const found = fakePiiCheck(payload, [[{ kind: 'FULLNAME', start, end: start + 'Mario%20Rossi'.length, score: 0.98 }]]);
+  assert.equal(check(payload, createContext('L1', 'L1'), target, secretMatcher([]), found).rule, 'pii');
+  assert.equal(check(payload, createContext('L1', 'L1'), target, secretMatcher([]), fakePiiCheck(payload)).rule, 'page');
+});
+
+test('page: the consent is checked at runtime', () => {
+  assert.equal(isTarget(PAGE_PUBLIC), true);
+  assert.equal(isTarget(PAGE_USER), true);
+  assert.equal(isTarget(PAGE_SITES), true);
+  assert.equal(isTarget({ kind: 'web', page: { from: 'user', addresses: [] } }), false);
+  assert.equal(isTarget({ kind: 'web', page: { from: 'sites', sites: ['com'] } }), false);
+  assert.equal(isTarget({ kind: 'web', page: { from: 'anywhere' } }), false);
+  assert.equal(isTarget({ kind: 'web', page: 'public' }), false);
+});
