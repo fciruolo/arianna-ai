@@ -30,8 +30,8 @@ export interface ToolSpec {
    * The core offers the tool only in a step whose context holds nothing above
    * Internal (L1) and no finance data (D-262): private data starts at L2, so in
    * that step the private data side is closed, whatever the card declares. Its
-   * external communication may then be open on a card that declares it
-   * removed: in the steps that read private data the tool is not there. What
+   * external communication may then be open on a card that runs on the local
+   * model alone and declares it removed: in the steps that read private data the tool is not there. What
    * it reads stays in the history, so its untrusted content is never excused.
    */
   withoutPrivateData?: boolean;

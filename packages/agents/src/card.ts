@@ -95,7 +95,8 @@ const KEYS = [
  * Validates a parsed card. `name` is the file name without extension: the
  * card's own `name` must match it. Rules beyond the shape:
  * - at least one side of the trifecta is removed, and no tool opens a removed side
- *   (but a tool `withoutPrivateData`, offered only where the private data side is closed, D-262);
+ *   (but the external communication of a tool `withoutPrivateData` on a card that runs on the local model
+ *   alone: the core offers it only where the private data side is closed, D-262);
  * - a card cleared for L2 reads private data, so it cannot claim that side removed;
  * - a cloud executor next to an L2 clearance needs `cloud_max_label` at most L1;
  * - every approval a tool needs is listed in `approvals`;
@@ -174,9 +175,11 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     fail(`max_label ${maxLabel} reads private data: trifecta.private_data must be true`);
   }
   for (const tool of tools) {
-    // Offered only where the private data side is closed (D-262): its external communication never meets private
-    // data. What it reads stays in the history of later steps, so the card must still declare untrusted content.
-    for (const side of toolSpec(tool).opens.filter((opened) => !(toolSpec(tool).withoutPrivateData === true && opened === 'external_comms'))) {
+    // Offered by the core only where the private data side is closed (D-262): its external communication never
+    // meets private data. Only on a card that runs on the local model alone, where the core's orchestrator is the one
+    // offering it; what it reads stays in the history of later steps, so untrusted content is never excused.
+    const excused = toolSpec(tool).withoutPrivateData === true && !hasCloud;
+    for (const side of toolSpec(tool).opens.filter((opened) => !(excused && opened === 'external_comms'))) {
       if (!trifecta[side]) fail(`tool ${tool} opens ${side}, which the card declares removed`);
     }
     // Private by nature (D-144): never on a card a cloud executor runs, nor on one that may not read L2.

@@ -160,6 +160,29 @@ describe('parseAgentCard', () => {
         c.tools = ['kb.read', 'web.search'];
         c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
       }), /web.search opens external_comms/);
+      // Only on a card that runs on the local model alone: a cloud executor is not the core's orchestrator.
+      rejects(card((c) => {
+        c.tools = ['web.fetch'];
+        c.max_label = 'L1';
+        c.executors = ['local', 'claude'];
+        c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
+      }), /web.fetch opens external_comms/);
+      rejects(card((c) => {
+        c.tools = ['kb.read', 'web.fetch'];
+        c.executors = ['local', 'codex'];
+        c.cloud_max_label = 'L1';
+        c.trifecta = { private_data: true, untrusted_content: true, external_comms: false };
+      }), /web.fetch opens external_comms/);
+      // With the side declared open, a cloud card may list it as before.
+      assert.deepEqual(
+        parseAgentCard(card((c) => {
+          c.tools = ['web.fetch'];
+          c.max_label = 'L1';
+          c.executors = ['claude'];
+          c.trifecta = { private_data: false, untrusted_content: true, external_comms: true };
+        }), 'archivista').tools,
+        ['web.fetch'],
+      );
       // What it reads stays in the history: untrusted content must be declared.
       rejects(card((c) => (c.tools = ['kb.read', 'web.fetch'])), /web.fetch opens untrusted_content/);
       // Not on a card of the finances.

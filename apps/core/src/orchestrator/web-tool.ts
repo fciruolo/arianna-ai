@@ -2,6 +2,7 @@ import type { ToolId } from '@arianna/agents';
 import { isAtMost, isFinanceContext, type Context, type Label, type PageConsent } from '@arianna/policy';
 
 import type { Queryable, Sql } from '../db/client.ts';
+import { localMidnight } from '../commitment-dates.ts';
 import { appendEvent } from '../events.ts';
 import { FETCH_FAILURE_TEXT, siteOf } from '../link-fetch.ts';
 import type { Task } from '../tasks.ts';
@@ -102,11 +103,21 @@ export async function userAddresses(sql: Queryable, task: Task, effective: Label
   );
 }
 
-/** Pages read in this task and today, from the events. */
-async function pagesRead(sql: Queryable, taskId: string): Promise<{ task: number; day: number }> {
+/**
+ * Pages asked in this task and today, from the events. Today is the day of
+ * this machine, the user's time zone, as for the secretary (localMidnight).
+ * Every outcome counts, a refusal of the gateway too: a model in a loop of
+ * refused addresses stops at the limit. The check and the event are not
+ * atomic: two answers at the same moment may go one or two pages over, which
+ * the limit (a cap on loops and on traffic, not a security boundary) tolerates.
+ * The kind is written as a literal so that events_web_fetch_idx (0083) serves the count.
+ */
+async function pagesRead(sql: Queryable, taskId: string, now = new Date()): Promise<{ task: number; day: number }> {
+  const today = localMidnight(now);
   const [row] = await sql<{ task: number; day: number }[]>`
-    SELECT count(*) FILTER (WHERE task_id = ${taskId})::int AS task, count(*) FILTER (WHERE ts >= date_trunc('day', now()))::int AS day
-    FROM events WHERE kind = ${WEB_FETCH_EVENT} AND (task_id = ${taskId} OR ts >= date_trunc('day', now()))`;
+    SELECT
+      (SELECT count(*)::int FROM events WHERE kind = 'web.fetch' AND task_id = ${taskId}) AS task,
+      (SELECT count(*)::int FROM events WHERE kind = 'web.fetch' AND ts >= ${today}) AS day`;
   return { task: row?.task ?? 0, day: row?.day ?? 0 };
 }
 

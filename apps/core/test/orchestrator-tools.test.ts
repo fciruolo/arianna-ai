@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { loadAgent, userCard, userPresets, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, toolSpec, TOOLS, userCard, userPresets, type LoadedAgent, type ToolId } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
 import { availableCloud, briefCeiling, claudeToolsOf, cloudStepKind, codexAccessOf, delegateTargets, delegationRoute, runLimitsOf, stepFor, type DelegateEnv } from '../src/orchestrator/delegate.ts';
@@ -19,6 +19,15 @@ const arianna = official.get('arianna');
 const cards = mkdtempSync(join(tmpdir(), 'arianna-delegates-'));
 after(() => {
   rmSync(cards, { recursive: true, force: true });
+});
+
+test('a tool offered only where private data is closed (D-262) never becomes a tool of Claude Code or Codex', () => {
+  const guarded = (Object.keys(TOOLS) as ToolId[]).filter((tool) => toolSpec(tool).withoutPrivateData === true);
+  assert.deepEqual(guarded, ['web.fetch']);
+  for (const base of [[], ['repo.read'], ['repo.read', 'repo.write', 'repo.test']] as ToolId[][]) {
+    assert.deepEqual(claudeToolsOf([...base, ...guarded]), claudeToolsOf(base));
+    assert.equal(codexAccessOf([...base, ...guarded]), codexAccessOf(base));
+  }
 });
 
 test('task.update is offered only when the conversation has an open card (task 1.10)', () => {
