@@ -2814,3 +2814,120 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni, tutte le consigliate):
 - `ws` con `createConnection` su un canale `docker exec`: va provato al passo 1, altrimenti `playwright-core`.
 - Dimensioni reali delle immagini A e B; licenza dell'immagine di linuxserver e di kasmweb.
 - Che l'intercettazione `Fetch` copra anche le richieste dei service worker: se no, falliscono comunque per `--network none`.
+
+## D-273 — Video di YouTube in Pensieri e Wiki proposta (proposta del 2026-10-21)
+
+Richiesta dell'utente del 2026-10-21: «se mandiamo un video youtube (come fatto per X) dobbiamo avere un dettaglio di cosa parla il video e questo deve diventare eventualmente conoscenza ed eventualmente creare una sezione wiki». Scelte già fatte con le domande a opzioni: **«Prima i sottotitoli, poi l'audio»** (emenda D-197) e **«Nota, poi wiki proposta»**; si lavora in parallelo al browser (D-264).
+
+### Da dove partiamo (letto il 2026-10-21)
+
+- Un link di YouTube incollato in Pensieri oggi resta un link. Al primo riordino (D-086) non si scarica niente. Con «Scarica e riassumi» (D-154) la pagina `watch` arriva come HTML generico (`link-fetch.ts`): ne restano titolo e inizio della descrizione, senza trascrizione, durata né canale. Dall'Italia probabilmente arriva la pagina dei cookie (`consent.youtube.com`), da verificare.
+- **D-197 non è costruita:** `yt-dlp` non è in `apps/voice/pyproject.toml` e in tutto il codice non ci sono yt-dlp né ffmpeg. `ffmpeg` è installato sul Mac ma senza la sua voce in DECISIONS.
+- La Parakeet installata (mlx-audio 0.5.7) spezza da sé l'audio lungo e dà le frasi con l'inizio in secondi: i minuti ci sono.
+- **Incoerenza:** le Impostazioni propongono `youtube.com` come esempio di sito scaricato da solo, cosa che aggirerebbe l'approvazione per singolo video.
+- Una nota sopra i 200 KB sparisce da Pensieri, dal grafo e dalla ricerca.
+- La Wiki è la voce 18 della SPEC («Wiki compilato dal modello per il Mentor», Fase 5): questa richiesta la anticipa.
+
+### Tappa A: la nota del video (stima 34-44 h)
+
+1. **Riconoscere il video:** `youtube.com/watch`, `youtu.be`, `/shorts/` e `/live/` diventano sempre `https://www.youtube.com/watch?v=<id>`, senza `t`, `si` e `list`. Playlist e canali sono esclusi. Un video non si scarica mai da solo, nemmeno con `youtube.com` fra i siti.
+2. **«Riassumi il video»** al posto di «Scarica e riassumi». La scheda di conferma dice:
+   - cosa esce: l'indirizzo del video verso YouTube e Google, dall'IP di casa;
+   - prima i sottotitoli, poi l'audio trascritto sul Mac e cancellato;
+   - il tetto di durata;
+   - che le condizioni d'uso di YouTube vietano lo scaricamento.
+
+   I pulsanti sono «Approva per questo video» e «Annulla».
+3. **Lavoro in coda `note.video`**, in pausa durante una chiamata:
+   - metadati con `yt-dlp -J` (titolo, canale, durata, capitoli, lingue dei sottotitoli);
+   - sottotitoli: prima quelli manuali nella lingua originale, poi gli automatici, poi it/en, letti dal core senza espressioni regolari che tornano indietro;
+   - solo se i sottotitoli mancano: audio al più 300 MB in `data/voice/tmp/video/` (0700), poi `ffmpeg`, poi Parakeet in un processo **senza rete**, poi l'audio si cancella.
+4. **Rete di yt-dlp:** un proxy `CONNECT` del core, attivo solo durante il lavoro:
+   - solo la porta 443, verso un elenco chiuso di host di YouTube e Google;
+   - indirizzi controllati come in D-154;
+   - tetti di 400 MB e 20 minuti;
+   - una riga in `gateway_log` (`link-video`, sha256 dell'indirizzo, byte).
+
+   yt-dlp gira con `--ignore-config --no-cache-dir --use-extractors youtube`, una `HOME` temporanea e nessun cookie. Limite dichiarato: il proxy vede i nomi degli host, non il contenuto cifrato.
+5. **Riassunto col modello locale in due passate:**
+   - finestre di circa 8.000 caratteri a segmenti numerati;
+   - poi titolo, riassunto, al più 10 punti, contesto e tag.
+
+   **I minuti li scrive il codice** dal numero del segmento, così il modello non può inventarli.
+6. **Nota:**
+   - intestazione scritta dal codice: `media: youtube`, `video_id`, `channel`, `duration`, `transcript_source`;
+   - sezioni Riassunto, **Punti principali** (`- [12:34] …`), Capitoli, Video e **Trascrizione** chiusa (testo inerte);
+   - in chat icona video, durata e canale; i minuti sono cliccabili.
+7. **Etichette:**
+   - L2: l'indirizzo, la trascrizione e la nota (la scelta del video dice cosa interessa all'utente);
+   - L0, con soli codici: gli eventi (`note.video_fetched {source, minutes}`, `note.video_failed {reason}`).
+8. **Errori** da un elenco chiuso. «Scaricamento non riuscito: forse yt-dlp va aggiornato» senza riprovare (D-197). Il doctor controlla `ffmpeg` e l'età di yt-dlp.
+9. **Dipendenze:**
+   - `yt-dlp` a versione esatta (Unlicense);
+   - forse `yt-dlp-ejs` (licenza da verificare);
+   - un motore JavaScript (domanda 3);
+   - `ffmpeg` come prerequisito di sistema.
+
+   Migrazione `0085`, con `link-video` fra i bersagli di `gateway_log`.
+
+### Tappa B: la Wiki proposta (stima 31-39 h)
+
+1. **Pagine** in `kb/wiki/<argomento>.md`, fuori da git, sempre Private (L2: le fonti sono L2), mai verso il cloud. Il codice di sviluppo di Codex non le vede (`DEV_ALWAYS_DENIED`).
+2. **Formato** composto dal codice:
+   - In breve;
+   - Punti, ciascuno con almeno una citazione `[[nota]]` scelta da un elenco chiuso, quindi sempre vera;
+   - Domande aperte;
+   - Fonti;
+   - Pagine collegate.
+3. **Proposte:**
+   - il modello locale propone «crea», «aggiorna» o «niente»;
+   - per un aggiornamento aggiunge o riscrive punti, mai ne cancella;
+   - le proposte stanno in `kb/wiki/.proposte/`, le versioni precedenti in `kb/wiki/.storia/`.
+4. **Approvazione come l'Archivista (D-195):**
+   - nella chat il diff riga per riga, con «Approva», «Scarta» e «Proponi di nuovo»;
+   - una pagina cambiata nel frattempo fa scadere la proposta;
+   - «Ripristina la versione precedente» riporta la pagina indietro;
+   - se l'Archivista sposta una nota, le citazioni si aggiornano.
+5. **Pagina «Wiki»** nella colonna di sinistra e comando `/wiki`. Elenco delle pagine, lettura, e una scheda «Proposte (n)». Nel grafo di Conoscenza le pagine hanno colore e forma propri e un filtro «Solo Wiki».
+6. **Nessuna dipendenza nuova né migrazione.** Eval `evals/notes/wiki.jsonl` con 15 note inventate.
+
+**Totale:** 65-83 h, circa due settimane di sessioni. A e B si provano separatamente, ciascuna col suo ramo e la sua versione.
+
+### Domande aperte
+
+1. **Dove si tiene la trascrizione completa del video?**
+   - Contesto: un video di un'ora dà circa 60 KB di testo, e una nota sopra i 200 KB sparisce da Pensieri, grafo e ricerca. Tenere la trascrizione permette di cercare le parole dette nel video.
+   - Opzione consigliata: Nella nota, sezione chiusa — un file solo, che l'Archivista sposta intero e la ricerca trova; serve un tetto di durata.
+   - Opzione: In un file accanto — nota snella, ma l'Archivista sposta due file e il grafo ha un nodo in più.
+   - Opzione: Non tenerla — solo punti coi minuti; più leggera, ma non si cerca più dentro il video.
+   - Esempio: «Intervista a M. Rossi sul fotovoltaico», 48 minuti: con la consigliata la nota pesa 52 KB e cercando «inverter ibrido» la trovi al punto [31:10].
+2. **Tetto di durata dei video**
+   - Contesto: più il video è lungo, più tempo serve per trascriverlo e riassumerlo, e più pesa la nota.
+   - Opzione consigliata: 2 ore — lezioni e podcast passano, la nota resta sotto i 150 KB; un video più lungo è rifiutato col motivo.
+   - Opzione: 1 ora — più veloce, ma esclude molti podcast.
+   - Opzione: 3 ore, trascrizione tagliata — tutto passa, ma la fine della trascrizione si perde.
+   - Esempio: un podcast di 2 h 35 min; con la consigliata la nota dice «Video di 2 h 35 min: oltre il tetto di 2 h, non scaricato».
+3. **Motore JavaScript per yt-dlp**
+   - Contesto: da fine 2025 YouTube obbliga yt-dlp a eseguire un pezzo del suo codice JavaScript per dare i flussi audio (da verificare con la versione che fissiamo). Serve un programma che lo esegua.
+   - Opzione consigliata: Deno, con permessi chiusi — dipendenza nuova (MIT) nel doctor; il codice di YouTube gira in una gabbia.
+   - Opzione: Node, già sul Mac — niente da installare, ma il codice di YouTube girerebbe senza gabbia.
+   - Opzione: Nessuno, solo sottotitoli — più semplice, ma senza sottotitoli spesso il video non si trascrive.
+   - Esempio: un video di 22 minuti di «Canale Orto Facile» senza sottotitoli; con l'ultima opzione la nota dice «nessuna trascrizione: serve il motore JavaScript».
+4. **Quando il modello propone le pagine della Wiki**
+   - Contesto: le proposte arrivano nella scheda «Proposte» e le approvi tu; si decide quanto spesso il modello locale le prepara.
+   - Opzione consigliata: Dopo ogni video e nota archiviata — le proposte arrivano da sole, con un po' di lavoro in più per il modello locale.
+   - Opzione: Solo a mano — pulsante «Proponi per la Wiki»; zero rumore, ma la Wiki cresce solo se te ne ricordi.
+   - Opzione: Una volta al giorno, di notte — proposte raggruppate, ma con un giorno di ritardo.
+   - Esempio: salvi tre video sulle batterie al sodio; con la consigliata trovi «Nuova pagina: Batterie al sodio» con 3 fonti e, al terzo video, «Aggiorna: +2 punti».
+5. **Dove vivono le pagine della Wiki**
+   - Contesto: le pagine riassumono note Private, quindi sono Private anche loro; si decide la cartella.
+   - Opzione consigliata: Cartella kb/wiki, tutta Privata — semplice e sicura; nessuna pagina va mai al cloud.
+   - Opzione: Divise per area dell'archivio — ordine per area, ma le pagine restano comunque Private perché lo sono le fonti.
+   - Opzione: Dentro l'archivio come cartella — niente regole nuove, ma l'Archivista potrebbe proporla come destinazione delle note.
+   - Esempio: la pagina «Laravel Octane», citata da una nota video; con la consigliata sta in kb/wiki/laravel-octane.md.
+6. **Come si registra la tua approvazione di un video**
+   - Contesto: D-080 diceva di rendere Pubblico quel solo indirizzo con una riga nel registro delle etichette; D-154 per i link usa invece il consenso del clic, registrato nel registro delle uscite. Conviene un modo solo.
+   - Opzione consigliata: Come i link di D-154 — consenso verificato dal gateway, una riga nel registro delle uscite con impronta e byte; una migrazione piccola.
+   - Opzione: Come scritto in D-080 — riga anche nel registro delle etichette; fedele alla lettera, ma due registri da tenere allineati.
+   - Opzione: Entrambe — massima traccia, più codice.
+   - Esempio: approvi youtu.be/AbCdEfGhIjK alle 21:14; con la consigliata in Impostazioni → Uscite vedi «21:14 link-video, 38 MB, consenso clic», senza l'indirizzo.
