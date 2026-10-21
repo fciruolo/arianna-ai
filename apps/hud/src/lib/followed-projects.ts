@@ -6,6 +6,7 @@
  * write the choice in data/dev/RISPOSTE.md for Claude Code.
  */
 import type { NewsItem, NewsRelease } from './design-news.ts';
+import { SOURCE_URL } from './skills-catalog.ts';
 
 export type ProjectChoice = 'implement' | 'skip';
 
@@ -29,6 +30,8 @@ export interface FollowedProject {
   id: string;
   page: string;
   addedAt: string;
+  /** From GitHub, when followed with «Segui» from an account (D-272); absent otherwise. */
+  description?: string;
   /** Open Design: its news come with the catalog of the styles. */
   catalog: boolean;
   checking: boolean;
@@ -36,6 +39,52 @@ export interface FollowedProject {
   checkedAt: string | null;
   message: string | null;
   news: ProjectNews | null;
+}
+
+/** A new repository of a followed account (D-271). */
+export interface AccountRepo {
+  id: string;
+  name: string;
+  page: string;
+  description: string;
+  createdAt: string;
+  license: string | null;
+  /** Already among the projects followed. */
+  followed: boolean;
+}
+
+/** An account followed (D-271): `https://github.com/<owner>`, with the new repositories of its last check. */
+export interface FollowedAccount {
+  id: string;
+  page: string;
+  addedAt: string;
+  checking: boolean;
+  checkedAt: string | null;
+  message: string | null;
+  firstCount: number | null;
+  freshAt: string | null;
+  fresh: AccountRepo[];
+}
+
+const ACCOUNT_URL = /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}\/?$/;
+
+/** What an address follows: a repository, an account (D-271), or nothing. */
+export function followedKind(value: string): 'project' | 'account' | null {
+  const url = value.trim();
+  if (ACCOUNT_URL.test(url)) return 'account';
+  return SOURCE_URL.test(url) ? 'project' : null;
+}
+
+/** Why the address cannot be followed: undefined when it can. */
+export function followedUrlProblem(value: string): string | undefined {
+  if (value.trim() === '') return 'Scrivi l’indirizzo di un repository o di un account GitHub';
+  if (followedKind(value) === null) return 'Solo https://github.com/<proprietario>/<repository> o https://github.com/<account>, senza altre parti';
+  return undefined;
+}
+
+/** The facts of a new repository in one line: creation, license. */
+export function repoFacts(repo: AccountRepo, date: (iso: string) => string): string {
+  return [`creato il ${date(repo.createdAt)}`, repo.license ?? 'licenza non indicata'].join(' · ');
 }
 
 export const CHOICE_TEXT: Record<ProjectChoice, string> = { implement: 'Implementiamo', skip: 'Non interessa' };

@@ -79,6 +79,26 @@ export function isRoutinesPath(pathname: string): boolean {
   return pathname === ROUTINES_PATH || pathname === `${ROUTINES_PATH}/`;
 }
 
+/** «Seguiti» (D-272): projects, accounts, oMLX, Open Design and the catalogs followed, in one page. */
+export const FOLLOWED_PATH = '/seguiti';
+
+export function isFollowedPath(pathname: string): boolean {
+  return pathname === FOLLOWED_PATH || pathname === `${FOLLOWED_PATH}/`;
+}
+
+/** Inside the page: the address changes and the app follows it, as with "back" (MockupLink does the same). */
+export function goTo(path: string): void {
+  window.history.pushState(null, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+/** A plain click on a link inside the app goes there with goTo; with a modifier key the browser does what it does. */
+export function openInside(event: MouseEvent, path: string): void {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  event.preventDefault();
+  goTo(path);
+}
+
 /** The Dashboard (D-248): the answers pinned from the chat. */
 export const DASHBOARD_PATH = '/dashboard';
 /** Its first address, before the user renamed the page (2026-10-17): it leads to the new one. */
@@ -145,4 +165,19 @@ export const NEW_AGENT_PATH = '/impostazioni/agenti/nuovo';
 
 export function isNewAgentPath(pathname: string): boolean {
   return pathname === NEW_AGENT_PATH || pathname === `${NEW_AGENT_PATH}/`;
+}
+
+/**
+ * The screen of Arianna's browser in a tab of its own (D-264, passo 4):
+ * `/browser/<conversationId>`, opened from «Apri in una nuova scheda». The
+ * page shows that screen alone, with its own token (one of the 3 screens).
+ */
+export function browserPathFor(conversationId: string): string {
+  return `/browser/${encodeURIComponent(conversationId)}`;
+}
+
+/** The conversation of a `/browser/<id>` address, or undefined for any other path. */
+export function browserConversationFromPath(pathname: string): string | undefined {
+  const id = /^\/browser\/([^/]+)\/?$/.exec(pathname)?.[1];
+  return id !== undefined && UUID.test(id) ? id.toLowerCase() : undefined;
 }

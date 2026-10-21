@@ -70,6 +70,7 @@ export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'],
   'not-installed': 'Il browser non è installato su questo Mac.',
   'start-failed': 'Il browser non è partito: riprova fra poco.',
   'not-open': 'Il browser non è aperto: aprilo prima con browser.open.',
+  'closed-by-user': 'Il browser l’ha chiuso l’utente: riaprilo con browser.open solo se serve.',
   'no-reading': 'Prima leggi la pagina con browser.read: i numeri cambiano con la pagina.',
   'unknown-element': 'Nessun elemento con quel numero nell’ultima lettura.',
   'not-clickable': 'Quell’elemento non si clicca.',
@@ -287,11 +288,22 @@ export async function browserReplay(sql: Queryable, ctx: StepContext, turn: Turn
 
 export const TAKEN_TEXT = 'Browser chiuso: lo usa un’altra chat. Se serve, Arianna lo riapre.';
 
+export const CLOSED_BY_USER_TEXT = 'Browser chiuso da te. Se serve, Arianna lo riapre.';
+
 /** The line in the conversation whose browser another one took (D-264, «Lo prende se fermo da 2 minuti»): without a task, so the model reads it too. */
 export async function writeTakenLine(sql: Queryable, conversationId: string): Promise<void> {
+  await writeBrowserLine(sql, conversationId, TAKEN_TEXT);
+}
+
+/** The line in the conversation whose browser the user closed with «Chiudi» (D-264, passo 4): the model reads it too. */
+export async function writeClosedByUserLine(sql: Queryable, conversationId: string): Promise<void> {
+  await writeBrowserLine(sql, conversationId, CLOSED_BY_USER_TEXT);
+}
+
+async function writeBrowserLine(sql: Queryable, conversationId: string, text: string): Promise<void> {
   const [line] = await sql<{ id: string }[]>`
     INSERT INTO messages (conversation_id, role, channel, label, body)
-    SELECT id, 'system', 'web', 'L0'::privacy_label, ${TAKEN_TEXT} FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL
+    SELECT id, 'system', 'web', 'L0'::privacy_label, ${text} FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL
     RETURNING id::text`;
   // Erased or purged meanwhile: nothing to tell.
   if (line === undefined) return;

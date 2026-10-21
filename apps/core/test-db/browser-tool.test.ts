@@ -25,6 +25,7 @@ import {
   approvedAddresses,
   BROWSER_ACTION_EVENT,
   browserConsent,
+  CLOSED_BY_USER_TEXT,
   browserResultText,
   browserTool,
   MAX_ACTIONS_PER_TASK,
@@ -32,6 +33,7 @@ import {
   TAKEN_TEXT,
   TASK_LIMIT,
   WAITING_BROWSER,
+  writeClosedByUserLine,
   writeTakenLine,
 } from '../src/orchestrator/browser-tool.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
@@ -268,4 +270,12 @@ test('writeTakenLine: a system line without a task in the conversation whose bro
   const rows = await db().sql<{ role: string; taskId: string | null; label: string; body: string }[]>`
     SELECT role, task_id::text AS "taskId", label::text, body FROM messages WHERE conversation_id = ${conversationId}`;
   assert.deepEqual([...rows], [{ role: 'system', taskId: null, label: 'L0', body: TAKEN_TEXT }]);
+});
+
+test('writeClosedByUserLine: «Chiudi» in the chat leaves a system line without a task, read by the model too', async () => {
+  const conversationId = await workConversation();
+  await writeClosedByUserLine(db().sql, conversationId);
+  const rows = await db().sql<{ role: string; taskId: string | null; label: string; body: string }[]>`
+    SELECT role, task_id::text AS "taskId", label::text, body FROM messages WHERE conversation_id = ${conversationId}`;
+  assert.deepEqual([...rows], [{ role: 'system', taskId: null, label: 'L0', body: CLOSED_BY_USER_TEXT }]);
 });

@@ -99,6 +99,14 @@ test('entrypoint: no TCP port for CDP or VNC, only the two Unix sockets', () => 
   assert.doesNotMatch(lines, /TCP(4|6)?(-LISTEN)?:/);
 });
 
+test('entrypoint: Xvnc neither sends nor accepts the clipboard (the screen of passo 4 filters only toward the container)', () => {
+  const script = readFileSync(join(import.meta.dirname, '..', 'browser', 'entrypoint.sh'), 'utf8');
+  const lines = script.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+  assert.match(lines, /-SendCutText=0(\s|$)/);
+  assert.match(lines, /-AcceptCutText=0(\s|$)/);
+  assert.doesNotMatch(lines, /-(Send|Accept)CutText=(1|true|on)/i);
+});
+
 test('removal: a container already gone counts as removed, one being removed is asked again', async () => {
   const replies = [new BrowserError('docker', 'docker rm: Error response from daemon: removal of container arianna-browser-a is already in progress'), null];
   const calls: string[][] = [];

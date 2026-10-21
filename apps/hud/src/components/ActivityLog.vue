@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { listActivities } from '../lib/api.ts';
+import { browserSite, isBrowserLine } from '../lib/browser-screen.ts';
 import { activityLink, activityText, errorText, relativeTimeText, stepsButtonText } from '../lib/italian.ts';
 import type { SavedActivity } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -12,12 +13,15 @@ import Icon from './Icon.vue';
  * worked, each with how long ago it was written.
  */
 const props = defineProps<{ taskId: string; count: number }>();
+/** «Guarda» on the newest line of Arianna's browser (D-264, passo 4): the parent opens the screen, with the line's site. */
+const emit = defineEmits<{ watchBrowser: [site: string | undefined] }>();
 
 const open = ref(false);
 const lines = ref<SavedActivity[] | null>(null);
 const loading = ref(false);
 const problem = ref<string | null>(null);
 const now = ref(new Date());
+const lastBrowser = computed(() => lines.value?.findLastIndex((line) => isBrowserLine(line)) ?? -1);
 
 async function toggle(): Promise<void> {
   open.value = !open.value;
@@ -51,12 +55,19 @@ async function toggle(): Promise<void> {
       <p v-if="loading" class="text-xs text-muted">Carico i passi…</p>
       <p v-else-if="problem !== null" class="text-xs text-warn">{{ problem }}</p>
       <ul v-else-if="lines !== null" class="flex flex-col gap-[5px]">
-        <li v-for="line in lines" :key="line.id" class="flex items-start gap-2.5">
+        <li v-for="(line, index) in lines" :key="line.id" class="flex items-start gap-2.5">
           <span class="w-4 shrink-0 text-center font-mono text-[12.5px]" :class="(line.kind === 'error' || line.kind === 'stop') ? 'text-warn' : 'text-ok'" aria-hidden="true">{{
             (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓'
           }}</span>
           <a v-if="activityLink(line) !== undefined" :href="activityLink(line)" target="_blank" rel="noopener noreferrer" class="min-w-0 flex-1 break-words text-accent hover:underline">{{ activityText(line) }}</a>
           <span v-else class="min-w-0 flex-1 break-words">{{ activityText(line) }}</span>
+          <button
+            v-if="index === lastBrowser"
+            type="button"
+            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink hover:bg-surface"
+            title="Apri lo schermo del browser di Arianna, in sola visione"
+            @click="emit('watchBrowser', browserSite(line))"
+          ><Icon name="computer" :size="12" />Guarda</button>
           <time class="shrink-0 font-mono text-[12px] text-muted" :datetime="line.at" :title="new Date(line.at).toLocaleString('it-IT')">{{
             relativeTimeText(line.at, now)
           }}</time>

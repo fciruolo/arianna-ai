@@ -10,7 +10,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
-import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
+import type { FollowedAccount, FollowedProject, ProjectChoice } from './followed-projects.ts';
 import type { OmlxReleaseView } from './omlx-release.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
@@ -1164,6 +1164,37 @@ export async function listCredits(conversationId: string): Promise<MessageCredit
   return (await call<{ credits: MessageCredit[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/credits`)).credits;
 }
 
+/**
+ * A token for the live screen of the conversation's browser (D-264, passo 4),
+ * valid while that browser lives. Refused with 409 `no-browser`, 403 for a
+ * Private or incognito conversation, 409 `too-many-screens`.
+ */
+export async function openBrowserScreen(conversationId: string): Promise<string> {
+  const { token } = await call<{ token: unknown }>('POST', '/api/browser/screen', { conversationId });
+  if (typeof token !== 'string' || token === '') throw new ApiError(500, 'no token');
+  return token;
+}
+
+/** Whether the conversation holds Arianna's browser now (D-264, passo 4): the bar above the composer. Never for a Private or incognito one. */
+export async function browserStatus(conversationId: string): Promise<{ open: boolean; site: string | null }> {
+  const { open, site } = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?conversationId=${encodeURIComponent(conversationId)}`);
+  return { open: open === true, site: open === true && typeof site === 'string' && site !== '' ? site : null };
+}
+
+/**
+ * «Chiudi» (D-264, passo 4): closes the browser of the conversation, after
+ * the action under way. A browser already gone (409 `no-browser`) counts as
+ * closed.
+ */
+export async function closeBrowser(conversationId: string): Promise<void> {
+  try {
+    await call('POST', '/api/browser/close', { conversationId });
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 409) return;
+    throw cause;
+  }
+}
+
 /** The activity lines a task saved (D-083), oldest first. */
 export async function listActivities(taskId: string): Promise<SavedActivity[]> {
   return (await call<{ activities: SavedActivity[] }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/activities`)).activities;
@@ -1345,8 +1376,8 @@ export async function confirmFactShare(id: string): Promise<UserFact> {
 }
 
 /** "Progetti seguiti" (D-202): the projects followed for ideas, with their last news and what was already chosen. */
-export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number }> {
-  return call<{ projects: FollowedProject[]; max: number }>('GET', '/api/dev/projects');
+export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }> {
+  return call<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }>('GET', '/api/dev/projects');
 }
 
 export async function addFollowedProject(url: string): Promise<void> {
@@ -1357,7 +1388,7 @@ export async function removeFollowedProject(id: string): Promise<void> {
   await call('DELETE', '/api/dev/projects', { id });
 }
 
-/** «Controlla novità»: the check runs in the core; the page reads again while the project is `checking`. */
+/** «Controlla novità» of a project or an account (D-271): the check runs in the core; the page reads again while it is `checking`. */
 export async function checkFollowedProject(id: string): Promise<void> {
   await call('POST', '/api/dev/projects/check', { id });
 }

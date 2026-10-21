@@ -18,6 +18,18 @@ import {
   type NewsRelease,
   type NewsSummarizer,
 } from './design-news.ts';
+import {
+  ACCOUNT_ID,
+  checkAccount,
+  emptyAccountState,
+  invalidAddress,
+  MAX_ACCOUNTS,
+  parseAccountState,
+  parseAccountUrl,
+  type AccountState,
+  type AccountView,
+  type FollowedAccount,
+} from './followed-accounts.ts';
 import type { GithubGet } from './github-api.ts';
 import { folderOf, parseSourceUrl, SOURCE_ID } from './source-catalogs.ts';
 
@@ -34,10 +46,16 @@ import { folderOf, parseSourceUrl, SOURCE_ID } from './source-catalogs.ts';
  * web. Checked only when the user asks («Controlla novità» or
  * `pnpm projects:followed check`); no scheduled task (as D-186).
  *
- * Files in `data/catalogs/followed/`: `projects.json` (the list; missing,
- * the default list with OpenWork) and `<owner>__<repo>.json` (the release
- * last seen and the news of the last check). A busy file per project keeps
- * the core and the command from checking the same project together.
+ * Accounts too (D-271, followed-accounts.ts): `https://github.com/<owner>`,
+ * at most 5, whose new repositories the user may follow with «Segui».
+ *
+ * Files in `data/catalogs/followed/`: `projects.json` (the list, with
+ * `accounts` since D-271, missing in the files written before; missing, the
+ * default list with OpenWork), `<owner>__<repo>.json` (the release last seen
+ * and the news of the last check) and `account-<owner>.json` (the
+ * repositories seen and the new ones of the last check: no `__`, so it never
+ * meets the file of a project). A busy file per project or account keeps the
+ * core and the command from checking the same one together.
  */
 
 export const FOLLOWED_FOLDER = 'followed';
@@ -62,6 +80,12 @@ export interface FollowedProject {
   id: string;
   page: string;
   addedAt: string;
+  /**
+   * The description GitHub gives, when the project was followed with «Segui»
+   * from the new repositories of an account (D-271, D-272): taken from what
+   * that check already read, never asked again. Absent otherwise.
+   */
+  description?: string;
 }
 
 export interface ProjectNews {
@@ -118,9 +142,12 @@ export interface FollowedDeps {
 
 export interface FollowedProjects {
   list(): ProjectView[];
-  add(url: unknown): FollowedProject;
-  remove(value: unknown): FollowedProject;
-  /** Starts a check in the background; refused while one of the same project runs. */
+  /** The accounts followed (D-271), with the new repositories of their last check. */
+  accounts(): AccountView[];
+  /** A repository becomes a project, `https://github.com/<owner>` an account (D-271). */
+  add(url: unknown): FollowedProject | FollowedAccount;
+  remove(value: unknown): FollowedProject | FollowedAccount;
+  /** Starts a check of a project or an account in the background; refused while one of the same runs. */
   check(value: unknown): void;
   /** Every check started by this process. */
   idle(): Promise<void>;
@@ -157,6 +184,20 @@ function readJson(path: string, max: number): unknown {
   }
 }
 
+/** The accounts as written (D-271): none in a file written before them. */
+export function readAccounts(base: string): FollowedAccount[] {
+  const parsed = record(readJson(join(base, LIST_FILE), 64 * 1024));
+  if (parsed === undefined || parsed.version !== 1 || !Array.isArray(parsed.accounts)) return [];
+  return parsed.accounts.flatMap((raw) => {
+    const item = record(raw);
+    if (item === undefined || typeof item.addedAt !== 'string') return [];
+    const account = parseAccountUrl(item.page);
+    return account !== undefined && account.id === item.id ? [{ ...account, addedAt: item.addedAt }] : [];
+  })
+    .filter((account, index, all) => all.findIndex((other) => other.id === account.id) === index)
+    .slice(0, MAX_ACCOUNTS);
+}
+
 /** The list as written; undefined when the file is missing (the default list applies). */
 export function readList(base: string): FollowedProject[] | undefined {
   const parsed = record(readJson(join(base, LIST_FILE), 64 * 1024));
@@ -167,7 +208,9 @@ export function readList(base: string): FollowedProject[] | undefined {
     if (item === undefined || typeof item.page !== 'string' || typeof item.addedAt !== 'string') return [];
     try {
       const ref = parseSourceUrl(item.page);
-      return ref.id === item.id && ref.id !== CATALOG_PROJECT.id ? [{ id: ref.id, page: ref.page, addedAt: item.addedAt }] : [];
+      if (ref.id !== item.id || ref.id === CATALOG_PROJECT.id) return [];
+      const description = cleanLine(item.description, 300);
+      return [{ id: ref.id, page: ref.page, addedAt: item.addedAt, ...(description === '' ? {} : { description }) }];
     } catch {
       return [];
     }
@@ -300,6 +343,9 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
   const running = new Map<string, Promise<void>>();
   const now = (): Date => deps.now?.() ?? new Date();
   const statePath = (id: string): string => join(base, `${folderOf(id)}.json`);
+  const accountPath = (id: string): string => join(base, `account-${id}.json`);
+  /** The key of a running check: a project id has a `/`, an account one never. */
+  const accountKey = (id: string): string => `account:${id}`;
 
   function followed(): FollowedProject[] {
     const list = readList(base);
@@ -314,6 +360,19 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
     return parseState(readJson(statePath(id), 4 * 1024 * 1024), id) ?? emptyState(id);
   }
 
+  function readAccountState(id: string): AccountState {
+    return parseAccountState(readJson(accountPath(id), 1024 * 1024), id) ?? emptyAccountState(id);
+  }
+
+  /** The account a value names (its id or its address); undefined when it names no account. */
+  function accountOf(value: unknown): FollowedAccount | undefined {
+    const id = typeof value === 'string' && ACCOUNT_ID.test(value) ? value : parseAccountUrl(value)?.id;
+    if (id === undefined) return undefined;
+    const account = readAccounts(base).find((item) => item.id === id);
+    if (account === undefined) throw new CatalogError('not-found', 'no such followed account');
+    return account;
+  }
+
   function find(value: unknown): FollowedProject {
     const id = typeof value === 'string' && SOURCE_ID.test(value) ? value : parseSourceUrl(value).id;
     if (id === CATALOG_PROJECT.id) throw new CatalogError('conflict', 'Open Design is followed through its catalog');
@@ -322,16 +381,70 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
     return project;
   }
 
-  function changeList(change: (list: FollowedProject[]) => FollowedProject[]): void {
+  function changeList(change: (list: FollowedProject[]) => FollowedProject[], changeAccounts: (list: FollowedAccount[]) => FollowedAccount[] = (list) => list): void {
     mkdirSync(base, { recursive: true, mode: 0o700 });
     const token = randomUUID();
     const busy = join(base, LIST_BUSY);
     if (!takeBusy(busy, token)) throw new CatalogError('conflict', 'the list of projects is being changed by another process');
     try {
-      writeAtomic(join(base, LIST_FILE), { version: 1, projects: change(followed()) });
+      writeAtomic(join(base, LIST_FILE), { version: 1, projects: change(followed()), accounts: changeAccounts(readAccounts(base)) });
     } finally {
       releaseBusy(busy, token);
     }
+  }
+
+  function accounts(): AccountView[] {
+    const projects = new Set(followed().map((project) => project.id));
+    return readAccounts(base).map((account) => {
+      const state = readAccountState(account.id);
+      return {
+        ...account,
+        checking: running.has(accountKey(account.id)),
+        checkedAt: state.checkedAt,
+        message: state.message,
+        firstCount: state.firstCount,
+        freshAt: state.freshAt,
+        fresh: state.fresh.map((repo) => ({ ...repo, followed: projects.has(repo.id) || repo.id === CATALOG_PROJECT.id })),
+      };
+    });
+  }
+
+  function addAccount(account: FollowedAccount): FollowedAccount {
+    const added: FollowedAccount = { ...account, addedAt: now().toISOString() };
+    changeList(
+      (list) => list,
+      (current) => {
+        if (current.some((item) => item.id === added.id)) throw new CatalogError('conflict', 'this account is already followed');
+        if (current.length >= MAX_ACCOUNTS) throw new CatalogError('invalid', `at most ${String(MAX_ACCOUNTS)} accounts`);
+        return [...current, added];
+      },
+    );
+    deps.onEvent?.('followed.account_added', { account: added.id });
+    return added;
+  }
+
+  function checkAccountNow(account: FollowedAccount): void {
+    const key = accountKey(account.id);
+    if (running.has(key)) throw new CatalogError('conflict', 'a check of this account is already running');
+    mkdirSync(base, { recursive: true, mode: 0o700 });
+    const busy = join(base, `account-${account.id}.busy`);
+    const token = randomUUID();
+    if (!takeBusy(busy, token)) throw new CatalogError('conflict', 'another process is checking this account');
+    const task = (async () => {
+      try {
+        const before = readAccountState(account.id);
+        const next = await checkAccount(deps, account, before);
+        // Removed meanwhile: nothing to keep.
+        if (readAccounts(base).some((item) => item.id === account.id)) writeAtomic(accountPath(account.id), next);
+        deps.onEvent?.('followed.account_checked', { account: account.id, first: before.known === null ? 1 : 0, fresh: next.freshAt === before.freshAt ? 0 : next.fresh.length });
+      } catch {
+        deps.onEvent?.('followed.account_check_failed', { account: account.id });
+      } finally {
+        releaseBusy(busy, token);
+        running.delete(key);
+      }
+    })();
+    running.set(key, task);
   }
 
   function list(): ProjectView[] {
@@ -345,10 +458,21 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
     ];
   }
 
-  function add(url: unknown): FollowedProject {
-    const ref = parseSourceUrl(url);
+  function add(url: unknown): FollowedProject | FollowedAccount {
+    const account = parseAccountUrl(url);
+    if (account !== undefined) return addAccount(account);
+    let ref;
+    try {
+      ref = parseSourceUrl(url);
+    } catch {
+      throw invalidAddress();
+    }
     if (ref.id === CATALOG_PROJECT.id) throw new CatalogError('conflict', 'Open Design is already followed through its catalog');
-    const added: FollowedProject = { id: ref.id, page: ref.page, addedAt: now().toISOString() };
+    // Followed from the new repositories of an account: its description comes with it, nothing asked of GitHub.
+    const description = readAccounts(base)
+      .flatMap((account) => readAccountState(account.id).fresh)
+      .find((repo) => repo.id === ref.id)?.description;
+    const added: FollowedProject = { id: ref.id, page: ref.page, addedAt: now().toISOString(), ...(description === undefined || description === '' ? {} : { description }) };
     changeList((current) => {
       if (current.some((item) => item.id === ref.id)) throw new CatalogError('conflict', 'this project is already followed');
       if (current.length >= MAX_PROJECTS) throw new CatalogError('invalid', `at most ${String(MAX_PROJECTS)} projects`);
@@ -358,7 +482,18 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
     return added;
   }
 
-  function remove(value: unknown): FollowedProject {
+  function remove(value: unknown): FollowedProject | FollowedAccount {
+    const account = accountOf(value);
+    if (account !== undefined) {
+      if (running.has(accountKey(account.id))) throw new CatalogError('conflict', 'a check of this account is running');
+      changeList(
+        (list) => list,
+        (current) => current.filter((item) => item.id !== account.id),
+      );
+      rmSync(accountPath(account.id), { force: true });
+      deps.onEvent?.('followed.account_removed', { account: account.id });
+      return account;
+    }
     const project = find(value);
     if (running.has(project.id)) throw new CatalogError('conflict', 'a check of this project is running');
     changeList((current) => current.filter((item) => item.id !== project.id));
@@ -368,6 +503,11 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
   }
 
   function check(value: unknown): void {
+    const account = accountOf(value);
+    if (account !== undefined) {
+      checkAccountNow(account);
+      return;
+    }
     const project = find(value);
     if (running.has(project.id)) throw new CatalogError('conflict', 'a check of this project is already running');
     mkdirSync(base, { recursive: true, mode: 0o700 });
@@ -393,6 +533,7 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
 
   return {
     list,
+    accounts,
     add,
     remove,
     check,

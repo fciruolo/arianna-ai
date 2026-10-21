@@ -17,6 +17,30 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Un video di YouTube non si scarica più come pagina con «Scarica e riassumi» né da solo con `youtube.com` fra i siti; le Impostazioni non propongono più `youtube.com` come esempio di sito scaricato da solo.
 
+## [0.157.0] - 2026-10-21
+
+### Aggiunto
+
+- Pagina «Seguiti» nella colonna di sinistra (gruppo Sistema) e comando `/seguiti`: in un posto solo progetti e account seguiti con la casella «Segui», le release di oMLX, le novità di Open Design e l'elenco dei cataloghi di skill e di agenti con la versione in uso e in attesa e il rimando a dove si gestiscono; in Sviluppo di Arianna, Modelli e Skill e stili al loro posto c'è «Ora in Seguiti» (D-272).
+- «Seguiti» mostra progetti, account, oMLX e Open Design come schede grandi in una griglia (nome, descrizione, ultima release, ultimo controllo, numero di novità e le prime tre; un clic apre il dettaglio) e ha una casella di ricerca che filtra sulla pagina schede e novità (release, funzioni, commit, repository nuovi) con la parola evidenziata; un progetto seguito dai repository nuovi di un account tiene la descrizione di GitHub (D-272).
+
+## [0.156.0] - 2026-10-21
+
+### Aggiunto
+
+- Progetti seguiti: si può seguire anche un account GitHub (`https://github.com/<account>`, al più 5) dalla pagina «Sviluppo di Arianna» o con `pnpm projects:followed add`; «Controlla nuovi repository» mostra i repository pubblici creati dall'ultimo controllo (fork e archiviati esclusi) con descrizione, data, licenza e «Segui», che li aggiunge ai progetti seguiti; il primo controllo segna come già visti quelli che ci sono (D-271).
+
+## [0.155.0] - 2026-10-21
+
+### Aggiunto
+
+- Schermo in diretta del browser di Arianna (D-264 passo 4, D-270): sulle righe «browser: …» della chat il pulsante «Guarda» apre il pannello «Computer» con la scheda «Browser», dove si vede la pagina mentre Arianna la usa, in sola visione (clic e tasti non arrivano al browser). Fino a 3 schermi insieme, per esempio Mac e telefono; quando il browser si chiude lo schermo dice «Browser chiuso». Dopo la prova: sopra la casella di scrittura una riga fissa «Browser aperto · <sito> · Guarda · Chiudi» finché la conversazione tiene il browser; nella scheda «Schermo intero» (dove il browser lo permette), «Apri in una nuova scheda» (lo schermo da solo su `/browser/<id>`) e «Chiudi il browser», che lo chiude dopo l'azione in corso e lo dice in chat e ad Arianna.
+- Dipendenza `@novnc/novnc` 1.7.0 nella chat, per lo schermo del browser (D-269).
+
+### Sicurezza
+
+- Lo schermo del browser passa solo dal core, con un gettone per conversazione che muore con il browser e mai per le conversazioni Private o in incognito; il core scarta tasti, mouse e appunti diretti al browser e chiude il collegamento su messaggi non previsti (D-270).
+
 ## [0.154.0] - 2026-10-21
 
 ### Aggiunto

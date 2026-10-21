@@ -23,6 +23,8 @@ interface FakePage {
   typable: boolean;
   /** A script of the page that never ends: the reading hangs. */
   hang?: boolean;
+  /** A script of the page that ends when this does: an action under way. */
+  wait?: Promise<void>;
 }
 
 function fakePage(state: FakePage): Page {
@@ -37,7 +39,11 @@ function fakePage(state: FakePage): Page {
   return {
     url: () => state.url,
     title: () => Promise.resolve(state.title),
-    evaluate: (script: unknown) => (state.hang === true ? new Promise<never>(() => undefined) : Promise.resolve(script === READ_SCRIPT ? state.reading : undefined)),
+    evaluate: async (script: unknown) => {
+      if (state.hang === true) return new Promise<never>(() => undefined);
+      if (state.wait !== undefined) await state.wait;
+      return script === READ_SCRIPT ? state.reading : undefined;
+    },
     locator,
     mainFrame: () => ({}),
     waitForEvent: () => Promise.reject(new Error('no navigation')),
@@ -54,6 +60,7 @@ interface Harness {
   closed: string[];
   scopes: NetworkScope[];
   taken: string[];
+  released: string[];
   typed: string[];
   page: FakePage;
   clock: { now: number };
@@ -64,7 +71,7 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], typed: [], page, clock };
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock };
   const openSession: OpenSession = (_manager, id) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
@@ -86,6 +93,7 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
     session: { home: '/nowhere' },
     gateTyped: (text) => { h.typed.push(text); return Promise.resolve(options.gate ?? true); },
     onTaken: (conversationId) => { h.taken.push(conversationId); },
+    onReleased: (conversationId) => { h.released.push(conversationId); },
     now: () => clock.now,
     actionLimitMs: 50,
     openSession,
@@ -307,6 +315,26 @@ test('a browser the manager closed (idle, max) is no longer held', async () => {
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
 });
 
+test('onReleased: the screens hear of every browser a conversation no longer holds (close, take-over, release, manager)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  await h.browser.act(scope('a'), { kind: 'close' });
+  assert.deepEqual(h.released, ['a']);
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  h.clock.now += TAKE_OVER_MS;
+  await h.browser.act(scope('b'), { kind: 'open', url: 'https://ricette-finte.it/' });
+  assert.deepEqual(h.released, ['a', 'a']);
+  await h.browser.release('b');
+  assert.deepEqual(h.released, ['a', 'a', 'b']);
+  await h.browser.act(scope('c'), { kind: 'open', url: 'https://ricette-finte.it/' });
+  h.expire();
+  assert.equal(h.browser.holder, null);
+  assert.deepEqual(h.released, ['a', 'a', 'b', 'c']);
+  // Nothing held: nothing to tell.
+  await h.browser.close();
+  assert.deepEqual(h.released, ['a', 'a', 'b', 'c']);
+});
+
 test('in an Internal conversation browser.open takes only an address the user wrote; any other waits for the user', async () => {
   const h = harness();
   const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
@@ -331,4 +359,63 @@ test('typing counts characters as the gateway does: 200 emoji are not too long',
   await h.browser.act(scope('a'), { kind: 'read' });
   const typed = await h.browser.act(scope('a'), { kind: 'type', ref: 1, text: '😀'.repeat(200), submit: false });
   assert.ok(typed.ok && typed.typed === 200);
+});
+
+test('closeByUser («Chiudi» in the chat): only the conversation holding the browser, after the action under way, then the next action hears why once', async () => {
+  const h = harness();
+  assert.equal(await h.browser.closeByUser('a'), false);
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  // Another conversation cannot close it.
+  assert.equal(await h.browser.closeByUser('b'), false);
+  assert.equal(h.browser.holder, 'a');
+  // An action under way: the browser closes once it ended, never in the middle.
+  let finish = (): void => undefined;
+  h.page.wait = new Promise<void>((resolve) => { finish = resolve; });
+  const reading = h.browser.act(scope('a'), { kind: 'read' });
+  const closing = h.browser.closeByUser('a');
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(h.browser.holder, 'a');
+  assert.deepEqual(h.closed, []);
+  finish();
+  assert.equal((await reading).ok, true);
+  assert.equal(await closing, true);
+  assert.equal(h.browser.holder, null);
+  assert.deepEqual(h.closed, h.opened);
+  assert.deepEqual(h.released, ['a']);
+  // The next action of that conversation hears it was the user, once; another conversation does not.
+  assert.deepEqual(await h.browser.act(scope('b'), { kind: 'read' }), { ok: false, reason: 'not-open' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'closed-by-user' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
+  // browser.open opens it again.
+  assert.equal(await h.browser.closeByUser('a'), false);
+  delete h.page.wait;
+  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' })).ok, true);
+  assert.equal(h.browser.holder, 'a');
+});
+
+test('after closeByUser, browser.open opens again at once, without the «closed by the user» refusal', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  assert.equal(await h.browser.closeByUser('a'), true);
+  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' })).ok, true);
+  // The refusal was consumed by the open: a read now reads.
+  assert.equal((await h.browser.act(scope('a'), { kind: 'read' })).ok, true);
+});
+
+test('siteOf: the site of the last page reached, only for the conversation holding the browser', async () => {
+  const h = harness();
+  assert.equal(h.browser.siteOf('a'), null);
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.equal(h.browser.siteOf('a'), 'comune-finto.it');
+  assert.equal(h.browser.siteOf('b'), null);
+  await h.browser.act(scope('a'), { kind: 'close' });
+  assert.equal(h.browser.siteOf('a'), null);
+});
+
+test('release forgets a «Chiudi» not yet heard: a later read hears «not open»', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  assert.equal(await h.browser.closeByUser('a'), true);
+  await h.browser.release('a');
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
 });

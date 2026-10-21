@@ -31,6 +31,7 @@ import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import DashboardPage from './components/DashboardPage.vue';
 import RoutinesPage from './components/RoutinesPage.vue';
+import FollowedPage from './components/FollowedPage.vue';
 import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
@@ -66,6 +67,8 @@ import {
   isDashboardPath,
   DASHBOARD_PATH,
   isRoutinesPath,
+  isFollowedPath,
+  FOLLOWED_PATH,
   ROUTINES_PATH,
   isVoiceTrialPath,
   knowledgeFocus,
@@ -427,9 +430,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -464,7 +467,7 @@ watch(live, (state) => {
 
 /**
  * A stable release of oMLX newer than the one installed (D-265): a dot on
- * "Impostazioni" and on "Modelli". Read like the questions above; the card of
+ * "Seguiti" (D-272, where its card is now). Read like the questions above; the card of
  * oMLX sends its state after «Controlla ora». A core without it gives none.
  */
 const omlxUpdate = ref<string | null>(null);
@@ -523,6 +526,11 @@ function openGodChat(workspace: string): void {
 /** The Dashboard (D-248): the answers pinned from the chat. */
 function openDashboard(): void {
   openPage('dashboard', DASHBOARD_PATH, 'Dashboard');
+}
+
+/** «Seguiti» (D-272): what Arianna follows on GitHub for ideas, in one page. */
+function openFollowed(): void {
+  openPage('followed', FOLLOWED_PATH, 'Seguiti');
 }
 
 /** The routines (D-110 tappa A, D-254). */
@@ -659,6 +667,7 @@ function runCommand(action: PageCommandAction, from = current.value): void {
     return;
   }
   if (action.page === 'thoughts') openThoughts();
+  else if (action.page === 'followed') openFollowed();
   else if (action.page === 'knowledge') openKnowledge();
   else openSettings();
 }
@@ -724,6 +733,10 @@ function followMain(): void {
   }
   if (isRoutinesPath(window.location.pathname)) {
     openRoutines();
+    return;
+  }
+  if (isFollowedPath(window.location.pathname)) {
+    openFollowed();
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
@@ -1061,6 +1074,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @secretary="openSecretary"
       @thoughts="openThoughts"
       @routines="openRoutines"
+      @followed="openFollowed"
       @dashboard="openDashboard"
       @god="openGod"
       @knowledge="openKnowledge()"
@@ -1125,6 +1139,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Dashboard</b></template>
           <template v-else-if="page === 'routines'">Arianna / <b class="font-medium text-ink">Routine</b></template>
+          <template v-else-if="page === 'followed'">Arianna / <b class="font-medium text-ink">Seguiti</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
@@ -1239,12 +1254,13 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :call-busy="callSession !== null || callStarting || incoming !== null || strayCall !== null" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :omlx-update="omlxUpdate" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @omlx="omlxUpdate = updateHint($event)" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :call-busy="callSession !== null || callStarting || incoming !== null || strayCall !== null" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <DashboardPage v-else-if="page === 'dashboard'" @open="openConversation" @chat="openChat()" />
       <RoutinesPage v-else-if="page === 'routines'" :version="routinesVersion" @open="openConversation" />
+      <FollowedPage v-else-if="page === 'followed'" @omlx="omlxUpdate = updateHint($event)" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />

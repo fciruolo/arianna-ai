@@ -2808,8 +2808,98 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni, tutte le consigliate):
 2. **Link verso un altro sito nelle Interne: scheda «Apri / No» in chat.** Tipo di approvazione nuovo `browser` (migrazione): con «Apri» quell'indirizzo vale da lì come scritto dall'utente per la conversazione e Arianna riprende; con «No» Arianna non apre quel sito e prosegue senza (o te lo dice). Dopo la revisione: nelle Interne anche `browser.open` di un indirizzo non scritto dall'utente passa dalla scheda, come `web.fetch`; i siti degli indirizzi scritti valgono solo per clic e rimandi.
 3. **Browser occupato da un'altra chat: «Lo prende se fermo da 2 minuti».** Se l'altra chat non lo usa da almeno 2 minuti si chiude lì, con la riga «browser chiuso: lo usa un'altra chat», e si riapre per la nuova; se è in uso, «occupato, riprova fra poco».
 
+### Passo 4, lo schermo in diretta: piano (2026-10-21)
+
+Scritto dopo il passo 3 (stima 8-10 h, contro le 6-8 della proposta, per il filtro dei messaggi VNC e il gettone). Solo **sola visione** e solo per Arianna: «Prendi il controllo» è il passo 5, il Coder il passo 7.
+
+**Cosa c'è già:**
+- Xvnc ascolta solo sul socket Unix `/tmp/vnc.sock` (`-rfbport -1`) con `-SecurityTypes None`, `-SendCutText=0`, `-AcceptCutText=0` e `-AcceptSetDesktopSize=0`.
+- `channelArgs` accetta già `/tmp/vnc.sock`.
+- Lo schermo è 1280×800.
+- Il core ha un solo WebSocket (`/api/ws`), protetto solo da Host e Origin, senza gettone.
+
+**Core:**
+- **Gettone:** `POST /api/browser/screen {conversationId}` restituisce un gettone di 32 byte, solo se:
+  - quella conversazione tiene il browser in quel momento;
+  - la conversazione non è Privata né in incognito.
+
+  In memoria resta solo il suo sha256, legato alla conversazione e all'id del contenitore. Vale finché vive quel contenitore: se il browser si chiude o passa a un'altra chat, il gettone muore.
+- **Rotta** `GET /api/browser/screen?t=<gettone>` in upgrade a WebSocket:
+  - stessi controlli di `/api/ws` (`checkRequest`, Origin obbligatoria);
+  - gettone confrontato in tempo costante;
+  - `maxPayload` piccolo.
+
+  Ogni altro percorso resta 404.
+- **Ponte** (`apps/core/src/browser/screen.ts`): byte fra il WebSocket e `openChannel(contenitore, VNC_SOCKET)`, con contrappressione. Ogni schermo apre il suo canale; Xvnc ha già `-AlwaysShared`. Quando il browser si chiude, il core chiude anche gli schermi aperti.
+- **Filtro dei messaggi** (`apps/core/src/browser/rfb-filter.ts`): legge il flusso dalla chat verso Xvnc.
+  - Prima i 12 byte della versione, il tipo di sicurezza (solo None) e ClientInit; poi i messaggi, uno per uno, con la loro lunghezza.
+  - **Passano:** 0 SetPixelFormat, 2 SetEncodings, 3 FramebufferUpdateRequest, 150 EnableContinuousUpdates, 248 ClientFence.
+  - **Si scartano:** 4 tasti, 5 mouse e 6 appunti, sempre in sola visione (al passo 5 tasti e mouse passeranno solo durante il controllo; gli appunti mai).
+  - **Chiudono il collegamento:** 250 xvp, 251 SetDesktopSize, 255 QEMU e ogni tipo sconosciuto, perché senza conoscerne la lunghezza il resto del flusso non si legge più.
+  - Funziona anche con messaggi spezzati in più pezzi.
+- **Eventi:** `browser.screen` (aperto, chiuso, durata, motivo), L0, senza contenuto.
+
+**Chat:**
+- Dipendenza `@novnc/novnc` 1.7.0 (voce D-269 in DECISIONS):
+  - MPL-2.0, nessuna dipendenza, ESM dalla 1.7.0 (`import RFB from '@novnc/novnc'`);
+  - i tipi sono un piccolo `.d.ts` nostro, perché `@types/novnc__novnc` è fermo alla 1.6 col vecchio percorso;
+  - il top-level await di `core/util/browser.js` va bene col target di default di Vite 8.
+- Componente `BrowserScreen.vue`:
+  - `RFB` con `viewOnly`, `scaleViewport` (lo schermo 1280×800 si adatta alla larghezza) e `focusOnClick` spento;
+  - nessun gestore di `clipboard`;
+  - stati «In collegamento», «In diretta» e «Browser chiuso»;
+  - sopra lo schermo solo il sito, dall'ultima riga di attività «browser · …»: le righe di attività non portano il titolo della pagina.
+
+- Su `http://127.0.0.1` noVNC funziona; vuole un contesto sicuro (HTTPS o localhost).
+
+Scelte dell'utente del 2026-10-21 (domande a opzioni, tutte le consigliate):
+1. **Dove: «Pannello, con un pulsante».** Sulla riga di attività «browser · …» compare «Guarda», che apre il pannello laterale «Computer» con la scheda «Browser». Lo schermo si apre solo quando lo chiede l'utente. Al passo 7 il Coder riceve la stessa scheda.
+2. **Appunti in uscita: «Bastano Xvnc e noVNC».** Il core filtra solo i messaggi verso il contenitore. In uscita valgono `-SendCutText=0` di Xvnc, controllato da un test sull'entrypoint, e noVNC in sola visione senza gestore `clipboard`. È una deviazione dalla proposta del 2026-10-20 («scartati sempre, in tutte e due le direzioni»): la voce va in DECISIONS.
+3. **Schermi: «Fino a 3 insieme».** Ogni schermo usa il suo canale; al quarto la risposta è «troppi schermi aperti».
+
+**Test:**
+- Filtro:
+  - ogni tipo ammesso e scartato;
+  - messaggi spezzati e messaggi incollati insieme;
+  - SetEncodings lungo;
+  - tipo sconosciuto che chiude.
+- Gettone:
+  - quello di un'altra conversazione, di un browser chiuso o di un browser passato ad altri è rifiutato;
+  - nessun gettone per le conversazioni Private o in incognito.
+- Rotta: Origin o Host sbagliati danno 403, un percorso diverso 404.
+- Ponte: canale finto (`PassThrough`); la chiusura del browser chiude gli schermi.
+
+**Prova:**
+1. In una conversazione di lavoro, «Arianna, apri example.com e leggimi il titolo».
+2. Apro lo schermo: si vede la pagina in diretta e, mentre Arianna scorre o clicca, cambia.
+3. Clic e tasti sullo schermo non fanno niente.
+
+**Richieste della prova dell'utente (2026-10-21):** «funziona ma vorrei sistemare 2 cose», poi una terza.
+1. **«Guarda» facile da trovare, non solo dentro i passi.**
+   - Sopra la casella di scrittura c'è una riga fissa «Browser aperto · <sito> · Guarda · Chiudi», visibile finché la conversazione tiene il browser.
+   - Rotta leggera `GET /api/browser/screen?conversationId=<id>`, che risponde `{open, site?}`:
+     - `open: false` per le conversazioni Private e in incognito;
+     - 404 per una conversazione che non esiste.
+   - Il sito è quello dell'ultima azione che ha raggiunto una pagina (`AgentBrowser.siteOf`).
+   - La chat legge la rotta all'apertura della conversazione, a ogni riga del browser o messaggio nuovo e ogni 30 s mentre la riga è visibile; con `browser · chiude` la riga sparisce subito.
+   - Il «Guarda» nei passi resta.
+2. **Schermo intero e nuova scheda.** Nella scheda Browser ci sono due pulsanti:
+   - «Schermo intero»: Fullscreen API sullo schermo, Esc per uscire. Il pulsante è nascosto dove `document.fullscreenEnabled` è falso, come Safari su iPhone.
+   - «Apri in una nuova scheda»: apre `/browser/<id>` (`target="_blank" rel="noopener"`), una pagina con il solo schermo su fondo scuro, con sito e stato in alto e «Riprova». Chiede il suo gettone e conta fra i 3 schermi.
+3. **«Chiudi» il browser** («serve pure un pulsante per chiudere il browser»): nella riga fissa e nella scheda Browser, senza conferma.
+   - `POST /api/browser/close {conversationId}`:
+     - 200 `{closed: true}`;
+     - 409 `no-browser` se la conversazione non tiene il browser (un'altra conversazione non può chiuderlo);
+     - 404 per una conversazione che non esiste.
+   - Il core chiude dopo l'azione in corso (la coda seriale), mai a metà.
+   - Si chiudono anche gli schermi.
+   - Il core scrive l'evento `browser.close`, L0, `{conversationId, reason: 'user'}`.
+   - In chat compare la riga di sistema «Browser chiuso da te. Se serve, Arianna lo riapre.», che legge anche il modello.
+   - La prossima azione del browser in quella conversazione riceve una volta «Il browser l'ha chiuso l'utente: riaprilo con browser.open solo se serve.» (`closed-by-user`); `browser.open` lo riapre.
+
 ### Cose non verificate
 
+- noVNC dal telefono: se la chat arriva al telefono su `http://` con un indirizzo di rete (non localhost), il browser del telefono non lo considera un contesto sicuro e noVNC rifiuta di partire. Da vedere nella prova del passo 4.
 - Sandbox di Chromium con il seccomp di Docker Desktop senza `SYS_ADMIN`: va provata al passo 1.
 - `ws` con `createConnection` su un canale `docker exec`: va provato al passo 1, altrimenti `playwright-core`.
 - Dimensioni reali delle immagini A e B; licenza dell'immagine di linuxserver e di kasmweb.

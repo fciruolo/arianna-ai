@@ -124,6 +124,7 @@ import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
+import { MAX_ACCOUNTS } from '../followed-accounts.ts';
 import { MAX_PROJECTS, PROJECT_KEY, type FollowedProjects, type ProjectNews } from '../followed-projects.ts';
 import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveProjectChoice, saveRewrite, saveUserNote, type AnswerGate, type ProjectChoice, type OpenQuestion } from '../dev-progress.ts';
 import { createUserFacts, FACTS_STATUS, FactsError, MAX_FACT_TEXT, MAX_TOPIC } from '../user-facts.ts';
@@ -191,6 +192,7 @@ import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveCl
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { isYoutubeVideo } from '../video-url.ts';
 import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video-job.ts';
+import type { BrowserScreens } from '../browser/screen.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
 /**
@@ -413,6 +415,8 @@ export interface ApiServerOptions {
    * first; without it the route erases with no stop (a step at work: 409).
    */
   erase?: (conversationId: string) => Promise<EraseResult>;
+  /** The screen of the browser of Arianna (D-264, passo 4); without it the routes answer 404. */
+  browserScreens?: BrowserScreens;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -3938,24 +3942,28 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       }
       return { status: 201, body: { ...saved, logged } };
     }),
-    // The projects followed for ideas (D-202): public text read from GitHub (L0), with what was already chosen.
+    // The projects followed for ideas (D-202): public text read from GitHub (L0), with what was already chosen;
+    // and the accounts followed (D-271), with their new repositories.
     route('GET', '/api/dev/projects', () => {
       const { home, projects } = need();
       const answers = answersByKey(home);
       const list = (projects?.list() ?? []).map((project) => ({ ...project, news: newsView(project.news, answers) }));
-      return Promise.resolve({ body: { projects: list, max: MAX_PROJECTS } });
+      return Promise.resolve({ body: { projects: list, max: MAX_PROJECTS, accounts: projects?.accounts() ?? [], maxAccounts: MAX_ACCOUNTS } });
     }),
+    // A repository or, since D-271, an account (`https://github.com/<owner>`, whose id has no `/`).
     route('POST', '/api/dev/projects', async (request) => {
       const projects = needProjects();
       const body = await readJson(request, 4 * 1024);
       onlyFields(body, ['url']);
-      return { status: 201, body: { project: projects.add(body.url) } };
+      const added = projects.add(body.url);
+      return { status: 201, body: added.id.includes('/') ? { project: added } : { account: added } };
     }),
     route('DELETE', '/api/dev/projects', async (request) => {
       const projects = needProjects();
       const body = await readJson(request, 4 * 1024);
       onlyFields(body, ['id']);
-      return { body: { project: projects.remove(body.id) } };
+      const removed = projects.remove(body.id);
+      return { body: removed.id.includes('/') ? { project: removed } : { account: removed } };
     }),
     // «Controlla novità»: the check runs in the background; the page reads again while `checking`.
     route('POST', '/api/dev/projects/check', async (request) => {
@@ -4470,6 +4478,53 @@ export function incognitoClosedFrame(event: { kind: string; payload: unknown }):
   return { type: 'conversation.incognito-closed', conversationId: payload.conversationId, cause };
 }
 
+const SCREEN_PATH = '/api/browser/screen';
+/** Client messages of RFB are small (SetEncodings at most 260 bytes); a dropped clipboard spans frames. */
+export const SCREEN_MAX_PAYLOAD = 4096;
+
+/**
+ * The token of the screen of the browser (D-264, passo 4): only for the
+ * conversation holding the browser now, never a Private or incognito one.
+ */
+function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
+  return [
+    route('POST', SCREEN_PATH, async (request) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId']);
+      const { conversationId } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      const issued = await screens.issue(conversationId);
+      if (issued.ok) return { body: { token: issued.token } };
+      if (issued.reason === 'not-found') throw new HttpError(404, 'not found');
+      if (issued.reason === 'no-browser') return { status: 409, body: { error: 'no-browser' } };
+      if (issued.reason === 'too-many-screens') return { status: 409, body: { error: 'too-many-screens' } };
+      return { status: 403, body: { error: issued.reason } };
+    }),
+    // Whether the conversation holds the browser now: the bar of the chat above the composer.
+    route('GET', SCREEN_PATH, async (_request, url) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const conversationId = url.searchParams.get('conversationId');
+      if (conversationId === null || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      const status = await screens.status(conversationId);
+      if (status === null) throw new HttpError(404, 'not found');
+      return { body: status };
+    }),
+    // «Chiudi» in the chat: the browser of that conversation closes after the action under way.
+    route('POST', '/api/browser/close', async (request) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId']);
+      const { conversationId } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      const closed = await screens.closeByUser(conversationId);
+      if (closed === 'not-found') throw new HttpError(404, 'not found');
+      if (closed === 'no-browser') return { status: 409, body: { error: 'no-browser' } };
+      return { body: { closed: true } };
+    }),
+  ];
+}
+
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
   const table = routes(sql, {
@@ -4584,6 +4639,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...agentsCatalogRoutes(options.agentsCatalog, options.safetyReports, options.roleTranslations));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
+  table.push(...browserScreenRoutes(options.browserScreens));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
@@ -4716,6 +4772,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+  // The screen of the browser (D-264, passo 4): RFB from the page, small messages only.
+  const screenWss = new WebSocketServer({ noServer: true, maxPayload: SCREEN_MAX_PAYLOAD });
   server.on('upgrade', (request: IncomingMessage, socket, head) => {
     socket.on('error', () => {
       socket.destroy();
@@ -4725,6 +4783,18 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       { method: 'GET', host: request.headers.host, origin: request.headers.origin, contentType: undefined, upgrade: true },
       hosts,
     );
+    if (url.pathname === SCREEN_PATH) {
+      const screens = options.browserScreens;
+      const token = url.searchParams.get('t') ?? '';
+      if (screens === undefined || !check.ok || !screens.valid(token)) {
+        socket.end(`HTTP/1.1 ${screens === undefined ? '404 Not Found' : '403 Forbidden'}\r\nConnection: close\r\n\r\n`);
+        return;
+      }
+      screenWss.handleUpgrade(request, socket, head, (ws) => {
+        screens.attach(token, ws);
+      });
+      return;
+    }
     if (url.pathname !== '/api/ws' || !check.ok) {
       socket.end(`HTTP/1.1 ${url.pathname === '/api/ws' ? '403 Forbidden' : '404 Not Found'}\r\nConnection: close\r\n\r\n`);
       return;
@@ -4831,6 +4901,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       for (const response of helpers) response.end();
       for (const ws of sockets) ws.terminate();
       wss.close();
+      screenWss.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => { resolve(); }));
     },
