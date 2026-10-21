@@ -43,6 +43,8 @@ interface FakeRequestSpec {
   sandbox?: string;
   /** Playwright does not know the frame yet (a popup being created): frame() throws. */
   unknownFrame?: boolean;
+  /** The address of the page of the frame before the navigation (a form is sent from it). */
+  pageUrl?: string;
 }
 
 interface Outcome {
@@ -60,6 +62,7 @@ function fakeRequest(spec: FakeRequestSpec): unknown {
     frame: () => {
       if (spec.unknownFrame === true) throw new Error('frame not created yet');
       return spec.frame ?? {
+      url: () => spec.pageUrl ?? 'about:blank',
       parentFrame: () => (spec.main === true ? null : {}),
       frameElement: () => Promise.resolve({ getAttribute: () => Promise.resolve(spec.sandbox ?? null), dispose: () => Promise.resolve() }),
       };
@@ -449,5 +452,98 @@ describe('attachNetwork', () => {
     assert.deepEqual(net.events.at(-1)?.payload, { pages: 3, requests: 4, bytes: 2, counts: { page: { ok: 1, failed: 1, form: 1 }, image: { ok: 1 } }, limits: [] });
     // After close, nothing more passes.
     assert.equal((await net.send({ url: 'https://example.net/b.png' })).aborted, 'blockedbyclient');
+  });
+});
+
+// The access made by the user (D-276, D-264 passo 5).
+describe('attachNetwork: forms and cookies of the user', () => {
+  const html = (setCookies?: string[]): ResourceResult => ({ ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>ok</p>'), ...(setCookies === undefined ? {} : { setCookies }) });
+  const columns = (row: unknown[] | undefined) => ({ target: row?.[3], label: row?.[5], decision: row?.[6], rule: row?.[7], reason: row?.[8], bytes: row?.[9] });
+  const asUser = (net: Harness, consent: PageConsent = { from: 'public' }, level: 'L0' | 'L1' = 'L0') => {
+    net.handle.rescope({ context: level === 'L1' ? createContext('L1', 'L1') : createContext('L1', 'L0'), consent, driver: 'user' });
+  };
+
+  it('a form of the user to the site of its page leaves as written, logged with its size only; from then on the browser has an access', async () => {
+    const net = await harness({ answer: () => html(['sid=abc; Path=/; Domain=banca-finta.it']) });
+    asUser(net);
+    const body = Buffer.from('utente=finto&password=finta-123');
+    const sent = await net.send({ url: 'https://login.banca-finta.it/session', main: true, method: 'POST', body, pageUrl: 'https://www.banca-finta.it/accedi', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    assert.equal(sent.fulfilled?.status, 200);
+    assert.equal(net.fetched[0]?.body?.toString('utf8'), body.toString('utf8'));
+    assert.equal(net.fetched[0].method, 'POST');
+    const row = columns(net.rows[0]);
+    assert.deepEqual({ ...row, reason: undefined }, { target: 'web-form', label: 'L2', decision: 'allow', rule: 'form', reason: undefined, bytes: body.length });
+    // Nothing of the content in the log, nor in the events.
+    assert.ok(!JSON.stringify(net.rows).includes('finta-123'));
+    assert.ok(!JSON.stringify(net.events).includes('finta-123'));
+    assert.equal(net.handle.authenticated(), 'banca-finta.it');
+    assert.deepEqual(net.events.find((event) => event.kind === 'browser.access')?.payload, { site: 'banca-finta.it' });
+    // The next page of the site: as `session`, L2, with the cookie of the answer.
+    assert.ok((await net.send({ url: 'https://www.banca-finta.it/conti', main: true, pageUrl: 'https://www.banca-finta.it/accedi' })).fulfilled);
+    assert.deepEqual(columns(net.rows.at(-1)).target, 'web-session');
+    assert.equal(columns(net.rows.at(-1)).label, 'L2');
+    assert.equal(net.fetched.at(-1)?.cookie, 'sid=abc');
+  });
+
+  it('after the access nothing goes to another site: pages, iframes and resources carry L2 and the gateway refuses them', async () => {
+    const net = await harness({ answer: () => html() });
+    asUser(net);
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    const fetched = net.fetched.length;
+    for (const spec of [{ url: 'https://news-finte.it/', main: true }, { url: 'https://cdn-finto.net/app.js', type: 'script' }, { url: 'https://tracker-finto.net/p.gif?u=1', type: 'image' }, { url: 'https://video-finto.net/embed', main: false }]) {
+      assert.ok((await net.send(spec)).aborted, spec.url);
+    }
+    assert.equal(net.fetched.length, fetched);
+    // Every refusal is a row of the gateway, L2: never a cookie nor a request.
+    for (const row of net.rows.slice(1)) assert.equal(columns(row).label, 'L2');
+    assert.ok(net.rows.slice(1).every((row) => columns(row).decision === 'block'));
+    // A resource of the site goes, as `session`, with no cookie when the jar has none for it.
+    assert.ok((await net.send({ url: 'https://static.banca-finta.it/app.css', type: 'stylesheet' })).fulfilled);
+    assert.equal(columns(net.rows.at(-1)).target, 'web-session');
+  });
+
+  it('a form to another site, a form while Arianna drives, a form from an iframe: refused before the gateway', async () => {
+    const net = await harness({ answer: () => html() });
+    assert.ok((await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' })).aborted);
+    asUser(net);
+    assert.ok((await net.send({ url: 'https://raccolta-finta.net/steal', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' })).aborted);
+    assert.ok((await net.send({ url: 'https://banca-finta.it/session', main: false, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' })).aborted);
+    assert.ok((await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1') })).aborted);
+    assert.deepEqual(net.rows, []);
+    assert.equal(net.handle.authenticated(), null);
+    // Once the browser has an access, a form to another site's page stays refused too.
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    assert.ok((await net.send({ url: 'https://altra-finta.it/form', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://altra-finta.it/' })).aborted);
+    assert.equal(net.handle.authenticated(), 'banca-finta.it');
+  });
+
+  it('the cookies of the navigations of the user wait for a form to their site; never those of Arianna; given back, they go', async () => {
+    const answers = new Map<string, string[]>([['https://banca-finta.it/accedi', ['csrf=t1; Path=/']], ['https://news-finte.it/', ['track=1']]]);
+    const net = await harness({ answer: (input) => html(answers.get(input.url)) });
+    // Arianna drives: the cookie of the page is dropped.
+    await net.send({ url: 'https://banca-finta.it/accedi', main: true });
+    asUser(net);
+    await net.send({ url: 'https://news-finte.it/', main: true });
+    // Never sent while they wait.
+    await net.send({ url: 'https://news-finte.it/', main: true });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
+    // Given back and taken again: what waited is gone.
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'agent' });
+    asUser(net);
+    await net.send({ url: 'https://banca-finta.it/accedi', main: true });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    // The form carries the cookie of its site only.
+    assert.equal(net.fetched.at(-1)?.cookie, 'csrf=t1');
+    assert.equal(net.handle.authenticated(), 'banca-finta.it');
+  });
+
+  it('closing the network forgets the access and its cookies', async () => {
+    const net = await harness({ answer: () => html(['sid=1']) });
+    asUser(net);
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    assert.equal(net.handle.authenticated(), 'banca-finta.it');
+    await net.close();
+    assert.equal(net.handle.authenticated(), null);
   });
 });

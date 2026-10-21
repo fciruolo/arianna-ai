@@ -147,6 +147,21 @@ describe('fetchResource', () => {
     assert.ok(!JSON.stringify(request.headers).includes('fake-vault-token'));
   });
 
+  it('the Cookie of the core (D-276) leaves; the Set-Cookie lines come back apart, never among the headers for the browser', async () => {
+    routes.set('/conti', (_request, response) => {
+      response.setHeader('set-cookie', ['sid=1; Path=/', 'pref=it']);
+      response.writeHead(200, { 'content-type': 'text/html' }).end('<p>conti</p>');
+    });
+    const result = await fetchResource({ ...get(at('/conti'), 'document', { Cookie: 'from-the-page=1' }), cookie: 'sid=0' }, network());
+    assert.ok(result.ok);
+    assert.deepEqual(result.setCookies, ['sid=1; Path=/', 'pref=it']);
+    assert.ok(!result.headers.some(([name]) => name === 'set-cookie'));
+    assert.equal(first(seen).headers.cookie, 'sid=0');
+    // Without the cookie of the core, none: the header of the page never leaves.
+    await fetchResource(get(at('/conti'), 'document', { Cookie: 'from-the-page=1' }), network());
+    assert.equal(seen.at(-1)?.headers.cookie, undefined);
+  });
+
   it('a Content-Type of a POST only from a closed list: a value written in it never leaves', async () => {
     routes.set('/form', (_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' }).end('{}');
@@ -387,6 +402,23 @@ describe('gateResource', () => {
     assert.deepEqual(await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L0'), consent: 'public', request: { url: at('/a'), method: 'DELETE', headers: {}, type: 'fetch' }, network: network() }), { ok: false, reason: 'invalid-request' });
     assert.deepEqual(rows, []);
     assert.deepEqual(seen, []);
+  });
+
+  it('after an access (D-276): a request of its site goes as session with the cookie; another site carries L2 and never its cookie', async () => {
+    const rows: unknown[][] = [];
+    routes.set('/pixel.gif', (_request, response) => { response.writeHead(200, { 'content-type': 'image/gif' }).end('GIF'); });
+    const onSite = await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', session: 'site.example.org', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
+    assert.equal(onSite.ok, true);
+    assert.equal(first(seen).headers.cookie, 'sid=1');
+    assert.equal(rows.at(-1)?.[3], 'web-session');
+    assert.equal(rows.at(-1)?.[5], 'L2');
+    const other = await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', session: 'banca-finta.it', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
+    assert.deepEqual(other, { ok: false, reason: 'blocked' });
+    assert.equal(seen.length, 1);
+    assert.equal(rows.at(-1)?.[7], 'cloud-label');
+    // Without an access the cookie never goes, even when a caller set it.
+    await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
+    assert.equal(seen.at(-1)?.headers.cookie, undefined);
   });
 
   it('a gateway that cannot write its log is a refusal', async () => {
