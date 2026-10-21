@@ -30,6 +30,8 @@ export interface FollowedProject {
   id: string;
   page: string;
   addedAt: string;
+  /** From GitHub, when followed with «Segui» from an account (D-272); absent otherwise. */
+  description?: string;
   /** Open Design: its news come with the catalog of the styles. */
   catalog: boolean;
   checking: boolean;

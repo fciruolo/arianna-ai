@@ -261,6 +261,22 @@ describe('the accounts in the list of the projects', () => {
     assert.throws(() => projects.remove('copilotkit'), (error: unknown) => error instanceof CatalogError && error.code === 'not-found');
   });
 
+  it('a description written by hand is cleaned and cut, one that is not text is dropped (D-272)', () => {
+    const dir = join(scratch, randomUUID());
+    mkdirSync(join(dir, FOLLOWED_FOLDER), { recursive: true });
+    const projects = [
+      { id: 'a/long', page: 'https://github.com/a/long', addedAt: 'x', description: `riga\u0007 nuova\n${'x'.repeat(400)}` },
+      { id: 'a/number', page: 'https://github.com/a/number', addedAt: 'x', description: 42 },
+      { id: 'a/blank', page: 'https://github.com/a/blank', addedAt: 'x', description: '   ' },
+    ];
+    writeFileSync(join(dir, FOLLOWED_FOLDER, 'projects.json'), JSON.stringify({ version: 1, projects }));
+    const listed = createFollowedProjects(deps(dir)).list();
+    const long = listed.find((item) => item.id === 'a/long')?.description ?? '';
+    assert.ok(long.length <= 300 && long.startsWith('riga') && !long.includes('\u0007') && !long.includes('\n'), long.slice(0, 40));
+    assert.equal(listed.find((item) => item.id === 'a/number')?.description, undefined);
+    assert.equal(listed.find((item) => item.id === 'a/blank')?.description, undefined);
+  });
+
   it('drops an account written by hand that does not match its address, or twice', () => {
     const dir = join(scratch, randomUUID());
     mkdirSync(join(dir, FOLLOWED_FOLDER), { recursive: true });
@@ -308,7 +324,12 @@ describe('the accounts in the list of the projects', () => {
     );
     projects.add(view.fresh[0]?.page);
     assert.equal(projects.accounts()[0]?.fresh[0]?.followed, true);
-    assert.deepEqual(events, ['followed.account_added:', 'followed.account_checked:0', 'followed.account_checked:1', 'followed.added:']);
+    // The description of the check comes with it (D-272), and stays after a reload of the list.
+    assert.equal(projects.list().find((item) => item.id === 'copilotkit/new-agent')?.description, 'Descrizione di new-agent');
+    assert.equal(createFollowedProjects(deps(dir)).list().find((item) => item.id === 'copilotkit/new-agent')?.description, 'Descrizione di new-agent');
+    projects.add('https://github.com/other/plain');
+    assert.equal(projects.list().find((item) => item.id === 'other/plain')?.description, undefined);
+    assert.deepEqual(events, ['followed.account_added:', 'followed.account_checked:0', 'followed.account_checked:1', 'followed.added:', 'followed.added:']);
   });
 });
 

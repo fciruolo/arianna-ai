@@ -80,6 +80,12 @@ export interface FollowedProject {
   id: string;
   page: string;
   addedAt: string;
+  /**
+   * The description GitHub gives, when the project was followed with «Segui»
+   * from the new repositories of an account (D-271, D-272): taken from what
+   * that check already read, never asked again. Absent otherwise.
+   */
+  description?: string;
 }
 
 export interface ProjectNews {
@@ -202,7 +208,9 @@ export function readList(base: string): FollowedProject[] | undefined {
     if (item === undefined || typeof item.page !== 'string' || typeof item.addedAt !== 'string') return [];
     try {
       const ref = parseSourceUrl(item.page);
-      return ref.id === item.id && ref.id !== CATALOG_PROJECT.id ? [{ id: ref.id, page: ref.page, addedAt: item.addedAt }] : [];
+      if (ref.id !== item.id || ref.id === CATALOG_PROJECT.id) return [];
+      const description = cleanLine(item.description, 300);
+      return [{ id: ref.id, page: ref.page, addedAt: item.addedAt, ...(description === '' ? {} : { description }) }];
     } catch {
       return [];
     }
@@ -460,7 +468,11 @@ export function createFollowedProjects(deps: FollowedDeps): FollowedProjects {
       throw invalidAddress();
     }
     if (ref.id === CATALOG_PROJECT.id) throw new CatalogError('conflict', 'Open Design is already followed through its catalog');
-    const added: FollowedProject = { id: ref.id, page: ref.page, addedAt: now().toISOString() };
+    // Followed from the new repositories of an account: its description comes with it, nothing asked of GitHub.
+    const description = readAccounts(base)
+      .flatMap((account) => readAccountState(account.id).fresh)
+      .find((repo) => repo.id === ref.id)?.description;
+    const added: FollowedProject = { id: ref.id, page: ref.page, addedAt: now().toISOString(), ...(description === undefined || description === '' ? {} : { description }) };
     changeList((current) => {
       if (current.some((item) => item.id === ref.id)) throw new CatalogError('conflict', 'this project is already followed');
       if (current.length >= MAX_PROJECTS) throw new CatalogError('invalid', `at most ${String(MAX_PROJECTS)} projects`);

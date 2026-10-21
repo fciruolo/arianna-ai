@@ -12,6 +12,7 @@ import {
   CalendarCheck,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Columns2,
@@ -108,6 +109,8 @@ export const ICONS = {
   restore: ArchiveRestore,
   delete: Trash2,
   expand: ChevronRight,
+  // «Tutti i seguiti» (D-272): back from the detail of a card.
+  back: ChevronLeft,
   close: X,
   menu: Menu,
   panel: PanelRight,

@@ -69,6 +69,11 @@ describe('the catalogs on the page «Seguiti»', () => {
     assert.equal(rows[0].job, 'ultimo download non riuscito');
   });
 
+  it('a version waiting with no date says so', () => {
+    const rows = catalogRows({ sources: [skill({ adopted: { ...version('2026-10-02T10:00:00Z'), adoptedAt: null }, pending: { ...version(null), diff } })], suggestions: [] }, null);
+    assert.equal(rows[0]?.pending, 'in attesa la versione scaricata');
+  });
+
   it('links to the sections of the settings and has its own address in the system group', () => {
     assert.equal(CATALOG_PLACES.skills.path, '/impostazioni/skill-e-stili');
     assert.equal(CATALOG_PLACES.agents.path, '/impostazioni/catalogo-agenti');
