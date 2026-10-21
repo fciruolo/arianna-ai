@@ -130,6 +130,11 @@ export interface AgentBrowserOptions {
   onEvent?: (event: NewEvent) => void;
   /** The browser of `conversationId` was closed for another conversation. */
   onTaken?: (conversationId: string) => void;
+  /**
+   * The conversation no longer holds the browser (closed, taken, released,
+   * or closed by the manager): the screens of passo 4 close at once.
+   */
+  onReleased?: (conversationId: string) => void;
   now?: () => number;
   takeOverMs?: number;
   /** Tests: opens the session instead of starting a container. */
@@ -356,13 +361,23 @@ export class AgentBrowser {
   /** The manager closed the browser (idle, max, disconnected): the conversation holds nothing any more. */
   #forgetClosed(): void {
     const held = this.#held;
-    if (held !== null && this.#options.manager.active?.id !== held.id) this.#held = null;
+    if (held !== null && this.#options.manager.active?.id !== held.id) {
+      this.#held = null;
+      this.#released(held);
+    }
   }
 
   async #drop(): Promise<void> {
     const held = this.#held;
     this.#held = null;
-    if (held !== null) await held.session.close().catch(() => undefined);
+    if (held === null) return;
+    // The screens first: they show nothing of a browser that is going.
+    this.#released(held);
+    await held.session.close().catch(() => undefined);
+  }
+
+  #released(held: Held): void {
+    this.#safely(() => { this.#options.onReleased?.(held.conversationId); });
   }
 
   #safely(callback: () => void): void {

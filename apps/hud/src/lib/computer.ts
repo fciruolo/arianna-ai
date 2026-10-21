@@ -15,9 +15,21 @@ import type { DelegationFile, MessageCredit, SavedTerminal, TaskStatus } from '.
  *   gives. During the run no content is ever asked: the files are not yet
  *   those of the delegation, and the paths come from the binary.
  * - Attività: the activity lines (D-054 live, D-083 saved).
+ * - Browser: the live screen of Arianna's browser, view only (D-264, passo 4).
+ *   It needs no task of the Coder: the panel opens on it from «Guarda».
  */
-export type ComputerTab = 'terminal' | 'files' | 'activity';
-export const COMPUTER_TABS: readonly ComputerTab[] = ['terminal', 'files', 'activity'];
+export type ComputerTab = 'terminal' | 'files' | 'activity' | 'browser';
+export const COMPUTER_TABS: readonly ComputerTab[] = ['terminal', 'files', 'activity', 'browser'];
+
+/** The tabs the panel offers: all of them with a task of the Coder to show, otherwise only the browser. */
+export function computerTabs(coderTask: string | undefined): readonly ComputerTab[] {
+  return coderTask === undefined ? ['browser'] : COMPUTER_TABS;
+}
+
+/** The tab to show: the one asked when offered, otherwise the first offered. */
+export function shownTab(asked: ComputerTab, tabs: readonly ComputerTab[]): ComputerTab {
+  return tabs.includes(asked) ? asked : (tabs[0] ?? 'browser');
+}
 
 /** A task in these states is at work: live data only. */
 const AT_WORK: readonly TaskStatus[] = ['inbox', 'ready', 'running'];

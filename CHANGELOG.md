@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Schermo in diretta del browser di Arianna (D-264 passo 4, D-270): sulle righe «browser: …» della chat il pulsante «Guarda» apre il pannello «Computer» con la scheda «Browser», dove si vede la pagina mentre Arianna la usa, in sola visione (clic e tasti non arrivano al browser). Fino a 3 schermi insieme, per esempio Mac e telefono; quando il browser si chiude lo schermo dice «Browser chiuso».
+- Dipendenza `@novnc/novnc` 1.7.0 nella chat, per lo schermo del browser (D-269).
+
+### Sicurezza
+
+- Lo schermo del browser passa solo dal core, con un gettone per conversazione che muore con il browser e mai per le conversazioni Private o in incognito; il core scarta tasti, mouse e appunti diretti al browser e chiude il collegamento su messaggi non previsti (D-270).
+
 ## [0.154.0] - 2026-10-21
 
 ### Aggiunto

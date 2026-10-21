@@ -2848,7 +2848,7 @@ Scritto dopo il passo 3 (stima 8-10 h, contro le 6-8 della proposta, per il filt
   - `RFB` con `viewOnly`, `scaleViewport` (lo schermo 1280×800 si adatta alla larghezza) e `focusOnClick` spento;
   - nessun gestore di `clipboard`;
   - stati «In collegamento», «In diretta» e «Browser chiuso»;
-  - sopra lo schermo, sito e titolo della pagina dalle righe di attività.
+  - sopra lo schermo solo il sito, dall'ultima riga di attività «browser · …»: le righe di attività non portano il titolo della pagina.
 
 - Su `http://127.0.0.1` noVNC funziona; vuole un contesto sicuro (HTTPS o localhost).
 

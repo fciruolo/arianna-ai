@@ -54,6 +54,7 @@ interface Harness {
   closed: string[];
   scopes: NetworkScope[];
   taken: string[];
+  released: string[];
   typed: string[];
   page: FakePage;
   clock: { now: number };
@@ -64,7 +65,7 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], typed: [], page, clock };
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock };
   const openSession: OpenSession = (_manager, id) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
@@ -86,6 +87,7 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
     session: { home: '/nowhere' },
     gateTyped: (text) => { h.typed.push(text); return Promise.resolve(options.gate ?? true); },
     onTaken: (conversationId) => { h.taken.push(conversationId); },
+    onReleased: (conversationId) => { h.released.push(conversationId); },
     now: () => clock.now,
     actionLimitMs: 50,
     openSession,
@@ -305,6 +307,26 @@ test('a browser the manager closed (idle, max) is no longer held', async () => {
   h.expire();
   assert.equal(h.browser.holder, null);
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
+});
+
+test('onReleased: the screens hear of every browser a conversation no longer holds (close, take-over, release, manager)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  await h.browser.act(scope('a'), { kind: 'close' });
+  assert.deepEqual(h.released, ['a']);
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/' });
+  h.clock.now += TAKE_OVER_MS;
+  await h.browser.act(scope('b'), { kind: 'open', url: 'https://ricette-finte.it/' });
+  assert.deepEqual(h.released, ['a', 'a']);
+  await h.browser.release('b');
+  assert.deepEqual(h.released, ['a', 'a', 'b']);
+  await h.browser.act(scope('c'), { kind: 'open', url: 'https://ricette-finte.it/' });
+  h.expire();
+  assert.equal(h.browser.holder, null);
+  assert.deepEqual(h.released, ['a', 'a', 'b', 'c']);
+  // Nothing held: nothing to tell.
+  await h.browser.close();
+  assert.deepEqual(h.released, ['a', 'a', 'b', 'c']);
 });
 
 test('in an Internal conversation browser.open takes only an address the user wrote; any other waits for the user', async () => {
