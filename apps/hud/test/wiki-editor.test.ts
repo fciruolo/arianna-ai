@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { Editor, type JSONContent } from '@tiptap/core';
 
-import { citationMarkdown, citationText, cursorInCell, docToMarkdown, flattenCells, markdownToDoc, plainEntities, unknownTypes, WikiCellLines, wikiExtensions } from '../src/lib/wiki-editor.ts';
+import { citationMarkdown, citationText, cursorInCell, docToMarkdown, flattenCells, markdownToDoc, plainEntities, unknownTypes, WikiCellLines, wikiExtensions, withoutEmptyParagraphs } from '../src/lib/wiki-editor.ts';
 
 const PAGE = [
   '## In breve',
@@ -134,4 +134,23 @@ test('Enter, Shift+Enter and Mod+Enter add no line inside a table cell, and work
   } finally {
     editor.destroy();
   }
+});
+
+test('an empty paragraph before a table is not written as &nbsp;, text and the table stay (D-282)', () => {
+  const cell = (text: string) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+  const doc = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph' },
+      { type: 'table', content: [{ type: 'tableRow', content: [cell('Farina'), cell('500 g')] }] },
+      { type: 'paragraph', content: [{ type: 'text', text: '  ' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Ricetta del pane.' }] },
+    ],
+  };
+  const out = docToMarkdown(doc);
+  assert.ok(!out.includes('&nbsp;'), out);
+  assert.ok(out.includes('Farina') && out.includes('500 g') && out.includes('Ricetta del pane.'), out);
+  // A paragraph with text is never dropped.
+  const kept = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Testo' }] }] };
+  assert.deepEqual(withoutEmptyParagraphs(kept), kept);
 });

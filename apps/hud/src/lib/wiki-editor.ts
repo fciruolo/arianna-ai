@@ -266,8 +266,20 @@ export function plainEntities(text: string): string {
 }
 
 /** The editor's document back to Markdown, what the save sends to the core. */
+/**
+ * The document without its empty paragraphs between blocks: the serializer
+ * writes one as `&nbsp;`, which the page then shows as text (the line the
+ * editor leaves before a table, D-282). A blank line says the same in Markdown.
+ */
+export function withoutEmptyParagraphs(doc: JSONContent): JSONContent {
+  const empty = (node: JSONContent): boolean =>
+    node.type === 'paragraph' && (node.content ?? []).every((child) => child.type === 'text' && (child.text ?? '').trim() === '');
+  const content = doc.content?.filter((node) => !empty(node)).map((node) => (node.type === 'blockquote' ? withoutEmptyParagraphs(node) : node));
+  return content === undefined ? doc : { ...doc, content };
+}
+
 export function docToMarkdown(doc: JSONContent): string {
-  return `${plainEntities(markdown().serialize(flattenCells(doc))).replace(/\s+$/, '')}\n`;
+  return `${plainEntities(markdown().serialize(flattenCells(withoutEmptyParagraphs(doc)))).replace(/\s+$/, '')}\n`;
 }
 
 /** Whether the document holds a mark or node the schema of a page does not know (never: the schema has no link). */

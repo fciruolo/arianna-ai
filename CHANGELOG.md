@@ -15,6 +15,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - Editor della Wiki: Invio dentro una cella di tabella non va più a capo, e un a capo già presente in una cella si salva come spazio invece che come `<br>`, che il core rifiutava come HTML (D-282).
+- Editor della Wiki: la riga vuota prima di una tabella non compare più nella pagina come «&nbsp;» (D-282).
 
 ### Sicurezza
 
