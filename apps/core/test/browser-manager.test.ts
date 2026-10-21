@@ -172,6 +172,7 @@ test('a container docker cannot remove keeps the browser busy, retried at the ne
   const ticks: (() => void)[] = [];
   const events: unknown[] = [];
   const closed: string[] = [];
+  const stopping: string[] = [];
   const manager = new BrowserManager({
     home: '/h', docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json',
     every: (callback) => {
@@ -180,9 +181,12 @@ test('a container docker cannot remove keeps the browser busy, retried at the ne
     },
     onEvent: (event) => { events.push(event); },
     onClose: (id, reason) => { closed.push(`${id}:${reason}`); },
+    // Before docker rm, with the browser already no longer active: the screens close at once.
+    onStop: (id, reason) => { stopping.push(`${id}:${reason}:rm=${String(calls.filter((args) => args[0] === 'rm').length)}:active=${String(manager.active !== null)}`); },
   });
   await manager.start('a');
   await manager.stop('a');
+  assert.deepEqual(stopping, ['a:stopped:rm=0:active=false']);
   assert.equal(manager.state, 'closing');
   assert.deepEqual(events, [{ kind: 'browser.remove_failed', label: 'L0', payload: { reason: 'docker' } }]);
   // Only the kind of failure: nothing of what docker said.
@@ -195,6 +199,7 @@ test('a container docker cannot remove keeps the browser busy, retried at the ne
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(manager.state, 'free');
   assert.deepEqual(closed, ['a:stopped']);
+  assert.equal(stopping.length, 1);
   assert.equal(ticks.length, 0);
   assert.equal(calls.filter((args) => args[0] === 'rm').length, 2);
   await assert.doesNotReject(manager.start('b'));
@@ -374,6 +379,7 @@ test('callbacks of the caller that throw do not break the manager', async () => 
       home: '/h', docker: fakeDocker().docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json', now: () => now,
       every: (callback) => { tick = callback; return { clear: () => undefined }; },
       onClose: () => { throw new Error('caller failed'); },
+      onStop: () => { throw new Error('caller failed'); },
       onEvent: () => { throw new Error('caller failed'); },
     });
     await manager.start('a');

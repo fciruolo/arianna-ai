@@ -3,11 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { listActivities, listTerminal, loadDelegationFile } from '../lib/api.ts';
 import { activityLines, type ChatState, type TerminalCall, type TerminalText } from '../lib/chat-state.ts';
-import { atWork, COMPUTER_TABS, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, savedCalls, terminalCalls, type ComputerTab } from '../lib/computer.ts';
+import { atWork, computerTabs, computerTask, delegationCredit, filesView, mayReadFile, sandboxRefusal, savedCalls, shownTab, terminalCalls, type ComputerTab } from '../lib/computer.ts';
 import { codeFence } from '../lib/delegations.ts';
 import { activityText, CHANGE_TEXT, errorText, previewErrorText } from '../lib/italian.ts';
 import { STATUS_TEXT } from '../lib/labels.ts';
 import type { Activity, FilePreview, MessageCredit, SavedActivity, Task } from '../lib/types.ts';
+import BrowserScreen from './BrowserScreen.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 
@@ -18,6 +19,11 @@ import MarkdownText from './MarkdownText.vue';
  * the run works everything comes from the WebSocket; once it ended the files
  * and the steps are read again from the core, and so is the terminal, saved
  * with the delegation (migration 0062).
+ *
+ * The «Browser» tab (D-264, passo 4) shows the live screen of Arianna's
+ * browser, view only; it needs no task of the Coder, and without one it is the
+ * only tab. The parent chooses the tab (the «Guarda» of a browser line opens
+ * it), the panel only follows.
  */
 const props = defineProps<{
   chat: ChatState;
@@ -26,6 +32,9 @@ const props = defineProps<{
   activityCounts: Record<string, number>;
   /** The project folder of the conversation, the only one the Coder's cage opens. */
   workspace: string | null;
+  conversationId: string;
+  /** The site of the newest browser line, shown above the screen when known. */
+  browserSite: string | null;
 }>();
 
 /** Why the Coder is isolated, in plain words (D-095): the sandbox of the executors, PRIVACY-POLICY-SPEC. */
@@ -39,10 +48,16 @@ const cageFolder = computed(() => (props.workspace === null ? 'la cartella del p
 const cageOpen = ref(false);
 const emit = defineEmits<{ close: [] }>();
 
-const TAB_TEXT: Record<ComputerTab, string> = { terminal: 'Terminale', files: 'File', activity: 'Attività' };
-const tab = ref<ComputerTab>('terminal');
+const TAB_TEXT: Record<ComputerTab, string> = { terminal: 'Terminale', files: 'File', activity: 'Attività', browser: 'Browser' };
+const asked = defineModel<ComputerTab>('tab', { required: true });
 
 const taskId = computed(() => computerTask(props.chat, props.credits));
+const tabs = computed(() => computerTabs(taskId.value));
+/** The tab shown: the one asked when the panel offers it (the Coder's tabs need a task of the Coder). */
+const tab = computed<ComputerTab>({
+  get: () => shownTab(asked.value, tabs.value),
+  set: (value) => (asked.value = value),
+});
 const status = computed(() => (taskId.value === undefined ? undefined : props.tasks[taskId.value]?.status));
 const working = computed(() => atWork(status.value));
 const credit = computed(() => (taskId.value === undefined ? undefined : delegationCredit(props.chat, props.credits, taskId.value)));
@@ -182,13 +197,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   <aside class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[560px] flex-col border-l border-line bg-surface shadow-[0_14px_40px_#0006]" aria-labelledby="computer-title">
     <header class="flex items-start gap-2 border-b border-line px-5 py-4">
       <div class="min-w-0 flex-1">
-        <h2 id="computer-title" class="flex items-center gap-2 text-[16px] font-semibold"><Icon name="computer" :size="16" />Computer del Coder</h2>
-        <p class="mt-1 text-xs text-muted">
+        <h2 id="computer-title" class="flex items-center gap-2 text-[16px] font-semibold"><Icon name="computer" :size="16" />{{ taskId === undefined ? 'Computer' : 'Computer del Coder' }}</h2>
+        <p v-if="tab === 'browser'" class="mt-1 text-xs text-muted">Il browser di Arianna in questa conversazione, in diretta. Puoi solo guardare.</p>
+        <p v-else class="mt-1 text-xs text-muted">
           <template v-if="taskId === undefined">Nessun lavoro del Coder in questa conversazione.</template>
           <template v-else-if="working">Al lavoro adesso. Puoi solo guardare: da qui non si scrive nulla al Coder.</template>
           <template v-else>Lavoro finito · {{ status === undefined ? '' : STATUS_TEXT[status] }}</template>
         </p>
         <button
+          v-if="tab !== 'browser'"
           type="button"
           class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink hover:bg-surface-2"
           :aria-expanded="cageOpen"
@@ -196,19 +213,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         >
           <Icon name="private" :size="12" />Isolato · solo {{ cageFolder }} · rete spenta · tu guardi soltanto
         </button>
-        <ul v-if="cageOpen" class="mt-2 flex list-disc flex-col gap-1 pl-5 text-[12px] text-muted">
+        <ul v-if="cageOpen && tab !== 'browser'" class="mt-2 flex list-disc flex-col gap-1 pl-5 text-[12px] text-muted">
           <li v-for="line in CAGE_LINES" :key="line">{{ line }}</li>
           <li>Per vederlo coi tuoi occhi: chiedi al Coder di leggere un file della tua home o di scaricare una pagina; nel Terminale il tentativo compare con «Bloccato dall'isolamento».</li>
         </ul>
       </div>
-      <button ref="closeButton" type="button" class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi il computer del Coder" @click="emit('close')">
+      <button ref="closeButton" type="button" class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" :aria-label="taskId === undefined ? 'Chiudi il computer' : 'Chiudi il computer del Coder'" @click="emit('close')">
         <Icon name="close" :size="16" />
       </button>
     </header>
 
-    <div class="flex gap-1 border-b border-line px-4" role="tablist" aria-label="Viste del computer del Coder">
+    <div class="flex gap-1 overflow-x-auto border-b border-line px-4" role="tablist" aria-label="Viste del computer">
       <button
-        v-for="item in COMPUTER_TABS"
+        v-for="item in tabs"
         :key="item"
         type="button"
         role="tab"
@@ -221,8 +238,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       </button>
     </div>
 
+    <!-- Browser: the live screen of Arianna's browser, view only (D-264, passo 4); connected only while this tab is open -->
+    <section v-if="tab === 'browser'" class="min-h-0 flex-1 overflow-y-auto px-4 py-3" role="tabpanel" aria-label="Browser">
+      <BrowserScreen :conversation-id="conversationId" :site="browserSite" />
+    </section>
+
     <!-- Terminale: commands and outputs of Bash, live while the run works, then as saved -->
-    <section v-if="tab === 'terminal'" class="flex min-h-0 flex-1 flex-col" role="tabpanel" aria-label="Terminale">
+    <section v-else-if="tab === 'terminal'" class="flex min-h-0 flex-1 flex-col" role="tabpanel" aria-label="Terminale">
       <div ref="screen" class="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-4 py-3 font-mono text-[12.5px] leading-[1.55]" @scroll.passive="onScreenScroll">
         <p v-if="terminalProblem !== null && calls.length === 0" class="font-sans text-[13px] text-warn">{{ terminalProblem }}</p>
         <p v-else-if="terminalLoading && calls.length === 0" class="font-sans text-[13px] text-muted">Carico i comandi…</p>

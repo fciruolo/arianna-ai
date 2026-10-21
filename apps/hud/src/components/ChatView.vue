@@ -11,7 +11,8 @@ import { planCommandProblem } from '../lib/plan-approval.ts';
 import { useMentionMenu } from '../lib/mention-menu.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, shownStreaming, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
-import { computerTask } from '../lib/computer.ts';
+import { computerTask, type ComputerTab } from '../lib/computer.ts';
+import { browserSignal, browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
@@ -47,6 +48,7 @@ import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Dir
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import BrowserBar from './BrowserBar.vue';
 import ComputerButton from './ComputerButton.vue';
 import ComputerPanel from './ComputerPanel.vue';
 import CreditLine from './CreditLine.vue';
@@ -565,13 +567,41 @@ watch(() => [props.conversation.secretary === true, props.chat.conversationId, p
  * It opens from the block of the Coder's task it shows (the live card or the report), next to who is working.
  */
 const computerOpen = ref(false);
+const computerTab = ref<ComputerTab>('terminal');
 const computerTaskId = computed(() => computerTask(props.chat, props.credits));
 function showsComputer(message: { taskId: string | null }): boolean {
   return message.taskId !== null && message.taskId === computerTaskId.value;
 }
+/** The «Computer» button of the Coder's block: opens the panel on the Coder's terminal, or closes it. */
+function toggleComputer(): void {
+  if (!computerOpen.value) computerTab.value = 'terminal';
+  computerOpen.value = !computerOpen.value;
+}
+/**
+ * «Guarda» on a line of Arianna's browser (D-264, passo 4): the panel on the
+ * «Browser» tab, also without a task of the Coder. The screen opens only from
+ * here, never by itself.
+ */
+const watchedSite = ref<string | null>(null);
+function watchBrowser(site: string | undefined): void {
+  watchedSite.value = site ?? null;
+  computerTab.value = 'browser';
+  computerOpen.value = true;
+}
+/** The site above the screen: the newest live browser line, or the line the user pressed «Guarda» on. */
+const screenSite = computed(() => latestBrowserSite(props.chat) ?? watchedSite.value);
+/** What the bar «Browser aperto» above the composer follows: new browser lines and messages. */
+const browserBar = computed(() => browserSignal(props.chat));
+/** The newest browser line of a list carries «Guarda»; the older ones would only repeat it. */
+function lastBrowserLine(lines: readonly Activity[]): number {
+  return lines.findLastIndex((line) => isBrowserLine(line));
+}
 watch(
   () => props.chat.conversationId,
-  () => (computerOpen.value = false),
+  () => {
+    computerOpen.value = false;
+    watchedSite.value = null;
+  },
 );
 
 /** The Coder's run while it works for this conversation: shown in the persona header. */
@@ -1308,7 +1338,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <!-- The computer of the run sits at the end of the header, where the live card had it: the body never moves it (D-095). -->
-              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="computerOpen = !computerOpen" />
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" :working="false" @toggle="toggleComputer" />
               <!-- Copy and save float on the card's bottom edge, at the end of a long report, while the pointer is on it: hidden, they leave no hole in the header. -->
               <MessageActions class="absolute! -bottom-3 right-3 z-10 rounded-full border border-line bg-surface px-2.5 py-0.5 whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" :side="sideOf(message)" :pin="pinOf(message)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" @side="emit('side', message)" @pin="pinning = message" @open-dashboard="emit('dashboard')" />
             </header>
@@ -1365,7 +1395,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directShort}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="flex-1 font-medium">{{ directShort }} al lavoro</span>
-              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" working @toggle="computerOpen = !computerOpen" />
+              <ComputerButton v-if="showsComputer(message)" :open="computerOpen" working @toggle="toggleComputer" />
               <span v-else class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
             <!--
@@ -1389,6 +1419,14 @@ onBeforeUnmount(() => clearInterval(clock));
                     >{{ index === activityOf(message).length - 1 ? '▸' : (line.kind === 'error' || line.kind === 'stop') ? '!' : '✓' }}</span>
                     <a v-if="activityLink(line) !== undefined" :href="activityLink(line)" target="_blank" rel="noopener noreferrer" class="break-words text-accent hover:underline">{{ activityText(line) }}</a>
                     <span v-else class="break-words">{{ activityText(line) }}</span>
+                    <!-- D-264, passo 4: the live screen of Arianna's browser, in the Computer panel. -->
+                    <button
+                      v-if="index === lastBrowserLine(activityOf(message))"
+                      type="button"
+                      class="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink hover:bg-surface-2"
+                      title="Apri lo schermo del browser di Arianna, in sola visione"
+                      @click="watchBrowser(browserSite(line))"
+                    ><Icon name="computer" :size="12" />Guarda</button>
                   </li>
                 </ul>
                 <LiveEdits v-if="editsOf(message).length > 0" :edits="editsOf(message)" />
@@ -1396,7 +1434,7 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
           </article>
 
-          <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
+          <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" @watch-browser="watchBrowser" />
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
           <ImClosingCard v-if="closings.get(message.id) !== undefined" :key="`im-closing-${closings.get(message.id)!.id}`" :closing="closings.get(message.id)!" />
@@ -1479,6 +1517,8 @@ onBeforeUnmount(() => clearInterval(clock));
           <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[14px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
           <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
+        <!-- D-264, passo 4: while this conversation holds Arianna's browser, «Guarda» and «Chiudi» at hand. -->
+        <BrowserBar v-if="!incognito" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" />
         <QueuedMessages
           v-if="queue !== undefined"
           :queue="queue"
@@ -1565,7 +1605,18 @@ onBeforeUnmount(() => clearInterval(clock));
         </span>
       </p>
     </div>
-    <ComputerPanel v-if="computerOpen" :chat="chat" :tasks="tasks" :credits="credits" :activity-counts="activityCounts" :workspace="conversation.workspace" @close="computerOpen = false" />
+    <ComputerPanel
+      v-if="computerOpen"
+      v-model:tab="computerTab"
+      :chat="chat"
+      :tasks="tasks"
+      :credits="credits"
+      :activity-counts="activityCounts"
+      :workspace="conversation.workspace"
+      :conversation-id="conversation.id"
+      :browser-site="screenSite"
+      @close="computerOpen = false"
+    />
     <PinDialog v-if="pinning !== null" :key="pinning.id" :message-id="pinning.id" :label="pinning.label" @pinned="onPinned" @cancel="pinning = null" />
   </section>
 </template>

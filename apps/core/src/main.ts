@@ -57,7 +57,8 @@ import { appendEvent } from './events.ts';
 import { AgentBrowser, gatewayTyped } from './browser/agent-browser.ts';
 import { readBrowserImageLock } from './browser/image.ts';
 import { BrowserManager } from './browser/manager.ts';
-import { writeTakenLine } from './orchestrator/browser-tool.ts';
+import { BrowserScreens, conversationKindOf } from './browser/screen.ts';
+import { writeClosedByUserLine, writeTakenLine } from './orchestrator/browser-tool.ts';
 import { createMcpServer } from './mcp/server.ts';
 import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
@@ -554,10 +555,28 @@ const advise = createAdvisor({
 const attachmentFiles = attachmentsDir(config.paths.data);
 pruneAttachments(sql, attachmentFiles).catch(report);
 
+// The screen of the browser in the chat (D-264, passo 4): view only, a token per conversation holding it.
+// Declared first: it reads the browser below only when asked (lazy), and the browser tells it when it goes.
+const browserScreens = new BrowserScreens({
+  holder: () => agentBrowser.holder,
+  container: () => browserManager.active?.container ?? null,
+  conversation: conversationKindOf(sql),
+  // «Chiudi» in the chat: after the action under way; the line tells the user and the model.
+  closeBrowser: async (conversationId) => {
+    const closed = await agentBrowser.closeByUser(conversationId);
+    if (closed) await writeClosedByUserLine(sql, conversationId).catch(report);
+    return closed;
+  },
+  site: (conversationId) => agentBrowser.siteOf(conversationId),
+  onEvent: (event) => { appendEvent(sql, event).catch(report); },
+});
 // The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.
 const browserManager = new BrowserManager({
   home: config.home,
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
+  // Its screens close as soon as it starts closing, before docker removes it (D-264, passo 4).
+  onStop: () => { browserScreens.revoke(); },
+  onClose: () => { browserScreens.revoke(); },
 });
 if (readBrowserImageLock(config.home) !== null) browserManager.cleanup().catch(report);
 const agentBrowser = new AgentBrowser({
@@ -567,6 +586,7 @@ const agentBrowser = new AgentBrowser({
   gateTyped: gatewayTyped(sql),
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
   onTaken: (conversationId) => { writeTakenLine(sql, conversationId).catch(report); },
+  onReleased: () => { browserScreens.revoke(); },
 });
 
 const orchestrator = createOrchestrator({
@@ -1387,6 +1407,7 @@ const server = await startApiServer({
     }
   },
   incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
+  browserScreens,
   onError: report,
 });
 for (const one of workers) await one.start();
@@ -1543,6 +1564,8 @@ async function shutdown(): Promise<void> {
   queueDispatcher.stop();
   stopNotices();
   await telegram.close();
+  // Before the server: an upgraded socket of a screen is no connection the server still closes.
+  browserScreens.close();
   await server.close();
   await mcpServer.close();
   ringer.stop();

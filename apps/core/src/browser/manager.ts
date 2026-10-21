@@ -78,6 +78,8 @@ export interface ManagerOptions {
   cdpReadyMs?: number;
   /** Periodic check of the lifetime; injectable for tests. */
   every?: (callback: () => void, ms: number) => { clear(): void };
+  /** A browser starts closing: called at once, before `docker rm` (onClose comes once it is removed). */
+  onStop?: (id: string, reason: CloseReason) => void;
   onClose?: (id: string, reason: CloseReason) => void;
   /** Events without data (L0, only the kind of failure); without it, a line on stderr. */
   onEvent?: (event: NewEvent) => void;
@@ -204,6 +206,8 @@ export class BrowserManager {
     }
     this.#active = null;
     active.timer.clear();
+    // The screens of passo 4 close now, not after the removal.
+    this.#safely(() => { this.#options.onStop?.(id, reason); });
     active.browser.cdp.close();
     await this.#close({ id, container: active.browser.container, reason, notify: true });
   }

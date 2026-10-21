@@ -146,3 +146,18 @@ export const NEW_AGENT_PATH = '/impostazioni/agenti/nuovo';
 export function isNewAgentPath(pathname: string): boolean {
   return pathname === NEW_AGENT_PATH || pathname === `${NEW_AGENT_PATH}/`;
 }
+
+/**
+ * The screen of Arianna's browser in a tab of its own (D-264, passo 4):
+ * `/browser/<conversationId>`, opened from «Apri in una nuova scheda». The
+ * page shows that screen alone, with its own token (one of the 3 screens).
+ */
+export function browserPathFor(conversationId: string): string {
+  return `/browser/${encodeURIComponent(conversationId)}`;
+}
+
+/** The conversation of a `/browser/<id>` address, or undefined for any other path. */
+export function browserConversationFromPath(pathname: string): string | undefined {
+  const id = /^\/browser\/([^/]+)\/?$/.exec(pathname)?.[1];
+  return id !== undefined && UUID.test(id) ? id.toLowerCase() : undefined;
+}
