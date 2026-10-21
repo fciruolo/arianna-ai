@@ -1284,6 +1284,42 @@ function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, 
   return { kind: 'move', path: to, corrected: to !== proposal.to, points: 0, relinked, folders: [parentFolder(to), to].filter((folder, index, all) => all.indexOf(folder) === index) };
 }
 
+export interface Deleted {
+  /** Old versions removed with the page. */
+  versions: number;
+  /** Proposals waiting on the page, discarded. */
+  proposals: number;
+}
+
+/**
+ * «Elimina» of a page, after the user's confirmation in the chat: the page
+ * as it was shown (`base`, its sha256), its old versions in .storia and the
+ * proposals waiting on it go; the indexes are composed again and folders
+ * left without pages go. Never a page a rule raises above L2, never an index.
+ */
+export function deleteWikiPage(home: string, rules: LabelRules, path: string, base: string): Deleted {
+  if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
+  if (!SHA.test(base)) throw new WikiError('invalid', 'base is required');
+  const current = readWikiPageFile(home, path);
+  if (current === undefined) throw new WikiError('not-found', 'page not found');
+  if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
+  if (!removeWikiFile(home, pageSegments(path))) throw new WikiError('unavailable', 'cannot delete the page');
+  const versions = pageVersions(home, path);
+  for (const version of versions) removeWikiFile(home, [...historySegments(path), `${version.id}.md`]);
+  const history = wikiFolder(home, historySegments(path), false);
+  if (history !== undefined) {
+    try {
+      rmdirSync(history);
+    } catch {
+      // Not empty (a file of the user): left as it is.
+    }
+  }
+  const waiting = allProposals(home).filter((proposal) => proposal.kind !== 'move' && proposal.path === path);
+  for (const proposal of waiting) dropProposal(home, proposal.id);
+  rebuildIndexes(home, rules);
+  return { versions: versions.length, proposals: waiting.length };
+}
+
 /**
  * «Ripristina»: the page goes back to an old version, only if it is still the
  * one the user saw (`base`); the version it had is kept in turn, so a restore
@@ -1340,6 +1376,6 @@ export function readWikiView(home: string, rules: LabelRules, path: string): Wik
 // ---------------------------------------------------------------------------
 // Events: counts and codes only, never a path, a title or a folder
 
-export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed', payload: Record<string, string | number | boolean>): Promise<void> {
+export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed' | 'wiki.deleted', payload: Record<string, string | number | boolean>): Promise<void> {
   await appendEvent(sql, { kind, label: 'L0', payload });
 }

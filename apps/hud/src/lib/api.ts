@@ -1370,6 +1370,11 @@ export async function proposeWikiMove(from: string, to: string): Promise<string>
   return (await call<{ id: string }>('POST', '/api/wiki/move', { from, to })).id;
 }
 
+/** «Elimina» a page of the Wiki as it was shown (`base`): its old versions and the proposals waiting on it go too. */
+export async function deleteWikiPage(path: string, base: string): Promise<void> {
+  await call('POST', '/api/wiki/delete', { path, base });
+}
+
 /** «Proponi per la Wiki» of a note of kb/ (`inbox/x.md`): the local model prepares a proposal in the background. */
 export async function proposeForWiki(page: string): Promise<void> {
   await call('POST', '/api/wiki/propose', { page });

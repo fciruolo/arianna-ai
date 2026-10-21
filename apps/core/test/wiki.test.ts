@@ -21,6 +21,7 @@ import {
   composeIndex,
   composeWikiPage,
   countWikiProposals,
+  deleteWikiPage,
   discardWikiProposal,
   indexSummary,
   inertLine,
@@ -225,6 +226,52 @@ describe('proposals', () => {
     const page = readFileSync(join(root, 'kb/wiki/laravel/octane/swoole.md'), 'utf8');
     assert.match(page, /\[\[archivio\/private\/2026-10-21-100000-octane\]\]/);
     assert.doesNotMatch(page, /\[\[inbox\//);
+  });
+});
+
+describe('deleting a page', () => {
+  it('«Elimina» takes the page as shown, its versions and the proposals on it; the indexes follow and an empty folder goes', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    approveWikiProposal(root, RULES, proposal(root, {}).id, { path: 'laravel/swoole' }, NOW);
+    const file = join(root, 'kb/wiki/laravel/octane/swoole.md');
+    const before = readFileSync(file, 'utf8');
+    const updated = composeWikiPage({ ...PAGE, points: [...PAGE.points, { text: 'Un punto nuovo.', sources: ['inbox/2026-10-21-100000-octane'] }] }, NOW);
+    approveWikiProposal(root, RULES, proposal(root, { kind: 'update', base: sha256(before), content: updated }).id, {}, NOW);
+    assert.equal(pageVersions(root, 'laravel/octane/swoole').length, 1);
+    const waiting = proposal(root, { kind: 'update', base: sha256(updated), content: updated });
+    const other = proposal(root, { path: 'laravel/altra' });
+    const current = readWikiView(root, RULES, 'laravel/octane/swoole');
+    // Changed after it was shown: nothing goes.
+    assert.throws(() => deleteWikiPage(root, RULES, 'laravel/octane/swoole', sha256('altro')), (error) => error instanceof WikiError && error.code === 'changed');
+    assert.ok(existsSync(file));
+    assert.deepEqual(deleteWikiPage(root, RULES, 'laravel/octane/swoole', current.version), { versions: 1, proposals: 1 });
+    assert.equal(existsSync(file), false);
+    assert.equal(existsSync(join(root, 'kb/wiki/.storia/laravel__octane__swoole')), false);
+    assert.deepEqual(pageVersions(root, 'laravel/octane/swoole'), []);
+    const left = allProposals(root).map((item) => item.id);
+    assert.ok(!left.includes(waiting.id));
+    assert.ok(left.includes(other.id));
+    // The folder left without pages goes with its index; the parent index no longer names it.
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel/octane')), false);
+    assert.doesNotMatch(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /octane/);
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /laravel\/swoole/);
+  });
+
+  it('refuses an index, a missing page, an invalid path and a page a rule raises above L2, touching nothing', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const index = readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8');
+    const up = '.'.repeat(2);
+    for (const path of ['_indice', 'laravel/_indice', 'laravel/octane/mancante', `${up}/altro`, 'laravel']) {
+      assert.throws(() => deleteWikiPage(root, RULES, path, sha256(index)), (error) => error instanceof WikiError && error.code === 'not-found', path);
+    }
+    assert.throws(() => deleteWikiPage(root, RULES, 'laravel/octane/swoole', 'non-uno-sha'), (error) => error instanceof WikiError && error.code === 'invalid');
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/laravel"\nlabel = "L3"'].join('\n\n'));
+    const page = readWikiView(root, RULES, 'laravel/octane/swoole');
+    assert.throws(() => deleteWikiPage(root, strict, 'laravel/octane/swoole', page.version), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.ok(existsSync(join(root, 'kb/wiki/laravel/octane/swoole.md')));
+    assert.ok(existsSync(join(root, 'kb/wiki/_indice.md')));
   });
 });
 

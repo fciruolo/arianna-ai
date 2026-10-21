@@ -234,7 +234,7 @@ test('the «In breve» of an index is written by the local model', async () => {
   assert.equal(await enqueueWikiIndex(db().sql, '../x'), false);
 });
 
-test('the routes: tree, proposals with diff, approve with a path, discard, again, propose, move, restore; events without names', async () => {
+test('the routes: tree, proposals with diff, approve with a path, discard, again, propose, move, restore, delete; events without names', async () => {
   const { sql } = db();
   const make = async (): Promise<string> => {
     const outcome = await proposeFromNote(env(serverHome, fakeModel([], () => CREATE)), `inbox/${NAME}`, new AbortController().signal, true);
@@ -290,7 +290,20 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   const view = restoreOf.body.page as { version: string; versions: { id: string }[] };
   assert.equal((await send('POST', '/api/wiki/restore', { path: 'php/swoole', version: '20261021-100000-000', base: view.version })).status, 404);
 
+  // «Elimina»: only the page as shown; then the page, its folder and its index go.
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'php/swoole', base: '0'.repeat(64) })).status, 409);
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'php/swoole' })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'php/swoole', base: view.version, extra: 1 })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'php/_indice', base: view.version })).status, 404);
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'php/swoole', base: view.version })).status, 200);
+  assert.equal((await send('GET', '/api/wiki/page?path=php/swoole')).status, 404);
+  const empty = await send('GET', '/api/wiki');
+  assert.deepEqual(empty.body.pages, []);
+  assert.deepEqual(empty.body.folders, []);
+  assert.equal(existsSync(join(serverHome, 'kb/wiki/php')), false);
+
   const events = await sql<{ kind: string; payload: Record<string, unknown> }[]>`SELECT kind, payload FROM events WHERE kind LIKE 'wiki.%' ORDER BY id`;
+  assert.ok(events.some((event) => event.kind === 'wiki.deleted' && typeof event.payload.versions === 'number' && typeof event.payload.proposals === 'number'));
   assert.ok(events.some((event) => event.kind === 'wiki.approved' && event.payload.corrected === true));
   assert.ok(events.some((event) => event.kind === 'wiki.discarded'));
   assert.ok(events.some((event) => event.kind === 'wiki.move_proposed'));

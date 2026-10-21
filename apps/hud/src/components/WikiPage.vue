@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
-import { ApiError, approveWikiProposal, discardWikiProposal, loadWiki, loadWikiPage, loadWikiProposals, proposeWikiAgain, proposeWikiMove, restoreWikiPage } from '../lib/api.ts';
+import { ApiError, approveWikiProposal, deleteWikiPage, discardWikiProposal, loadWiki, loadWikiPage, loadWikiProposals, proposeWikiAgain, proposeWikiMove, restoreWikiPage } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   ancestorsOf,
@@ -58,6 +58,12 @@ const restoring = ref<string | null>(null);
 const restoreProblem = ref<string | null>(null);
 const restoreBusy = ref(false);
 
+/** «Elimina» of the page shown: asked in a dialog, then the page, its versions and its proposals go. */
+const deleting = ref(false);
+const deleteProblem = ref<string | null>(null);
+const deleteBusy = ref(false);
+const deleteNotice = ref<string | null>(null);
+
 const moveTo = ref('');
 const moveNotice = ref<string | null>(null);
 const moveBusy = ref(false);
@@ -102,6 +108,7 @@ async function loadListing(): Promise<void> {
 let pageRequest = 0;
 async function show(path: string): Promise<void> {
   shownPath.value = path;
+  deleteNotice.value = null;
   moveTo.value = '';
   moveNotice.value = null;
   const folder = path === '_indice' ? '' : path.endsWith('/_indice') ? path.slice(0, -'/_indice'.length) : null;
@@ -224,6 +231,24 @@ async function confirmRestore(): Promise<void> {
   }
 }
 
+async function confirmDelete(): Promise<void> {
+  if (page.value === null || page.value.kind !== 'page') return;
+  const { path, title, version } = page.value;
+  deleteBusy.value = true;
+  deleteProblem.value = null;
+  try {
+    await deleteWikiPage(path, version);
+    deleting.value = false;
+    await Promise.all([loadListing(), loadProposals()]);
+    await show('_indice');
+    deleteNotice.value = `Pagina «${title}» eliminata, con le sue versioni.`;
+  } catch (failure) {
+    deleteProblem.value = problemOf(failure);
+  } finally {
+    deleteBusy.value = false;
+  }
+}
+
 async function proposeMove(): Promise<void> {
   const from = shownFolder.value;
   const to = tidyPath(moveTo.value);
@@ -326,10 +351,16 @@ onMounted(() => {
           </nav>
 
           <article class="min-w-0 rounded-xl border border-line bg-surface p-4">
+            <p v-if="deleteNotice !== null" class="mb-3 rounded-lg border border-ok/50 bg-ok/10 px-3 py-2 text-sm" role="status">{{ deleteNotice }}</p>
             <p v-if="pageLoading && page === null" class="text-sm text-muted">Leggo la pagina…</p>
             <p v-else-if="pageError !== null" class="text-sm text-muted">{{ pageError }}</p>
             <template v-else-if="page !== null">
-              <p class="font-mono text-[12px] text-muted">wiki/{{ page.path }}</p>
+              <div class="flex items-center gap-2">
+                <p class="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">wiki/{{ page.path }}</p>
+                <button v-if="page.kind === 'page'" type="button" class="btn px-2 py-0.5 text-[12.5px] hover:text-danger" @click="deleting = true; deleteProblem = null">
+                  <Icon name="delete" :size="12" />Elimina
+                </button>
+              </div>
               <h2 class="mt-1 text-[19px] font-semibold">{{ page.title }}</h2>
               <MarkdownText class="mt-3" :source="page.body" :wikilink="follow" />
 
@@ -429,6 +460,21 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="deleting && page !== null && page.kind === 'page'"
+      title="Elimina la pagina"
+      confirm-text="Elimina"
+      danger
+      :busy="deleteBusy"
+      :problem="deleteProblem"
+      @confirm="confirmDelete"
+      @cancel="deleting = false"
+    >
+      <p>
+        La pagina «{{ page.title }}» va via per sempre dal Mac{{ page.versions.length === 0 ? '' : page.versions.length === 1 ? ', con la sua versione precedente,' : `, con le sue ${String(page.versions.length)} versioni precedenti,` }} insieme alle proposte in attesa su di lei. Le note che cita restano. Gli indici delle cartelle si aggiornano; una cartella rimasta senza pagine sparisce.
+      </p>
+    </ConfirmDialog>
 
     <ConfirmDialog
       v-if="restoring !== null && page !== null"

@@ -164,6 +164,7 @@ import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgeP
 import {
   approveWikiProposal,
   countWikiProposals,
+  deleteWikiPage,
   discardWikiProposal,
   isWikiSource,
   listWikiProposals,
@@ -1119,6 +1120,16 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       const proposal = proposeMove(home, rules, body.from, body.to);
       await recordWikiEvent(sql, 'wiki.move_proposed', { pages: proposal.citations }).catch(onError);
       return { status: 201, body: { id: proposal.id } };
+    }),
+    // «Elimina» a page, after the confirmation in the chat: with its old versions and the proposals waiting on it.
+    route('POST', '/api/wiki/delete', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'base']);
+      if (typeof body.path !== 'string' || typeof body.base !== 'string') throw new HttpError(400, 'path and base are required');
+      const deleted = deleteWikiPage(home, rules, body.path, body.base);
+      await recordWikiEvent(sql, 'wiki.deleted', { versions: deleted.versions, proposals: deleted.proposals }).catch(onError);
+      return { body: { deleted: true } };
     }),
     route('POST', '/api/wiki/restore', async (request) => {
       const { home, rules } = need();
