@@ -2947,6 +2947,8 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni):
 
 **Da sapere:** un modulo POST (login, iscrizione) oggi è fermo anche se guida l'utente, perché il core non distingue un clic da uno script; i cookie non escono mai. Le ricerche (moduli GET) funzionano. Nelle Interne un clic dell'utente verso un altro sito oggi è rifiutato dalla rete senza la scheda «Apri / No».
 
+**Stato (2026-10-21, sera):** passi A-F costruiti sul ramo `task/d095-browser` (D-276), da provare; immagine da ricostruire con `pnpm browser:build`. **Non costruito:** il lavoro di Arianna dopo l'accesso. Oggi le pagine dopo l'accesso sono L2 e una conversazione col browser è di lavoro (clearance L1), quindi Arianna risponde `authenticated` e continua l'utente dallo schermo. Per farla diventare Privata serve una scelta dell'utente: la modalità di una conversazione oggi è fissata dal database (`conversations_guard`, `conversations_clearance_follows_mode`; progetto e modello solo nelle conversazioni di lavoro).
+
 ### Cose non verificate
 
 - noVNC dal telefono: se la chat arriva al telefono su `http://` con un indirizzo di rete (non localhost), il browser del telefono non lo considera un contesto sicuro e noVNC rifiuta di partire. Da vedere nella prova del passo 4.
