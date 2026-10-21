@@ -2947,7 +2947,7 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni):
 
 **Da sapere** *(superato da D-276: ora moduli e cookie dell'accesso passano come scelto sopra; invece di «niente strumenti per sviluppatori» e «F1-F12» il filtro scarta F1-F35, Ctrl+Shift+I/J/C, tasto Menu e clic destro, senza `DeveloperToolsAvailability`)*: un modulo POST (login, iscrizione) prima di D-276 era fermo anche se guida l'utente, perché il core non distingue un clic da uno script, e i cookie non uscivano mai. Le ricerche (moduli GET) funzionavano. Nelle Interne un clic dell’utente verso un altro sito era rifiutato dalla rete senza la scheda «Apri / No».
 
-**Stato (2026-10-21, sera):** passi A-F costruiti sul ramo `task/d095-browser` (D-276), da provare; immagine da ricostruire con `pnpm browser:build`. **Non costruito:** il lavoro di Arianna dopo l'accesso. Oggi le pagine dopo l'accesso sono L2 e una conversazione col browser è di lavoro (clearance L1), quindi Arianna risponde `authenticated` e continua l'utente dallo schermo. Per farla diventare Privata serve una scelta dell'utente: la modalità di una conversazione oggi è fissata dal database (`conversations_guard`, `conversations_clearance_follows_mode`; progetto e modello solo nelle conversazioni di lavoro).
+**Stato (2026-10-21, sera)** *(superato: il lavoro di Arianna dopo l'accesso è costruito in D-281, sezione sotto)*: passi A-F costruiti sul ramo `task/d095-browser` (D-276), da provare; immagine da ricostruire con `pnpm browser:build`. **Non costruito:** il lavoro di Arianna dopo l'accesso. Oggi le pagine dopo l'accesso sono L2 e una conversazione col browser è di lavoro (clearance L1), quindi Arianna risponde `authenticated` e continua l'utente dallo schermo. Per farla diventare Privata serve una scelta dell'utente: la modalità di una conversazione oggi è fissata dal database (`conversations_guard`, `conversations_clearance_follows_mode`; progetto e modello solo nelle conversazioni di lavoro).
 
 ### «Nuova chat Privata» dopo l'accesso: piano (2026-10-21, D-281)
 
@@ -2967,7 +2967,9 @@ Scelta dell'utente del 2026-10-21 («Nuova chat Privata», stima 10-14 h): dopo 
 9. **Eventi:** `browser.handoff` L0 `{from, to}` senza il sito; `browser.action` della chat Privata con l'etichetta della chat (L2).
 10. **Migrazione `0087`:** `conversations.browser_of` (riferimento a una conversazione di lavoro, solo in una Privata non incognito senza agente, congelata da `conversations_guard`); `gateway_log_cloud_up_to_l1` e `gateway_log_session_fields` ammettono `web-typed-session` con la regola `typed`; `approvals_browser_fields` ammette `browser.send` (L2, sito, passo, pulsante). Numero libero su `main` e nel ramo `task/d273-wiki` (verificato il 2026-10-21).
 
-**Prova:** su https://the-internet.herokuapp.com/login, in una conversazione di lavoro, «apri https://the-internet.herokuapp.com/login»; «Guarda», «Prendi il controllo», l'utente scrive le credenziali dimostrative della pagina, «Restituisci ad Arianna»; compare la riga con «Apri la chat Privata»; nella chat Privata «leggimi cosa dice la pagina» e poi «premi Logout».
+**Prova:** su https://the-internet.herokuapp.com/login, in una conversazione di lavoro, «apri https://the-internet.herokuapp.com/login»; «Guarda», «Prendi il controllo», l'utente scrive le credenziali dimostrative della pagina, «Restituisci ad Arianna»; compare la riga con «Apri la chat Privata»; nella chat Privata «leggimi cosa dice la pagina»; per la scheda «Invia / No», «apri https://the-internet.herokuapp.com/forgot_password, scrivi prova nel campo e premi il pulsante»; infine «premi Logout» (un link, passa senza scheda).
+
+**Stato (2026-10-21, notte):** costruita sul ramo `task/d276-chat-privata` (D-281, migrazione `0087`), da provare; serve l'immagine del browser (`pnpm browser:build`, già fatta per la 0.159.0) e il riavvio del core. Non provata dal vivo con il modello locale vero: i test usano un browser e un modello finti.
 
 ### Cose non verificate
 

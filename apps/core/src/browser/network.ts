@@ -88,6 +88,14 @@ import { gateResource } from './resource-gate.ts';
  * the Set-Cookie lines of its answer; any other request carries L2 with the
  * consent of the page, which the gateway refuses: nothing read after the
  * access goes to another site. The jar dies with the browser.
+ *
+ * The Private chat of an access (D-281): once the browser passed to it, the
+ * scope carries a context marked with the site of the access, from which the
+ * gateway lets `session`, `form` and typed text go to that site. While
+ * Arianna drives there, every request other than GET and HEAD (a form, a
+ * POST of the page's scripts) is refused before the gateway and counted
+ * (`heldSends`), unless the scope says `send` (an «Invia» of the user, for
+ * one action): then a form to the site goes as `form`, a POST as `session`.
  */
 
 export const MAX_PAGES = 30;
