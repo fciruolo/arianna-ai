@@ -137,7 +137,7 @@ export function createContext(clearance: Label, effective: Label = 'L0', options
 }
 
 /** A closed list: a new source keeps the site only once it is added here. */
-const BROWSER_CHAT_SOURCES: readonly string[] = ['user', 'browser:read', 'browser:typed', 'browser:form', 'browser:session', 'web:page', 'web:resource'];
+const BROWSER_CHAT_SOURCES: readonly string[] = ['user', 'browser:read', 'browser:typed', 'browser:form', 'browser:session'];
 
 /** The sources a context of the Private chat of an access reads L2 from and keeps its site (D-281): the site itself and the user. */
 export function isBrowserChatSource(source: unknown): boolean {

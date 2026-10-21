@@ -21,6 +21,9 @@ import type { ControlEnd, ConversationKind } from './screen.ts';
 export const HANDOFF_LINE =
   'Hai fatto l’accesso a un sito: il browser è passato a una nuova chat Privata, dove lavora solo il modello locale. Qui Arianna non usa più quel browser.';
 
+/** The line of the work conversation when the Private chat could not be opened: the browser closed with its access. */
+export const HANDOFF_FAILED_LINE = 'Il browser con il tuo accesso non è potuto passare a una chat Privata e si è chiuso: l’accesso è perso. Se serve, Arianna riapre il browser senza accesso.';
+
 /** The first line of the Private chat, L2: it names the site. */
 export function browserChatLine(site: string): string {
   return `Hai fatto l’accesso a ${site} e il browser è passato qui, in una chat Privata: lavora solo il modello locale di Arianna, che legge le pagine di ${site} e agisce nel browser, solo su quel sito. Prima di inviare dati al sito ti chiede «Invia / No». Scrivi cosa vuoi fare.`;
@@ -96,6 +99,9 @@ export async function afterControl(
     } catch {
       // The chat could not be written (the work conversation erased meanwhile, the database): its browser is closed.
       console.warn('browser: the private chat of an access could not be opened');
+      await env.browser.release(conversationId).catch(() => undefined);
+      await writeBrowserLine(env.sql, conversationId, HANDOFF_FAILED_LINE);
+      return;
     }
   }
   // Read again: the browser may have closed while the chat was opened.

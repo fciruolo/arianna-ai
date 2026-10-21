@@ -18,7 +18,7 @@ import { createContext } from '@arianna/policy';
 
 import type { ActionResult, AgentBrowser, BrowserAction, BrowserScope } from '../src/browser/agent-browser.ts';
 import { gatewayTyped } from '../src/browser/agent-browser.ts';
-import { afterControl, browserChatLine, browserChatTitle, HANDOFF_LINE, openBrowserChat, type HandoffBrowser } from '../src/browser/handoff.ts';
+import { afterControl, browserChatLine, browserChatTitle, HANDOFF_FAILED_LINE, HANDOFF_LINE, openBrowserChat, type HandoffBrowser } from '../src/browser/handoff.ts';
 import { conversationKindOf } from '../src/browser/screen.ts';
 import { createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE } from '../src/engine.ts';
@@ -193,12 +193,12 @@ test('openBrowserChat: a chat that cannot be written closes the browser passed t
   assert.deepEqual(released, moved);
   const [none] = await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM conversations WHERE id = ${moved[0] ?? gone}`;
   assert.equal(none?.n, 0);
-  // From afterControl the failure is caught: the work conversation (here one the trigger refuses) gets the ordinary line.
+  // From afterControl the failure is caught: the browser is closed and the work conversation reads that the access is lost.
   const work = (await createConversation(db().sql, { mode: 'work' })).id;
   await afterControl({ sql: db().sql, browser: { ...browser, handOver: () => Promise.reject(new Error('docker')) }, kind }, work, { state: 'returned', reason: 'user' });
   const lines = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${work}`;
   assert.equal(lines.length, 1);
-  assert.match(lines[0]?.body ?? '', /Private/);
+  assert.equal(lines[0]?.body, HANDOFF_FAILED_LINE);
 });
 
 test('afterControl: given back in the work conversation with an access, the browser passes to a new chat', async () => {
