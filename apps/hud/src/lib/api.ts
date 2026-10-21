@@ -1370,6 +1370,26 @@ export async function proposeWikiMove(from: string, to: string): Promise<string>
   return (await call<{ id: string }>('POST', '/api/wiki/move', { from, to })).id;
 }
 
+/** «Modifica» of a page of the Wiki by the user, over the page as shown (`base`): the version before is kept. Gives the new version. */
+export async function editWikiPage(path: string, base: string, title: string, body: string): Promise<string> {
+  return (await call<{ version: string }>('POST', '/api/wiki/edit', { path, base, title, body })).version;
+}
+
+/** «Nuova pagina» of the Wiki by the user (`topic/article`): it starts with the sections to fill. */
+export async function createWikiPage(path: string, title: string): Promise<{ path: string; version: string }> {
+  return call<{ path: string; version: string }>('POST', '/api/wiki/create', { kind: 'page', path, title });
+}
+
+/** «Nuova cartella» of the Wiki by the user: it stays, empty, until a page goes in it. */
+export async function createWikiFolder(path: string): Promise<void> {
+  await call('POST', '/api/wiki/create', { kind: 'folder', path });
+}
+
+/** «Sposta o rinomina» (or a drag in the tree) of a page — as shown, `base` — or of a folder, at once. Gives where it is now. */
+export async function moveWikiNow(kind: 'page' | 'folder', from: string, to: string, base?: string): Promise<string> {
+  return (await call<{ path: string }>('POST', '/api/wiki/move-now', kind === 'page' ? { kind, from, to, base } : { kind, from, to })).path;
+}
+
 /** «Elimina» a page of the Wiki as it was shown (`base`): its old versions and the proposals waiting on it go too. */
 export async function deleteWikiPage(path: string, base: string): Promise<void> {
   await call('POST', '/api/wiki/delete', { path, base });

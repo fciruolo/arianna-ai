@@ -1,18 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
-import { ApiError, approveWikiProposal, deleteWikiPage, discardWikiProposal, loadWiki, loadWikiPage, loadWikiProposals, proposeWikiAgain, proposeWikiMove, restoreWikiPage } from '../lib/api.ts';
+import {
+  ApiError,
+  approveWikiProposal,
+  createWikiFolder,
+  createWikiPage,
+  deleteWikiPage,
+  discardWikiProposal,
+  editWikiPage,
+  loadWiki,
+  loadWikiPage,
+  loadWikiProposals,
+  moveWikiNow,
+  proposeWikiAgain,
+  restoreWikiPage,
+} from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   ancestorsOf,
   buildWikiTree,
+  dropDestination,
+  dropFolder,
   indexPath,
   KIND_TEXT,
+  movedPath,
   pathProblem,
   tidyPath,
   versionText,
   wikiErrorText,
   wikilinkTarget,
+  type WikiDragged,
   type WikiListing,
   type WikiNode,
   type WikiPageView,
@@ -62,17 +80,44 @@ const restoreBusy = ref(false);
 const deleting = ref(false);
 const deleteProblem = ref<string | null>(null);
 const deleteBusy = ref(false);
-const deleteNotice = ref<string | null>(null);
+const notice = ref<string | null>(null);
 
 const moveTo = ref('');
 const moveNotice = ref<string | null>(null);
 const moveBusy = ref(false);
+
+/** «Modifica» (D-280): the user writes the page; saved at once, the version before kept. */
+const editing = ref(false);
+const editTitle = ref('');
+const editBody = ref('');
+const editBusy = ref(false);
+const editProblem = ref<string | null>(null);
+
+/** «Sposta o rinomina» of the page shown, at once. */
+const movingPage = ref(false);
+const pageMoveTo = ref('');
+const pageMoveBusy = ref(false);
+const pageMoveProblem = ref<string | null>(null);
+
+/** «Nuova pagina» or «Nuova cartella» from the folder shown. */
+const creating = ref<'page' | 'folder' | null>(null);
+const createPath = ref('');
+const createTitle = ref('');
+const createBusy = ref(false);
+const createProblem = ref<string | null>(null);
+
+/** Dragging a page or folder in the tree: where it is over, and what went wrong. */
+const dragging = ref<WikiDragged | null>(null);
+const dropOver = ref<string | null>(null);
+const treeNotice = ref<string | null>(null);
 
 const tree = computed(() => (listing.value === null ? [] : buildWikiTree(listing.value.folders, listing.value.pages)));
 const proposalCount = computed(() => proposals.value?.length ?? listing.value?.proposals ?? 0);
 /** The folder whose index is shown, or null for a page. */
 const shownFolder = computed(() => (shownPath.value === '_indice' ? '' : shownPath.value.endsWith('/_indice') ? shownPath.value.slice(0, -'/_indice'.length) : null));
 const moveProblem = computed(() => (moveTo.value.trim() === '' ? undefined : pathProblem(tidyPath(moveTo.value), 'folder')));
+const pageMovePathProblem = computed(() => (pageMoveTo.value.trim() === '' ? undefined : pathProblem(tidyPath(pageMoveTo.value), 'page')));
+const createPathProblem = computed(() => (createPath.value.trim() === '' || creating.value === null ? undefined : pathProblem(tidyPath(createPath.value), creating.value)));
 
 interface Row {
   node: WikiNode;
@@ -108,9 +153,12 @@ async function loadListing(): Promise<void> {
 let pageRequest = 0;
 async function show(path: string): Promise<void> {
   shownPath.value = path;
-  deleteNotice.value = null;
+  notice.value = null;
   moveTo.value = '';
   moveNotice.value = null;
+  editing.value = false;
+  movingPage.value = false;
+  creating.value = null;
   const folder = path === '_indice' ? '' : path.endsWith('/_indice') ? path.slice(0, -'/_indice'.length) : null;
   const next = new Set(open.value);
   for (const ancestor of folder === null ? ancestorsOf(path) : [...ancestorsOf(`${folder}/x`)]) if (ancestor !== '') next.add(ancestor);
@@ -124,7 +172,15 @@ async function show(path: string): Promise<void> {
   } catch (failure) {
     if (request !== pageRequest) return;
     page.value = null;
-    pageError.value = failure instanceof ApiError && failure.status === 404 ? (folder === '' ? 'La Wiki è ancora vuota: le pagine arrivano dalle proposte del modello locale.' : 'Questa pagina non c’è più.') : problemOf(failure);
+    const emptyFolder = folder !== null && folder !== '' && (listing.value?.folders.includes(folder) ?? false);
+    pageError.value =
+      failure instanceof ApiError && failure.status === 404
+        ? folder === ''
+          ? 'La Wiki è ancora vuota: le pagine arrivano dalle proposte del modello locale, o le scrivi tu con «Nuova pagina».'
+          : emptyFolder
+            ? 'Cartella ancora vuota: crea qui una pagina o trascinane una dall’albero.'
+            : 'Questa pagina non c’è più.'
+        : problemOf(failure);
   } finally {
     if (request === pageRequest) pageLoading.value = false;
   }
@@ -241,7 +297,7 @@ async function confirmDelete(): Promise<void> {
     deleting.value = false;
     await Promise.all([loadListing(), loadProposals()]);
     await show('_indice');
-    deleteNotice.value = `Pagina «${title}» eliminata, con le sue versioni.`;
+    notice.value = `Pagina «${title}» eliminata, con le sue versioni.`;
   } catch (failure) {
     deleteProblem.value = problemOf(failure);
   } finally {
@@ -249,21 +305,144 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-async function proposeMove(): Promise<void> {
+/** After a move: the tree, the proposals and the page shown at its new place. */
+async function afterMove(from: string, to: string, what: string): Promise<void> {
+  await Promise.all([loadListing(), loadProposals()]);
+  await show(movedPath(shownPath.value, from, to));
+  notice.value = `${what} spostata in wiki/${to}.`;
+}
+
+/** «Sposta o rinomina» of the folder shown, at once (D-280): its pages, versions and links follow. */
+async function moveFolder(): Promise<void> {
   const from = shownFolder.value;
   const to = tidyPath(moveTo.value);
   if (from === null || from === '' || moveBusy.value || pathProblem(to, 'folder') !== undefined) return;
   moveBusy.value = true;
   moveNotice.value = null;
   try {
-    await proposeWikiMove(from, to);
-    moveTo.value = '';
-    moveNotice.value = `Proposta di spostamento in wiki/${to}: la approvi nella scheda «Proposte».`;
-    await loadProposals();
+    const now = await moveWikiNow('folder', from, to);
+    await afterMove(from, now, 'Cartella');
   } catch (failure) {
     moveNotice.value = problemOf(failure);
   } finally {
     moveBusy.value = false;
+  }
+}
+
+/** «Sposta o rinomina» of the page shown, at once: over the page as shown. */
+async function movePage(): Promise<void> {
+  if (page.value === null || page.value.kind !== 'page' || pageMoveBusy.value) return;
+  const to = tidyPath(pageMoveTo.value);
+  if (pathProblem(to, 'page') !== undefined) return;
+  const { path, version } = page.value;
+  pageMoveBusy.value = true;
+  pageMoveProblem.value = null;
+  try {
+    const now = await moveWikiNow('page', path, to, version);
+    await afterMove(path, now, 'Pagina');
+  } catch (failure) {
+    pageMoveProblem.value = problemOf(failure);
+  } finally {
+    pageMoveBusy.value = false;
+  }
+}
+
+function startEdit(): void {
+  if (page.value === null || page.value.kind !== 'page') return;
+  editTitle.value = page.value.title;
+  editBody.value = page.value.body;
+  editProblem.value = null;
+  movingPage.value = false;
+  editing.value = true;
+}
+
+/** «Salva»: the page as written, over the page as shown; the version before goes to «Versioni precedenti». */
+async function saveEdit(): Promise<void> {
+  if (page.value === null || page.value.kind !== 'page' || editBusy.value) return;
+  const { path, version } = page.value;
+  editBusy.value = true;
+  editProblem.value = null;
+  try {
+    await editWikiPage(path, version, editTitle.value, editBody.value);
+    await Promise.all([show(path), loadListing(), loadProposals()]);
+    notice.value = 'Pagina salvata. La versione di prima è fra le precedenti.';
+  } catch (failure) {
+    editProblem.value = problemOf(failure);
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+function startCreate(kind: 'page' | 'folder'): void {
+  const folder = shownFolder.value ?? '';
+  creating.value = kind;
+  createPath.value = folder === '' ? '' : `${folder}/`;
+  createTitle.value = '';
+  createProblem.value = null;
+}
+
+/** «Crea»: a folder stays empty until a page goes in it; a page opens in «Modifica». */
+async function create(): Promise<void> {
+  const kind = creating.value;
+  const path = tidyPath(createPath.value);
+  if (kind === null || createBusy.value || pathProblem(path, kind) !== undefined || (kind === 'page' && createTitle.value.trim() === '')) return;
+  createBusy.value = true;
+  createProblem.value = null;
+  try {
+    if (kind === 'folder') {
+      await createWikiFolder(path);
+      await loadListing();
+      await show(indexPath(path));
+      notice.value = `Cartella wiki/${path} creata.`;
+    } else {
+      const made = await createWikiPage(path, createTitle.value);
+      await loadListing();
+      await show(made.path);
+      startEdit();
+    }
+  } catch (failure) {
+    createProblem.value = problemOf(failure);
+  } finally {
+    createBusy.value = false;
+  }
+}
+
+function dragStart(event: DragEvent, node: WikiNode): void {
+  dragging.value = { kind: node.kind, path: node.path };
+  treeNotice.value = null;
+  event.dataTransfer?.setData('text/plain', `wiki/${node.path}`);
+  if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'move';
+}
+
+function dragEnd(): void {
+  dragging.value = null;
+  dropOver.value = null;
+}
+
+function dragOver(event: DragEvent, folder: string): void {
+  if (dragging.value === null) return;
+  event.preventDefault();
+  if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'move';
+  dropOver.value = folder;
+}
+
+/** A page or folder dropped on a folder (or on a page: its folder): moved at once, as with «Sposta o rinomina». */
+async function dropOn(folder: string): Promise<void> {
+  const item = dragging.value;
+  dragEnd();
+  if (item === null) return;
+  const where = dropDestination(item, folder);
+  if (where === null) return;
+  if ('problem' in where) {
+    treeNotice.value = where.problem;
+    return;
+  }
+  try {
+    const base = item.kind === 'page' ? (await loadWikiPage(item.path)).version : undefined;
+    const now = await moveWikiNow(item.kind, item.path, where.to, base);
+    await afterMove(item.path, now, item.kind === 'page' ? 'Pagina' : 'Cartella');
+  } catch (failure) {
+    treeNotice.value = problemOf(failure);
   }
 }
 
@@ -321,12 +500,34 @@ onMounted(() => {
         <!-- Pages: the tree and the page read -->
         <div v-if="tab === 'pages'" id="wiki-panel-pages" role="tabpanel" aria-labelledby="wiki-tab-pages" class="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
           <nav class="flex flex-col gap-0.5 rounded-xl border border-line bg-surface-2 p-2 text-[14px]" aria-label="Albero della Wiki">
-            <button type="button" class="flex items-center gap-1.5 rounded-md px-2 py-1 text-left font-semibold hover:bg-surface" :class="shownPath === '_indice' ? 'text-accent' : ''" @click="show('_indice')">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md px-2 py-1 text-left font-semibold hover:bg-surface"
+              :class="[shownPath === '_indice' ? 'text-accent' : '', dropOver === '' ? 'bg-accent/15' : '']"
+              @click="show('_indice')"
+              @dragover="dragOver($event, '')"
+              @dragleave="dropOver = null"
+              @drop.prevent="dropOn('')"
+            >
               <Icon name="wiki" :size="14" />Wiki
             </button>
+            <p v-if="treeNotice !== null" class="px-2 py-1 text-xs text-danger" role="alert">{{ treeNotice }}</p>
             <p v-if="listError !== null" class="px-2 py-1 text-xs text-danger" role="alert">{{ listError }}</p>
             <p v-else-if="listing !== null && rows.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna pagina ancora.</p>
-            <div v-for="row in rows" :key="`${row.node.kind}:${row.node.path}`" class="flex items-center" :style="{ paddingLeft: `${String(row.depth * 14)}px` }">
+            <p v-if="rows.length > 0" class="mt-1 px-2 text-[12px] text-muted">Trascina pagine e cartelle per spostarle.</p>
+            <div
+              v-for="row in rows"
+              :key="`${row.node.kind}:${row.node.path}`"
+              class="flex items-center rounded-md"
+              :class="dropOver !== null && dropOver === dropFolder(row.node) && dragging !== null ? 'bg-accent/15' : ''"
+              :style="{ paddingLeft: `${String(row.depth * 14)}px` }"
+              draggable="true"
+              :title="`Trascina per spostare wiki/${row.node.path}`"
+              @dragstart="dragStart($event, row.node)"
+              @dragend="dragEnd"
+              @dragover="dragOver($event, dropFolder(row.node))"
+              @drop.prevent="dropOn(dropFolder(row.node))"
+            >
               <button
                 v-if="row.node.kind === 'folder'"
                 type="button"
@@ -351,37 +552,67 @@ onMounted(() => {
           </nav>
 
           <article class="min-w-0 rounded-xl border border-line bg-surface p-4">
-            <p v-if="deleteNotice !== null" class="mb-3 rounded-lg border border-ok/50 bg-ok/10 px-3 py-2 text-sm" role="status">{{ deleteNotice }}</p>
+            <p v-if="notice !== null" class="mb-3 rounded-lg border border-ok/50 bg-ok/10 px-3 py-2 text-sm" role="status">{{ notice }}</p>
             <p v-if="pageLoading && page === null" class="text-sm text-muted">Leggo la pagina…</p>
             <p v-else-if="pageError !== null" class="text-sm text-muted">{{ pageError }}</p>
             <template v-else-if="page !== null">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <p class="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">wiki/{{ page.path }}</p>
-                <button v-if="page.kind === 'page'" type="button" class="btn px-2 py-0.5 text-[12.5px] hover:text-danger" @click="deleting = true; deleteProblem = null">
-                  <Icon name="delete" :size="12" />Elimina
-                </button>
+                <template v-if="page.kind === 'page' && !editing">
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="startEdit"><Icon name="rename" :size="12" />Modifica</button>
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="movingPage = !movingPage; pageMoveTo = page.path; pageMoveProblem = null">Sposta o rinomina</button>
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px] hover:text-danger" @click="deleting = true; deleteProblem = null">
+                    <Icon name="delete" :size="12" />Elimina
+                  </button>
+                </template>
               </div>
-              <h2 class="mt-1 text-[19px] font-semibold">{{ page.title }}</h2>
-              <MarkdownText class="mt-3" :source="page.body" :wikilink="follow" />
 
-              <section v-if="shownFolder !== null && shownFolder !== ''" class="mt-5 border-t border-line pt-3">
-                <h3 class="text-[14px] font-semibold">Sposta o rinomina la cartella</h3>
-                <p class="mt-0.5 text-[13px] text-muted">Diventa una proposta da approvare in «Proposte»; i collegamenti alle pagine seguono.</p>
-                <form class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="proposeMove">
+              <form v-if="editing" class="mt-2 flex flex-col gap-2" @submit.prevent="saveEdit">
+                <input
+                  v-model="editTitle"
+                  type="text"
+                  maxlength="80"
+                  class="rounded-md border border-line bg-surface-2 px-2.5 py-1 text-[17px] font-semibold outline-none"
+                  aria-label="Titolo della pagina"
+                />
+                <textarea
+                  v-model="editBody"
+                  rows="20"
+                  class="min-h-[320px] resize-y rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-[13.5px] leading-relaxed outline-none"
+                  aria-label="Testo della pagina in Markdown"
+                  spellcheck="true"
+                />
+                <p class="text-[12.5px] text-muted">
+                  Markdown: titoli con ##, elenchi con -, grassetto con **. Per citare una nota o un’altra pagina scrivi il suo percorso fra doppie parentesi quadre (come nelle pagine proposte). Niente link, immagini o indirizzi: la pagina resta sul Mac.
+                </p>
+                <p v-if="editProblem !== null" class="text-[13px] text-danger" role="alert">{{ editProblem }}</p>
+                <div class="flex gap-2">
+                  <button type="submit" class="btn btn-primary px-3 py-1 text-[13.5px]" :disabled="editBusy || editTitle.trim() === ''">Salva</button>
+                  <button type="button" class="btn px-3 py-1 text-[13.5px]" :disabled="editBusy" @click="editing = false">Annulla</button>
+                </div>
+              </form>
+              <template v-else>
+                <h2 class="mt-1 text-[19px] font-semibold">{{ page.title }}</h2>
+                <MarkdownText class="mt-3" :source="page.body" :wikilink="follow" />
+              </template>
+
+              <section v-if="page.kind === 'page' && movingPage && !editing" class="mt-5 border-t border-line pt-3">
+                <h3 class="text-[14px] font-semibold">Sposta o rinomina la pagina</h3>
+                <p class="mt-0.5 text-[13px] text-muted">Subito: versioni e collegamenti seguono; un aggiornamento proposto per questa pagina scade.</p>
+                <form class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="movePage">
                   <input
-                    v-model="moveTo"
+                    v-model="pageMoveTo"
                     type="text"
                     class="min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2.5 py-1 font-mono text-[13.5px] outline-none"
-                    :placeholder="shownFolder"
-                    aria-label="Nuovo percorso della cartella"
+                    aria-label="Nuovo percorso della pagina"
                   />
-                  <button type="submit" class="btn px-2.5 py-1 text-[13px]" :disabled="moveBusy || moveTo.trim() === '' || moveProblem !== undefined">Proponi</button>
+                  <button type="submit" class="btn px-2.5 py-1 text-[13px]" :disabled="pageMoveBusy || pageMoveTo.trim() === '' || pageMovePathProblem !== undefined">Sposta</button>
                 </form>
-                <p v-if="moveProblem !== undefined" class="mt-1 text-xs text-danger">{{ moveProblem }}</p>
-                <p v-if="moveNotice !== null" class="mt-1 text-[13px]" role="status">{{ moveNotice }}</p>
+                <p v-if="pageMovePathProblem !== undefined" class="mt-1 text-xs text-danger">{{ pageMovePathProblem }}</p>
+                <p v-if="pageMoveProblem !== null" class="mt-1 text-[13px] text-danger" role="alert">{{ pageMoveProblem }}</p>
               </section>
 
-              <section v-if="page.kind === 'page' && page.versions.length > 0" class="mt-5 border-t border-line pt-3">
+              <section v-if="page.kind === 'page' && !editing && page.versions.length > 0" class="mt-5 border-t border-line pt-3">
                 <h3 class="flex items-center gap-1.5 text-[14px] font-semibold"><Icon name="history" :size="14" />Versioni precedenti</h3>
                 <ul class="mt-1.5 flex flex-col gap-1 text-[13.5px]">
                   <li v-for="version in page.versions" :key="version.id" class="flex items-center gap-2">
@@ -391,6 +622,61 @@ onMounted(() => {
                 </ul>
               </section>
             </template>
+
+            <!-- The folder shown (or the root): new pages and folders, and «Sposta o rinomina» of the folder -->
+            <section v-if="shownFolder !== null && !pageLoading" class="mt-5 border-t border-line pt-3">
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="startCreate('page')"><Icon name="new" :size="13" />Nuova pagina</button>
+                <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="startCreate('folder')"><Icon name="new" :size="13" />Nuova cartella</button>
+              </div>
+              <form v-if="creating !== null" class="mt-2 flex flex-col gap-2" @submit.prevent="create">
+                <input
+                  v-model="createPath"
+                  type="text"
+                  class="rounded-md border border-line bg-surface-2 px-2.5 py-1 font-mono text-[13.5px] outline-none"
+                  :placeholder="creating === 'page' ? 'argomento/articolo' : 'argomento o argomento/sotto-argomento'"
+                  :aria-label="creating === 'page' ? 'Percorso della pagina nuova' : 'Percorso della cartella nuova'"
+                />
+                <input
+                  v-if="creating === 'page'"
+                  v-model="createTitle"
+                  type="text"
+                  maxlength="80"
+                  class="rounded-md border border-line bg-surface-2 px-2.5 py-1 text-[13.5px] outline-none"
+                  placeholder="Titolo"
+                  aria-label="Titolo della pagina nuova"
+                />
+                <p v-if="createPathProblem !== undefined" class="text-xs text-danger">{{ createPathProblem }}</p>
+                <p v-if="createProblem !== null" class="text-[13px] text-danger" role="alert">{{ createProblem }}</p>
+                <div class="flex gap-2">
+                  <button
+                    type="submit"
+                    class="btn btn-primary px-3 py-1 text-[13px]"
+                    :disabled="createBusy || createPath.trim() === '' || createPathProblem !== undefined || (creating === 'page' && createTitle.trim() === '')"
+                  >
+                    Crea
+                  </button>
+                  <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="createBusy" @click="creating = null">Annulla</button>
+                </div>
+              </form>
+
+              <template v-if="shownFolder !== ''">
+                <h3 class="mt-4 text-[14px] font-semibold">Sposta o rinomina la cartella</h3>
+                <p class="mt-0.5 text-[13px] text-muted">Subito, con le sue pagine: versioni e collegamenti seguono. Puoi anche trascinarla nell’albero.</p>
+                <form class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="moveFolder">
+                  <input
+                    v-model="moveTo"
+                    type="text"
+                    class="min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2.5 py-1 font-mono text-[13.5px] outline-none"
+                    :placeholder="shownFolder"
+                    aria-label="Nuovo percorso della cartella"
+                  />
+                  <button type="submit" class="btn px-2.5 py-1 text-[13px]" :disabled="moveBusy || moveTo.trim() === '' || moveProblem !== undefined">Sposta</button>
+                </form>
+                <p v-if="moveProblem !== undefined" class="mt-1 text-xs text-danger">{{ moveProblem }}</p>
+                <p v-if="moveNotice !== null" class="mt-1 text-[13px] text-danger" role="alert">{{ moveNotice }}</p>
+              </template>
+            </section>
           </article>
         </div>
 

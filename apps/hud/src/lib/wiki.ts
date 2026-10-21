@@ -164,9 +164,29 @@ export function ancestorsOf(path: string): string[] {
   return segments.map((_segment, index) => segments.slice(0, index + 1).join('/'));
 }
 
+/** What the core said about a page the user wrote («invalid: line 3: citation»), in Italian; undefined for another error. */
+function invalidText(detail: string): string | undefined {
+  const line = /^line (\d+): (citation|link|header)$/.exec(detail);
+  if (line !== null) {
+    const where = `Riga ${line[1] ?? ''}: `;
+    if (line[2] === 'citation') return `${where}la citazione [[…]] non porta a una tua nota (fino a Privata) né a una pagina della Wiki che c’è.`;
+    if (line[2] === 'header') return `${where}l’intestazione la scrive Arianna, togli le righe «---».`;
+    return `${where}niente link, immagini, indirizzi o HTML: la pagina resta sul Mac.`;
+  }
+  if (detail === 'title') return 'Il titolo non va bene: non vuoto, al più 80 caratteri, senza [ ] | # < >.';
+  if (detail === 'too-long') return 'La pagina è troppo lunga.';
+  if (detail.includes('deeper')) return 'Le pagine andrebbero oltre tre livelli.';
+  if (detail.includes('inside itself')) return 'Una cartella non può andare dentro se stessa.';
+  return undefined;
+}
+
 /** An error of the core («expired: …») said in Italian. */
 export function wikiErrorText(status: number, message: string): string {
   const code = message.split(':')[0] ?? '';
+  if (code === 'invalid') {
+    const text = invalidText(message.slice(code.length + 1).trim());
+    if (text !== undefined) return text;
+  }
   if (code === 'expired') return 'La pagina è cambiata dopo la proposta: chiedine una nuova.';
   if (code === 'exists') return 'C’è già una pagina o una cartella con questo percorso: scegline un altro.';
   if (code === 'changed') return 'La pagina è cambiata intanto: ricarica.';
@@ -176,6 +196,39 @@ export function wikiErrorText(status: number, message: string): string {
   if (status === 503) return 'La Wiki non può proporre adesso: riprova fra poco.';
   if (status === 400) return 'Il percorso non va bene.';
   return 'Non ci sono riuscito: riprova.';
+}
+
+/** What is dragged in the tree of the Wiki. */
+export interface WikiDragged {
+  kind: 'page' | 'folder';
+  path: string;
+}
+
+/**
+ * Where a page or folder dropped on `folder` ('' for the root) goes: its
+ * name under that folder. Null when it stays where it is; a problem in
+ * Italian when it cannot go there (a page at the root, a folder inside
+ * itself, deeper than three levels).
+ */
+export function dropDestination(item: WikiDragged, folder: string): { to: string } | { problem: string } | null {
+  const name = item.path.split('/').at(-1) ?? item.path;
+  const to = folder === '' ? name : `${folder}/${name}`;
+  if (to === item.path) return null;
+  if (item.kind === 'folder' && (folder === item.path || folder.startsWith(`${item.path}/`))) return { problem: 'Una cartella non può andare dentro se stessa.' };
+  if (item.kind === 'page' && folder === '') return { problem: 'Un articolo sta sempre in una cartella: trascinalo su una cartella.' };
+  if (item.kind === 'page' ? !isPagePath(to) : !isFolderPath(to)) return { problem: 'Lì andrebbe oltre tre livelli: argomento › sotto-argomento › articolo.' };
+  return { to };
+}
+
+/** The folder a dropped item lands in when dropped on a row: the folder itself, or the folder of a page. */
+export function dropFolder(row: WikiDragged): string {
+  return row.kind === 'folder' ? row.path : row.path.split('/').slice(0, -1).join('/');
+}
+
+/** A path after a move of `from` to `to` (a page, or a folder and everything under it); the same path when untouched. */
+export function movedPath(path: string, from: string, to: string): string {
+  if (path === from) return to;
+  return path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
 }
 
 /** A version time («2026-10-21T09:30:12») as the page shows it. */

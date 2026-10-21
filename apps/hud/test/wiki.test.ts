@@ -16,6 +16,9 @@ import {
   tidyPath,
   versionText,
   wikiErrorText,
+  dropDestination,
+  dropFolder,
+  movedPath,
   wikilinkTarget,
 } from '../src/lib/wiki.ts';
 
@@ -109,4 +112,29 @@ test('the page has its address and its command', () => {
   assert.equal(isWikiPath('/wiki/'), true);
   assert.equal(isWikiPath('/wikipedia'), false);
   assert.deepEqual(findCommand('wiki')?.action, { kind: 'open', page: 'wiki' });
+});
+
+test('a page the user wrote: what the core refuses, said in Italian with the line', () => {
+  assert.match(wikiErrorText(400, 'invalid: line 3: citation'), /^Riga 3: la citazione/);
+  assert.match(wikiErrorText(400, 'invalid: line 1: link'), /^Riga 1: niente link/);
+  assert.match(wikiErrorText(400, 'invalid: line 1: header'), /intestazione/);
+  assert.match(wikiErrorText(400, 'invalid: title'), /titolo/);
+  assert.match(wikiErrorText(400, 'invalid: too-long'), /troppo lunga/);
+  assert.match(wikiErrorText(400, 'invalid: the pages would go deeper than 3 levels'), /tre livelli/);
+  assert.equal(wikiErrorText(400, 'invalid: something else'), 'Il percorso non va bene.');
+});
+
+test('dragging in the tree: where a page or folder lands, and when it cannot', () => {
+  assert.deepEqual(dropDestination({ kind: 'page', path: 'laravel/octane/swoole' }, 'php'), { to: 'php/swoole' });
+  assert.equal(dropDestination({ kind: 'page', path: 'laravel/swoole' }, 'laravel'), null);
+  assert.ok('problem' in (dropDestination({ kind: 'page', path: 'laravel/swoole' }, '') ?? { to: '' }));
+  assert.deepEqual(dropDestination({ kind: 'folder', path: 'laravel/octane' }, ''), { to: 'octane' });
+  assert.deepEqual(dropDestination({ kind: 'folder', path: 'octane' }, 'laravel'), { to: 'laravel/octane' });
+  assert.ok('problem' in (dropDestination({ kind: 'folder', path: 'laravel' }, 'laravel/octane') ?? { to: '' }));
+  assert.ok('problem' in (dropDestination({ kind: 'folder', path: 'octane' }, 'laravel/server') ?? { to: '' }));
+  assert.equal(dropFolder({ kind: 'page', path: 'laravel/octane/swoole' }), 'laravel/octane');
+  assert.equal(dropFolder({ kind: 'folder', path: 'laravel' }), 'laravel');
+  assert.equal(movedPath('laravel/octane/swoole', 'laravel/octane', 'php'), 'php/swoole');
+  assert.equal(movedPath('laravel/swoole', 'laravel/swoole', 'php/swoole'), 'php/swoole');
+  assert.equal(movedPath('laravelx/a', 'laravel', 'php'), 'laravelx/a');
 });
