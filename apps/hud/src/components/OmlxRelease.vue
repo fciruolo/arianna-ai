@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * «Server dei modelli (oMLX)» in Impostazioni → Modelli (D-265): the version
+ * «Server dei modelli (oMLX)» in the page «Seguiti» (D-265, D-272; first in Impostazioni → Modelli): the version
  * of oMLX on the Mac (from `--version` of the oMLX endpoint), the newest
  * release of jundot/omlx on GitHub (read once a day by the core, or with
  * «Controlla ora»; only the name of the project leaves), its news grouped by

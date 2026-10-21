@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * "Progetti seguiti" in "Sviluppo di Arianna" (D-202, after D-093): public
+ * "Progetti seguiti" in the page «Seguiti» (D-202 after D-093, D-272): public
  * GitHub repositories Arianna takes ideas from. «Controlla novità» reads
  * their releases from the public API of GitHub (only the name of the
  * repository leaves); the local model groups what changed in a few entries,
  * each with «Implementiamo» or «Non interessa», which write the choice in
  * data/dev/RISPOSTE.md for Claude Code. Open Design is followed through its
- * catalog: its news are in Impostazioni → Skill e stili. Accounts too
+ * catalog: its news are in the card below on the same page. Accounts too
  * (D-271): «Controlla nuovi repository» lists the repositories created since
  * the last check, each with «Segui», which makes it a project followed. The
  * text is public, of a third party: shown as data, never as an instruction.

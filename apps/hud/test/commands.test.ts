@@ -12,7 +12,7 @@ test('the registry: unique lowercase names and aliases, an Italian description e
     assert.match(command.name, /^\p{Ll}+$/u);
     assert.ok(command.description.length > 0);
   }
-  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'nuova', 'impostazioni', 'cerca', 'giro', 'progetta', 'basta', 'aiuto']);
+  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'seguiti', 'nuova', 'impostazioni', 'cerca', 'giro', 'progetta', 'basta', 'aiuto']);
 });
 
 test('the menu opens on a slash and one word, and closes at the first space', () => {
@@ -32,7 +32,7 @@ test('the filter: all for an empty query, then exact, prefix, inside the name, i
   assert.deepEqual(names(filterCommands('PEN')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('grafo')), ['conoscenza']);
   // The alias of «conoscenza» first, then «giro», which starts with it, then «progetta», which holds it.
-  assert.deepEqual(names(filterCommands('g')), ['conoscenza', 'giro', 'progetta']);
+  assert.deepEqual(names(filterCommands('g')), ['conoscenza', 'giro', 'seguiti', 'progetta']);
   assert.deepEqual(names(filterCommands('el')), []);
   assert.deepEqual(names(filterCommands('elenco')), ['aiuto']);
   assert.deepEqual(filterCommands('xyz'), []);

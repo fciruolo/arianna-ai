@@ -7,6 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Progetti seguiti: si può seguire anche un account GitHub (`https://github.com/<account>`, al più 5) dalla pagina «Sviluppo di Arianna» o con `pnpm projects:followed add`; «Controlla nuovi repository» mostra i repository pubblici creati dall'ultimo controllo (fork e archiviati esclusi) con descrizione, data, licenza e «Segui», che li aggiunge ai progetti seguiti; il primo controllo segna come già visti quelli che ci sono (D-271).
+- Pagina «Seguiti» nella colonna di sinistra (gruppo Sistema) e comando `/seguiti`: in un posto solo progetti e account seguiti con la casella «Segui», le release di oMLX, le novità di Open Design e l'elenco dei cataloghi di skill e di agenti con la versione in uso e in attesa e il rimando a dove si gestiscono; in Sviluppo di Arianna, Modelli e Skill e stili al loro posto c'è «Ora in Seguiti» (D-272).
 
 ## [0.153.0] - 2026-10-21
 

@@ -91,6 +91,7 @@ import {
   TriangleAlert,
   VenetianMask,
   X,
+  Telescope,
 } from 'lucide-vue-next';
 
 /**
@@ -148,6 +149,8 @@ export const ICONS = {
   office: Building2,
   thoughts: Lightbulb,
   routine: Repeat,
+  // «Seguiti» (D-272): what Arianna follows on GitHub for ideas.
+  followed: Telescope,
   search: Search,
   focus: Focus,
   pin: Pin,

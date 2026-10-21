@@ -1,5 +1,5 @@
 // The projects followed for ideas from the terminal (D-202), the same steps as
-// Impostazioni → Sviluppo di Arianna → Progetti seguiti:
+// the page «Seguiti» of the chat (D-272):
 //   pnpm projects:followed [list]          the projects and accounts followed, the last news
 //   pnpm projects:followed add <url>       follows https://github.com/<owner>/<repo>, or the
 //                                          account https://github.com/<owner> (D-271; reads nothing)
@@ -68,7 +68,7 @@ function print(list: ProjectView[], full: boolean): void {
       console.log(`    - ${safe(item.title)}${item.summary === '' ? '' : `: ${safe(item.summary)}`} [${item.commits.map((commit) => commit.short).join(', ')}]`);
     }
     if (news.truncated) console.log(`    (${String(news.commits)} commit in tutto: elencati solo i più recenti)`);
-    if (news.items.length > 0) console.log('    Per sceglierle: Impostazioni → Sviluppo di Arianna → Progetti seguiti.');
+    if (news.items.length > 0) console.log('    Per sceglierle: la pagina Seguiti della chat.');
   }
 }
 

@@ -43,7 +43,7 @@ import {
 } from '../lib/dev-progress.ts';
 import { errorText } from '../lib/italian.ts';
 import DevUserNote from './DevUserNote.vue';
-import FollowedProjects from './FollowedProjects.vue';
+import MovedToFollowed from './MovedToFollowed.vue';
 import Icon from './Icon.vue';
 
 /**
@@ -54,7 +54,7 @@ import Icon from './Icon.vue';
  * data/dev/RISPOSTE.md and Claude Code applies them at the start of its next
  * session. Title, sentence and width are the settings page's; the news of
  * Open Design moved to «Skill e stili». Three tabs: «Domande» (all of the
- * above), «Progetti seguiti» (D-202) and «Su di te», the note for Claude Code and Codex
+ * above), «Progetti seguiti» (D-202, now a link to the page «Seguiti», D-272) and «Su di te», the note for Claude Code and Codex
  * (D-114); the address remembers the open one.
  */
 const tab = ref<DevTab>(devTabFromSearch(window.location.search));
@@ -247,9 +247,9 @@ onMounted(refresh);
       </div>
     </div>
 
-    <!-- «Progetti seguiti» (D-202) -->
+    <!-- «Progetti seguiti» (D-202) moved to the page «Seguiti» (D-272): the tab stays, so an old address lands somewhere -->
     <div v-if="tab === 'followed'" id="dev-panel-followed" role="tabpanel" aria-labelledby="dev-tab-followed">
-      <FollowedProjects />
+      <MovedToFollowed what="I progetti e gli account seguiti, con le loro novità e «Implementiamo» / «Non interessa», sono nella pagina Seguiti." />
     </div>
 
     <!-- «Su di te, per chi sviluppa Arianna» (D-114, D-226): data/dev/UTENTE.md, through the gateway -->

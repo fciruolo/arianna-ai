@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * "Novità di Open Design" in Impostazioni → Skill e stili (I-21, D-186,
- * D-192): what changed in nexu-io/open-design between the version of the
+ * "Novità di Open Design" in the page «Seguiti» (I-21, D-186, D-192,
+ * D-272; the catalog stays in Impostazioni → Skill e stili): what changed in nexu-io/open-design between the version of the
  * catalog in use and the one downloaded, grouped by the local model (or the
  * raw list by kind). Each entry has "Da rifare nello Studio", which writes it
  * in data/dev/RISPOSTE.md for Claude Code; nothing changes in the code by
