@@ -7,7 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - La Wiki proposta dal modello locale (D-280, tappa B di D-273): dopo ogni video riassunto, ogni nota archiviata e col pulsante «Proponi per la Wiki», il modello propone di creare o aggiornare una pagina di `kb/wiki` (ad albero, al più 3 livelli, con un indice per cartella) citando solo le tue note; tu approvi, scarti o chiedi di nuovo dalla pagina «Wiki» (comando `/wiki`), vedendo le righe cambiate.
-- Nella pagina «Wiki» scrivi anche tu, subito (D-280): «Modifica» del titolo e del testo in Markdown, «Sposta o rinomina» di pagine e cartelle, trascinamento nell'albero, «Nuova pagina» e «Nuova cartella»; ogni modifica tiene la versione di prima.
+- Nella pagina «Wiki» scrivi anche tu, subito (D-280): «Modifica» del titolo e del testo in Markdown, «Sposta o rinomina» di pagine e cartelle, trascinamento nell'albero, «Nuova pagina» e «Nuova cartella»; ogni modifica tiene la versione di prima. Le cartelle restano anche vuote e si tolgono con «Elimina cartella».
 - Nella pagina «Wiki»: «Elimina» una pagina dopo una conferma, con le sue versioni e le proposte in attesa (gli indici si aggiornano, le cartelle vuote spariscono); versioni precedenti con «Ripristina»; nel grafo di Conoscenza le pagine della Wiki hanno colore e forma propri e il filtro «Solo Wiki» (D-280).
 - Eval `evals/notes/wiki.jsonl` con 15 note inventate nel gruppo `notes` di `pnpm eval:models` (D-280).
 
