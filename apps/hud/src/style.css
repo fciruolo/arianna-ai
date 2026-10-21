@@ -822,3 +822,130 @@ body::before {
     opacity: 0.5;
   }
 }
+
+/* The editor of the Wiki (D-282): the text as the page shows it, colours from the tokens, no focus ring in the text. */
+@layer components {
+  .wiki-tool {
+    min-width: 2rem;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 0.375rem;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .wiki-tool:hover {
+    border-color: var(--accent);
+  }
+  .wiki-tool.is-on {
+    border-color: var(--accent);
+    background: var(--glow);
+    color: var(--accent);
+  }
+  .wiki-editor-host {
+    min-height: 320px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .wiki-editor-content {
+    min-height: 300px;
+    outline: none;
+    font-size: 14.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .wiki-editor-content:focus {
+    outline: none;
+  }
+  .wiki-editor-content > * + * {
+    margin-top: 0.6em;
+  }
+  .wiki-editor-content h1 {
+    font-size: 1.45em;
+    font-weight: 650;
+  }
+  .wiki-editor-content h2 {
+    font-size: 1.25em;
+    font-weight: 650;
+  }
+  .wiki-editor-content h3,
+  .wiki-editor-content h4 {
+    font-size: 1.08em;
+    font-weight: 650;
+  }
+  .wiki-editor-content ul {
+    list-style: disc;
+    padding-left: 1.4em;
+  }
+  .wiki-editor-content ol {
+    list-style: decimal;
+    padding-left: 1.6em;
+  }
+  .wiki-editor-content blockquote {
+    border-left: 3px solid var(--line);
+    padding-left: 0.8em;
+    color: var(--muted);
+  }
+  .wiki-editor-content code {
+    padding: 0.05em 0.3em;
+    border-radius: 0.25rem;
+    background: var(--surface);
+    font: 0.9em var(--font-mono);
+  }
+  .wiki-editor-content pre {
+    padding: 0.6em 0.8em;
+    border: 1px solid var(--line);
+    border-radius: 0.375rem;
+    background: var(--surface);
+    overflow-x: auto;
+  }
+  .wiki-editor-content pre code {
+    padding: 0;
+    background: none;
+  }
+  .wiki-editor-content hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  .wiki-editor-content table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .wiki-editor-content th,
+  .wiki-editor-content td {
+    border: 1px solid var(--line);
+    padding: 0.25em 0.5em;
+    vertical-align: top;
+  }
+  .wiki-editor-content th {
+    background: var(--surface);
+    font-weight: 600;
+  }
+  .wiki-editor-content .selectedCell {
+    background: var(--glow);
+  }
+  /* A citation [[nota]]: a label, one piece, never a link. */
+  .wiki-editor-content .wiki-citation {
+    display: inline-block;
+    padding: 0 0.4em;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 0.92em;
+    line-height: 1.45;
+    cursor: default;
+  }
+  .wiki-editor-content .wiki-citation.ProseMirror-selectednode {
+    background: var(--glow);
+  }
+  .wiki-editor-content p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    color: var(--muted);
+    pointer-events: none;
+  }
+}

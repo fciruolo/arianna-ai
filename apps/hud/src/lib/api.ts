@@ -1385,6 +1385,18 @@ export async function moveWikiNow(kind: 'page' | 'folder', from: string, to: str
   return (await call<{ path: string }>('POST', '/api/wiki/move-now', kind === 'page' ? { kind, from, to, base } : { kind, from, to })).path;
 }
 
+/** A note or page the editor of the Wiki suggests after «[[» (D-282). */
+export interface WikiCitationTarget {
+  target: string;
+  title: string;
+  kind: 'note' | 'page';
+}
+
+/** The notes and pages a citation may name, whose path or title holds the words typed after «[[». */
+export async function loadWikiTargets(query: string): Promise<WikiCitationTarget[]> {
+  return (await call<{ targets: WikiCitationTarget[] }>('GET', `/api/wiki/targets?q=${encodeURIComponent(query)}`)).targets;
+}
+
 /** «Elimina cartella»: only an empty folder of the Wiki. */
 export async function deleteWikiFolder(path: string): Promise<void> {
   await call('POST', '/api/wiki/folder/delete', { path });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 
 import {
   ApiError,
@@ -42,6 +42,9 @@ import ConfirmDialog from './ConfirmDialog.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 import PageHeader from './PageHeader.vue';
+
+/** The editor (D-282) loads only when a page is edited: the rest of the chat does not carry it. */
+const WikiEditor = defineAsyncComponent(() => import('./WikiEditor.vue'));
 
 /**
  * The Wiki (D-280): pages of kb/wiki the local model proposes from the
@@ -601,15 +604,9 @@ onMounted(() => {
                   class="rounded-md border border-line bg-surface-2 px-2.5 py-1 text-[17px] font-semibold outline-none"
                   aria-label="Titolo della pagina"
                 />
-                <textarea
-                  v-model="editBody"
-                  rows="20"
-                  class="min-h-[320px] resize-y rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-[13.5px] leading-relaxed outline-none"
-                  aria-label="Testo della pagina in Markdown"
-                  spellcheck="true"
-                />
+                <WikiEditor v-model="editBody" />
                 <p class="text-[12.5px] text-muted">
-                  Markdown: titoli con ##, elenchi con -, grassetto con **. Per citare una nota o un’altra pagina scrivi il suo percorso fra doppie parentesi quadre (come nelle pagine proposte). Niente link, immagini o indirizzi: la pagina resta sul Mac.
+                  Scrivi già formattato con i pulsanti; «[[» cita una nota o un’altra pagina. Niente link, immagini o indirizzi: la pagina resta sul Mac. «Markdown» mostra il testo nudo.
                 </p>
                 <p v-if="editProblem !== null" class="text-[13px] text-danger" role="alert">{{ editProblem }}</p>
                 <div class="flex gap-2">
