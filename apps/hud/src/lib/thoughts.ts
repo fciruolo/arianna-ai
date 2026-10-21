@@ -3,6 +3,7 @@ import { groupItemsByDay, type DaySection } from './day-groups.ts';
 import { matchesFilter } from './graph.ts';
 import { THOUGHT_EMPTY_TEXT, THOUGHT_TOO_LARGE_TEXT } from './italian.ts';
 import type { Label } from './types.ts';
+import { isYoutubeVideo, type NoteVideo } from './video.ts';
 
 /**
  * The "Pensieri" page (D-090): thoughts saved in kb/inbox (POST /api/capture)
@@ -21,6 +22,8 @@ export interface NoteSummary {
   capturedKind: string | null;
   label: Label;
   tags: string[];
+  /** `youtube` for the note of a video (D-273). Optional: an older core sends none. */
+  media?: string | null;
 }
 
 /** A note as GET /api/notes/:name gives it, with its text. */
@@ -31,12 +34,17 @@ export interface Note extends NoteSummary {
   fetchedAt?: string | null;
   /** Why the last download failed, a code of the core (D-154). */
   fetchFailed?: string | null;
+  /** The video of the note once summarized (D-273). Optional: an older core sends none. */
+  video?: NoteVideo | null;
   body: string;
 }
 
-/** "Scarica e riassumi" (D-154): a note with a link whose content is not in it yet (never downloaded, or failed). */
+/**
+ * "Scarica e riassumi" (D-154): a note with a link whose content is not in it
+ * yet (never downloaded, or failed). Never a YouTube video: that is «Riassumi il video» (D-273).
+ */
 export function canFetch(note: Pick<Note, 'url' | 'fetchedAt'> | null): boolean {
-  return note !== null && note.url !== null && (note.fetchedAt ?? null) === null;
+  return note !== null && note.url !== null && (note.fetchedAt ?? null) === null && !isYoutubeVideo(note.url);
 }
 
 /** A download asked from the panel is over: the note was organized again, or its outcome changed. */

@@ -137,6 +137,8 @@ export interface NoteSummary {
   capturedKind: string | null;
   label: Label;
   tags: string[];
+  /** `youtube` for the note of a video (D-273); null otherwise. */
+  media: string | null;
 }
 
 export interface Note extends NoteSummary {
@@ -146,8 +148,6 @@ export interface Note extends NoteSummary {
   fetchedAt: string | null;
   /** Why the last download of the link failed (a code of link-fetch.ts); null otherwise. */
   fetchFailed: string | null;
-  /** `youtube` for the note of a video (D-273); null otherwise. */
-  media: string | null;
   /** The video of the note: its id, channel, seconds and where the transcript came from (D-273); null when it is not one. */
   video: { id: string; channel: string | null; duration: number | null; transcriptSource: string | null } | null;
   body: string;
@@ -165,6 +165,7 @@ function summaryOf(rules: LabelRules, path: string, raw: string): NoteSummary {
     capturedKind: fields.get('captured_kind') ?? null,
     label: noteLabel(rules, path, raw),
     tags: jsonList(fields.get('tags')),
+    media: fields.get('media') === 'youtube' ? 'youtube' : null,
   };
 }
 
@@ -302,7 +303,6 @@ export function readNote(home: string, rules: LabelRules, name: string): Note {
     url: fields.get('url') ?? (fields.get('captured_kind') === 'link' || fields.get('kind') === 'link' ? (linkInText(userText(raw, fields.get('status'))) ?? null) : null),
     fetchedAt: fields.get('fetched_at') ?? null,
     fetchFailed: fetchFailed !== undefined && /^[a-z-]{1,40}$/.test(fetchFailed) ? fetchFailed : null,
-    media: fields.get('media') === 'youtube' ? 'youtube' : null,
     video: videoOf(fields),
     body: parsePage(raw).body,
   };
