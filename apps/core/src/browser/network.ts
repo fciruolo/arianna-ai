@@ -813,6 +813,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const decided = await withDeadline(hops, job.hopTimeoutMs ?? HOP_MS);
     if (decided === 'late') {
       expired.add(seq);
+      // Forgotten only when its late work is really over, however long the gateway or the download take.
+      void hops.finally(() => { expired.delete(seq); }).catch(() => undefined);
       if (frame.main) navigated('failed', undefined, 'timeout');
       await abort('failed', 'timeout');
       return;
@@ -880,8 +882,6 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
         await route.abort('failed').catch(() => undefined);
       })
       .finally(() => { stages.delete(seq); });
-    // Forgotten only once its work is surely over (the download has its own timeout).
-    void run.finally(() => { setTimeout(() => { expired.delete(seq); }, 60_000).unref(); });
     inFlight.add(run);
     void run.finally(() => inFlight.delete(run));
     return run;
