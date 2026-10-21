@@ -3073,6 +3073,7 @@ Decisione D-280. Scelte fatte durante la costruzione, dentro la proposta:
 - Una pagina modificata a mano non viene più proposta per un aggiornamento: riscriverla perderebbe ciò che l'utente ha scritto.
 - Dopo una nota archiviata che è un video non parte una seconda proposta: c'è già stata quando il video è stato riassunto.
 - Il percorso si cambia solo per una pagina nuova (e per la destinazione di uno spostamento); un aggiornamento resta sulla sua pagina.
+- «Elimina» nella pagina «Wiki» (scelta dell'utente del 2026-10-21, invece di lasciare l'eliminazione a Finder): con una conferma toglie la pagina, le sue versioni e le proposte in attesa su di lei, e aggiorna gli indici; da Conoscenza le pagine della Wiki non si eliminano.
 
 ### Tappa A: costruita sul ramo `task/d273-youtube` (da provare)
 
