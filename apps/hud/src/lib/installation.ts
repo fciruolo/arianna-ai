@@ -144,9 +144,9 @@ export const READINESS_TEXT: Record<ReadinessId, { title: string; ok: string; fi
     fix: 'Manca un programma, o Docker è spento. Esegui pnpm arianna:doctor nel Terminale per sapere quale; se lì c’è tutto, riavvia Arianna dal Terminale.',
   },
   voice: {
-    title: 'Ambiente della voce',
+    title: 'Ambiente della voce e dei video',
     ok: 'Pronto.',
-    fix: 'Manca l’ambiente della voce: esegui pnpm voice:sync.',
+    fix: 'Manca l’ambiente della voce (pnpm voice:sync), oppure per i video di YouTube mancano ffmpeg o Deno (brew install ffmpeg deno) o yt-dlp è vecchio: pnpm arianna:doctor nel Terminale dice cosa.',
   },
   projects: {
     title: 'Cartelle dei progetti',

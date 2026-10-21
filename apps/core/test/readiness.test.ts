@@ -102,6 +102,11 @@ test('an id the list does not know still counts, under «other»', () => {
   ]);
 });
 
+test('the checks of the videos (D-273) go with the voice: Deno missing fails that group, not another', () => {
+  assert.deepEqual(groupChecks([check('voice.env', true), check('video.ffmpeg', true), check('video.deno', false), check('video.yt-dlp', true)]), [{ id: 'voice', ok: false }]);
+  assert.deepEqual(groupChecks([check('video.deno', true)]), [{ id: 'voice', ok: true }]);
+});
+
 test('the record of the doctor: time, last migration, ids and outcomes only; a private folder and a 600 file', () => {
   const data = dataDir();
   writeDoctorRecord(data, [check('system.node', true), ...TERMINAL_OK], { now: new Date('2026-10-12T18:40:00Z'), migration: MIGRATION });

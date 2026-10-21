@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 
 import { parseCatalog, resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, guardDirChecks, layoutCheck, omlxLogChecks, omlxSettingsChecks, systemChecks, voiceCheck, type Runner } from '../src/install-checks.ts';
+import { DATA_LAYOUT, ensureLayout, guardDirChecks, layoutCheck, lockedYtDlp, omlxLogChecks, omlxSettingsChecks, systemChecks, videoChecks, voiceCheck, ytDlpAgeDays, type Runner } from '../src/install-checks.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 
@@ -385,4 +385,32 @@ ${extra}    ram_min_gib: 1
   assert.equal(guardDirChecks(catalog, data)[0]?.ok, false);
   // Without a model of apps/guard in the catalog there is nothing to check.
   assert.deepEqual(guardDirChecks({ version: 1, models: catalog.models.filter((model) => model.dir !== 'guard') }, data), []);
+});
+
+test('video (D-273): ffmpeg, Deno at least 2.6.6 and a yt-dlp younger than 90 days', async () => {
+  const home = join(HOME, 'video-home');
+  mkdirSync(join(home, 'apps', 'voice'), { recursive: true });
+  writeFileSync(join(home, 'apps', 'voice', 'uv.lock'), 'version = 1\n\n[[package]]\nname = "yt-dlp"\nversion = "2026.8.19"\nsource = { registry = "https://pypi.org/simple" }\n');
+  const tools = (deno: string | null, ffmpeg = true): Runner => (binary) => {
+    if (binary === 'deno' && deno !== null) return Promise.resolve(`deno ${deno} (stable, release, aarch64-apple-darwin)\nv8 14`);
+    if (binary === 'ffmpeg' && ffmpeg) return Promise.resolve('ffmpeg version 8.0 Copyright (c)\nbuilt with clang');
+    return Promise.reject(new Error('ENOENT'));
+  };
+  const at = new Date(Date.UTC(2026, 9, 21));
+  const good = await videoChecks(home, at, tools('2.6.6'));
+  assert.deepEqual(good.map((check) => [check.id, check.ok]), [['video.ffmpeg', true], ['video.deno', true], ['video.yt-dlp', true]]);
+  assert.equal(good[2]?.detail, 'yt-dlp 2026.8.19, released 63 days ago');
+  const missing = await videoChecks(home, at, tools(null, false));
+  assert.deepEqual(missing.map((check) => [check.id, check.ok]), [['video.ffmpeg', false], ['video.deno', false], ['video.yt-dlp', true]]);
+  assert.match(missing[1]?.detail ?? '', /brew install deno/);
+  const old = await videoChecks(home, at, tools('2.5.9'));
+  assert.equal(old[1]?.ok, false);
+  const later = await videoChecks(home, new Date(Date.UTC(2027, 0, 30)), tools('3.0.0'));
+  assert.equal(later[1]?.ok, true);
+  const stale = later[2];
+  assert.ok(stale !== undefined);
+  assert.equal(stale.ok, false);
+  assert.match(stale.detail, /pnpm voice:lock/);
+  assert.equal(lockedYtDlp('name = "yt-dlp-ejs"\nversion = "0.8.0"\n'), null);
+  assert.equal(ytDlpAgeDays('2026.13.1', at), null);
 });
