@@ -7,7 +7,7 @@
 export type CommandAction =
   /** Saves the text after the name as a thought (D-080): handled by the store. */
   | { kind: 'note' }
-  | { kind: 'open'; page: 'thoughts' | 'knowledge' | 'settings' | 'followed' }
+  | { kind: 'open'; page: 'thoughts' | 'knowledge' | 'wiki' | 'settings' | 'followed' }
   | { kind: 'new-conversation' }
   | { kind: 'search' }
   | { kind: 'help' }
@@ -43,6 +43,7 @@ export const COMMANDS: readonly ChatCommand[] = [
   { name: 'nota', alias: 'n', description: 'Salva il testo come pensiero in kb/inbox, senza Arianna', takesArgument: true, argumentHint: 'testo', action: { kind: 'note' } },
   { name: 'pensieri', alias: 'p', description: 'Apre la pagina dei pensieri', takesArgument: false, action: { kind: 'open', page: 'thoughts' } },
   { name: 'conoscenza', alias: 'g', description: 'Apre il grafo della conoscenza', takesArgument: false, action: { kind: 'open', page: 'knowledge' } },
+  { name: 'wiki', description: 'Apre la Wiki, compilata dalle tue note', takesArgument: false, action: { kind: 'open', page: 'wiki' } },
   { name: 'seguiti', description: 'Apre la pagina Seguiti: progetti, account e cataloghi da GitHub', takesArgument: false, action: { kind: 'open', page: 'followed' } },
   { name: 'nuova', description: 'Apre una nuova conversazione dello stesso tipo', takesArgument: false, action: { kind: 'new-conversation' } },
   { name: 'impostazioni', alias: 'i', description: 'Apre le impostazioni', takesArgument: false, action: { kind: 'open', page: 'settings' } },

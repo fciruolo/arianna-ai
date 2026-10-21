@@ -12,7 +12,7 @@ test('the registry: unique lowercase names and aliases, an Italian description e
     assert.match(command.name, /^\p{Ll}+$/u);
     assert.ok(command.description.length > 0);
   }
-  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'seguiti', 'nuova', 'impostazioni', 'cerca', 'giro', 'progetta', 'basta', 'aiuto']);
+  assert.deepEqual(names(COMMANDS), ['nota', 'pensieri', 'conoscenza', 'wiki', 'seguiti', 'nuova', 'impostazioni', 'cerca', 'giro', 'progetta', 'basta', 'aiuto']);
 });
 
 test('the menu opens on a slash and one word, and closes at the first space', () => {

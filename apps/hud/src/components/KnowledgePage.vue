@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
-import { ApiError, deleteKnowledgePage, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
+import { ApiError, deleteKnowledgePage, loadKnowledgeGraph, loadKnowledgePage, proposeForWiki } from '../lib/api.ts';
 import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import {
   advanceOrbit,
@@ -17,7 +17,6 @@ import {
   hubGlow,
   isSettled,
   makeStars,
-  matchesFilter,
   neighbours,
   nodeAt,
   pulseProgress,
@@ -36,6 +35,8 @@ import {
   wheelFactor,
   withAlpha,
   zoomAt,
+  isWikiNode,
+  matchesView,
   type GraphData,
   type KnowledgePage,
   type Pulse,
@@ -118,6 +119,8 @@ const graph = shallowRef<GraphData | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const filter = ref('');
+/** «Solo Wiki» (D-280): only the pages of the Wiki stand out. */
+const onlyWiki = ref(false);
 const selected = ref(-1);
 const hovered = ref(-1);
 const page = ref<KnowledgePage | null>(null);
@@ -221,6 +224,7 @@ const SCENE = {
   accent: '#3ee8ff',
   violet: '#a879ff',
   folders: ['#3ee8ff', '#5cffb1', '#a879ff', '#ffb547', '#5b9dff', '#ff6bcb'],
+  wiki: '#ffe066',
 } as const;
 
 interface Palette {
@@ -234,6 +238,8 @@ interface Palette {
   accent: string;
   violet: string;
   folders: readonly string[];
+  /** The pages of the Wiki (D-280). */
+  wiki: string;
   /** A soft glow per colour, drawn as an image: cheaper than a gradient per node. */
   glows: Map<string, HTMLCanvasElement>;
 }
@@ -242,8 +248,10 @@ let palette: Palette | null = null;
 const nodes = computed(() => graph.value?.nodes ?? []);
 const pageIds = computed(() => nodes.value.filter((node) => node.kind !== 'tag').map((node) => node.id));
 const slots = computed(() => folderSlots(nodes.value.map((node) => node.folder)));
-const matches = computed(() => nodes.value.map((node) => matchesFilter(node, filter.value)));
+const matches = computed(() => nodes.value.map((node) => matchesView(node, filter.value, wikiOnly.value)));
 const filtering = computed(() => filter.value.trim() !== '');
+/** «Solo Wiki» only among the notes: Arianna's documents have no Wiki. */
+const wikiOnly = computed(() => onlyWiki.value && source.value === 'kb');
 const results = computed(() => (filtering.value ? nodes.value.map((node, index) => ({ node, index })).filter(({ index }) => matches.value[index]).slice(0, 8) : []));
 const counts = computed(() => ({
   notes: pageIds.value.length,
@@ -260,15 +268,37 @@ const selectedNeighbours = computed(() => [...(adjacency[selected.value] ?? [])]
 
 
 function folderVar(folder: string): string {
+  if (wikiFolder(folder)) return 'var(--graph-wiki)';
   const slot = slots.value.get(folder);
   return slot === undefined ? 'var(--muted)' : `var(--graph-${String(slot + 1)})`;
+}
+
+/** The folder of the Wiki among the notes (not among Arianna's documents). */
+function wikiFolder(folder: string): boolean {
+  return source.value === 'kb' && folder === 'wiki';
+}
+
+/** A node drawn as a page of the Wiki: a diamond in its own colour (D-280). */
+function wikiAt(index: number): boolean {
+  const node = nodes.value[index];
+  return source.value === 'kb' && node !== undefined && isWikiNode(node);
 }
 
 function colorOf(index: number): string {
   const node = nodes.value[index];
   if (palette === null || node === undefined) return '#888888';
   if (node.kind === 'tag') return palette.tag;
+  if (wikiAt(index)) return palette.wiki;
   return palette.folders[slots.value.get(node.folder) ?? 0] ?? palette.accent;
+}
+
+/** A diamond path centred on (x, y): the shape of the pages of the Wiki. */
+function diamond(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r, y);
+  ctx.lineTo(x, y + r);
+  ctx.lineTo(x - r, y);
+  ctx.closePath();
 }
 
 function glowSprite(color: string, dark: boolean): HTMLCanvasElement {
@@ -297,10 +327,10 @@ function buildPalette(): void {
     const v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
     const folders = ['#1f8a7d', '#3f8a56', '#3a6cb0', '#b07612', '#8a52c4', '#c0447a'].map((fallback, i) => v(`--graph-${String(i + 1)}`, fallback));
     const muted = v('--muted', '#687673');
-    base = { dark: false, bg: v('--bg', '#f5f4f0'), surface: v('--surface', '#fbfaf7'), ink: v('--ink', '#24302e'), muted, tag: muted, accent: v('--accent', '#23887c'), violet: folders[4] ?? '#8a52c4', folders };
+    base = { dark: false, bg: v('--bg', '#f5f4f0'), surface: v('--surface', '#fbfaf7'), ink: v('--ink', '#24302e'), muted, tag: muted, accent: v('--accent', '#23887c'), violet: folders[4] ?? '#8a52c4', folders, wiki: v('--graph-wiki', '#9a7612') };
   }
   const glows = new Map<string, HTMLCanvasElement>();
-  for (const color of [...base.folders, base.tag, base.accent]) glows.set(color, glowSprite(color, base.dark));
+  for (const color of [...base.folders, base.tag, base.accent, base.wiki]) glows.set(color, glowSprite(color, base.dark));
   palette = { ...base, glows };
   requestFrame();
 }
@@ -683,7 +713,7 @@ function draw(now: number): void {
 
   const focus = hovered.value >= 0 ? hovered.value : selected.value;
   const lit = focus >= 0 ? new Set([focus, ...(adjacency[focus] ?? [])]) : null;
-  const showFilter = filtering.value;
+  const showFilter = filtering.value || wikiOnly.value;
   const visible = (i: number): boolean => (lit === null || lit.has(i)) && (!showFilter || matches.value[i] === true);
   const simNodes = sim.nodes;
   const X = (i: number): number => px[i] ?? 0;
@@ -818,6 +848,15 @@ function draw(now: number): void {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.4 * pixel;
       ctx.stroke();
+    } else if (wikiAt(i)) {
+      // A diamond for the pages of the Wiki (D-280).
+      diamond(ctx, x, y, node.r * 1.25);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.beginPath();
+      diamond(ctx, x, y, node.r * 0.5);
+      ctx.fillStyle = withAlpha(colors.dark ? '#ffffff' : colors.bg, colors.dark ? 0.6 : 0.7);
+      ctx.fill();
     } else {
       ctx.arc(x, y, node.r, 0, Math.PI * 2);
       ctx.fillStyle = color;
@@ -933,7 +972,7 @@ function draw3d(now: number): void {
 
   const focus = hovered.value >= 0 ? hovered.value : selected.value;
   const lit = focus >= 0 ? new Set([focus, ...(adjacency[focus] ?? [])]) : null;
-  const showFilter = filtering.value;
+  const showFilter = filtering.value || wikiOnly.value;
   const visible = (i: number): boolean => (lit === null || lit.has(i)) && (!showFilter || matches.value[i] === true);
 
   // Edges by depth band: the far ones dim, the near ones bright.
@@ -1062,6 +1101,10 @@ function draw3d(now: number): void {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.2;
       ctx.stroke();
+    } else if (wikiAt(i)) {
+      diamond(ctx, x, y, Math.max(1.1, r * 1.25));
+      ctx.fillStyle = color;
+      ctx.fill();
     } else {
       ctx.arc(x, y, Math.max(0.9, r), 0, Math.PI * 2);
       ctx.fillStyle = color;
@@ -1385,6 +1428,23 @@ function focusOn(index: number): void {
   glideTo(centerOn(width - panel, height, at.x, at.y, Math.max(view.k, 1.4)));
 }
 
+/** «Proponi per la Wiki» (D-280): what the local model proposes from this note, per node. */
+const wikiNotice = ref<{ id: string; text: string } | null>(null);
+const wikiSending = ref(false);
+
+async function proposeWiki(id: string): Promise<void> {
+  if (wikiSending.value) return;
+  wikiSending.value = true;
+  try {
+    await proposeForWiki(id);
+    wikiNotice.value = { id, text: 'Proposta in preparazione: la trovi nella Wiki, scheda Proposte.' };
+  } catch (failure) {
+    wikiNotice.value = { id, text: failure instanceof ApiError && failure.status === 503 ? 'La Wiki non può proporre adesso: riprova fra poco.' : 'Non ho chiesto la proposta: riprova.' };
+  } finally {
+    wikiSending.value = false;
+  }
+}
+
 /** "Elimina" confirmed: the file of the page goes for good, the graph is read again. */
 async function removePage(id: string): Promise<void> {
   if (removingPage.value) return;
@@ -1525,7 +1585,7 @@ watch(
   },
 );
 
-watch([filter, selected], () => wake());
+watch([filter, selected, onlyWiki], () => wake());
 
 function typing(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
@@ -1749,6 +1809,11 @@ onBeforeUnmount(() => {
             @keydown.enter.prevent="chooseResult"
           />
         </label>
+        <label v-if="source === 'kb'" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
+          <input v-model="onlyWiki" type="checkbox" class="accent-[var(--graph-wiki)]" />
+          <span class="inline-block size-2 rotate-45" :style="{ background: 'var(--graph-wiki)' }" />
+          Solo Wiki
+        </label>
         <ul v-if="filtering" class="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
           <li v-for="{ node, index } in results" :key="node.id">
             <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(index)">
@@ -1773,6 +1838,7 @@ onBeforeUnmount(() => {
             v-if="item.folder === '#'"
             class="inline-block size-2.5 rotate-45 border border-muted"
           />
+          <span v-else-if="wikiFolder(item.folder)" class="inline-block size-2.5 rotate-45" :style="{ background: folderVar(item.folder), boxShadow: `0 0 8px ${folderVar(item.folder)}` }" />
           <span v-else class="inline-block size-2.5 rounded-full" :style="{ background: folderVar(item.folder), boxShadow: `0 0 8px ${folderVar(item.folder)}` }" />
           <button type="button" class="hover:text-accent" :title="`Filtra: ${folderName(item.folder)}`" @click="filter = item.folder === '#' ? 'tag:' : item.folder === '' ? '' : `${item.folder}/`">
             {{ folderName(item.folder) }} <span class="text-muted">{{ item.count }}</span>
@@ -1843,9 +1909,22 @@ onBeforeUnmount(() => {
               deletePageError = null;
             "
           />
-          <button v-else type="button" class="btn mt-3 px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
-            <Icon name="delete" :size="14" />Elimina
-          </button>
+          <div v-else class="mt-3 flex flex-wrap gap-2">
+            <button
+              v-if="!isWikiNode(selectedNode)"
+              type="button"
+              class="btn px-2.5 py-1 text-xs"
+              :disabled="wikiSending"
+              title="Il modello locale propone cosa aggiungere alla Wiki da questa nota; la pagina cambia solo se approvi"
+              @click="proposeWiki(selectedNode.id)"
+            >
+              <Icon name="wiki" :size="14" />Proponi per la Wiki
+            </button>
+            <button type="button" class="btn px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
+              <Icon name="delete" :size="14" />Elimina
+            </button>
+          </div>
+          <p v-if="wikiNotice !== null && wikiNotice.id === selectedNode.id" class="mt-2 text-xs" role="status">{{ wikiNotice.text }}</p>
         </template>
         <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la pagina…</p>
         <p v-else-if="pageError !== null" class="mt-3 text-sm text-danger">{{ pageError }}</p>
@@ -1961,6 +2040,7 @@ onBeforeUnmount(() => {
   --graph-4: #ffb547;
   --graph-5: #5b9dff;
   --graph-6: #ff6bcb;
+  --graph-wiki: #ffe066;
   color-scheme: dark;
   background: var(--bg);
   color: var(--ink);

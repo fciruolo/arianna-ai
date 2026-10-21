@@ -76,6 +76,8 @@
   --graph-4: #f2b34b;
   --graph-5: #c08bf0;
   --graph-6: #f07fa8;
+  /* The pages of the Wiki in the graph (D-280): a colour of their own. */
+  --graph-wiki: #f5d76e;
   /* The two colours of the decorations of a theme (D-103): ornaments, under the content. */
   --deco-a: #4fd1c1;
   --deco-b: #93aeaa;
@@ -121,6 +123,7 @@
     --graph-4: #b07612;
     --graph-5: #8a52c4;
     --graph-6: #c0447a;
+    --graph-wiki: #9a7612;
     --deco-a: #23887c;
     --deco-b: #56635f;
     --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;
@@ -160,6 +163,7 @@
   --graph-4: #b07612;
   --graph-5: #8a52c4;
   --graph-6: #c0447a;
+  --graph-wiki: #9a7612;
   --deco-a: #23887c;
   --deco-b: #56635f;
   --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;

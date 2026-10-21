@@ -468,6 +468,16 @@ export function matchesFilter(node: Pick<GraphNodeData, 'id' | 'title' | 'tags'>
   return words.every((word) => haystack.includes(word));
 }
 
+/** A page of the Wiki (D-280): its own colour and shape in the graph, and the filter «Solo Wiki». */
+export function isWikiNode(node: Pick<GraphNodeData, 'id' | 'kind'>): boolean {
+  return node.kind !== 'tag' && node.id.toLowerCase().startsWith('wiki/');
+}
+
+/** Whether a node is shown with the filter and «Solo Wiki» (when `onlyWiki`). */
+export function matchesView(node: Pick<GraphNodeData, 'id' | 'title' | 'tags' | 'kind'>, query: string, onlyWiki: boolean): boolean {
+  return (!onlyWiki || isWikiNode(node)) && matchesFilter(node, query);
+}
+
 /** Lowercase, `.md` added, `kb/` dropped: as the core resolves links. */
 function linkKey(target: string): string {
   let key = target.trim().replace(/^\.\//, '').replace(/^\/+/, '');

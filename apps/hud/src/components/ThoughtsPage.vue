@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, deleteNote, fetchNoteLink, listNotes, loadArchive, loadNote, loadNoteVideo, organizeNote, summarizeNoteVideo } from '../lib/api.ts';
+import { captureNote, deleteNote, fetchNoteLink, listNotes, loadArchive, loadNote, loadNoteVideo, organizeNote, proposeForWiki, summarizeNoteVideo } from '../lib/api.ts';
 import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
@@ -385,6 +385,24 @@ async function approveVideo(): Promise<void> {
   }
 }
 
+const wikiSending = ref(false);
+
+/** «Proponi per la Wiki» (D-280): the local model prepares a proposal from this thought, in the background. */
+async function proposeWiki(): Promise<void> {
+  const current = note.value;
+  if (current === null || wikiSending.value || current.status !== 'organized') return;
+  wikiSending.value = true;
+  panelNotice.value = null;
+  try {
+    await proposeForWiki(`inbox/${current.name}`);
+    panelNotice.value = 'Proposta in preparazione: la trovi nella Wiki, scheda Proposte.';
+  } catch (cause) {
+    panelNotice.value = errorText(cause);
+  } finally {
+    wikiSending.value = false;
+  }
+}
+
 /** A thought approved or discarded in "Da archiviare": the list again; a thought moved out of the inbox leaves the panel. */
 async function afterArchive(): Promise<void> {
   await refresh();
@@ -646,6 +664,16 @@ onBeforeUnmount(() => {
         </button>
         <button v-if="selected !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('openGraph', graphId(selected.path))">
           <Icon name="knowledge" :size="14" />Apri nel grafo
+        </button>
+        <button
+          v-if="note !== null && note.name === selectedName && note.status === 'organized'"
+          type="button"
+          class="btn px-2.5 py-1 text-xs"
+          :disabled="wikiSending"
+          title="Il modello locale propone cosa aggiungere alla Wiki da questo pensiero; la pagina cambia solo se approvi"
+          @click="proposeWiki"
+        >
+          <Icon name="wiki" :size="14" />Proponi per la Wiki
         </button>
         <button
           v-if="selected !== undefined"

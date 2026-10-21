@@ -1,6 +1,7 @@
 import type { Component } from 'vue';
 import {
   Archive,
+  BookOpen,
   ArchiveRestore,
   ArrowDownUp,
   ArrowUp,
@@ -151,6 +152,8 @@ export const ICONS = {
   copy: Copy,
   inbox: Inbox,
   knowledge: BrainCircuit,
+  // The Wiki (D-280): pages compiled from the notes by the local model.
+  wiki: BookOpen,
   office: Building2,
   thoughts: Lightbulb,
   routine: Repeat,
