@@ -60,7 +60,8 @@ export async function gateResource(input: ResourceGateInput): Promise<ResourceRe
   if (checked.body !== undefined && body === undefined) return { ok: false, reason: 'unreadable-body' };
 
   const of = typeof input.consent === 'string' ? input.consent : input.consent.from;
-  const onSession = input.session !== undefined && onSite(url.hostname, input.session);
+  // Only https for the site of the access: its cookies never travel in clear.
+  const onSession = input.session !== undefined && url.protocol === 'https:' && onSite(url.hostname, input.session);
   const target: Target =
     onSession && input.session !== undefined ? { kind: 'web', session: { site: input.session, type: request.type, method: checked.method } } : { kind: 'web', resource: { of, type: request.type, method: checked.method } };
   // The label of the session, never above it, as for a page; L2 once the browser has an access (D-276).

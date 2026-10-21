@@ -394,11 +394,12 @@ export class AgentBrowser {
     if (held !== null && held.conversationId === scope.conversationId) {
       held.scope = scope;
       held.session.network?.rescope(networkScope(scope, 'agent'));
-      held.lastAction = this.#now();
       // An access made by the user: its pages are Private, never read here (rule 9); closing is allowed.
+      // A refused action does not keep the browser alive.
       if (held.session.network?.authenticated() != null) return { ok: false, reason: 'authenticated' };
       // Given back by the user: the page is read again before anything else.
       if (held.reread && action.kind !== 'read') return { ok: false, reason: 'reread' };
+      held.lastAction = this.#now();
       if (action.kind === 'read') held.reread = false;
       return this.#bounded(held, this.#run(held, scope, action));
     }

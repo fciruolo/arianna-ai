@@ -537,25 +537,41 @@ describe('attachNetwork: forms and cookies of the user', () => {
     assert.equal(net.handle.authenticated(), 'banca-finta.it');
   });
 
-  it('the cookies of the navigations of the user wait for a form to their site; never those of Arianna; given back, they go', async () => {
-    const answers = new Map<string, string[]>([['https://banca-finta.it/accedi', ['csrf=t1; Path=/']], ['https://news-finte.it/', ['track=1']]]);
+  it('the cookies of the main pages wait for a form of the user to their site, never sent before; given back without a form, they go', async () => {
+    const answers = new Map<string, string[]>([['https://banca-finta.it/accedi', ['csrf=t1; Path=/']], ['https://news-finte.it/', ['track=1']], ['https://posta-finta.it/accedi', ['csrf=p1; Path=/']]]);
     const net = await harness({ answer: (input) => html(answers.get(input.url)) });
-    // Arianna drives: the cookie of the page is dropped.
+    // Arianna reads the page of the access: its cookie waits (a CSRF token), never sent by her.
     await net.send({ url: 'https://banca-finta.it/accedi', main: true });
+    await net.send({ url: 'https://banca-finta.it/accedi', main: true });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'agent' });
     asUser(net);
     await net.send({ url: 'https://news-finte.it/', main: true });
     // Never sent while they wait.
     await net.send({ url: 'https://news-finte.it/', main: true });
     assert.equal(net.fetched.at(-1)?.cookie, undefined);
-    // Given back and taken again: what waited is gone.
-    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'agent' });
-    asUser(net);
-    await net.send({ url: 'https://banca-finta.it/accedi', main: true });
-    assert.equal(net.fetched.at(-1)?.cookie, undefined);
+    // The form of the user carries the cookie of its site only, also the one of the page Arianna read.
     await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
-    // The form carries the cookie of its site only.
     assert.equal(net.fetched.at(-1)?.cookie, 'csrf=t1');
     assert.equal(net.handle.authenticated(), 'banca-finta.it');
+  });
+
+  it('a form of the user over http never leaves: no access, nothing fetched', async () => {
+    const net = await harness({ answer: () => html(['sid=1']) });
+    asUser(net);
+    await net.send({ url: 'http://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'http://banca-finta.it/accedi' });
+    assert.deepEqual(net.fetched, []);
+    assert.equal(net.handle.authenticated(), null);
+  });
+
+  it('given back without a form, the cookies that waited go', async () => {
+    const net = await harness({ answer: (input) => html(input.url === 'https://banca-finta.it/accedi' ? ['csrf=t1; Path=/'] : undefined) });
+    asUser(net);
+    await net.send({ url: 'https://banca-finta.it/accedi', main: true });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'agent' });
+    asUser(net);
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
   });
 
   it('closing the network forgets the access and its cookies', async () => {

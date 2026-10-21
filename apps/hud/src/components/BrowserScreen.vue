@@ -4,7 +4,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { ApiError, browserStatus, closeBrowser, openBrowserScreen, returnBrowserControl, takeBrowserControl } from '../lib/api.ts';
 import { keysymsOf, SPECIAL_KEYS } from '../lib/browser-keys.ts';
-import { accessText, blockedText, canRetry, CONTROL_PASSED, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
+import { accessText, accessWarning, blockedText, canRetry, CONTROL_PASSED, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
 import { errorText } from '../lib/italian.ts';
 import { browserPathFor } from '../lib/route.ts';
 import Icon from './Icon.vue';
@@ -289,8 +289,8 @@ onBeforeUnmount(() => {
       <span v-if="controlProblem !== null" class="text-[12px] text-warn">{{ controlProblem }}</span>
     </div>
     <div v-if="control === 'you'" class="rounded-lg border border-warn px-3 py-1.5 text-[13px] text-warn" role="status">
-      <p class="font-medium">{{ CONTROL_WARNING }}</p>
-      <p class="text-[12.5px]">{{ FORM_NOTE }}</p>
+      <p class="font-medium">{{ access === null ? CONTROL_WARNING : accessWarning(access) }}</p>
+      <p v-if="access === null" class="text-[12.5px]">{{ FORM_NOTE }}</p>
     </div>
     <p v-if="access !== null" class="text-[12.5px] text-muted" role="status">{{ accessText(access) }}</p>
     <p v-if="notice !== null" class="text-[12.5px] text-muted" role="status">{{ notice }}</p>

@@ -105,6 +105,8 @@ test('form: never to another site, never with its content, never from a Private 
   assert.equal(ruleOf([piece('https://banca-finta.it/session')], PRIVATE, FORM), 'contaminated');
   assert.equal(ruleOf([piece('https://banca-finta.it/session')], FINANCE, FORM), 'finance');
   assert.equal(ruleOf([piece('https://banca-finta.it/session', 'L3')], INTERNAL, FORM), 'secret');
+  const secrets = secretMatcher([{ ref: 'vault://banca', value: 'fake-form-canary-9c4d' }]);
+  assert.equal(ruleOf([piece('https://banca-finta.it/session?t=fake%2Dform%2Dcanary%2D9c4d')], INTERNAL, FORM, secrets), 'secret');
   assert.equal(ruleOf([piece('https://banca-finta.it/session?c=4111111111111111')], INTERNAL, FORM), 'scanner');
   for (const bytes of [-1, 1.5, MAX_FORM_BODY + 1]) assert.equal(isTarget({ kind: 'web', form: { site: 'banca-finta.it', bytes } }), false, String(bytes));
   assert.equal(isTarget({ kind: 'web', form: { site: 'banca-finta.it', bytes: MAX_FORM_BODY } }), true);

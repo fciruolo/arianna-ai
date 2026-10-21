@@ -353,14 +353,15 @@ const RETURNED_HOW = {
  * The line given back after an access made by the user (D-276): Arianna does
  * not read the pages again (they are Private), so it never says she does.
  */
-export function accessReturnedLine(reason: keyof typeof RETURNED_HOW, site: string): string {
-  return `${RETURNED_HOW[reason]} C’è un accesso fatto da te su ${site}: le sue pagine sono Private e in questa conversazione Arianna non le legge. Continui tu dallo schermo con «Prendi il controllo», oppure «Chiudi» il browser per ripartire senza accesso.`;
+export function accessReturnedLine(reason: keyof typeof RETURNED_HOW): string {
+  // Never the site: the model reads this line, and which site the user signs in to says something of the user.
+  return `${RETURNED_HOW[reason]} Nel browser c’è un accesso fatto da te: le sue pagine sono Private e in questa conversazione Arianna non le legge. Continui tu dallo schermo con «Prendi il controllo», oppure «Chiudi» il browser per ripartire senza accesso.`;
 }
 
 /**
  * The line of a change of the control; none when the browser itself closed
  * (its own lines say so). `access`: the site of an access made by the user,
- * if the browser has one.
+ * if the browser has one (only whether there is one reaches the line).
  */
 export async function writeControlLine(
   sql: Queryable,
@@ -373,7 +374,7 @@ export async function writeControlLine(
     return;
   }
   if (change.reason === 'browser-closed') return;
-  await writeBrowserLine(sql, conversationId, access === null ? CONTROL_TEXT[change.reason] : accessReturnedLine(change.reason, access));
+  await writeBrowserLine(sql, conversationId, access === null ? CONTROL_TEXT[change.reason] : accessReturnedLine(change.reason));
 }
 
 /** The line in the conversation whose browser another one took (D-264, «Lo prende se fermo da 2 minuti»): without a task, so the model reads it too. */

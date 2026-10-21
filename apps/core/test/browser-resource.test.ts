@@ -404,17 +404,17 @@ describe('gateResource', () => {
     assert.deepEqual(seen, []);
   });
 
-  it('after an access (D-276): a request of its site goes as session with the cookie; another site carries L2 and never its cookie', async () => {
+  it('after an access (D-276): a request of its site over http, or of another site, carries L2 and never its cookie (https as session: browser-network tests)', async () => {
     const rows: unknown[][] = [];
     routes.set('/pixel.gif', (_request, response) => { response.writeHead(200, { 'content-type': 'image/gif' }).end('GIF'); });
-    const onSite = await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', session: 'site.example.org', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
-    assert.equal(onSite.ok, true);
-    assert.equal(first(seen).headers.cookie, 'sid=1');
-    assert.equal(rows.at(-1)?.[3], 'web-session');
+    // The site of the access, but in clear: never as session, so refused.
+    const clear = await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', session: 'site.example.org', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
+    assert.deepEqual(clear, { ok: false, reason: 'blocked' });
+    assert.equal(rows.at(-1)?.[3], 'web-resource-user');
     assert.equal(rows.at(-1)?.[5], 'L2');
     const other = await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', session: 'banca-finta.it', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });
     assert.deepEqual(other, { ok: false, reason: 'blocked' });
-    assert.equal(seen.length, 1);
+    assert.equal(seen.length, 0);
     assert.equal(rows.at(-1)?.[7], 'cloud-label');
     // Without an access the cookie never goes, even when a caller set it.
     await gateResource({ sql: fakeSql(rows), context: createContext('L1', 'L1'), consent: 'user', request: { ...get(at('/pixel.gif')), cookie: 'sid=1' }, network: network() });

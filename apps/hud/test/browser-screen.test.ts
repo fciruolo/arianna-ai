@@ -206,7 +206,7 @@ describe('«Prendi il controllo» (D-264, passo 5)', () => {
 
 describe('the access made by the user (D-276)', () => {
   it('the status carries the site of the access; the refused pages say that only that site opens', async () => {
-    const { accessText, blockedText, FORM_NOTE, parseControl } = await import('../src/lib/browser-screen.ts');
+    const { accessText, accessWarning, blockedText, FORM_NOTE, parseControl } = await import('../src/lib/browser-screen.ts');
     assert.equal(parseControl({ control: 'you', access: 'banca-finta.it' }).access, 'banca-finta.it');
     assert.equal(parseControl({ control: 'you', access: 3 }).access, null);
     assert.match(blockedText({ outcome: 'blocked' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
@@ -214,6 +214,8 @@ describe('the access made by the user (D-276)', () => {
     assert.match(blockedText({ outcome: 'blocked' }, null), /scrivilo in chat/);
     assert.match(accessText('banca-finta.it'), /Private/);
     assert.match(FORM_NOTE, /Unica eccezione/);
+    assert.match(accessWarning('banca-finta.it'), /solo a banca-finta\.it/);
+    assert.doesNotMatch(accessWarning('banca-finta.it'), /pubblica/);
     assert.match(FORM_NOTE, /solo verso quel sito/);
   });
 });

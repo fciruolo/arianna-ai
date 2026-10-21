@@ -77,7 +77,8 @@ import { gateResource } from './resource-gate.ts';
  *   gateway as `form`: its address and its size, never its content, which
  *   leaves as the user wrote it; a form to another site, or with Arianna
  *   driving, stays refused (`form`);
- * - the Set-Cookie lines of the answers to the navigations of the user wait
+ * - the Set-Cookie lines of the answers to the main pages (of the user, or
+ *   of Arianna before: the page of the access is often one she read) wait
  *   in memory, by site, never sent: the first form of the user to a site
  *   makes them the cookie jar of that site (so a login that set its cookie
  *   with the page of the form works). Given back without a form, they go.
@@ -465,7 +466,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       return;
     }
     const site = siteOf(url.href);
-    if (!main || scope.driver !== 'user' || site === undefined) return;
+    // Arianna's navigations too: the page of the access is often the one she read (a CSRF cookie); never sent before a form of the user.
+    if (!main || site === undefined) return;
     let jar = pending.get(site);
     if (jar === undefined) {
       if (pending.size >= MAX_PENDING_SITES) pending.delete(pending.keys().next().value ?? '');
@@ -485,7 +487,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     if (request.body !== undefined) return { ok: false, reason: 'blocked' };
     // After an access (D-276): the site of the access as `session`, with its cookies; any other carries L2 and is refused.
     const jar = session;
-    const onAccess = jar !== null && onSite(url.hostname, jar.site);
+    // Only https: the cookies of the access never travel in clear (D-276).
+    const onAccess = jar !== null && url.protocol === 'https:' && onSite(url.hostname, jar.site);
     const method = request.method.toUpperCase() === 'POST' ? 'POST' : 'GET';
     const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
     let allowed: string | undefined;
@@ -516,6 +519,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const formHop = async (request: ResourceInput, site: string): Promise<ResourceResult> => {
     const url = resourceUrl(request.url, network);
     if (typeof url === 'string') return { ok: false, reason: url };
+    // A form of the user leaves only over https: what the user wrote never travels in clear (D-276).
+    if (url.protocol !== 'https:') return { ok: false, reason: 'blocked' };
     const bytes = request.body?.length ?? 0;
     if (bytes > MAX_FORM_BODY) return { ok: false, reason: 'body-too-large' };
     let allowed: string | undefined;
@@ -746,9 +751,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   return {
     budget,
     rescope(next) {
+      const before = scope.driver;
       scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }), ...(next.driver === undefined ? {} : { driver: next.driver }) };
       // Given back without a form: the cookies that waited for one go (D-276).
-      if (next.driver !== 'user') pending.clear();
+      if (before === 'user' && next.driver !== 'user') pending.clear();
     },
     authenticated: () => session?.site ?? null,
     counts: () => structuredClone(counts),

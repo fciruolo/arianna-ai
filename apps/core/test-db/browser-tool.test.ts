@@ -292,9 +292,10 @@ test('writeControlLine after an access (D-276): the line given back never says A
   const conversationId = await workConversation();
   await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'user' }, 'banca-finta.it');
   const rows = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${conversationId}`;
-  assert.deepEqual(rows.map((row) => row.body), [accessReturnedLine('user', 'banca-finta.it')]);
+  assert.deepEqual(rows.map((row) => row.body), [accessReturnedLine('user')]);
   assert.doesNotMatch(rows[0]?.body ?? '', /rilegge/);
   assert.match(rows[0]?.body ?? '', /Private/);
+  assert.doesNotMatch(rows[0]?.body ?? '', /banca-finta/);
 });
 
 test('writeLoginLine (D-276): one system line per site in ten minutes, read by the model too', async () => {

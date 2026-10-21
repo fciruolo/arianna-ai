@@ -138,6 +138,10 @@ export interface BlockedNavigation {
 
 /** The fixed warning above the screen while the user drives. */
 export const CONTROL_WARNING = 'Non scrivere dati personali: la pagina è pubblica e il sito li riceve.';
+/** The fixed warning while the user drives after an access (D-276): the pages are no longer public. */
+export function accessWarning(site: string): string {
+  return `Sei dentro ${site} con il tuo accesso: quello che scrivi va solo a ${site}, mai ad altri siti, e Arianna non lo legge.`;
+}
 export const CONTROL_PASSED = 'Il controllo è passato a un altro schermo.';
 /** How often a live screen asks the core who drives and what was refused. */
 export const CONTROL_POLL_MS = 2_500;
