@@ -89,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -110,11 +110,13 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
     onEvent: (event) => events.push(event),
     fetchResource: (input) => {
       fetched.push(input);
-      return Promise.resolve(answer(input));
+      // A download that never ends (seen in the trial of D-281): only the deadline of the request answers it.
+      return options.hang === true ? new Promise(() => undefined) : Promise.resolve(answer(input));
     },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.debug === undefined ? {} : { debug: options.debug }),
     headersTimeoutMs: 50,
+    hopTimeoutMs: 100,
     unsafeTestAddresses: [],
   };
   const handle = await attachNetwork(context, job);
@@ -595,6 +597,17 @@ describe('attachNetwork: requests are always answered', () => {
     const sent = await net.send({ url: 'https://example.net/fonts/a.woff2', type: 'font', hangHeaders: true, headers: { accept: '*/*' } });
     assert.ok(sent.fulfilled);
     assert.equal(net.fetched.length, 1);
+  });
+
+  it('a download that never ends: the page and the resource are refused at the deadline, with a timeout', async () => {
+    const net = await harness({ hang: true });
+    const page = await net.send({ url: 'https://example.net/login', main: true });
+    assert.equal(page.aborted, 'timedout');
+    assert.equal(net.handle.lastNavigation()?.outcome, 'failed');
+    assert.equal(net.handle.lastNavigation()?.reason, 'timeout');
+    const image = await net.send({ url: 'https://example.net/a.png' });
+    assert.equal(image.aborted, 'timedout');
+    assert.deepEqual(net.handle.counts(), { page: { failed: 1 }, image: { failed: 1 } });
   });
 });
 

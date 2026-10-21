@@ -1,4 +1,6 @@
 import { MAX_FORM_BODY, spendAllowed, type Context, type Label, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { BrowserContext, Frame, Page, Request, Route } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
@@ -219,7 +221,17 @@ export interface NetworkJob {
   debug?: (line: string) => void;
   /** Tests: how long `allHeaders` of Playwright is waited for (HEADERS_MS). */
   headersTimeoutMs?: number;
+  /** Tests: how long the gateway and the download of one request may take in all (HOP_MS). */
+  hopTimeoutMs?: number;
 }
+
+/**
+ * How long the gateway and the download of one request (its redirects
+ * included) may take in all: past it the request is refused with a timeout,
+ * so that no request of the browser stays unanswered and holds its page
+ * (seen in the trial of D-281: a main page waited for minutes, the screen white).
+ */
+export const HOP_MS = 40_000;
 
 /**
  * How long the extra headers of a request (`allHeaders`, which waits for an
@@ -389,6 +401,20 @@ function headerOf(headers: Record<string, string>, name: string): string | undef
   return undefined;
 }
 
+/** `work`, or 'late' past `ms` (the work goes on unseen: its answer is dropped). */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | 'late'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => { resolve('late'); }, ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+    work.catch(() => undefined);
+  }
+}
+
 /** The headers of a request: all of them when Chromium says them within `ms`, else those Playwright already has. */
 async function boundedHeaders(request: Request, ms: number): Promise<Record<string, string>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -468,8 +494,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const inFlight = new Set<Promise<void>>();
   const interrupted: ResourceResult = { ok: false, reason: 'interrupted' };
   /** The network part, never once the job is closing. */
-  const fetchOne = (input: ResourceInput, options: ResourceOptions, signal?: AbortSignal): Promise<ResourceResult> =>
-    closed ? Promise.resolve(interrupted) : download(input, options, signal ?? stopping.signal);
+  const fetchOne = (input: ResourceInput, options: ResourceOptions, signal?: AbortSignal): Promise<ResourceResult> => {
+    mark(`download:${input.type}`);
+    return closed ? Promise.resolve(interrupted) : download(input, options, signal ?? stopping.signal);
+  };
 
   const emit = (event: NewEvent): void => {
     try {
@@ -543,6 +571,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
     let allowed: string | undefined;
     try {
+      mark('gateway:page');
       const decision = await passGateway(job.sql, [{ value: url.href, label: requestLabel(), source: 'web:page' }], scope.context, target, scope.meta);
       if (decision.decision === 'allow') {
         const spent = spendAllowed(decision);
@@ -624,6 +653,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     } catch {
       cookie = undefined;
     }
+    mark('gateway:resource');
     const result = await gateResource({
       sql: job.sql,
       context: scope.context,
@@ -664,6 +694,13 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
 
   /** Requests under way and the stage each waits at (diagnostics, `debug`). */
   const stages = new Map<number, string>();
+  /** The request a piece of the handler works for, for `mark`. */
+  const working = new AsyncLocalStorage<number>();
+  /** The stage of the request under way here (diagnostics only). */
+  const mark = (name: string): void => {
+    const seq = working.getStore();
+    if (job.debug !== undefined && seq !== undefined && stages.has(seq)) stages.set(seq, name);
+  };
   let requestSeq = 0;
   let debugTimer: ReturnType<typeof setInterval> | undefined;
   if (job.debug !== undefined) {
@@ -761,9 +798,16 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const input: ResourceInput = { url, method, headers, type, ...(body === null ? {} : { body }) };
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
     const site = formSite;
-    const { result, final, tooMany, limited } = frame.main
-      ? await follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
-      : await follow(input, before, (next) => resourceHop(next, frame.navigation));
+    const hops = frame.main
+      ? follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
+      : follow(input, before, (next) => resourceHop(next, frame.navigation));
+    const decided = await withDeadline(hops, job.hopTimeoutMs ?? HOP_MS);
+    if (decided === 'late') {
+      if (frame.main) navigated('failed', undefined, 'timeout');
+      await abort('failed', 'timeout');
+      return;
+    }
+    const { result, final, tooMany, limited } = decided;
     if (isClosed()) {
       await abort('refused', 'interrupted');
       return;
@@ -820,7 +864,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const tracked = (route: Route): Promise<void> => {
     requestSeq += 1;
     const seq = requestSeq;
-    const run = handler(route, seq)
+    const run = working
+      .run(seq, () => handler(route, seq))
       .catch(async () => {
         await route.abort('failed').catch(() => undefined);
       })
