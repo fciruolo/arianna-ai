@@ -16,6 +16,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Le pagine scritte a mano nella Wiki accettano solo citazioni alle tue note e pagine fino a Privata, senza link, immagini, indirizzi né HTML (D-280).
 - `kb/wiki` è sempre almeno L2 nella policy anche con una regola più bassa, resta fuori da git, è negata a `pnpm dev:codex` e non è mai una cartella dell'Archivista (D-280).
 
+## [0.159.1] - 2026-10-21
+
+### Corretto
+
+- Un link di YouTube incollato in Pensieri non prende più il titolo di un altro video (D-273): il video non è scaricato, quindi il riordino non dà al modello le note vicine e, se c'è solo il link, titolo («Video YouTube <id>») e riassunto li scrive il codice, anche per un link incollato come pensiero; con parole tue il modello sa che del video non conosce nulla.
+
 ## [0.159.0] - 2026-10-21
 
 ### Aggiunto
