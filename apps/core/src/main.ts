@@ -125,7 +125,8 @@ import { createRinger } from './voice/ringer.ts';
 import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
-import { fileSize, trialModels } from './voice/trial.ts';
+import { fileSize, filesPresent, trialModels } from './voice/trial.ts';
+import { createVideoWorker, findTool, voiceRunner } from './video-job.ts';
 import { trialRefusal } from './orchestrator/trial-chat.ts';
 import { CLOUD_WORKER_NAMES } from './work-diary.ts';
 import { closeRefusedDirectWaits } from './orchestrator/gateway-refusal.ts';
@@ -864,6 +865,33 @@ const organizer = createNoteOrganizer({
   fetchSites: () => settings.current().capture.fetchSites,
   onError: report,
 });
+// «Riassumi il video» (D-273, tappa A): one video at a time, approved by the user
+// for that video, giving way to calls and task steps as the notes do. yt-dlp,
+// Deno and ffmpeg are found when a job needs them; Parakeet is the model of the
+// role stt, only when it is on disk.
+const videoWorker = createVideoWorker({
+  ...archiveEnv,
+  scratch: join(voiceDirs.tmp, 'video'),
+  tools: {
+    runner: voiceRunner(voiceDirs),
+    installed: () => existsSync(voiceDirs.python),
+    deno: () => findTool('deno'),
+    ffmpeg: () => findTool('ffmpeg'),
+    stt: () => {
+      const assigned = settings.current().roles.stt;
+      const entry = assigned === undefined ? undefined : loadCatalog(config.home).models.find((model) => model.id === assigned && model.family === 'parakeet');
+      return entry !== undefined && filesPresent(config.paths.data, entry) ? modelPath(config.paths.data, entry) : undefined;
+    },
+  },
+  archive: (tx, path) => enqueueArchive(tx, path),
+  modelReady: () =>
+    organizeModelReady(
+      settings.current().local.endpoints,
+      (id) => localServers.isAvailable(id),
+      (id) => localServers.isSettling(id),
+    ),
+  onError: report,
+});
 // The routines (D-110 tappa A, D-254): the report written by code in each routine's chat at its
 // time, then three lines of the local model without tools, which wait for oMLX as the notes do (D-100).
 // D-258: the source «Dashboard» starts «Aggiorna» of the tiles with the same agents as the page.
@@ -1374,7 +1402,7 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), arianna: ariannaDocs },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), video: (path) => videoWorker.enqueue(path), videoState: (path) => videoWorker.state(path), arianna: ariannaDocs },
   modelEvals,
   advisorData: config.paths.data,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
@@ -1467,6 +1495,7 @@ try {
 // New notes left by pnpm kb:capture or by a previous run: queued again, at most MAX_RESUMED.
 const { resumed } = await organizer.start();
 if (resumed > 0) console.log(`Notes: ${String(resumed)} queued to be organized`);
+await videoWorker.start();
 await routineSummarizer.start();
 
 // The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing];
@@ -1586,6 +1615,7 @@ async function shutdown(): Promise<void> {
   await modelActions.stop();
   localReload.stop();
   await organizer.stop();
+  await videoWorker.stop();
   await routineSummarizer.stop();
   await Promise.all(workers.map((one) => one.stop()));
   await agentBrowser.close();

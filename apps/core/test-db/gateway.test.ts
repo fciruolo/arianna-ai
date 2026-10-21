@@ -253,6 +253,23 @@ test('rows of the link target (D-154): L2 only with the rule of links, never a s
   await assert.rejects(row('https://example.org/', 'cloud', 'link', null), /gateway_log_link_fields/);
   await assert.rejects(row('link-click', 'cloud', 'cloud', null), /gateway_log_link_fields/);
   await assert.rejects(row('link-click', 'cloud', 'link', null, 'L3'), /gateway_log_no_secret_out/);
+  // D-273: «Riassumi il video», with the same limits.
+  await row('link-video', 'cloud', 'link', null);
+  await assert.rejects(row('link-video', 'cloud', 'link', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'), /gateway_log_link_fields/);
+  await assert.rejects(row('link-video', 'local', 'link', null), /gateway_log_link_fields/);
+  await assert.rejects(row('link-youtube', 'cloud', 'link', null), /gateway_log_link_fields/);
+});
+
+test('a video passes the gateway as link-video: its sha256 and length, never the address (D-273)', async () => {
+  const address = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  const decision = await passGateway(db().sql, [{ value: address, label: 'L2', source: 'link:kb/inbox/x.md' }], createContext('L2', 'L2'), { kind: 'link', consent: 'video' });
+  assert.equal(decision.decision, 'allow');
+  const row = await lastLog();
+  assert.equal(row.target, 'link-video');
+  assert.equal(row.summary, null);
+  assert.doesNotMatch(JSON.stringify(row), /youtube|dQw4w9WgXcQ/);
+  const refused = await passGateway(db().sql, [{ value: 'https://youtu.be/dQw4w9WgXcQ', label: 'L2', source: 'link:kb/inbox/x.md' }], createContext('L2', 'L2'), { kind: 'link', consent: 'video' });
+  assert.equal(refused.rule, 'link-invalid');
 });
 
 test('0086: rows of the site of an access and of a form of the user (D-276): L2 only with their rules, never a summary', async () => {

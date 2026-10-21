@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, deleteNote, fetchNoteLink, listNotes, loadArchive, loadNote, organizeNote } from '../lib/api.ts';
+import { captureNote, deleteNote, fetchNoteLink, listNotes, loadArchive, loadNote, loadNoteVideo, organizeNote, summarizeNoteVideo } from '../lib/api.ts';
 import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
@@ -35,12 +35,14 @@ import {
   type NoteSummary,
   type StatusFilter,
 } from '../lib/thoughts.ts';
+import { canSummarizeVideo, isYoutubeVideo, VIDEO_CONFIRM_LINES, videoFacts, videoJobText, type VideoJob } from '../lib/video.ts';
 import ArchiveProposals from './ArchiveProposals.vue';
 import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 import PageHeader from './PageHeader.vue';
+import VideoNote from './VideoNote.vue';
 
 /**
  * "Pensieri" (D-090): a large field to write a thought, saved at once in
@@ -84,6 +86,11 @@ const deleting = ref<string | null>(null);
 const deletingOpen = ref(false);
 const removing = ref(false);
 const deleteError = ref<string | null>(null);
+/** «Riassumi il video» (D-273): the card that asks the approval for this video, and the job of the open note. */
+const videoConfirm = ref(false);
+const videoSending = ref(false);
+const videoJob = ref<VideoJob | null>(null);
+const videoWorking = computed(() => videoJob.value !== null && (videoJob.value.state === 'queued' || videoJob.value.state === 'running'));
 
 const counter = computed(() => sizeCounter(draft.value));
 const tooLarge = computed(() => byteLength(draft.value) > MAX_NOTE_BYTES);
@@ -210,7 +217,10 @@ async function read(name: string): Promise<void> {
   noteError.value = null;
   try {
     const loaded = await loadNote(name);
-    if (request === readRequest) note.value = loaded;
+    if (request === readRequest) {
+      note.value = loaded;
+      if (isYoutubeVideo(loaded.url) && (loaded.video ?? null) === null) void watchVideo(name);
+    }
   } catch (cause) {
     if (request === readRequest) noteError.value = errorText(cause);
   } finally {
@@ -221,6 +231,8 @@ async function read(name: string): Promise<void> {
 function open(name: string): void {
   panelNotice.value = null;
   deletingOpen.value = false;
+  videoConfirm.value = false;
+  videoJob.value = null;
   if (selectedName.value === name) return;
   selectedName.value = name;
   note.value = null;
@@ -228,6 +240,9 @@ function open(name: string): void {
 }
 
 function closePanel(): void {
+  videoConfirm.value = false;
+  videoJob.value = null;
+  clearTimeout(videoTimer);
   selectedName.value = null;
   note.value = null;
   noteError.value = null;
@@ -320,6 +335,56 @@ async function fetchAndSummarize(): Promise<void> {
   look();
 }
 
+const VIDEO_POLL_MS = 3_000;
+let videoTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The job of the video of the open note (D-273): read now and again every few
+ * seconds while it is queued or at work; once done, the note is read again.
+ * A job may wait for a call to end, or take long for the audio: no time cap,
+ * the polling stops when the panel closes or shows another note.
+ */
+async function watchVideo(name: string): Promise<void> {
+  clearTimeout(videoTimer);
+  if (!alive || selectedName.value !== name) return;
+  try {
+    const job = await loadNoteVideo(name);
+    if (selectedName.value !== name) return;
+    const wasWorking = videoWorking.value;
+    videoJob.value = job;
+    if (job?.state === 'done' && wasWorking) {
+      await read(name);
+      void refresh();
+      return;
+    }
+  } catch {
+    // Read again at the next look.
+  }
+  if (videoWorking.value) {
+    videoTimer = setTimeout(() => {
+      void watchVideo(name);
+    }, VIDEO_POLL_MS);
+  }
+}
+
+/** «Approva per questo video»: the approval of the user for this one video, then the job in the queue of the core. */
+async function approveVideo(): Promise<void> {
+  const current = note.value;
+  if (current === null || videoSending.value || !canSummarizeVideo(current)) return;
+  videoSending.value = true;
+  panelNotice.value = null;
+  try {
+    await summarizeNoteVideo(current.name);
+    videoConfirm.value = false;
+    videoJob.value = { state: 'queued' };
+    void watchVideo(current.name);
+  } catch (cause) {
+    panelNotice.value = errorText(cause);
+  } finally {
+    videoSending.value = false;
+  }
+}
+
 /** A thought approved or discarded in "Da archiviare": the list again; a thought moved out of the inbox leaves the panel. */
 async function afterArchive(): Promise<void> {
   await refresh();
@@ -361,6 +426,7 @@ onBeforeUnmount(() => {
   alive = false;
   clearTimeout(timer);
   clearTimeout(fetchTimer);
+  clearTimeout(videoTimer);
   window.removeEventListener('keydown', onWindowKey);
 });
 </script>
@@ -486,7 +552,7 @@ onBeforeUnmount(() => {
                     <span class="shrink-0 text-[13px] text-muted tabular-nums">{{ timeOf(item) }}</span>
                   </span>
                   <span class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
-                    <span>{{ kindText(item) }}</span>
+                    <span class="inline-flex items-center gap-1"><Icon v-if="item.media === 'youtube'" name="video" :size="13" />{{ item.media === 'youtube' ? 'Video' : kindText(item) }}</span>
                     <span
                       class="inline-flex items-center gap-1.5"
                       :class="{ 'text-accent': stateOf(item) === 'organizing', 'text-ok': stateOf(item) === 'organized', 'text-warn': stateOf(item) === 'stuck' }"
@@ -544,6 +610,9 @@ onBeforeUnmount(() => {
           <h2 class="mt-1 text-[17px] leading-snug font-semibold break-words">
             {{ note?.title ?? (selected === undefined ? selectedName : displayTitle(selected)) }}
           </h2>
+          <p v-if="note !== null && note.name === selectedName && note.video" class="mt-1 flex items-center gap-1.5 text-[13px] text-muted">
+            <Icon name="video" :size="14" />{{ videoFacts(note.video) }}
+          </p>
         </div>
         <LabelBadge v-if="selected !== undefined" class="mt-0.5" :label="selected.label" />
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi il pensiero" @click="closePanel">
@@ -564,6 +633,17 @@ onBeforeUnmount(() => {
         >
           <Icon name="link" :size="14" />{{ fetching === note.name ? 'Scarico e riassumo…' : 'Scarica e riassumi' }}
         </button>
+        <button
+          v-if="note !== null && note.name === selectedName && canSummarizeVideo(note) && !videoWorking"
+          type="button"
+          class="btn px-2.5 py-1 text-xs"
+          :disabled="videoSending"
+          :aria-expanded="videoConfirm"
+          title="Arianna legge i sottotitoli (o l’audio) del video e il modello locale lo riassume nel pensiero; prima ti chiede l’approvazione"
+          @click="videoConfirm = !videoConfirm"
+        >
+          <Icon name="video" :size="14" />Riassumi il video
+        </button>
         <button v-if="selected !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('openGraph', graphId(selected.path))">
           <Icon name="knowledge" :size="14" />Apri nel grafo
         </button>
@@ -578,6 +658,18 @@ onBeforeUnmount(() => {
         >
           <Icon name="delete" :size="14" />Elimina
         </button>
+      </div>
+      <div v-if="videoConfirm && note !== null && canSummarizeVideo(note)" class="border-b border-line px-4 py-3" role="group" aria-labelledby="video-confirm-title">
+        <p id="video-confirm-title" class="mb-1.5 text-[14px] font-semibold">Riassumo questo video?</p>
+        <ul class="mb-2.5 flex list-disc flex-col gap-1 pl-5 text-[13px] text-muted">
+          <li v-for="line in VIDEO_CONFIRM_LINES" :key="line">{{ line }}</li>
+        </ul>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="videoSending" @click="approveVideo">
+            <Icon name="video" :size="14" />{{ videoSending ? 'Metto in coda…' : 'Approva per questo video' }}
+          </button>
+          <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="videoSending" @click="videoConfirm = false">Annulla</button>
+        </div>
       </div>
       <div v-if="selected !== undefined && deletingOpen" class="border-b border-line px-4 py-2.5">
         <DeleteConfirm
@@ -596,6 +688,10 @@ onBeforeUnmount(() => {
         <div v-if="fetching !== null && fetching === selectedName" class="mb-3">
           <p class="mb-1.5 font-mono text-[12.5px] text-accent">Scarico il link e lo riassumo col modello locale…</p>
           <span class="hud-scan block w-full" aria-hidden="true" />
+        </div>
+        <div v-if="videoJobText(videoJob) !== null" class="mb-3" role="status">
+          <p class="mb-1.5 font-mono text-[12.5px]" :class="videoJob?.state === 'failed' ? 'text-warn' : 'text-accent'">{{ videoJobText(videoJob) }}</p>
+          <span v-if="videoWorking" class="hud-scan block w-full" aria-hidden="true" />
         </div>
         <div v-if="selectedState === 'organizing'" class="mb-3">
           <p class="mb-1.5 font-mono text-[12.5px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
@@ -616,7 +712,10 @@ onBeforeUnmount(() => {
         <p v-if="panelNotice !== null" class="mb-2 text-xs text-warn" role="status">{{ panelNotice }}</p>
         <p v-if="noteLoading && note === null" class="font-mono text-xs text-muted">Leggo il pensiero…</p>
         <p v-else-if="noteError !== null" class="text-sm text-danger">{{ noteError }}</p>
-        <MarkdownText v-if="note !== null && note.name === selectedName" :source="note.body" :wikilink="followWikilink" />
+        <template v-if="note !== null && note.name === selectedName">
+          <VideoNote v-if="note.video" :body="note.body" :video-id="note.video.id" :wikilink="followWikilink" />
+          <MarkdownText v-else :source="note.body" :wikilink="followWikilink" />
+        </template>
       </div>
     </aside>
   </div>

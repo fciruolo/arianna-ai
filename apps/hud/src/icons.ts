@@ -12,6 +12,7 @@ import {
   CalendarCheck,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Columns2,
@@ -50,6 +51,7 @@ import {
   MicOff,
   NotebookPen,
   Play,
+  Video,
   Square,
   Monitor,
   MessageSquare,
@@ -91,6 +93,7 @@ import {
   TriangleAlert,
   VenetianMask,
   X,
+  Telescope,
 } from 'lucide-vue-next';
 
 /**
@@ -107,6 +110,8 @@ export const ICONS = {
   restore: ArchiveRestore,
   delete: Trash2,
   expand: ChevronRight,
+  // «Tutti i seguiti» (D-272): back from the detail of a card.
+  back: ChevronLeft,
   close: X,
   menu: Menu,
   panel: PanelRight,
@@ -133,6 +138,7 @@ export const ICONS = {
   mic: Mic,
   'mic-off': MicOff,
   play: Play,
+  video: Video,
   stop: Square,
   phone: Phone,
   'phone-off': PhoneOff,
@@ -148,6 +154,8 @@ export const ICONS = {
   office: Building2,
   thoughts: Lightbulb,
   routine: Repeat,
+  // «Seguiti» (D-272): what Arianna follows on GitHub for ideas.
+  followed: Telescope,
   search: Search,
   focus: Focus,
   pin: Pin,

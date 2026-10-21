@@ -10,7 +10,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
-import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
+import type { FollowedAccount, FollowedProject, ProjectChoice } from './followed-projects.ts';
 import type { OmlxReleaseView } from './omlx-release.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
@@ -40,6 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, type BlockedNavigation, type ControlState } from './browser-screen.ts';
+import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -1299,6 +1300,16 @@ export async function fetchNoteLink(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/fetch`, {});
 }
 
+/** «Riassumi il video» (D-273): queued only with the approval of the user for this video, given in the card of the panel. */
+export async function summarizeNoteVideo(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/video`, { approved: true });
+}
+
+/** The job of the video of a note: queued, at work with its stage, failed with its reason, done; null without one. */
+export async function loadNoteVideo(name: string): Promise<VideoJob | null> {
+  return (await call<{ video: VideoJob | null }>('GET', `/api/notes/${encodeURIComponent(name)}/video`)).video;
+}
+
 /** "Da archiviare" (D-195): the proposals of the Archivist and the folders a thought may go to. */
 export async function loadArchive(): Promise<ArchiveListing> {
   return call<ArchiveListing>('GET', '/api/archive');
@@ -1394,8 +1405,8 @@ export async function confirmFactShare(id: string): Promise<UserFact> {
 }
 
 /** "Progetti seguiti" (D-202): the projects followed for ideas, with their last news and what was already chosen. */
-export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number }> {
-  return call<{ projects: FollowedProject[]; max: number }>('GET', '/api/dev/projects');
+export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }> {
+  return call<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }>('GET', '/api/dev/projects');
 }
 
 export async function addFollowedProject(url: string): Promise<void> {
@@ -1406,7 +1417,7 @@ export async function removeFollowedProject(id: string): Promise<void> {
   await call('DELETE', '/api/dev/projects', { id });
 }
 
-/** «Controlla novità»: the check runs in the core; the page reads again while the project is `checking`. */
+/** «Controlla novità» of a project or an account (D-271): the check runs in the core; the page reads again while it is `checking`. */
 export async function checkFollowedProject(id: string): Promise<void> {
   await call('POST', '/api/dev/projects/check', { id });
 }

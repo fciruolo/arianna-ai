@@ -574,3 +574,14 @@ test('the link leaves once per job, never twice for a note already downloaded, a
   assert.deepEqual(seen, []);
   assert.ok(!outcome.ok || outcome.fetch === 'blocked');
 });
+
+test('a YouTube video is never downloaded by the link downloader: not with youtube.com in the list, not with the button (D-273)', async () => {
+  const { home } = setup();
+  const { path } = linkNote(home, 'https://youtu.be/dQw4w9WgXcQ?si=abc');
+  const asked: string[] = [];
+  const base = { ...env(home, fakeModel([], [])), fetchSites: () => ['youtube.com', 'youtu.be'], fetchLink: fakeFetch(asked) };
+  assert.deepEqual(await organizeNote(base, path, new AbortController().signal), { ok: true, label: 'L2', linked: 0, fetch: 'none' });
+  assert.deepEqual(await organizeNote(base, path, new AbortController().signal, { fetch: true }), { ok: true, label: 'L2', linked: 0, fetch: 'none' });
+  assert.deepEqual(asked, []);
+  assert.doesNotMatch(readFileSync(join(home, path), 'utf8'), /## Contenuto|fetched_at|fetch_failed/);
+});

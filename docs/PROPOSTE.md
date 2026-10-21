@@ -3047,3 +3047,25 @@ Risposte dell'utente del 2026-10-21, con le domande a opzioni.
    - ogni cartella ha una pagina d'ingresso `_indice.md`, composta dal codice (elenco degli articoli) con un «In breve» scritto dal modello, che si aggiorna da sola;
    - anche spostare o rinominare una cartella è una proposta da approvare.
 6. **Approvazione del video: «Come i link di D-154»** (la consigliata): consenso `video` verificato dal gateway e una riga in `gateway_log` (`link-video`, sha256 e byte); nessuna riga in `label_changes`. Emenda la domanda 4 di D-080 per i video.
+
+### Tappa A: verifiche
+
+Fatte il 2026-10-21, prima di scrivere il codice, sul registro PyPI, sulle release di GitHub e sul sorgente di yt-dlp alla versione scelta.
+
+- **yt-dlp 2026.8.19**: ultima versione stabile (release `2026.08.19` di GitHub, pubblicata su PyPI il 2026-08-19 alle 23:48 UTC; dopo ci sono solo versioni di sviluppo `.dev0`, l'ultima del 2026-10-10). Più vecchia dell'`exclude-newer` di `apps/voice` (2026-10-03): nessun cambio della data. Licenza **Unlicense**, Python ≥ 3.10.
+- **yt-dlp-ejs 0.8.0** (2026-03-17): per YouTube serve, la chiede l'extra `default` di yt-dlp 2026.8.19 (`yt-dlp-ejs==0.8.0`) e la documentazione la dice «required for full YouTube support». Licenza **Unlicense AND MIT AND ISC**. Si mette a versione esatta da sola, **senza l'extra `default`**: `certifi` e `requests` sono già nel lockfile, `websockets`, `mutagen`, `pycryptodomex` e `brotli` non servono a metadati, sottotitoli e audio. Con l'aggiornamento il lockfile aggiunge solo questi due pacchetti (`pnpm voice:lock` fatto; resta `pnpm voice:sync`).
+- **Motore JavaScript:** yt-dlp abilita da sé solo Deno («Only "deno" is enabled by default»), con minimo 2.3.0 (wiki EJS; l'extra `deno` di yt-dlp chiede `deno>=2.6.6`, che prendiamo come minimo controllato dal doctor). Si passa con `--js-runtimes deno:<percorso>` dopo `--no-js-runtimes`, così nessun altro motore della macchina (Node, Bun) viene usato. Gli script di yt-dlp-ejs vengono dal pacchetto installato: `--no-remote-components`, mai da GitHub o npm.
+- **Permessi di Deno:** yt-dlp lo lancia con `deno run --ext=js --no-code-cache --no-prompt --no-remote --no-lock --node-modules-dir=none --no-config --no-npm --cached-only -` e **nessun `--allow-*`**: per Deno vuol dire niente file, rete, ambiente né processi (la documentazione: «no file system or network access»). In più il core gli dà `DENO_DIR` nella `HOME` temporanea del lavoro e `DENO_NO_UPDATE_CHECK=1`. Deno è una **dipendenza di sistema** (come ffmpeg, `brew install deno`), non un pacchetto Python: la installa l'utente, il doctor la controlla; senza Deno il lavoro prova i soli sottotitoli e, se mancano, si ferma con «serve Deno per l'audio».
+- **ffmpeg:** già sul Mac (`/opt/homebrew/bin/ffmpeg`), prerequisito di sistema; la trascrizione lo usa solo per convertire l'audio in PCM 16 kHz mono, con `-protocol_whitelist file` (nessun protocollo di rete).
+- **Parakeet** (mlx-audio 0.5.7): `generate(audio, chunk_duration=…, overlap_duration=…)` spezza l'audio lungo e restituisce le frasi con `start` in secondi: le righe della trascrizione hanno il loro minuto.
+- **Il «byte» della riga di `gateway_log`** è quello di ogni riga del registro: lunghezza e sha256 dell'indirizzo che esce, mai l'indirizzo. I byte ricevuti dal proxy restano un tetto (400 MB), non una colonna nuova.
+
+### Tappa A: costruita sul ramo `task/d273-youtube` (da provare)
+
+Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte fatte durante la costruzione, dentro la proposta:
+
+- La conferma dell'utente è la scheda del pannello: «Approva per questo video» manda `approved: true` alla rotta, senza una riga in `approvals` (come «Scarica e riassumi» di D-154; nessuna riga in `label_changes`, domanda 6).
+- Il proxy accetta solo i tunnel con il suo gettone (`Proxy-Authorization`): un altro programma del Mac non può usarlo mentre è aperto.
+- I segmenti numerati sono pezzi di circa 240 caratteri o 30 secondi; il secondo passaggio usa solo i numeri dei punti del primo.
+- Il doctor controlla ffmpeg, Deno e yt-dlp solo dove c'è l'ambiente di `apps/voice`, nel gruppo «Ambiente della voce e dei video» della pagina «Pronta per i dati veri». ffmpeg e Deno mancanti si dicono ma non fanno fallire (sono facoltativi: senza, solo sottotitoli); fanno fallire un Deno più vecchio di 2.6.6 e uno yt-dlp più vecchio di 90 giorni (yt-dlp 2026.8.19 li compie il 2026-11-17).
+- Un lavoro che lascia il posto a una chiamata mentre scarica o trascrive riparte da capo: una seconda riga `link-video` e un secondo scaricamento. Se interrotto durante il riassunto, la trascrizione già ottenuta si riusa senza uscire di nuovo.

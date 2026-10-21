@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -27,7 +27,7 @@ const props = defineProps<{
   status: StatusSnapshot | null;
   /** Open questions of "Sviluppo di Arianna" without an answer (D-120): a dot on "Impostazioni". */
   devPending: number;
-  /** A stable release of oMLX newer than the one installed (D-265): a plain dot on "Impostazioni". */
+  /** A stable release of oMLX newer than the one installed (D-265): a plain dot on "Seguiti" (D-272). */
   omlxUpdate?: string | null;
   /** The secretary's conversation is the one open (D-144): its button is marked. */
   secretaryOpen: boolean;
@@ -45,6 +45,8 @@ const emit = defineEmits<{
   thoughts: [];
   /** The routines (D-110 tappa A, D-254). */
   routines: [];
+  /** «Seguiti» (D-272). */
+  followed: [];
   /** The Dashboard (D-248). */
   dashboard: [];
   knowledge: [];
@@ -86,6 +88,8 @@ const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> 
   finance: { label: 'Finanze', icon: 'finance' },
   // GOD (D-127): Arianna developed from inside Arianna, in a clone of its code.
   god: { label: 'GOD', icon: 'god', title: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
+  // «Seguiti» (D-272): projects, accounts, oMLX and the catalogs followed on GitHub.
+  followed: { label: 'Seguiti', icon: 'followed', title: 'Progetti, account e cataloghi seguiti su GitHub per prendere idee' },
   office: { label: 'Ufficio', icon: 'office' },
   settings: { label: 'Impostazioni', icon: 'settings' },
 };
@@ -128,6 +132,7 @@ function go(area: NavArea): void {
     case 'knowledge': emit('knowledge'); break;
     case 'finance': emit('finance'); break;
     case 'god': emit('god'); break;
+    case 'followed': emit('followed'); break;
     case 'office': emit('office'); break;
     case 'settings': emit('settings'); break;
   }
@@ -216,8 +221,8 @@ function itemClass(on: boolean): string {
               :title="devLabel ?? undefined"
               :aria-label="devLabel ?? undefined"
             >{{ devDot }}</span>
-            <!-- A newer stable release of oMLX (D-265), when no question already marks the entry. -->
-            <span v-else-if="area === 'settings' && omlxUpdate" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="omlxUpdate" :aria-label="omlxUpdate" />
+            <!-- A newer stable release of oMLX (D-265), on «Seguiti» where its card is (D-272). -->
+            <span v-if="area === 'followed' && omlxUpdate" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="omlxUpdate" :aria-label="omlxUpdate" />
           </button>
         </template>
       </div>

@@ -20,7 +20,6 @@ import {
   type UploadedCharacter,
 } from '../lib/api.ts';
 import { MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
-import type { OmlxReleaseView } from '../lib/omlx-release.ts';
 import { personasBody, personasForm, personasProblem, type PersonaForm } from '../lib/persona.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
@@ -115,7 +114,7 @@ import Icon from './Icon.vue';
 import ProfileFacts from './ProfileFacts.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
-import OdNews from './OdNews.vue';
+import MovedToFollowed from './MovedToFollowed.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
 import ThemePicker from './ThemePicker.vue';
@@ -140,9 +139,8 @@ import VoiceListen from './VoiceListen.vue';
  * `directAgents`: the agents one can talk with directly (D-111d), for "Apri una chat" in Agenti (D-133).
  * `theme`: the theme of this browser (D-158), the same choice as the button of the top bar.
  * `callBusy`: a call is starting, ringing or on (D-192): «Ascolta» waits for it to end.
- * `omlxUpdate`: a newer stable release of oMLX (D-265), a dot on «Modelli».
  */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; omlxUpdate?: string | null; directAgents?: DirectAgent[]; theme?: Theme; callBusy?: boolean }>();
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[]; theme?: Theme; callBusy?: boolean }>();
 const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /**
@@ -162,8 +160,6 @@ const emit = defineEmits<{
   dirty: [dirty: boolean];
   theme: [theme: Theme];
   devPending: [count: number];
-  /** The card of oMLX read its state (D-265): the dot on «Impostazioni» follows it. */
-  omlx: [view: OmlxReleaseView];
   knowledge: [];
   open: [id: string];
 }>();
@@ -917,8 +913,6 @@ const grid = 'grid gap-3 sm:grid-cols-6';
             :title="devLabel ?? undefined"
             :aria-label="devLabel ?? undefined"
           >{{ devDot }}</span>
-          <!-- A stable release of oMLX newer than the one installed (D-265). -->
-          <span v-if="item.id === 'models' && omlxUpdate" role="img" class="size-2 rounded-full bg-accent" :title="omlxUpdate" :aria-label="omlxUpdate" />
           <span v-if="dirty(item)" role="img" class="size-[7px] rounded-full bg-warn" title="Modifiche non salvate" aria-label="modifiche non salvate" />
           <span v-if="item.privacy" role="img" class="inline-flex text-warn" :title="PRIVACY_HINT" :aria-label="PRIVACY_HINT"><Icon name="private" :size="14" /></span>
         </a>
@@ -961,9 +955,9 @@ const grid = 'grid gap-3 sm:grid-cols-6';
 
         <!-- Sections that do not need the values of the file: they work even when it does not load. -->
         <div v-if="active === 'skills'" class="flex flex-col gap-3.5">
-          <!-- The catalog of Open Design (D-160) with its news (I-21, D-186), then the catalog of skills (D-161) -->
+          <!-- The catalog of Open Design (D-160), then the catalog of skills (D-161); its news (I-21, D-186) are in «Seguiti» (D-272) -->
           <DesignCatalog />
-          <OdNews />
+          <MovedToFollowed what="Le novità di Open Design, da scegliere per lo Studio, sono nella pagina Seguiti; il catalogo si aggiorna qui." />
           <SkillsCatalog @changed="agentsPage?.skillsCatalogChanged()" />
           <!-- The user's own skills of Claude Code (D-255): copied on a click, private until marked shareable -->
           <ClaudeSkills @changed="agentsPage?.skillsCatalogChanged()" />
@@ -1082,7 +1076,6 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 @section="openSection"
                 @catalog="reload"
                 @chat-trial="emit('chatTrial', $event)"
-                @omlx="emit('omlx', $event)"
               />
 
               <!-- Agenti (D-116, D-133): the cards on the left, the chosen agent in tabs; its own save bar -->
@@ -1419,13 +1412,13 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 </p>
                 <form :class="grid" @submit.prevent="addSite">
                   <FormField id="site-new" label="Aggiungi un sito" :span="2">
-                    <input id="site-new" v-model="newSite" :class="input" placeholder="per esempio youtube.com" autocomplete="off" />
+                    <input id="site-new" v-model="newSite" :class="input" placeholder="per esempio ilpost.it" autocomplete="off" />
                   </FormField>
                   <div class="flex items-end sm:col-span-1">
                     <button type="submit" class="btn w-full px-3 py-1.5 text-[14px]" :disabled="fetchSiteOf(newSite) === undefined">Aggiungi</button>
                   </div>
                 </form>
-                <p class="text-[13px] text-muted">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi».</p>
+                <p class="text-[13px] text-muted">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi». Un video di YouTube non si scarica mai da solo, nemmeno con youtube.com qui: nel pensiero c’è «Riassumi il video», da approvare video per video.</p>
               </SettingsCard>
 
               <!-- Siti per il Coder (D-262): the sites whose pages the Coder on Claude reads by itself -->

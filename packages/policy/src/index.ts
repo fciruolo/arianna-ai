@@ -100,6 +100,7 @@ export {
   RESOURCE_TYPES,
   type Allowed,
   type LinkConsent,
+  VIDEO_ADDRESS,
   type PageConsent,
   type ResourceMethod,
   type FormRequest,

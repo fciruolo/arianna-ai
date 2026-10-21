@@ -67,13 +67,12 @@ import {
   type Tone,
 } from '../lib/models-page.ts';
 import { MODEL_ROLES, ROLE_TEXT, roleOptions, type CatalogModel, type CloudModelsForm, type ModelRole, type SettingsValues } from '../lib/settings.ts';
-import type { OmlxReleaseView } from '../lib/omlx-release.ts';
 import HubEntryPanel from './HubEntryPanel.vue';
 import HuggingFaceSearch from './HuggingFaceSearch.vue';
 import Icon from './Icon.vue';
 import AdvisorSettings from './AdvisorSettings.vue';
 import ModelsCompare from './ModelsCompare.vue';
-import OmlxRelease from './OmlxRelease.vue';
+import MovedToFollowed from './MovedToFollowed.vue';
 import SettingsSaveBar from './SettingsSaveBar.vue';
 
 interface ModelParts {
@@ -95,7 +94,7 @@ const props = defineProps<{
   save: () => Promise<boolean>;
 }>();
 /** `cancel`: the parts back to what was read. `section`: another section of the settings. `catalog`: the catalog changed (I-10): read the settings again. */
-const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: []; chatTrial: [modelId: string]; omlx: [view: OmlxReleaseView] }>();
+const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: []; chatTrial: [modelId: string] }>();
 
 // «Elenco» and «Confronto» (D-199): the trials of every model, those gone too, side by side.
 const PAGE_TABS = [
@@ -804,8 +803,8 @@ const factKey = 'text-[13px] text-muted';
       </div>
     </section>
 
-    <!-- The server of the models and its releases (D-265) -->
-    <OmlxRelease @changed="emit('omlx', $event)" />
+    <!-- The releases of the server of the models (D-265) moved to «Seguiti» (D-272) -->
+    <MovedToFollowed what="Le release di oMLX, il server dei modelli, con le novità e il controllo quotidiano, sono nella pagina Seguiti." />
 
     <HuggingFaceSearch @added="(id) => catalogChanged(id)" />
     </div>

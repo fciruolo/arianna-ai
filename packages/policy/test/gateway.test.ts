@@ -315,6 +315,39 @@ test('link: with the list, only an address on a site of the list or a subdomain'
   assert.equal(isTarget(LINK_CLICK), true);
 });
 
+// D-273: one video of YouTube approved with «Riassumi il video».
+const LINK_VIDEO: Target = { kind: 'link', consent: 'video' };
+const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+test('link video: the normalized address of one YouTube video leaves as L2, logged as link-video', () => {
+  const decision = gatewayCheck([fragment('L2', VIDEO)], createContext('L2', 'L2'), LINK_VIDEO);
+  assert.equal(decision.decision, 'allow');
+  assert.equal(decision.rule, 'link');
+  assert.equal(decision.texts[0], VIDEO);
+  assert.equal(isTarget(LINK_VIDEO), true);
+  assert.equal(localityOf(LINK_VIDEO), 'cloud');
+  assert.equal(targetName(LINK_VIDEO), 'link-video');
+  assert.equal(brief([fragment('L3', VIDEO)], createContext('L2', 'L2'), LINK_VIDEO).rule, 'secret');
+});
+
+test('link video: any other address, form of a video or text is refused', () => {
+  for (const value of [
+    'https://youtu.be/dQw4w9WgXcQ',
+    `${VIDEO}&t=42s`,
+    `${VIDEO}&list=PL123`,
+    'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+    'http://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    'https://www.youtube.com/playlist?list=PL1234567890',
+    'https://www.youtube.com/watch?v=short',
+    'https://www.youtube.com.evil.example/watch?v=dQw4w9WgXcQ',
+    'https://example.org/watch?v=dQw4w9WgXcQ',
+    `Riassumi ${VIDEO}`,
+  ]) {
+    assert.deepEqual(brief([fragment('L2', value)], createContext('L2', 'L2'), LINK_VIDEO), { decision: 'block', rule: 'link-invalid', next: 'stay-local' }, value);
+  }
+  assert.equal(brief([fragment('L2', VIDEO), fragment('L2', VIDEO)], createContext('L2', 'L2'), LINK_VIDEO).rule, 'link-invalid');
+});
+
 test('link: the scanner reads the whole address but the id of a post of X', () => {
   assert.equal(linkScanText(POST), 'https://x.com/taylorotwell/status/0');
   assert.match(linkScanText(OEMBED), /status%2F0&/);

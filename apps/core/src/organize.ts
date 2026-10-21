@@ -15,6 +15,7 @@ import { FETCH_FAILURE_TEXT, fetchLink, oneLine, siteOf, xPostUrl, type FetchedL
 import { machineBusy } from './model-evals.ts';
 import { checkNotePath, headerFields, keptCaptureFields, listNotes, noteLabel, NoteError, rawBody, readNoteFile, replaceNote, sha256 } from './notes.ts';
 import { KB_DIR, parsePage, type Kb, type KbHit } from './orchestrator/kb.ts';
+import { isYoutubeVideo } from './video-url.ts';
 
 /**
  * Organizing a captured note with the local model, in the background
@@ -494,7 +495,8 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   // The link (D-154): downloaded only when the user chose it, its site in the list or the button.
   const url = view.kept.url;
   const host = url === undefined ? undefined : siteOf(url);
-  const wanted = url !== undefined && host !== undefined && (request.fetch === true || siteListed(env.fetchSites?.() ?? [], host));
+  // A video of YouTube is never downloaded here, by itself or with the button: only «Riassumi il video» (D-273).
+  const wanted = url !== undefined && host !== undefined && !isYoutubeVideo(url) && (request.fetch === true || siteListed(env.fetchSites?.() ?? [], host));
   let linkContent: LinkContent | undefined;
   if (wanted && request.content !== undefined) {
     linkContent = request.content;

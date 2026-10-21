@@ -17,6 +17,11 @@ dependencies = [
   "espeakng-loader==0.2.4",
   # The tekken tokenizer of Voxtral TTS (D-067): mlx-audio leaves it unpinned and 1.9 cannot read it.
   "mistral-common[audio]==1.11.7",
+  # Metadata, subtitles and audio of a YouTube video (D-273): Unlicense. Without
+  # the `default` extra: certifi and requests come already, the rest is not needed.
+  "yt-dlp==2026.8.19",
+  # The JavaScript of YouTube's challenges, run by yt-dlp with Deno (D-273): Unlicense AND MIT AND ISC.
+  "yt-dlp-ejs==0.8.0",
 ]
 
 [tool.uv]

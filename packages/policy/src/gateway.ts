@@ -15,9 +15,16 @@ export type ChannelId = 'web' | 'telegram' | 'phone' | 'voice' | 'push';
 /**
  * Why the user allowed a link to be downloaded (D-154): its site is in
  * `[capture] fetch_sites` (`list`), or the user pressed "Scarica e riassumi"
- * on that note (`click`).
+ * on that note (`click`), or approved «Riassumi il video» for that one video
+ * of YouTube (`video`, D-273).
  */
-export type LinkConsent = 'list' | 'click';
+export type LinkConsent = 'list' | 'click' | 'video';
+
+/**
+ * The only address a `video` consent takes (D-273): one video of YouTube,
+ * normalized by the core, without any other parameter.
+ */
+export const VIDEO_ADDRESS = /^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/;
 
 /**
  * Why a public page may be read (D-262, P7): the session is Public (`public`,
@@ -117,7 +124,14 @@ export type Target =
    * gateway guarantees is one address, checked and scanned, never other text.
    */
   | { kind: 'link'; consent: 'list'; sites: readonly string[] }
-  | { kind: 'link'; consent: 'click' };
+  | { kind: 'link'; consent: 'click' }
+  /**
+   * One video of YouTube approved by the user with «Riassumi il video»
+   * (D-273): the address must be `https://www.youtube.com/watch?v=<id>`
+   * exactly. What leaves after it (yt-dlp through the proxy of the core,
+   * towards a closed list of hosts of YouTube and Google) is that video only.
+   */
+  | { kind: 'link'; consent: 'video' };
 
 /** The rules of an allow. */
 type AllowRule = 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed' | 'session' | 'form';
@@ -241,6 +255,7 @@ function checkLink(payload: readonly Labeled<unknown>[], texts: readonly string[
   const url = singleAddress(payload, texts);
   if (typeof url === 'string') return block('link-invalid', label, url, 'stay-local');
   if (target.consent === 'list' && !onSites(url, target.sites)) return block('link-invalid', label, 'the site is not in the list of the user', 'stay-local');
+  if (target.consent === 'video' && !VIDEO_ADDRESS.test(url.href)) return block('link-invalid', label, 'a video consent takes one normalized YouTube video address only', 'stay-local');
   const findings = addressFindings(url.href);
   if (findings.length > 0) {
     const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
@@ -453,7 +468,7 @@ export function isTarget(value: unknown): value is Target {
       return target.page === undefined || isPageConsent(target.page);
     }
     case 'link':
-      if (target.consent === 'click') return true;
+      if (target.consent === 'click' || target.consent === 'video') return true;
       return (
         target.consent === 'list' &&
         Array.isArray(target.sites) &&

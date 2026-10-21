@@ -406,6 +406,7 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...(await systemChecks({ voice: config.voice !== undefined, ...(run === undefined ? {} : { run }) })),
     ...layoutCheck(config.home, config.paths.data),
     ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
+    ...(existsSync(voicePaths(config.home, config.paths.data).python) ? await videoChecks(config.home, new Date(), run) : []),
     ...omlxLogChecks(config.local.endpoints),
     ...omlxSettingsChecks(config.home, config.paths.data, config.local.endpoints),
     ...(await modelsChecks(config)),
@@ -413,6 +414,75 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...projectChecks(config.home, config.projects),
     ...browserImageChecks(config.home, new Date()),
   ];
+}
+
+/** Deno at least this version (D-273): what the `deno` extra of yt-dlp 2026.8.19 asks. */
+export const DENO_MIN = [2, 6, 6] as const;
+/** yt-dlp older than this many days is reported: YouTube changes and an old one stops working (D-197). */
+export const YTDLP_MAX_AGE_DAYS = 90;
+
+/** The version of yt-dlp fixed in apps/voice/uv.lock (`2026.8.19`), or null. */
+export function lockedYtDlp(lock: string): string | null {
+  const at = lock.indexOf('\nname = "yt-dlp"\n');
+  if (at < 0) return null;
+  const line = /^version = "(\d{4}\.\d{1,2}\.\d{1,2}(?:\.\d+)?)"$/m.exec(lock.slice(at + 1, at + 200));
+  return line?.[1] ?? null;
+}
+
+/** Days since the release of a version of yt-dlp, read from the version itself (its date). */
+export function ytDlpAgeDays(version: string, now: Date): number | null {
+  const [year, month, day] = version.split('.').map(Number);
+  if (year === undefined || month === undefined || day === undefined || !Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return Math.floor((now.getTime() - Date.UTC(year, month - 1, day)) / 86_400_000);
+}
+
+function versionAtLeast(text: string, minimum: readonly number[]): boolean {
+  const have = text.split('.').map(Number);
+  for (let index = 0; index < minimum.length; index += 1) {
+    const a = have[index] ?? 0;
+    const b = minimum[index] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
+}
+
+/**
+ * «Riassumi il video» (D-273), only where apps/voice is installed: ffmpeg and
+ * Deno, prerequisites of the system for the audio (without them only the
+ * subtitles), and the age of the yt-dlp fixed in apps/voice/uv.lock.
+ */
+export async function videoChecks(home: string, now: Date, run: Runner = runCommand): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  try {
+    checks.push({ id: 'video.ffmpeg', ok: true, detail: firstLine(await run('ffmpeg', ['-hide_banner', '-version'])).slice(0, 80) });
+  } catch {
+    // Optional (D-275): without it the videos are summarized from their subtitles only.
+    checks.push({ id: 'video.ffmpeg', ok: true, detail: 'ffmpeg is missing: videos from their subtitles only; brew install ffmpeg for the audio (D-275)' });
+  }
+  try {
+    const version = /deno (\d+\.\d+\.\d+)/.exec(await run('deno', ['--version']))?.[1];
+    const ok = version !== undefined && versionAtLeast(version, DENO_MIN);
+    checks.push({ id: 'video.deno', ok, detail: ok ? `deno ${version}` : `deno ${version ?? '?'} is older than ${DENO_MIN.join('.')}: brew upgrade deno` });
+  } catch {
+    // Optional (D-274): without it the videos are summarized from their subtitles only.
+    checks.push({ id: 'video.deno', ok: true, detail: 'Deno is missing: videos from their subtitles only; brew install deno for the audio (D-274)' });
+  }
+  let lock = '';
+  try {
+    lock = readFileSync(join(home, 'apps', 'voice', 'uv.lock'), 'utf8');
+  } catch {
+    // Without the lockfile there is no version to read.
+  }
+  const version = lockedYtDlp(lock);
+  const days = version === null ? null : ytDlpAgeDays(version, now);
+  if (version === null || days === null) {
+    checks.push({ id: 'video.yt-dlp', ok: false, detail: 'yt-dlp is not in apps/voice/uv.lock' });
+  } else {
+    const ok = days <= YTDLP_MAX_AGE_DAYS;
+    const age = `yt-dlp ${version}, released ${String(days)} days ago`;
+    checks.push({ id: 'video.yt-dlp', ok, detail: ok ? age : `${age}: update it (apps/voice/pyproject.toml, pnpm voice:lock, pnpm voice:sync)` });
+  }
+  return checks;
 }
 
 /**

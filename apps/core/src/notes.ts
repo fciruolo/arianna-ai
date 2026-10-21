@@ -137,6 +137,8 @@ export interface NoteSummary {
   capturedKind: string | null;
   label: Label;
   tags: string[];
+  /** `youtube` for the note of a video (D-273); null otherwise. */
+  media: string | null;
 }
 
 export interface Note extends NoteSummary {
@@ -146,6 +148,8 @@ export interface Note extends NoteSummary {
   fetchedAt: string | null;
   /** Why the last download of the link failed (a code of link-fetch.ts); null otherwise. */
   fetchFailed: string | null;
+  /** The video of the note: its id, channel, seconds and where the transcript came from (D-273); null when it is not one. */
+  video: { id: string; channel: string | null; duration: number | null; transcriptSource: string | null } | null;
   body: string;
 }
 
@@ -161,6 +165,7 @@ function summaryOf(rules: LabelRules, path: string, raw: string): NoteSummary {
     capturedKind: fields.get('captured_kind') ?? null,
     label: noteLabel(rules, path, raw),
     tags: jsonList(fields.get('tags')),
+    media: fields.get('media') === 'youtube' ? 'youtube' : null,
   };
 }
 
@@ -298,7 +303,22 @@ export function readNote(home: string, rules: LabelRules, name: string): Note {
     url: fields.get('url') ?? (fields.get('captured_kind') === 'link' || fields.get('kind') === 'link' ? (linkInText(userText(raw, fields.get('status'))) ?? null) : null),
     fetchedAt: fields.get('fetched_at') ?? null,
     fetchFailed: fetchFailed !== undefined && /^[a-z-]{1,40}$/.test(fetchFailed) ? fetchFailed : null,
+    video: videoOf(fields),
     body: parsePage(raw).body,
+  };
+}
+
+/** The video of a note written by the code (D-273): every value checked again, the file may have been edited. */
+function videoOf(fields: Map<string, string>): Note['video'] {
+  const id = fields.get('video_id');
+  if (fields.get('media') !== 'youtube' || id === undefined || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+  const duration = Number(fields.get('duration'));
+  const source = fields.get('transcript_source');
+  return {
+    id,
+    channel: jsonString(fields.get('channel'))?.slice(0, 120) ?? null,
+    duration: Number.isInteger(duration) && duration >= 0 && duration <= 86_400 ? duration : null,
+    transcriptSource: source === 'subtitles' || source === 'automatic' || source === 'audio' ? source : null,
   };
 }
 

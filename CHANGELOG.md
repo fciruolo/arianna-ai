@@ -4,6 +4,34 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.158.0] - 2026-10-21
+
+### Aggiunto
+
+- «Riassumi il video» nei Pensieri (D-273, tappa A): un link di YouTube diventa una nota con riassunto, punti principali con i minuti cliccabili, capitoli, durata, canale e trascrizione chiusa; prima i sottotitoli, l'audio solo se mancano, trascritto sul Mac e cancellato; al più 2 ore di video, un video alla volta e mai durante una chiamata.
+- yt-dlp 2026.8.19 e yt-dlp-ejs 0.8.0 nell'ambiente di `apps/voice` (D-197, D-273): dopo l'aggiornamento serve `pnpm voice:sync`; per l'audio dei video senza sottotitoli servono Deno (D-274) e ffmpeg (D-275), controllati dal doctor insieme all'età di yt-dlp.
+
+### Sicurezza
+
+- Nuovo consenso del gateway per i video (`link-video`, migrazione `0085`): esce solo l'indirizzo normalizzato del video approvato dall'utente, e yt-dlp raggiunge solo YouTube e Google da un proxy del core vivo per quel lavoro (porta 443, indirizzi controllati, 400 MB e 20 minuti al massimo).
+
+### Corretto
+
+- Un video di YouTube non si scarica più come pagina con «Scarica e riassumi» né da solo con `youtube.com` fra i siti; le Impostazioni non propongono più `youtube.com` come esempio di sito scaricato da solo.
+
+## [0.157.0] - 2026-10-21
+
+### Aggiunto
+
+- Pagina «Seguiti» nella colonna di sinistra (gruppo Sistema) e comando `/seguiti`: in un posto solo progetti e account seguiti con la casella «Segui», le release di oMLX, le novità di Open Design e l'elenco dei cataloghi di skill e di agenti con la versione in uso e in attesa e il rimando a dove si gestiscono; in Sviluppo di Arianna, Modelli e Skill e stili al loro posto c'è «Ora in Seguiti» (D-272).
+- «Seguiti» mostra progetti, account, oMLX e Open Design come schede grandi in una griglia (nome, descrizione, ultima release, ultimo controllo, numero di novità e le prime tre; un clic apre il dettaglio) e ha una casella di ricerca che filtra sulla pagina schede e novità (release, funzioni, commit, repository nuovi) con la parola evidenziata; un progetto seguito dai repository nuovi di un account tiene la descrizione di GitHub (D-272).
+
+## [0.156.0] - 2026-10-21
+
+### Aggiunto
+
+- Progetti seguiti: si può seguire anche un account GitHub (`https://github.com/<account>`, al più 5) dalla pagina «Sviluppo di Arianna» o con `pnpm projects:followed add`; «Controlla nuovi repository» mostra i repository pubblici creati dall'ultimo controllo (fork e archiviati esclusi) con descrizione, data, licenza e «Segui», che li aggiunge ai progetti seguiti; il primo controllo segna come già visti quelli che ci sono (D-271).
+
 ## [0.155.0] - 2026-10-21
 
 ### Aggiunto
