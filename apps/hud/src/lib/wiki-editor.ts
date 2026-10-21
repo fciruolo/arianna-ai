@@ -7,7 +7,7 @@ import { HardBreak } from '@tiptap/extension-hard-break';
 import { Heading } from '@tiptap/extension-heading';
 import { HorizontalRule } from '@tiptap/extension-horizontal-rule';
 import { Italic } from '@tiptap/extension-italic';
-import { BulletList, ListItem, ListKeymap, OrderedList } from '@tiptap/extension-list';
+import { BulletList, ListItem, ListKeymap, OrderedList, TaskItem, TaskList } from '@tiptap/extension-list';
 import { Paragraph } from '@tiptap/extension-paragraph';
 import { Strike } from '@tiptap/extension-strike';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
@@ -130,6 +130,8 @@ export function wikiExtensions(): AnyExtension[] {
     OrderedList,
     ListItem,
     ListKeymap,
+    TaskList,
+    TaskItem.configure({ nested: true }),
     HardBreak,
     HorizontalRule,
     Table.configure({ resizable: false }),
@@ -151,14 +153,35 @@ export function markdownToDoc(text: string): JSONContent {
   return markdown().parse(text);
 }
 
+const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+
+/**
+ * The entities the serializer writes (`R&amp;D`, `a &lt; b`) back to the
+ * characters, outside fenced code: the page shows the text as written, and
+ * the core sees a `<` that opens a tag for what it is and refuses it.
+ */
+export function plainEntities(text: string): string {
+  let fenced = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        fenced = !fenced;
+        return line;
+      }
+      return fenced ? line : line.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity);
+    })
+    .join('\n');
+}
+
 /** The editor's document back to Markdown, what the save sends to the core. */
 export function docToMarkdown(doc: JSONContent): string {
-  return `${markdown().serialize(doc).replace(/\s+$/, '')}\n`;
+  return `${plainEntities(markdown().serialize(doc)).replace(/\s+$/, '')}\n`;
 }
 
 /** Whether the document holds a mark or node the schema of a page does not know (never: the schema has no link). */
 export function unknownTypes(doc: JSONContent): string[] {
-  const known = new Set(['doc', 'paragraph', 'text', 'heading', 'bold', 'italic', 'strike', 'code', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'hardBreak', 'horizontalRule', 'table', 'tableRow', 'tableHeader', 'tableCell', 'wikiCitation']);
+  const known = new Set(['doc', 'paragraph', 'text', 'heading', 'bold', 'italic', 'strike', 'code', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'hardBreak', 'horizontalRule', 'table', 'tableRow', 'tableHeader', 'tableCell', 'wikiCitation']);
   const found = new Set<string>();
   const walk = (node: JSONContent): void => {
     if (node.type !== undefined && !known.has(node.type)) found.add(node.type);

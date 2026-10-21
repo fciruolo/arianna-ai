@@ -334,6 +334,11 @@ describe('the user writes the wiki', () => {
     refused('Titolo', 'https://esempio.invalid', 'line 1: link');
     refused('Titolo', 'www.esempio.invalid', 'line 1: link');
     refused('Titolo', '<img src=x>', 'line 1: link');
+    refused('Titolo', '</b> e <!-- commento -->', 'line 1: link');
+    ok('a < b e c > d, R&D');
+    // In a table the label comes after `\\|`, as Obsidian writes it.
+    ok('| a |\n| --- |\n| [[private/nota\\|la nota]] |');
+    refused('Titolo', '| [[segreti/chiave\\|x]] |', 'line 1: citation');
     refused('Titolo', '![[inbox/2026-10-21-100000-octane]]', 'line 1: link');
     refused('Titolo', 'un ]] spaiato', 'line 1: link');
     // Links the chat or Obsidian would still follow: after a wikilink, a scheme without slashes, a reference.
@@ -442,6 +447,8 @@ describe('the user writes the wiki', () => {
     assert.throws(() => { deleteWikiFolder(root, strict, 'laravel/octane'); }, (error) => error instanceof WikiError && error.code === 'not-found');
     assert.ok(existsSync(join(root, 'kb/wiki/laravel/octane')));
     deleteWikiFolder(root, RULES, 'laravel/octane');
+    // Finder's `.DS_Store` does not make a folder not empty.
+    writeFileSync(join(root, 'kb/wiki/laravel/.DS_Store'), 'finto');
     deleteWikiFolder(root, RULES, 'laravel');
     // An empty wiki: no index at all.
     assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
@@ -461,6 +468,9 @@ describe('what «[[» suggests', () => {
     assert.deepEqual(wikiCitationTargets(root, strict, 'nessuna-parola'), []);
     // Every suggestion is one the save accepts.
     for (const item of wikiCitationTargets(root, strict, '')) checkUserPage(root, strict, 'Titolo', `[[${item.target}]]`);
+    // A page whose header says more than L2 is not offered either.
+    writeFileSync(join(root, 'kb/wiki/laravel/octane/segreta.md'), '---\nlabel: L3\nkind: wiki\ntitle: "Octane segreta"\n---\n\nsegreta finta\n');
+    assert.ok(!wikiCitationTargets(root, strict, 'octane').some((item) => item.target === 'wiki/laravel/octane/segreta'));
   });
 });
 

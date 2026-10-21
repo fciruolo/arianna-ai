@@ -35,6 +35,9 @@ const suggest = reactive<{ open: boolean; items: WikiCitationTarget[]; index: nu
   loading: false,
 });
 
+let requests = 0;
+let frame: number | undefined;
+
 function place(props: SuggestionProps<WikiCitationTarget, WikiCitationTarget>): void {
   const rect = props.clientRect?.();
   if (rect === null || rect === undefined) return;
@@ -55,13 +58,15 @@ const CitationSuggest = Extension.create({
         allowedPrefixes: null,
         debounce: 150,
         items: async ({ query }) => {
+          // Only the latest request says when the list is ready.
+          const asked = ++requests;
           suggest.loading = true;
           try {
             return await loadWikiTargets(query);
           } catch {
             return [];
           } finally {
-            suggest.loading = false;
+            if (asked === requests) suggest.loading = false;
           }
         },
         command: ({ editor: current, range, props: item }) => {
@@ -106,7 +111,8 @@ const CitationSuggest = Extension.create({
             if (event.key === 'Enter' || event.key === 'Tab') {
               const item = suggest.items[suggest.index];
               if (item !== undefined) suggest.command?.(item);
-              return item !== undefined;
+              // While the list is coming, Enter waits instead of breaking the line inside «[[…».
+              return item !== undefined || suggest.loading;
             }
             if (event.key === 'Escape') {
               suggest.open = false;
@@ -124,7 +130,8 @@ function choose(item: WikiCitationTarget): void {
   suggest.command?.(item);
 }
 
-function create(): void {
+function create(text: string): void {
+  frame = undefined;
   if (host.value === null) return;
   editor.value = new Editor({
     element: host.value,
@@ -136,7 +143,7 @@ function create(): void {
       Placeholder.configure({ placeholder: 'Scrivi qui. «[[» per citare una nota o una pagina.' }),
       CitationSuggest,
     ],
-    content: markdownToDoc(props.modelValue),
+    content: markdownToDoc(text),
     editorProps: { attributes: { class: 'wiki-editor-content', 'aria-label': 'Testo della pagina', spellcheck: 'true' } },
     onUpdate: ({ editor: current }) => {
       emit('update:modelValue', docToMarkdown(current.getJSON()));
@@ -159,10 +166,13 @@ function toggle(): void {
     destroy();
     mode.value = 'markdown';
   } else {
-    emit('update:modelValue', plain.value);
+    const text = plain.value;
+    emit('update:modelValue', text);
     mode.value = 'rich';
-    // The host is in the DOM again on the next frame.
-    requestAnimationFrame(create);
+    // The host is shown again on the next frame; the editor starts from the text as written.
+    frame = requestAnimationFrame(() => {
+      create(text);
+    });
   }
 }
 
@@ -210,8 +220,13 @@ function run(action: Run): void {
   if (editor.value !== null) action(editor.value);
 }
 
-onMounted(create);
-onBeforeUnmount(destroy);
+onMounted(() => {
+  create(props.modelValue);
+});
+onBeforeUnmount(() => {
+  if (frame !== undefined) cancelAnimationFrame(frame);
+  destroy();
+});
 </script>
 
 <template>

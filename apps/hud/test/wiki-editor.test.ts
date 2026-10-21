@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { citationMarkdown, citationText, docToMarkdown, markdownToDoc, unknownTypes } from '../src/lib/wiki-editor.ts';
+import { citationMarkdown, citationText, docToMarkdown, markdownToDoc, plainEntities, unknownTypes } from '../src/lib/wiki-editor.ts';
 
 const PAGE = [
   '## In breve',
@@ -53,7 +53,9 @@ test('the editor has no link, image or HTML: they stay text, and an address stay
   const doc = markdownToDoc('Un [link](https://esempio.invalid/?q=1) e ![img](x.png) e <img src=x> e https://nudo.invalid.');
   assert.deepEqual(unknownTypes(doc), []);
   const back = docToMarkdown(doc);
-  assert.doesNotMatch(back, /\]\(|!\[|<img/);
+  assert.doesNotMatch(back, /\]\(|!\[/);
+  // HTML stays text in the editor; written back it is a tag again, which the save refuses with its line.
+  assert.match(back, /<img src=x>/);
   assert.doesNotMatch(back, /esempio\.invalid\/\?q=1/);
   // A bare address is kept as text: the save refuses it with its line, as in the plain editor.
   assert.match(back, /https:\/\/nudo\.invalid/);
@@ -62,4 +64,20 @@ test('the editor has no link, image or HTML: they stay text, and an address stay
 test('an address the pages proposed wrote inert stays inert', () => {
   const back = docToMarkdown(markdownToDoc('Il sito è https[://]esempio.invalid/guida.'));
   assert.doesNotMatch(back, /(?<!\[):\/\//);
+});
+
+test('the text keeps its characters: no entity in what is saved, except inside fenced code', () => {
+  const back = docToMarkdown(markdownToDoc('R&D e a < b, "virgolette" e l\'apostrofo.'));
+  assert.match(back, /R&D e a < b, "virgolette" e l'apostrofo\./);
+  assert.doesNotMatch(back, /&amp;|&lt;|&quot;|&#39;/);
+  assert.equal(plainEntities('```\n&amp;\n```\n&amp;'), '```\n&amp;\n```\n&');
+  // HTML written as text becomes a tag again: the save refuses it with its line, as in the plain editor.
+  assert.match(docToMarkdown(markdownToDoc('Scrivo <b>forte</b>.')), /<b>forte<\/b>/);
+});
+
+test('to-do lists and a citation with a label inside a table go and come back', () => {
+  const back = docToMarkdown(markdownToDoc('- [ ] da fare\n- [x] fatto [[inbox/nota]]\n\n| a | b |\n| --- | --- |\n| [[inbox/x\\|La X]] | 2 |'));
+  assert.match(back, /- \[ \] da fare/);
+  assert.match(back, /- \[x\] fatto \[\[inbox\/nota\]\]/);
+  assert.match(back, /\[\[inbox\/x\\?\|La X\]\]/);
 });

@@ -153,7 +153,7 @@ export function indexPath(folder: string): string {
  * (`[[wiki/laravel/octane/_indice|…]]`), or a note of kb/ to open in Conoscenza.
  */
 export function wikilinkTarget(target: string): { wiki: string } | { note: string } {
-  const clean = (target.split('|')[0] ?? '').split('#')[0]?.trim().replace(/\.md$/, '') ?? '';
+  const clean = (target.replace(/\\\|/g, '|').split('|')[0] ?? '').split('#')[0]?.trim().replace(/\\$/, '').replace(/\.md$/, '') ?? '';
   if (clean.startsWith('wiki/')) return { wiki: clean.slice('wiki/'.length) };
   return { note: `${clean}.md` };
 }

@@ -300,7 +300,7 @@ body::before {
  * around it at focus (user's requests, 2026-10-04 and 2026-10-05). Buttons,
  * links, checkboxes and switches keep the ring of :focus-visible.
  */
-:is(textarea, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])):focus-visible {
+:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])):focus-visible {
   outline: none;
 }
 
@@ -850,14 +850,10 @@ body::before {
   }
   .wiki-editor-content {
     min-height: 300px;
-    outline: none;
     font-size: 14.5px;
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
-  }
-  .wiki-editor-content:focus {
-    outline: none;
   }
   .wiki-editor-content > * + * {
     margin-top: 0.6em;
@@ -940,6 +936,14 @@ body::before {
   }
   .wiki-editor-content .wiki-citation.ProseMirror-selectednode {
     background: var(--glow);
+  }
+  .wiki-editor-content ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0.2em;
+  }
+  .wiki-editor-content ul[data-type="taskList"] li {
+    display: flex;
+    gap: 0.5em;
   }
   .wiki-editor-content p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);

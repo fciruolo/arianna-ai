@@ -552,8 +552,8 @@ function holdsPages(tree: WikiTree, folder: string): boolean {
 
 /**
  * Every index composed again from the tree, keeping its «In breve» (or
- * `summaries` given for a folder); a folder without pages loses its index and
- * goes when it is empty. Gives back the folders whose index is new.
+ * `summaries` given for a folder); an empty folder keeps an index that says
+ * so. Gives back the folders with pages whose index is new.
  */
 export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map()): string[] {
   // No folder goes by itself (the user's choice, 2026-10-21): an empty one stays, with an index that says so,
@@ -1407,12 +1407,14 @@ export function checkUserPage(home: string, rules: LabelRules, title: string, bo
     // On the line as written: a `](` after a wikilink is a link too, and a scheme needs no slashes (`https:host`).
     if (/\]\(|\b(?:https?|mailto|ftp|file|javascript|vbscript|data|obsidian|tel):(?=\S)/i.test(line) || /^[\s>]*\[[^\]]+\]:/.test(line)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     const rest = line.replace(/\[\[([^[\]\n]{1,400})\]\]/g, (_match, inner: string) => {
-      const target = (inner.split('|')[0] ?? '').split('#')[0]?.trim() ?? '';
+      // In a table the label is written after `\|` (as Obsidian does): the same citation.
+      const target = (inner.replace(/\\\|/g, '|').split('|')[0] ?? '').split('#')[0]?.trim() ?? '';
       if (!userLinkOk(home, rules, target)) throw new WikiError('invalid', `line ${String(index + 1)}: citation`);
       return ' ';
     });
     // An address the code wrote inert (`https[://]…`, as in the pages proposed) stays; any other `://` does not.
-    if (/\[\[|\]\]|<|!\[|\]\(|\]\[|(?<!\[):\/\/|\bwww\./i.test(rest)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    // `<` only where it opens a tag, a comment or an autolink: «a < b» is text.
+    if (/\[\[|\]\]|<(?=[A-Za-z/!?])|!\[|\]\(|\]\[|(?<!\[):\/\/|\bwww\./i.test(rest)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
   });
   return { title: cleanTitle, body: `${text.replace(/\s+$/, '')}\n` };
 }
@@ -1435,23 +1437,47 @@ export function wikiCitationTargets(home: string, rules: LabelRules, query: stri
   const found: CitationTarget[] = [];
   for (const page of visibleWikiTree(home, rules).pages) {
     if (found.length >= limit) break;
-    if (matches(`${page.path} ${page.title}`)) found.push({ target: `${WIKI_ID}/${page.path}`, title: page.title, kind: 'page' });
-  }
-  const kb = kbReal(home);
-  if (kb === undefined) return found;
-  for (const id of listPageIds(kb)) {
-    if (found.length >= limit) break;
-    if (!isWikiSource(id)) continue;
-    let title: string;
+    if (!matches(`${page.path} ${page.title}`)) continue;
+    // As the save checks it: a page whose header says more than L2 is not offered.
     try {
-      title = readKnowledgePage(home, rules, id).title;
+      readWikiView(home, rules, page.path);
     } catch {
       continue;
     }
-    if (matches(`${id} ${title}`)) found.push({ target: vaultId(id), title, kind: 'note' });
+    found.push({ target: `${WIKI_ID}/${page.path}`, title: page.title, kind: 'page' });
+  }
+  const kb = kbReal(home);
+  if (kb === undefined) return found;
+  const ids = listPageIds(kb).filter(isWikiSource);
+  const note = (id: string): CitationTarget | undefined => {
+    try {
+      return { target: vaultId(id), title: readKnowledgePage(home, rules, id).title, kind: 'note' };
+    } catch {
+      return undefined;
+    }
+  };
+  // The notes whose path matches first, then a few more read for their title: never the whole kb at each key.
+  const byPath = ids.filter((id) => matches(id));
+  for (const id of byPath) {
+    if (found.length >= limit) return found;
+    const item = note(id);
+    if (item !== undefined) found.push(item);
+  }
+  if (words.length === 0) return found;
+  const seen = new Set(byPath);
+  let reads = 0;
+  for (const id of ids) {
+    if (found.length >= limit || reads >= MAX_TITLE_READS) break;
+    if (seen.has(id)) continue;
+    reads += 1;
+    const item = note(id);
+    if (item !== undefined && matches(item.title)) found.push(item);
   }
   return found;
 }
+
+/** Notes read for their title by one suggestion at most. */
+const MAX_TITLE_READS = 300;
 
 /** A page as the user wrote it: the header of the code (always L2), then their body. */
 function composeUserPage(title: string, body: string, now: Date): string {
@@ -1509,8 +1535,10 @@ export function deleteWikiFolder(home: string, rules: LabelRules, path: string):
   } catch {
     throw new WikiError('unavailable', 'cannot delete the folder');
   }
-  if (names.some((name) => name !== INDEX_NAME)) throw new WikiError('invalid', 'not-empty');
+  // Finder's own `.DS_Store` is not something the user put there.
+  if (names.some((name) => name !== INDEX_NAME && name !== '.DS_Store')) throw new WikiError('invalid', 'not-empty');
   removeWikiFile(home, [...path.split('/'), INDEX_NAME]);
+  if (names.includes('.DS_Store')) removeWikiFile(home, [...path.split('/'), '.DS_Store']);
   try {
     rmdirSync(dir);
   } catch {
