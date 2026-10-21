@@ -109,6 +109,8 @@ class MetaTest(unittest.TestCase):
         self.assertEqual(error_code("Sign in to confirm you’re not a bot"), "bot-check")
         self.assertEqual(error_code("Unable to connect to proxy"), "network")
         self.assertEqual(error_code("nsig extraction failed"), "download-failed")
+        self.assertEqual(error_code("Requested format is not available"), "download-failed")
+        self.assertEqual(error_code("Unable to download API page: Tunnel connection failed: 403 Forbidden (caused by ProxyError)"), "network")
 
 
 class SegmentsTest(unittest.TestCase):

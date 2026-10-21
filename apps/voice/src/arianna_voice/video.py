@@ -167,7 +167,7 @@ def error_code(message: str) -> str:
     text = message.lower()
     if "not a bot" in text or ("confirm you" in text and "bot" in text):
         return "bot-check"
-    if any(part in text for part in ("private video", "video unavailable", "not available", "has been removed", "members-only", "members only", "confirm your age", "age-restricted", "premieres in", "this live event")):
+    if any(part in text for part in ("private video", "video unavailable", "video is not available", "video is unavailable", "has been removed", "members-only", "members only", "join this channel", "confirm your age", "age-restricted", "premieres in", "this live event")):
         return "unavailable"
     if any(part in text for part in ("proxy", "timed out", "connection refused", "connection reset", "network is unreachable", "name resolution", "ssl")):
         return "network"
@@ -200,11 +200,16 @@ def _ytdlp(argv: list[str], download: bool) -> dict[str, Any]:
     except SystemExit as error:
         raise StepError("bad-request") from error
     options = dict(parsed.ydl_opts)
-    options.update({"logger": _Silent(), "quiet": True, "no_warnings": True, "noprogress": True, "consoletitle": False})
+    # The command line ignores download errors by default ("only_download"): here every error is an answer.
+    options.update({"logger": _Silent(), "quiet": True, "no_warnings": True, "noprogress": True, "consoletitle": False, "ignoreerrors": False})
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(parsed.urls[0], download=download)
+            if info is None:
+                raise StepError("download-failed")
             return ydl.sanitize_info(info)
+    except StepError:
+        raise
     except Exception as error:  # noqa: BLE001 - yt-dlp raises many kinds; only the code goes out
         raise StepError(error_code(str(error))) from None
 

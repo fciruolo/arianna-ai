@@ -21,7 +21,7 @@ import { checkedLookup, isPrivateName, systemResolve, type Resolver } from './pu
  */
 
 /** Hosts reached by name, exactly. */
-export const VIDEO_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com', 'i.ytimg.com'] as const;
+export const VIDEO_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com', 'i.ytimg.com'] as const;
 /** Hosts reached as subdomains: the servers of the media of YouTube. */
 export const VIDEO_HOST_SUFFIXES = ['.googlevideo.com'] as const;
 export const VIDEO_PROXY_MAX_BYTES = 400 * 1024 * 1024;
