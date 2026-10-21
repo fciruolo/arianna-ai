@@ -198,6 +198,8 @@ export interface NetworkScope {
   context: Context;
   consent: PageConsent;
   meta?: GatewayMeta;
+  /** Who drives the browser (D-264, passo 5): `agent` when missing. */
+  driver?: 'agent' | 'user';
 }
 
 export interface NetworkHandle {
@@ -588,7 +590,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   return {
     budget,
     rescope(next) {
-      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }) };
+      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }), ...(next.driver === undefined ? {} : { driver: next.driver }) };
     },
     counts: () => structuredClone(counts),
     lastNavigation: () => (last === undefined ? undefined : { ...last }),

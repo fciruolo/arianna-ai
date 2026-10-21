@@ -9,7 +9,7 @@ import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
 import { BrowserError } from './container.ts';
 import type { BrowserManager } from './manager.ts';
-import { navigationConsent, type NetworkJob, type RequestOutcome } from './network.ts';
+import { navigationConsent, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
 import type { ResourceFailure } from './resource-fetch.ts';
 import { connectSession, type BrowserSession, type SessionOptions } from './session.ts';
 
@@ -46,6 +46,16 @@ import { connectSession, type BrowserSession, type SessionOptions } from './sess
  * the sites of those addresses count for clicks and redirects only.
  * Every action has a deadline (ACTION_LIMIT_MS): a page that hangs the
  * browser loses it, never the queue nor the shutdown of the core.
+ *
+ * «Prendi il controllo» (D-264, passo 5): the control is `agent` or `user`.
+ * takeControl waits for the action under way (bounded by ACTION_LIMIT_MS),
+ * never in the middle of one; while the user drives, every action of the
+ * conversation answers `paused` and every action of another one `busy`
+ * (never taken over, however long the browser stays without actions of
+ * Arianna). The network decides the requests of the user without the task of
+ * Arianna (no task in gateway_log). Given back, the first action must be a
+ * reading (`reread`): the page is no longer the one Arianna read. Input of
+ * the user counts as activity for the 15 minutes; the 30 stay.
  */
 
 export const TAKE_OVER_MS = 2 * 60_000;
@@ -89,6 +99,10 @@ export type ActionResult =
 
 export type ActionFailure =
   | 'busy'
+  /** The user drives the browser (D-264, passo 5): Arianna does nothing in it. */
+  | 'paused'
+  /** The user gave the browser back: the page must be read again before anything else. */
+  | 'reread'
   | 'not-installed'
   | 'start-failed'
   | 'not-open'
@@ -112,6 +126,22 @@ export type BrowserAction =
   | { kind: 'type'; ref: number; text: string; submit: boolean }
   | { kind: 'scroll'; direction: 'up' | 'down' }
   | { kind: 'close' };
+
+/** Who drives the browser of a conversation (D-264, passo 5). */
+export type Driver = 'agent' | 'user';
+
+/** The answer of takeControl: `waiting` while an action of Arianna ends first; `done` says whether the user drives. */
+export interface ControlRequest {
+  waiting: boolean;
+  done: Promise<boolean>;
+}
+
+/** A navigation refused while the user drove, for the chat (D-264, passo 5): its number, never its address. */
+export interface BlockedNavigation {
+  seq: number;
+  outcome: 'blocked' | 'refused' | 'form' | 'limit';
+  site?: string;
+}
 
 /** The session of the step that acts. */
 export interface BrowserScope {
@@ -158,6 +188,14 @@ interface Held {
   readAt: string | undefined;
   /** The site of the page after the last action that reached one: the bar of the chat shows it (D-264, passo 4). */
   site?: string;
+  /** Who drives (D-264, passo 5). */
+  driver: Driver;
+  /** The last scope of an action of Arianna: the network of the user goes on with it, without the task. */
+  scope: BrowserScope;
+  /** Given back by the user: the next action of Arianna must read the page. */
+  reread: boolean;
+  /** The last navigation decided when the user took the control: what is refused after it is shown in the chat. */
+  seqAtTake: number;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -193,7 +231,76 @@ export class AgentBrowser {
   /** The site the browser of `conversationId` is on, when it holds the browser and an action reached a page. */
   siteOf(conversationId: string): string | null {
     const held = this.#held;
-    return this.holder === conversationId ? (held?.site ?? null) : null;
+    if (this.holder !== conversationId || held === null) return null;
+    // While the user drives the page changes without actions of Arianna: the network knows the last one.
+    if (held.driver === 'user') {
+      const last = held.session.network?.lastNavigation();
+      if (last !== undefined && last.seq > held.seqAtTake && last.site !== undefined && (last.outcome === 'ok' || last.outcome === 'http-error')) return last.site;
+    }
+    return held.site ?? null;
+  }
+
+  /** Who drives the browser of `conversationId`; null when it holds none. */
+  driverOf(conversationId: string): Driver | null {
+    return this.holder === conversationId ? (this.#held?.driver ?? null) : null;
+  }
+
+  /** The last main page refused while the user drove (D-264, passo 5), for the chat; null when none. */
+  blockedOf(conversationId: string): BlockedNavigation | null {
+    const held = this.#held;
+    if (this.holder !== conversationId || held === null || held.driver !== 'user') return null;
+    const last = held.session.network?.lastNavigation();
+    if (last === undefined || last.seq <= held.seqAtTake) return null;
+    if (last.outcome !== 'blocked' && last.outcome !== 'refused' && last.outcome !== 'form' && last.outcome !== 'limit') return null;
+    return { seq: last.seq, outcome: last.outcome, ...(last.site === undefined ? {} : { site: last.site }) };
+  }
+
+  /**
+   * «Prendi il controllo» (D-264, passo 5): after the action under way, if
+   * any (`waiting`), never in the middle of one. `done` is false when the
+   * conversation does not hold the browser, then or once its turn came.
+   */
+  takeControl(conversationId: string): ControlRequest {
+    if (this.holder !== conversationId) return { waiting: false, done: Promise.resolve(false) };
+    const waiting = this.#running;
+    const run = this.#queue.then(() => {
+      this.#forgetClosed();
+      const held = this.#held;
+      if (held?.conversationId !== conversationId) return false;
+      if (held.driver === 'user') return true;
+      held.driver = 'user';
+      held.reread = false;
+      held.seqAtTake = held.session.network?.lastNavigation()?.seq ?? 0;
+      // The requests of the user carry no task of Arianna in gateway_log.
+      held.session.network?.rescope(networkScope(held.scope, 'user'));
+      this.#touch(held);
+      return true;
+    });
+    this.#queue = run.catch(() => undefined);
+    return { waiting, done: run };
+  }
+
+  /**
+   * «Restituisci ad Arianna», the screen closed, or no input for a while:
+   * Arianna drives again, and reads the page first. False when the user did
+   * not drive the browser of that conversation.
+   */
+  returnControl(conversationId: string): boolean {
+    const held = this.#held;
+    if (this.holder !== conversationId || held === null || held.driver !== 'user') return false;
+    held.driver = 'agent';
+    held.reread = true;
+    held.elements.clear();
+    held.readAt = undefined;
+    held.session.network?.rescope(networkScope(held.scope, 'agent'));
+    this.#touch(held);
+    return true;
+  }
+
+  /** Input of the user on the screen that drives: counts as activity for the 15 minutes (never for the 30). */
+  userInput(conversationId: string): void {
+    const held = this.#held;
+    if (held !== null && held.conversationId === conversationId && held.driver === 'user') this.#touch(held);
   }
 
   /** One action, after the ones already running. Never throws. */
@@ -255,6 +362,8 @@ export class AgentBrowser {
   async #act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
     this.#forgetClosed();
     const held = this.#held;
+    // The user drives: nothing of Arianna, in this conversation or another (D-264, passo 5).
+    if (held !== null && held.driver === 'user') return { ok: false, reason: held.conversationId === scope.conversationId ? 'paused' : 'busy' };
     // Closed by the user: the next action hears why, once; browser.open opens it again.
     const userClosed = this.#closedByUser.delete(scope.conversationId) && held?.conversationId !== scope.conversationId;
     if (userClosed && action.kind !== 'open' && action.kind !== 'close') return { ok: false, reason: 'closed-by-user' };
@@ -263,8 +372,12 @@ export class AgentBrowser {
       return { ok: true, page: { url: '', site: '', title: '' } };
     }
     if (held !== null && held.conversationId === scope.conversationId) {
-      held.session.network?.rescope(scope);
+      held.scope = scope;
+      held.session.network?.rescope(networkScope(scope, 'agent'));
       held.lastAction = this.#now();
+      // Given back by the user: the page is read again before anything else.
+      if (held.reread && action.kind !== 'read') return { ok: false, reason: 'reread' };
+      if (action.kind === 'read') held.reread = false;
       return this.#bounded(held, this.#run(held, scope, action));
     }
     if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
@@ -293,7 +406,7 @@ export class AgentBrowser {
       if (error instanceof BrowserError && (error.code === 'no-lock' || error.code === 'image-mismatch' || error.code === 'bad-image')) return { ok: false, reason: 'not-installed' };
       return { ok: false, reason: 'start-failed' };
     }
-    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined };
+    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0 };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
   }
@@ -417,6 +530,11 @@ export class AgentBrowser {
     await held.session.close().catch(() => undefined);
   }
 
+  #touch(held: Held): void {
+    held.lastAction = this.#now();
+    held.session.touch?.();
+  }
+
   #released(held: Held): void {
     this.#safely(() => { this.#options.onReleased?.(held.conversationId); });
   }
@@ -428,6 +546,11 @@ export class AgentBrowser {
       console.warn('browser: a callback of the agent browser failed');
     }
   }
+}
+
+/** The scope of the network for who drives: the user's requests carry no task of Arianna. */
+function networkScope(scope: BrowserScope, driver: Driver): NetworkScope {
+  return { context: scope.context, consent: scope.consent, driver, ...(driver === 'agent' && scope.meta !== undefined ? { meta: scope.meta } : {}) };
 }
 
 function pageOf(url: string, title: string): { url: string; site: string; title: string } {

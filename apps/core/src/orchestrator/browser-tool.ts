@@ -67,6 +67,8 @@ export const TASK_LIMIT = `Ho già fatto ${String(MAX_ACTIONS_PER_TASK)} azioni 
 /** Fixed texts of the failures, Italian: the chat shows them, the model reads them. */
 export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'], string> = {
   busy: 'Il browser lo sta usando un’altra chat: riprova fra poco.',
+  paused: 'Il browser lo sta usando l’utente: nessuna azione nel browser finché non te lo restituisce. Rispondi con quello che hai.',
+  reread: 'L’utente ha usato il browser e te l’ha restituito: rileggi la pagina con browser.read prima di ogni altra azione.',
   'not-installed': 'Il browser non è installato su questo Mac.',
   'start-failed': 'Il browser non è partito: riprova fra poco.',
   'not-open': 'Il browser non è aperto: aprilo prima con browser.open.',
