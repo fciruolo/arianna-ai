@@ -7,6 +7,7 @@ import { piiExemptions, piiScanTexts } from './catalog-texts.ts';
 import { piiVerdict, type PiiCheck, type PiiFinding } from './pii.ts';
 import { scanText, type Finding } from './scanner.ts';
 import type { KnownSecrets } from './secrets.ts';
+import { isSiteName } from './site.ts';
 
 // `voice`: a call from the web chat to apps/voice, on this machine (D-066);
 // `push`: the notification of a call, through Apple, Google or Mozilla.
@@ -115,7 +116,14 @@ export type Target =
    * The payload is one text of at most `MAX_TYPED_TEXT` characters, checked
    * as a page: never with `page` or `resource`.
    */
-  | { kind: 'web'; typed: PageConsent['from']; page?: never; resource?: never; session?: never; form?: never }
+  | { kind: 'web'; typed: PageConsent['from']; site?: never; page?: never; resource?: never; session?: never; form?: never }
+  /**
+   * The text the agent's browser types in a field of the site of an access
+   * made by the user, from the Private chat the browser passed to (D-281):
+   * `site` is the site of the access. It may carry L2, only from a context
+   * marked with that site (`browserSite`): never with `page` or `resource`.
+   */
+  | { kind: 'web'; typed: 'session'; site: string; page?: never; resource?: never; session?: never; form?: never }
   /**
    * The address of a link saved by the user, to its own site (D-154). With
    * `list`, `sites` are the sites of the list the caller read: the address
@@ -212,13 +220,6 @@ export function linkScanText(address: string): string {
   }
   if (!X_HOSTS.includes(host)) return address;
   return address.replace(/(status(?:\/|%2F))\d{1,25}/gi, (_match, prefix: string) => `${prefix}0`);
-}
-
-/** A host name of the list: lowercase, at least two labels, no scheme, port or path (`com` would cover every .com site). */
-function isSiteName(site: string): boolean {
-  if (site.length > 253) return false;
-  const labels = site.split('.');
-  return labels.length >= 2 && labels.every((part) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(part)) && !/^\d+$/.test(labels.at(-1) ?? '');
 }
 
 /** One address only: http(s), normalized, no credentials, no space. The URL, or the reason of the refusal. */
@@ -461,8 +462,11 @@ export function isTarget(value: unknown): value is Target {
       // One kind of web target at a time.
       const kinds = ['page', 'resource', 'typed', 'session', 'form'].filter((key) => target[key] !== undefined);
       if (kinds.length > 1) return false;
+      // The site only with the text typed in the site of an access (D-281), and there always.
+      if (target.site !== undefined && target.typed !== 'session') return false;
       if (target.session !== undefined) return isSessionRequest(target.session);
       if (target.form !== undefined) return isFormRequest(target.form);
+      if (target.typed === 'session') return typeof target.site === 'string' && isSiteName(target.site);
       if (target.typed !== undefined) return target.typed === 'public' || target.typed === 'user' || target.typed === 'sites';
       if (target.resource !== undefined) return isResourceRequest(target.resource);
       return target.page === undefined || isPageConsent(target.page);
@@ -606,7 +610,13 @@ function block(
  *    form the user sent (`form`, its address only) may carry L2, only
  *    towards that site and only from a context that has read at most L1:
  *    their shape right after rule 3, then rules 4, 5 and the context of 7,
- *    the scanner, never the second scan.
+ *    the scanner, never the second scan. In the Private chat the browser
+ *    passed to after the access (D-281) the context has read L2, but only
+ *    from that site and the user: a context marked by the core with the site
+ *    (`browserSite`) may send `session`, `form` and the text typed in a field
+ *    (`typed: 'session'`) towards that site only, never anything to any
+ *    other target; the typed text is checked as a session request (shape,
+ *    scanner, no second scan).
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -740,13 +750,30 @@ export function gatewayCheck(
     return allow({ decision: 'allow', rule: 'local', label, reason: `${label} to a local target`, texts }, target);
   }
 
-  if (!canUseCloud(context)) {
+  // The Private chat of an access (D-281): a context that has read L2 only from the site of the access and
+  // the user sends towards that site only, and only a request, a form or a typed text of that site.
+  const typedSite = target.kind === 'web' && target.typed === 'session' ? target.site : undefined;
+  const accessSite = session?.site ?? form?.site ?? typedSite;
+  const fromItsSite = accessSite !== undefined && context.browserSite === accessSite && context.finance !== true;
+  if (typedSite !== undefined && !fromItsSite) {
+    return block('typed-invalid', label, 'text is typed in the site of an access only from its own private chat', 'stay-local');
+  }
+  if (!canUseCloud(context) && !fromItsSite) {
     return block('contaminated', label, `the session has read ${context.effective}: it stays local`, onBlock);
   }
 
   // The site of an access made by the user (D-276): L2 goes, only to that site (its shape checked it), and
-  // only from a session that has read at most Internal (just above). The scanner on the address and the
-  // body; never the second scanner, which would read the user's own data of that site as a person.
+  // only from a session that has read at most Internal (just above) or from the Private chat of that very
+  // access (D-281). The scanner on the address and the body, or on the typed text; never the second
+  // scanner, which would read the user's own data of that site as a person.
+  if (typedSite !== undefined) {
+    const findings = parts.flatMap((part) => scanText(part));
+    if (findings.length > 0) {
+      const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
+      return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
+    }
+    return allow({ decision: 'allow', rule: 'typed', label, reason: `${label} text typed in the site of an access from its private chat, scan clean, no second check`, texts }, target);
+  }
   if (session !== undefined || form !== undefined) {
     const findings = [...addressFindings(texts[0] ?? ''), ...bodyParts.flatMap((part) => scanText(part))];
     if (findings.length > 0) {

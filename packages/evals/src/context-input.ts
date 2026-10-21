@@ -12,6 +12,8 @@ export interface ContextInput {
   effective?: Label;
   forged?: boolean;
   reads?: (Label | ReadInput)[];
+  /** The site of the access of the Private chat of the browser (D-281): a context the core declares, cleared for L2. */
+  browserSite?: string;
 }
 
 /** A read with the source of the value read. */
@@ -28,7 +30,7 @@ function readOf(raw: unknown): ReadInput | undefined {
   return isLabel(read.label) && typeof read.source === 'string' ? { label: read.label, source: read.source } : undefined;
 }
 
-const KEYS = new Set(['clearance', 'effective', 'forged', 'reads']);
+const KEYS = new Set(['clearance', 'effective', 'forged', 'reads', 'browserSite']);
 
 export interface BuiltContext {
   context: Context;
@@ -54,7 +56,7 @@ export function contextOf(raw: unknown): BuiltContext {
     if (input.forged === true) throw new Error('"context.reads" cannot be used with "forged": a forged context reads nothing');
   }
   if (input.forged === true) return { context: { clearance: input.clearance, effective: input.effective ?? 'L0' }, deniedReads: 0 };
-  let context = createContext(input.clearance, input.effective);
+  let context = createContext(input.clearance, input.effective, input.browserSite === undefined ? {} : { browserSite: input.browserSite });
   let deniedReads = 0;
   for (const raw of input.reads ?? []) {
     const { label, source } = readOf(raw) as ReadInput;

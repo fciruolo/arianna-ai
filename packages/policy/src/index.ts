@@ -9,6 +9,7 @@ export {
   FINANCE_DERIVED_SOURCE,
   FINANCE_LABEL,
   FINANCE_SOURCE_PREFIX,
+  isBrowserChatSource,
   isContext,
   isFinanceContext,
   isFinanceSource,
@@ -24,6 +25,7 @@ export {
   type ReadResult,
 } from './context.ts';
 export { PolicyError } from './errors.ts';
+export { isSiteName } from './site.ts';
 export { isMcpKbPath, MCP_CEILING, MCP_PROJECT_FOLDERS, mcpClearance } from './mcp.ts';
 export { PERSONA_LABEL, personaFits } from './persona.ts';
 export {
