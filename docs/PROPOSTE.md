@@ -2919,3 +2919,12 @@ Fatte il 2026-10-21, prima di scrivere il codice, sul registro PyPI, sulle relea
 - **ffmpeg:** già sul Mac (`/opt/homebrew/bin/ffmpeg`), prerequisito di sistema; la trascrizione lo usa solo per convertire l'audio in PCM 16 kHz mono, con `-protocol_whitelist file` (nessun protocollo di rete).
 - **Parakeet** (mlx-audio 0.5.7): `generate(audio, chunk_duration=…, overlap_duration=…)` spezza l'audio lungo e restituisce le frasi con `start` in secondi: le righe della trascrizione hanno il loro minuto.
 - **Il «byte» della riga di `gateway_log`** è quello di ogni riga del registro: lunghezza e sha256 dell'indirizzo che esce, mai l'indirizzo. I byte ricevuti dal proxy restano un tetto (400 MB), non una colonna nuova.
+
+### Tappa A: costruita sul ramo `task/d273-youtube` (da provare)
+
+Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte fatte durante la costruzione, dentro la proposta:
+
+- La conferma dell'utente è la scheda del pannello: «Approva per questo video» manda `approved: true` alla rotta, senza una riga in `approvals` (come «Scarica e riassumi» di D-154; nessuna riga in `label_changes`, domanda 6).
+- Il proxy accetta solo i tunnel con il suo gettone (`Proxy-Authorization`): un altro programma del Mac non può usarlo mentre è aperto.
+- I segmenti numerati sono pezzi di circa 240 caratteri o 30 secondi; il secondo passaggio usa solo i numeri dei punti del primo.
+- Il doctor segnala ffmpeg, Deno (almeno 2.6.6) e yt-dlp più vecchio di 90 giorni solo dove c'è l'ambiente di `apps/voice`, nel gruppo «Ambiente della voce e dei video» della pagina «Pronta per i dati veri».

@@ -4,6 +4,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- «Riassumi il video» nei Pensieri (D-273, tappa A): un link di YouTube diventa una nota con riassunto, punti principali con i minuti cliccabili, capitoli, durata, canale e trascrizione chiusa; prima i sottotitoli, l'audio solo se mancano, trascritto sul Mac e cancellato; al più 2 ore di video, un video alla volta e mai durante una chiamata.
+- yt-dlp 2026.8.19 e yt-dlp-ejs 0.8.0 nell'ambiente di `apps/voice` (D-197, D-273): dopo l'aggiornamento serve `pnpm voice:sync`; per l'audio dei video senza sottotitoli servono Deno (D-274) e ffmpeg (D-275), controllati dal doctor insieme all'età di yt-dlp.
+
+### Sicurezza
+
+- Nuovo consenso del gateway per i video (`link-video`, migrazione `0085`): esce solo l'indirizzo normalizzato del video approvato dall'utente, e yt-dlp raggiunge solo YouTube e Google da un proxy del core vivo per quel lavoro (porta 443, indirizzi controllati, 400 MB e 20 minuti al massimo).
+
+### Corretto
+
+- Un video di YouTube non si scarica più come pagina con «Scarica e riassumi» né da solo con `youtube.com` fra i siti; le Impostazioni non propongono più `youtube.com` come esempio di sito scaricato da solo.
+
 ## [0.154.0] - 2026-10-21
 
 ### Aggiunto
