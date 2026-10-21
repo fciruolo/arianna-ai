@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BROWSER_NO, BROWSER_YES, browserClick } from '../src/lib/browser-approval.ts';
+import { BROWSER_NO, BROWSER_YES, browserClick, browserSend, SEND_NO, SEND_NOTE, SEND_YES } from '../src/lib/browser-approval.ts';
 import { activityLink, activityText } from '../src/lib/italian.ts';
 import { ACTION_TEXT } from '../src/lib/labels.ts';
 import { pendingAskText } from '../src/lib/pending-text.ts';
@@ -44,4 +44,18 @@ test('the browser lines read as Italian and are never links', () => {
   assert.equal(activityText(line('wait', 'browser · Questo indirizzo non l’hai scritto tu: chiedo a te se aprirlo.')), 'browser: questo indirizzo non l’hai scritto tu: chiedo a te se aprirlo');
   // The other lines stay as they were.
   assert.equal(activityText(line('tool', 'command')), 'Il Coder usa il terminale');
+});
+
+test('the card «Invia / No» of the Private chat of an access (D-281): site and element, only for browser.send', () => {
+  const card = (action: string, detail: Record<string, unknown>) => browserSend({ kind: 'browser', action, detail });
+  assert.deepEqual(card('browser.send', { site: 'biblioteca-finta.it', element: 'Rinnova', step: 2 }), { site: 'biblioteca-finta.it', element: 'Rinnova' });
+  assert.deepEqual(card('browser.send', { site: 'biblioteca-finta.it', element: '  ', step: 2 }), { site: 'biblioteca-finta.it', element: 'elemento senza nome' });
+  assert.equal(card('browser.send', { element: 'Rinnova' }), undefined);
+  assert.equal(card('browser.click', { site: 'biblioteca-finta.it', element: 'Rinnova' }), undefined);
+  assert.equal(browserSend({ kind: 'action', action: 'browser.send', detail: { site: 'x.it', element: 'y' } }), undefined);
+  // A send is never read as a link card.
+  assert.equal(browserClick({ kind: 'browser', detail: { site: 'biblioteca-finta.it', element: 'Rinnova', step: 2 } }), undefined);
+  assert.equal([SEND_YES, SEND_NO].join(' / '), 'Invia / No');
+  assert.match(SEND_NOTE, /una volta sola/);
+  assert.equal(ACTION_TEXT['browser.send'], 'Invio questi dati al sito?');
 });

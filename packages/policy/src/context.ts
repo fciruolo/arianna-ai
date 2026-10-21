@@ -1,6 +1,7 @@
 // Taint, clearance and contamination (docs/PRIVACY-POLICY-SPEC.md, rules 2, 8 and 9).
 import { PolicyError } from './errors.ts';
 import { isAtMost, labelOrDefault, maxLabel, type Label } from './labels.ts';
+import { isSiteName } from './site.ts';
 
 export interface Labeled<T> {
   value: T;
@@ -21,12 +22,23 @@ export interface Context {
    * the gateway sends nothing of a marked context to a cloud target.
    */
   readonly finance?: true;
+  /**
+   * Present in the Private chat the agent's browser passed to after an access
+   * made by the user (D-281): the site of the access. The core declares it
+   * for a context that has read L2 only from that site and from the user;
+   * the gateway then lets that context send to that site only (rule 4, the
+   * `session`, `form` and `typed: 'session'` targets). A read of L2 from any
+   * other source drops it (`recordRead`).
+   */
+  readonly browserSite?: string;
 }
 
 /** Options of `createContext`. */
 export interface ContextOptions {
   /** A context that has read finance data: needs clearance and effective L2. */
   finance?: boolean;
+  /** The site of the access of the Private chat of the browser (D-281): clearance L2, never with finance. */
+  browserSite?: string;
 }
 
 export type ConversationMode = 'work' | 'private';
@@ -111,9 +123,25 @@ export function createContext(clearance: Label, effective: Label = 'L0', options
   if (options.finance === true && effective !== FINANCE_LABEL) {
     throw new PolicyError(`a context that has read finance data has effective ${FINANCE_LABEL}, not ${effective}`);
   }
-  const context: Context = Object.freeze(options.finance === true ? { clearance, effective, finance: true as const } : { clearance, effective });
+  const site = options.browserSite;
+  if (site !== undefined) {
+    if (typeof site !== 'string' || !isSiteName(site)) throw new PolicyError('the site of an access is a host name');
+    if (clearance !== MAX_CLEARANCE) throw new PolicyError(`the private chat of an access is cleared for ${MAX_CLEARANCE}, not ${clearance}`);
+    if (options.finance === true) throw new PolicyError('the private chat of an access never reads finance data');
+  }
+  const context: Context = Object.freeze(
+    options.finance === true ? { clearance, effective, finance: true as const } : site === undefined ? { clearance, effective } : { clearance, effective, browserSite: site },
+  );
   issued.add(context);
   return context;
+}
+
+/** A closed list: a new source keeps the site only once it is added here. */
+const BROWSER_CHAT_SOURCES: readonly string[] = ['user', 'browser:read', 'browser:typed', 'browser:form', 'browser:session'];
+
+/** The sources a context of the Private chat of an access reads L2 from and keeps its site (D-281): the site itself and the user. */
+export function isBrowserChatSource(source: unknown): boolean {
+  return typeof source === 'string' && BROWSER_CHAT_SOURCES.includes(source);
 }
 
 /** True when the context was made by the policy and has read finance data: nothing of it goes to the cloud. */
@@ -141,7 +169,7 @@ export function labelForUserMessage(context: Context): Label {
 
 /** The context after the user wrote a message: it has read its own clearance. */
 export function recordUserMessage(context: Context): Context {
-  return recordRead(context, labelForUserMessage(context)).context;
+  return recordRead(context, labelForUserMessage(context), 'user').context;
 }
 
 /** Reads up to the clearance are allowed; L3 never is. */
@@ -170,7 +198,12 @@ export function recordRead(context: Context, label: Label, source?: string): Rea
     };
   }
   const marked = finance || context.finance === true;
-  return { allowed: true, context: createContext(context.clearance, maxLabel(context.effective, read), { finance: marked }) };
+  // The site of the access stays only for what is at most Internal, or Private from the site or the user (D-281).
+  const keepsSite = context.browserSite !== undefined && !marked && (isAtMost(read, CLOUD_CEILING) || isBrowserChatSource(source));
+  return {
+    allowed: true,
+    context: createContext(context.clearance, maxLabel(context.effective, read), { finance: marked, ...(keepsSite ? { browserSite: context.browserSite } : {}) }),
+  };
 }
 
 /** `recordRead` of finance data: the value read is L2 at least and the context is marked. */

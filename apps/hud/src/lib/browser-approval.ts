@@ -28,3 +28,27 @@ export function browserClick(approval: { kind: string; detail: Record<string, un
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
   return { site: site.trim(), url };
 }
+
+// The card of a send in the Private chat of an access (D-281): Arianna would
+// send data to the site where the user signed in (a form, or what the page
+// sends after her click); nothing leaves before «Invia».
+
+export const SEND_YES = 'Invia';
+export const SEND_NO = 'No';
+export const SEND_NOTE =
+  'Con Invia Arianna ripete quel clic una volta sola e il sito riceve i dati, a tuo nome; con No non lo rifà. Solo verso questo sito: è quello dove hai fatto l’accesso.';
+
+export interface BrowserSendCard {
+  /** The site of the access ("biblioteca-finta.it"). */
+  site: string;
+  /** The label of the element Arianna clicked, as the page names it: text, never a link. */
+  element: string;
+}
+
+/** The card of a `browser.send` approval (kind `browser`), or undefined when it is not a whole one. */
+export function browserSend(approval: { kind: string; action: string; detail: Record<string, unknown> }): BrowserSendCard | undefined {
+  if (approval.kind !== 'browser' || approval.action !== 'browser.send') return undefined;
+  const { site, element } = approval.detail;
+  if (typeof site !== 'string' || site.trim() === '' || typeof element !== 'string') return undefined;
+  return { site: site.trim(), element: element.trim() || 'elemento senza nome' };
+}

@@ -101,6 +101,7 @@ export const ACTION_TEXT: Record<string, string> = {
   'routine.propose': 'Attivo questa routine?',
   // The browser of Arianna (D-264): a link to another site.
   'browser.click': 'Apro questo indirizzo?',
+  'browser.send': 'Invio questi dati al sito?',
 };
 
 /** The ways a card of an agent may run, as the user chooses them (D-159). */

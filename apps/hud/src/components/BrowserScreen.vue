@@ -46,6 +46,8 @@ let screenToken: string | null = null;
 const control = ref<ControlState | null>(null);
 /** The site of an access made by the user (D-276). */
 const access = ref<string | null>(null);
+/** The screen of the Private chat of an access (D-281): there Arianna reads the pages. */
+const chat = ref(false);
 /** Asked, waiting for Arianna to end her action. */
 const asking = ref(false);
 const notice = ref<string | null>(null);
@@ -74,6 +76,7 @@ async function readStatus(): Promise<void> {
     const before = control.value;
     control.value = status.control;
     access.value = status.access;
+    chat.value = status.chat;
     if (before === 'you' && status.control === 'other') notice.value = CONTROL_PASSED;
     if (before === 'you' && status.control === 'agent') notice.value = 'Il browser è tornato ad Arianna.';
     if (status.control === 'you' || !status.open) asking.value = false;
@@ -100,6 +103,7 @@ function stop(): void {
   screenToken = null;
   control.value = null;
   access.value = null;
+  chat.value = false;
   asking.value = false;
   stopPolling();
   current?.disconnect();
@@ -292,7 +296,7 @@ onBeforeUnmount(() => {
       <p class="font-medium">{{ access === null ? CONTROL_WARNING : accessWarning(access) }}</p>
       <p v-if="access === null" class="text-[12.5px]">{{ FORM_NOTE }}</p>
     </div>
-    <p v-if="access !== null" class="text-[12.5px] text-muted" role="status">{{ accessText(access) }}</p>
+    <p v-if="access !== null" class="text-[12.5px] text-muted" role="status">{{ accessText(access, chat) }}</p>
     <p v-if="notice !== null" class="text-[12.5px] text-muted" role="status">{{ notice }}</p>
     <!-- The keyboard of a phone: off screen, never shown; what it receives goes as keys and is cleared. -->
     <input

@@ -16,7 +16,7 @@ import { configurePiiGuard } from '../src/pii-guard.ts';
 /** What the fake second scanner finds: nothing, or a person in every text. */
 let rizzoFinds = false;
 configurePiiGuard({
-  state: 'ready',
+  state: 'ready', warm: () => Promise.resolve(true),
   scan: (texts) => Promise.resolve(piiReport(texts, texts.map((text) => (rizzoFinds && text.length > 4 ? [{ kind: 'FULLNAME', start: 0, end: 4, score: 0.99 }] : [])))),
   stop: () => Promise.resolve(),
 });
@@ -45,6 +45,8 @@ interface FakeRequestSpec {
   unknownFrame?: boolean;
   /** The address of the page of the frame before the navigation (a form is sent from it). */
   pageUrl?: string;
+  /** allHeaders of Playwright never answers (an event of Chromium that does not come). */
+  hangHeaders?: boolean;
 }
 
 interface Outcome {
@@ -69,7 +71,7 @@ function fakeRequest(spec: FakeRequestSpec): unknown {
     },
     redirectedFrom: () => chain(spec.redirects ?? 0),
     headers: () => spec.headers ?? {},
-    allHeaders: () => Promise.resolve(spec.headers ?? {}),
+    allHeaders: () => (spec.hangHeaders === true ? new Promise(() => undefined) : Promise.resolve(spec.headers ?? {})),
     postDataBuffer: () => spec.body ?? null,
   };
 }
@@ -87,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -108,9 +110,15 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
     onEvent: (event) => events.push(event),
     fetchResource: (input) => {
       fetched.push(input);
-      return Promise.resolve(answer(input));
+      // A download that never ends (seen in the trial of D-281): only the deadline of the request answers it.
+      if (options.hang === true) return new Promise(() => undefined);
+      const delay = options.delayMs;
+      return delay === undefined ? Promise.resolve(answer(input)) : new Promise((resolve) => { setTimeout(() => { resolve(answer(input)); }, delay); });
     },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
+    ...(options.debug === undefined ? {} : { debug: options.debug }),
+    headersTimeoutMs: 50,
+    hopTimeoutMs: 100,
     unsafeTestAddresses: [],
   };
   const handle = await attachNetwork(context, job);
@@ -581,5 +589,89 @@ describe('attachNetwork: forms and cookies of the user', () => {
     assert.equal(net.handle.authenticated(), 'banca-finta.it');
     await net.close();
     assert.equal(net.handle.authenticated(), null);
+  });
+});
+
+// A page that did not load in the trial of D-281: a request whose extra headers never come is still answered.
+describe('attachNetwork: requests are always answered', () => {
+  it('allHeaders that never answers: the headers Playwright has are used, the request goes on', async () => {
+    const net = await harness();
+    const sent = await net.send({ url: 'https://example.net/fonts/a.woff2', type: 'font', hangHeaders: true, headers: { accept: '*/*' } });
+    assert.ok(sent.fulfilled);
+    assert.equal(net.fetched.length, 1);
+  });
+
+  it('a download that never ends: the page and the resource are refused at the deadline, with a timeout', async () => {
+    const net = await harness({ hang: true });
+    const page = await net.send({ url: 'https://example.net/login', main: true });
+    assert.equal(page.aborted, 'timedout');
+    assert.equal(net.handle.lastNavigation()?.outcome, 'failed');
+    assert.equal(net.handle.lastNavigation()?.reason, 'timeout');
+    const image = await net.send({ url: 'https://example.net/a.png' });
+    assert.equal(image.aborted, 'timedout');
+    assert.deepEqual(net.handle.counts(), { page: { failed: 1 }, image: { failed: 1 } });
+  });
+
+  it('an answer that comes after the deadline: its redirect is never followed and its cookies are never kept', async () => {
+    const net = await harness({ delayMs: 200, answer: () => ({ ok: true, status: 302, headers: [['location', 'https://example.net/next']], body: Buffer.alloc(0), location: 'https://example.net/next', setCookies: ['sid=late'] }) });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    const sent = await net.send({ url: 'https://example.net/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://example.net/accedi' });
+    assert.equal(sent.aborted, 'timedout');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(net.fetched.map((request) => request.url), ['https://example.net/session']);
+    // The form left before the deadline (the access is born with it, as in D-276); the cookie of its late answer is not kept.
+    assert.equal(net.handle.authenticated(), 'example.net');
+    await net.send({ url: 'https://example.net/conti', main: true });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
+  });
+});
+
+// The Private chat of an access (D-281): Arianna reads the site of the access, and sends to it only after «Invia».
+describe('attachNetwork: the Private chat of an access', () => {
+  const html = (): ResourceResult => ({ ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>ok</p>') });
+  const target = (row: unknown[] | undefined) => ({ target: row?.[3], label: row?.[5], decision: row?.[6], rule: row?.[7] });
+  const CHAT_CONTEXT = createContext('L2', 'L2', { browserSite: 'banca-finta.it' });
+  const accessed = async (): Promise<Harness> => {
+    const net = await harness({ answer: () => html() });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    net.handle.rescope({ context: CHAT_CONTEXT, consent: { from: 'sites', sites: ['banca-finta.it'] }, driver: 'agent' });
+    return net;
+  };
+
+  it('pages and reads of the site go as session from the context of the chat; another site never', async () => {
+    const net = await accessed();
+    assert.ok((await net.send({ url: 'https://www.banca-finta.it/conti', main: true, pageUrl: 'https://www.banca-finta.it/' })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-session', label: 'L2', decision: 'allow', rule: 'session' });
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/saldo', type: 'fetch' })).fulfilled);
+    assert.ok((await net.send({ url: 'https://news-finte.it/', main: true })).aborted);
+    assert.ok((await net.send({ url: 'https://cdn-finto.net/app.js', type: 'script' })).aborted);
+    assert.equal(net.handle.heldSends(), 0);
+  });
+
+  it('a send of Arianna to the site (form or POST of a script) is held and counted without «Invia»; with it, it goes', async () => {
+    const net = await accessed();
+    const rows = net.rows.length;
+    assert.ok((await net.send({ url: 'https://banca-finta.it/rinnova', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).aborted);
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/rinnova', type: 'fetch', method: 'POST', body: Buffer.from('{"p":7}') })).aborted);
+    assert.equal(net.handle.heldSends(), 2);
+    // Held before the gateway: nothing logged.
+    assert.equal(net.rows.length, rows);
+    net.handle.rescope({ context: CHAT_CONTEXT, consent: { from: 'sites', sites: ['banca-finta.it'] }, driver: 'agent', send: true });
+    assert.ok((await net.send({ url: 'https://banca-finta.it/rinnova', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-form', label: 'L2', decision: 'allow', rule: 'form' });
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/rinnova', type: 'fetch', method: 'POST', body: Buffer.from('{"p":7}') })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-session', label: 'L2', decision: 'allow', rule: 'session' });
+    // Even with «Invia», never a form to another site.
+    assert.ok((await net.send({ url: 'https://raccolta-finta.net/x', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).aborted);
+    assert.equal(net.handle.heldSends(), 2);
+  });
+
+  it('in a work context after the access nothing is held: the user sends as before', async () => {
+    const net = await harness({ answer: () => html() });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    assert.ok((await net.send({ url: 'https://banca-finta.it/altro', main: true, method: 'POST', body: Buffer.from('b=2'), pageUrl: 'https://banca-finta.it/conti' })).fulfilled);
+    assert.equal(net.handle.heldSends(), 0);
   });
 });

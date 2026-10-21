@@ -39,7 +39,7 @@ import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard
 import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
-import { parseControl, type BlockedNavigation, type ControlState } from './browser-screen.ts';
+import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -1180,14 +1180,27 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
  * Whether the conversation holds Arianna's browser now (D-264, passo 4): the
  * bar above the composer. Never for a Private or incognito one. With the token
  * of an open screen (passo 5), whether that screen drives, and the last page
- * refused while the user drove.
+ * refused while the user drove. The Private chat of an access (D-281) has
+ * the browser too (`chat`), and a work conversation whose browser passed to
+ * one says which (`movedTo`).
  */
-export async function browserStatus(conversationId: string, screen?: string): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null }> {
+export async function browserStatus(
+  conversationId: string,
+  screen?: string,
+): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; movedTo: string | null }> {
   const query = `conversationId=${encodeURIComponent(conversationId)}${screen === undefined ? '' : `&screen=${encodeURIComponent(screen)}`}`;
   const body = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?${query}`);
   const open = body.open === true;
-  const { control, blocked, access } = parseControl(body);
-  return { open, site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null, control: open ? control : null, blocked: open ? blocked : null, access: open ? access : null };
+  const { control, blocked, access, chat } = parseControl(body);
+  return {
+    open,
+    site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null,
+    control: open ? control : null,
+    blocked: open ? blocked : null,
+    access: open ? access : null,
+    chat: open && chat,
+    movedTo: open ? null : parseMovedTo(body),
+  };
 }
 
 /**

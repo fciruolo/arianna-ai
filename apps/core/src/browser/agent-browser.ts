@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
-import { spendAllowed, type Context, type PageConsent } from '@arianna/policy';
+import { createContext, spendAllowed, type Context, type PageConsent, type Target } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
 import type { NewEvent } from '../events.ts';
 import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
+import { warmPiiGuard } from '../pii-guard.ts';
 import { BrowserError } from './container.ts';
 import type { BrowserManager } from './manager.ts';
 import { navigationConsent, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
@@ -61,8 +62,18 @@ import { connectSession, type BrowserSession, type SessionOptions } from './sess
  * cookies of that site) the pages are Private (L2). A conversation with the
  * browser tools is a work conversation, cleared for L1: a read above the
  * clearance is denied (docs/PRIVACY-POLICY-SPEC.md, rule 9). So every
- * action of Arianna but browser.close answers `authenticated`: the user goes
- * on from the screen, or closes the browser (and its cookies).
+ * action of Arianna there but browser.close answers `authenticated`.
+ *
+ * «Nuova chat Privata» (D-281): given back by the user, the browser with an
+ * access passes to a Private chat born for it (handOver, in the queue of the
+ * actions): its scope is the context of that chat, marked with the site of
+ * the access (`browserSite`), and the consent of that site only. There
+ * Arianna reads and acts, on that site only (`outside-access` elsewhere);
+ * every send of hers to the site (a form, a POST of the page's scripts) is
+ * held by the network until the user approves it: the click or the typing
+ * that caused one answers `confirm-send`, and the action after an «Invia»
+ * (`sendPermit`, used once) may send. A browser with an access is never
+ * taken over by another conversation.
  */
 
 export const TAKE_OVER_MS = 2 * 60_000;
@@ -102,7 +113,9 @@ export interface PageReading {
 export type ActionResult =
   | { ok: true; page: { url: string; site: string; title: string }; reading?: PageReading; typed?: number }
   | { ok: false; reason: ActionFailure; site?: string; network?: ResourceFailure | RequestOutcome }
-  | { ok: false; reason: 'confirm'; url: string; site: string };
+  | { ok: false; reason: 'confirm'; url: string; site: string }
+  /** The Private chat of an access (D-281): the action tried to send data to the site; the user decides with «Invia / No». */
+  | { ok: false; reason: 'confirm-send'; site: string; element: string };
 
 export type ActionFailure =
   | 'busy'
@@ -116,6 +129,8 @@ export type ActionFailure =
    * Arianna neither reads it nor acts in it; only browser.close.
    */
   | 'authenticated'
+  /** The Private chat of an access (D-281): an address or a link outside the site of the access. */
+  | 'outside-access'
   | 'not-installed'
   | 'start-failed'
   | 'not-open'
@@ -162,6 +177,12 @@ export interface BrowserScope {
   context: Context;
   consent: PageConsent;
   meta?: GatewayMeta;
+  /**
+   * The Private chat of an access (D-281): an approval «Invia» of the user,
+   * with the element it was asked for. The next click, or typing with Enter,
+   * on that same element may send to the site of the access, once.
+   */
+  sendPermit?: { id: string; element: string };
 }
 
 export type OpenSession = (browser: BrowserManager, id: string, network: Omit<NetworkJob, 'userAgent'>) => Promise<BrowserSession>;
@@ -186,6 +207,11 @@ export interface AgentBrowserOptions {
   openSession?: OpenSession;
   /** Tests: the deadline of an action (ACTION_LIMIT_MS). */
   actionLimitMs?: number;
+  /**
+   * The second scanner, started ahead of the gateway of a page: its load (6-30 s)
+   * is not counted in the time of the page (D-281 trial). Default warmPiiGuard.
+   */
+  warmGuard?: () => Promise<unknown>;
   /** Tests: the network job options the core never sets (fake servers). */
   network?: Pick<NetworkJob, 'unsafeTestAddresses' | 'resolve' | 'fetchResource' | 'timeoutMs'>;
 }
@@ -209,6 +235,8 @@ interface Held {
   reread: boolean;
   /** The last navigation decided when the user took the control: what is refused after it is shown in the chat. */
   seqAtTake: number;
+  /** The work conversation the browser came from, once handed to a Private chat after an access (D-281). */
+  from?: string;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -229,6 +257,11 @@ export class AgentBrowser {
   #running = false;
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
   readonly #closedByUser = new Set<string>();
+  /** Releases by conversation: an action that waited for the second scanner across one is dropped. */
+  readonly #releases = new Map<string, number>();
+  #shutDown = false;
+  /** Approvals «Invia» already used (D-281): each lets one action send. */
+  readonly #usedPermits = new Set<string>();
 
   constructor(options: AgentBrowserOptions) {
     this.#options = options;
@@ -258,6 +291,45 @@ export class AgentBrowser {
     const held = this.#held;
     if (this.holder !== conversationId || held === null) return null;
     return held.session.network?.authenticated() ?? null;
+  }
+
+  /** The Private chat holding the browser that came from the work conversation `conversationId` (D-281); null when none. */
+  movedFrom(conversationId: string): string | null {
+    const held = this.#held;
+    if (held === null || this.holder === null || held.from !== conversationId) return null;
+    return held.conversationId;
+  }
+
+  /**
+   * «Nuova chat Privata» (D-281): the browser of `from`, with an access made
+   * by the user and Arianna driving, passes to the Private chat `to`, after
+   * the action under way (the queue), never in the middle of one. Its scope
+   * becomes that chat's: a context marked with the site of the access, the
+   * consent of that site only; the next action must read the page. The
+   * screens of `from` close (onReleased). The site of the access, or null
+   * when `from` no longer holds such a browser.
+   */
+  handOver(from: string, to: string): Promise<string | null> {
+    const run = this.#queue.then(() => {
+      this.#forgetClosed();
+      const held = this.#held;
+      if (held?.conversationId !== from || held.driver !== 'agent' || held.from !== undefined) return null;
+      const site = held.session.network?.authenticated() ?? null;
+      if (site === null) return null;
+      const scope: BrowserScope = { conversationId: to, context: createContext('L2', 'L2', { browserSite: site }), consent: { from: 'sites', sites: [site] } };
+      held.conversationId = to;
+      held.from = from;
+      held.scope = scope;
+      held.reread = true;
+      held.elements.clear();
+      held.readAt = undefined;
+      held.session.network?.rescope(networkScope(scope, 'agent'));
+      this.#touch(held);
+      this.#safely(() => { this.#options.onReleased?.(from); });
+      return site;
+    });
+    this.#queue = run.catch(() => undefined);
+    return run;
   }
 
   /** Who drives the browser of `conversationId`; null when it holds none. */
@@ -324,9 +396,16 @@ export class AgentBrowser {
   }
 
   /** One action, after the ones already running. Never throws. */
-  act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+  async act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+    // An action that may reach a page waits for the second scanner before the queue (D-281 trial):
+    // its load (6-30 s) is counted neither in the time of the page nor in the deadline of the action,
+    // and the queue stays free meanwhile (the user taking control, a release).
+    const releases = this.#releases.get(scope.conversationId) ?? 0;
+    if (action.kind === 'open' || action.kind === 'click' || action.kind === 'type') await this.#warm();
+    // Released (it became private, or it was deleted) or shut down meanwhile: no browser opens behind the release.
+    if (this.#shutDown || (this.#releases.get(scope.conversationId) ?? 0) !== releases) return { ok: false, reason: 'not-open' };
     // Another conversation while an action runs: «occupato» at once, never a wait behind it.
-    if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return Promise.resolve({ ok: false, reason: 'busy' });
+    if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return { ok: false, reason: 'busy' };
     const run = this.#queue.then(async () => {
       this.#running = true;
       try {
@@ -343,6 +422,7 @@ export class AgentBrowser {
 
   /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
   async release(conversationId: string): Promise<void> {
+    this.#releases.set(conversationId, (this.#releases.get(conversationId) ?? 0) + 1);
     // Closed for a reason of the core: a later action of this conversation hears «not open», not «closed by the user».
     this.#closedByUser.delete(conversationId);
     // The session first: an action under way on it then fails at once instead of being waited for.
@@ -374,6 +454,7 @@ export class AgentBrowser {
 
   /** At the shutdown of the core. */
   async close(): Promise<void> {
+    this.#shutDown = true;
     await this.#drop();
     await this.#queue;
     await this.#drop();
@@ -392,21 +473,31 @@ export class AgentBrowser {
       return { ok: true, page: { url: '', site: '', title: '' } };
     }
     if (held !== null && held.conversationId === scope.conversationId) {
+      const access = held.session.network?.authenticated() ?? null;
+      const chat = scope.context.browserSite;
+      // The Private chat of an access acts only on the browser of that very access (D-281).
+      if (chat !== undefined && access !== chat) return { ok: false, reason: 'not-open' };
       held.scope = scope;
       held.session.network?.rescope(networkScope(scope, 'agent'));
-      // An access made by the user: its pages are Private, never read here (rule 9); closing is allowed.
+      // An access made by the user: its pages are Private, never read in a work conversation (rule 9); closing is allowed.
       // A refused action does not keep the browser alive.
-      if (held.session.network?.authenticated() != null) return { ok: false, reason: 'authenticated' };
+      if (access !== null && chat === undefined) return { ok: false, reason: 'authenticated' };
       // Given back by the user: the page is read again before anything else.
       if (held.reread && action.kind !== 'read') return { ok: false, reason: 'reread' };
+      if (chat !== undefined && outsideAccess(chat, action, held.elements)) return { ok: false, reason: 'outside-access', site: chat };
       held.lastAction = this.#now();
       if (action.kind === 'read') held.reread = false;
+      if (chat !== undefined && (action.kind === 'click' || (action.kind === 'type' && action.submit))) return this.#sending(held, scope, action, chat);
       return this.#bounded(held, this.#run(held, scope, action));
     }
+    // The Private chat of an access opens no browser of its own (D-281): its browser came with the access.
+    if (scope.context.browserSite !== undefined) return { ok: false, reason: 'not-open' };
     if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
     const unwritten = openOutsideConsent(scope.consent, action.url);
     if (unwritten !== undefined) return unwritten;
     if (held !== null) {
+      // A browser with an access made by the user is never taken over: closing it would lose the access.
+      if (held.session.network?.authenticated() != null) return { ok: false, reason: 'busy' };
       if (this.#now() - held.lastAction < (this.#options.takeOverMs ?? TAKE_OVER_MS)) return { ok: false, reason: 'busy' };
       await this.#drop();
       this.#safely(() => { this.#options.onTaken?.(held.conversationId); });
@@ -423,6 +514,8 @@ export class AgentBrowser {
         ...(scope.meta === undefined ? {} : { meta: scope.meta }),
         ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
         ...this.#options.network,
+        // Diagnostics of a page that does not load (D-281 trial): counts by stage and the lag of the event loop, never an address.
+        ...(process.env.ARIANNA_BROWSER_DEBUG === '1' ? { debug: (line: string) => { console.warn(line); } } : {}),
       });
     } catch (error) {
       if (error instanceof BrowserError && error.code === 'busy') return { ok: false, reason: 'busy' };
@@ -432,6 +525,42 @@ export class AgentBrowser {
     const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0 };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
+  }
+
+  /** The second scanner ready, or given up on: a scanner that cannot start is the gateway's to refuse, never an error here. */
+  async #warm(): Promise<void> {
+    try {
+      await (this.#options.warmGuard ?? warmPiiGuard)();
+    } catch {
+      // The gateway refuses without it: nothing to do here.
+    }
+  }
+
+  /**
+   * A click, or typing with Enter, in the Private chat of an access (D-281):
+   * with an «Invia» not used yet the network lets this one action send to the
+   * site; without, a send it caused is held and the action asks the user.
+   */
+  async #sending(held: Held, scope: BrowserScope, action: Extract<BrowserAction, { kind: 'click' | 'type' }>, site: string): Promise<ActionResult> {
+    const network = held.session.network;
+    const element = held.elements.get(action.ref);
+    const label = (element?.label ?? '').trim() || (action.kind === 'type' ? 'campo di testo' : 'elemento senza nome');
+    const named = sendElement(action.kind === 'type' ? `${label} (Invio)` : label);
+    // Only the element the user approved, and only once: «Invia» on «Rinnova» never sends «Elimina».
+    const asked = scope.sendPermit;
+    const permit = asked !== undefined && asked.element === named && !this.#usedPermits.has(asked.id) ? asked.id : undefined;
+    if (permit !== undefined) {
+      this.#usedPermits.add(permit);
+      network?.rescope({ ...networkScope(scope, 'agent'), send: true });
+    }
+    const before = network?.heldSends() ?? 0;
+    try {
+      const result = await this.#bounded(held, this.#run(held, scope, action));
+      if ((network?.heldSends() ?? 0) > before) return { ok: false, reason: 'confirm-send', site, element: named };
+      return result;
+    } finally {
+      if (permit !== undefined && this.#held === held) network?.rescope(networkScope(held.scope, 'agent'));
+    }
   }
 
   async #run(held: Held, scope: BrowserScope, action: Exclude<BrowserAction, { kind: 'close' }>): Promise<ActionResult> {
@@ -444,7 +573,9 @@ export class AgentBrowser {
         held.readAt = undefined;
         try {
           await session.openPage(action.url, LOAD_MS);
-        } catch {
+        } catch (error) {
+          // Only the kind of the failure, never the address: what to look at when a page "did not open" (D-281 trial).
+          console.warn(`browser: open failed (${openFailureKind(error)})`);
           return navigationFailure(session);
         }
         return this.#state(held);
@@ -548,6 +679,8 @@ export class AgentBrowser {
     const held = this.#held;
     this.#held = null;
     if (held === null) return;
+    // The approvals «Invia» were for this browser only.
+    this.#usedPermits.clear();
     // The screens first: they show nothing of a browser that is going.
     this.#released(held);
     await held.session.close().catch(() => undefined);
@@ -569,6 +702,59 @@ export class AgentBrowser {
       console.warn('browser: a callback of the agent browser failed');
     }
   }
+}
+
+/**
+ * The kind of a failed open, for the log of the core: a Chromium network code
+ * (`net::ERR_ABORTED`), a timeout, an interrupted navigation, or the class of
+ * the error; never its message, which carries the address.
+ */
+export function openFailureKind(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  const code = /net::ERR_[A-Z_]+/.exec(message)?.[0];
+  if (code !== undefined) return code;
+  if (/interrupted by another navigation/i.test(message)) return 'interrupted by another navigation';
+  if (/frame was detached/i.test(message)) return 'frame detached';
+  if (/Timeout \d+ms exceeded/i.test(message)) return 'timeout';
+  if (/Target page, context or browser has been closed/i.test(message)) return 'closed';
+  return error instanceof Error ? error.name : typeof error;
+}
+
+/** The name of the element of a card «Invia / No» (D-281), as stored and as compared: one line, at most 120 characters. */
+export function sendElement(label: string): string {
+  return label.replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+
+/**
+ * Whether an action of the Private chat of an access leaves its site (D-281):
+ * an address to open, or a link of the last reading, that is not https on
+ * the site of the access or a subdomain. A link the page moved since the
+ * reading is stopped by the network all the same (L2 towards another site).
+ */
+export function outsideAccess(site: string, action: BrowserAction, elements: ReadonlyMap<number, PageElement>): boolean {
+  const off = (address: string): boolean => {
+    try {
+      const url = new URL(address);
+      const host = url.hostname.toLowerCase().replace(/[.]$/, '');
+      return url.protocol !== 'https:' || !(host === site || host.endsWith('.' + site));
+    } catch {
+      return true;
+    }
+  };
+  if (action.kind === 'open') return off(action.url);
+  if (action.kind === 'click') {
+    const element = elements.get(action.ref);
+    if (element?.kind !== 'link' || element.href === undefined) return false;
+    // Not a page (a fragment, javascript:, mailto:): the click stays on this page, the network refuses the rest.
+    try {
+      const protocol = new URL(element.href).protocol;
+      if (protocol !== 'http:' && protocol !== 'https:') return false;
+    } catch {
+      return false;
+    }
+    return off(element.href);
+  }
+  return false;
 }
 
 /** The scope of the network for who drives: the user's requests carry no task of Arianna. */
@@ -808,12 +994,16 @@ export function parseReading(raw: unknown): PageReading {
 
 /**
  * The gateway on a text browser.type would type (target `web` with `typed`,
- * D-264): vault, scanner and the second check, as a page. True only when the
- * exact text was allowed and spent here.
+ * D-264): vault, scanner and the second check, as a page. In the Private
+ * chat of an access (D-281) `typed: 'session'` with the site of the access:
+ * vault and scanner, towards that site only. True only when the exact text
+ * was allowed and spent here.
  */
 export function gatewayTyped(sql: Sql): AgentBrowserOptions['gateTyped'] {
   return async (text, scope) => {
-    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, { kind: 'web', typed: scope.consent.from }, { ...scope.meta, summary: 'browser typed text' });
+    const site = scope.context.browserSite;
+    const target: Target = site === undefined ? { kind: 'web', typed: scope.consent.from } : { kind: 'web', typed: 'session', site };
+    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, target, { ...scope.meta, summary: 'browser typed text' });
     if (decision.decision !== 'allow') return false;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' && spent.target.typed !== undefined && spent.texts[0] === text;

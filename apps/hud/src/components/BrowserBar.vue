@@ -13,6 +13,8 @@ import Icon from './Icon.vue';
  * when the conversation opens, at every new browser line or message, and
  * every 30 s while the bar shows. «Guarda» opens the Computer panel on the
  * «Browser» tab; «Chiudi» closes the browser, after the action under way.
+ * Once the browser passed to the Private chat of an access (D-281) the bar
+ * of the work conversation says so, with «Apri» towards that chat.
  */
 const props = defineProps<{
   conversationId: string;
@@ -21,10 +23,12 @@ const props = defineProps<{
   /** The newest browser line closed the browser: the bar goes at once. */
   closed: boolean;
 }>();
-const emit = defineEmits<{ watch: [site: string | undefined] }>();
+const emit = defineEmits<{ watch: [site: string | undefined]; open: [conversationId: string] }>();
 
 const open = ref(false);
 const site = ref<string | null>(null);
+/** The Private chat the browser passed to after an access (D-281); null when none. */
+const movedTo = ref<string | null>(null);
 /** The user drives the browser from a screen (D-264, passo 5): «Stai guidando tu · Restituisci». */
 const driving = ref(false);
 const closing = ref(false);
@@ -39,11 +43,15 @@ async function refresh(): Promise<void> {
     const status = await browserStatus(props.conversationId);
     if (run !== read) return;
     open.value = status.open;
+    movedTo.value = status.movedTo;
     site.value = status.site;
     driving.value = status.control === 'user';
   } catch {
     // A conversation that is gone or a core that does not answer: no bar.
-    if (run === read) open.value = false;
+    if (run === read) {
+      open.value = false;
+      movedTo.value = null;
+    }
   }
 }
 
@@ -51,6 +59,7 @@ watch(
   () => props.conversationId,
   () => {
     open.value = false;
+    movedTo.value = null;
     site.value = null;
     problem.value = null;
     void refresh();
@@ -65,7 +74,7 @@ watch(
   },
 );
 watch(
-  open,
+  () => open.value || movedTo.value !== null,
   (shown) => {
     clearInterval(timer);
     timer = shown ? setInterval(() => void refresh(), BROWSER_POLL_MS) : undefined;
@@ -101,7 +110,17 @@ async function closeIt(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="open" class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-[13px]">
+  <div v-if="!open && movedTo !== null" class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-[13px]">
+    <Icon name="private" :size="14" class="shrink-0 text-accent" />
+    <span class="min-w-0 flex-1 font-medium" role="status">Il browser è passato alla chat Privata del tuo accesso</span>
+    <button
+      type="button"
+      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
+      title="Apri la chat Privata dove lavora solo il modello locale"
+      @click="emit('open', movedTo)"
+    >Apri</button>
+  </div>
+  <div v-else-if="open" class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-[13px]">
     <Icon name="computer" :size="14" class="shrink-0 text-accent" />
     <span class="shrink-0 font-medium" role="status">{{ driving ? 'Stai guidando tu' : 'Browser aperto' }}</span>
     <template v-if="site !== null">

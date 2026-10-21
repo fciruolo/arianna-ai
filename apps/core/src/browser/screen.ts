@@ -21,7 +21,8 @@ import { createRfbFilter, type FilterClose, type InputCounts, type RfbFilter } f
  * conversation and to the container that conversation holds. It dies with
  * that browser: closed, taken by another chat, or the core stopping. No
  * token for a Private or incognito conversation (the browser tools are off
- * there anyway). A token opens one screen (passo 5: it is consumed at the
+ * there anyway), except the Private chat of an access (`browser`, D-281),
+ * which the browser passed to: the screen and the control follow it. A token opens one screen (passo 5: it is consumed at the
  * connection, and then names that screen for «Prendi il controllo»), at most
  * MAX_SCREENS at once per browser (the Mac and the phone).
  *
@@ -84,7 +85,13 @@ export const SCREEN_CLOSE = {
 
 export type ScreenCloseKey = keyof typeof SCREEN_CLOSE;
 
-export type ConversationKind = 'work' | 'private' | 'incognito';
+/** `browser`: the Private chat of an access, which the browser passed to (D-281). */
+export type ConversationKind = 'work' | 'browser' | 'private' | 'incognito';
+
+/** The kinds whose browser has a screen: a work conversation, and the Private chat of an access. */
+function screened(kind: ConversationKind): boolean {
+  return kind === 'work' || kind === 'browser';
+}
 
 /** «Chiudi» of the chat: closed, no browser held by that conversation, or no such conversation. */
 export type CloseResult = 'closed' | 'no-browser' | 'not-found';
@@ -110,6 +117,8 @@ export interface ScreensOptions {
   closeBrowser?: (conversationId: string) => Promise<boolean>;
   /** The site the browser of a conversation is on (AgentBrowser.siteOf), for the bar of the chat. */
   site?: (conversationId: string) => string | null;
+  /** The Private chat the browser of a work conversation passed to after an access (AgentBrowser.movedFrom, D-281). */
+  movedTo?: (conversationId: string) => string | null;
   /** «Prendi il controllo» (D-264, passo 5): AgentBrowser's takeControl, returnControl, userInput, driverOf, blockedOf. */
   control?: {
     take: (conversationId: string) => ControlRequest;
@@ -189,7 +198,7 @@ export class BrowserScreens {
   async issue(conversationId: string): Promise<IssueResult> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return { ok: false, reason: 'not-found' };
-    if (kind !== 'work') return { ok: false, reason: kind };
+    if (kind === 'private' || kind === 'incognito') return { ok: false, reason: kind };
     const container = this.#current(conversationId);
     if (this.#stopped || container === null) return { ok: false, reason: 'no-browser' };
     // Refused here too, so the chat can say why: noVNC does not pass on the close code of the stream (4002 stays for two screens opened at once)
@@ -207,11 +216,18 @@ export class BrowserScreens {
    * chat («Browser aperto · Guarda · Chiudi»); null when there is no such
    * conversation. Never open for a Private or incognito one.
    */
-  async status(conversationId: string, token?: string): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string } | null> {
+  async status(
+    conversationId: string,
+    token?: string,
+  ): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string; chat?: true } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
-    const open = kind === 'work' && !this.#stopped && this.#current(conversationId) !== null;
-    if (!open) return { open };
+    const open = screened(kind) && !this.#stopped && this.#current(conversationId) !== null;
+    if (!open) {
+      // The browser passed to the Private chat of an access (D-281): the work conversation shows where.
+      const movedTo = kind === 'work' && !this.#stopped ? (this.#options.movedTo?.(conversationId) ?? null) : null;
+      return movedTo === null ? { open } : { open, movedTo };
+    }
     const site = this.#options.site?.(conversationId) ?? null;
     const driver = this.#options.control?.driver(conversationId) ?? null;
     let control: ControlState | undefined;
@@ -223,7 +239,15 @@ export class BrowserScreens {
     }
     const blocked = this.#options.control?.blocked(conversationId) ?? null;
     const access = this.#options.control?.access?.(conversationId) ?? null;
-    return { open, ...(site === null ? {} : { site }), ...(control === undefined ? {} : { control }), ...(blocked === null ? {} : { blocked }), ...(access === null ? {} : { access }) };
+    return {
+      open,
+      ...(site === null ? {} : { site }),
+      ...(control === undefined ? {} : { control }),
+      ...(blocked === null ? {} : { blocked }),
+      ...(access === null ? {} : { access }),
+      // The Private chat of an access (D-281): there Arianna reads the pages, with the local model.
+      ...(kind === 'browser' ? { chat: true } : {}),
+    };
   }
 
   /**
@@ -236,7 +260,7 @@ export class BrowserScreens {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return { ok: false, reason: 'not-found' };
     const control = this.#options.control;
-    if (kind !== 'work' || control === undefined || this.#current(conversationId) === null) return { ok: false, reason: 'no-browser' };
+    if (!screened(kind) || control === undefined || this.#current(conversationId) === null) return { ok: false, reason: 'no-browser' };
     const screen = this.#screenOf(conversationId, token);
     if (screen === null) return { ok: false, reason: 'no-screen' };
     const request = control.take(conversationId);
@@ -548,12 +572,14 @@ export class BrowserScreens {
   }
 }
 
-/** The kind of a conversation, from its mode and incognito flag. */
+/** The kind of a conversation, from its mode, its incognito flag and the work conversation its browser came from (D-281). */
 export function conversationKindOf(sql: Sql): ScreensOptions['conversation'] {
   return async (conversationId) => {
-    const [row] = await sql<{ mode: string; incognito: boolean }[]>`SELECT mode, incognito FROM conversations WHERE id = ${conversationId}`;
+    const [row] = await sql<{ mode: string; incognito: boolean; browserChat: boolean }[]>`
+      SELECT mode, incognito, browser_of IS NOT NULL AS "browserChat" FROM conversations WHERE id = ${conversationId}`;
     if (row === undefined) return null;
     if (row.incognito) return 'incognito';
+    if (row.browserChat) return 'browser';
     return row.mode === 'work' ? 'work' : 'private';
   };
 }

@@ -1,4 +1,6 @@
 import { MAX_FORM_BODY, spendAllowed, type Context, type Label, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { BrowserContext, Frame, Page, Request, Route } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
@@ -88,6 +90,14 @@ import { gateResource } from './resource-gate.ts';
  * the Set-Cookie lines of its answer; any other request carries L2 with the
  * consent of the page, which the gateway refuses: nothing read after the
  * access goes to another site. The jar dies with the browser.
+ *
+ * The Private chat of an access (D-281): once the browser passed to it, the
+ * scope carries a context marked with the site of the access, from which the
+ * gateway lets `session`, `form` and typed text go to that site. While
+ * Arianna drives there, every request other than GET and HEAD (a form, a
+ * POST of the page's scripts) is refused before the gateway and counted
+ * (`heldSends`), unless the scope says `send` (an «Invia» of the user, for
+ * one action): then a form to the site goes as `form`, a POST as `session`.
  */
 
 export const MAX_PAGES = 30;
@@ -203,7 +213,33 @@ export interface NetworkJob {
    * address, to count by hand what the scanner refused (try-cli.ts).
    */
   trace?: (entry: { url: string; type: CountedType; kind: string; outcome: RequestOutcome; reason?: ResourceFailure }) => void;
+  /**
+   * Diagnostics, off by default: every 5 s while requests are under way, a
+   * line with how many wait at each stage (headers, gateway and download,
+   * fulfil) and how late the event loop is. Counts only, never an address.
+   */
+  debug?: (line: string) => void;
+  /** Tests: how long `allHeaders` of Playwright is waited for (HEADERS_MS). */
+  headersTimeoutMs?: number;
+  /** Tests: how long the gateway and the download of one request may take in all (HOP_MS). */
+  hopTimeoutMs?: number;
 }
+
+/**
+ * How long the gateway and the download of one request (its redirects
+ * included) may take in all: past it the request is refused with a timeout,
+ * so that no request of the browser stays unanswered and holds its page
+ * (seen in the trial of D-281: a main page waited for minutes, the screen white).
+ */
+export const HOP_MS = 40_000;
+
+/**
+ * How long the extra headers of a request (`allHeaders`, which waits for an
+ * event of Chromium that may never come for an intercepted request) are
+ * waited for; then the headers Playwright already has. Without the bound a
+ * request could stay unanswered and hold the load of its page.
+ */
+export const HEADERS_MS = 2_000;
 
 /** The last main page decided; `seq` grows by one at each, so a caller tells a new one from the same one read again. */
 export interface LastNavigation {
@@ -220,6 +256,14 @@ export interface NetworkScope {
   meta?: GatewayMeta;
   /** Who drives the browser (D-264, passo 5): `agent` when missing. */
   driver?: 'agent' | 'user';
+  /**
+   * The Private chat of an access (D-281, context with `browserSite`): Arianna
+   * may send to the site of the access (a form, a POST of the page's scripts)
+   * only while this is true, for the one action the user approved with
+   * «Invia». Without it every request of Arianna there other than GET and
+   * HEAD is refused and counted (`heldSends`).
+   */
+  send?: boolean;
 }
 
 /** Cookies of a site waiting for the first form of the user (D-276): at most this many sites, the oldest go. */
@@ -242,6 +286,8 @@ export interface NetworkHandle {
   settle(page: Page, timeoutMs?: number): Promise<void>;
   /** The site of the access made by the user (D-276), once a form of the user went; null before. */
   authenticated(): string | null;
+  /** Requests of Arianna other than GET and HEAD refused in the Private chat of an access without «Invia» (D-281), so far. */
+  heldSends(): number;
   /** Removes the interception, sends `browser.network`, closes the connections. */
   close(): Promise<void>;
 }
@@ -355,6 +401,34 @@ function headerOf(headers: Record<string, string>, name: string): string | undef
   return undefined;
 }
 
+/** `work`, or 'late' past `ms` (the work goes on unseen: its answer is dropped). */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | 'late'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => { resolve('late'); }, ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+    work.catch(() => undefined);
+  }
+}
+
+/** The headers of a request: all of them when Chromium says them within `ms`, else those Playwright already has. */
+async function boundedHeaders(request: Request, ms: number): Promise<Record<string, string>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => { resolve(undefined); }, ms);
+  });
+  try {
+    const all = await Promise.race([request.allHeaders().catch(() => undefined), late]);
+    return all ?? request.headers();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** A request with the cookie of the jar of the core, or none: never one a caller left on it. */
 function withCookie(request: ResourceInput, cookie: string | undefined): ResourceInput {
   const next: ResourceInput = { url: request.url, method: request.method, headers: request.headers, type: request.type, ...(request.body === undefined ? {} : { body: request.body }) };
@@ -408,6 +482,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const moved = new Map<string, string>();
   /** The cookie jar of the site of the access (D-276): null until the first form of the user. */
   let session: CookieJar | null = null;
+  /** Sends of Arianna held in the Private chat of an access (D-281): the click that caused one asks the user. */
+  let held = 0;
   /** Cookies of the navigations of the user, waiting for a form to their site; never sent. */
   const pending = new Map<string, CookieJar>();
   let closed = false;
@@ -418,8 +494,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const inFlight = new Set<Promise<void>>();
   const interrupted: ResourceResult = { ok: false, reason: 'interrupted' };
   /** The network part, never once the job is closing. */
-  const fetchOne = (input: ResourceInput, options: ResourceOptions, signal?: AbortSignal): Promise<ResourceResult> =>
-    closed ? Promise.resolve(interrupted) : download(input, options, signal ?? stopping.signal);
+  const fetchOne = (input: ResourceInput, options: ResourceOptions, signal?: AbortSignal): Promise<ResourceResult> => {
+    mark(`download:${input.type}`);
+    return closed ? Promise.resolve(interrupted) : download(input, options, signal ?? stopping.signal);
+  };
 
   const emit = (event: NewEvent): void => {
     try {
@@ -454,7 +532,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
    * waiting for a form to that site. Anything else is dropped, as before.
    */
   const keepCookies = (result: ResourceResult, address: string, main: boolean): void => {
-    if (!result.ok || result.setCookies === undefined) return;
+    // An answer that came after the deadline of its request: Chromium never saw it, its cookies are not kept.
+    if (!result.ok || result.setCookies === undefined || isExpired()) return;
     let url: URL;
     try {
       url = new URL(address);
@@ -493,6 +572,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
     let allowed: string | undefined;
     try {
+      mark('gateway:page');
       const decision = await passGateway(job.sql, [{ value: url.href, label: requestLabel(), source: 'web:page' }], scope.context, target, scope.meta);
       if (decision.decision === 'allow') {
         const spent = spendAllowed(decision);
@@ -533,7 +613,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     } catch {
       allowed = undefined;
     }
-    if (isClosed()) return interrupted;
+    if (isClosed() || isExpired()) return interrupted;
     if (allowed !== url.href) return { ok: false, reason: 'blocked' };
     // The browser has an access from here on: everything it asks carries L2.
     if (session === null) {
@@ -574,6 +654,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     } catch {
       cookie = undefined;
     }
+    mark('gateway:resource');
     const result = await gateResource({
       sql: job.sql,
       context: scope.context,
@@ -598,6 +679,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     let request = first;
     for (let index = already; ; index += 1) {
       if (index > already) {
+        // Refused at its deadline meanwhile: the next redirect is never asked.
+        if (isExpired()) return { result: interrupted, final: request.url, tooMany: false };
         const reached = budget.take(false);
         if (reached !== null) return { result: { ok: false, reason: 'blocked' }, final: request.url, tooMany: false, limited: reached };
       }
@@ -612,7 +695,38 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
   };
 
-  const handler = async (route: Route): Promise<void> => {
+  /** Requests under way and the stage each waits at (diagnostics, `debug`). */
+  const stages = new Map<number, string>();
+  /** The request a piece of the handler works for, for `mark`. */
+  const working = new AsyncLocalStorage<number>();
+  /** Requests refused at their deadline: what their work does later is dropped (no hop, no cookie, no access). */
+  const expired = new Set<number>();
+  const isExpired = (): boolean => {
+    const seq = working.getStore();
+    return seq !== undefined && expired.has(seq);
+  };
+  /** The stage of the request under way here (diagnostics only). */
+  const mark = (name: string): void => {
+    const seq = working.getStore();
+    if (job.debug !== undefined && seq !== undefined && stages.has(seq)) stages.set(seq, name);
+  };
+  let requestSeq = 0;
+  let debugTimer: ReturnType<typeof setInterval> | undefined;
+  if (job.debug !== undefined) {
+    let expected = Date.now() + 5_000;
+    debugTimer = setInterval(() => {
+      const lag = Date.now() - expected;
+      expected = Date.now() + 5_000;
+      if (stages.size === 0) return;
+      const byStage: Record<string, number> = {};
+      for (const stage of stages.values()) byStage[stage] = (byStage[stage] ?? 0) + 1;
+      job.debug?.(`browser: ${String(stages.size)} requests under way ${JSON.stringify(byStage)}, event loop ${String(lag)} ms late`);
+    }, 5_000);
+    debugTimer.unref();
+  }
+  const handler = async (route: Route, seq: number): Promise<void> => {
+    const stage = (name: string): void => { if (job.debug !== undefined) stages.set(seq, name); };
+    stage('start');
     const request = route.request();
     const url = request.url();
     const method = request.method().toUpperCase();
@@ -656,10 +770,19 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await abort('limit');
       return;
     }
-    // 3. No form sent by a frame, main or not; a form of the user to the site of its page excepted (D-276).
+    // 3a. The Private chat of an access (D-281): Arianna sends nothing to the site without «Invia» for this action.
+    const agentInChat = scope.driver !== 'user' && scope.context.browserSite !== undefined && session !== null;
+    if (agentInChat && method !== 'GET' && method !== 'HEAD' && scope.send !== true) {
+      held += 1;
+      if (frame.main) navigated('form');
+      await abort('form');
+      return;
+    }
+    // 3. No form sent by a frame, main or not; a form of the user to the site of its page excepted (D-276),
+    // and one of Arianna in the Private chat of the access with «Invia» (D-281).
     let formSite: string | undefined;
     if (frame.navigation && method !== 'GET') {
-      formSite = frame.main && method === 'POST' && scope.driver === 'user' ? userFormSite(request, url, session?.site) : undefined;
+      formSite = frame.main && method === 'POST' && (scope.driver === 'user' || agentInChat) ? userFormSite(request, url, session?.site) : undefined;
       if (formSite === undefined) {
         if (frame.main) navigated('form');
         await abort('form');
@@ -677,14 +800,26 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await abort('too-many-redirects');
       return;
     }
-    const headers = await request.allHeaders().catch(() => request.headers());
+    stage(`headers:${counted}`);
+    const headers = await boundedHeaders(request, job.headersTimeoutMs ?? HEADERS_MS);
+    stage(`hop:${counted}`);
     const body = request.postDataBuffer();
     const input: ResourceInput = { url, method, headers, type, ...(body === null ? {} : { body }) };
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
     const site = formSite;
-    const { result, final, tooMany, limited } = frame.main
-      ? await follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
-      : await follow(input, before, (next) => resourceHop(next, frame.navigation));
+    const hops = frame.main
+      ? follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
+      : follow(input, before, (next) => resourceHop(next, frame.navigation));
+    const decided = await withDeadline(hops, job.hopTimeoutMs ?? HOP_MS);
+    if (decided === 'late') {
+      expired.add(seq);
+      // Forgotten only when its late work is really over, however long the gateway or the download take.
+      void hops.finally(() => { expired.delete(seq); }).catch(() => undefined);
+      if (frame.main) navigated('failed', undefined, 'timeout');
+      await abort('failed', 'timeout');
+      return;
+    }
+    const { result, final, tooMany, limited } = decided;
     if (isClosed()) {
       await abort('refused', 'interrupted');
       return;
@@ -725,6 +860,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const outcome: RequestOutcome = result.status >= 400 ? 'http-error' : 'ok';
     if (frame.main) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
     count(counted, outcome, url, request.resourceType());
+    stage(`fulfil:${counted}`);
     const movedAway = (withoutHash(final) ?? final) !== (withoutHash(url) ?? url);
     if (frame.navigation && movedAway) {
       // The frame goes to its true address and origin. The answer waits there for this frame only;
@@ -738,9 +874,14 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     await route.fulfill({ status: result.status, headers: fulfillHeaders(result, origin, final), body: result.body }).catch(() => undefined);
   };
   const tracked = (route: Route): Promise<void> => {
-    const run = handler(route).catch(async () => {
-      await route.abort('failed').catch(() => undefined);
-    });
+    requestSeq += 1;
+    const seq = requestSeq;
+    const run = working
+      .run(seq, () => handler(route, seq))
+      .catch(async () => {
+        await route.abort('failed').catch(() => undefined);
+      })
+      .finally(() => { stages.delete(seq); });
     inFlight.add(run);
     void run.finally(() => inFlight.delete(run));
     return run;
@@ -752,11 +893,18 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     budget,
     rescope(next) {
       const before = scope.driver;
-      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }), ...(next.driver === undefined ? {} : { driver: next.driver }) };
+      scope = {
+        context: next.context,
+        consent: next.consent,
+        ...(next.meta === undefined ? {} : { meta: next.meta }),
+        ...(next.driver === undefined ? {} : { driver: next.driver }),
+        ...(next.send === true ? { send: true } : {}),
+      };
       // Given back without a form: the cookies that waited for one go (D-276).
       if (before === 'user' && next.driver !== 'user') pending.clear();
     },
     authenticated: () => session?.site ?? null,
+    heldSends: () => held,
     counts: () => structuredClone(counts),
     lastNavigation: () => (last === undefined ? undefined : { ...last }),
     async settle(page, timeoutMs = 15_000) {
@@ -771,6 +919,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     async close() {
       if (closed) return;
       closed = true;
+      clearInterval(debugTimer);
       session = null;
       pending.clear();
       stopping.abort();

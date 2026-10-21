@@ -23,7 +23,9 @@ const OTHER = '22222222-2222-4222-8222-222222222222';
 const PRIVATE = '33333333-3333-4333-8333-333333333333';
 const INCOGNITO = '44444444-4444-4444-8444-444444444444';
 const MISSING = '55555555-5555-4555-8555-555555555555';
-const KINDS: Record<string, ConversationKind> = { [WORK]: 'work', [OTHER]: 'work', [PRIVATE]: 'private', [INCOGNITO]: 'incognito' };
+/** The Private chat of an access (D-281), which the browser of WORK passed to. */
+const CHAT = '66666666-6666-4666-8666-666666666666';
+const KINDS: Record<string, ConversationKind> = { [WORK]: 'work', [OTHER]: 'work', [PRIVATE]: 'private', [INCOGNITO]: 'incognito', [CHAT]: 'browser' };
 
 const HANDSHAKE = Buffer.concat([Buffer.from(RFB_VERSION, 'latin1'), Buffer.from([1, 1])]);
 const UPDATE_REQUEST = Buffer.from([3, 1, 0, 0, 0, 0, 5, 0, 3, 32]);
@@ -82,6 +84,7 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
       return Promise.resolve(true);
     },
     site: (id) => (id === state.holder ? 'comune-finto.it' : null),
+    movedTo: (id) => (id === WORK && state.holder === CHAT ? CHAT : null),
     openChannel,
     onEvent: (event) => { events.push(event); },
     control: {
@@ -118,6 +121,21 @@ async function token(h: Harness, conversationId = WORK): Promise<string> {
   assert.ok(issued.ok, JSON.stringify(issued));
   return issued.token;
 }
+
+test('the Private chat of an access (D-281): token, status and control follow the browser; the work conversation shows where it went', async () => {
+  const h = harness();
+  h.state.holder = CHAT;
+  const issued = await h.screens.issue(CHAT);
+  assert.ok(issued.ok);
+  assert.deepEqual(await h.screens.issue(WORK), { ok: false, reason: 'no-browser' });
+  assert.deepEqual(await h.screens.status(CHAT), { open: true, site: 'comune-finto.it', control: 'agent', chat: true });
+  assert.deepEqual(await h.screens.status(WORK), { open: false, movedTo: CHAT });
+  assert.deepEqual(await h.screens.status(OTHER), { open: false });
+  // A Private chat that is not of an access never gets one.
+  h.state.holder = PRIVATE;
+  assert.deepEqual(await h.screens.issue(PRIVATE), { ok: false, reason: 'private' });
+  assert.deepEqual(await h.screens.status(PRIVATE), { open: false });
+});
 
 test('a token only for the conversation holding the browser, never for a Private or incognito one', async () => {
   const h = harness();

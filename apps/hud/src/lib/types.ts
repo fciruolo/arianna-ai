@@ -115,6 +115,14 @@ export interface Conversation {
   dashboardOf?: string | null;
   /** The conversation of a routine (D-110, D-254): the left bar marks it with an «R». Optional: a core without routines sends none. */
   routine?: boolean;
+  /**
+   * The Private chat of an access (D-281): the work conversation the browser
+   * came from after an access made by the user; null elsewhere. Optional: a
+   * core without it sends none.
+   */
+  browserOf?: string | null;
+  /** The Private chats of an access born from this work conversation (D-281), oldest first: ids only. */
+  browserChats?: { id: string; createdAt: string }[];
 }
 
 /** A side thread of a conversation (D-232): the answer it is about and its own conversation. */

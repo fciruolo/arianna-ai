@@ -167,11 +167,11 @@ describe('main.ts', () => {
 describe('«Prendi il controllo» (D-264, passo 5)', () => {
   it('the status of the core: control and the refused page, anything else dropped', async () => {
     const { parseControl } = await import('../src/lib/browser-screen.ts');
-    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null });
-    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null });
-    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null });
-    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null });
-    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null });
+    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null, chat: false });
+    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null, chat: false });
+    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null, chat: false });
+    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null, chat: false });
+    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null, chat: false });
   });
 
   it('every refused page has its sentence; a link to a site not written says to write it in the chat', async () => {
@@ -217,5 +217,41 @@ describe('the access made by the user (D-276)', () => {
     assert.match(accessWarning('banca-finta.it'), /solo a banca-finta\.it/);
     assert.doesNotMatch(accessWarning('banca-finta.it'), /pubblica/);
     assert.match(FORM_NOTE, /solo verso quel sito/);
+  });
+});
+
+describe('the Private chat of an access (D-281)', () => {
+  it('the status says the chat, and where the browser of a work conversation went', async () => {
+    const { accessText, parseControl, parseMovedTo } = await import('../src/lib/browser-screen.ts');
+    assert.equal(parseControl({ open: true, chat: true }).chat, true);
+    assert.equal(parseControl({ open: true, chat: 'yes' }).chat, false);
+    const id = '66666666-6666-4666-8666-666666666666';
+    assert.equal(parseMovedTo({ open: false, movedTo: id }), id);
+    assert.equal(parseMovedTo({ open: false, movedTo: '../impostazioni' }), null);
+    assert.equal(parseMovedTo({ open: false }), null);
+    assert.match(accessText('banca-finta.it', true), /solo in questa chat Privata/);
+    assert.match(accessText('banca-finta.it', true), /Invia \/ No/);
+    assert.match(accessText('banca-finta.it'), /nuova chat Privata/);
+  });
+
+  it('the line of the hand over leads to the chat born before it; any other message to none', async () => {
+    const { browserChatOf, HANDOFF_LINE } = await import('../src/lib/browser-screen.ts');
+    const chats = [
+      { id: 'first', createdAt: '2026-10-21T10:00:00.000Z' },
+      { id: 'second', createdAt: '2026-10-21T12:00:00.000Z' },
+    ];
+    const line = (ts: string, body = HANDOFF_LINE, role = 'system') => ({ role, body, ts });
+    assert.equal(browserChatOf(chats, line('2026-10-21T10:00:00.500Z')), 'first');
+    assert.equal(browserChatOf(chats, line('2026-10-21T12:00:01.000Z')), 'second');
+    assert.equal(browserChatOf(chats, line('2026-10-21T10:00:00.500Z', 'Altro')), undefined);
+    assert.equal(browserChatOf(chats, line('2026-10-21T10:00:00.500Z', HANDOFF_LINE, 'assistant')), undefined);
+    assert.equal(browserChatOf(undefined, line('2026-10-21T10:00:00.500Z')), undefined);
+    assert.equal(browserChatOf([], line('2026-10-21T10:00:00.500Z')), undefined);
+  });
+
+  it('the line is the one the core writes', async () => {
+    const { HANDOFF_LINE } = await import('../src/lib/browser-screen.ts');
+    const core = readFileSync(join(import.meta.dirname, '..', '..', 'core', 'src', 'browser', 'handoff.ts'), 'utf8');
+    assert.ok(core.includes(`'${HANDOFF_LINE}'`));
   });
 });

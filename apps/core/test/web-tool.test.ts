@@ -26,7 +26,7 @@ import { committedAgents } from './support/committed-agents.ts';
 import { resolveHome } from '@arianna/config';
 
 // The second scanner finds nothing: these tests are about the consent and the limits.
-configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 const arianna = committedAgents(resolveHome({})).get('arianna');
 const TASK = { id: '00000000-0000-4000-8000-000000000001', conversationId: '00000000-0000-4000-8000-000000000002' } as Task;

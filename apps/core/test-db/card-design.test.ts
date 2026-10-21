@@ -349,7 +349,7 @@ const XAI_BLOCK = 'Skills chosen by the user for this agent: third-party referen
 /** A fake Rizzo-PII: «xAI» and «Mario Bianchi» are persons wherever they are. */
 function personGuard(): void {
   configurePiiGuard({
-    state: 'ready',
+    state: 'ready', warm: () => Promise.resolve(true),
     scan: (texts) =>
       Promise.resolve(
         piiReport(
@@ -398,7 +398,7 @@ test('the Studio with a style the second scanner took for a person: the brief re
     assert.equal(refused?.rule, 'pii');
   } finally {
     forgetCatalogTexts();
-    configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+    configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
     execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
   }
 });

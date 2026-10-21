@@ -18,7 +18,7 @@ const APPROVAL = '6f1c2a9e-0b7d-4c3e-9a51-2d8f4e6b7c10';
 const FAKE_TOKEN = '1234567:fake-token-for-tests-only-0000';
 
 // The second scanner (D-113) finds nothing: these tests are about the channel.
-configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 // passGateway writes one row per decision: here the log is a no-op.
 const noLog = (() => Promise.resolve([])) as unknown as Sql;

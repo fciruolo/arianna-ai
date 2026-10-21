@@ -12,7 +12,7 @@ import { useMentionMenu } from '../lib/mention-menu.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, shownStreaming, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { computerTask, type ComputerTab } from '../lib/computer.ts';
-import { browserSignal, browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
+import { browserChatOf, browserSignal, browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
@@ -1382,7 +1382,16 @@ onBeforeUnmount(() => clearInterval(clock));
                 @open-dashboard="emit('dashboard')"
               />
             </div>
-            <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
+            <template v-if="message.role === 'system'">
+              <div class="break-words whitespace-pre-wrap">{{ message.body }}</div>
+              <!-- «Nuova chat Privata» (D-281): the line of the hand over leads to the Private chat of the access. -->
+              <button
+                v-if="browserChatOf(conversation.browserChats, message) !== undefined"
+                type="button"
+                class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
+                @click="emit('open', browserChatOf(conversation.browserChats, message) ?? '')"
+              ><Icon name="private" :size="12" />Apri la chat Privata</button>
+            </template>
             <template v-else>
               <!-- «Ha ragionato per…» (D-249): the thinking kept with the answer, opened on a click. -->
               <ThoughtBlock v-if="message.thought != null" :text="message.thought" :live="false" :ms="message.thoughtMs ?? null" />
@@ -1518,7 +1527,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
         <!-- D-264, passo 4: while this conversation holds Arianna's browser, «Guarda» and «Chiudi» at hand. -->
-        <BrowserBar v-if="!incognito" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" />
+        <BrowserBar v-if="!incognito" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" @open="emit('open', $event)" />
         <QueuedMessages
           v-if="queue !== undefined"
           :queue="queue"

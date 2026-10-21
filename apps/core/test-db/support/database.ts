@@ -10,7 +10,7 @@ import { configurePiiGuard } from '../../src/pii-guard.ts';
 
 // The second scanner (D-113) finds nothing in these tests: they are about
 // everything else. pii-gateway.test.ts sets its own fake service.
-configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 export interface TestDatabase {
   /** As the application role, like the core (D-046). */
