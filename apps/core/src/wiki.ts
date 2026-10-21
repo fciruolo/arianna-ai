@@ -586,7 +586,11 @@ export function rebuildIndexes(home: string, rules: LabelRules, summaries: Reado
   tree = visibleWikiTree(home, rules);
   const created: string[] = [];
   for (const folder of ['', ...tree.folders]) {
-    if (!holdsPages(tree, folder)) continue;
+    if (!holdsPages(tree, folder)) {
+      // No page left to list (the root after the last «Elimina»): an old index would only name what is gone.
+      if (headerFields(readWikiFile(home, indexSegments(folder))?.raw ?? '').get('kind') === 'wiki-index') removeWikiFile(home, indexSegments(folder));
+      continue;
+    }
     const segments = indexSegments(folder);
     const current = readWikiFile(home, segments);
     const summary = summaries.get(folder) ?? indexSummary(current?.raw);
@@ -726,7 +730,8 @@ export interface ProposalView {
 function proposalState(home: string, proposal: StoredProposal): ProposalState {
   if (proposal.kind === 'move') return wikiFolder(home, proposal.path.split('/'), false) !== undefined && folderFingerprint(home, proposal.path) === proposal.base ? 'fresh' : 'expired';
   if (proposal.kind === 'update') return readWikiPageFile(home, proposal.path)?.version === proposal.base ? 'fresh' : 'expired';
-  return 'fresh';
+  // A new page where the user (or another approval) put a page meanwhile.
+  return readWikiPageFile(home, proposal.path) === undefined ? 'fresh' : 'expired';
 }
 
 /** Pages under `from` and where a move to `to` puts them. */
@@ -1272,12 +1277,11 @@ export interface Moved {
 /** Moves a folder of the wiki with its pages, their old versions and the links to them; the indexes follow. */
 function moveFolderNow(home: string, rules: LabelRules, from: string, to: string): Moved {
   checkMove(home, rules, from, to);
-  const proposal = { path: from };
   const kb = kbReal(home);
-  const fromDir = wikiFolder(home, proposal.path.split('/'), false);
+  const fromDir = wikiFolder(home, from.split('/'), false);
   const parent = wikiFolder(home, to.split('/').slice(0, -1), true);
   if (kb === undefined || fromDir === undefined || parent === undefined) throw new WikiError('unavailable', 'cannot move the folder');
-  const moves = movedPages(home, proposal.path, to);
+  const moves = movedPages(home, from, to);
   const target = join(parent, to.split('/').at(-1) ?? '');
   if (lstatSync(target, { throwIfNoEntry: false }) !== undefined) throw new WikiError('exists', 'a folder with that name exists already');
   try {
@@ -1335,6 +1339,7 @@ export function moveWikiPage(home: string, rules: LabelRules, from: string, to: 
   if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
   if (to === from) return { path: to, pages: 0, relinked: 0 };
   if (readWikiPageFile(home, to) !== undefined || wikiFolder(home, to.split('/'), false) !== undefined) throw new WikiError('exists', 'a page or a folder with that path exists already');
+  if (parentFolder(to).includes('/') && readWikiPageFile(home, parentFolder(to)) !== undefined) throw new WikiError('exists', 'a page with that path exists already');
   const kb = kbReal(home);
   if (kb === undefined) throw new WikiError('unavailable', 'cannot move the page');
   writeNewFile(home, pageSegments(to), current.raw);
@@ -1342,6 +1347,7 @@ export function moveWikiPage(home: string, rules: LabelRules, from: string, to: 
     removeWikiFile(home, pageSegments(to));
     throw new WikiError('unavailable', 'cannot move the page');
   }
+  clearHistory(home, to);
   const old = wikiFolder(home, historySegments(from), false);
   const history = wikiFolder(home, [HISTORY_DIR], false);
   if (old !== undefined && history !== undefined) {
@@ -1422,12 +1428,15 @@ export function checkUserPage(home: string, rules: LabelRules, title: string, bo
   lines.forEach((line, index) => {
     if (line.includes('\0')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     if (line.includes('![[')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    // On the line as written: a `](` after a wikilink is a link too, and a scheme needs no slashes (`https:host`).
+    if (/\]\(|\b(?:https?|mailto|ftp|file|javascript|vbscript|data|obsidian|tel):/i.test(line) || /^\s{0,3}\[[^\]]+\]:/.test(line)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     const rest = line.replace(/\[\[([^[\]\n]{1,400})\]\]/g, (_match, inner: string) => {
       const target = (inner.split('|')[0] ?? '').split('#')[0]?.trim() ?? '';
       if (!userLinkOk(home, rules, target)) throw new WikiError('invalid', `line ${String(index + 1)}: citation`);
       return ' ';
     });
-    if (/\[\[|\]\]|<|!\[|\]\(|:\/\/|\bwww\.|\bmailto:|\bjavascript:|\bdata:/i.test(rest)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    // An address the code wrote inert (`https[://]…`, as in the pages proposed) stays; any other `://` does not.
+    if (/\[\[|\]\]|<|!\[|\]\(|\]\[|(?<!\[):\/\/|\bwww\./i.test(rest)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
   });
   return { title: cleanTitle, body: `${text.replace(/\s+$/, '')}\n` };
 }
@@ -1451,8 +1460,8 @@ export function editWikiPage(home: string, rules: LabelRules, path: string, base
   if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
   const checked = checkUserPage(home, rules, title, body);
   const content = composeUserPage(checked.title, checked.body, now);
-  keepVersion(home, path, current.raw, now);
   replaceFile(home, pageSegments(path), content, current.version);
+  keepVersion(home, path, current.raw, now);
   rebuildIndexes(home, rules);
   return { version: sha256(content) };
 }
@@ -1467,11 +1476,26 @@ export function createUserWikiPage(home: string, rules: LabelRules, path: string
   const checked = checkUserPage(home, rules, title, body);
   const content = composeUserPage(checked.title, checked.body, now);
   writeNewFile(home, pageSegments(path), content);
+  // Versions left by a page removed outside the chat are not this page's.
+  clearHistory(home, path);
   rebuildIndexes(home, rules);
   return { path, version: sha256(content) };
 }
 
-
+/** Removes the old versions kept for `path` (and their folder when empty); gives how many went. */
+function clearHistory(home: string, path: string): number {
+  const versions = pageVersions(home, path);
+  for (const version of versions) removeWikiFile(home, [...historySegments(path), `${version.id}.md`]);
+  const history = wikiFolder(home, historySegments(path), false);
+  if (history !== undefined) {
+    try {
+      rmdirSync(history);
+    } catch {
+      // Not empty (a file of the user): left as it is.
+    }
+  }
+  return versions.length;
+}
 
 export interface Deleted {
   /** Old versions removed with the page. */
@@ -1493,20 +1517,11 @@ export function deleteWikiPage(home: string, rules: LabelRules, path: string, ba
   if (current === undefined) throw new WikiError('not-found', 'page not found');
   if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
   if (!removeWikiFile(home, pageSegments(path))) throw new WikiError('unavailable', 'cannot delete the page');
-  const versions = pageVersions(home, path);
-  for (const version of versions) removeWikiFile(home, [...historySegments(path), `${version.id}.md`]);
-  const history = wikiFolder(home, historySegments(path), false);
-  if (history !== undefined) {
-    try {
-      rmdirSync(history);
-    } catch {
-      // Not empty (a file of the user): left as it is.
-    }
-  }
+  const versions = clearHistory(home, path);
   const waiting = allProposals(home).filter((proposal) => proposal.kind !== 'move' && proposal.path === path);
   for (const proposal of waiting) dropProposal(home, proposal.id);
   rebuildIndexes(home, rules, new Map(), [parentFolder(path)]);
-  return { versions: versions.length, proposals: waiting.length };
+  return { versions, proposals: waiting.length };
 }
 
 /**

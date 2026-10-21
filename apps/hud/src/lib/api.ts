@@ -1365,11 +1365,6 @@ export async function restoreWikiPage(path: string, version: string, base: strin
   await call('POST', '/api/wiki/restore', { path, version, base });
 }
 
-/** «Sposta o rinomina» a folder: a proposal to approve in «Proposte»; its id. */
-export async function proposeWikiMove(from: string, to: string): Promise<string> {
-  return (await call<{ id: string }>('POST', '/api/wiki/move', { from, to })).id;
-}
-
 /** «Modifica» of a page of the Wiki by the user, over the page as shown (`base`): the version before is kept. Gives the new version. */
 export async function editWikiPage(path: string, base: string, title: string, body: string): Promise<string> {
   return (await call<{ version: string }>('POST', '/api/wiki/edit', { path, base, title, body })).version;

@@ -131,6 +131,7 @@ test('dragging in the tree: where a page or folder lands, and when it cannot', (
   assert.deepEqual(dropDestination({ kind: 'folder', path: 'laravel/octane' }, ''), { to: 'octane' });
   assert.deepEqual(dropDestination({ kind: 'folder', path: 'octane' }, 'laravel'), { to: 'laravel/octane' });
   assert.ok('problem' in (dropDestination({ kind: 'folder', path: 'laravel' }, 'laravel/octane') ?? { to: '' }));
+  assert.equal(dropDestination({ kind: 'folder', path: 'laravel' }, 'laravel'), null);
   assert.ok('problem' in (dropDestination({ kind: 'folder', path: 'octane' }, 'laravel/server') ?? { to: '' }));
   assert.equal(dropFolder({ kind: 'page', path: 'laravel/octane/swoole' }), 'laravel/octane');
   assert.equal(dropFolder({ kind: 'folder', path: 'laravel' }), 'laravel');

@@ -312,6 +312,8 @@ describe('the user writes the wiki', () => {
       checkUserPage(root, strict, 'Titolo', body);
     };
     ok('## Titolo\n\nTesto con [[private/nota]] e [[inbox/2026-10-21-100000-octane.md]].\n\n> citazione\n\n```\ncodice\n```\n');
+    // As the pages proposed write an address: inert, kept when the page is saved untouched; two citations side by side.
+    ok('- Il sito è https[://]esempio.invalid/guida [[private/nota]][[inbox/2026-10-21-100000-octane]]\n');
     const refused = (title: string, body: string, message: string): void => {
       assert.throws(() => checkUserPage(root, strict, title, body), (error) => error instanceof WikiError && error.code === 'invalid' && error.message === message, body);
     };
@@ -325,6 +327,12 @@ describe('the user writes the wiki', () => {
     refused('Titolo', '<img src=x>', 'line 1: link');
     refused('Titolo', '![[inbox/2026-10-21-100000-octane]]', 'line 1: link');
     refused('Titolo', 'un ]] spaiato', 'line 1: link');
+    // Links the chat or Obsidian would still follow: after a wikilink, a scheme without slashes, a reference.
+    refused('Titolo', '[[inbox/2026-10-21-100000-octane]](https:esempio.invalid)', 'line 1: link');
+    refused('Titolo', '[[[inbox/2026-10-21-100000-octane]](HTTPS:esempio.invalid/x?d=1)', 'line 1: link');
+    refused('Titolo', 'scrivi a mailto:finto@esempio.invalid', 'line 1: link');
+    refused('Titolo', '[r]: esempio.invalid', 'line 1: link');
+    refused('Titolo', 'vedi [x][r]', 'line 1: link');
     refused('Titolo', '---\nlabel: L0\n---\n', 'line 1: header');
     refused('', 'testo', 'title');
     refused('Titolo [x]', 'testo', 'title');
@@ -375,6 +383,9 @@ describe('the user writes the wiki', () => {
     createUserWikiPage(root, RULES, 'php/altra', 'Altra', undefined, NOW);
     const swoole = readWikiView(root, RULES, 'php/swoole');
     assert.throws(() => moveWikiPage(root, RULES, 'php/swoole', 'php/altra', swoole.version), (error) => error instanceof WikiError && error.code === 'exists');
+    // Never a folder beside a page of the same name.
+    assert.throws(() => moveWikiPage(root, RULES, 'php/swoole', 'php/altra/swoole', swoole.version), (error) => error instanceof WikiError && error.code === 'exists');
+    assert.equal(existsSync(join(root, 'kb/wiki/php/altra')), false);
     const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/segreti"\nlabel = "L3"'].join('\n\n'));
     assert.throws(() => moveWikiPage(root, strict, 'php/swoole', 'segreti/swoole', swoole.version), (error) => error instanceof WikiError && error.code === 'not-found');
     assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
@@ -391,6 +402,30 @@ describe('the user writes the wiki', () => {
     assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
     assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
     assert.match(readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8'), /wiki\/php\/_indice/);
+    // A folder holding a sub-folder a rule raises above L2 does not move.
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/php/segreti"\nlabel = "L3"'].join('\n\n'));
+    mkdirSync(join(root, 'kb/wiki/php/segreti'), { recursive: true });
+    assert.throws(() => moveWikiFolder(root, strict, 'php', 'dev'), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
+  });
+
+  it('a new page proposed where the user put a page meanwhile expires; versions left on the disk are not a new page’s', () => {
+    const root = home();
+    const waiting = proposal(root, { path: 'cucina/pane' });
+    mkdirSync(join(root, 'kb/wiki/.storia/cucina__pane'), { recursive: true });
+    writeFileSync(join(root, 'kb/wiki/.storia/cucina__pane/20261001-100000-000.md'), composeWikiPage(PAGE, NOW));
+    createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', undefined, NOW);
+    assert.equal(listWikiProposals(root, RULES).find((item) => item.id === waiting.id)?.state, 'expired');
+    assert.deepEqual(pageVersions(root, 'cucina/pane'), []);
+  });
+
+  it('after the last page goes, no index names it: the root index goes too', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    assert.ok(existsSync(join(root, 'kb/wiki/_indice.md')));
+    deleteWikiPage(root, RULES, 'laravel/octane/swoole', readWikiView(root, RULES, 'laravel/octane/swoole').version);
+    assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
+    assert.throws(() => readWikiView(root, RULES, '_indice'), (error) => error instanceof WikiError && error.code === 'not-found');
   });
 });
 
@@ -439,7 +474,8 @@ describe('the tree, the indexes and the rest of kb/', () => {
     rmSync(join(root, 'kb/wiki/laravel/octane/swoole.md'));
     rebuildIndexes(root, RULES, new Map(), ['laravel/octane']);
     assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
-    assert.equal(readWikiView(root, RULES, '_indice').kind, 'index');
+    // No page left anywhere: the root index goes as well.
+    assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
   });
 
   it('finds the pages close to a text', () => {

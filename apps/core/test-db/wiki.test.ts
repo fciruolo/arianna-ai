@@ -301,6 +301,7 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.deepEqual(empty.body.pages, []);
   assert.deepEqual(empty.body.folders, []);
   assert.equal(existsSync(join(serverHome, 'kb/wiki/php')), false);
+  assert.equal((await send('GET', '/api/wiki/page?path=_indice')).status, 404);
 
   // The user writes the wiki: a folder, a page, «Modifica», «Sposta o rinomina» of a page and a folder, at once.
   assert.equal((await send('POST', '/api/wiki/create', { kind: 'folder', path: 'cucina' })).status, 201);

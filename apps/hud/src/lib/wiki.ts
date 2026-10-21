@@ -213,8 +213,8 @@ export interface WikiDragged {
 export function dropDestination(item: WikiDragged, folder: string): { to: string } | { problem: string } | null {
   const name = item.path.split('/').at(-1) ?? item.path;
   const to = folder === '' ? name : `${folder}/${name}`;
-  if (to === item.path) return null;
-  if (item.kind === 'folder' && (folder === item.path || folder.startsWith(`${item.path}/`))) return { problem: 'Una cartella non può andare dentro se stessa.' };
+  if (to === item.path || (item.kind === 'folder' && folder === item.path)) return null;
+  if (item.kind === 'folder' && folder.startsWith(`${item.path}/`)) return { problem: 'Una cartella non può andare dentro se stessa.' };
   if (item.kind === 'page' && folder === '') return { problem: 'Un articolo sta sempre in una cartella: trascinalo su una cartella.' };
   if (item.kind === 'page' ? !isPagePath(to) : !isFolderPath(to)) return { problem: 'Lì andrebbe oltre tre livelli: argomento › sotto-argomento › articolo.' };
   return { to };
