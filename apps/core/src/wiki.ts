@@ -727,8 +727,7 @@ function movedPages(home: string, from: string, to: string): { from: string; to:
 export function listWikiProposals(home: string, rules: LabelRules): ProposalView[] {
   return allProposals(home)
     .reverse()
-    // A proposal for a place a rule raises above L2 is not shown (nor approvable).
-    .filter((proposal) => (proposal.kind === 'move' ? wikiPathUpToL2(rules, proposal.path) && (proposal.to === undefined || wikiPathUpToL2(rules, proposal.to)) : wikiPathUpToL2(rules, `${proposal.path}.md`)))
+    .filter((proposal) => proposalShown(rules, proposal))
     .map((proposal) => {
       let source: ProposalView['source'] = null;
       if (proposal.source !== null) {
@@ -758,8 +757,13 @@ export function listWikiProposals(home: string, rules: LabelRules): ProposalView
     });
 }
 
-export function countWikiProposals(home: string): number {
-  return proposalIds(home).length;
+export function countWikiProposals(home: string, rules: LabelRules): number {
+  return allProposals(home).filter((proposal) => proposalShown(rules, proposal)).length;
+}
+
+/** A proposal for a place a rule raises above L2 is neither shown, counted nor approvable. */
+function proposalShown(rules: LabelRules, proposal: StoredProposal): boolean {
+  return proposal.kind === 'move' ? wikiPathUpToL2(rules, proposal.path) && (proposal.to === undefined || wikiPathUpToL2(rules, proposal.to)) : wikiPathUpToL2(rules, `${proposal.path}.md`);
 }
 
 // ---------------------------------------------------------------------------

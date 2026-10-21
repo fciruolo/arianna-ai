@@ -20,6 +20,7 @@ import {
   approveWikiProposal,
   composeIndex,
   composeWikiPage,
+  countWikiProposals,
   discardWikiProposal,
   indexSummary,
   inertLine,
@@ -324,6 +325,7 @@ describe('the tree, the indexes and the rest of kb/', () => {
     assert.throws(() => proposeMove(root, strict, 'laravel/octane', 'laravel/segreti', NOW), (error) => error instanceof WikiError);
     const there = proposal(root, { path: 'laravel/segreti/nuova' });
     assert.ok(!listWikiProposals(root, strict).some((item) => item.id === there.id));
+    assert.equal(countWikiProposals(root, strict), countWikiProposals(root, RULES) - 1);
     assert.throws(() => approveWikiProposal(root, strict, there.id, {}, NOW), (error) => error instanceof WikiError && error.code === 'not-found');
     const elsewhere = proposal(root, { path: 'laravel/aperta' });
     assert.throws(() => approveWikiProposal(root, strict, elsewhere.id, { path: 'laravel/segreti/aperta' }, NOW), (error) => error instanceof WikiError && error.code === 'not-found');

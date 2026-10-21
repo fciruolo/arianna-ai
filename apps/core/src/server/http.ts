@@ -1062,7 +1062,7 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
   return [
     route('GET', '/api/wiki', () => {
       const { home, rules } = need();
-      return Promise.resolve({ body: { ...visibleWikiTree(home, rules), proposals: countWikiProposals(home) } });
+      return Promise.resolve({ body: { ...visibleWikiTree(home, rules), proposals: countWikiProposals(home, rules) } });
     }),
     route('GET', '/api/wiki/page', (_request, url) => {
       const { home, rules } = need();
