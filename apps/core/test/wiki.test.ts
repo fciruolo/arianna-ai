@@ -199,8 +199,8 @@ describe('proposals', () => {
     const versions = pageVersions(root, 'laravel/octane/swoole');
     assert.equal(versions.length, 1);
     const current = readWikiView(root, RULES, 'laravel/octane/swoole');
-    assert.throws(() => { restoreWikiVersion(root, 'laravel/octane/swoole', versions[0]?.id ?? '', sha256('altro'), NOW); }, (error) => error instanceof WikiError && error.code === 'changed');
-    restoreWikiVersion(root, 'laravel/octane/swoole', versions[0]?.id ?? '', current.version, NOW);
+    assert.throws(() => { restoreWikiVersion(root, RULES, 'laravel/octane/swoole', versions[0]?.id ?? '', sha256('altro'), NOW); }, (error) => error instanceof WikiError && error.code === 'changed');
+    restoreWikiVersion(root, RULES, 'laravel/octane/swoole', versions[0]?.id ?? '', current.version, NOW);
     assert.equal(readFileSync(file, 'utf8'), before);
     // The version replaced is kept in turn: the restore can be undone.
     assert.equal(pageVersions(root, 'laravel/octane/swoole').length, 2);
@@ -233,7 +233,7 @@ describe('moving a folder', () => {
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
     approveWikiProposal(root, RULES, proposal(root, { path: 'php/composer', content: composeWikiPage({ ...PAGE, title: 'Composer', related: ['laravel/octane/swoole'] }, NOW) }).id, {}, NOW);
     write(root, { 'kb/private/link.md': '---\nlabel: L2\n---\nVedi [[wiki/laravel/octane/swoole]].\n' });
-    const move = proposeMove(root, 'laravel/octane', 'php/octane', NOW);
+    const move = proposeMove(root, RULES, 'laravel/octane', 'php/octane', NOW);
     assert.equal(listWikiProposals(root, RULES).find((item) => item.id === move.id)?.moves[0]?.to, 'php/octane/swoole');
     const approved = approveWikiProposal(root, RULES, move.id, {}, NOW);
     assert.equal(approved.path, 'php/octane');
@@ -248,11 +248,11 @@ describe('moving a folder', () => {
     const root = home();
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
     approveWikiProposal(root, RULES, proposal(root, { path: 'php/composer' }).id, {}, NOW);
-    assert.throws(() => proposeMove(root, 'laravel', 'php', NOW), (error) => error instanceof WikiError && error.code === 'exists');
-    assert.throws(() => proposeMove(root, 'laravel', 'laravel/dentro', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
-    assert.throws(() => proposeMove(root, 'laravel', 'php/laravel', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
-    assert.throws(() => proposeMove(root, 'nessuna', 'altra', NOW), (error) => error instanceof WikiError && error.code === 'not-found');
-    const move = proposeMove(root, 'laravel/octane', 'laravel/server', NOW);
+    assert.throws(() => proposeMove(root, RULES, 'laravel', 'php', NOW), (error) => error instanceof WikiError && error.code === 'exists');
+    assert.throws(() => proposeMove(root, RULES, 'laravel', 'laravel/dentro', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
+    assert.throws(() => proposeMove(root, RULES, 'laravel', 'php/laravel', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
+    assert.throws(() => proposeMove(root, RULES, 'nessuna', 'altra', NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    const move = proposeMove(root, RULES, 'laravel/octane', 'laravel/server', NOW);
     approveWikiProposal(root, RULES, proposal(root, { path: 'laravel/octane/roadrunner' }).id, {}, NOW);
     assert.throws(() => approveWikiProposal(root, RULES, move.id, {}, NOW), (error) => error instanceof WikiError && error.code === 'expired');
   });
@@ -267,10 +267,10 @@ describe('the tree, the indexes and the rest of kb/', () => {
     assert.equal(indexSummary(composeIndex('laravel', '', tree)), '');
     const root = home();
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
-    rebuildIndexes(root, new Map([['laravel', 'Note finte su Laravel.']]));
+    rebuildIndexes(root, RULES, new Map([['laravel', 'Note finte su Laravel.']]));
     assert.equal(indexSummary(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8')), 'Note finte su Laravel.');
     rmSync(join(root, 'kb/wiki/laravel/octane/swoole.md'));
-    rebuildIndexes(root);
+    rebuildIndexes(root, RULES);
     assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
     assert.equal(readWikiView(root, RULES, '_indice').kind, 'index');
   });
@@ -311,6 +311,25 @@ describe('the tree, the indexes and the rest of kb/', () => {
     assert.equal(readWikiView(root, RULES, 'segreti/swoole').title, 'Swoole segreto');
   });
 
+  it('a rule above L2 inside kb/wiki: no move of it or of a folder around it, no proposal shown or approved there, no name in the indexes', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/private"\nlabel = "L2"', '[[folder]]\npath = "kb/wiki/laravel/segreti"\nlabel = "L3"'].join('\n\n'));
+    mkdirSync(join(root, 'kb/wiki/laravel/segreti'), { recursive: true });
+    writeFileSync(join(root, 'kb/wiki/laravel/segreti/chiave.md'), composeWikiPage({ ...PAGE, title: 'Chiave segreta' }, NOW));
+    rebuildIndexes(root, strict);
+    assert.doesNotMatch(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /segret/i);
+    assert.throws(() => proposeMove(root, strict, 'laravel', 'php', NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => proposeMove(root, strict, 'laravel/segreti', 'laravel/aperti', NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => proposeMove(root, strict, 'laravel/octane', 'laravel/segreti', NOW), (error) => error instanceof WikiError);
+    const there = proposal(root, { path: 'laravel/segreti/nuova' });
+    assert.ok(!listWikiProposals(root, strict).some((item) => item.id === there.id));
+    assert.throws(() => approveWikiProposal(root, strict, there.id, {}, NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    const elsewhere = proposal(root, { path: 'laravel/aperta' });
+    assert.throws(() => approveWikiProposal(root, strict, elsewhere.id, { path: 'laravel/segreti/aperta' }, NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.ok(listWikiProposals(root, strict).some((item) => item.id === elsewhere.id));
+  });
+
   it('never goes through a link: a kb/wiki that is a link is neither read nor written', () => {
     const root = home();
     const elsewhere = join(scratch, `fuori-${String(homes)}`);
@@ -320,6 +339,6 @@ describe('the tree, the indexes and the rest of kb/', () => {
     assert.deepEqual(wikiTree(root), { folders: [], pages: [] });
     assert.throws(() => readWikiView(root, RULES, 'laravel/x'), (error) => error instanceof WikiError && error.code === 'not-found');
     assert.deepEqual(allProposals(root), []);
-    assert.throws(() => proposeMove(root, 'laravel', 'php', NOW), (error) => error instanceof WikiError);
+    assert.throws(() => proposeMove(root, RULES, 'laravel', 'php', NOW), (error) => error instanceof WikiError);
   });
 });

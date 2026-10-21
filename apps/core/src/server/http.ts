@@ -1112,20 +1112,20 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
     }),
     // «Sposta o rinomina» a folder: a proposal the user approves in «Proposte».
     route('POST', '/api/wiki/move', async (request) => {
-      const { home } = need();
+      const { home, rules } = need();
       const body = await readJson(request);
       onlyFields(body, ['from', 'to']);
       if (typeof body.from !== 'string' || typeof body.to !== 'string') throw new HttpError(400, 'from and to are required');
-      const proposal = proposeMove(home, body.from, body.to);
+      const proposal = proposeMove(home, rules, body.from, body.to);
       await recordWikiEvent(sql, 'wiki.move_proposed', { pages: proposal.citations }).catch(onError);
       return { status: 201, body: { id: proposal.id } };
     }),
     route('POST', '/api/wiki/restore', async (request) => {
-      const { home } = need();
+      const { home, rules } = need();
       const body = await readJson(request);
       onlyFields(body, ['path', 'version', 'base']);
       if (typeof body.path !== 'string' || typeof body.version !== 'string' || typeof body.base !== 'string') throw new HttpError(400, 'path, version and base are required');
-      restoreWikiVersion(home, body.path, body.version, body.base);
+      restoreWikiVersion(home, rules, body.path, body.version, body.base);
       await recordWikiEvent(sql, 'wiki.restored', {}).catch(onError);
       return { body: { restored: true } };
     }),

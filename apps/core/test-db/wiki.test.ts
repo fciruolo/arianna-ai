@@ -211,6 +211,20 @@ test('an existing page is updated, never a point removed; "none" stores nothing;
   assert.deepEqual(await proposeFromNote(env(other, fakeModel([], () => CREATE)), 'wiki/laravel/x.md', new AbortController().signal), { ok: false, reason: 'not-found' });
 });
 
+test('a page where a rule says more than L2 is never read nor proposed from a note, even when the model names it', async () => {
+  const home = setup();
+  const strict = parseLabelRules('[[folder]]\npath = "kb/private"\nlabel = "L2"\n\n[[folder]]\npath = "kb/wiki/segreti"\nlabel = "L3"\n');
+  write(home, {
+    'kb/wiki/segreti/swoole.md': composeWikiPage({ title: 'Swoole segreto', summary: 'Un riassunto segreto finto.', points: [{ text: 'Un punto segreto finto.', sources: ['private/laravel/deploy'] }], questions: [], sources: ['private/laravel/deploy'], related: [] }, new Date()),
+  });
+  const requests: ChatRequest[] = [];
+  const strictEnv: WikiEnv = { ...env(home, fakeModel(requests, () => ({ ...CREATE, path: 'segreti/swoole' }))), rules: strict, kb: createKb({ home, rules: strict }) };
+  assert.deepEqual(await proposeFromNote(strictEnv, `inbox/${NAME}`, new AbortController().signal), { ok: false, reason: 'above-clearance' });
+  assert.deepEqual(allProposals(home), []);
+  // The model never saw the folder nor the page.
+  assert.doesNotMatch(requests[0]?.messages[1]?.content ?? '', /segret/i);
+});
+
 test('the «In breve» of an index is written by the local model', async () => {
   const home = setup();
   write(home, { 'kb/wiki/laravel/swoole.md': composeWikiPage({ title: 'Swoole', summary: 'Octane su Swoole.', points: [{ text: 'Un fatto.', sources: ['private/laravel/deploy'] }], questions: [], sources: ['private/laravel/deploy'], related: [] }, new Date()) });

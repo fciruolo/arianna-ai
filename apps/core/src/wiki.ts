@@ -554,7 +554,7 @@ function holdsPages(tree: WikiTree, folder: string): boolean {
  * `summaries` given for a folder); a folder without pages loses its index and
  * goes when it is empty. Gives back the folders whose index is new.
  */
-export function rebuildIndexes(home: string, summaries: ReadonlyMap<string, string> = new Map()): string[] {
+export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map()): string[] {
   let tree = wikiTree(home);
   // Empty folders first, deepest first: a folder with no page anywhere below it goes with its index.
   for (const folder of [...tree.folders].sort((a, b) => b.split('/').length - a.split('/').length)) {
@@ -569,7 +569,8 @@ export function rebuildIndexes(home: string, summaries: ReadonlyMap<string, stri
       // Not empty (a file of the user, an old index of a moved folder): left as it is.
     }
   }
-  tree = wikiTree(home);
+  // Indexes list only what is up to L2: a folder or page a rule raises is neither named nor indexed.
+  tree = visibleWikiTree(home, rules);
   const created: string[] = [];
   for (const folder of ['', ...tree.folders]) {
     if (!holdsPages(tree, folder)) continue;
@@ -726,6 +727,8 @@ function movedPages(home: string, from: string, to: string): { from: string; to:
 export function listWikiProposals(home: string, rules: LabelRules): ProposalView[] {
   return allProposals(home)
     .reverse()
+    // A proposal for a place a rule raises above L2 is not shown (nor approvable).
+    .filter((proposal) => (proposal.kind === 'move' ? wikiPathUpToL2(rules, proposal.path) && (proposal.to === undefined || wikiPathUpToL2(rules, proposal.to)) : wikiPathUpToL2(rules, `${proposal.path}.md`)))
     .map((proposal) => {
       let source: ProposalView['source'] = null;
       if (proposal.source !== null) {
@@ -924,6 +927,8 @@ export async function proposeFromNote(env: WikiEnv, noteId: string, signal: Abor
     return { ok: true, action: 'none', points: 0, citations: 0 };
   }
 
+  // A page where a rule says more than L2: never written nor read from a note (D-280).
+  if (!wikiPathUpToL2(env.rules, `${chosen.path}.md`)) return { ok: false, reason: 'above-clearance' };
   // A new page where one exists already becomes an update of that page, its points all new.
   const existing = readWikiPageFile(env.home, chosen.path);
   const current = existing === undefined ? undefined : parseWikiPage(existing.raw);
@@ -1006,7 +1011,7 @@ export async function writeIndexSummary(env: WikiEnv, folder: string, signal: Ab
   if (indexSummary(composeIndex(folder, summary, tree)) !== summary) return { ok: false, reason: 'bad-response' };
   // Changed meanwhile (an approval, a move): the next job writes it.
   if (readWikiFile(env.home, indexSegments(folder))?.raw !== before) return { ok: false, reason: 'changed' };
-  rebuildIndexes(env.home, new Map([[folder, summary]]));
+  rebuildIndexes(env.home, env.rules, new Map([[folder, summary]]));
   return { ok: true };
 }
 
@@ -1149,6 +1154,7 @@ export function approveWikiProposal(home: string, rules: LabelRules, id: string,
   if (input.path !== undefined && proposal.kind !== 'create') throw new WikiError('invalid', 'only the path of a new page can be changed');
   const path = input.path ?? proposal.path;
   if (typeof path !== 'string' || !isWikiPagePath(path)) throw new WikiError('invalid', 'the path must be topic/article or topic/subtopic/article, lowercase words joined by "-"');
+  if (!wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
   // The content is the code's: refused if it is not a page the code would write.
   if (!isSafeWikiPage(proposal.content)) throw new WikiError('edited', 'the proposal is not a page the code wrote');
   const data = parseWikiPage(proposal.content);
@@ -1166,7 +1172,7 @@ export function approveWikiProposal(home: string, rules: LabelRules, id: string,
     replaceFile(home, pageSegments(path), content, current.version);
   }
   dropProposal(home, proposal.id);
-  const created = rebuildIndexes(home);
+  const created = rebuildIndexes(home, rules);
   const known = new Set(before.folders);
   const folders = [...new Set([parentFolder(path), ...created.filter((folder) => folder !== '' && !known.has(folder)), ...(created.includes('') ? [''] : [])])];
   return { kind: proposal.kind, path, corrected: path !== proposal.path, points: proposal.points, relinked: 0, folders };
@@ -1193,9 +1199,9 @@ export function proposalSource(home: string, rules: LabelRules, id: string): str
  * the user approves in «Proposte». The destination must not exist, nor be
  * inside the folder, and every page must stay within MAX_WIKI_DEPTH levels.
  */
-export function proposeMove(home: string, from: string, to: string, now = new Date()): StoredProposal {
+export function proposeMove(home: string, rules: LabelRules, from: string, to: string, now = new Date()): StoredProposal {
   if (!isWikiFolderPath(from) || wikiFolder(home, from.split('/'), false) === undefined) throw new WikiError('not-found', 'folder not found');
-  checkMove(home, from, to);
+  checkMove(home, rules, from, to);
   const moves = movedPages(home, from, to);
   const proposal: StoredProposal = {
     v: 1,
@@ -1217,8 +1223,12 @@ export function proposeMove(home: string, from: string, to: string, now = new Da
   return proposal;
 }
 
-function checkMove(home: string, from: string, to: string): void {
+function checkMove(home: string, rules: LabelRules, from: string, to: string): void {
   if (typeof to !== 'string' || !isWikiFolderPath(to)) throw new WikiError('invalid', 'the new place must be topic or topic/subtopic, lowercase words joined by "-"');
+  // Up to L2 on both sides and inside: a sub-folder a rule raises would lose its rule once moved.
+  const tree = wikiTree(home);
+  const under = [...tree.folders.filter((folder) => folder === from || folder.startsWith(`${from}/`)), ...tree.pages.filter((page) => page.path.startsWith(`${from}/`)).map((page) => `${page.path}.md`)];
+  if (!wikiPathUpToL2(rules, from) || !wikiPathUpToL2(rules, to) || !under.every((path) => wikiPathUpToL2(rules, path))) throw new WikiError('not-found', 'folder not found');
   if (to === from || to.startsWith(`${from}/`)) throw new WikiError('invalid', 'a folder cannot go inside itself');
   if (wikiFolder(home, to.split('/'), false) !== undefined || readWikiPageFile(home, to) !== undefined) throw new WikiError('exists', 'a folder with that name exists already');
   const deepest = Math.max(0, ...movedPages(home, from, to).map((move) => move.to.split('/').length));
@@ -1228,7 +1238,7 @@ function checkMove(home: string, from: string, to: string): void {
 function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, path: string | undefined): Approved {
   const to = path ?? proposal.to ?? '';
   if (proposalState(home, proposal) !== 'fresh') throw new WikiError('expired', 'the folder changed after the proposal: ask for a new one');
-  checkMove(home, proposal.path, to);
+  checkMove(home, rules, proposal.path, to);
   const kb = kbReal(home);
   const fromDir = wikiFolder(home, proposal.path.split('/'), false);
   const parent = wikiFolder(home, to.split('/').slice(0, -1), true);
@@ -1266,7 +1276,7 @@ function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, 
   }
   dropProposal(home, proposal.id);
   // The indexes of the moved folder still name the old paths: composed again from the tree.
-  rebuildIndexes(home);
+  rebuildIndexes(home, rules);
   return { kind: 'move', path: to, corrected: to !== proposal.to, points: 0, relinked, folders: [parentFolder(to), to].filter((folder, index, all) => all.indexOf(folder) === index) };
 }
 
@@ -1275,8 +1285,8 @@ function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, 
  * one the user saw (`base`); the version it had is kept in turn, so a restore
  * can be undone.
  */
-export function restoreWikiVersion(home: string, path: string, version: string, base: string, now = new Date()): void {
-  if (!isWikiPagePath(path) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
+export function restoreWikiVersion(home: string, rules: LabelRules, path: string, version: string, base: string, now = new Date()): void {
+  if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
   if (typeof base !== 'string' || !SHA.test(base)) throw new WikiError('invalid', 'base is required');
   const old = readWikiFile(home, [...historySegments(path), `${version}.md`]);
   if (old === undefined) throw new WikiError('not-found', 'version not found');
@@ -1286,7 +1296,7 @@ export function restoreWikiVersion(home: string, path: string, version: string, 
   if (headerFields(old.raw).get('label') !== 'L2') throw new WikiError('edited', 'that version is not a page the code wrote');
   keepVersion(home, path, current.raw, now);
   replaceFile(home, pageSegments(path), old.raw, current.version);
-  rebuildIndexes(home);
+  rebuildIndexes(home, rules);
 }
 
 export interface WikiPageView {
