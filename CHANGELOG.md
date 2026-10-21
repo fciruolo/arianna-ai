@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.159.0] - 2026-10-21
+
 ### Aggiunto
 
 - «Prendi il controllo» nello schermo del browser di Arianna (D-264 passo 5, D-276): dopo l'azione in corso di Arianna guidi tu, con tastiera e mouse (sul telefono il pulsante «Tastiera»); bordo colorato, avviso fisso «Non scrivere dati personali: la pagina è pubblica e il sito li riceve» e nella riga sopra la casella «Stai guidando tu · Restituisci». Il controllo passa all'ultimo schermo che lo chiede e torna ad Arianna con «Restituisci ad Arianna», chiudendo lo schermo o dopo 5 minuti senza input; Arianna rilegge la pagina prima di continuare. Una navigazione fermata lo dice nello schermo.
