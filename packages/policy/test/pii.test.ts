@@ -403,9 +403,16 @@ test('a piece of a name of the fragment, inside a whole occurrence of it, is no 
 });
 
 test('an EMAIL that is a site alone, with no at sign near it, does not count; every other EMAIL does (D-268)', () => {
-  for (const [text, value] of [['https://www.comune.torino.it/', 'www.comune.torino.it'], ['apri comune.torino.it/servizi', 'comune.torino.it'], ['https://it.wikipedia.org/wiki/Torino', 'it.wikipedia.org']] as const) {
+  for (const [text, value] of [['https://www.comune.torino.it/', 'www.comune.torino.it'], ['apri comune.torino.it/servizi', 'comune.torino.it'], ['https://it.wikipedia.org/wiki/Torino', 'it.wikipedia.org'], ['(vedi https://www.comune.torino.it/anagrafe)', 'torino.it']] as const) {
     assert.equal(blocks(text, value, 'EMAIL'), false, text);
   }
+  // What Rizzo marked on 2026-10-21: the «.» after www in the address, «torino.it» in the host alone.
+  const address = 'https://www.comune.torino.it/';
+  assert.equal(check([fragment(address)], CLAUDE, piiReport([address], [[{ kind: 'EMAIL', start: 11, end: 12, score: 0.51 }]])).decision, 'allow');
+  const host = 'www.comune.torino.it';
+  assert.equal(check([fragment(host)], CLAUDE, piiReport([host], [[{ kind: 'EMAIL', start: 3, end: 4, score: 0.97 }, { kind: 'EMAIL', start: 10, end: 20, score: 0.77 }]])).decision, 'allow');
+  // A piece in the path or the query is not in the host: it counts.
+  assert.ok(blocks('https://sito-finto.it/utenti/mario.rossi', 'mario.rossi', 'EMAIL'));
   for (const [text, value] of [
     ['https://sito-finto.it/?contatto=mario.rossi@example.com', 'mario.rossi@example.com'],
     ['https://sito-finto.it/?contatto=mario.rossi@example.com', 'example.com'],

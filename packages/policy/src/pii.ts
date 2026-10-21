@@ -196,8 +196,10 @@ function formAround(text: string, entity: PiiEntity, form: RegExp): boolean {
 
 /**
  * A site the model took for an email (https://www.comune.torino.it/, D-268):
- * the span is a host name alone (labels and a top-level domain of letters,
- * no local part), and no at sign in any form is near it. Every other EMAIL
+ * the span lies in the host name of the word it is in (a host alone, or after
+ * a scheme: labels and a top-level domain of letters, no local part; the model
+ * marks pieces of it, «.» or «torino.it»), and no at sign in any form is in
+ * that word or near it. Every other EMAIL
  * counts, IP addresses (marked EMAIL too) included: the scanner has no rule
  * for emails, so this is the only check of them. The forms are looked for in
  * the text around the span, normalized (NFKC, so ＠ and ﹫ are @) and in
@@ -209,9 +211,23 @@ const HOST_ONLY = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 const AT_FORMS = /@|%(?:25)*40|&#0*64;|&#x0*40;|&commat;|chiocciola|[([{]\s*at\s*[)\]}]|[\s_.-]at[\s_.-]/i;
 const SITE_REACH = 64;
 
+/** Longest word read around an EMAIL span to find the address it is in. */
+const MAX_WORD = 2_000;
+
 function siteNotEmail(text: string, entity: PiiEntity): boolean {
-  if (!HOST_ONLY.test(text.slice(entity.start, entity.end).trim())) return false;
-  const around = text.slice(Math.max(0, entity.start - SITE_REACH), Math.min(text.length, entity.end + SITE_REACH)).normalize('NFKC');
+  // The word the span is in: the model marks pieces of a site («.», «torino.it»), not always the whole name.
+  let start = entity.start;
+  let end = entity.end;
+  while (start > 0 && entity.start - start < MAX_WORD && !/\s/.test(text[start - 1] ?? ' ')) start -= 1;
+  while (end < text.length && end - entity.end < MAX_WORD && !/\s/.test(text[end] ?? ' ')) end += 1;
+  const word = text.slice(start, end);
+  // Its host: after punctuation and a scheme, up to the path, the query, the fragment or a port.
+  const parts = /^([^a-z0-9]*(?:[a-z][a-z0-9+.-]*:\/\/)?)([^/?#:\s]+)/i.exec(word);
+  if (parts === null) return false;
+  const host = (parts[2] ?? '').replace(/[.,;!?»”"')\]]+$/u, '');
+  const hostStart = start + (parts[1] ?? '').length;
+  if (entity.start < hostStart || entity.end > hostStart + host.length || !HOST_ONLY.test(host)) return false;
+  const around = text.slice(Math.max(0, start - SITE_REACH), Math.min(text.length, end + SITE_REACH)).normalize('NFKC');
   return !AT_FORMS.test(around);
 }
 
