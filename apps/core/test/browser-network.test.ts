@@ -463,6 +463,24 @@ describe('attachNetwork: forms and cookies of the user', () => {
     net.handle.rescope({ context: level === 'L1' ? createContext('L1', 'L1') : createContext('L1', 'L0'), consent, driver: 'user' });
   };
 
+  it('a 307 or 308 of a form keeps its body only as a form again, to the site of the form: logged with its size; to another site never sent', async () => {
+    const body = Buffer.from('utente=finto&password=finta-123');
+    const redirect = (location: string, status: number): ResourceResult => ({ ok: true, status, headers: [['location', location]], body: Buffer.alloc(0), location });
+    const net = await harness({
+      answer: (input) =>
+        input.url === 'https://www.banca-finta.it/session' ? redirect('https://login.banca-finta.it/session', 307) : input.url === 'https://login.banca-finta.it/session' ? redirect('https://other.example.org/raccolta', 308) : html(),
+    });
+    asUser(net);
+    const sent = await net.send({ url: 'https://www.banca-finta.it/session', main: true, method: 'POST', body, pageUrl: 'https://www.banca-finta.it/accedi' });
+    assert.equal(sent.fulfilled, undefined);
+    // The second hop, on the site, went again as a form with its bytes; the third, to another site, was never asked.
+    assert.deepEqual(net.rows.map((row) => columns(row).target), ['web-form', 'web-form', 'web-form']);
+    assert.deepEqual(net.rows.map((row) => columns(row).bytes), [body.length, body.length, body.length]);
+    assert.deepEqual(net.rows.map((row) => columns(row).decision), ['allow', 'allow', 'block']);
+    assert.deepEqual(net.fetched.map((request) => request.url), ['https://www.banca-finta.it/session', 'https://login.banca-finta.it/session']);
+    assert.equal(net.fetched[1]?.body?.toString('utf8'), body.toString('utf8'));
+  });
+
   it('a form of the user to the site of its page leaves as written, logged with its size only; from then on the browser has an access', async () => {
     const net = await harness({ answer: () => html(['sid=abc; Path=/; Domain=banca-finta.it']) });
     asUser(net);
@@ -477,12 +495,14 @@ describe('attachNetwork: forms and cookies of the user', () => {
     assert.ok(!JSON.stringify(net.rows).includes('finta-123'));
     assert.ok(!JSON.stringify(net.events).includes('finta-123'));
     assert.equal(net.handle.authenticated(), 'banca-finta.it');
-    assert.deepEqual(net.events.find((event) => event.kind === 'browser.access')?.payload, { site: 'banca-finta.it' });
+    assert.deepEqual(net.events.find((event) => event.kind === 'browser.access')?.payload, {});
     // The next page of the site: as `session`, L2, with the cookie of the answer.
     assert.ok((await net.send({ url: 'https://www.banca-finta.it/conti', main: true, pageUrl: 'https://www.banca-finta.it/accedi' })).fulfilled);
     assert.deepEqual(columns(net.rows.at(-1)).target, 'web-session');
     assert.equal(columns(net.rows.at(-1)).label, 'L2');
     assert.equal(net.fetched.at(-1)?.cookie, 'sid=abc');
+    // After the access the events never name the site.
+    assert.deepEqual(net.events.at(-1)?.payload, { outcome: 'ok' });
   });
 
   it('after the access nothing goes to another site: pages, iframes and resources carry L2 and the gateway refuses them', async () => {

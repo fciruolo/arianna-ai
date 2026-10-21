@@ -342,14 +342,38 @@ export const CONTROL_TEXT = {
   idle: 'Nessun tasto né clic da 5 minuti: il browser torna ad Arianna, che alla prossima richiesta rilegge la pagina.',
 } as const;
 
-/** The line of a change of the control; none when the browser itself closed (its own lines say so). */
-export async function writeControlLine(sql: Queryable, conversationId: string, change: { state: 'taken' } | { state: 'returned'; reason: 'user' | 'screen-closed' | 'idle' | 'browser-closed' }): Promise<void> {
+/** How the control came back, at the start of the line given back after an access. */
+const RETURNED_HOW = {
+  user: 'Hai restituito il browser ad Arianna.',
+  'screen-closed': 'Lo schermo si è chiuso: il browser torna ad Arianna.',
+  idle: 'Nessun tasto né clic da 5 minuti: il browser torna ad Arianna.',
+} as const;
+
+/**
+ * The line given back after an access made by the user (D-276): Arianna does
+ * not read the pages again (they are Private), so it never says she does.
+ */
+export function accessReturnedLine(reason: keyof typeof RETURNED_HOW, site: string): string {
+  return `${RETURNED_HOW[reason]} C’è un accesso fatto da te su ${site}: le sue pagine sono Private e in questa conversazione Arianna non le legge. Continui tu dallo schermo con «Prendi il controllo», oppure «Chiudi» il browser per ripartire senza accesso.`;
+}
+
+/**
+ * The line of a change of the control; none when the browser itself closed
+ * (its own lines say so). `access`: the site of an access made by the user,
+ * if the browser has one.
+ */
+export async function writeControlLine(
+  sql: Queryable,
+  conversationId: string,
+  change: { state: 'taken' } | { state: 'returned'; reason: 'user' | 'screen-closed' | 'idle' | 'browser-closed' },
+  access: string | null = null,
+): Promise<void> {
   if (change.state === 'taken') {
     await writeBrowserLine(sql, conversationId, CONTROL_TEXT.taken);
     return;
   }
   if (change.reason === 'browser-closed') return;
-  await writeBrowserLine(sql, conversationId, CONTROL_TEXT[change.reason]);
+  await writeBrowserLine(sql, conversationId, access === null ? CONTROL_TEXT[change.reason] : accessReturnedLine(change.reason, access));
 }
 
 /** The line in the conversation whose browser another one took (D-264, «Lo prende se fermo da 2 minuti»): without a task, so the model reads it too. */

@@ -302,6 +302,7 @@ onBeforeUnmount(() => {
       type="text"
       autocomplete="off"
       autocapitalize="off"
+      autocorrect="off"
       spellcheck="false"
       aria-label="Tastiera del browser"
       @input="sendText"

@@ -189,7 +189,8 @@ test('in control F1-F12, Super and Meta are dropped, and every key while Super i
 test('keys pressed and clicks are counted in control, never what they were', () => {
   const filter = createRfbFilter('control');
   filter.push(HANDSHAKE);
-  filter.push(Buffer.concat([key(0x61), key(0x61, false), key(0x62), key(0xffbe), pointer(0), pointer(1), pointer(1), pointer(0), pointer(4), pointer(0), pointer(8)]));
+  filter.push(Buffer.concat([key(0x61), key(0x61, false), key(0x62), key(0xffbe), pointer(0), pointer(1), pointer(1), pointer(0), pointer(1), pointer(0), pointer(4), pointer(0), pointer(8)]));
+  // The right button (4) is cleared before Chromium: not a click.
   assert.deepEqual(filter.counts, { keys: 2, clicks: 2 });
   // In view nothing is counted.
   filter.setMode('view');
@@ -206,4 +207,15 @@ test('in control Ctrl+Shift+I, J and C are dropped (the developer tools); Ctrl+C
   assert.deepEqual(Buffer.concat(filter.push(key(0x63)).forward), key(0x63));
   filter.push(Buffer.concat([key(0xffe3, false), key(0xffe2)]));
   assert.deepEqual(Buffer.concat(filter.push(key(0x49)).forward), key(0x49));
+});
+
+test('in control the right and middle buttons and the Menu key never reach Chromium (no context menu, no «Ispeziona»); left and wheel pass', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x04)).forward), pointer(0));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x02)).forward), pointer(0));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x05)).forward), pointer(0x01));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x08)).forward), pointer(0x08));
+  assert.deepEqual(filter.push(key(0xff67)).forward, []);
+  assert.equal(filter.counts.clicks, 1);
 });

@@ -162,11 +162,11 @@ const OUTCOMES: readonly BlockedNavigation['outcome'][] = ['blocked', 'refused',
 
 /** The line under the screen once the user signed in (D-276). */
 export function accessText(site: string): string {
-  return `Accesso fatto su ${site}: le sue pagine sono Private. Arianna non le legge in questa conversazione; i cookie restano solo per ${site}, nella memoria del core, e spariscono con il browser.`;
+  return `Accesso fatto su ${site}: le sue pagine sono Private. Arianna non le legge in questa conversazione; i cookie restano solo per ${site}, nella memoria del core, e spariscono con il browser. Da ora immagini e script di altri siti non si caricano: la pagina può sembrare rotta.`;
 }
 
 /** The second line of the warning while the user drives: what a form does (D-276). */
-export const FORM_NOTE = 'Per accedere scrivi le credenziali nella pagina: il modulo parte solo verso il sito della pagina, Arianna non vede né salva quello che scrivi.';
+export const FORM_NOTE = 'Unica eccezione, l’accesso: utente e password scrivili solo nel modulo d’accesso del sito che conosci. Partono solo verso quel sito; Arianna non li vede né li salva.';
 
 /** The status of the core as the chat reads it: anything unexpected is dropped. */
 export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null } {

@@ -28,7 +28,9 @@
  *   length would be wrong and the rest of the stream unreadable.
  * - Keys that reach the browser chrome are dropped (droppedKeysym: F1-F35,
  *   Super, Meta, Hyper), and every key while one of those modifiers is down:
- *   Cmd+V on a Mac becomes nothing, not a «v»; Ctrl+Shift+I, J and C (the
+ *   Cmd+V on a Mac becomes nothing, not a «v»; the Menu key too, and the
+ *   middle and right buttons are cleared from every pointer message (no
+ *   context menu, so no «Ispeziona»); Ctrl+Shift+I, J and C (the
  *   developer tools, which a policy cannot turn off without stopping the
  *   CDP of the core: their pages are blocked by the policies of the image
  *   too).
@@ -58,9 +60,18 @@ function chromeModifier(keysym: number): boolean {
   return (keysym >= 0xffe7 && keysym <= 0xffe8) || (keysym >= 0xffeb && keysym <= 0xffee);
 }
 
-/** Whether a keysym is dropped in control: F1-F35 and the chrome modifiers. */
+/** The Menu key: it opens the context menu of Chromium («Ispeziona», «Salva con nome»…). */
+const MENU_KEY = 0xff67;
+/**
+ * The buttons kept in a pointer message in control: left and the wheel. The
+ * right one opens the context menu of Chromium (with «Ispeziona»), the
+ * middle one pastes the X selection and opens links in a new tab.
+ */
+const KEPT_BUTTONS = 0xf9;
+
+/** Whether a keysym is dropped in control: F1-F35, the Menu key and the chrome modifiers. */
 export function droppedKeysym(keysym: number): boolean {
-  return (keysym >= 0xffbe && keysym <= 0xffe0) || chromeModifier(keysym);
+  return (keysym >= 0xffbe && keysym <= 0xffe0) || keysym === MENU_KEY || chromeModifier(keysym);
 }
 
 const CONTROL_KEYS = [0xffe3, 0xffe4];
@@ -286,9 +297,13 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
           continue;
         }
         if (type === 4 && !keyPasses(message)) continue;
-        if (type === 5) countPointer(message);
         // A copy: the chunk of the WebSocket is not kept alive by what goes to Xvnc.
-        forward.push(Buffer.from(message));
+        const copy = Buffer.from(message);
+        if (type === 5) {
+          copy[1] = (copy[1] ?? 0) & KEPT_BUTTONS;
+          countPointer(copy);
+        }
+        forward.push(copy);
       }
     },
   };

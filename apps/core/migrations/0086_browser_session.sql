@@ -16,5 +16,6 @@ ALTER TABLE gateway_log ADD CONSTRAINT gateway_log_cloud_up_to_l1 CHECK (
 
 ALTER TABLE gateway_log ADD CONSTRAINT gateway_log_session_fields CHECK (
   (target NOT IN ('web-session', 'web-form') OR (target_kind = 'web' AND locality = 'cloud' AND summary IS NULL))
-  AND (rule NOT IN ('session', 'form') OR target IN ('web-session', 'web-form'))
+  AND (rule <> 'session' OR target = 'web-session')
+  AND (rule <> 'form' OR target = 'web-form')
 );

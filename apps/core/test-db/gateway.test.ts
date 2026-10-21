@@ -284,6 +284,9 @@ test('0086: rows of the site of an access and of a form of the user (D-276): L2 
   await assert.rejects(row('web-resource-user', 'resource', null), /gateway_log_cloud_up_to_l1/);
   await assert.rejects(row('web-session', 'form', 'text', 'L1'), /gateway_log_session_fields/);
   await assert.rejects(row('web-form', 'form', null, 'L2', 'allow', 'local'), /gateway_log_session_fields/);
+  // Each rule with its own target: a form never logged as the site of an access, nor the other way round.
+  await assert.rejects(row('web-session', 'form', null), /gateway_log_session_fields/);
+  await assert.rejects(row('web-form', 'session', null), /gateway_log_session_fields/);
   await assert.rejects(row('web-session', 'session', null, 'L3'), /gateway_log_no_secret_out/);
 });
 

@@ -578,7 +578,7 @@ const browserScreens = new BrowserScreens({
     blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
     access: (conversationId) => agentBrowser.accessOf(conversationId),
   },
-  onControl: (conversationId, change) => { writeControlLine(sql, conversationId, change).catch(report); },
+  onControl: (conversationId, change) => { writeControlLine(sql, conversationId, change, agentBrowser.accessOf(conversationId)).catch(report); },
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
 });
 // The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.

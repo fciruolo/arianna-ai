@@ -213,6 +213,7 @@ describe('the access made by the user (D-276)', () => {
     assert.match(blockedText({ outcome: 'form' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
     assert.match(blockedText({ outcome: 'blocked' }, null), /scrivilo in chat/);
     assert.match(accessText('banca-finta.it'), /Private/);
-    assert.match(FORM_NOTE, /solo verso il sito della pagina/);
+    assert.match(FORM_NOTE, /Unica eccezione/);
+    assert.match(FORM_NOTE, /solo verso quel sito/);
   });
 });

@@ -442,7 +442,9 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const navigated = (outcome: RequestOutcome, site?: string, reason?: ResourceFailure): void => {
     last = { seq: (last?.seq ?? 0) + 1, outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) };
     // The site only of an address the gateway let go: a refused one may carry what it was refused for.
-    emit({ kind: 'browser.navigate', label: scope.context.effective, payload: { outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
+    // After an access (D-276) never: what the user does on that site says something of the user.
+    const logged = session === null ? site : undefined;
+    emit({ kind: 'browser.navigate', label: scope.context.effective, payload: { outcome, ...(logged === undefined ? {} : { site: logged }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
   };
 
   /**
@@ -479,6 +481,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const pageHop = async (address: string, hop: number, request: ResourceInput): Promise<ResourceResult> => {
     const url = resourceUrl(address, network);
     if (typeof url === 'string') return { ok: false, reason: url };
+    // A page is its address only: a body (a 307/308 of a form) goes through formHop, never here.
+    if (request.body !== undefined) return { ok: false, reason: 'blocked' };
     // After an access (D-276): the site of the access as `session`, with its cookies; any other carries L2 and is refused.
     const jar = session;
     const onAccess = jar !== null && onSite(url.hostname, jar.site);
@@ -530,7 +534,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     if (session === null) {
       session = pending.get(site) ?? new CookieJar(site);
       pending.clear();
-      emit({ kind: 'browser.access', label: 'L0', payload: { site }, ...meta() });
+      // L0 without the site: which site the user signs in to says something of the user (the gateway log keeps it, locally).
+      emit({ kind: 'browser.access', label: 'L0', payload: {}, ...meta() });
     }
     const cookie = session.header(url, Date.now());
     const result = await fetchOne(withCookie({ ...request, url: allowed, type: 'document' }, cookie), network, stopping.signal);
@@ -673,7 +678,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
     const site = formSite;
     const { result, final, tooMany, limited } = frame.main
-      ? await follow(input, before, (next, index) => (site !== undefined && index === before ? formHop(next, site) : pageHop(next.url, index, next)))
+      ? await follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
       : await follow(input, before, (next) => resourceHop(next, frame.navigation));
     if (isClosed()) {
       await abort('refused', 'interrupted');

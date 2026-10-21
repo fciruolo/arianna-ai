@@ -27,6 +27,7 @@ import {
   browserConsent,
   CLOSED_BY_USER_TEXT,
   browserResultText,
+  accessReturnedLine,
   browserTool,
   MAX_ACTIONS_PER_TASK,
   NOT_HERE,
@@ -285,6 +286,15 @@ test('writeControlLine: taken and given back leave system lines; the browser clo
     SELECT role, label::text, body FROM messages WHERE conversation_id = ${conversationId} ORDER BY ts, id`;
   assert.deepEqual(rows.map((row) => row.body).sort(), [CONTROL_TEXT.taken, CONTROL_TEXT.idle].sort());
   assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
+});
+
+test('writeControlLine after an access (D-276): the line given back never says Arianna reads the page again', async () => {
+  const conversationId = await workConversation();
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'user' }, 'banca-finta.it');
+  const rows = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${conversationId}`;
+  assert.deepEqual(rows.map((row) => row.body), [accessReturnedLine('user', 'banca-finta.it')]);
+  assert.doesNotMatch(rows[0]?.body ?? '', /rilegge/);
+  assert.match(rows[0]?.body ?? '', /Private/);
 });
 
 test('writeLoginLine (D-276): one system line per site in ten minutes, read by the model too', async () => {
