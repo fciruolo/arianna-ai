@@ -14,6 +14,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Profilo seccomp del browser dell'agente: quello ufficiale di Docker più tre eccezioni, così la sandbox di Chromium resta accesa senza privilegi in più (D-266); il doctor segnala un'immagine del browser costruita da più di 30 giorni.
 - Nuova destinazione del gateway per il testo che Arianna scrive in una pagina (`web-typed-<consenso>`, regole `typed` e `typed-invalid`): al più 200 caratteri senza caratteri di controllo, valori del vault, scanner e secondo controllo dei dati personali come per una pagina; mai da una conversazione Privata (D-268).
 
+### Corretto
+
+- Il secondo controllo dei dati personali non prende più un nome di sito per un'email (`https://www.comune.torino.it/` fermava il browser dopo «Apri»): un'«email» che è solo un nome di sito, senza nessuna forma di chiocciola vicino (@, %40 anche codificato due volte, &#64;, «chiocciola», « at »), non conta; le email, anche scritte così, e gli IP pubblici restano fermati (D-268, prova dell'utente).
+
 ## [0.151.0] - 2026-10-20
 
 ### Aggiunto

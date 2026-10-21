@@ -195,6 +195,27 @@ function formAround(text: string, entity: PiiEntity, form: RegExp): boolean {
 }
 
 /**
+ * A site the model took for an email (https://www.comune.torino.it/, D-268):
+ * the span is a host name alone (labels and a top-level domain of letters,
+ * no local part), and no at sign in any form is near it. Every other EMAIL
+ * counts, IP addresses (marked EMAIL too) included: the scanner has no rule
+ * for emails, so this is the only check of them. The forms are looked for in
+ * the text around the span, normalized (NFKC, so ＠ and ﹫ are @) and in
+ * their encoded and written-out forms: %40 (also encoded again, %2540, as in
+ * the links of newsletters), &#64;, &commat;, «chiocciola»,
+ * «(at)», « at ».
+ */
+const HOST_ONLY = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
+const AT_FORMS = /@|%(?:25)*40|&#0*64;|&#x0*40;|&commat;|chiocciola|[([{]\s*at\s*[)\]}]|[\s_.-]at[\s_.-]/i;
+const SITE_REACH = 64;
+
+function siteNotEmail(text: string, entity: PiiEntity): boolean {
+  if (!HOST_ONLY.test(text.slice(entity.start, entity.end).trim())) return false;
+  const around = text.slice(Math.max(0, entity.start - SITE_REACH), Math.min(text.length, entity.end + SITE_REACH)).normalize('NFKC');
+  return !AT_FORMS.test(around);
+}
+
+/**
  * False when the entity is of a kind with a form (D-215) and the text has not
  * that form where it was found. Every other kind keeps what the model said.
  */
@@ -208,6 +229,8 @@ function hasForm(text: string, entity: PiiEntity): boolean {
       return formAround(text, entity, ZIPCODE_FORM);
     case 'BUILDINGNUM':
       return formAround(text, entity, BUILDINGNUM_FORM);
+    case 'EMAIL':
+      return !siteNotEmail(text, entity);
     case 'CATASTO':
       return CATASTO_WORD.test(normalized(text.slice(Math.max(0, entity.start - CATASTO_BEFORE), Math.min(text.length, entity.end + CATASTO_AFTER))).text);
     default:

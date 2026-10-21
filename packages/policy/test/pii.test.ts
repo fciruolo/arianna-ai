@@ -263,7 +263,7 @@ test('inside a local IPv4 address nothing counts; a public one, or an email, sti
 
 test('an ignored name only covers FULLNAME', () => {
   const text = 'Arianna';
-  assert.equal(check([fragment(text)], CLAUDE, piiReport([text], [[{ kind: 'EMAIL', start: 0, end: 7, score: 0.9 }]])).decision, 'block');
+  assert.equal(check([fragment(text)], CLAUDE, piiReport([text], [[{ kind: 'TELEPHONENUM', start: 0, end: 7, score: 0.9 }]])).decision, 'block');
 });
 
 test('no answer blocks: off, starting, timeout, error', () => {
@@ -400,4 +400,37 @@ test('a piece of a name of the fragment, inside a whole occurrence of it, is no 
   const two = check([fragment(character), fragment(other)], CLAUDE, piiReport([character, other], [[at('verne')], [piece]], [], [names[0], undefined]));
   assert.ok(two.decision === 'block');
   assert.deepEqual(two.pii, [{ kind: 'FULLNAME', fragment: 1 }]);
+});
+
+test('an EMAIL that is a site alone, with no at sign near it, does not count; every other EMAIL does (D-268)', () => {
+  for (const [text, value] of [['https://www.comune.torino.it/', 'www.comune.torino.it'], ['apri comune.torino.it/servizi', 'comune.torino.it'], ['https://it.wikipedia.org/wiki/Torino', 'it.wikipedia.org']] as const) {
+    assert.equal(blocks(text, value, 'EMAIL'), false, text);
+  }
+  for (const [text, value] of [
+    ['https://sito-finto.it/?contatto=mario.rossi@example.com', 'mario.rossi@example.com'],
+    ['https://sito-finto.it/?contatto=mario.rossi@example.com', 'example.com'],
+    ['https://sito-finto.it/?email=mario.rossi%40example.com', 'example.com'],
+    ['https://sito-finto.it/?email=mario.rossi%40example.com', 'mario.rossi%40example.com'],
+    ['mailto:mario.rossi%40example.com', 'mario.rossi'],
+    ['https://t.example.net/r?u=https%3A%2F%2Fshop.example.com%2Fp%3Femail%3Dmario.rossi%2540example.com', 'example.com'],
+    ['scrivi a mario.rossi(at)example.com', 'mario.rossi'],
+    ['scrivi a mario.rossi ＠ example.com', 'example.com'],
+    ['scrivi a mario.rossi @ example.com', 'mario.rossi'],
+    ['scrivi a mario.rossi\u00a0@\u00a0example.com', 'example.com'],
+    ['mario.rossi chiocciola gmail.com', 'gmail.com'],
+    ['mario.rossi at gmail dot com', 'mario.rossi'],
+    ['mario.rossi_at_example.com', 'example.com'],
+    ['mario.rossi&#64;example.com', 'example.com'],
+    ['mario.rossi&commat;example.com', 'example.com'],
+    ['il server di casa è 93.41.12.7', '93.41.12.7'],
+  ] as const) {
+    assert.ok(blocks(text, value, 'EMAIL'), text);
+  }
+});
+
+test('the same rule on the other exits: a site passes towards Telegram, an email does not', () => {
+  const site = 'Guarda https://www.comune.torino.it/ per gli orari';
+  assert.equal(check([fragment(site)], TELEGRAM, piiReport([site], [[entity(site, 'www.comune.torino.it', 'EMAIL')]])).decision, 'allow');
+  const email = 'Scrivi a mario.rossi@example.com per gli orari';
+  assert.equal(check([fragment(email)], TELEGRAM, piiReport([email], [[entity(email, 'mario.rossi@example.com', 'EMAIL')]])).decision, 'block');
 });
