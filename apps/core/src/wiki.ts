@@ -1429,7 +1429,7 @@ export function checkUserPage(home: string, rules: LabelRules, title: string, bo
     if (line.includes('\0')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     if (line.includes('![[')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     // On the line as written: a `](` after a wikilink is a link too, and a scheme needs no slashes (`https:host`).
-    if (/\]\(|\b(?:https?|mailto|ftp|file|javascript|vbscript|data|obsidian|tel):/i.test(line) || /^\s{0,3}\[[^\]]+\]:/.test(line)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    if (/\]\(|\b(?:https?|mailto|ftp|file|javascript|vbscript|data|obsidian|tel):(?=\S)/i.test(line) || /^[\s>]*\[[^\]]+\]:/.test(line)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
     const rest = line.replace(/\[\[([^[\]\n]{1,400})\]\]/g, (_match, inner: string) => {
       const target = (inner.split('|')[0] ?? '').split('#')[0]?.trim() ?? '';
       if (!userLinkOk(home, rules, target)) throw new WikiError('invalid', `line ${String(index + 1)}: citation`);

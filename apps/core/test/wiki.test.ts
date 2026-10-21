@@ -332,6 +332,8 @@ describe('the user writes the wiki', () => {
     refused('Titolo', '[[[inbox/2026-10-21-100000-octane]](HTTPS:esempio.invalid/x?d=1)', 'line 1: link');
     refused('Titolo', 'scrivi a mailto:finto@esempio.invalid', 'line 1: link');
     refused('Titolo', '[r]: esempio.invalid', 'line 1: link');
+    refused('Titolo', '> [r]: //esempio.invalid', 'line 1: link');
+    ok('La data: 21 ottobre. File: elenco della spesa finta.');
     refused('Titolo', 'vedi [x][r]', 'line 1: link');
     refused('Titolo', '---\nlabel: L0\n---\n', 'line 1: header');
     refused('', 'testo', 'title');
