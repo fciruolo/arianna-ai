@@ -15,7 +15,7 @@ import { FETCH_FAILURE_TEXT, fetchLink, oneLine, siteOf, xPostUrl, type FetchedL
 import { machineBusy } from './model-evals.ts';
 import { checkNotePath, headerFields, keptCaptureFields, listNotes, noteLabel, NoteError, rawBody, readNoteFile, replaceNote, sha256 } from './notes.ts';
 import { KB_DIR, parsePage, type Kb, type KbHit } from './orchestrator/kb.ts';
-import { isYoutubeVideo } from './video-url.ts';
+import { isYoutubeVideo, youtubeVideoId } from './video-url.ts';
 
 /**
  * Organizing a captured note with the local model, in the background
@@ -169,6 +169,36 @@ export const ORGANIZE_LINK_PROMPT = [
   `- With a page, "summary" says what the page says (who, what, when), then what the user wrote besides the link, if anything. At most ${String(MAX_SUMMARY)} characters.`,
   `- "points": up to ${String(MAX_POINTS)} key points of the page in Italian, each one sentence of at most ${String(MAX_POINT)} characters; empty when the page says too little.`,
 ].join('\n');
+
+/**
+ * With the link of a YouTube video not summarized yet (D-273): nobody
+ * downloaded it, so the model knows nothing of it and must guess nothing.
+ */
+export const ORGANIZE_VIDEO_PROMPT = [
+  ORGANIZE_PROMPT,
+  '- The link of the note is a YouTube video that nobody downloaded: you know neither its title nor what it says. Never guess them, not from the address, not from memory: "title" and "summary" say only that it is a video and what the user wrote besides the link.',
+].join('\n');
+
+/**
+ * The fields of a note that is only the link of a YouTube video (D-273),
+ * written by the code: no model, nothing guessed about a video nobody
+ * downloaded. «Riassumi il video» writes what it says.
+ */
+export function videoLinkFields(id: string): OrganizedFields {
+  return {
+    title: `Video YouTube ${id}`,
+    summary: 'Link a un video YouTube non ancora riassunto: «Riassumi il video» ne scrive il contenuto.',
+    context: '',
+    tags: ['youtube', 'video'],
+    kind: 'link',
+  };
+}
+
+/** Whether the text is one address and nothing else. */
+export function onlyOneLink(text: string): boolean {
+  const addresses = text.match(/\bhttps?:\/\/\S+/giu) ?? [];
+  return addresses.length === 1 && text.replace(/\bhttps?:\/\/\S+/giu, '').trim() === '';
+}
 
 export interface OrganizedFields {
   title: string;
@@ -482,7 +512,6 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   }
   const status = headerFields(raw).get('status');
   const view = captureOf(raw);
-  // An organized note is organized again only to download its link (D-154).
   // An organized note is organized again only to download its link (D-154), and only once it has none.
   const again = request.fetch === true && status === 'organized' && view?.kept.url !== undefined && headerFields(raw).get('fetched_at') === undefined;
   if (status !== 'new' && !again) return { ok: false, reason: 'not-new' };
@@ -522,9 +551,13 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
     if (!(!fetched.ok && fetched.reason === 'interrupted')) request.onContent?.(linkContent);
   }
   const page = linkContent !== undefined && 'link' in linkContent ? linkContent.link : undefined;
+  // A video nobody downloaded (D-273): the model gets no related notes, where it would find another video's title to copy.
+  // Pensieri captures a pasted link as a thought, without url: the video is looked for in the text too.
+  const video = page === undefined ? youtubeVideoId(url ?? linkInText(text) ?? '') : undefined;
+  if (video !== undefined && onlyOneLink(text)) return writeOrganized(env, path, raw, { ownLabel, fields: videoLinkFields(video), hits: [], linkContent });
 
   // The closest notes, with the clearance of the private chat: never L3.
-  const hits: KbHit[] = env.kb
+  const hits: KbHit[] = video !== undefined ? [] : env.kb
     .search(text.slice(0, MAX_QUERY), createContext('L2'), RELATED_LIMIT + 1, 'kb')
     // Notes of kb/ only: the pages of the projects (D-145) and Arianna's documents (D-155) are not linked from the inbox.
     .hits.filter((hit) => hit.path !== path && hit.path.startsWith('kb/') && isAtMost(hit.label, 'L2'))
@@ -550,7 +583,7 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
     const result = await env.model().chat({
       model: ORGANIZE_MODEL,
       messages: [
-        { role: 'system', content: page === undefined ? ORGANIZE_PROMPT : ORGANIZE_LINK_PROMPT },
+        { role: 'system', content: page !== undefined ? ORGANIZE_LINK_PROMPT : video !== undefined ? ORGANIZE_VIDEO_PROMPT : ORGANIZE_PROMPT },
         { role: 'user', content: decision.texts.join('\n') },
       ],
       schema: { name: ORGANIZE_SCHEMA_NAME, schema: page === undefined ? ORGANIZE_SCHEMA : ORGANIZE_LINK_SCHEMA },
@@ -569,11 +602,22 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   }
   if ('reason' in read) return { ok: false, reason: read.reason };
   if (signal.aborted) return { ok: false, reason: 'interrupted' };
+  return writeOrganized(env, path, raw, { ownLabel, fields: read, hits, linkContent, label });
+}
 
+/** Writes the organized note over the one read, unless it changed meanwhile. */
+function writeOrganized(
+  env: OrganizeEnv,
+  path: string,
+  raw: string,
+  input: { ownLabel: Label; fields: OrganizedFields; hits: KbHit[]; linkContent: LinkContent | undefined; label?: Label },
+): OrganizeOutcome {
+  const { fields, hits, linkContent } = input;
+  const label = input.label ?? input.ownLabel;
   const { content, linked } = composeOrganized({
     raw,
     label,
-    fields: read,
+    fields,
     related: hits.map((hit) => hit.path),
     model: ORGANIZE_MODEL,
     now: env.now?.() ?? new Date(),
