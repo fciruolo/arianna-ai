@@ -67,6 +67,10 @@ export const TASK_LIMIT = `Ho già fatto ${String(MAX_ACTIONS_PER_TASK)} azioni 
 /** Fixed texts of the failures, Italian: the chat shows them, the model reads them. */
 export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'], string> = {
   busy: 'Il browser lo sta usando un’altra chat: riprova fra poco.',
+  paused: 'Il browser lo sta usando l’utente: nessuna azione nel browser finché non te lo restituisce. Rispondi con quello che hai.',
+  reread: 'L’utente ha usato il browser e te l’ha restituito: rileggi la pagina con browser.read prima di ogni altra azione.',
+  authenticated:
+    'Nel browser c’è un accesso fatto dall’utente: le sue pagine sono Private e in una conversazione di lavoro non le leggo. Dì all’utente che può continuare lui dallo schermo del browser, oppure chiudere il browser (browser.close) per ripartire senza accesso.',
   'not-installed': 'Il browser non è installato su questo Mac.',
   'start-failed': 'Il browser non è partito: riprova fra poco.',
   'not-open': 'Il browser non è aperto: aprilo prima con browser.open.',
@@ -150,6 +154,39 @@ function oneLine(value: string, max: number): string {
   return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
+/** Words of a button or link that signs in, as a whole label (D-276). */
+const LOGIN_WORDS = /^(accedi|entra|login|log in|sign in|signin|accesso|area riservata|continua con la password)$/i;
+
+/**
+ * Whether a page asks to sign in (D-276): a password field, or a text field
+ * with a button or link named as a sign in. Read on the reading of the core,
+ * which a hostile page may shape: it only adds a hint for the user.
+ */
+export function asksLogin(reading: Pick<PageReading, 'elements'>): boolean {
+  if (reading.elements.some((element) => element.kind === 'password')) return true;
+  const field = reading.elements.some((element) => element.kind === 'field' && (element.type === 'email' || element.type === 'text'));
+  return field && reading.elements.some((element) => (element.kind === 'button' || element.kind === 'link') && LOGIN_WORDS.test(element.label.trim()));
+}
+
+/** What the model reads after a page that asks to sign in: never type a password, the user signs in. */
+export const LOGIN_HINT =
+  'This page asks to sign in. Never type in a password field. Tell the user, in Italian: the page asks for an access; if they want, they open the screen of the browser («Guarda»), press «Prendi il controllo», sign in themselves and give the browser back. After an access the pages of that site are Private: in this work conversation you cannot read them, the user goes on from the screen.';
+
+/** The system line of the chat when the browser meets a page that asks to sign in (D-276): the model reads it too. */
+export function loginLine(site: string): string {
+  return `La pagina di ${site} chiede un accesso. Arianna non scrive password: se vuoi accedere, apri lo schermo con «Guarda», premi «Prendi il controllo» e accedi tu, poi «Restituisci ad Arianna». Dopo l’accesso le pagine di ${site} sono Private: in questa conversazione Arianna non le legge, continui tu dallo schermo.`;
+}
+
+/** The line of the login, once per site in ten minutes of a conversation: a page read again says nothing new. */
+export async function writeLoginLine(sql: Queryable, conversationId: string, site: string): Promise<void> {
+  const text = loginLine(site);
+  const [seen] = await sql<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM messages
+    WHERE conversation_id = ${conversationId} AND role = 'system' AND body = ${text} AND ts > now() - interval '10 minutes'`;
+  if ((seen?.n ?? 0) > 0) return;
+  await writeBrowserLine(sql, conversationId, text);
+}
+
 /** What the model reads of a page: fenced as untrusted public content, the elements by number, never a field value. */
 export function readingText(reading: PageReading): string {
   const cut = reading.text.length > MAX_PAGE_TEXT;
@@ -221,7 +258,14 @@ export async function browserTool(
   }
   const site = result.page.site;
   if (action.kind === 'close') return { text: 'Browser closed.', label: 'L0', detail: 'browser · chiude' };
-  if (action.kind === 'read' && result.reading !== undefined) return { text: readingText(result.reading), label: 'L0', detail: `browser · legge · ${site}` };
+  if (action.kind === 'read' && result.reading !== undefined) {
+    // A page that asks to sign in (D-276): the user does it, never Arianna; a line tells the user too.
+    if (asksLogin(result.reading)) {
+      await writeLoginLine(browser.sql, task.conversationId, site || 'questo sito').catch(() => undefined);
+      return { text: `${readingText(result.reading)}\n${LOGIN_HINT}`, label: 'L0', detail: `browser · legge · ${site}` };
+    }
+    return { text: readingText(result.reading), label: 'L0', detail: `browser · legge · ${site}` };
+  }
   const typed = action.kind === 'type' ? ` Typed ${String(Array.from(action.text).length)} characters${action.submit ? ' and pressed Enter' : ''}.` : '';
   return {
     text: `Browser on «${fenced(oneLine(result.page.title, 120)) || '(no title)'}» (${site}).${typed} Call browser.read to see the page.`,
@@ -289,6 +333,49 @@ export async function browserReplay(sql: Queryable, ctx: StepContext, turn: Turn
 export const TAKEN_TEXT = 'Browser chiuso: lo usa un’altra chat. Se serve, Arianna lo riapre.';
 
 export const CLOSED_BY_USER_TEXT = 'Browser chiuso da te. Se serve, Arianna lo riapre.';
+
+/** The lines of «Prendi il controllo» (D-264, passo 5): the model reads them too. */
+export const CONTROL_TEXT = {
+  taken: 'Hai preso il controllo del browser: Arianna non lo usa finché non glielo restituisci.',
+  user: 'Hai restituito il browser ad Arianna: alla prossima richiesta rilegge la pagina.',
+  'screen-closed': 'Lo schermo si è chiuso: il browser torna ad Arianna, che alla prossima richiesta rilegge la pagina.',
+  idle: 'Nessun tasto né clic da 5 minuti: il browser torna ad Arianna, che alla prossima richiesta rilegge la pagina.',
+} as const;
+
+/** How the control came back, at the start of the line given back after an access. */
+const RETURNED_HOW = {
+  user: 'Hai restituito il browser ad Arianna.',
+  'screen-closed': 'Lo schermo si è chiuso: il browser torna ad Arianna.',
+  idle: 'Nessun tasto né clic da 5 minuti: il browser torna ad Arianna.',
+} as const;
+
+/**
+ * The line given back after an access made by the user (D-276): Arianna does
+ * not read the pages again (they are Private), so it never says she does.
+ */
+export function accessReturnedLine(reason: keyof typeof RETURNED_HOW): string {
+  // Never the site: the model reads this line, and which site the user signs in to says something of the user.
+  return `${RETURNED_HOW[reason]} Nel browser c’è un accesso fatto da te: le sue pagine sono Private e in questa conversazione Arianna non le legge. Continui tu dallo schermo con «Prendi il controllo», oppure «Chiudi» il browser per ripartire senza accesso.`;
+}
+
+/**
+ * The line of a change of the control; none when the browser itself closed
+ * (its own lines say so). `access`: the site of an access made by the user,
+ * if the browser has one (only whether there is one reaches the line).
+ */
+export async function writeControlLine(
+  sql: Queryable,
+  conversationId: string,
+  change: { state: 'taken' } | { state: 'returned'; reason: 'user' | 'screen-closed' | 'idle' | 'browser-closed' },
+  access: string | null = null,
+): Promise<void> {
+  if (change.state === 'taken') {
+    await writeBrowserLine(sql, conversationId, CONTROL_TEXT.taken);
+    return;
+  }
+  if (change.reason === 'browser-closed') return;
+  await writeBrowserLine(sql, conversationId, access === null ? CONTROL_TEXT[change.reason] : accessReturnedLine(change.reason));
+}
 
 /** The line in the conversation whose browser another one took (D-264, «Lo prende se fermo da 2 minuti»): without a task, so the model reads it too. */
 export async function writeTakenLine(sql: Queryable, conversationId: string): Promise<void> {

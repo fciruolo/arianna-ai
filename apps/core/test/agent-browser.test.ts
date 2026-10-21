@@ -64,6 +64,12 @@ interface Harness {
   typed: string[];
   page: FakePage;
   clock: { now: number };
+  /** The last navigation the fake network decided; set by a test. */
+  last: { seq: number; outcome: 'blocked' | 'ok' | 'form'; site?: string } | undefined;
+  /** Activity without an action (the user drives). */
+  userTouches: number;
+  /** The site of an access made by the user, as the fake network says (D-276). */
+  access: string | null;
 }
 
 function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' } } = {}): Harness {
@@ -71,18 +77,19 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock };
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null };
   const openSession: OpenSession = (_manager, id) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
     h.opened.push(id);
     const session = {
-      network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (options.last === undefined ? undefined : { ...options.last }), settle: () => Promise.resolve() },
+      network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), authenticated: () => h.access, settle: () => Promise.resolve() },
       openPage: (url: string) => { page.url = url; return Promise.resolve({ title: page.title, url }); },
       currentPage: () => {
         h.touches += 1;
         return Promise.resolve(fakePage(page));
       },
+      touch: () => { h.userTouches += 1; },
       close: () => { h.closed.push(id); active = null; return Promise.resolve(); },
     } as unknown as BrowserSession;
     return Promise.resolve(session);
@@ -129,7 +136,7 @@ test('the scope of every action goes to the network: a conversation that became 
   await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
   const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
   await h.browser.act(scope('a', consent, INTERNAL), { kind: 'read' });
-  assert.deepEqual(h.scopes.at(-1), { conversationId: 'a', context: INTERNAL, consent });
+  assert.deepEqual(h.scopes.at(-1), { context: INTERNAL, consent, driver: 'agent' });
 });
 
 test('another conversation gets busy while the browser was used less than 2 minutes ago, and takes it after', async () => {
@@ -418,4 +425,102 @@ test('release forgets a «Chiudi» not yet heard: a later read hears «not open�
   assert.equal(await h.browser.closeByUser('a'), true);
   await h.browser.release('a');
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
+});
+
+
+// «Prendi il controllo» (D-264, passo 5).
+test('takeControl: only the conversation holding the browser; then Arianna is paused there and busy elsewhere, never taken over', async () => {
+  const h = harness();
+  assert.equal(await h.browser.takeControl('a').done, false);
+  await h.browser.act({ ...scope('a'), meta: { taskId: 't1' } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.equal(await h.browser.takeControl('b').done, false);
+  const request = h.browser.takeControl('a');
+  assert.equal(request.waiting, false);
+  assert.equal(await request.done, true);
+  assert.equal(h.browser.driverOf('a'), 'user');
+  assert.equal(h.browser.driverOf('b'), null);
+  // The requests of the user go on with the scope of Arianna, without her task.
+  const last = h.scopes.at(-1);
+  assert.equal(last?.driver, 'user');
+  assert.equal(last.meta, undefined);
+  const paused = await h.browser.act(scope('a'), { kind: 'read' });
+  assert.deepEqual(paused, { ok: false, reason: 'paused' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'close' }), { ok: false, reason: 'paused' });
+  h.clock.now += TAKE_OVER_MS * 10;
+  assert.deepEqual(await h.browser.act(scope('b'), { kind: 'open', url: 'https://altro-finto.it/' }), { ok: false, reason: 'busy' });
+  assert.equal(h.browser.holder, 'a');
+  assert.equal(h.taken.length, 0);
+});
+
+test('returnControl: the first action of Arianna must be a reading, then she goes on', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.act(scope('a'), { kind: 'read' });
+  assert.equal(h.browser.returnControl('a'), false);
+  await h.browser.takeControl('a').done;
+  assert.equal(h.browser.returnControl('b'), false);
+  assert.equal(h.browser.returnControl('a'), true);
+  assert.equal(h.browser.driverOf('a'), 'agent');
+  assert.equal(h.scopes.at(-1)?.driver, 'agent');
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'click', ref: 1 }), { ok: false, reason: 'reread' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'scroll', direction: 'down' }), { ok: false, reason: 'reread' });
+  const read = await h.browser.act(scope('a'), { kind: 'read' });
+  assert.equal(read.ok, true);
+  assert.equal((await h.browser.act(scope('a'), { kind: 'scroll', direction: 'down' })).ok, true);
+});
+
+test('takeControl waits for the action under way, never in the middle of it', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  let finish: () => void = () => undefined;
+  h.page.wait = new Promise((resolve) => { finish = resolve; });
+  const reading = h.browser.act(scope('a'), { kind: 'read' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = h.browser.takeControl('a');
+  assert.equal(request.waiting, true);
+  assert.equal(h.browser.driverOf('a'), 'agent');
+  finish();
+  assert.equal((await reading).ok, true);
+  assert.equal(await request.done, true);
+  assert.equal(h.browser.driverOf('a'), 'user');
+});
+
+test('input of the user counts as activity; the site and the refused navigations come from the network while the user drives', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  h.last = { seq: 4, outcome: 'ok', site: 'comune-finto.it' };
+  h.browser.userInput('a');
+  assert.equal(h.userTouches, 0);
+  await h.browser.takeControl('a').done;
+  const before = h.userTouches;
+  h.browser.userInput('a');
+  h.browser.userInput('b');
+  assert.equal(h.userTouches, before + 1);
+  // Nothing refused since the control was taken.
+  assert.equal(h.browser.blockedOf('a'), null);
+  h.last = { seq: 5, outcome: 'ok', site: 'servizi-finti.it' };
+  assert.equal(h.browser.siteOf('a'), 'servizi-finti.it');
+  h.last = { seq: 6, outcome: 'blocked' };
+  assert.deepEqual(h.browser.blockedOf('a'), { seq: 6, outcome: 'blocked' });
+  assert.equal(h.browser.blockedOf('b'), null);
+  h.browser.returnControl('a');
+  assert.equal(h.browser.blockedOf('a'), null);
+});
+
+test('after an access made by the user (D-276) Arianna neither reads nor acts in the browser; she may close it', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://banca-finta.it/accedi' });
+  assert.equal(h.browser.accessOf('a'), null);
+  h.access = 'banca-finta.it';
+  assert.equal(h.browser.accessOf('a'), 'banca-finta.it');
+  assert.equal(h.browser.accessOf('b'), null);
+  for (const action of [{ kind: 'read' }, { kind: 'scroll', direction: 'down' }, { kind: 'click', ref: 1 }, { kind: 'open', url: 'https://banca-finta.it/conti' }, { kind: 'type', ref: 1, text: 'x', submit: false }] as const) {
+    assert.deepEqual(await h.browser.act(scope('a'), action), { ok: false, reason: 'authenticated' }, action.kind);
+  }
+  // Given back after the access: still nothing, the reading is refused too.
+  await h.browser.takeControl('a').done;
+  h.browser.returnControl('a');
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'authenticated' });
+  assert.equal((await h.browser.act(scope('a'), { kind: 'close' })).ok, true);
+  assert.equal(h.browser.holder, null);
 });

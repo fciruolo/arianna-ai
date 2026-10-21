@@ -26,6 +26,8 @@ export interface BrowserSession {
   /** After a refused navigation: a fresh tab in place of the current one, left on Chromium's error page. */
   resetPage(): Promise<void>;
   screenshot(): Promise<Buffer>;
+  /** Activity without an action of the agent (the user drives, D-264 passo 5): the idle time starts again. */
+  touch?(): void;
   close(): Promise<void>;
 }
 
@@ -133,6 +135,9 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
       const old = page;
       page = await shared.newPage().catch(() => undefined);
       if (page && old && !old.isClosed()) await old.close().catch(() => undefined);
+    },
+    touch() {
+      open.touch();
     },
     async screenshot() {
       open.touch();

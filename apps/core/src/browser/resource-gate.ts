@@ -2,6 +2,7 @@ import { spendAllowed, type Context, type Labeled, type PageConsent, type Target
 
 import type { Sql } from '../db/client.ts';
 import { passGateway, type GatewayMeta } from '../gateway.ts';
+import { onSite } from './cookie-jar.ts';
 import { checkRequest, fetchResource, resourceUrl, type ResourceInput, type ResourceOptions, type ResourceResult } from './resource-fetch.ts';
 
 /**
@@ -24,6 +25,13 @@ export interface ResourceGateInput {
   context: Context;
   /** The consent the page of the job was opened with (D-262). */
   consent: PageConsent | PageConsent['from'];
+  /**
+   * The site of an access made by the user (D-276), once the browser has
+   * one: a request of that site goes as `session` (L2, with the cookies the
+   * core set in `request.cookie`); any other carries L2 with the consent of
+   * the page, which the gateway refuses.
+   */
+  session?: string;
   request: ResourceInput;
   network: ResourceOptions;
   meta?: GatewayMeta;
@@ -52,10 +60,14 @@ export async function gateResource(input: ResourceGateInput): Promise<ResourceRe
   if (checked.body !== undefined && body === undefined) return { ok: false, reason: 'unreadable-body' };
 
   const of = typeof input.consent === 'string' ? input.consent : input.consent.from;
-  const target: Target = { kind: 'web', resource: { of, type: request.type, method: checked.method } };
-  // The label of the session, never above it, as for a page.
-  const payload: Labeled<unknown>[] = [{ value: url.href, label: context.effective, source: 'web:resource' }];
-  if (body !== undefined) payload.push({ value: body, label: context.effective, source: 'web:resource' });
+  // Only https for the site of the access: its cookies never travel in clear.
+  const onSession = input.session !== undefined && url.protocol === 'https:' && onSite(url.hostname, input.session);
+  const target: Target =
+    onSession && input.session !== undefined ? { kind: 'web', session: { site: input.session, type: request.type, method: checked.method } } : { kind: 'web', resource: { of, type: request.type, method: checked.method } };
+  // The label of the session, never above it, as for a page; L2 once the browser has an access (D-276).
+  const label = input.session === undefined ? context.effective : 'L2';
+  const payload: Labeled<unknown>[] = [{ value: url.href, label, source: 'web:resource' }];
+  if (body !== undefined) payload.push({ value: body, label, source: 'web:resource' });
   let spent;
   try {
     const decision = await passGateway(input.sql, payload, context, target, input.meta);
@@ -65,12 +77,14 @@ export async function gateResource(input: ResourceGateInput): Promise<ResourceRe
     // A gateway that cannot decide (its log not writable) is a refusal, never a network error.
     return { ok: false, reason: 'blocked' };
   }
-  if (spent?.target.kind !== 'web' || spent.target.resource === undefined) return { ok: false, reason: 'blocked' };
+  if (spent?.target.kind !== 'web' || (spent.target.resource === undefined && spent.target.session === undefined)) return { ok: false, reason: 'blocked' };
   const [address, text] = spent.texts;
   if (address !== url.href || text !== body) return { ok: false, reason: 'blocked' };
   const download = input.fetchResource ?? fetchResource;
+  // The cookies only for a request the gateway allowed as one of the site of the access.
+  const cookie = spent.target.session !== undefined ? request.cookie : undefined;
   return download(
-    { url: address, method: checked.method, headers: request.headers, type: request.type, ...(text === undefined ? {} : { body: Buffer.from(text, 'utf8') }) },
+    { url: address, method: checked.method, headers: request.headers, type: request.type, ...(text === undefined ? {} : { body: Buffer.from(text, 'utf8') }), ...(cookie === undefined ? {} : { cookie }) },
     input.network,
     input.signal,
   );

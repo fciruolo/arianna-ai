@@ -4502,11 +4502,13 @@ function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
       return { status: 403, body: { error: issued.reason } };
     }),
     // Whether the conversation holds the browser now: the bar of the chat above the composer.
+    // With `screen` (the token of an open screen, D-264 passo 5): whether that screen drives.
     route('GET', SCREEN_PATH, async (_request, url) => {
       if (screens === undefined) throw new HttpError(404, 'not found');
       const conversationId = url.searchParams.get('conversationId');
       if (conversationId === null || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
-      const status = await screens.status(conversationId);
+      const screen = url.searchParams.get('screen') ?? undefined;
+      const status = await screens.status(conversationId, screen);
       if (status === null) throw new HttpError(404, 'not found');
       return { body: status };
     }),
@@ -4521,6 +4523,35 @@ function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
       if (closed === 'not-found') throw new HttpError(404, 'not found');
       if (closed === 'no-browser') return { status: 409, body: { error: 'no-browser' } };
       return { body: { closed: true } };
+    }),
+    // «Prendi il controllo» and «Restituisci ad Arianna» (D-264, passo 5). `take` names the screen by its
+    // token; 202 while Arianna ends the action under way (the chat reads the status until it is its own).
+    route('POST', '/api/browser/control', async (request) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId', 'action', 'screen']);
+      const { conversationId, action, screen } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      if (action === 'return') {
+        if (screen !== undefined) throw new HttpError(400, 'return takes no screen');
+        const returned = await screens.giveBack(conversationId);
+        if (returned === 'not-found') throw new HttpError(404, 'not found');
+        if (returned === 'not-driving') return { status: 409, body: { error: 'not-driving' } };
+        return { body: { control: 'agent' } };
+      }
+      if (action !== 'take') throw new HttpError(400, 'action must be take or return');
+      if (typeof screen !== 'string' || screen.length > 64) throw new HttpError(400, 'screen must be the token of an open screen');
+      const taken = await screens.take(conversationId, screen);
+      if (!taken.ok) {
+        if (taken.reason === 'not-found') throw new HttpError(404, 'not found');
+        return { status: 409, body: { error: taken.reason } };
+      }
+      if (taken.waiting) {
+        taken.done.catch(() => undefined);
+        return { status: 202, body: { waiting: true } };
+      }
+      if (!(await taken.done.catch(() => false))) return { status: 409, body: { error: 'no-browser' } };
+      return { body: { control: 'you' } };
     }),
   ];
 }

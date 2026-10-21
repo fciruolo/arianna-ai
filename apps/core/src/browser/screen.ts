@@ -6,7 +6,8 @@ import type { Sql } from '../db/client.ts';
 import type { NewEvent } from '../events.ts';
 import { openDockerChannel, type Channel, type OpenChannel } from './channel.ts';
 import { VNC_SOCKET } from './container.ts';
-import { createRfbFilter, type FilterClose } from './rfb-filter.ts';
+import type { BlockedNavigation, ControlRequest, Driver } from './agent-browser.ts';
+import { createRfbFilter, type FilterClose, type InputCounts, type RfbFilter } from './rfb-filter.ts';
 
 /**
  * The screen of the browser in the chat (D-264, passo 4): view only, only
@@ -20,9 +21,34 @@ import { createRfbFilter, type FilterClose } from './rfb-filter.ts';
  * conversation and to the container that conversation holds. It dies with
  * that browser: closed, taken by another chat, or the core stopping. No
  * token for a Private or incognito conversation (the browser tools are off
- * there anyway). One token may open several screens while it holds (the Mac
- * and the phone), at most MAX_SCREENS at once per browser.
+ * there anyway). A token opens one screen (passo 5: it is consumed at the
+ * connection, and then names that screen for «Prendi il controllo»), at most
+ * MAX_SCREENS at once per browser (the Mac and the phone).
+ *
+ * «Prendi il controllo» (D-264, passo 5): `take` with the token of a screen
+ * open now asks AgentBrowser.takeControl (after the action under way), then
+ * only that screen's filter forwards keys and pointer. The last screen that
+ * asks gets it («Passa all'ultimo che lo chiede»): the one before goes back
+ * to view and reads «il controllo è passato a un altro schermo» in the
+ * status. The control goes back to Arianna with «Restituisci» (`user`), when
+ * that screen closes (`screen-closed`: at once, or at the missing pong of a
+ * locked phone, 30-60 s), after CONTROL_IDLE_MS without input (`idle`), or
+ * with the browser (`browser-closed`). Event `browser.control`, L0: taken;
+ * returned with the reason, the duration, keys and clicks counted, never
+ * their values.
  */
+
+/** Without input on the screen that drives for this long, the control goes back to Arianna («5 minuti senza input»). */
+export const CONTROL_IDLE_MS = 5 * 60_000;
+const CONTROL_CHECK_MS = 15_000;
+
+export type ControlEnd = 'user' | 'screen-closed' | 'idle' | 'browser-closed';
+
+/** «Prendi il controllo»: taken now, after the action of Arianna under way, or why not. */
+export type TakeResult = { ok: true; waiting: boolean; done: Promise<boolean> } | { ok: false; reason: 'not-found' | 'no-browser' | 'no-screen' };
+
+/** Who drives, for the status: `you` is the screen of the token asked with, `other` another screen. */
+export type ControlState = 'agent' | 'you' | 'other' | 'user';
 
 export const MAX_SCREENS = 3;
 /** Tokens kept at once; the oldest goes first. */
@@ -84,6 +110,21 @@ export interface ScreensOptions {
   closeBrowser?: (conversationId: string) => Promise<boolean>;
   /** The site the browser of a conversation is on (AgentBrowser.siteOf), for the bar of the chat. */
   site?: (conversationId: string) => string | null;
+  /** «Prendi il controllo» (D-264, passo 5): AgentBrowser's takeControl, returnControl, userInput, driverOf, blockedOf. */
+  control?: {
+    take: (conversationId: string) => ControlRequest;
+    give: (conversationId: string) => boolean;
+    input: (conversationId: string) => void;
+    driver: (conversationId: string) => Driver | null;
+    blocked: (conversationId: string) => BlockedNavigation | null;
+    /** The site of an access made by the user (D-276), for the chat. */
+    access?: (conversationId: string) => string | null;
+  };
+  /** The control was taken or went back (the system lines of the chat). */
+  onControl?: (conversationId: string, change: { state: 'taken' } | { state: 'returned'; reason: ControlEnd }) => void;
+  /** Tests: CONTROL_IDLE_MS and how often it is checked. */
+  controlIdleMs?: number;
+  controlCheckMs?: number;
   openChannel?: OpenChannel;
   onEvent?: (event: NewEvent) => void;
   now?: () => number;
@@ -97,9 +138,18 @@ interface Binding {
   hash: Buffer;
   conversationId: string;
   container: string;
+  /** Consumed by the screen it opened: it opens no other. */
+  used: boolean;
 }
 
 interface Screen {
+  /** The sha256 of its token: names the screen for the control. */
+  hash: Buffer;
+  filter: RfbFilter | null;
+  /** When keys or pointer of the user last went through, in control. */
+  lastInput: number;
+  /** Counts of the filter when this screen got the control. */
+  countsAtControl: InputCounts;
   socket: ScreenSocket;
   channel: Channel | null;
   conversationId: string;
@@ -120,6 +170,9 @@ export class BrowserScreens {
   #tokens: Binding[] = [];
   readonly #screens = new Set<Screen>();
   #stopped = false;
+  /** The screen that drives, and the control under way. */
+  #controller: Screen | null = null;
+  #control: { conversationId: string; container: string; since: number; keys: number; clicks: number; timer: ReturnType<typeof setInterval> } | null = null;
 
   constructor(options: ScreensOptions) {
     this.#options = options;
@@ -144,7 +197,7 @@ export class BrowserScreens {
     if (sameBrowser >= (this.#options.maxScreens ?? MAX_SCREENS)) return { ok: false, reason: 'too-many-screens' };
     this.#prune();
     const token = randomBytes(32).toString('base64url');
-    this.#tokens.push({ hash: sha256(token), conversationId, container });
+    this.#tokens.push({ hash: sha256(token), conversationId, container, used: false });
     if (this.#tokens.length > MAX_TOKENS) this.#tokens.shift();
     return { ok: true, token };
   }
@@ -154,12 +207,61 @@ export class BrowserScreens {
    * chat («Browser aperto · Guarda · Chiudi»); null when there is no such
    * conversation. Never open for a Private or incognito one.
    */
-  async status(conversationId: string): Promise<{ open: boolean; site?: string } | null> {
+  async status(conversationId: string, token?: string): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
     const open = kind === 'work' && !this.#stopped && this.#current(conversationId) !== null;
-    const site = open ? (this.#options.site?.(conversationId) ?? null) : null;
-    return site === null ? { open } : { open, site };
+    if (!open) return { open };
+    const site = this.#options.site?.(conversationId) ?? null;
+    const driver = this.#options.control?.driver(conversationId) ?? null;
+    let control: ControlState | undefined;
+    if (driver === 'agent') control = 'agent';
+    else if (driver === 'user') {
+      const here = token === undefined || !TOKEN_PATTERN.test(token) ? null : sha256(token);
+      const controller = this.#controller;
+      control = here === null || controller === null ? 'user' : timingSafeEqual(here, controller.hash) ? 'you' : 'other';
+    }
+    const blocked = this.#options.control?.blocked(conversationId) ?? null;
+    const access = this.#options.control?.access?.(conversationId) ?? null;
+    return { open, ...(site === null ? {} : { site }), ...(control === undefined ? {} : { control }), ...(blocked === null ? {} : { blocked }), ...(access === null ? {} : { access }) };
+  }
+
+  /**
+   * «Prendi il controllo» from the screen of `token` (open now, of the
+   * browser `conversationId` holds): after the action of Arianna under way
+   * (`waiting`), never in the middle of one. The screen that drove before,
+   * if another, goes back to view.
+   */
+  async take(conversationId: string, token: string): Promise<TakeResult> {
+    const kind = await this.#options.conversation(conversationId);
+    if (kind === null) return { ok: false, reason: 'not-found' };
+    const control = this.#options.control;
+    if (kind !== 'work' || control === undefined || this.#current(conversationId) === null) return { ok: false, reason: 'no-browser' };
+    const screen = this.#screenOf(conversationId, token);
+    if (screen === null) return { ok: false, reason: 'no-screen' };
+    const request = control.take(conversationId);
+    const done = request.done.then((taken) => {
+      if (!taken) return false;
+      // The screen closed, or the browser went, while Arianna finished her action.
+      if (screen.closed || !this.#holds(screen.conversationId, screen.container)) {
+        if (this.#controller === null) this.#returnAgent(conversationId, 'screen-closed');
+        return false;
+      }
+      this.#handTo(screen);
+      return true;
+    });
+    return { ok: true, waiting: request.waiting, done };
+  }
+
+  /** «Restituisci ad Arianna»: false when the user did not drive that browser. */
+  async giveBack(conversationId: string): Promise<'returned' | 'not-driving' | 'not-found'> {
+    const kind = await this.#options.conversation(conversationId);
+    if (kind === null) return 'not-found';
+    if (this.#options.control?.driver(conversationId) !== 'user') return 'not-driving';
+    this.#endControl('user');
+    // No screen held it (a state left by a race): the browser is Arianna's again all the same.
+    if (this.#options.control.driver(conversationId) === 'user') this.#returnAgent(conversationId, 'user');
+    return 'returned';
   }
 
   /**
@@ -178,9 +280,96 @@ export class BrowserScreens {
     return 'closed';
   }
 
-  /** Whether a token holds now: checked before the upgrade, so a wrong one never gets a WebSocket. */
+  /** Whether a token holds now and opened no screen yet: checked before the upgrade, so a wrong one never gets a WebSocket. */
   valid(token: string): boolean {
     return this.#binding(token) !== null;
+  }
+
+  /** The open screen of a token, of the browser `conversationId` holds now. */
+  #screenOf(conversationId: string, token: string): Screen | null {
+    if (!TOKEN_PATTERN.test(token)) return null;
+    const hash = sha256(token);
+    let found: Screen | null = null;
+    for (const screen of this.#screens) {
+      if (timingSafeEqual(screen.hash, hash) && screen.conversationId === conversationId && !screen.closed && this.#holds(screen.conversationId, screen.container)) found = screen;
+    }
+    return found;
+  }
+
+  /** The control goes to `screen`: its filter forwards keys and pointer, the one before goes back to view. */
+  #handTo(screen: Screen): void {
+    const before = this.#controller;
+    if (before === screen) return;
+    if (before !== null) this.#release(before);
+    this.#controller = screen;
+    screen.filter?.setMode('control');
+    screen.countsAtControl = screen.filter?.counts ?? { keys: 0, clicks: 0 };
+    screen.lastInput = this.#now();
+    if (this.#control === null || this.#control.conversationId !== screen.conversationId || this.#control.container !== screen.container) {
+      if (this.#control !== null) clearInterval(this.#control.timer);
+      const timer = setInterval(() => { this.#checkIdle(); }, this.#options.controlCheckMs ?? CONTROL_CHECK_MS);
+      timer.unref();
+      this.#control = { conversationId: screen.conversationId, container: screen.container, since: this.#now(), keys: 0, clicks: 0, timer };
+      this.#controlEvent({ state: 'taken', conversationId: screen.conversationId });
+      this.#safely(() => { this.#options.onControl?.(screen.conversationId, { state: 'taken' }); });
+    }
+  }
+
+  /** A screen that drove goes back to view; its keys and clicks are added to the control. */
+  #release(screen: Screen): void {
+    screen.filter?.setMode('view');
+    const counts = screen.filter?.counts ?? screen.countsAtControl;
+    if (this.#control !== null) {
+      this.#control.keys += counts.keys - screen.countsAtControl.keys;
+      this.#control.clicks += counts.clicks - screen.countsAtControl.clicks;
+    }
+    if (this.#controller === screen) this.#controller = null;
+  }
+
+  /** The control ends for `reason`: the screen goes back to view, Arianna drives again (unless the browser went). */
+  #endControl(reason: ControlEnd): void {
+    const controller = this.#controller;
+    if (controller !== null) this.#release(controller);
+    const control = this.#control;
+    if (control === null) return;
+    this.#control = null;
+    clearInterval(control.timer);
+    if (reason !== 'browser-closed') this.#options.control?.give(control.conversationId);
+    this.#controlEvent({ state: 'returned', conversationId: control.conversationId, reason, ms: Math.max(0, this.#now() - control.since), keys: control.keys, clicks: control.clicks });
+    this.#safely(() => { this.#options.onControl?.(control.conversationId, { state: 'returned', reason }); });
+  }
+
+  /** Arianna drives again without a control under way here (it was never handed to a screen). */
+  #returnAgent(conversationId: string, reason: ControlEnd): void {
+    if (this.#options.control?.give(conversationId) !== true) return;
+    this.#controlEvent({ state: 'returned', conversationId, reason, ms: 0, keys: 0, clicks: 0 });
+    this.#safely(() => { this.#options.onControl?.(conversationId, { state: 'returned', reason }); });
+  }
+
+  #checkIdle(): void {
+    const controller = this.#controller;
+    if (controller === null) {
+      // The screen went without ending the control (it cannot, but a timer must never run alone).
+      if (this.#control !== null) this.#endControl(this.#holds(this.#control.conversationId, this.#control.container) ? 'screen-closed' : 'browser-closed');
+      return;
+    }
+    if (this.#now() - controller.lastInput >= (this.#options.controlIdleMs ?? CONTROL_IDLE_MS)) this.#endControl('idle');
+  }
+
+  #controlEvent(payload: NonNullable<NewEvent['payload']>): void {
+    try {
+      this.#options.onEvent?.({ kind: 'browser.control', label: 'L0', payload });
+    } catch {
+      console.warn('browser: the event of the control failed');
+    }
+  }
+
+  #safely(callback: () => void): void {
+    try {
+      callback();
+    } catch {
+      console.warn('browser: a callback of the screens failed');
+    }
   }
 
   /** Bridges a WebSocket just upgraded with `token` to Xvnc; closes it when the token no longer holds. */
@@ -195,7 +384,9 @@ export class BrowserScreens {
       socket.close(SCREEN_CLOSE.tooMany.code, SCREEN_CLOSE.tooMany.reason);
       return;
     }
-    const screen: Screen = { socket, channel: null, conversationId: binding.conversationId, container: binding.container, openedAt: this.#now(), closed: false, ping: undefined };
+    // One screen per token: the token now names it.
+    binding.used = true;
+    const screen: Screen = { hash: binding.hash, filter: null, lastInput: 0, countsAtControl: { keys: 0, clicks: 0 }, socket, channel: null, conversationId: binding.conversationId, container: binding.container, openedAt: this.#now(), closed: false, ping: undefined };
     // An oversized frame or a broken socket: reported here, or it would stop the process.
     socket.on('error', (error: Error & { code?: string }) => {
       if (error.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') this.#end(screen, 'overflow', true, 'frame-too-long');
@@ -218,6 +409,7 @@ export class BrowserScreens {
   /** Closes the screens and forgets the tokens of a browser no longer held as they were bound. */
   revoke(): void {
     this.#prune();
+    if (this.#control !== null && !this.#holds(this.#control.conversationId, this.#control.container)) this.#endControl('browser-closed');
     for (const screen of [...this.#screens]) {
       if (!this.#holds(screen.conversationId, screen.container)) this.#end(screen, 'browserClosed', true);
     }
@@ -225,6 +417,7 @@ export class BrowserScreens {
 
   /** At the shutdown of the core: every screen closes, every token dies. */
   close(): void {
+    if (this.#control !== null) this.#endControl('browser-closed');
     this.#stopped = true;
     this.#tokens = [];
     for (const screen of [...this.#screens]) this.#end(screen, 'stopping', true);
@@ -234,6 +427,7 @@ export class BrowserScreens {
     const { socket } = screen;
     const { stream } = channel;
     const filter = createRfbFilter('view');
+    screen.filter = filter;
     const highWater = this.#options.limits?.highWater ?? HIGH_WATER;
     const lowWater = this.#options.limits?.lowWater ?? LOW_WATER;
     const maxInbound = this.#options.limits?.maxInbound ?? MAX_INBOUND_QUEUE;
@@ -261,8 +455,17 @@ export class BrowserScreens {
         return;
       }
       const chunk = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
+      const before = filter.mode === 'control' ? filter.counts : undefined;
       const step = filter.push(chunk);
       for (const part of step.forward) stream.write(part);
+      // Input of the user on the screen that drives: activity for the browser and for the 5 minutes.
+      if (before !== undefined && this.#controller === screen) {
+        const after = filter.counts;
+        if (after.keys !== before.keys || after.clicks !== before.clicks || step.forward.some((part) => part[0] === 4 || part[0] === 5)) {
+          screen.lastInput = this.#now();
+          this.#safely(() => { this.#options.control?.input(screen.conversationId); });
+        }
+      }
       if (step.close !== undefined) {
         this.#end(screen, 'refused', true, step.close);
         return;
@@ -294,6 +497,8 @@ export class BrowserScreens {
     if (screen.closed) return;
     screen.closed = true;
     if (screen.ping !== undefined) clearInterval(screen.ping);
+    // The screen that drove: the control goes back to Arianna at once (or ends with the browser).
+    if (this.#controller === screen) this.#endControl(this.#holds(screen.conversationId, screen.container) ? 'screen-closed' : 'browser-closed');
     const wasOpen = this.#screens.delete(screen);
     screen.channel?.close();
     if (closeSocket && screen.socket.readyState === OPEN) {
@@ -330,7 +535,7 @@ export class BrowserScreens {
     this.#tokens = this.#tokens.filter((binding) => this.#holds(binding.conversationId, binding.container));
   }
 
-  /** The binding of a token that holds now; every kept hash is compared, in constant time. */
+  /** The binding of a token that holds now and opened no screen yet; every kept hash is compared, in constant time. */
   #binding(token: string): Binding | null {
     if (this.#stopped || !TOKEN_PATTERN.test(token)) return null;
     const hash = sha256(token);
@@ -338,7 +543,7 @@ export class BrowserScreens {
     for (const binding of this.#tokens) {
       if (timingSafeEqual(binding.hash, hash)) found = binding;
     }
-    if (found === null || !this.#holds(found.conversationId, found.container)) return null;
+    if (found === null || found.used || !this.#holds(found.conversationId, found.container)) return null;
     return found;
   }
 }

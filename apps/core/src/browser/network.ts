@@ -1,4 +1,4 @@
-import { spendAllowed, type Context, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
+import { MAX_FORM_BODY, spendAllowed, type Context, type Label, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
 import type { BrowserContext, Frame, Page, Request, Route } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
@@ -6,6 +6,7 @@ import type { NewEvent } from '../events.ts';
 import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
 import { redirectConsent } from '../web-page.ts';
+import { CookieJar, onSite } from './cookie-jar.ts';
 import { createResourcePool, fetchResource, resourceUrl, type ResourceFailure, type ResourceInput, type ResourceOptions, type ResourcePool, type ResourceResult } from './resource-fetch.ts';
 import { gateResource } from './resource-gate.ts';
 
@@ -68,6 +69,25 @@ import { gateResource } from './resource-gate.ts';
  * No cookie leaves (the headers are rebuilt by resource-fetch.ts) and no
  * Set-Cookie arrives. Events carry the site of an allowed main page and
  * counts, never a whole address nor a text.
+ *
+ * The access made by the user (D-276, D-264 passo 5). While the user drives
+ * (`driver: 'user'`):
+ * - a form (a POST navigation of the main frame) to the site of the page it
+ *   is sent from (`siteOf` of the page, its subdomains too) goes through the
+ *   gateway as `form`: its address and its size, never its content, which
+ *   leaves as the user wrote it; a form to another site, or with Arianna
+ *   driving, stays refused (`form`);
+ * - the Set-Cookie lines of the answers to the main pages (of the user, or
+ *   of Arianna before: the page of the access is often one she read) wait
+ *   in memory, by site, never sent: the first form of the user to a site
+ *   makes them the cookie jar of that site (so a login that set its cookie
+ *   with the page of the form works). Given back without a form, they go.
+ * From that form on the browser has an access («autenticato»): every request
+ * carries L2. A request of the site of the access goes as `session` with the
+ * cookies of the jar (the core adds them, Chromium never sees one) and keeps
+ * the Set-Cookie lines of its answer; any other request carries L2 with the
+ * consent of the page, which the gateway refuses: nothing read after the
+ * access goes to another site. The jar dies with the browser.
  */
 
 export const MAX_PAGES = 30;
@@ -198,7 +218,12 @@ export interface NetworkScope {
   context: Context;
   consent: PageConsent;
   meta?: GatewayMeta;
+  /** Who drives the browser (D-264, passo 5): `agent` when missing. */
+  driver?: 'agent' | 'user';
 }
+
+/** Cookies of a site waiting for the first form of the user (D-276): at most this many sites, the oldest go. */
+const MAX_PENDING_SITES = 8;
 
 export interface NetworkHandle {
   readonly budget: BrowserBudget;
@@ -215,6 +240,8 @@ export interface NetworkHandle {
   counts(): Record<string, Record<string, number>>;
   /** After a navigation: waits while the frame is moved to the final address of a redirect. */
   settle(page: Page, timeoutMs?: number): Promise<void>;
+  /** The site of the access made by the user (D-276), once a form of the user went; null before. */
+  authenticated(): string | null;
   /** Removes the interception, sends `browser.network`, closes the connections. */
   close(): Promise<void>;
 }
@@ -328,6 +355,32 @@ function headerOf(headers: Record<string, string>, name: string): string | undef
   return undefined;
 }
 
+/** A request with the cookie of the jar of the core, or none: never one a caller left on it. */
+function withCookie(request: ResourceInput, cookie: string | undefined): ResourceInput {
+  const next: ResourceInput = { url: request.url, method: request.method, headers: request.headers, type: request.type, ...(request.body === undefined ? {} : { body: request.body }) };
+  return cookie === undefined ? next : { ...next, cookie };
+}
+
+/**
+ * The site a form of the user may go to (D-276): the site of the page it is
+ * sent from (the frame's address before the navigation), when the form goes
+ * to that site or a subdomain and, once the browser has an access, that site
+ * is the one of the access. Undefined: the form stays refused.
+ */
+export function userFormSite(request: Pick<Request, 'frame'>, address: string, accessSite: string | undefined): string | undefined {
+  let pageSite: string | undefined;
+  let host: string;
+  try {
+    pageSite = siteOf(request.frame().url());
+    host = new URL(address).hostname;
+  } catch {
+    return undefined;
+  }
+  if (pageSite === undefined || pageSite === '' || !onSite(host, pageSite)) return undefined;
+  if (accessSite !== undefined && pageSite !== accessSite) return undefined;
+  return pageSite;
+}
+
 /**
  * Attaches the network of a job to the context of the browser: call it
  * before the first navigation. Every request of every page of the context,
@@ -353,6 +406,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const finals = new Map<string, { answer: Answer; at: number; main: boolean; frame: Frame }>();
   /** Asked address of a frame moved by movePage → its final address. */
   const moved = new Map<string, string>();
+  /** The cookie jar of the site of the access (D-276): null until the first form of the user. */
+  let session: CookieJar | null = null;
+  /** Cookies of the navigations of the user, waiting for a form to their site; never sent. */
+  const pending = new Map<string, CookieJar>();
   let closed = false;
   // Read through a function: the handler awaits, and close() may run meanwhile.
   const isClosed = (): boolean => closed;
@@ -386,20 +443,60 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const navigated = (outcome: RequestOutcome, site?: string, reason?: ResourceFailure): void => {
     last = { seq: (last?.seq ?? 0) + 1, outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) };
     // The site only of an address the gateway let go: a refused one may carry what it was refused for.
-    emit({ kind: 'browser.navigate', label: scope.context.effective, payload: { outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
+    // After an access (D-276) never: what the user does on that site says something of the user.
+    const logged = session === null ? site : undefined;
+    emit({ kind: 'browser.navigate', label: scope.context.effective, payload: { outcome, ...(logged === undefined ? {} : { site: logged }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
   };
+
+  /**
+   * The Set-Cookie lines of an answer (D-276): kept by the jar of the access
+   * for its site; before an access, for a main page the user navigated to,
+   * waiting for a form to that site. Anything else is dropped, as before.
+   */
+  const keepCookies = (result: ResourceResult, address: string, main: boolean): void => {
+    if (!result.ok || result.setCookies === undefined) return;
+    let url: URL;
+    try {
+      url = new URL(address);
+    } catch {
+      return;
+    }
+    if (session !== null) {
+      session.store(result.setCookies, url, Date.now());
+      return;
+    }
+    const site = siteOf(url.href);
+    // Arianna's navigations too: the page of the access is often the one she read (a CSRF cookie); never sent before a form of the user.
+    if (!main || site === undefined) return;
+    let jar = pending.get(site);
+    if (jar === undefined) {
+      if (pending.size >= MAX_PENDING_SITES) pending.delete(pending.keys().next().value ?? '');
+      jar = new CookieJar(site);
+      pending.set(site, jar);
+    }
+    jar.store(result.setCookies, url, Date.now());
+  };
+  /** The label of what a request carries: the session's, L2 once the browser has an access. */
+  const requestLabel = (): Label => (session === null ? scope.context.effective : 'L2');
 
   /** One hop of a main page: the gateway as a page (second scanner included), then the download. */
   const pageHop = async (address: string, hop: number, request: ResourceInput): Promise<ResourceResult> => {
     const url = resourceUrl(address, network);
     if (typeof url === 'string') return { ok: false, reason: url };
-    const target: Target = { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
+    // A page is its address only: a body (a 307/308 of a form) goes through formHop, never here.
+    if (request.body !== undefined) return { ok: false, reason: 'blocked' };
+    // After an access (D-276): the site of the access as `session`, with its cookies; any other carries L2 and is refused.
+    const jar = session;
+    // Only https: the cookies of the access never travel in clear (D-276).
+    const onAccess = jar !== null && url.protocol === 'https:' && onSite(url.hostname, jar.site);
+    const method = request.method.toUpperCase() === 'POST' ? 'POST' : 'GET';
+    const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
     let allowed: string | undefined;
     try {
-      const decision = await passGateway(job.sql, [{ value: url.href, label: scope.context.effective, source: 'web:page' }], scope.context, target, scope.meta);
+      const decision = await passGateway(job.sql, [{ value: url.href, label: requestLabel(), source: 'web:page' }], scope.context, target, scope.meta);
       if (decision.decision === 'allow') {
         const spent = spendAllowed(decision);
-        allowed = spent?.target.kind === 'web' && spent.target.page !== undefined ? spent.texts[0] : undefined;
+        allowed = spent?.target.kind === 'web' && (spent.target.page !== undefined || spent.target.session !== undefined) ? spent.texts[0] : undefined;
       }
     } catch {
       allowed = undefined;
@@ -407,7 +504,48 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // Closed while the gateway decided: nothing is requested.
     if (isClosed()) return interrupted;
     if (allowed !== url.href) return { ok: false, reason: 'blocked' };
-    return fetchOne({ ...request, url: allowed, type: 'document' }, network, stopping.signal);
+    const cookie = onAccess ? jar.header(url, Date.now()) : undefined;
+    const result = await fetchOne(withCookie({ ...request, url: allowed, type: 'document' }, cookie), network, stopping.signal);
+    keepCookies(result, allowed, true);
+    return result;
+  };
+
+  /**
+   * The first hop of a form the user sent while driving (D-276): to the site
+   * of the page it was sent from, through the gateway as `form` (its address
+   * and size, never its content), then sent as the user wrote it. The first
+   * form to a site makes the cookies waiting for it the jar of the access.
+   */
+  const formHop = async (request: ResourceInput, site: string): Promise<ResourceResult> => {
+    const url = resourceUrl(request.url, network);
+    if (typeof url === 'string') return { ok: false, reason: url };
+    // A form of the user leaves only over https: what the user wrote never travels in clear (D-276).
+    if (url.protocol !== 'https:') return { ok: false, reason: 'blocked' };
+    const bytes = request.body?.length ?? 0;
+    if (bytes > MAX_FORM_BODY) return { ok: false, reason: 'body-too-large' };
+    let allowed: string | undefined;
+    try {
+      const decision = await passGateway(job.sql, [{ value: url.href, label: 'L2', source: 'browser:form' }], scope.context, { kind: 'web', form: { site, bytes } }, scope.meta);
+      if (decision.decision === 'allow') {
+        const spent = spendAllowed(decision);
+        allowed = spent?.target.kind === 'web' && spent.target.form !== undefined ? spent.texts[0] : undefined;
+      }
+    } catch {
+      allowed = undefined;
+    }
+    if (isClosed()) return interrupted;
+    if (allowed !== url.href) return { ok: false, reason: 'blocked' };
+    // The browser has an access from here on: everything it asks carries L2.
+    if (session === null) {
+      session = pending.get(site) ?? new CookieJar(site);
+      pending.clear();
+      // L0 without the site: which site the user signs in to says something of the user (the gateway log keeps it, locally).
+      emit({ kind: 'browser.access', label: 'L0', payload: {}, ...meta() });
+    }
+    const cookie = session.header(url, Date.now());
+    const result = await fetchOne(withCookie({ ...request, url: allowed, type: 'document' }, cookie), network, stopping.signal);
+    keepCookies(result, allowed, true);
+    return result;
   };
 
   /** Whether an iframe may navigate to `address`: always with `public`; with `user` or `sites` only on the sites `navigationConsent` allows after the first page. */
@@ -426,9 +564,29 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   };
 
   /** One hop of any other request: gateResource, the gateway as a resource; an iframe on the sites of its consent first. */
-  const resourceHop = (request: ResourceInput, frameNavigation: boolean): Promise<ResourceResult> => {
-    if (frameNavigation && !frameOnSites(request.url)) return Promise.resolve({ ok: false, reason: 'other-site' });
-    return gateResource({ sql: job.sql, context: scope.context, consent: scope.consent, request, network, ...(scope.meta === undefined ? {} : { meta: scope.meta }), signal: stopping.signal, fetchResource: fetchOne });
+  const resourceHop = async (request: ResourceInput, frameNavigation: boolean): Promise<ResourceResult> => {
+    if (frameNavigation && !frameOnSites(request.url)) return { ok: false, reason: 'other-site' };
+    // After an access (D-276): the cookies of the jar, which gateResource sends only for a request of its site.
+    const jar = session;
+    let cookie: string | undefined;
+    try {
+      cookie = jar?.header(new URL(request.url), Date.now());
+    } catch {
+      cookie = undefined;
+    }
+    const result = await gateResource({
+      sql: job.sql,
+      context: scope.context,
+      consent: scope.consent,
+      request: withCookie(request, cookie),
+      network,
+      ...(jar === null ? {} : { session: jar.site }),
+      ...(scope.meta === undefined ? {} : { meta: scope.meta }),
+      signal: stopping.signal,
+      fetchResource: fetchOne,
+    });
+    if (jar !== null) keepCookies(result, request.url, false);
+    return result;
   };
 
   /** Follows up to MAX_REDIRECTS hops, each through the gateway and counted in the requests; the final answer and its address. */
@@ -498,11 +656,15 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await abort('limit');
       return;
     }
-    // 3. No form sent by a frame, main or not.
+    // 3. No form sent by a frame, main or not; a form of the user to the site of its page excepted (D-276).
+    let formSite: string | undefined;
     if (frame.navigation && method !== 'GET') {
-      if (frame.main) navigated('form');
-      await abort('form');
-      return;
+      formSite = frame.main && method === 'POST' && scope.driver === 'user' ? userFormSite(request, url, session?.site) : undefined;
+      if (formSite === undefined) {
+        if (frame.main) navigated('form');
+        await abort('form');
+        return;
+      }
     }
     const type = frame.main ? 'document' : resourceTypeOf(request.resourceType(), method);
     if (type === undefined) {
@@ -519,8 +681,9 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const body = request.postDataBuffer();
     const input: ResourceInput = { url, method, headers, type, ...(body === null ? {} : { body }) };
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
+    const site = formSite;
     const { result, final, tooMany, limited } = frame.main
-      ? await follow(input, before, (next, index) => pageHop(next.url, index, next))
+      ? await follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
       : await follow(input, before, (next) => resourceHop(next, frame.navigation));
     if (isClosed()) {
       await abort('refused', 'interrupted');
@@ -588,8 +751,12 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   return {
     budget,
     rescope(next) {
-      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }) };
+      const before = scope.driver;
+      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }), ...(next.driver === undefined ? {} : { driver: next.driver }) };
+      // Given back without a form: the cookies that waited for one go (D-276).
+      if (before === 'user' && next.driver !== 'user') pending.clear();
     },
+    authenticated: () => session?.site ?? null,
     counts: () => structuredClone(counts),
     lastNavigation: () => (last === undefined ? undefined : { ...last }),
     async settle(page, timeoutMs = 15_000) {
@@ -604,6 +771,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     async close() {
       if (closed) return;
       closed = true;
+      session = null;
+      pending.clear();
       stopping.abort();
       await context.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => undefined);
       // The counts are final only when every request under way has ended or stopped.
