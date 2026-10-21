@@ -194,9 +194,10 @@ export function videoLinkFields(id: string): OrganizedFields {
   };
 }
 
-/** Whether the text holds nothing besides addresses. */
-export function onlyLinks(text: string): boolean {
-  return text.replace(/\bhttps?:\/\/\S+/giu, '').trim() === '';
+/** Whether the text is one address and nothing else. */
+export function onlyOneLink(text: string): boolean {
+  const addresses = text.match(/\bhttps?:\/\/\S+/giu) ?? [];
+  return addresses.length === 1 && text.replace(/\bhttps?:\/\/\S+/giu, '').trim() === '';
 }
 
 export interface OrganizedFields {
@@ -511,7 +512,6 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   }
   const status = headerFields(raw).get('status');
   const view = captureOf(raw);
-  // An organized note is organized again only to download its link (D-154).
   // An organized note is organized again only to download its link (D-154), and only once it has none.
   const again = request.fetch === true && status === 'organized' && view?.kept.url !== undefined && headerFields(raw).get('fetched_at') === undefined;
   if (status !== 'new' && !again) return { ok: false, reason: 'not-new' };
@@ -552,8 +552,9 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   }
   const page = linkContent !== undefined && 'link' in linkContent ? linkContent.link : undefined;
   // A video nobody downloaded (D-273): the model gets no related notes, where it would find another video's title to copy.
-  const video = page === undefined && url !== undefined ? youtubeVideoId(url) : undefined;
-  if (video !== undefined && onlyLinks(text)) return writeOrganized(env, path, raw, { ownLabel, fields: videoLinkFields(video), hits: [], linkContent });
+  // Pensieri captures a pasted link as a thought, without url: the video is looked for in the text too.
+  const video = page === undefined ? youtubeVideoId(url ?? linkInText(text) ?? '') : undefined;
+  if (video !== undefined && onlyOneLink(text)) return writeOrganized(env, path, raw, { ownLabel, fields: videoLinkFields(video), hits: [], linkContent });
 
   // The closest notes, with the clearance of the private chat: never L3.
   const hits: KbHit[] = video !== undefined ? [] : env.kb
