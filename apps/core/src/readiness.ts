@@ -60,7 +60,8 @@ function groupOf(id: string): ReadinessId {
   if (/^local\..+\.log-level$/.test(id)) return 'model-log';
   if (/^local\..+\.(flags|gguf|base-path|settings)$/.test(id)) return 'model-server';
   if (id.startsWith('system.')) return 'programs';
-  if (id === 'voice.env') return 'voice';
+  // The videos of D-273 run in the environment of the voice: ffmpeg, Deno and yt-dlp with it.
+  if (id === 'voice.env' || id.startsWith('video.')) return 'voice';
   if (id === 'projects' || id.startsWith('projects.')) return 'projects';
   return 'other';
 }

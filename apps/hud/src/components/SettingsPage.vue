@@ -1412,13 +1412,13 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 </p>
                 <form :class="grid" @submit.prevent="addSite">
                   <FormField id="site-new" label="Aggiungi un sito" :span="2">
-                    <input id="site-new" v-model="newSite" :class="input" placeholder="per esempio youtube.com" autocomplete="off" />
+                    <input id="site-new" v-model="newSite" :class="input" placeholder="per esempio ilpost.it" autocomplete="off" />
                   </FormField>
                   <div class="flex items-end sm:col-span-1">
                     <button type="submit" class="btn w-full px-3 py-1.5 text-[14px]" :disabled="fetchSiteOf(newSite) === undefined">Aggiungi</button>
                   </div>
                 </form>
-                <p class="text-[13px] text-muted">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi».</p>
+                <p class="text-[13px] text-muted">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi». Un video di YouTube non si scarica mai da solo, nemmeno con youtube.com qui: nel pensiero c’è «Riassumi il video», da approvare video per video.</p>
               </SettingsCard>
 
               <!-- Siti per il Coder (D-262): the sites whose pages the Coder on Claude reads by itself -->

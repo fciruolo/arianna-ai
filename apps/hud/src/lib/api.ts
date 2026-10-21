@@ -39,6 +39,7 @@ import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard
 import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
+import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -1268,6 +1269,16 @@ export async function organizeNote(name: string): Promise<void> {
 /** "Scarica e riassumi" (D-154): the link of the note downloaded and summarized, whatever its site. */
 export async function fetchNoteLink(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/fetch`, {});
+}
+
+/** «Riassumi il video» (D-273): queued only with the approval of the user for this video, given in the card of the panel. */
+export async function summarizeNoteVideo(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/video`, { approved: true });
+}
+
+/** The job of the video of a note: queued, at work with its stage, failed with its reason, done; null without one. */
+export async function loadNoteVideo(name: string): Promise<VideoJob | null> {
+  return (await call<{ video: VideoJob | null }>('GET', `/api/notes/${encodeURIComponent(name)}/video`)).video;
 }
 
 /** "Da archiviare" (D-195): the proposals of the Archivist and the folders a thought may go to. */

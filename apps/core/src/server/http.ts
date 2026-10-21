@@ -190,6 +190,8 @@ import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
 import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveClone } from '../voice/clones.ts';
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
+import { isYoutubeVideo } from '../video-url.ts';
+import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video-job.ts';
 import type { BrowserScreens } from '../browser/screen.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
@@ -268,6 +270,10 @@ export interface ApiServerOptions {
     fetch?: (path: string) => Promise<boolean>;
     /** "Proponi di nuovo" (D-195): the Archivist proposes again where the note goes. */
     archive?: (path: string) => Promise<boolean>;
+    /** «Riassumi il video» (D-273): queues the summary of the video of the note, approved by the user in the chat. */
+    video?: (path: string) => Promise<boolean>;
+    /** The job of the video of a note, as the chat shows it. */
+    videoState?: (path: string) => Promise<VideoJobState | undefined>;
     arianna?: AriannaDocs;
   };
   /** data/, where the router's advisor keeps the path of the usage status file (D-207); without it the routes answer 404. */
@@ -1050,11 +1056,35 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       onlyFields(await readJson(request), []);
       const note = readNote(home, rules, params.name ?? '');
       if (note.url === null) throw new HttpError(409, 'the note has no link');
+      if (isYoutubeVideo(note.url)) throw new HttpError(409, 'a video is summarized with «Riassumi il video»');
       if (note.fetchedAt !== null) throw new HttpError(409, 'the link is already downloaded');
       if (note.status !== 'new' && note.status !== 'organized') throw new HttpError(409, 'the note cannot be organized again');
       if (fetch === undefined) throw new HttpError(503, 'notes cannot be organized now');
       await fetch(note.path);
       return { status: 202, body: { path: note.path, organizing: true } };
+    }),
+
+    // «Riassumi il video» (D-273): only after the user approved it in the chat for this video; never by itself.
+    route('POST', '/api/notes/:name/video', async (request, _url, params) => {
+      const { home, rules, video } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['approved']);
+      // The confirmation card of the chat says what leaves; the request says it was approved there.
+      if (body.approved !== true) throw new HttpError(400, 'approved must be true: the user approves each video');
+      const note = readNote(home, rules, params.name ?? '');
+      if (note.url === null || !isYoutubeVideo(note.url)) throw new HttpError(409, 'the note has no YouTube video');
+      if (note.media === 'youtube') throw new HttpError(409, 'the video is already summarized');
+      if (video === undefined) throw new HttpError(503, 'videos cannot be summarized now');
+      const queued = await video(note.path);
+      return { status: 202, body: { path: note.path, queued } };
+    }),
+    // The job of the video of a note: queued, at work (with its stage), failed (with its reason in Italian) or done.
+    route('GET', '/api/notes/:name/video', async (_request, _url, params) => {
+      const { home, rules, videoState } = need();
+      const note = readNote(home, rules, params.name ?? '');
+      const state = videoState === undefined ? undefined : await videoState(note.path);
+      const reason = state?.reason;
+      return { body: { video: state === undefined ? null : { ...state, ...(reason !== undefined && isVideoFailure(reason) ? { reasonText: VIDEO_FAILURE_TEXT[reason] } : {}) } } };
     }),
 
     // "Elimina" of a thought (D-157): the note of kb/inbox goes for good, with its organizing; the user confirmed it in the page.
