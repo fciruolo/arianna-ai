@@ -101,8 +101,22 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
   shared.on('page', (opened) => {
     page = opened;
   });
+  /**
+   * A new tab for the agent, in front, and the empty tabs behind it closed: when the first tab of
+   * Chromium was not listed yet at the connection, the window kept showing it and the screen of
+   * the chat stayed white while the agent read its own tab (D-281 trial). Opened first, so the
+   * window never has no tab.
+   */
+  const fresh = async (): Promise<Page> => {
+    const created = await shared.newPage();
+    await created.bringToFront().catch(() => undefined);
+    for (const other of shared.pages()) {
+      if (other !== created && other.url() === 'about:blank') await other.close().catch(() => undefined);
+    }
+    return created;
+  };
   const current = async (): Promise<Page> => {
-    if (!page || page.isClosed()) page = await shared.newPage();
+    if (!page || page.isClosed()) page = await fresh();
     return page;
   };
   return {
@@ -112,13 +126,15 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     async openPage(url, timeoutMs = 15_000) {
       open.touch();
       const target = await current();
+      // The screen of the chat shows the window: the page the agent opens is the tab in front.
+      await target.bringToFront().catch(() => undefined);
       try {
         await target.goto(url, { timeout: timeoutMs, waitUntil: 'load' });
       } catch (error) {
         // A failed navigation goes on to Chromium's error page, which would interrupt the next goto:
         // the next action gets a fresh tab (opened first, so the window never has none).
         // If even the new tab fails, the error of the navigation is the one that counts.
-        page = await shared.newPage().catch(() => undefined);
+        page = await fresh().catch(() => undefined);
         if (page) await target.close().catch(() => undefined);
         throw error;
       }
@@ -133,7 +149,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     },
     async resetPage() {
       const old = page;
-      page = await shared.newPage().catch(() => undefined);
+      page = await fresh().catch(() => undefined);
       if (page && old && !old.isClosed()) await old.close().catch(() => undefined);
     },
     touch() {

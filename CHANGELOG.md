@@ -13,6 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - La prima pagina aperta dal browser di Arianna dopo un quarto d'ora di pausa restava bianca («open failed (timeout)») (D-281): il secondo controllo dei dati personali (Rizzo) si ricaricava dentro i 15 s della pagina; ora parte prima, e la sua attesa non conta nel tempo della pagina.
 - Una riga di sistema nella chat compariva due volte (D-281).
+- Lo schermo del browser restava bianco mentre Arianna leggeva la pagina (D-281): la finestra mostrava la scheda vuota iniziale di Chromium; ora la scheda di Arianna passa in primo piano prima di ogni apertura.
 
 ### Sicurezza
 

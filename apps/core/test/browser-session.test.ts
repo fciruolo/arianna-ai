@@ -30,9 +30,9 @@ interface FakeBrowser {
   browser: Browser;
 }
 
-function fakeBrowser(options: { contexts?: number; failSend?: boolean } = {}): FakeBrowser {
+function fakeBrowser(options: { contexts?: number; failSend?: boolean; pages?: unknown[]; newPage?: () => Promise<unknown> } = {}): FakeBrowser {
   const fake: FakeBrowser = { sent: [], detached: 0, closed: 0, browser: undefined as unknown as Browser };
-  const context = { pages: () => [], newPage: () => Promise.reject(new Error('not in this test')), on: () => undefined };
+  const context = { pages: () => options.pages ?? [], newPage: options.newPage ?? (() => Promise.reject(new Error('not in this test'))), on: () => undefined };
   fake.browser = {
     contexts: () => (options.contexts === 0 ? [] : [context]),
     newBrowserCDPSession: () => Promise.resolve({
@@ -78,6 +78,45 @@ test('session: downloads refused on a CDP session that stays attached, Playwrigh
   assert.equal(options.noDefaults, true);
   assert.equal(options.artifactsDir, join(home, 'data', 'tmp', 'browser'));
   assert.ok(existsSync(join(home, 'data', 'tmp', 'browser')));
+});
+
+/** A tab that writes what is done to it, in order; `fails` makes its goto fail. */
+function fakeTab(name: string, steps: string[], options: { url?: string; fails?: boolean } = {}) {
+  let closed = false;
+  return {
+    isClosed: () => closed,
+    close: () => { closed = true; steps.push(`${name}:close`); return Promise.resolve(); },
+    bringToFront: () => { steps.push(`${name}:front`); return Promise.resolve(); },
+    goto: (url: string) => { steps.push(`${name}:goto ${url}`); return options.fails ? Promise.reject(new Error('timeout')) : Promise.resolve(null); },
+    title: () => Promise.resolve('Pagina'),
+    url: () => options.url ?? 'https://comune-finto.it/',
+  };
+}
+
+test('session: the tab of the agent is in front before it opens a page, and an empty first tab not listed at the connection is closed (D-281)', async () => {
+  for (const listed of [true, false]) {
+    const steps: string[] = [];
+    const first = fakeTab('first', steps, { url: 'about:blank' });
+    const created = fakeTab('created', steps);
+    // Chromium lists its first tab late: by the time the agent's tab exists, both are there.
+    const tabs: unknown[] = listed ? [first] : [];
+    const fake = fakeBrowser({ pages: tabs, newPage: () => { steps.push('new'); tabs.push(first, created); return Promise.resolve(created); } });
+    const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+    await session.openPage('https://comune-finto.it/');
+    if (listed) assert.deepEqual(steps, ['first:front', 'first:goto https://comune-finto.it/']);
+    else assert.deepEqual(steps, ['new', 'created:front', 'first:close', 'created:front', 'created:goto https://comune-finto.it/']);
+  }
+});
+
+test('session: after a failed page the new tab is in front, never the empty one behind it (D-281)', async () => {
+  const steps: string[] = [];
+  const failing = fakeTab('failing', steps, { fails: true });
+  const created = fakeTab('created', steps, { url: 'about:blank' });
+  const tabs: unknown[] = [failing];
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { steps.push('new'); tabs.push(created); return Promise.resolve(created); } });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  await assert.rejects(session.openPage('https://comune-finto.it/'));
+  assert.deepEqual(steps, ['failing:front', 'failing:goto https://comune-finto.it/', 'new', 'created:front', 'failing:close']);
 });
 
 test('session: the artifacts go in the configured data folder when it is known', () => {
