@@ -58,7 +58,7 @@ import { AgentBrowser, gatewayTyped } from './browser/agent-browser.ts';
 import { readBrowserImageLock } from './browser/image.ts';
 import { BrowserManager } from './browser/manager.ts';
 import { BrowserScreens, conversationKindOf } from './browser/screen.ts';
-import { writeClosedByUserLine, writeTakenLine } from './orchestrator/browser-tool.ts';
+import { writeClosedByUserLine, writeControlLine, writeTakenLine } from './orchestrator/browser-tool.ts';
 import { createMcpServer } from './mcp/server.ts';
 import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
@@ -568,6 +568,15 @@ const browserScreens = new BrowserScreens({
     return closed;
   },
   site: (conversationId) => agentBrowser.siteOf(conversationId),
+  // «Prendi il controllo» (D-264, passo 5): the state is the browser's, the lines tell the user and the model.
+  control: {
+    take: (conversationId) => agentBrowser.takeControl(conversationId),
+    give: (conversationId) => agentBrowser.returnControl(conversationId),
+    input: (conversationId) => { agentBrowser.userInput(conversationId); },
+    driver: (conversationId) => agentBrowser.driverOf(conversationId),
+    blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
+  },
+  onControl: (conversationId, change) => { writeControlLine(sql, conversationId, change).catch(report); },
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
 });
 // The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.

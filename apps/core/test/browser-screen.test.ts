@@ -717,3 +717,30 @@ test('the control ends with the browser: no give back to a browser that is gone'
   assert.deepEqual(h.controls.at(-1), { conversationId: WORK, state: 'returned', reason: 'browser-closed' });
   assert.equal(h.events.filter((event) => event.kind === 'browser.control').length, 2);
 });
+
+test('POST /api/browser/control: take with the token of an open screen (200, or 202 while Arianna acts), return; errors', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  const control = (body: unknown, headers: Record<string, string> = {}) => post(port, body, headers, '/api/browser/control');
+  const screen = await token(h);
+  const ws = connect(port, `?t=${screen}`);
+  await once(ws, 'open');
+  await until(() => h.screens.open === 1, 'the screen');
+  assert.equal((await control({ conversationId: WORK, action: 'take', screen }, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await control({ conversationId: WORK, action: 'take' })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'drive', screen })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'take', screen, more: 1 })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'return', screen })).status, 400);
+  assert.equal((await control({ conversationId: MISSING, action: 'take', screen })).status, 404);
+  assert.deepEqual(await control({ conversationId: OTHER, action: 'take', screen }), { status: 409, body: { error: 'no-browser' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen: randomBytes(32).toString('base64url') }), { status: 409, body: { error: 'no-screen' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 409, body: { error: 'not-driving' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 200, body: { control: 'you' } });
+  assert.deepEqual(await get(port, `?conversationId=${WORK}&screen=${screen}`), { status: 200, body: { open: true, site: 'comune-finto.it', control: 'you', blocked: { seq: 3, outcome: 'form' } } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 200, body: { control: 'agent' } });
+  let finish: () => void = () => undefined;
+  h.driver.wait = new Promise((resolve) => { finish = resolve; });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 202, body: { waiting: true } });
+  finish();
+  await until(() => h.driver.value === 'user', 'the control taken after the action');
+});

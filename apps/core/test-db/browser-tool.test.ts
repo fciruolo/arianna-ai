@@ -34,7 +34,9 @@ import {
   TASK_LIMIT,
   WAITING_BROWSER,
   writeClosedByUserLine,
+  writeControlLine,
   writeTakenLine,
+  CONTROL_TEXT,
 } from '../src/orchestrator/browser-tool.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -270,6 +272,17 @@ test('writeTakenLine: a system line without a task in the conversation whose bro
   const rows = await db().sql<{ role: string; taskId: string | null; label: string; body: string }[]>`
     SELECT role, task_id::text AS "taskId", label::text, body FROM messages WHERE conversation_id = ${conversationId}`;
   assert.deepEqual([...rows], [{ role: 'system', taskId: null, label: 'L0', body: TAKEN_TEXT }]);
+});
+
+test('writeControlLine: taken and given back leave system lines; the browser closing leaves none', async () => {
+  const conversationId = await workConversation();
+  await writeControlLine(db().sql, conversationId, { state: 'taken' });
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'idle' });
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'browser-closed' });
+  const rows = await db().sql<{ role: string; label: string; body: string }[]>`
+    SELECT role, label::text, body FROM messages WHERE conversation_id = ${conversationId} ORDER BY created_at, id`;
+  assert.deepEqual(rows.map((row) => row.body).sort(), [CONTROL_TEXT.taken, CONTROL_TEXT.idle].sort());
+  assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
 });
 
 test('writeClosedByUserLine: «Chiudi» in the chat leaves a system line without a task, read by the model too', async () => {

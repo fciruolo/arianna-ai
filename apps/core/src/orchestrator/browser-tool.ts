@@ -292,6 +292,24 @@ export const TAKEN_TEXT = 'Browser chiuso: lo usa un’altra chat. Se serve, Ari
 
 export const CLOSED_BY_USER_TEXT = 'Browser chiuso da te. Se serve, Arianna lo riapre.';
 
+/** The lines of «Prendi il controllo» (D-264, passo 5): the model reads them too. */
+export const CONTROL_TEXT = {
+  taken: 'Hai preso il controllo del browser: Arianna non lo usa finché non glielo restituisci.',
+  user: 'Hai restituito il browser ad Arianna: alla prossima richiesta rilegge la pagina.',
+  'screen-closed': 'Lo schermo si è chiuso: il browser torna ad Arianna, che alla prossima richiesta rilegge la pagina.',
+  idle: 'Nessun tasto né clic da 5 minuti: il browser torna ad Arianna, che alla prossima richiesta rilegge la pagina.',
+} as const;
+
+/** The line of a change of the control; none when the browser itself closed (its own lines say so). */
+export async function writeControlLine(sql: Queryable, conversationId: string, change: { state: 'taken' } | { state: 'returned'; reason: 'user' | 'screen-closed' | 'idle' | 'browser-closed' }): Promise<void> {
+  if (change.state === 'taken') {
+    await writeBrowserLine(sql, conversationId, CONTROL_TEXT.taken);
+    return;
+  }
+  if (change.reason === 'browser-closed') return;
+  await writeBrowserLine(sql, conversationId, CONTROL_TEXT[change.reason]);
+}
+
 /** The line in the conversation whose browser another one took (D-264, «Lo prende se fermo da 2 minuti»): without a task, so the model reads it too. */
 export async function writeTakenLine(sql: Queryable, conversationId: string): Promise<void> {
   await writeBrowserLine(sql, conversationId, TAKEN_TEXT);
