@@ -69,20 +69,53 @@ export interface ResourceRequest {
  */
 export const MAX_TYPED_TEXT = 200;
 
+/**
+ * A request of the agent's browser after an access made by the user (D-276):
+ * a page or a resource of the site of the access (`site`, a host name as the
+ * browser names a site: without `www.`; its subdomains too). The payload is
+ * the address, and for a POST its body, as for a resource. What the browser
+ * read after the access is Private (L2), and so is what it asks: L2 may go,
+ * only towards that site, never from a session that has read Private or
+ * finance data.
+ */
+export interface SessionRequest {
+  site: string;
+  type: ResourceType;
+  method: ResourceMethod;
+}
+
+/**
+ * A form the user sent from the agent's browser while driving it (D-276):
+ * towards the site of the page it was on (`site`), `bytes` the size of its
+ * body. The payload is the address the form goes to, and only that: the
+ * content of the form never reaches the gateway, a model, a log or an event.
+ */
+export interface FormRequest {
+  site: string;
+  bytes: number;
+}
+
+/** Bytes of the body of a form of the user (D-276) at most. */
+export const MAX_FORM_BODY = 64 * 1024;
+
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
   | { kind: 'channel'; id: ChannelId }
   /** Without `page`: a query to a fixed service (catalogs, Hugging Face). With `page`: one public page to read (D-262). */
-  | { kind: 'web'; page?: PageConsent; resource?: never; typed?: never }
+  | { kind: 'web'; page?: PageConsent; resource?: never; typed?: never; session?: never; form?: never }
   /** One resource of a page of the agent's browser (D-264): never with `page`. */
-  | { kind: 'web'; resource: ResourceRequest; page?: never; typed?: never }
+  | { kind: 'web'; resource: ResourceRequest; page?: never; typed?: never; session?: never; form?: never }
+  /** A page or resource of the site of an access made by the user (D-276): alone. */
+  | { kind: 'web'; session: SessionRequest; page?: never; resource?: never; typed?: never; form?: never }
+  /** A form sent by the user while driving the agent's browser (D-276): alone. */
+  | { kind: 'web'; form: FormRequest; page?: never; resource?: never; typed?: never; session?: never }
   /**
    * The text the agent's browser types in a field of a public page (D-264,
    * `browser.type`): `typed` is the consent the page was opened with (D-262).
    * The payload is one text of at most `MAX_TYPED_TEXT` characters, checked
    * as a page: never with `page` or `resource`.
    */
-  | { kind: 'web'; typed: PageConsent['from']; page?: never; resource?: never }
+  | { kind: 'web'; typed: PageConsent['from']; page?: never; resource?: never; session?: never; form?: never }
   /**
    * The address of a link saved by the user, to its own site (D-154). With
    * `list`, `sites` are the sites of the list the caller read: the address
@@ -100,6 +133,9 @@ export type Target =
    */
   | { kind: 'link'; consent: 'video' };
 
+/** The rules of an allow. */
+type AllowRule = 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed' | 'session' | 'form';
+
 /** Which rule decided; stored in `gateway_log.rule`. */
 export type GatewayRule =
   | 'invalid-input'
@@ -115,12 +151,15 @@ export type GatewayRule =
   | 'page-consent'
   | 'resource-invalid'
   | 'typed-invalid'
+  | 'session-invalid'
   | 'local'
   | 'cloud'
   | 'link'
   | 'page'
   | 'resource'
-  | 'typed';
+  | 'typed'
+  | 'session'
+  | 'form';
 
 /**
  * What the caller does after a block. `notify-reference`: a channel gets a
@@ -133,7 +172,7 @@ export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
 export type Decision =
   | {
       decision: 'allow';
-      rule: 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed';
+      rule: 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed' | 'session' | 'form';
       label: Label;
       reason: string;
       /** The exact text checked for each fragment, frozen: this is what is sent. */
@@ -141,7 +180,7 @@ export type Decision =
     }
   | {
       decision: 'block';
-      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed'>;
+      rule: Exclude<GatewayRule, AllowRule>;
       label: Label;
       reason: string;
       next: NextStep;
@@ -277,6 +316,53 @@ function isResourceRequest(value: unknown): value is ResourceRequest {
   );
 }
 
+function isSessionRequest(value: unknown): value is SessionRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const session = value as Record<string, unknown>;
+  return (
+    Object.keys(session).every((key) => key === 'site' || key === 'type' || key === 'method') &&
+    typeof session.site === 'string' &&
+    isSiteName(session.site) &&
+    RESOURCE_TYPES.some((type) => type === session.type) &&
+    RESOURCE_METHODS.some((method) => method === session.method)
+  );
+}
+
+function isFormRequest(value: unknown): value is FormRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const form = value as Record<string, unknown>;
+  return (
+    Object.keys(form).every((key) => key === 'site' || key === 'bytes') &&
+    typeof form.site === 'string' &&
+    isSiteName(form.site) &&
+    typeof form.bytes === 'number' &&
+    Number.isInteger(form.bytes) &&
+    form.bytes >= 0 &&
+    form.bytes <= MAX_FORM_BODY
+  );
+}
+
+/**
+ * The shape of a request of the site of an access (D-276), before any text
+ * is read: as a resource, and its address on the site of the access.
+ */
+function checkSessionShape(payload: readonly Labeled<unknown>[], label: Label, session: SessionRequest): Decision | undefined {
+  const refused = checkResourceShape(payload, label, { of: 'sites', type: session.type, method: session.method });
+  if (refused !== undefined) return block('session-invalid', label, refused.reason, 'stay-local');
+  const url = new URL(String(payload[0]?.value));
+  if (!onSites(url, [session.site])) return block('session-invalid', label, 'the address is not on the site of the access', 'stay-local');
+  return undefined;
+}
+
+/** The shape of a form of the user (D-276): exactly one address, on the site of its page. */
+function checkFormShape(payload: readonly Labeled<unknown>[], label: Label, form: FormRequest): Decision | undefined {
+  if (payload.length !== 1 || typeof payload[0]?.value !== 'string') return block('session-invalid', label, 'a form is its address only, never its content', 'stay-local');
+  const url = singleAddress(payload, [payload[0].value]);
+  if (typeof url === 'string') return block('session-invalid', label, url, 'stay-local');
+  if (!onSites(url, [form.site])) return block('session-invalid', label, 'a form goes only to the site of its page', 'stay-local');
+  return undefined;
+}
+
 /**
  * The shape of a resource (D-264), before any text is read: one normalized
  * address, and a body only with POST, a string of at most 64 KB in UTF-8.
@@ -371,10 +457,16 @@ export function isTarget(value: unknown): value is Target {
       );
     case 'channel':
       return CHANNELS.includes(target.id as string);
-    case 'web':
-      if (target.typed !== undefined) return target.page === undefined && target.resource === undefined && (target.typed === 'public' || target.typed === 'user' || target.typed === 'sites');
-      if (target.resource !== undefined) return target.page === undefined && isResourceRequest(target.resource);
+    case 'web': {
+      // One kind of web target at a time.
+      const kinds = ['page', 'resource', 'typed', 'session', 'form'].filter((key) => target[key] !== undefined);
+      if (kinds.length > 1) return false;
+      if (target.session !== undefined) return isSessionRequest(target.session);
+      if (target.form !== undefined) return isFormRequest(target.form);
+      if (target.typed !== undefined) return target.typed === 'public' || target.typed === 'user' || target.typed === 'sites';
+      if (target.resource !== undefined) return isResourceRequest(target.resource);
       return target.page === undefined || isPageConsent(target.page);
+    }
     case 'link':
       if (target.consent === 'click' || target.consent === 'video') return true;
       return (
@@ -403,6 +495,8 @@ export function localityOf(target: Target): Locality {
 /** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`, `web-typed-public`; never the address nor the site of a link, nor a typed text. */
 export function targetName(target: Target): string {
   if (target.kind === 'web') {
+    if (target.session !== undefined) return 'web-session';
+    if (target.form !== undefined) return 'web-form';
     if (target.typed !== undefined) return `web-typed-${target.typed}`;
     if (target.resource !== undefined) return `web-resource-${target.resource.of}`;
     return target.page === undefined ? 'web-search' : `web-page-${target.page.from}`;
@@ -468,7 +562,7 @@ export function spendAllowed(decision: unknown): Allowed | undefined {
 }
 
 function block(
-  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed'>,
+  rule: Exclude<GatewayRule, AllowRule>,
   label: Label,
   reason: string,
   next: NextStep,
@@ -507,7 +601,12 @@ function block(
  *    types in a field (`typed`, D-264) is checked as a page: its shape right
  *    after rule 3 (one text of at most `MAX_TYPED_TEXT` characters), then
  *    rules 4-7, its consent (`public` only from an L0 session and an L0
- *    text), the scanner and the second scan.
+ *    text), the scanner and the second scan. After an access made by the
+ *    user (D-276), a request of the site of the access (`session`) and a
+ *    form the user sent (`form`, its address only) may carry L2, only
+ *    towards that site and only from a context that has read at most L1:
+ *    their shape right after rule 3, then rules 4, 5 and the context of 7,
+ *    the scanner, never the second scan.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -574,6 +673,18 @@ export function gatewayCheck(
     if (refused !== undefined) return refused;
   }
 
+  // The site of an access, and a form of the user (D-276): their shape first, as for a resource.
+  const session = target.kind === 'web' ? target.session : undefined;
+  if (session !== undefined) {
+    const refused = checkSessionShape(payload, label, session);
+    if (refused !== undefined) return refused;
+  }
+  const form = target.kind === 'web' ? target.form : undefined;
+  if (form !== undefined) {
+    const refused = checkFormShape(payload, label, form);
+    if (refused !== undefined) return refused;
+  }
+
   const texts: string[] = [];
   const parts: string[] = [];
   for (const fragment of payload) {
@@ -595,9 +706,9 @@ export function gatewayCheck(
       }
     }
   }
-  // A resource (D-264): its address the same way, its body decoded as a form and as JSON too.
+  // A resource (D-264), or a request of the site of an access (D-276): its address the same way, its body decoded as a form and as JSON too.
   let bodyParts: string[] = [];
-  if (resource !== undefined) {
+  if (resource !== undefined || session !== undefined || form !== undefined) {
     const [address = '', body] = texts;
     try {
       parts.push(decodeURIComponent(address));
@@ -632,6 +743,23 @@ export function gatewayCheck(
   if (!canUseCloud(context)) {
     return block('contaminated', label, `the session has read ${context.effective}: it stays local`, onBlock);
   }
+
+  // The site of an access made by the user (D-276): L2 goes, only to that site (its shape checked it), and
+  // only from a session that has read at most Internal (just above). The scanner on the address and the
+  // body; never the second scanner, which would read the user's own data of that site as a person.
+  if (session !== undefined || form !== undefined) {
+    const findings = [...addressFindings(texts[0] ?? ''), ...bodyParts.flatMap((part) => scanText(part))];
+    if (findings.length > 0) {
+      const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
+      return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
+    }
+    if (form !== undefined) {
+      return allow({ decision: 'allow', rule: 'form', label, reason: `${label} form of the user to ${form.site}, ${String(form.bytes)} bytes, content not read`, texts }, target);
+    }
+    const body = texts.length === 2 ? ', with a body' : '';
+    return allow({ decision: 'allow', rule: 'session', label, reason: `${label} ${session?.type ?? ''} ${session?.method ?? ''} of the site of an access${body}, scan clean, no second check`, texts }, target);
+  }
+
   if (!canSendTo('cloud', label)) {
     return block('cloud-label', label, `${label} cannot go to a cloud target; at most L1`, onBlock);
   }

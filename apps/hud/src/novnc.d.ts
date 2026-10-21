@@ -32,6 +32,9 @@ declare module '@novnc/novnc' {
     qualityLevel: number;
     compressionLevel: number;
     disconnect(): void;
+    /** Without `down`, a press and a release; nothing in view only. */
+    sendKey(keysym: number, code: string | null, down?: boolean): void;
+    focus(options?: FocusOptions): void;
     addEventListener<K extends keyof RFBEventMap>(type: K, listener: (event: RFBEventMap[K]) => void): void;
     removeEventListener<K extends keyof RFBEventMap>(type: K, listener: (event: RFBEventMap[K]) => void): void;
   }

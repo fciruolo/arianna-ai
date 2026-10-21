@@ -126,3 +126,96 @@ test('after a close nothing passes any more', () => {
   assert.equal(filter.push(Buffer.from('RFB 003.007\n', 'latin1')).close, 'bad-version');
   assert.deepEqual(filter.push(HANDSHAKE), { forward: [], close: 'bad-version' });
 });
+
+// «Prendi il controllo» (D-264, passo 5).
+function key(keysym: number, down = true): Buffer {
+  const message = Buffer.from([4, down ? 1 : 0, 0, 0, 0, 0, 0, 0]);
+  message.writeUInt32BE(keysym, 4);
+  return message;
+}
+function pointer(mask: number): Buffer {
+  return Buffer.from([5, mask, 0, 10, 0, 20]);
+}
+function encodings(list: number[]): Buffer {
+  const head = Buffer.from([2, 0, 0, 0]);
+  head.writeUInt16BE(list.length, 2);
+  const body = Buffer.alloc(4 * list.length);
+  list.forEach((value, index) => body.writeInt32BE(value, index * 4));
+  return Buffer.concat([head, body]);
+}
+
+test('in control keys and pointer pass, the clipboard never; back in view they are dropped again', () => {
+  const filter = createRfbFilter();
+  filter.push(HANDSHAKE);
+  assert.deepEqual(filter.push(Buffer.concat([keyEvent, pointerEvent])).forward, []);
+  filter.setMode('control');
+  assert.equal(filter.mode, 'control');
+  assert.deepEqual(Buffer.concat(filter.push(Buffer.concat([keyEvent, pointerEvent, cutText(5), updateRequest])).forward), Buffer.concat([keyEvent, pointerEvent, updateRequest]));
+  filter.setMode('view');
+  assert.deepEqual(Buffer.concat(filter.push(Buffer.concat([keyEvent, pointerEvent, updateRequest])).forward), updateRequest);
+});
+
+test('SetEncodings loses the QEMU keys, the LED state, xvp and the extended mouse buttons, in both modes', () => {
+  const asked = [7, 1, 0, -258, -261, -309, -316, -312, -313];
+  for (const mode of ['view', 'control'] as const) {
+    const filter = createRfbFilter(mode);
+    filter.push(HANDSHAKE);
+    assert.deepEqual(Buffer.concat(filter.push(encodings(asked)).forward), encodings([7, 1, 0, -312, -313]), mode);
+  }
+  // Nothing to remove: the message is the same.
+  assert.deepEqual(run([HANDSHAKE, encodings([7, 0])]).out, Buffer.concat([HANDSHAKE, encodings([7, 0])]));
+});
+
+test('a pointer message with the bit of the extended buttons closes, in view and in control', () => {
+  for (const mode of ['view', 'control'] as const) {
+    const filter = createRfbFilter(mode);
+    filter.push(HANDSHAKE);
+    assert.equal(filter.push(Buffer.from([5, 0x81])).close, 'extended-pointer', mode);
+  }
+});
+
+test('in control F1-F12, Super and Meta are dropped, and every key while Super is down', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  for (const keysym of [0xffbe, 0xffc1, 0xffc9, 0xffe7, 0xffeb, 0xffec, 0xffed]) assert.deepEqual(filter.push(key(keysym)).forward, [], keysym.toString(16));
+  // Super and Meta down from above: «v» is dropped, not typed.
+  assert.deepEqual(filter.push(key(0x76)).forward, []);
+  for (const keysym of [0xffe7, 0xffeb, 0xffec, 0xffed]) filter.push(key(keysym, false));
+  assert.deepEqual(Buffer.concat(filter.push(key(0x76)).forward), key(0x76));
+  // Ctrl, Shift, Enter and letters pass.
+  for (const keysym of [0xffe3, 0xffe1, 0xff0d, 0x61]) assert.deepEqual(Buffer.concat(filter.push(key(keysym)).forward), key(keysym), keysym.toString(16));
+});
+
+test('keys pressed and clicks are counted in control, never what they were', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  filter.push(Buffer.concat([key(0x61), key(0x61, false), key(0x62), key(0xffbe), pointer(0), pointer(1), pointer(1), pointer(0), pointer(1), pointer(0), pointer(4), pointer(0), pointer(8)]));
+  // The right button (4) is cleared before Chromium: not a click.
+  assert.deepEqual(filter.counts, { keys: 2, clicks: 2 });
+  // In view nothing is counted.
+  filter.setMode('view');
+  filter.push(Buffer.concat([key(0x61), pointer(1)]));
+  assert.deepEqual(filter.counts, { keys: 2, clicks: 2 });
+});
+
+test('in control Ctrl+Shift+I, J and C are dropped (the developer tools); Ctrl+C and Shift+I pass', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  filter.push(Buffer.concat([key(0xffe3), key(0xffe1)]));
+  for (const letter of [0x49, 0x69, 0x4a, 0x63]) assert.deepEqual(filter.push(key(letter)).forward, [], letter.toString(16));
+  filter.push(key(0xffe1, false));
+  assert.deepEqual(Buffer.concat(filter.push(key(0x63)).forward), key(0x63));
+  filter.push(Buffer.concat([key(0xffe3, false), key(0xffe2)]));
+  assert.deepEqual(Buffer.concat(filter.push(key(0x49)).forward), key(0x49));
+});
+
+test('in control the right and middle buttons and the Menu key never reach Chromium (no context menu, no «Ispeziona»); left and wheel pass', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x04)).forward), pointer(0));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x02)).forward), pointer(0));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x05)).forward), pointer(0x01));
+  assert.deepEqual(Buffer.concat(filter.push(pointer(0x08)).forward), pointer(0x08));
+  assert.deepEqual(filter.push(key(0xff67)).forward, []);
+  assert.equal(filter.counts.clicks, 1);
+});

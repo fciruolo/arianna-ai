@@ -27,6 +27,7 @@ import {
   browserConsent,
   CLOSED_BY_USER_TEXT,
   browserResultText,
+  accessReturnedLine,
   browserTool,
   MAX_ACTIONS_PER_TASK,
   NOT_HERE,
@@ -34,7 +35,11 @@ import {
   TASK_LIMIT,
   WAITING_BROWSER,
   writeClosedByUserLine,
+  writeControlLine,
+  writeLoginLine,
   writeTakenLine,
+  CONTROL_TEXT,
+  loginLine,
 } from '../src/orchestrator/browser-tool.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -270,6 +275,37 @@ test('writeTakenLine: a system line without a task in the conversation whose bro
   const rows = await db().sql<{ role: string; taskId: string | null; label: string; body: string }[]>`
     SELECT role, task_id::text AS "taskId", label::text, body FROM messages WHERE conversation_id = ${conversationId}`;
   assert.deepEqual([...rows], [{ role: 'system', taskId: null, label: 'L0', body: TAKEN_TEXT }]);
+});
+
+test('writeControlLine: taken and given back leave system lines; the browser closing leaves none', async () => {
+  const conversationId = await workConversation();
+  await writeControlLine(db().sql, conversationId, { state: 'taken' });
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'idle' });
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'browser-closed' });
+  const rows = await db().sql<{ role: string; label: string; body: string }[]>`
+    SELECT role, label::text, body FROM messages WHERE conversation_id = ${conversationId} ORDER BY ts, id`;
+  assert.deepEqual(rows.map((row) => row.body).sort(), [CONTROL_TEXT.taken, CONTROL_TEXT.idle].sort());
+  assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
+});
+
+test('writeControlLine after an access (D-276): the line given back never says Arianna reads the page again', async () => {
+  const conversationId = await workConversation();
+  await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'user' }, 'banca-finta.it');
+  const rows = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${conversationId}`;
+  assert.deepEqual(rows.map((row) => row.body), [accessReturnedLine('user')]);
+  assert.doesNotMatch(rows[0]?.body ?? '', /rilegge/);
+  assert.match(rows[0]?.body ?? '', /Private/);
+  assert.doesNotMatch(rows[0]?.body ?? '', /banca-finta/);
+});
+
+test('writeLoginLine (D-276): one system line per site in ten minutes, read by the model too', async () => {
+  const conversationId = await workConversation();
+  await writeLoginLine(db().sql, conversationId, 'banca-finta.it');
+  await writeLoginLine(db().sql, conversationId, 'banca-finta.it');
+  await writeLoginLine(db().sql, conversationId, 'posta-finta.it');
+  const rows = await db().sql<{ body: string; label: string; role: string }[]>`SELECT body, label::text, role FROM messages WHERE conversation_id = ${conversationId}`;
+  assert.deepEqual(rows.map((row) => row.body).sort(), [loginLine('banca-finta.it'), loginLine('posta-finta.it')].sort());
+  assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
 });
 
 test('writeClosedByUserLine: «Chiudi» in the chat leaves a system line without a task, read by the model too', async () => {

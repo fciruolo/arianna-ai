@@ -126,14 +126,19 @@ describe('the token of the screen', () => {
 describe('BrowserScreen.vue', () => {
   const source = readFileSync(join(import.meta.dirname, '..', 'src', 'components', 'BrowserScreen.vue'), 'utf8');
 
-  it('is view only: viewOnly on, no focus on click, no clipboard handler, no field', () => {
+  it('starts view only: viewOnly on, no focus on click, no clipboard handler; keys only while it drives (passo 5)', () => {
     assert.match(source, /\.viewOnly = true;/);
     assert.match(source, /\.focusOnClick = false;/);
     assert.match(source, /\.resizeSession = false;/);
     assert.doesNotMatch(source, /clipboard['"]/);
-    assert.doesNotMatch(source, /clipboardPasteFrom|sendKey|sendCtrlAltDel/);
+    assert.doesNotMatch(source, /clipboardPasteFrom|sendCtrlAltDel/);
+    // sendKey only behind driving(): the keyboard of a phone while this screen drives.
+    for (const at of [...source.matchAll(/\.sendKey\(/g)].map((match) => match.index)) assert.match(source.slice(Math.max(0, at - 200), at), /driving\(\)/);
     const template = source.slice(source.indexOf('<template>'));
-    assert.doesNotMatch(template, /<(input|textarea|select|form)\b/i);
+    assert.doesNotMatch(template, /<(textarea|select|form)\b/i);
+    // The one field is the hidden keyboard, only while this screen drives on a phone.
+    assert.equal([...template.matchAll(/<input\b/gi)].length, 1);
+    assert.match(template, /<input\s+v-if="control === 'you' && touch"/);
   });
 
   it('disconnects when it goes away', () => {
@@ -156,5 +161,61 @@ describe('main.ts', () => {
     assert.match(source, /browserConversationFromPath\(window\.location\.pathname\)/);
     assert.match(source, /createApp\(BrowserPage/);
     assert.match(source, /createApp\(App\)/);
+  });
+});
+
+describe('«Prendi il controllo» (D-264, passo 5)', () => {
+  it('the status of the core: control and the refused page, anything else dropped', async () => {
+    const { parseControl } = await import('../src/lib/browser-screen.ts');
+    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null });
+    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null });
+    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null });
+    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null });
+    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null });
+  });
+
+  it('every refused page has its sentence; a link to a site not written says to write it in the chat', async () => {
+    const { blockedText, CONTROL_WARNING } = await import('../src/lib/browser-screen.ts');
+    assert.match(blockedText({ outcome: 'blocked' }), /scrivilo in chat se vuoi aprirlo/);
+    assert.match(blockedText({ outcome: 'form' }), /^Modulo non inviato/);
+    for (const outcome of ['refused', 'limit'] as const) assert.ok(blockedText({ outcome }).length > 10);
+    assert.equal(CONTROL_WARNING, 'Non scrivere dati personali: la pagina è pubblica e il sito li riceve.');
+  });
+
+  it('the keyboard of a phone: Latin-1 as itself, other characters as 0x01000000 plus the code point, control characters left out', async () => {
+    const { keysymOf, keysymsOf, SPECIAL_KEYS } = await import('../src/lib/browser-keys.ts');
+    assert.equal(keysymOf('a'), 0x61);
+    assert.equal(keysymOf('è'), 0xe8);
+    assert.equal(keysymOf('€'), 0x010020ac);
+    assert.equal(keysymOf('😀'), 0x0101f600);
+    assert.equal(keysymOf('\n'), SPECIAL_KEYS.Enter?.keysym);
+    assert.equal(keysymOf('\u0007'), undefined);
+    assert.equal(keysymOf('ab'), undefined);
+    assert.deepEqual(keysymsOf('Ciao è'), [0x43, 0x69, 0x61, 0x6f, 0x20, 0xe8]);
+    // No F-key nor Super among the special keys: the core drops them anyway.
+    for (const key of Object.values(SPECIAL_KEYS)) assert.ok(!(key.keysym >= 0xffbe && key.keysym <= 0xffe0) && !(key.keysym >= 0xffe7 && key.keysym <= 0xffee));
+  });
+
+  it('the screen drives only after the core says so, and keeps the clipboard off', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'src', 'components', 'BrowserScreen.vue'), 'utf8');
+    assert.ok(source.includes('current.viewOnly = !you'));
+    assert.ok(!source.includes("addEventListener('clipboard'"));
+    assert.ok(source.includes('CONTROL_WARNING'));
+  });
+});
+
+describe('the access made by the user (D-276)', () => {
+  it('the status carries the site of the access; the refused pages say that only that site opens', async () => {
+    const { accessText, accessWarning, blockedText, FORM_NOTE, parseControl } = await import('../src/lib/browser-screen.ts');
+    assert.equal(parseControl({ control: 'you', access: 'banca-finta.it' }).access, 'banca-finta.it');
+    assert.equal(parseControl({ control: 'you', access: 3 }).access, null);
+    assert.match(blockedText({ outcome: 'blocked' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
+    assert.match(blockedText({ outcome: 'form' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
+    assert.match(blockedText({ outcome: 'blocked' }, null), /scrivilo in chat/);
+    assert.match(accessText('banca-finta.it'), /Private/);
+    assert.match(FORM_NOTE, /Unica eccezione/);
+    assert.match(accessWarning('banca-finta.it'), /solo a banca-finta\.it/);
+    assert.doesNotMatch(accessWarning('banca-finta.it'), /pubblica/);
+    assert.match(FORM_NOTE, /solo verso quel sito/);
   });
 });

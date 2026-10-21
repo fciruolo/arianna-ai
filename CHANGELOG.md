@@ -4,6 +4,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.159.0] - 2026-10-21
+
+### Aggiunto
+
+- «Prendi il controllo» nello schermo del browser di Arianna (D-264 passo 5, D-276): dopo l'azione in corso di Arianna guidi tu, con tastiera e mouse (sul telefono il pulsante «Tastiera»); bordo colorato, avviso fisso «Non scrivere dati personali: la pagina è pubblica e il sito li riceve» e nella riga sopra la casella «Stai guidando tu · Restituisci». Il controllo passa all'ultimo schermo che lo chiede e torna ad Arianna con «Restituisci ad Arianna», chiudendo lo schermo o dopo 5 minuti senza input; Arianna rilegge la pagina prima di continuare. Una navigazione fermata lo dice nello schermo.
+- Accesso fatto da te (D-276): quando una pagina chiede di accedere, Arianna lo dice e propone «Prendi il controllo»; mentre guidi, il modulo d'accesso verso il sito della pagina parte com'è scritto e i cookie di quel sito restano al core finché il browser vive. Dopo l'accesso le pagine di quel sito sono Private: per ora Arianna non le legge e continui tu dallo schermo; la chat mostra il sito dell'accesso.
+
+### Sicurezza
+
+- Chromium del browser in modalità chiosco con regole gestite (niente incognito, stampa, password, compilazione automatica, download né scelta di file; `chrome://`, `devtools://`, `file://` e `view-source:` bloccati); il filtro dello schermo scarta F1-F35, Super, Meta, Hyper, Ctrl+Shift+I/J/C e gli appunti, e riscrive `SetEncodings` senza le codifiche QEMU e del mouse esteso (D-264 passo 5). Serve `pnpm browser:build`.
+- Nuove destinazioni del gateway `web-form` (modulo dell'utente: solo indirizzo, ora e byte, mai il contenuto) e `web-session` (richieste del sito dell'accesso, L2 solo verso quel sito e i suoi sottodomini); dopo l'accesso ogni richiesta verso un altro sito porta L2 ed è fermata; migrazione `0086` (D-276).
+
 ## [0.158.0] - 2026-10-21
 
 ### Aggiunto

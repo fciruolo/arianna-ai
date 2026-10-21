@@ -47,10 +47,15 @@ interface Harness {
   events: NewEvent[];
   /** Conversations whose browser «Chiudi» closed. */
   closes: string[];
+  /** Who drives (the fake AgentBrowser of passo 5), and what was asked of it. */
+  driver: { value: 'agent' | 'user'; gives: number; inputs: number; wait?: Promise<void> };
+  controls: { conversationId: string; state: string; reason?: string }[];
 }
 
-function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: ScreensOptions['limits']; pingMs?: number } = {}): Harness {
+function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: ScreensOptions['limits']; pingMs?: number; idleMs?: number; checkMs?: number } = {}): Harness {
   const state: Harness['state'] = { holder: WORK, container: 'arianna-browser-chat-aaaaaaaaaaaa' };
+  const driver: Harness['driver'] = { value: 'agent', gives: 0, inputs: 0 };
+  const controls: Harness['controls'] = [];
   const channels: FakeChannel[] = [];
   const events: NewEvent[] = [];
   const closes: string[] = [];
@@ -79,10 +84,33 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
     site: (id) => (id === state.holder ? 'comune-finto.it' : null),
     openChannel,
     onEvent: (event) => { events.push(event); },
+    control: {
+      take: (id) => {
+        const waiting = driver.wait !== undefined;
+        const done = (driver.wait ?? Promise.resolve()).then(() => {
+          if (state.holder !== id) return false;
+          driver.value = 'user';
+          return true;
+        });
+        return { waiting, done };
+      },
+      give: (id) => {
+        if (state.holder !== id || driver.value !== 'user') return false;
+        driver.value = 'agent';
+        driver.gives += 1;
+        return true;
+      },
+      input: () => { driver.inputs += 1; },
+      driver: (id) => (state.holder === id ? driver.value : null),
+      blocked: (id) => (state.holder === id && driver.value === 'user' ? { seq: 3, outcome: 'form' } : null),
+    },
+    onControl: (conversationId, change) => { controls.push({ conversationId, ...change }); },
+    ...(options.idleMs === undefined ? {} : { controlIdleMs: options.idleMs }),
+    ...(options.checkMs === undefined ? {} : { controlCheckMs: options.checkMs }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
     ...(options.pingMs === undefined ? {} : { pingMs: options.pingMs }),
   });
-  return { screens, state, channels, events, closes };
+  return { screens, state, channels, events, closes, driver, controls };
 }
 
 async function token(h: Harness, conversationId = WORK): Promise<string> {
@@ -297,18 +325,21 @@ test('a text frame closes the screen', async (t) => {
   assert.deepEqual(await closed(ws), SCREEN_CLOSE.refused);
 });
 
-test('at most three screens per browser, from the same token; the fourth is refused', async (t) => {
+test('at most three screens per browser, one per token; the fourth is refused, a used token too', async (t) => {
   const h = harness();
   const port = await serve(t, h.screens);
-  const shared = await token(h);
+  const tokens = [await token(h), await token(h), await token(h), await token(h)];
   const open: WebSocket[] = [];
   for (let index = 0; index < MAX_SCREENS; index += 1) {
-    const ws = connect(port, `?t=${index === 0 ? shared : await token(h)}`);
+    const ws = connect(port, `?t=${tokens[index] ?? ''}`);
     await once(ws, 'open');
     open.push(ws);
   }
   await until(() => h.screens.open === MAX_SCREENS, 'three screens');
-  const fourth = connect(port, `?t=${shared}`);
+  // A token opens one screen only (passo 5): used, it no longer holds.
+  assert.equal(h.screens.valid(tokens[0] ?? ''), false);
+  assert.equal(await refusedWith(connect(port, `?t=${tokens[0] ?? ''}`)), 403);
+  const fourth = connect(port, `?t=${tokens[3] ?? ''}`);
   assert.deepEqual(await closed(fourth), SCREEN_CLOSE.tooMany);
   assert.equal(h.channels.length, MAX_SCREENS);
   // A new token is refused too, so the chat can say «Troppi schermi aperti».
@@ -320,7 +351,7 @@ test('at most three screens per browser, from the same token; the fourth is refu
   const first = open.shift();
   first?.close();
   await until(() => h.screens.open === MAX_SCREENS - 1, 'one screen less');
-  const again = connect(port, `?t=${shared}`);
+  const again = connect(port, `?t=${await token(h)}`);
   await once(again, 'open');
   await until(() => h.screens.open === MAX_SCREENS, 'three screens again');
 });
@@ -505,7 +536,7 @@ test('a page that does not answer the ping is dropped; one that answers stays', 
 
 test('status: open only for the conversation holding the browser, never for a Private or incognito one', async () => {
   const h = harness();
-  assert.deepEqual(await h.screens.status(WORK), { open: true, site: 'comune-finto.it' });
+  assert.deepEqual(await h.screens.status(WORK), { open: true, site: 'comune-finto.it', control: 'agent' });
   assert.deepEqual(await h.screens.status(OTHER), { open: false });
   assert.equal(await h.screens.status(MISSING), null);
   // Never open nor a site for a Private or incognito one, even holding it.
@@ -539,7 +570,7 @@ test('closeByUser: only the conversation holding the browser closes it, its scre
 test('GET /api/browser/screen?conversationId: open or not, 404 for no conversation, 400 for a wrong id, Host checked', async (t) => {
   const h = harness();
   const port = await serve(t, h.screens);
-  assert.deepEqual(await get(port, `?conversationId=${WORK}`), { status: 200, body: { open: true, site: 'comune-finto.it' } });
+  assert.deepEqual(await get(port, `?conversationId=${WORK}`), { status: 200, body: { open: true, site: 'comune-finto.it', control: 'agent' } });
   assert.deepEqual(await get(port, `?conversationId=${OTHER}`), { status: 200, body: { open: false } });
   assert.deepEqual(await get(port, `?conversationId=${PRIVATE}`), { status: 200, body: { open: false } });
   assert.equal((await get(port, `?conversationId=${MISSING}`)).status, 404);
@@ -570,4 +601,146 @@ test('without the screens the status and close routes answer 404', async (t) => 
   const port = await serve(t);
   assert.equal((await get(port, `?conversationId=${WORK}`)).status, 404);
   assert.equal((await post(port, { conversationId: WORK }, {}, '/api/browser/close')).status, 404);
+});
+
+// «Prendi il controllo» (D-264, passo 5).
+const SET_ENCODINGS = Buffer.from([2, 0, 0, 2, 0xff, 0xff, 0xfe, 0xfe, 0, 0, 0, 7]); // -258 and 7
+const POINTER_DOWN = Buffer.from([5, 1, 0, 10, 0, 20]);
+
+function written(h: Harness, index: number): Buffer {
+  return Buffer.concat(h.channels[index]?.written ?? []);
+}
+
+test('take: only an open screen of the browser; its keys and clicks reach Xvnc, those of the others do not', async () => {
+  const h = harness();
+  const first = await token(h);
+  const second = await token(h);
+  assert.deepEqual(await h.screens.take(WORK, first), { ok: false, reason: 'no-screen' });
+  const a = attachFake(h, first);
+  const b = attachFake(h, second);
+  a.emit('message', HANDSHAKE, true);
+  b.emit('message', HANDSHAKE, true);
+  assert.deepEqual(await h.screens.take(OTHER, first), { ok: false, reason: 'no-browser' });
+  assert.deepEqual(await h.screens.take(MISSING, first), { ok: false, reason: 'not-found' });
+  assert.deepEqual(await h.screens.take(WORK, 'x'), { ok: false, reason: 'no-screen' });
+  const taken = await h.screens.take(WORK, first);
+  assert.ok(taken.ok);
+  assert.equal(taken.waiting, false);
+  assert.equal(await taken.done, true);
+  assert.equal(h.driver.value, 'user');
+  assert.deepEqual(await h.screens.status(WORK, first), { open: true, site: 'comune-finto.it', control: 'you', blocked: { seq: 3, outcome: 'form' } });
+  assert.equal((await h.screens.status(WORK, second))?.control, 'other');
+  assert.equal((await h.screens.status(WORK))?.control, 'user');
+  a.emit('message', Buffer.concat([SET_ENCODINGS, KEY_EVENT, POINTER_DOWN]), true);
+  b.emit('message', Buffer.concat([KEY_EVENT, POINTER_DOWN]), true);
+  await tick();
+  // SetEncodings without -258; the key and the click of the screen that drives only.
+  assert.deepEqual(written(h, 0), Buffer.concat([HANDSHAKE, Buffer.from([2, 0, 0, 1, 0, 0, 0, 7]), KEY_EVENT, POINTER_DOWN]));
+  assert.deepEqual(written(h, 1), HANDSHAKE);
+  assert.ok(h.driver.inputs >= 1);
+  // «Passa all'ultimo che lo chiede»: the second screen takes it, the first goes back to view.
+  const again = await h.screens.take(WORK, second);
+  assert.ok(again.ok && (await again.done));
+  assert.equal((await h.screens.status(WORK, first))?.control, 'other');
+  a.emit('message', KEY_EVENT, true);
+  b.emit('message', KEY_EVENT, true);
+  await tick();
+  assert.equal(written(h, 0).length, HANDSHAKE.length + 8 + KEY_EVENT.length + POINTER_DOWN.length);
+  assert.deepEqual(written(h, 1), Buffer.concat([HANDSHAKE, KEY_EVENT]));
+  // One control, taken once.
+  assert.deepEqual(h.controls, [{ conversationId: WORK, state: 'taken' }]);
+  assert.equal(await h.screens.giveBack(OTHER), 'not-driving');
+  assert.equal(await h.screens.giveBack(MISSING), 'not-found');
+  assert.equal(await h.screens.giveBack(WORK), 'returned');
+  assert.equal(h.driver.value, 'agent');
+  assert.equal((await h.screens.status(WORK, second))?.control, 'agent');
+  b.emit('message', KEY_EVENT, true);
+  await tick();
+  assert.deepEqual(written(h, 1), Buffer.concat([HANDSHAKE, KEY_EVENT]));
+  assert.equal(await h.screens.giveBack(WORK), 'not-driving');
+  const events = h.events.filter((event) => event.kind === 'browser.control');
+  assert.deepEqual(events[0], { kind: 'browser.control', label: 'L0', payload: { state: 'taken', conversationId: WORK } });
+  const returned = events[1]?.payload ?? {};
+  assert.equal(returned.state, 'returned');
+  assert.equal(returned.reason, 'user');
+  assert.equal(returned.keys, 2);
+  assert.equal(returned.clicks, 1);
+  assert.deepEqual(Object.keys(returned).sort(), ['clicks', 'conversationId', 'keys', 'ms', 'reason', 'state']);
+  assert.deepEqual(h.controls.at(-1), { conversationId: WORK, state: 'returned', reason: 'user' });
+});
+
+test('take waits for the action of Arianna under way; a screen closed meanwhile gives the browser back', async () => {
+  const h = harness();
+  let finish: () => void = () => undefined;
+  h.driver.wait = new Promise((resolve) => { finish = resolve; });
+  const t = await token(h);
+  const other = attachFake(h, t);
+  const asked = await h.screens.take(WORK, t);
+  assert.ok(asked.ok && asked.waiting);
+  other.close();
+  finish();
+  assert.equal(await asked.done, false);
+  assert.equal(h.driver.value, 'agent');
+  assert.equal(h.driver.gives, 1);
+  assert.deepEqual(h.controls, [{ conversationId: WORK, state: 'returned', reason: 'screen-closed' }]);
+});
+
+test('the control goes back to Arianna when its screen closes, and after the minutes without input', async () => {
+  const h = harness({ idleMs: 30, checkMs: 5 });
+  const first = await token(h);
+  const a = attachFake(h, first);
+  const taken = await h.screens.take(WORK, first);
+  assert.ok(taken.ok && (await taken.done));
+  a.close();
+  assert.equal(h.driver.value, 'agent');
+  assert.deepEqual(h.controls.at(-1), { conversationId: WORK, state: 'returned', reason: 'screen-closed' });
+  const second = await token(h);
+  attachFake(h, second);
+  const again = await h.screens.take(WORK, second);
+  assert.ok(again.ok && (await again.done));
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(h.driver.value, 'agent');
+  assert.deepEqual(h.controls.at(-1), { conversationId: WORK, state: 'returned', reason: 'idle' });
+  h.screens.close();
+});
+
+test('the control ends with the browser: no give back to a browser that is gone', async () => {
+  const h = harness();
+  const first = await token(h);
+  attachFake(h, first);
+  const taken = await h.screens.take(WORK, first);
+  assert.ok(taken.ok && (await taken.done));
+  h.state.holder = null;
+  h.state.container = null;
+  h.screens.revoke();
+  assert.equal(h.driver.gives, 0);
+  assert.deepEqual(h.controls.at(-1), { conversationId: WORK, state: 'returned', reason: 'browser-closed' });
+  assert.equal(h.events.filter((event) => event.kind === 'browser.control').length, 2);
+});
+
+test('POST /api/browser/control: take with the token of an open screen (200, or 202 while Arianna acts), return; errors', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  const control = (body: unknown, headers: Record<string, string> = {}) => post(port, body, headers, '/api/browser/control');
+  const screen = await token(h);
+  const ws = connect(port, `?t=${screen}`);
+  await once(ws, 'open');
+  await until(() => h.screens.open === 1, 'the screen');
+  assert.equal((await control({ conversationId: WORK, action: 'take', screen }, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await control({ conversationId: WORK, action: 'take' })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'drive', screen })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'take', screen, more: 1 })).status, 400);
+  assert.equal((await control({ conversationId: WORK, action: 'return', screen })).status, 400);
+  assert.equal((await control({ conversationId: MISSING, action: 'take', screen })).status, 404);
+  assert.deepEqual(await control({ conversationId: OTHER, action: 'take', screen }), { status: 409, body: { error: 'no-browser' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen: randomBytes(32).toString('base64url') }), { status: 409, body: { error: 'no-screen' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 409, body: { error: 'not-driving' } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 200, body: { control: 'you' } });
+  assert.deepEqual(await get(port, `?conversationId=${WORK}&screen=${screen}`), { status: 200, body: { open: true, site: 'comune-finto.it', control: 'you', blocked: { seq: 3, outcome: 'form' } } });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 200, body: { control: 'agent' } });
+  let finish: () => void = () => undefined;
+  h.driver.wait = new Promise((resolve) => { finish = resolve; });
+  assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 202, body: { waiting: true } });
+  finish();
+  await until(() => h.driver.value === 'user', 'the control taken after the action');
 });

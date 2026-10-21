@@ -94,6 +94,12 @@ export interface ResourceInput {
   headers: Readonly<Record<string, string>>;
   body?: Buffer;
   type: ResourceType;
+  /**
+   * The `Cookie` header of the site of an access made by the user (D-276):
+   * set only by the core (network.ts, from its cookie jar, after the gateway
+   * allowed a request of that site), never from the headers of the page.
+   */
+  cookie?: string;
 }
 
 export type ResourceResult =
@@ -105,6 +111,8 @@ export type ResourceResult =
       body: Buffer;
       /** For a 3xx: where it points, as an absolute http(s) address (not followed). */
       location?: string;
+      /** The Set-Cookie lines of the answer, never given to the browser: the cookie jar of network.ts decides (D-276). */
+      setCookies?: string[];
     }
   | { ok: false; reason: ResourceFailure };
 
@@ -267,7 +275,7 @@ export function postContentType(value: string | undefined, body?: Buffer): strin
  * host of the page (an address the gateway already let go), `User-Agent` of
  * the Chromium of the container. Every other header of the browser stays here.
  */
-export function outgoingHeaders(input: Pick<ResourceInput, 'headers' | 'type' | 'body'>, method: 'GET' | 'HEAD' | 'POST', userAgent: string): OutgoingHttpHeaders {
+export function outgoingHeaders(input: Pick<ResourceInput, 'headers' | 'type' | 'body' | 'cookie'>, method: 'GET' | 'HEAD' | 'POST', userAgent: string): OutgoingHttpHeaders {
   const headers: OutgoingHttpHeaders = {
     accept: RESOURCE_RULES[input.type].accept,
     'accept-language': ACCEPT_LANGUAGE,
@@ -275,6 +283,9 @@ export function outgoingHeaders(input: Pick<ResourceInput, 'headers' | 'type' | 
   };
   const origin = originOf(headerOf(input.headers, 'origin'));
   if (origin !== undefined) headers.origin = origin;
+  // The cookies of the site of an access (D-276): from the jar of the core, never from the page.
+  const cookie = headerValue(input.cookie, 8192);
+  if (cookie !== undefined) headers.cookie = cookie;
   if (method === 'POST') {
     const type = postContentType(headerOf(input.headers, 'content-type'), input.body);
     if (type !== undefined) headers['content-type'] = type;
@@ -358,6 +369,7 @@ export async function fetchResource(input: ResourceInput, options: ResourceOptio
       if (redirect !== undefined && 'reason' in redirect) return { ok: false, reason: redirect.reason };
       const location = redirect?.href;
       const headers = response.headers.filter(([name]) => !DROPPED_IN.has(name));
+      const setCookies = response.headers.filter(([name]) => name === 'set-cookie').map(([, value]) => value);
       const result: ResourceResult = {
         ok: true,
         status: response.status,
@@ -365,6 +377,7 @@ export async function fetchResource(input: ResourceInput, options: ResourceOptio
         body: response.body,
       };
       if (location !== undefined) result.location = location;
+      if (setCookies.length > 0) result.setCookies = setCookies;
       return result;
     }, signal);
   } catch (error) {
