@@ -128,7 +128,7 @@ test('the Private chat of an access (D-281): token, status and control follow th
   const issued = await h.screens.issue(CHAT);
   assert.ok(issued.ok);
   assert.deepEqual(await h.screens.issue(WORK), { ok: false, reason: 'no-browser' });
-  assert.equal((await h.screens.status(CHAT))?.open, true);
+  assert.deepEqual(await h.screens.status(CHAT), { open: true, site: 'comune-finto.it', control: 'agent', chat: true });
   assert.deepEqual(await h.screens.status(WORK), { open: false, movedTo: CHAT });
   assert.deepEqual(await h.screens.status(OTHER), { open: false });
   // A Private chat that is not of an access never gets one.

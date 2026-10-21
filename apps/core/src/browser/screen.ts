@@ -216,7 +216,10 @@ export class BrowserScreens {
    * chat («Browser aperto · Guarda · Chiudi»); null when there is no such
    * conversation. Never open for a Private or incognito one.
    */
-  async status(conversationId: string, token?: string): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string } | null> {
+  async status(
+    conversationId: string,
+    token?: string,
+  ): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string; chat?: true } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
     const open = screened(kind) && !this.#stopped && this.#current(conversationId) !== null;
@@ -236,7 +239,15 @@ export class BrowserScreens {
     }
     const blocked = this.#options.control?.blocked(conversationId) ?? null;
     const access = this.#options.control?.access?.(conversationId) ?? null;
-    return { open, ...(site === null ? {} : { site }), ...(control === undefined ? {} : { control }), ...(blocked === null ? {} : { blocked }), ...(access === null ? {} : { access }) };
+    return {
+      open,
+      ...(site === null ? {} : { site }),
+      ...(control === undefined ? {} : { control }),
+      ...(blocked === null ? {} : { blocked }),
+      ...(access === null ? {} : { access }),
+      // The Private chat of an access (D-281): there Arianna reads the pages, with the local model.
+      ...(kind === 'browser' ? { chat: true } : {}),
+    };
   }
 
   /**

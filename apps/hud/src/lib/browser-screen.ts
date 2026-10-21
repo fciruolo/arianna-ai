@@ -60,6 +60,12 @@ export function screenRefusal(status: number, error: string | undefined): Screen
   return 'error';
 }
 
+/** The id of the Private chat the browser of a work conversation passed to (D-281), from the status of the core; null when none. */
+export function parseMovedTo(value: unknown): string | null {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as { movedTo?: unknown };
+  return typeof body.movedTo === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.movedTo) ? body.movedTo : null;
+}
+
 /** The address of the stream: same host as the page, like /api/ws (the Vite proxy forwards /api with its WebSocket). */
 export function screenUrl(location: { protocol: string; host: string }, token: string): string {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -164,17 +170,51 @@ export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>, access?
 
 const OUTCOMES: readonly BlockedNavigation['outcome'][] = ['blocked', 'refused', 'form', 'limit'];
 
-/** The line under the screen once the user signed in (D-276). */
-export function accessText(site: string): string {
-  return `Accesso fatto su ${site}: le sue pagine sono Private. Arianna non le legge in questa conversazione; i cookie restano solo per ${site}, nella memoria del core, e spariscono con il browser. Da ora immagini e script di altri siti non si caricano: la pagina può sembrare rotta.`;
+/**
+ * The line under the screen once the user signed in (D-276). `chat`: the
+ * screen of the Private chat the browser passed to (D-281), where Arianna
+ * reads the pages with the local model.
+ */
+export function accessText(site: string, chat = false): string {
+  const who = chat
+    ? `Arianna le legge solo in questa chat Privata, col modello locale, e prima di inviare dati a ${site} ti chiede «Invia / No»`
+    : 'Arianna non le legge in questa conversazione: restituito il browser, passa a una nuova chat Privata';
+  return `Accesso fatto su ${site}: le sue pagine sono Private. ${who}; i cookie restano solo per ${site}, nella memoria del core, e spariscono con il browser. Da ora immagini e script di altri siti non si caricano: la pagina può sembrare rotta.`;
+}
+
+/**
+ * «Nuova chat Privata» (D-281): the line the core writes in the work
+ * conversation when the browser passes to the Private chat of an access
+ * (the same bytes as HANDOFF_LINE of apps/core/src/browser/handoff.ts).
+ */
+export const HANDOFF_LINE =
+  'Hai fatto l’accesso a un sito: il browser è passato a una nuova chat Privata, dove lavora solo il modello locale. Qui Arianna non usa più quel browser.';
+
+/** How far the line of a hand over may come after the birth of its chat (the core writes it right after). */
+const HANDOFF_SKEW_MS = 60_000;
+
+/**
+ * The Private chat a line of a hand over points to: the newest chat of the
+ * access born from this conversation before the line (or within a minute
+ * after it, for clocks); undefined for any other message.
+ */
+export function browserChatOf(chats: readonly { id: string; createdAt: string }[] | undefined, message: { role: string; body: string; ts: string }): string | undefined {
+  if (message.role !== 'system' || message.body !== HANDOFF_LINE || chats === undefined) return undefined;
+  const at = Date.parse(message.ts);
+  let found: string | undefined;
+  for (const chat of chats) {
+    const born = Date.parse(chat.createdAt);
+    if (Number.isNaN(at) || Number.isNaN(born) || born <= at + HANDOFF_SKEW_MS) found = chat.id;
+  }
+  return found;
 }
 
 /** The second line of the warning while the user drives: what a form does (D-276). */
 export const FORM_NOTE = 'Unica eccezione, l’accesso: utente e password scrivili solo nel modulo d’accesso del sito che conosci. Partono solo verso quel sito; Arianna non li vede né li salva.';
 
 /** The status of the core as the chat reads it: anything unexpected is dropped. */
-export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null } {
-  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown; access?: unknown };
+export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean } {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown; access?: unknown; chat?: unknown };
   const control = body.control === 'agent' || body.control === 'you' || body.control === 'other' || body.control === 'user' ? body.control : null;
   const raw = (typeof body.blocked === 'object' && body.blocked !== null ? body.blocked : null) as { seq?: unknown; outcome?: unknown; site?: unknown } | null;
   const outcome = OUTCOMES.find((item) => item === raw?.outcome);
@@ -183,5 +223,5 @@ export function parseControl(value: unknown): { control: ControlState | null; bl
     blocked = typeof raw.site === 'string' && raw.site !== '' ? { seq: raw.seq, outcome, site: raw.site } : { seq: raw.seq, outcome };
   }
   const access = typeof body.access === 'string' && body.access !== '' && body.access.length <= 253 ? body.access : null;
-  return { control, blocked, access };
+  return { control, blocked, access, chat: body.chat === true };
 }
