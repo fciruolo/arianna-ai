@@ -125,7 +125,7 @@ const REPLY = (text: string): Answer => ({ action: 'reply', text });
 /** A work conversation and its Private chat of an access, as openBrowserChat leaves them. */
 async function pair(): Promise<{ work: string; chat: string }> {
   const work = (await createConversation(db().sql, { mode: 'work' })).id;
-  const handoff: HandoffBrowser = { accessOf: () => SITE, handOver: () => Promise.resolve(SITE) };
+  const handoff: HandoffBrowser = { accessOf: () => SITE, handOver: () => Promise.resolve(SITE), release: () => Promise.resolve() };
   const chat = await openBrowserChat({ sql: db().sql, browser: handoff, kind: conversationKindOf(db().sql) }, work);
   assert.ok(chat !== null);
   return { work, chat };
@@ -168,21 +168,44 @@ test('openBrowserChat: the chat is born with its title and a line naming the sit
   assert.equal(await conversationKindOf(db().sql)(work), 'work');
 });
 
-test('openBrowserChat: no access, no chat; a browser closed meanwhile leaves the chat a line and the work conversation nothing', async () => {
+test('openBrowserChat: no access, or a browser closed meanwhile: no chat, no line', async () => {
   const work = (await createConversation(db().sql, { mode: 'work' })).id;
   const kind = conversationKindOf(db().sql);
-  assert.equal(await openBrowserChat({ sql: db().sql, browser: { accessOf: () => null, handOver: () => Promise.resolve(null) }, kind }, work), null);
+  const release = () => Promise.resolve();
+  assert.equal(await openBrowserChat({ sql: db().sql, browser: { accessOf: () => null, handOver: () => Promise.resolve(null), release }, kind }, work), null);
+  assert.equal(await openBrowserChat({ sql: db().sql, browser: { accessOf: () => SITE, handOver: () => Promise.resolve(null), release }, kind }, work), null);
   assert.deepEqual((await loadConversation(db().sql, work))?.browserChats, []);
-  assert.equal(await openBrowserChat({ sql: db().sql, browser: { accessOf: () => SITE, handOver: () => Promise.resolve(null) }, kind }, work), null);
   const lines = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${work}`;
   assert.deepEqual([...lines], []);
+});
+
+test('openBrowserChat: a chat that cannot be written closes the browser passed to it; afterControl then writes the line of D-276', async () => {
+  const gone = randomUUID();
+  const released: string[] = [];
+  const moved: string[] = [];
+  const browser: HandoffBrowser = {
+    accessOf: () => SITE,
+    handOver: (_from, to) => { moved.push(to); return Promise.resolve(SITE); },
+    release: (id) => { released.push(id); return Promise.resolve(); },
+  };
+  const kind = conversationKindOf(db().sql);
+  await assert.rejects(openBrowserChat({ sql: db().sql, browser, kind }, gone), /not an open work conversation/);
+  assert.deepEqual(released, moved);
+  const [none] = await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM conversations WHERE id = ${moved[0] ?? gone}`;
+  assert.equal(none?.n, 0);
+  // From afterControl the failure is caught: the work conversation (here one the trigger refuses) gets the ordinary line.
+  const work = (await createConversation(db().sql, { mode: 'work' })).id;
+  await afterControl({ sql: db().sql, browser: { ...browser, handOver: () => Promise.reject(new Error('docker')) }, kind }, work, { state: 'returned', reason: 'user' });
+  const lines = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${work}`;
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]?.body ?? '', /Private/);
 });
 
 test('afterControl: given back in the work conversation with an access, the browser passes to a new chat', async () => {
   const work = (await createConversation(db().sql, { mode: 'work' })).id;
   const moves: string[] = [];
   await afterControl(
-    { sql: db().sql, browser: { accessOf: () => SITE, handOver: (_from, to) => { moves.push(to); return Promise.resolve(SITE); } }, kind: conversationKindOf(db().sql) },
+    { sql: db().sql, browser: { accessOf: () => SITE, handOver: (_from, to) => { moves.push(to); return Promise.resolve(SITE); }, release: () => Promise.resolve() }, kind: conversationKindOf(db().sql) },
     work,
     { state: 'returned', reason: 'user' },
   );
@@ -244,9 +267,22 @@ test('orchestrator in the chat of an access: only the browser tools, the context
   await recordDecision(db().sql, approval?.id ?? '', 'approved', 'web');
   assert.equal((await drain(task.id, model, browser)).at(-1), 'answered');
   assert.ok(model.requests[2]?.messages.some((part) => part.content.includes(browserSendText('approved', SITE))));
-  assert.equal(browser.calls[2]?.scope.sendPermit, approval?.id);
+  assert.deepEqual(browser.calls[2]?.scope.sendPermit, { id: approval?.id, element: 'Rinnova' });
   const events = await db().sql<{ label: string }[]>`SELECT label::text FROM events WHERE task_id = ${task.id} AND kind = ${BROWSER_ACTION_EVENT}`;
   assert.ok(events.length === 3 && events.every((event) => event.label === 'L2'));
+});
+
+test('orchestrator: once another agent answered in the chat it loses the mark for good: no browser tools, the browser released', async () => {
+  const { chat } = await pair();
+  // An answer of another agent («@nome»): it may carry other data (the knowledge base).
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body, agent) VALUES (${chat}, 'assistant', 'web', 'L2', 'Dalla conoscenza: …', 'local-chat')`;
+  const { task } = await postUserMessage(db().sql, chat, 'Scrivilo nel sito.');
+  const browser = fakeBrowser(chat, []);
+  const model = scripted([REPLY('Qui non uso più il browser.')]);
+  assert.equal((await drain(task.id, model, browser)).at(-1), 'answered');
+  assert.ok(!toolsOf(model.requests[0]).some((tool) => tool.startsWith('browser.')));
+  assert.equal(browser.calls.length, 0);
+  assert.equal(browser.holder, null);
 });
 
 test('orchestrator: a Private chat without the browser of its access is a Private chat like the others, without browser tools', async () => {

@@ -4,7 +4,7 @@ import type { Context, Label, PageConsent } from '@arianna/policy';
 import { FETCH_FAILURE_TEXT, siteOf } from '../link-fetch.ts';
 import type { Queryable, Sql } from '../db/client.ts';
 import { appendEvent } from '../events.ts';
-import type { ActionResult, AgentBrowser, BrowserAction, PageReading } from '../browser/agent-browser.ts';
+import { sendElement, type ActionResult, type AgentBrowser, type BrowserAction, type PageReading } from '../browser/agent-browser.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import type { Task } from '../tasks.ts';
 import type { Turn } from './turns.ts';
@@ -50,13 +50,25 @@ export function browserOffered(context: Context, incognito: boolean, installed: 
  * The site of the access when `conversationId` is the Private chat of an
  * access (D-281, `browser_of`) and holds the browser of that access now;
  * undefined otherwise (then it is a Private chat like the others).
+ *
+ * The core declares its context as one that read L2 only from that site and
+ * the user: so only while nothing else entered the chat. Another agent that
+ * answered there («@nome», «/giro», a participant), a «/progetta» or a task
+ * of another assignee may have brought other data (the knowledge base): the
+ * chat loses the mark for good, fails closed (no browser tools, and the
+ * browser is released as in any Private chat).
  */
 export async function browserChatSite(sql: Queryable, browser: AgentBrowser, conversationId: string): Promise<string | undefined> {
   if (browser.holder !== conversationId) return undefined;
   const site = browser.accessOf(conversationId);
   if (site === null) return undefined;
-  const [row] = await sql<{ browserOf: string | null }[]>`SELECT browser_of::text AS "browserOf" FROM conversations WHERE id = ${conversationId}`;
-  return row?.browserOf == null ? undefined : site;
+  const [row] = await sql<{ browserOf: string | null; clean: boolean }[]>`
+    SELECT c.browser_of::text AS "browserOf",
+      NOT EXISTS (SELECT FROM conversation_participants p WHERE p.conversation_id = c.id)
+      AND NOT EXISTS (SELECT FROM messages m WHERE m.conversation_id = c.id AND (m.agent IS NOT NULL OR m.model IS NOT NULL))
+      AND NOT EXISTS (SELECT FROM tasks t WHERE t.conversation_id = c.id AND (t.addressed IS NOT NULL OR t.planning IS NOT NULL OR t.assignee <> 'arianna')) AS clean
+    FROM conversations c WHERE c.id = ${conversationId}`;
+  return row?.browserOf == null || !row.clean ? undefined : site;
 }
 
 export interface BrowserToolResult {
@@ -116,15 +128,17 @@ function failure(tool: BrowserToolId, text: string, label: Label = 'L0'): Browse
 }
 
 /**
- * The latest «Invia» the user approved in this task (D-281): AgentBrowser
- * lets it send once, for the next click or typing with Enter.
+ * The «Invia» of this task (D-281): only the latest card «Invia / No» of the
+ * task counts, and only when the user approved it (a later «No», or a card
+ * still waiting, leaves none). AgentBrowser lets it send once, and only for
+ * the same element it was asked for.
  */
-export async function approvedSend(sql: Queryable, taskId: string): Promise<string | undefined> {
-  const [row] = await sql<{ id: string }[]>`
-    SELECT id::text FROM approvals
-    WHERE task_id = ${taskId} AND kind = 'browser' AND action = 'browser.send' AND state = 'approved'
+export async function approvedSend(sql: Queryable, taskId: string): Promise<{ id: string; element: string } | undefined> {
+  const [row] = await sql<{ id: string; state: string; element: string | null }[]>`
+    SELECT id::text, state::text, detail->>'element' AS element FROM approvals
+    WHERE task_id = ${taskId} AND kind = 'browser' AND action = 'browser.send'
     ORDER BY requested_at DESC, id DESC LIMIT 1`;
-  return row?.id;
+  return row?.state === 'approved' && row.element !== null ? { id: row.id, element: row.element } : undefined;
 }
 
 /**
@@ -348,7 +362,7 @@ export const WAITING_SEND = 'waiting for the user to decide in the chat whether 
 export async function requestBrowserSend(tx: Queryable, options: { taskId: string; step: number; site: string; element: string }): Promise<string> {
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
-    VALUES (${options.taskId}, 'browser', 'browser.send', ${tx.json({ site: options.site, element: options.element.slice(0, 120), step: options.step })}, 'L2'::privacy_label)
+    VALUES (${options.taskId}, 'browser', 'browser.send', ${tx.json({ site: options.site, element: sendElement(options.element), step: options.step })}, 'L2'::privacy_label)
     RETURNING id::text`;
   if (row === undefined) throw new Error('the approval of the send was not written');
   return row.id;

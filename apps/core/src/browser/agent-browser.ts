@@ -177,11 +177,11 @@ export interface BrowserScope {
   consent: PageConsent;
   meta?: GatewayMeta;
   /**
-   * The Private chat of an access (D-281): the id of an approval «Invia» of
-   * the user not used yet. The next click, or typing with Enter, may send to
-   * the site of the access, once.
+   * The Private chat of an access (D-281): an approval «Invia» of the user,
+   * with the element it was asked for. The next click, or typing with Enter,
+   * on that same element may send to the site of the access, once.
    */
-  sendPermit?: string;
+  sendPermit?: { id: string; element: string };
 }
 
 export type OpenSession = (browser: BrowserManager, id: string, network: Omit<NetworkJob, 'userAgent'>) => Promise<BrowserSession>;
@@ -516,7 +516,10 @@ export class AgentBrowser {
     const network = held.session.network;
     const element = held.elements.get(action.ref);
     const label = (element?.label ?? '').trim() || (action.kind === 'type' ? 'campo di testo' : 'elemento senza nome');
-    const permit = scope.sendPermit !== undefined && !this.#usedPermits.has(scope.sendPermit) ? scope.sendPermit : undefined;
+    const named = sendElement(action.kind === 'type' ? `${label} (Invio)` : label);
+    // Only the element the user approved, and only once: «Invia» on «Rinnova» never sends «Elimina».
+    const asked = scope.sendPermit;
+    const permit = asked !== undefined && asked.element === named && !this.#usedPermits.has(asked.id) ? asked.id : undefined;
     if (permit !== undefined) {
       this.#usedPermits.add(permit);
       network?.rescope({ ...networkScope(scope, 'agent'), send: true });
@@ -524,7 +527,7 @@ export class AgentBrowser {
     const before = network?.heldSends() ?? 0;
     try {
       const result = await this.#bounded(held, this.#run(held, scope, action));
-      if ((network?.heldSends() ?? 0) > before) return { ok: false, reason: 'confirm-send', site, element: action.kind === 'type' ? `${label} (Invio)` : label };
+      if ((network?.heldSends() ?? 0) > before) return { ok: false, reason: 'confirm-send', site, element: named };
       return result;
     } finally {
       if (permit !== undefined && this.#held === held) network?.rescope(networkScope(held.scope, 'agent'));
@@ -645,6 +648,8 @@ export class AgentBrowser {
     const held = this.#held;
     this.#held = null;
     if (held === null) return;
+    // The approvals «Invia» were for this browser only.
+    this.#usedPermits.clear();
     // The screens first: they show nothing of a browser that is going.
     this.#released(held);
     await held.session.close().catch(() => undefined);
@@ -666,6 +671,11 @@ export class AgentBrowser {
       console.warn('browser: a callback of the agent browser failed');
     }
   }
+}
+
+/** The name of the element of a card «Invia / No» (D-281), as stored and as compared: one line, at most 120 characters. */
+export function sendElement(label: string): string {
+  return label.replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
 /**

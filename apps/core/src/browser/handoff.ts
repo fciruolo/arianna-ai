@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { Sql } from '../db/client.ts';
 import { appendEvent } from '../events.ts';
 import { writeBrowserLine, writeControlLine } from '../orchestrator/browser-tool.ts';
@@ -33,6 +35,8 @@ export function browserChatTitle(site: string): string {
 export interface HandoffBrowser {
   accessOf(conversationId: string): string | null;
   handOver(from: string, to: string): Promise<string | null>;
+  /** Closes the browser of a conversation (AgentBrowser.release). */
+  release(conversationId: string): Promise<void>;
 }
 
 export interface HandoffEnv {
@@ -43,29 +47,32 @@ export interface HandoffEnv {
 }
 
 /**
- * Opens the Private chat of the access of `from` and passes the browser to
- * it. Its id, or null when `from` holds no browser with an access any more
- * (closed meanwhile): then no chat is opened.
+ * Passes the browser of the access of `from` to a new Private chat, then
+ * writes the chat, its line, the line of the work conversation and the
+ * events in one transaction. The id of the chat, or null when `from` holds no
+ * browser with an access any more (closed meanwhile): then nothing is
+ * written. When the chat cannot be written the browser is closed: it never
+ * stays with a conversation that does not exist.
  */
 export async function openBrowserChat(env: HandoffEnv, from: string): Promise<string | null> {
-  const site = env.browser.accessOf(from);
+  if (env.browser.accessOf(from) === null) return null;
+  const to = randomUUID();
+  const site = await env.browser.handOver(from, to);
   if (site === null) return null;
-  const [row] = await env.sql<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, effective_label, title, browser_of)
-    VALUES ('private', 'L2'::privacy_label, 'L2'::privacy_label, ${browserChatTitle(site)}, ${from})
-    RETURNING id::text`;
-  if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
-  const to = row.id;
-  await appendEvent(env.sql, { kind: 'conversation.created', label: 'L0', payload: { conversationId: to, mode: 'private', browser: true } });
-  const moved = await env.browser.handOver(from, to);
-  if (moved === null) {
-    // Closed between the two: the chat says so, the work conversation keeps the line of D-276.
-    await writeBrowserLine(env.sql, to, 'Il browser si è chiuso prima di passare qui: l’accesso è perso. Se serve, rifallo da una conversazione di lavoro.');
-    return null;
+  try {
+    await env.sql.begin(async (tx) => {
+      await tx`
+        INSERT INTO conversations (id, mode, clearance, effective_label, title, browser_of)
+        VALUES (${to}, 'private', 'L2'::privacy_label, 'L2'::privacy_label, ${browserChatTitle(site)}, ${from})`;
+      await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: to, mode: 'private', browser: true } });
+      await writeBrowserLine(tx, to, browserChatLine(site), 'L2');
+      await writeBrowserLine(tx, from, HANDOFF_LINE);
+      await appendEvent(tx, { kind: 'browser.handoff', label: 'L0', payload: { from, to } });
+    });
+  } catch (error) {
+    await env.browser.release(to).catch(() => undefined);
+    throw error;
   }
-  await writeBrowserLine(env.sql, to, browserChatLine(moved), 'L2');
-  await writeBrowserLine(env.sql, from, HANDOFF_LINE);
-  await appendEvent(env.sql, { kind: 'browser.handoff', label: 'L0', payload: { from, to } });
   return to;
 }
 
@@ -84,7 +91,12 @@ export async function afterControl(
   const kind = await env.kind(conversationId);
   const access = kind === 'work' ? env.browser.accessOf(conversationId) : null;
   if (change.state === 'returned' && change.reason !== 'browser-closed' && access !== null) {
-    if ((await openBrowserChat(env, conversationId)) !== null) return;
+    try {
+      if ((await openBrowserChat(env, conversationId)) !== null) return;
+    } catch {
+      // The chat could not be written (the work conversation erased meanwhile, the database): its browser is closed.
+      console.warn('browser: the private chat of an access could not be opened');
+    }
   }
   // Read again: the browser may have closed while the chat was opened.
   await writeControlLine(env.sql, conversationId, change, kind === 'work' ? env.browser.accessOf(conversationId) : null);

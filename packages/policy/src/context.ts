@@ -136,9 +136,12 @@ export function createContext(clearance: Label, effective: Label = 'L0', options
   return context;
 }
 
+/** A closed list: a new source keeps the site only once it is added here. */
+const BROWSER_CHAT_SOURCES: readonly string[] = ['user', 'browser:read', 'browser:typed', 'browser:form', 'browser:session', 'web:page', 'web:resource'];
+
 /** The sources a context of the Private chat of an access reads L2 from and keeps its site (D-281): the site itself and the user. */
 export function isBrowserChatSource(source: unknown): boolean {
-  return typeof source === 'string' && (source === 'user' || source.startsWith('user:') || source.startsWith('browser:'));
+  return typeof source === 'string' && BROWSER_CHAT_SOURCES.includes(source);
 }
 
 /** True when the context was made by the policy and has read finance data: nothing of it goes to the cloud. */

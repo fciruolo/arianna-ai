@@ -119,6 +119,8 @@ test('browser chat: a read of L2 from another source drops the mark; the site an
   const note = recordRead(fresh, 'L2', 'kb:private-note');
   assert.equal(note.context.browserSite, undefined);
   assert.equal(ruleOf([piece('https://www.biblioteca-finta.it/prestiti')], note.context, PAGE), 'contaminated');
+  // A closed list: another source of the user (its profile) does not keep it.
+  assert.equal(recordRead(fresh, 'L2', 'user:profile').context.browserSite, undefined);
   // Without a source an L2 read drops it too: it fails closed.
   assert.equal(recordRead(fresh, 'L2').context.browserSite, undefined);
   // Finance data marks the context and drops the site.

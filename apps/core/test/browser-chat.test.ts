@@ -85,13 +85,14 @@ function harness(): Harness {
   return h;
 }
 
-const scope = (conversationId: string, context: Context = PUBLIC, consent: PageConsent = { from: 'public' }, sendPermit?: string): BrowserScope => ({
+type Permit = { id: string; element: string };
+const scope = (conversationId: string, context: Context = PUBLIC, consent: PageConsent = { from: 'public' }, sendPermit?: Permit): BrowserScope => ({
   conversationId,
   context,
   consent,
   ...(sendPermit === undefined ? {} : { sendPermit }),
 });
-const chat = (sendPermit?: string): BrowserScope => scope('chat', CHAT, { from: 'sites', sites: [SITE] }, sendPermit);
+const chat = (sendPermit?: Permit): BrowserScope => scope('chat', CHAT, { from: 'sites', sites: [SITE] }, sendPermit);
 
 /** A browser of the work conversation `work` with an access to SITE, given back by the user. */
 async function accessed(): Promise<Harness> {
@@ -189,12 +190,18 @@ test('a send to the site asks the user; the click after «Invia» sends once', a
   h.clickSends = true;
   assert.deepEqual(await h.browser.act(chat(), { kind: 'click', ref: 1 }), { ok: false, reason: 'confirm-send', site: SITE, element: 'Rinnova' });
   assert.equal(h.sent, 0);
-  // Approved: the next click may send, and the network goes back to holding after it.
-  assert.equal((await h.browser.act(chat('approval-1'), { kind: 'click', ref: 1 })).ok, true);
+  // Approved for «Rinnova»: a click on another element does not send with it.
+  const permit = { id: 'approval-1', element: 'Rinnova' };
+  h.page.elements = [{ ref: 1, kind: 'button', label: 'Elimina' }, { ref: 2, kind: 'button', label: 'Rinnova' }];
+  await h.browser.act(chat(permit), { kind: 'read' });
+  assert.deepEqual(await h.browser.act(chat(permit), { kind: 'click', ref: 1 }), { ok: false, reason: 'confirm-send', site: SITE, element: 'Elimina' });
+  assert.equal(h.sent, 0);
+  // The approved element: it sends, and the network goes back to holding after it.
+  assert.equal((await h.browser.act(chat(permit), { kind: 'click', ref: 2 })).ok, true);
   assert.equal(h.sent, 1);
   assert.notEqual(h.scopes.at(-1)?.send, true);
   // The same approval does not send twice.
-  assert.equal((await h.browser.act(chat('approval-1'), { kind: 'click', ref: 1 })).ok, false);
+  assert.equal((await h.browser.act(chat(permit), { kind: 'click', ref: 2 })).ok, false);
   assert.equal(h.sent, 1);
   // A click that sends nothing needs no approval.
   h.clickSends = false;
@@ -228,7 +235,7 @@ test('afterControl: given back in the chat of an access, no new chat is opened',
     return Promise.resolve([]);
   }) as unknown as Sql;
   await afterControl(
-    { sql, browser: { accessOf: () => SITE, handOver: () => { calls.push('handOver'); return Promise.resolve(SITE); } }, kind: () => Promise.resolve('browser') },
+    { sql, browser: { accessOf: () => SITE, handOver: () => { calls.push('handOver'); return Promise.resolve(SITE); }, release: () => Promise.resolve() }, kind: () => Promise.resolve('browser') },
     'chat',
     { state: 'returned', reason: 'user' },
   );
