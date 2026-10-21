@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.153.0] - 2026-10-21
+
 ### Aggiunto
 
 - Impostazioni → Modelli ha la scheda «Server dei modelli (oMLX)»: versione installata (letta con `--version` dal comando dell'endpoint di oMLX), ultima release stabile di `jundot/omlx` su GitHub con le sue novità raggruppate dal modello locale e il link alla release, la pre-release più recente solo come informazione; controllo da solo una volta al giorno e con «Controlla ora» (esce solo il nome del progetto), pallino su Impostazioni e su Modelli quando c'è una versione stabile più nuova; nessun aggiornamento automatico: prima Claude rilegge il codice della release, poi installi tu il DMG a core fermo (D-265).
