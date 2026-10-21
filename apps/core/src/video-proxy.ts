@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
-import { connect, isIP, type AddressInfo, type Socket } from 'node:net';
+import { connect, isIP, type AddressInfo, type LookupFunction, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 
 import { checkedLookup, isPrivateName, systemResolve, type Resolver } from './public-net.ts';
@@ -21,7 +21,7 @@ import { checkedLookup, isPrivateName, systemResolve, type Resolver } from './pu
  */
 
 /** Hosts reached by name, exactly. */
-export const VIDEO_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com', 'i.ytimg.com'] as const;
+export const VIDEO_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com'] as const;
 /** Hosts reached as subdomains: the servers of the media of YouTube. */
 export const VIDEO_HOST_SUFFIXES = ['.googlevideo.com'] as const;
 export const VIDEO_PROXY_MAX_BYTES = 400 * 1024 * 1024;
@@ -87,6 +87,10 @@ export async function startVideoProxy(options: VideoProxyOptions = {}): Promise<
   const expected = Buffer.from(`Basic ${Buffer.from(`arianna:${token}`).toString('base64')}`);
   const port = options.unsafeTest?.port ?? PORT;
   const lookup = checkedLookup(options.resolve ?? systemResolve, options.unsafeTest?.addresses ?? []);
+  // The checked lookup as a socket takes it: every address of the name checked before connecting.
+  const socketLookup: LookupFunction = (hostname, lookupOptions, callback) => {
+    lookup(hostname, { all: lookupOptions.all === true }, callback);
+  };
   const sockets = new Set<Duplex>();
   let bytes = 0;
   let refused = 0;
@@ -134,7 +138,7 @@ export async function startVideoProxy(options: VideoProxyOptions = {}): Promise<
       refuse(client, '403 Forbidden');
       return;
     }
-    const upstream = connect({ host: target.host, port, lookup: lookup as never });
+    const upstream = connect({ host: target.host, port, lookup: socketLookup });
     track(upstream);
     upstream.once('connect', () => {
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n');

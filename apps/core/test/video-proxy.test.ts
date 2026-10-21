@@ -64,10 +64,10 @@ function roundTrip(socket: Socket, text: string): Promise<string> {
 }
 
 test('the hosts of the list: YouTube and its media servers by name, nothing else (D-273)', () => {
-  for (const host of ['www.youtube.com', 'youtube.com', 'm.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com', 'i.ytimg.com', 'rr3---sn-hpa7zns7.googlevideo.com', 'WWW.YOUTUBE.COM']) {
+  for (const host of ['www.youtube.com', 'youtube.com', 'm.youtube.com', 'consent.youtube.com', 'youtubei.googleapis.com', 'music.youtube.com', 'rr3---sn-hpa7zns7.googlevideo.com', 'WWW.YOUTUBE.COM']) {
     assert.equal(videoHostAllowed(host), true, host);
   }
-  for (const host of ['googlevideo.com', '.googlevideo.com', 'evil.com', 'youtube.com.evil.com', 'www.google.com', 'accounts.google.com', '142.250.0.1', 'www.youtube.com.', 'localhost', 'a..googlevideo.com', 'x_y.googlevideo.com']) {
+  for (const host of ['googlevideo.com', '.googlevideo.com', 'evil.com', 'youtube.com.evil.com', 'www.google.com', 'accounts.google.com', 'i.ytimg.com', '142.250.0.1', 'www.youtube.com.', 'localhost', 'a..googlevideo.com', 'x_y.googlevideo.com']) {
     assert.equal(videoHostAllowed(host), false, host);
   }
   assert.deepEqual(connectTarget('www.youtube.com:443'), { host: 'www.youtube.com', port: 443 });

@@ -12,10 +12,10 @@ import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { completeJob, createJobQueue, enqueueJob, failJob, type Job } from './jobs.ts';
 import { machineBusy } from './model-evals.ts';
-import { checkNotePath, headerFields, noteLabel, NoteError, readNoteFile, replaceNote, sha256 } from './notes.ts';
+import { checkNotePath, headerFields, MAX_NOTE_BYTES, noteLabel, NoteError, readNoteFile, replaceNote, sha256 } from './notes.ts';
 import type { Kb } from './orchestrator/kb.ts';
 import { captureOf, ORGANIZE_MAX_ATTEMPTS, ORGANIZE_MODEL, organizeRetryDelayMs } from './organize.ts';
-import { composeVideoNote, relatedUsable, summarizeVideo, type SummaryFailure, type VideoFacts } from './video-note.ts';
+import { composeVideoNote, MAX_VIDEO_NOTE_BYTES, relatedUsable, summarizeVideo, type SummaryFailure, type VideoFacts } from './video-note.ts';
 import { startVideoProxy, type VideoProxy, type VideoProxyOptions } from './video-proxy.ts';
 import { chooseTrack, MAX_VTT_BYTES, parseVtt, readSpoken, toSegments, type Line, type Segment, type TranscriptSource } from './video-transcript.ts';
 import { videoUrl, youtubeVideoId } from './video-url.ts';
@@ -53,8 +53,6 @@ export const VIDEO_STEP_TIMEOUT_MS = 20 * 60_000;
 export const VIDEO_TRANSCRIBE_TIMEOUT_MS = 40 * 60_000;
 /** Bytes of the answer of one step of apps/voice read at most (2 hours of sentences are about 200 KB). */
 const MAX_ANSWER_BYTES = 8 * 1024 * 1024;
-/** Deno at least this version: what the `deno` extra of yt-dlp 2026.8.19 asks. */
-export const DENO_MIN_VERSION = '2.6.6';
 
 /** Why a video was not summarized: a closed list, safe for an event or the chat. */
 export const VIDEO_FAILURES = [
@@ -84,6 +82,7 @@ export const VIDEO_FAILURES = [
   'bad-response',
   'changed',
   'interrupted',
+  'note-too-large',
   'error',
 ] as const;
 export type VideoFailure = (typeof VIDEO_FAILURES)[number];
@@ -120,6 +119,7 @@ export const VIDEO_FAILURE_TEXT: Record<VideoFailure, string> = {
   'bad-response': 'la risposta del modello locale non è leggibile',
   changed: 'il pensiero è cambiato mentre lo riassumevo',
   interrupted: 'lavoro interrotto',
+  'note-too-large': 'il testo del pensiero è troppo lungo per aggiungergli il riassunto del video',
   error: 'errore interno',
 };
 
@@ -433,9 +433,11 @@ export async function fetchTranscript(env: VideoEnv, path: string, id: string, l
       const subs = await runner.fetch('subs', { ...base, lang: track.lang, auto: track.auto }, signal);
       if (aborted(signal)) return { reason: 'interrupted' };
       if (proxy.stopped !== undefined) return { reason: proxy.stopped };
+      // Only subtitles that are not there send the job to the audio: any other failure ends it with its reason.
+      if (!subs.ok && subs.error !== 'no-subtitles') return { reason: closed(stepFailure(subs, 'download-failed')) };
       const file = subs.ok ? jobFile(folder, subs.file, MAX_VTT_BYTES) : undefined;
       if (file !== undefined) {
-        lines = parseVtt(readFileSync(file, 'utf8'));
+        lines = parseVtt(readFileSync(file, 'utf8'), track.auto);
         source = track.auto ? 'automatic' : 'subtitles';
         lang = track.lang.replace(/-orig$/, '');
       }
@@ -453,7 +455,7 @@ export async function fetchTranscript(env: VideoEnv, path: string, id: string, l
       if (aborted(signal)) return { reason: 'interrupted' };
       if (!audio.ok) return { reason: closed(stepFailure(audio, 'download-failed')) };
       const file = jobFile(folder, audio.file, VIDEO_MAX_AUDIO_BYTES);
-      if (file === undefined || typeof audio.file !== 'string') return { reason: 'too-large' };
+      if (file === undefined || typeof audio.file !== 'string') return { reason: 'download-failed' };
       // The network is over before the audio is heard.
       await proxy.stop();
       env.onStage?.('transcribing');
@@ -497,7 +499,10 @@ export function isVideoNote(raw: string): boolean {
 
 /**
  * Summarizes the video of one note of kb/inbox. `kept` is the transcript an
- * earlier attempt of the same job fetched: the video leaves once per job.
+ * earlier attempt of the same job fetched: once fetched, the video does not
+ * leave again for that job. A job that gives way to a call while it fetches
+ * (metadata, subtitles, audio, transcription) starts again from the gateway:
+ * a second `link-video` row and a second download.
  */
 export async function summarizeVideoNote(
   env: VideoEnv,
@@ -562,6 +567,9 @@ export async function summarizeVideoNote(
       if (error instanceof NoteError) return { ok: false, reason: 'changed' };
       throw error;
     }
+    // The note of a video stays under 150 KB (a note over MAX_NOTE_BYTES is no longer listed nor read):
+    // the transcript is cut first; a capture too long by itself leaves the note as it was.
+    if (Buffer.byteLength(content, 'utf8') > Math.min(MAX_VIDEO_NOTE_BYTES, MAX_NOTE_BYTES)) return { ok: false, reason: 'note-too-large' };
     try {
       replaceNote(env.home, path, content, sha256(raw));
       return { ok: true, source: transcript.facts.source, minutes: Math.round(transcript.facts.duration / 60) };
@@ -661,7 +669,7 @@ export function createVideoWorker(options: VideoWorkerOptions): VideoWorker {
   const onError = options.onError ?? (() => undefined);
   const controller = new AbortController();
   let loop: Promise<void> | undefined;
-  // What a job fetched, kept for its next attempts: the video leaves once per job.
+  // What a job fetched, kept for its next attempts (a model not answering, a call during the summary): not fetched again.
   const transcripts = new Map<string, Transcript>();
   // The stage of the job at work, by path.
   const stages = new Map<string, VideoStage>();

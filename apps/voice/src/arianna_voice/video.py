@@ -91,6 +91,11 @@ def ytdlp_argv(step: str, url: str, proxy: str, folder: Path, deno: str | None, 
         "--no-write-info-json",
         "--no-write-comments",
         "--no-write-thumbnail",
+        # No second program behind the proxy: never ffmpeg as a downloader or for fixes.
+        "--downloader",
+        "native",
+        "--fixup",
+        "never",
         "--paths",
         str(folder),
     ]

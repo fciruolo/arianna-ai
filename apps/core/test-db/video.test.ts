@@ -48,7 +48,7 @@ interface Calls {
 
 interface Script {
   meta?: StepAnswer;
-  subs?: 'none' | 'file';
+  subs?: 'none' | 'file' | StepAnswer;
   audio?: StepAnswer | 'file';
   transcribe?: StepAnswer;
 }
@@ -62,6 +62,7 @@ function fakeRunner(calls: Calls, script: Script = {}): VideoRunner {
       }
       if (step === 'subs') {
         if (script.subs === 'none') return Promise.resolve({ ok: false, error: 'no-subtitles' });
+        if (script.subs !== undefined && script.subs !== 'file') return Promise.resolve(script.subs);
         writeFileSync(join(env.folder, 'subs.it.vtt'), VTT);
         return Promise.resolve({ ok: true, file: 'subs.it.vtt' });
       }
@@ -189,6 +190,32 @@ test('refused before any download: a live, a video over 2 hours, a failure of yt
     assert.deepEqual(calls.fetch.map((call) => call.step), ['meta']);
     assert.deepEqual(readdirSync(video), []);
   }
+});
+
+test('a failure of the subtitles other than «none» ends the job with its reason: no audio', async () => {
+  const { home, path, video } = setup();
+  const calls: Calls = { fetch: [], transcribe: [] };
+  const outcome = await summarizeVideoNote(env(home, fakeRunner(calls, { subs: { ok: false, error: 'bot-check' } }), [], { deno: () => '/fake/deno' }), path, '7', new AbortController().signal);
+  assert.deepEqual(outcome, { ok: false, reason: 'bot-check' });
+  assert.deepEqual(calls.fetch.map((call) => call.step), ['meta', 'subs']);
+  assert.deepEqual(readdirSync(video), []);
+});
+
+test('a note above Privato is never sent; a thought too long for the summary is left as it was', async () => {
+  const rules = parseLabelRules('[[folder]]\npath = "kb/inbox"\nlabel = "L3"\n');
+  const { home, path } = setup();
+  const calls: Calls = { fetch: [], transcribe: [] };
+  const before = (await logRows()).length;
+  assert.deepEqual(await summarizeVideoNote({ ...env(home, fakeRunner(calls), []), rules }, path, '8', new AbortController().signal), { ok: false, reason: 'above-clearance' });
+  assert.equal((await logRows()).length, before);
+  assert.deepEqual(calls.fetch, []);
+
+  const long = setup(`https://youtu.be/${ID}`);
+  const file = join(long.home, long.path);
+  writeFileSync(file, `${readFileSync(file, 'utf8')}${'parola '.repeat(27_000)}\n`);
+  const raw = readFileSync(file, 'utf8');
+  assert.deepEqual(await summarizeVideoNote(env(long.home, fakeRunner(calls), []), long.path, '9', new AbortController().signal), { ok: false, reason: 'note-too-large' });
+  assert.equal(readFileSync(file, 'utf8'), raw);
 });
 
 test('a note that is no video is never sent; nothing in gateway_log', async () => {

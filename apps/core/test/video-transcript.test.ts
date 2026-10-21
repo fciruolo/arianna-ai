@@ -67,6 +67,12 @@ test('automatic subtitles: each line once, the rolling repetitions dropped', () 
   ]);
 });
 
+test('subtitles by hand keep a line said twice; automatic ones drop it', () => {
+  const twice = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSì.\n\n00:00:03.000 --> 00:00:04.000\nSì.\n';
+  assert.deepEqual(parseVtt(twice, false).map((line) => line.start), [1, 3]);
+  assert.deepEqual(parseVtt(twice, true).map((line) => line.start), [1]);
+});
+
 test('text of a cue: an open tag ends the line, control and format characters become spaces', () => {
   assert.equal(cueText('a<b>c</b>d'), 'acd');
   assert.equal(cueText('testo <senza chiusura'), 'testo');

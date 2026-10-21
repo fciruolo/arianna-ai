@@ -401,7 +401,8 @@ test('video (D-273): ffmpeg, Deno at least 2.6.6 and a yt-dlp younger than 90 da
   assert.deepEqual(good.map((check) => [check.id, check.ok]), [['video.ffmpeg', true], ['video.deno', true], ['video.yt-dlp', true]]);
   assert.equal(good[2]?.detail, 'yt-dlp 2026.8.19, released 63 days ago');
   const missing = await videoChecks(home, at, tools(null, false));
-  assert.deepEqual(missing.map((check) => [check.id, check.ok]), [['video.ffmpeg', false], ['video.deno', false], ['video.yt-dlp', true]]);
+  // Both optional: missing is said, not a failure; a Deno too old is.
+  assert.deepEqual(missing.map((check) => [check.id, check.ok]), [['video.ffmpeg', true], ['video.deno', true], ['video.yt-dlp', true]]);
   assert.match(missing[1]?.detail ?? '', /brew install deno/);
   const old = await videoChecks(home, at, tools('2.5.9'));
   assert.equal(old[1]?.ok, false);

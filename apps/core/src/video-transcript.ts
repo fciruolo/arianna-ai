@@ -67,9 +67,9 @@ export function cueText(line: string): string {
 /**
  * The lines of a WebVTT file in order, with the start of their cue. The
  * automatic subtitles of YouTube repeat each line in the next cue (rolling
- * captions): a line equal to one of the last two kept is dropped.
+ * captions): for them a line equal to one of the last two kept is dropped.
  */
-export function parseVtt(text: string): Line[] {
+export function parseVtt(text: string, automatic = true): Line[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const out: Line[] = [];
   const recent: string[] = [];
@@ -87,7 +87,8 @@ export function parseVtt(text: string): Line[] {
       // Only a really empty line ends a cue: YouTube starts some with a line of one space.
       if (body === '') break;
       const clean = cueText(body);
-      if (clean === '' || recent.includes(clean)) continue;
+      // Subtitles by hand repeat a line only when it is said again («Sì.» «Sì.»): kept.
+      if (clean === '' || (automatic && recent.includes(clean))) continue;
       out.push({ start, text: clean });
       recent.push(clean);
       if (recent.length > 2) recent.shift();

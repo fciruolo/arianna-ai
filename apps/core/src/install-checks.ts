@@ -456,14 +456,16 @@ export async function videoChecks(home: string, now: Date, run: Runner = runComm
   try {
     checks.push({ id: 'video.ffmpeg', ok: true, detail: firstLine(await run('ffmpeg', ['-hide_banner', '-version'])).slice(0, 80) });
   } catch {
-    checks.push({ id: 'video.ffmpeg', ok: false, detail: 'ffmpeg is missing: brew install ffmpeg (audio of the videos without subtitles, D-273)' });
+    // Optional (D-275): without it the videos are summarized from their subtitles only.
+    checks.push({ id: 'video.ffmpeg', ok: true, detail: 'ffmpeg is missing: videos from their subtitles only; brew install ffmpeg for the audio (D-275)' });
   }
   try {
     const version = /deno (\d+\.\d+\.\d+)/.exec(await run('deno', ['--version']))?.[1];
     const ok = version !== undefined && versionAtLeast(version, DENO_MIN);
     checks.push({ id: 'video.deno', ok, detail: ok ? `deno ${version}` : `deno ${version ?? '?'} is older than ${DENO_MIN.join('.')}: brew upgrade deno` });
   } catch {
-    checks.push({ id: 'video.deno', ok: false, detail: 'Deno is missing: brew install deno (audio of the videos without subtitles, D-273)' });
+    // Optional (D-274): without it the videos are summarized from their subtitles only.
+    checks.push({ id: 'video.deno', ok: true, detail: 'Deno is missing: videos from their subtitles only; brew install deno for the audio (D-274)' });
   }
   let lock = '';
   try {
