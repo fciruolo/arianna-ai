@@ -27,7 +27,6 @@
 | ~~Incognito: verifica dal vivo del profilo di Claude Code~~ | **Deciso (utente, 2026-10-17):** si fa insieme in una sessione apposta (l'utente autorizza la lettura del solo elenco dei file del profilo); promemoria in «Prima dei dati veri» di `HANDOFF.md` | |
 | ~~Modelli: schede cloud da rileggere~~ | **Deciso (utente, 2026-10-14):** togliere i prezzi API dalle schede (l'utente usa gli abbonamenti); restano frasi e contesto. Lavoro piccolo in coda in `HANDOFF.md` | |
 | ~~Modelli da Hugging Face: scelte di D-139~~ | **Deciso (utente, 2026-10-14):** le regole di D-139 vanno bene così; D-139 accettata | |
-| Browser: Arianna dopo l'accesso fatto da te | Oggi, dopo un accesso fatto da te nel browser, Arianna si ferma e continui tu dallo schermo (D-276); la tua scelta «poi lavora Arianna» chiede una conversazione Privata, che la modalità fissata delle conversazioni non permette senza una decisione | Prova del passo 5 del browser |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -65,11 +64,3 @@ Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzion
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
-
-### oq-browser-arianna-dopo-l-accesso-fatto-da-te
-
-- Contesto: hai scelto che dopo un accesso fatto da te (per esempio alla tua banca) Arianna continui a lavorare nel browser, in una conversazione che diventa Privata e resta sul Mac. Ma il browser vive solo nelle conversazioni di lavoro, e il database oggi non lascia cambiare la modalità di una conversazione (lavoro o privata, con progetto e modello cloud solo nel lavoro). Quindi oggi Arianna dopo l'accesso si ferma, dice che le pagine sono Private e continui tu dallo schermo.
-- Opzione consigliata: Nuova conversazione Privata — dopo l'accesso il core apre una conversazione Privata che prende il browser; quella di lavoro resta com'è e perde il browser. Arianna lavora sul sito col solo modello locale, finché nella conversazione entra solo ciò che viene dal sito e da te. Circa 10-14 ore
-- Opzione: Converti la stessa conversazione — la conversazione di lavoro diventa Privata per sempre: perde progetto e modello cloud, niente più deleghe a Claude o Codex. Tocca i vincoli del database e le deleghe. Circa 14-18 ore
-- Opzione: Resta così — Arianna si ferma dopo l'accesso, continui tu dallo schermo con «Prendi il controllo» o chiudi il browser. Nessun lavoro in più
-- Esempio: scrivi «controlla l'ultimo movimento su banca-finta.it»; Arianna apre la pagina, trova l'accesso, tu entri con «Prendi il controllo» e restituisci. Con la prima opzione compare una conversazione Privata «banca-finta.it» dove Arianna legge il movimento col modello locale; con la terza ti dice che le pagine sono Private e lo guardi tu.

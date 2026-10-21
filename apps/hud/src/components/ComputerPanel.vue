@@ -198,7 +198,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <header class="flex items-start gap-2 border-b border-line px-5 py-4">
       <div class="min-w-0 flex-1">
         <h2 id="computer-title" class="flex items-center gap-2 text-[16px] font-semibold"><Icon name="computer" :size="16" />{{ taskId === undefined ? 'Computer' : 'Computer del Coder' }}</h2>
-        <p v-if="tab === 'browser'" class="mt-1 text-xs text-muted">Il browser di Arianna in questa conversazione, in diretta. Puoi solo guardare.</p>
+        <p v-if="tab === 'browser'" class="mt-1 text-xs text-muted">Il browser di Arianna in questa conversazione, in diretta.</p>
         <p v-else class="mt-1 text-xs text-muted">
           <template v-if="taskId === undefined">Nessun lavoro del Coder in questa conversazione.</template>
           <template v-else-if="working">Al lavoro adesso. Puoi solo guardare: da qui non si scrive nulla al Coder.</template>
