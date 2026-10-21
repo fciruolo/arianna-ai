@@ -4,6 +4,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.157.0] - 2026-10-21
+
+### Aggiunto
+
+- Pagina «Seguiti» nella colonna di sinistra (gruppo Sistema) e comando `/seguiti`: in un posto solo progetti e account seguiti con la casella «Segui», le release di oMLX, le novità di Open Design e l'elenco dei cataloghi di skill e di agenti con la versione in uso e in attesa e il rimando a dove si gestiscono; in Sviluppo di Arianna, Modelli e Skill e stili al loro posto c'è «Ora in Seguiti» (D-272).
+- «Seguiti» mostra progetti, account, oMLX e Open Design come schede grandi in una griglia (nome, descrizione, ultima release, ultimo controllo, numero di novità e le prime tre; un clic apre il dettaglio) e ha una casella di ricerca che filtra sulla pagina schede e novità (release, funzioni, commit, repository nuovi) con la parola evidenziata; un progetto seguito dai repository nuovi di un account tiene la descrizione di GitHub (D-272).
+
 ## [0.156.0] - 2026-10-21
 
 ### Aggiunto

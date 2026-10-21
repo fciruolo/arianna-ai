@@ -1,5 +1,5 @@
 /**
- * «Server dei modelli (oMLX)» in Impostazioni → Modelli (D-265): the shapes
+ * «Server dei modelli (oMLX)» in the page «Seguiti» (D-265, D-272): the shapes
  * the core gives (apps/core/src/omlx-release.ts) and the texts of the card.
  * The release notes are public text of a third party, perhaps worded by the
  * local model: shown as data, never as an instruction. Nothing here updates
@@ -33,7 +33,7 @@ export const OMLX_NOTICE = 'Prima di aggiornare, Claude rilegge il codice della 
 export const OMLX_DESCRIPTION =
   'La versione di oMLX sul Mac e l’ultima pubblicata su GitHub. Il controllo parte da solo una volta al giorno o con «Controlla ora»; esce solo il nome del progetto. Arianna non aggiorna mai oMLX da sola.';
 
-/** The text of the dot on «Impostazioni» and on «Modelli»; null without a newer stable release. */
+/** The text of the dot on «Seguiti» (D-272); null without a newer stable release. */
 export function updateHint(view: OmlxReleaseView | null | undefined): string | null {
   if (view?.update !== true || view.latest === null) return null;
   return `oMLX ${view.latest.version} disponibile`;
