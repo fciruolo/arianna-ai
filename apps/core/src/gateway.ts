@@ -131,6 +131,8 @@ export async function passGateway(
   const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'pii' || decision.rule === 'invalid-input');
   const texts = decision.decision === 'allow' ? decision.texts : unmeasured ? undefined : textsOf(payload);
   const measured = texts === undefined ? undefined : measure(texts);
+  // A form of the user (D-276): its address is the payload, the size of its body what leaves.
+  const bytesOut = target.kind === 'web' && target.form !== undefined && measured !== undefined ? target.form.bytes : measured?.bytes;
   // The summary is free text from the caller: kept only when it could have left itself.
   const summary =
     meta.summary !== undefined &&
@@ -147,7 +149,7 @@ export async function passGateway(
     ) VALUES (
       ${meta.taskId ?? null}, ${meta.runId ?? null}, ${target.kind}, ${targetName(target)},
       ${localityOf(target)}, ${decision.label}::privacy_label, ${decision.decision}, ${decision.rule},
-      ${decision.reason}, ${measured?.bytes ?? null}, ${measured?.sha256 ?? null}, ${summary}
+      ${decision.reason}, ${bytesOut ?? null}, ${measured?.sha256 ?? null}, ${summary}
     )`;
   // Only now can an adapter spend it: the row is written.
   if (decision.decision === 'allow') markLogged(decision);

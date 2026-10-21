@@ -11,7 +11,9 @@ HEIGHT=800
 if [ "${1:-}" = chromium ]; then
   # Run by socat at the first connection to /tmp/cdp.sock: CDP comes in on
   # fd 3 and goes out on fd 4 (--remote-debugging-pipe, messages ended by
-  # NUL), so Chromium opens no debugging port.
+  # NUL), so Chromium opens no debugging port. Kiosk (D-264, passo 5): no
+  # address bar, tabs nor menus for the keyboard of the user; the managed
+  # policies of the image close the rest.
   export DISPLAY=:1
   # "MAP * ~NOTFOUND": no name resolves inside the browser (the container has
   # no network; from step 2 every request is fulfilled by the core).
@@ -30,7 +32,7 @@ if [ "${1:-}" = chromium ]; then
     --password-store=basic \
     --window-position=0,0 \
     "--window-size=${WIDTH},${HEIGHT}" \
-    --start-fullscreen \
+    --kiosk \
     about:blank
 fi
 

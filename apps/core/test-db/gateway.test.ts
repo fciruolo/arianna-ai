@@ -254,3 +254,32 @@ test('rows of the link target (D-154): L2 only with the rule of links, never a s
   await assert.rejects(row('link-click', 'cloud', 'cloud', null), /gateway_log_link_fields/);
   await assert.rejects(row('link-click', 'cloud', 'link', null, 'L3'), /gateway_log_no_secret_out/);
 });
+
+test('0086: rows of the site of an access and of a form of the user (D-276): L2 only with their rules, never a summary', async () => {
+  const { sql } = db();
+  const row = (target: string, rule: string, summary: string | null, label = 'L2', decision = 'allow', locality = 'cloud') => sql`
+    INSERT INTO gateway_log (target_kind, target, locality, label, decision, rule, reason, summary)
+    VALUES ('web', ${target}, ${locality}, ${label}::privacy_label, ${decision}, ${rule}, 'test', ${summary})`;
+  await row('web-session', 'session', null);
+  await row('web-form', 'form', null);
+  await row('web-session', 'session-invalid', null, 'L2', 'block');
+  await assert.rejects(row('web-page-user', 'session', null), /gateway_log_cloud_up_to_l1|gateway_log_session_fields/);
+  await assert.rejects(row('web-resource-user', 'resource', null), /gateway_log_cloud_up_to_l1/);
+  await assert.rejects(row('web-session', 'form', 'text', 'L1'), /gateway_log_session_fields/);
+  await assert.rejects(row('web-form', 'form', null, 'L2', 'allow', 'local'), /gateway_log_session_fields/);
+  await assert.rejects(row('web-session', 'session', null, 'L3'), /gateway_log_no_secret_out/);
+});
+
+test('a form of the user (D-276): one row with the size of its body and the hash of its address, never its content', async () => {
+  const address = 'https://login.banca-finta.it/session';
+  const decision = await passGateway(db().sql, [{ value: address, label: 'L2', source: 'browser:form' }], createContext('L1', 'L1'), { kind: 'web', form: { site: 'banca-finta.it', bytes: 321 } });
+  assert.equal(decision.decision, 'allow');
+  const row = await lastLog();
+  assert.equal(row.target, 'web-form');
+  assert.equal(row.rule, 'form');
+  assert.equal(row.label, 'L2');
+  assert.equal(row.bytes_out, 321);
+  assert.equal(row.payload_sha256, sha256Hex(JSON.stringify([address])));
+  assert.equal(row.summary, null);
+  assert.equal(JSON.stringify(row).includes(address), false);
+});

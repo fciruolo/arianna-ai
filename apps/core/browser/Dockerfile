@@ -41,6 +41,10 @@ RUN printf '%s\n' \
  && useradd --uid 10001 --gid 10001 --home-dir /srv/browser --no-create-home --shell /usr/sbin/nologin browser
 
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/arianna-browser
+# Managed policies of Chromium (D-264, passo 5): with the keyboard of the user
+# no developer tools, incognito, printing, passwords, autofill, downloads nor
+# file dialogs; chrome://, file:// and view-source: blocked.
+COPY --chmod=0444 policies.json /etc/chromium/policies/managed/arianna.json
 
 USER 10001:10001
 ENV HOME=/srv/browser

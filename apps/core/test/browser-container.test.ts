@@ -147,3 +147,22 @@ test('leftovers: only well-formed browser containers are removed', async () => {
   await removeContainers(docker, ['arianna-postgres']);
   assert.equal(calls.length, 2);
 });
+
+test('the image: Chromium in kiosk, with the managed policies of «Prendi il controllo» (D-264, passo 5)', () => {
+  const dir = join(import.meta.dirname, '..', 'browser');
+  const script = readFileSync(join(dir, 'entrypoint.sh'), 'utf8');
+  assert.match(script, /^\s+--kiosk \\$/m);
+  assert.doesNotMatch(script, /--start-fullscreen/);
+  const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
+  assert.match(dockerfile, /^COPY --chmod=0444 policies\.json \/etc\/chromium\/policies\/managed\/arianna\.json$/m);
+  const policies = JSON.parse(readFileSync(join(dir, 'policies.json'), 'utf8')) as Record<string, unknown>;
+  assert.equal(policies.DeveloperToolsAvailability, 2);
+  assert.equal(policies.IncognitoModeAvailability, 1);
+  assert.equal(policies.PrintingEnabled, false);
+  assert.equal(policies.PasswordManagerEnabled, false);
+  assert.equal(policies.AutofillAddressEnabled, false);
+  assert.equal(policies.AutofillCreditCardEnabled, false);
+  assert.equal(policies.AllowFileSelectionDialogs, false);
+  assert.equal(policies.DownloadRestrictions, 3);
+  for (const blocked of ['chrome://*', 'file://*', 'view-source:*', 'devtools://*']) assert.ok((policies.URLBlocklist as string[]).includes(blocked), blocked);
+});
