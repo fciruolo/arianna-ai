@@ -1920,7 +1920,7 @@ onBeforeUnmount(() => {
             >
               <Icon name="wiki" :size="14" />Proponi per la Wiki
             </button>
-            <button type="button" class="btn px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
+            <button v-if="!isWikiNode(selectedNode)" type="button" class="btn px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
               <Icon name="delete" :size="14" />Elimina
             </button>
           </div>

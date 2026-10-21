@@ -1,7 +1,7 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { LabelRules } from '@arianna/policy';
+import { KB_WIKI, type LabelRules } from '@arianna/policy';
 
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -45,6 +45,8 @@ function kbBase(home: string): string {
  * inbox (the organizer writes them, D-086) become plain words.
  */
 export function deleteKbPage(home: string, rules: LabelRules, id: string): { where: DeletedWhere; path: string } {
+  // The Wiki (D-280) is not deleted here: its indexes and versions go with its pages, through its own page.
+  if (typeof id === 'string' && id.toLowerCase().startsWith(`${KB_WIKI.slice(KB_DIR.length + 1)}/`)) throw new NoteError('invalid', 'a page of the wiki is not deleted here');
   // The same checks as the reading: a valid page path, a real folder all the way, a label up to L2.
   readKnowledgePage(home, rules, id);
   const base = kbBase(home);

@@ -95,6 +95,15 @@ describe('a note of kb/', () => {
     for (const path of ['docs/SPEC.md', 'fuori.md', 'kb/inbox/.nascosta.md', 'kb/segreti/chiave.md']) assert.ok(existsSync(join(dir, path)), path);
   });
 
+  it('refuses a page of the Wiki, which goes with its indexes and versions through its own page (D-280)', () => {
+    const dir = home();
+    write(dir, { 'kb/wiki/laravel/swoole.md': '---\nlabel: L2\nkind: wiki\ntitle: "Swoole finto"\n---\n\n## In breve\n\nFinto.\n' });
+    for (const id of ['wiki/laravel/swoole.md', 'Wiki/laravel/swoole.md']) {
+      assert.throws(() => deleteKbPage(dir, RULES, id), (error) => error instanceof NoteError && error.code === 'invalid', id);
+    }
+    assert.ok(existsSync(join(dir, 'kb', 'wiki', 'laravel', 'swoole.md')));
+  });
+
   it('refuses a kb/ that is a link', () => {
     const real = home();
     const dir = join(scratch, randomUUID());

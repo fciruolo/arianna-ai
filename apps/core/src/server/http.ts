@@ -174,7 +174,7 @@ import {
   restoreWikiVersion,
   WIKI_STATUS,
   WikiError,
-  wikiTree,
+  visibleWikiTree,
 } from '../wiki.ts';
 import { approveMany, ARCHIVE_STATUS, archiveFolders, ArchiveError, discardArchive, listProposals, MAX_APPROVE_ITEMS, recordArchived, recordDiscarded, type ApproveInput } from '../archivist.ts';
 import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
@@ -1061,12 +1061,12 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
   };
   return [
     route('GET', '/api/wiki', () => {
-      const { home } = need();
-      return Promise.resolve({ body: { ...wikiTree(home), proposals: countWikiProposals(home) } });
+      const { home, rules } = need();
+      return Promise.resolve({ body: { ...visibleWikiTree(home, rules), proposals: countWikiProposals(home) } });
     }),
     route('GET', '/api/wiki/page', (_request, url) => {
-      const { home } = need();
-      return Promise.resolve({ body: { page: readWikiView(home, url.searchParams.get('path') ?? '') } });
+      const { home, rules } = need();
+      return Promise.resolve({ body: { page: readWikiView(home, rules, url.searchParams.get('path') ?? '') } });
     }),
     route('GET', '/api/wiki/proposals', () => {
       const { home, rules } = need();

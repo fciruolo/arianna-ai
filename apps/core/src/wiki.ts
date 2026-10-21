@@ -21,7 +21,7 @@ import {
   type WikiInput,
   type WikiPageInput,
 } from '@arianna/executors';
-import { createContext, isAtMost, KB_WIKI, maxLabel, type Label, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, KB_WIKI, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { relinkPages } from './archivist.ts';
 import { localTimestamp } from './capture.ts';
@@ -291,7 +291,11 @@ const NONE = 'Nessuna.';
 
 /** A text of the model as one inert line: no wikilink, no heading, image, link, address or HTML (D-086). */
 export function inertLine(text: string): string {
-  return bodyText(filterLinks(text.replace(/\s+/g, ' ').trim(), []).text).replace(/\n/g, ' ');
+  return bodyText(filterLinks(text.replace(/\s+/g, ' ').trim(), []).text)
+    .replace(/\n/g, ' ')
+    // Brackets left alone by the link filter (`x ]] y`) and a leading code fence: never a link or a block.
+    .replace(/\[\[|\]\]/g, '')
+    .replace(/^(\s*)`/, '$1\\`');
 }
 
 /** Whether a line of a page is inert as the code writes it: nothing a renderer or Obsidian would load or follow. */
@@ -456,6 +460,20 @@ export function wikiTree(home: string): WikiTree {
   };
   walk([]);
   return tree;
+}
+
+/** Whether a folder or a page of the wiki (`laravel`, `laravel/octane/swoole.md`) is up to L2 by the folder rules: a higher rule on a sub-folder stays (D-280). */
+function wikiPathUpToL2(rules: LabelRules, path: string): boolean {
+  return isAtMost(labelForPath(rules, `${KB_WIKI}/${path}`), 'L2');
+}
+
+/** The tree without the folders and pages a rule raises above L2: what the chat shows and the local model reads. */
+export function visibleWikiTree(home: string, rules: LabelRules): WikiTree {
+  const tree = wikiTree(home);
+  return {
+    folders: tree.folders.filter((folder) => wikiPathUpToL2(rules, folder)),
+    pages: tree.pages.filter((page) => wikiPathUpToL2(rules, `${page.path}.md`)),
+  };
 }
 
 function pageSegments(path: string): string[] {
@@ -788,14 +806,14 @@ function wordsOf(text: string): string[] {
 }
 
 /** The pages of the wiki closest to a text: words of the text in the path and title (three times) and in the body. */
-export function wikiCandidates(home: string, text: string, limit = MAX_WIKI_CANDIDATES): { path: string; raw: string; data: WikiPageData }[] {
+export function wikiCandidates(home: string, rules: LabelRules, text: string, limit = MAX_WIKI_CANDIDATES): { path: string; raw: string; data: WikiPageData }[] {
   const words = wordsOf(text).slice(0, 200);
   const scored: { path: string; raw: string; data: WikiPageData; score: number }[] = [];
-  for (const page of wikiTree(home).pages) {
+  for (const page of visibleWikiTree(home, rules).pages) {
     const file = readWikiPageFile(home, page.path);
     const data = file === undefined ? undefined : parseWikiPage(file.raw);
-    // A page edited by hand is never proposed for an update: its text would be lost.
-    if (file === undefined || data === undefined) continue;
+    // A page edited by hand is never proposed for an update: its text would be lost; nor one whose header says more than L2.
+    if (file === undefined || data === undefined || headerFields(file.raw).get('label') !== 'L2' || parsePage(file.raw).header.labels.length !== 1) continue;
     const head = folded(`${page.path} ${data.title}`);
     const body = folded(`${data.summary} ${data.points.map((point) => point.text).join(' ')}`);
     const score = words.reduce((sum, word) => sum + (head.includes(word) ? 3 : 0) + (body.includes(word) ? 1 : 0), 0);
@@ -873,8 +891,8 @@ export async function proposeFromNote(env: WikiEnv, noteId: string, signal: Abor
     .search(query, createContext('L2'), MAX_SOURCES + 6, 'kb')
     .hits.filter((hit) => hit.path.startsWith(`${KB_DIR}/`) && isWikiSource(hit.path.slice(KB_DIR.length + 1)) && hit.path.slice(KB_DIR.length + 1) !== note.id && isAtMost(hit.label, 'L2'))
     .slice(0, MAX_SOURCES);
-  const tree = wikiTree(env.home);
-  const candidates = wikiCandidates(env.home, `${note.title} ${note.body}`);
+  const tree = visibleWikiTree(env.home, env.rules);
+  const candidates = wikiCandidates(env.home, env.rules, `${note.title} ${note.body}`);
   const ids = new Map<string, string>([['nota-1', note.id]]);
   hits.forEach((hit, index) => ids.set(`nota-${String(index + 2)}`, hit.path.slice(KB_DIR.length + 1)));
   const input: WikiInput = {
@@ -923,6 +941,8 @@ export async function proposeFromNote(env: WikiEnv, noteId: string, signal: Abor
   if (kind === 'create' && (data.title === '' || data.summary === '')) return { ok: false, reason: 'bad-response' };
   const now = env.now?.() ?? new Date();
   const content = composeWikiPage(data, now);
+  // Checked as the approval will check it: never a proposal that could not be approved.
+  if (!isSafeWikiPage(content)) return { ok: false, reason: 'bad-response' };
   const proposal: StoredProposal = {
     v: 1,
     id: newId(),
@@ -956,7 +976,8 @@ export type IndexOutcome = { ok: true } | { ok: false; reason: WikiFailure | 'no
 /** Asks the local model the «In breve» of a folder from the titles and summaries in it, and writes it in its index. */
 export async function writeIndexSummary(env: WikiEnv, folder: string, signal: AbortSignal): Promise<IndexOutcome> {
   if (folder !== '' && !isWikiFolderPath(folder)) return { ok: false, reason: 'not-found' };
-  const tree = wikiTree(env.home);
+  if (folder !== '' && !wikiPathUpToL2(env.rules, folder)) return { ok: false, reason: 'not-found' };
+  const tree = visibleWikiTree(env.home, env.rules);
   if (!holdsPages(tree, folder)) return { ok: false, reason: 'not-found' };
   const depth = folder === '' ? 0 : folder.split('/').length;
   const inside = (path: string): boolean => (folder === '' ? !path.includes('/') : path.startsWith(`${folder}/`) && path.split('/').length === depth + 1);
@@ -980,9 +1001,12 @@ export async function writeIndexSummary(env: WikiEnv, folder: string, signal: Ab
   const answer = await writeWikiIndexSummary(env.model(), decision.texts, { signal, timeoutMs: env.timeoutMs ?? WIKI_TIMEOUT_MS });
   if (!answer.ok) return { ok: false, reason: answer.reason };
   if (signal.aborted) return { ok: false, reason: 'interrupted' };
+  const summary = inertLine(answer.summary);
+  // As the next rebuild reads it: a summary it would drop is not written.
+  if (indexSummary(composeIndex(folder, summary, tree)) !== summary) return { ok: false, reason: 'bad-response' };
   // Changed meanwhile (an approval, a move): the next job writes it.
   if (readWikiFile(env.home, indexSegments(folder))?.raw !== before) return { ok: false, reason: 'changed' };
-  rebuildIndexes(env.home, new Map([[folder, inertLine(answer.summary)]]));
+  rebuildIndexes(env.home, new Map([[folder, summary]]));
   return { ok: true };
 }
 
@@ -1006,8 +1030,7 @@ export async function enqueueWikiIndex(sql: Queryable, folder: string): Promise<
 /** What a job of the wiki did, as its event carries it: codes and counts only, never a path or a title. */
 export type WikiJobOutcome =
   | { ok: true; event: { kind: 'wiki.proposed'; payload: { action: string; points: number; citations: number } } | { kind: 'wiki.index_written'; payload: Record<string, never> } }
-  | { ok: false; reason: string }
-  | { ok: false; reason: 'skip' };
+  | { ok: false; reason: WikiProposeFailure | Extract<IndexOutcome, { ok: false }>['reason'] | 'skip' };
 
 /** Runs a job of the wiki (payload `{ wiki: 'note', page, force? }` or `{ wiki: 'index', folder }`). */
 export async function runWikiJob(env: WikiEnv, payload: Record<string, unknown>, signal: AbortSignal): Promise<WikiJobOutcome> {
@@ -1277,11 +1300,13 @@ export interface WikiPageView {
 }
 
 /** A page or an index of the wiki to read: `laravel/octane/swoole`, `laravel/_indice`, `_indice`. */
-export function readWikiView(home: string, path: string): WikiPageView {
+export function readWikiView(home: string, rules: LabelRules, path: string): WikiPageView {
   if (typeof path !== 'string' || path.length > 200) throw new WikiError('not-found', 'page not found');
   const index = path === '_indice' || path.endsWith('/_indice');
   const folder = index ? path.slice(0, Math.max(0, path.length - '_indice'.length - 1)) : '';
   if (index ? folder !== '' && !isWikiFolderPath(folder) : !isWikiPagePath(path)) throw new WikiError('not-found', 'page not found');
+  // A rule above L2 on a sub-folder: not read here, as Conoscenza does not.
+  if (!wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
   const file = index ? readWikiFile(home, indexSegments(folder)) : readWikiFile(home, pageSegments(path));
   if (file === undefined) throw new WikiError('not-found', 'page not found');
   const fields = headerFields(file.raw);

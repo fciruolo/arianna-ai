@@ -30,6 +30,7 @@ import {
   proposeMove,
   readWikiView,
   rebuildIndexes,
+  visibleWikiTree,
   restoreWikiVersion,
   WikiError,
   wikiCandidates,
@@ -118,6 +119,9 @@ describe('the page', () => {
   it('makes a text of the model inert: no wikilink, image, address or HTML', () => {
     assert.equal(inertLine('Vedi [[private/nota]] e ![x](https://esempio.invalid/a.png) <b>ok</b>'), 'Vedi private/nota e !\\[x]\\(https[://]esempio.invalid/a.png) &lt;b&gt;ok&lt;/b&gt;');
     assert.equal(inertLine('# Titolo\nseconda riga'), '\\# Titolo seconda riga');
+    // Brackets the link filter leaves alone and a leading code fence: never a link nor a block.
+    assert.equal(inertLine('x ]] y [[ z'), 'x  y  z');
+    assert.ok(inertLine('```js codice').startsWith('\\`'));
   });
 
   it('an update rewrites or adds points and never removes one', () => {
@@ -194,7 +198,7 @@ describe('proposals', () => {
     assert.match(readFileSync(file, 'utf8'), /Un punto nuovo\./);
     const versions = pageVersions(root, 'laravel/octane/swoole');
     assert.equal(versions.length, 1);
-    const current = readWikiView(root, 'laravel/octane/swoole');
+    const current = readWikiView(root, RULES, 'laravel/octane/swoole');
     assert.throws(() => { restoreWikiVersion(root, 'laravel/octane/swoole', versions[0]?.id ?? '', sha256('altro'), NOW); }, (error) => error instanceof WikiError && error.code === 'changed');
     restoreWikiVersion(root, 'laravel/octane/swoole', versions[0]?.id ?? '', current.version, NOW);
     assert.equal(readFileSync(file, 'utf8'), before);
@@ -268,14 +272,14 @@ describe('the tree, the indexes and the rest of kb/', () => {
     rmSync(join(root, 'kb/wiki/laravel/octane/swoole.md'));
     rebuildIndexes(root);
     assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
-    assert.equal(readWikiView(root, '_indice').kind, 'index');
+    assert.equal(readWikiView(root, RULES, '_indice').kind, 'index');
   });
 
   it('finds the pages close to a text', () => {
     const root = home();
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
-    assert.deepEqual(wikiCandidates(root, 'Swoole e la memoria').map((page) => page.path), ['laravel/octane/swoole']);
-    assert.deepEqual(wikiCandidates(root, 'ricetta della torta'), []);
+    assert.deepEqual(wikiCandidates(root, RULES, 'Swoole e la memoria').map((page) => page.path), ['laravel/octane/swoole']);
+    assert.deepEqual(wikiCandidates(root, RULES, 'ricetta della torta'), []);
   });
 
   it('is L2 even under a lower rule, in the graph without proposals nor old versions, and never a folder of the Archivist', () => {
@@ -289,6 +293,24 @@ describe('the tree, the indexes and the rest of kb/', () => {
     assert.ok(!archiveFolders(root, RULES).some((folder) => folder.path.startsWith('kb/wiki')));
   });
 
+  it('a rule above L2 on a sub-folder of kb/wiki stays: neither shown, read nor given to the model', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/segreti"\nlabel = "L3"'].join('\n\n'));
+    mkdirSync(join(root, 'kb/wiki/segreti'), { recursive: true });
+    writeFileSync(join(root, 'kb/wiki/segreti/swoole.md'), composeWikiPage({ ...PAGE, title: 'Swoole segreto' }, NOW));
+    assert.ok(wikiTree(root).pages.some((page) => page.path === 'segreti/swoole'));
+    const visible = visibleWikiTree(root, strict);
+    assert.ok(!visible.folders.includes('segreti'));
+    assert.ok(!visible.pages.some((page) => page.path.startsWith('segreti/')));
+    assert.ok(visible.pages.some((page) => page.path === 'laravel/octane/swoole'));
+    assert.throws(() => readWikiView(root, strict, 'segreti/swoole'), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => readWikiView(root, strict, 'segreti/_indice'), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.deepEqual(wikiCandidates(root, strict, 'Swoole e la memoria').map((page) => page.path), ['laravel/octane/swoole']);
+    // Without the rule the same page is there.
+    assert.equal(readWikiView(root, RULES, 'segreti/swoole').title, 'Swoole segreto');
+  });
+
   it('never goes through a link: a kb/wiki that is a link is neither read nor written', () => {
     const root = home();
     const elsewhere = join(scratch, `fuori-${String(homes)}`);
@@ -296,7 +318,7 @@ describe('the tree, the indexes and the rest of kb/', () => {
     writeFileSync(join(elsewhere, 'laravel/x.md'), composeWikiPage(PAGE, NOW));
     symlinkSync(elsewhere, join(root, 'kb/wiki'));
     assert.deepEqual(wikiTree(root), { folders: [], pages: [] });
-    assert.throws(() => readWikiView(root, 'laravel/x'), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => readWikiView(root, RULES, 'laravel/x'), (error) => error instanceof WikiError && error.code === 'not-found');
     assert.deepEqual(allProposals(root), []);
     assert.throws(() => proposeMove(root, 'laravel', 'php', NOW), (error) => error instanceof WikiError);
   });
