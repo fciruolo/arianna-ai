@@ -1385,6 +1385,11 @@ export async function moveWikiNow(kind: 'page' | 'folder', from: string, to: str
   return (await call<{ path: string }>('POST', '/api/wiki/move-now', kind === 'page' ? { kind, from, to, base } : { kind, from, to })).path;
 }
 
+/** «Elimina cartella»: only an empty folder of the Wiki. */
+export async function deleteWikiFolder(path: string): Promise<void> {
+  await call('POST', '/api/wiki/folder/delete', { path });
+}
+
 /** «Elimina» a page of the Wiki as it was shown (`base`): its old versions and the proposals waiting on it go too. */
 export async function deleteWikiPage(path: string, base: string): Promise<void> {
   await call('POST', '/api/wiki/delete', { path, base });

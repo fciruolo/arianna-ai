@@ -24,6 +24,7 @@ import {
   checkUserPage,
   createUserWikiPage,
   createWikiFolder,
+  deleteWikiFolder,
   deleteWikiPage,
   discardWikiProposal,
   editWikiPage,
@@ -236,7 +237,7 @@ describe('proposals', () => {
 });
 
 describe('deleting a page', () => {
-  it('«Elimina» takes the page as shown, its versions and the proposals on it; the indexes follow and an empty folder goes', () => {
+  it('«Elimina» takes the page as shown, its versions and the proposals on it; the indexes follow and an empty folder stays until «Elimina cartella»', () => {
     const root = home();
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
     approveWikiProposal(root, RULES, proposal(root, {}).id, { path: 'laravel/swoole' }, NOW);
@@ -258,10 +259,17 @@ describe('deleting a page', () => {
     const left = allProposals(root).map((item) => item.id);
     assert.ok(!left.includes(waiting.id));
     assert.ok(left.includes(other.id));
-    // The folder left without pages goes with its index; the parent index no longer names it.
+    // The folder left without pages stays, with an index that says it is empty; no index names the page.
+    assert.ok(existsSync(join(root, 'kb/wiki/laravel/octane')));
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/octane/_indice.md'), 'utf8'), /Cartella ancora vuota\./);
+    assert.doesNotMatch(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /octane\/swoole/);
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /laravel\/swoole/);
+    // «Elimina cartella»: only an empty one.
+    assert.throws(() => { deleteWikiFolder(root, RULES, 'laravel'); }, (error) => error instanceof WikiError && error.code === 'invalid' && error.message === 'not-empty');
+    deleteWikiFolder(root, RULES, 'laravel/octane');
     assert.equal(existsSync(join(root, 'kb/wiki/laravel/octane')), false);
     assert.doesNotMatch(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /octane/);
-    assert.match(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8'), /laravel\/swoole/);
+    assert.throws(() => { deleteWikiFolder(root, RULES, 'laravel/octane'); }, (error) => error instanceof WikiError && error.code === 'not-found');
   });
 
   it('refuses an index, a missing page, an invalid path and a page a rule raises above L2, touching nothing', () => {
@@ -379,7 +387,7 @@ describe('the user writes the wiki', () => {
     assert.ok(moved.relinked >= 1);
     assert.equal(readWikiView(root, RULES, 'php/swoole').title, 'Swoole');
     assert.equal(pageVersions(root, 'php/swoole').length, 1);
-    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), true);  // No folder goes by itself.
     assert.match(readFileSync(join(root, 'kb/private/rimanda.md'), 'utf8'), /\[\[wiki\/php\/swoole\]\]/);
     assert.equal(listWikiProposals(root, RULES).find((item) => item.id === waiting.id)?.state, 'expired');
     createUserWikiPage(root, RULES, 'php/altra', 'Altra', undefined, NOW);
@@ -402,7 +410,7 @@ describe('the user writes the wiki', () => {
     assert.equal(moved.path, 'php');
     assert.equal(moved.pages, 1);
     assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
-    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), true);  // No folder goes by itself.
     assert.match(readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8'), /wiki\/php\/_indice/);
     // A folder holding a sub-folder a rule raises above L2 does not move.
     const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/php/segreti"\nlabel = "L3"'].join('\n\n'));
@@ -421,11 +429,20 @@ describe('the user writes the wiki', () => {
     assert.deepEqual(pageVersions(root, 'cucina/pane'), []);
   });
 
-  it('after the last page goes, no index names it: the root index goes too', () => {
+  it('after the last page goes no index names it; with the last folder the root index goes too', () => {
     const root = home();
     approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
     assert.ok(existsSync(join(root, 'kb/wiki/_indice.md')));
     deleteWikiPage(root, RULES, 'laravel/octane/swoole', readWikiView(root, RULES, 'laravel/octane/swoole').version);
+    // The folders stay: the root index names them, no page.
+    assert.doesNotMatch(readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8'), /swoole/);
+    assert.match(readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8'), /wiki\/laravel\/_indice/);
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/laravel/octane"\nlabel = "L3"'].join('\n\n'));
+    assert.throws(() => { deleteWikiFolder(root, strict, 'laravel/octane'); }, (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.ok(existsSync(join(root, 'kb/wiki/laravel/octane')));
+    deleteWikiFolder(root, RULES, 'laravel/octane');
+    deleteWikiFolder(root, RULES, 'laravel');
+    // An empty wiki: no index at all.
     assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
     assert.throws(() => readWikiView(root, RULES, '_indice'), (error) => error instanceof WikiError && error.code === 'not-found');
   });
@@ -442,7 +459,7 @@ describe('moving a folder', () => {
     const approved = approveWikiProposal(root, RULES, move.id, {}, NOW);
     assert.equal(approved.path, 'php/octane');
     assert.equal(existsSync(join(root, 'kb/wiki/php/octane/swoole.md')), true);
-    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), true);  // No folder goes by itself.
     assert.match(readFileSync(join(root, 'kb/private/link.md'), 'utf8'), /\[\[wiki\/php\/octane\/swoole\]\]/);
     assert.match(readFileSync(join(root, 'kb/wiki/php/composer.md'), 'utf8'), /\[\[wiki\/php\/octane\/swoole\]\]/);
     assert.match(readFileSync(join(root, 'kb/wiki/php/_indice.md'), 'utf8'), /octane\/_indice/);
@@ -463,7 +480,7 @@ describe('moving a folder', () => {
 });
 
 describe('the tree, the indexes and the rest of kb/', () => {
-  it('composes indexes with the «In breve» kept, and drops those of empty folders', () => {
+  it('composes indexes with the «In breve» kept; an empty folder keeps its index, which says so', () => {
     const tree = { folders: ['laravel'], pages: [{ path: 'laravel/swoole', title: 'Swoole | [x]', updatedAt: '' }] };
     const index = composeIndex('laravel', 'Note su Laravel.', tree);
     assert.match(index, /- \[\[wiki\/laravel\/swoole\|Swoole x\]\]/);
@@ -474,10 +491,12 @@ describe('the tree, the indexes and the rest of kb/', () => {
     rebuildIndexes(root, RULES, new Map([['laravel', 'Note finte su Laravel.']]));
     assert.equal(indexSummary(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8')), 'Note finte su Laravel.');
     rmSync(join(root, 'kb/wiki/laravel/octane/swoole.md'));
-    rebuildIndexes(root, RULES, new Map(), ['laravel/octane']);
-    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
-    // No page left anywhere: the root index goes as well.
-    assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
+    rebuildIndexes(root, RULES);
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), true);  // No folder goes by itself.
+    // The folders stay, and their indexes say they hold nothing; the «In breve» written stays.
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/octane/_indice.md'), 'utf8'), /Cartella ancora vuota\./);
+    assert.equal(indexSummary(readFileSync(join(root, 'kb/wiki/laravel/octane/_indice.md'), 'utf8')), '');
+    assert.equal(indexSummary(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8')), 'Note finte su Laravel.');
   });
 
   it('finds the pages close to a text', () => {

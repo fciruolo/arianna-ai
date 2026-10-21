@@ -299,8 +299,14 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.equal((await send('GET', '/api/wiki/page?path=php/swoole')).status, 404);
   const empty = await send('GET', '/api/wiki');
   assert.deepEqual(empty.body.pages, []);
-  assert.deepEqual(empty.body.folders, []);
+  // The folder stays, its index says it is empty; «Elimina cartella» removes it, then the wiki has no index.
+  assert.deepEqual(empty.body.folders, ['php']);
+  assert.equal((await send('GET', '/api/wiki/page?path=php/_indice')).status, 200);
+  assert.equal((await send('POST', '/api/wiki/folder/delete', { path: 'php', extra: 1 })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/folder/delete', { path: 'nessuna' })).status, 404);
+  assert.equal((await send('POST', '/api/wiki/folder/delete', { path: 'php' })).status, 200);
   assert.equal(existsSync(join(serverHome, 'kb/wiki/php')), false);
+  assert.deepEqual((await send('GET', '/api/wiki')).body.folders, []);
   assert.equal((await send('GET', '/api/wiki/page?path=_indice')).status, 404);
 
   // The user writes the wiki: a folder, a page, «Modifica», «Sposta o rinomina» of a page and a folder, at once.
@@ -325,12 +331,17 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'folder', from: 'forno', to: 'cucina/forno' })).status, 200);
   assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'folder', from: 'cucina', to: 'a/b/c' })).status, 400);
   assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'altro', from: 'cucina', to: 'dolci' })).status, 400);
+  // A folder that is not empty is not deleted.
+  const notEmpty = await send('POST', '/api/wiki/folder/delete', { path: 'cucina' });
+  assert.equal(notEmpty.status, 400);
+  assert.match(String(notEmpty.body.error), /not-empty/);
   const after = await send('GET', '/api/wiki');
   assert.deepEqual((after.body.pages as { path: string }[]).map((page) => page.path), ['cucina/forno/pane']);
   assert.equal(((await send('GET', '/api/wiki/page?path=cucina/forno/pane')).body.page as { title: string }).title, 'Pane di casa');
 
   const events = await sql<{ kind: string; payload: Record<string, unknown> }[]>`SELECT kind, payload FROM events WHERE kind LIKE 'wiki.%' ORDER BY id`;
   assert.ok(events.some((event) => event.kind === 'wiki.edited'));
+  assert.ok(events.some((event) => event.kind === 'wiki.folder_deleted'));
   assert.ok(events.some((event) => event.kind === 'wiki.created' && event.payload.kind === 'folder'));
   assert.ok(events.some((event) => event.kind === 'wiki.created' && event.payload.kind === 'page'));
   assert.ok(events.some((event) => event.kind === 'wiki.moved' && event.payload.kind === 'page' && event.payload.pages === 1));

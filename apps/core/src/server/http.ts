@@ -166,6 +166,7 @@ import {
   countWikiProposals,
   createUserWikiPage,
   createWikiFolder,
+  deleteWikiFolder,
   deleteWikiPage,
   editWikiPage,
   discardWikiProposal,
@@ -1165,6 +1166,16 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       } else throw new HttpError(400, 'kind must be page or folder');
       await recordWikiEvent(sql, 'wiki.moved', { kind: body.kind, pages: moved.pages, relinked: moved.relinked }).catch(onError);
       return { body: { path: moved.path } };
+    }),
+    // «Elimina cartella»: only an empty folder, after the confirmation in the chat.
+    route('POST', '/api/wiki/folder/delete', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      deleteWikiFolder(home, rules, body.path);
+      await recordWikiEvent(sql, 'wiki.folder_deleted', {}).catch(onError);
+      return { body: { deleted: true } };
     }),
     // «Elimina» a page, after the confirmation in the chat: with its old versions and the proposals waiting on it.
     route('POST', '/api/wiki/delete', async (request) => {

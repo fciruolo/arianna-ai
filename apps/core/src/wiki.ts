@@ -496,6 +496,7 @@ function folderTitle(folder: string): string {
 }
 
 const INDEX_PENDING = 'In attesa del riassunto del modello locale.';
+const INDEX_EMPTY = 'Cartella ancora vuota.';
 
 /** An alias of a wikilink: no character that would end or split it. */
 function alias(text: string): string {
@@ -515,7 +516,7 @@ export function composeIndex(folder: string, summary: string, tree: WikiTree): s
     '',
     SECTION_SUMMARY,
     '',
-    summary === '' ? INDEX_PENDING : summary,
+    summary === '' ? (subfolders.length === 0 && pages.length === 0 ? INDEX_EMPTY : INDEX_PENDING) : summary,
     '',
     '## Sotto-argomenti',
     '',
@@ -537,7 +538,7 @@ export function indexSummary(raw: string | undefined): string {
   const rest = body.slice(start + SECTION_SUMMARY.length + 2);
   const end = rest.indexOf('\n\n## ');
   const summary = (end < 0 ? rest : rest.slice(0, end)).trim();
-  return summary === INDEX_PENDING || !isInert(summary) ? '' : summary;
+  return summary === INDEX_PENDING || summary === INDEX_EMPTY || !isInert(summary) ? '' : summary;
 }
 
 function indexSegments(folder: string): string[] {
@@ -554,47 +555,22 @@ function holdsPages(tree: WikiTree, folder: string): boolean {
  * `summaries` given for a folder); a folder without pages loses its index and
  * goes when it is empty. Gives back the folders whose index is new.
  */
-export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map(), prune: readonly string[] = []): string[] {
-  let tree = wikiTree(home);
-  // The folders an operation emptied (`prune` and the folders above them), deepest first: one with no page
-  // below it and nothing in it but its index goes with the index. A folder the user made, empty, stays.
-  const emptied = new Set<string>();
-  for (const folder of prune) {
-    const segments = folder.split('/').filter((segment) => segment !== '');
-    for (let size = segments.length; size >= 1; size -= 1) emptied.add(segments.slice(0, size).join('/'));
-  }
-  for (const folder of [...emptied].sort((a, b) => b.split('/').length - a.split('/').length)) {
-    if (!isWikiFolderPath(folder) || holdsPages(tree, folder)) continue;
-    const segments = folder.split('/');
-    const dir = wikiFolder(home, segments, false);
-    if (dir === undefined) continue;
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    if (names.some((name) => name !== INDEX_NAME)) continue;
-    removeWikiFile(home, [...segments, INDEX_NAME]);
-    try {
-      rmdirSync(dir);
-    } catch {
-      // Not empty after all: left as it is.
-    }
-  }
+export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map()): string[] {
+  // No folder goes by itself (the user's choice, 2026-10-21): an empty one stays, with an index that says so,
+  // until the user removes it with «Elimina cartella».
   // Indexes list only what is up to L2: a folder or page a rule raises is neither named nor indexed.
-  tree = visibleWikiTree(home, rules);
+  const tree = visibleWikiTree(home, rules);
   const created: string[] = [];
   for (const folder of ['', ...tree.folders]) {
-    if (!holdsPages(tree, folder)) {
-      // No page left to list (the root after the last «Elimina»): an old index would only name what is gone.
-      if (headerFields(readWikiFile(home, indexSegments(folder))?.raw ?? '').get('kind') === 'wiki-index') removeWikiFile(home, indexSegments(folder));
-      continue;
-    }
     const segments = indexSegments(folder);
     const current = readWikiFile(home, segments);
+    if (folder === '' && tree.folders.length === 0 && tree.pages.length === 0) {
+      // An empty wiki: no index to name what is gone.
+      if (headerFields(current?.raw ?? '').get('kind') === 'wiki-index') removeWikiFile(home, segments);
+      continue;
+    }
     const summary = summaries.get(folder) ?? indexSummary(current?.raw);
-    if (current === undefined) created.push(folder);
+    if (current === undefined && holdsPages(tree, folder)) created.push(folder);
     try {
       putFile(home, segments, composeIndex(folder, summary, tree));
     } catch (error) {
@@ -1313,7 +1289,7 @@ function moveFolderNow(home: string, rules: LabelRules, from: string, to: string
     relinked += relinkPages(home, rules, fromId, toId, ids, 'L2').pages;
   }
   // The indexes of the moved folder still name the old paths: composed again from the tree.
-  rebuildIndexes(home, rules, new Map(), [parentFolder(from)]);
+  rebuildIndexes(home, rules);
   return { path: to, pages: moves.length, relinked };
 }
 
@@ -1364,7 +1340,7 @@ export function moveWikiPage(home: string, rules: LabelRules, from: string, to: 
   const toId = `${WIKI_ID}/${to}.md`;
   const ids = [...listPageIds(kb).filter((id) => id !== toId), fromId];
   const relinked = relinkPages(home, rules, fromId, toId, ids, 'L2').pages;
-  rebuildIndexes(home, rules, new Map(), [parentFolder(from)]);
+  rebuildIndexes(home, rules);
   return { path: to, pages: 1, relinked };
 }
 
@@ -1482,6 +1458,31 @@ export function createUserWikiPage(home: string, rules: LabelRules, path: string
   return { path, version: sha256(content) };
 }
 
+/**
+ * «Elimina cartella» (D-280), after the user's confirmation: only an empty
+ * folder (no page, no sub-folder, nothing but its index), never one a rule
+ * raises above L2; the indexes follow.
+ */
+export function deleteWikiFolder(home: string, rules: LabelRules, path: string): void {
+  if (!isWikiFolderPath(path) || !wikiPathUpToL2(rules, path)) throw new WikiError('not-found', 'folder not found');
+  const dir = wikiFolder(home, path.split('/'), false);
+  if (dir === undefined) throw new WikiError('not-found', 'folder not found');
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    throw new WikiError('unavailable', 'cannot delete the folder');
+  }
+  if (names.some((name) => name !== INDEX_NAME)) throw new WikiError('invalid', 'not-empty');
+  removeWikiFile(home, [...path.split('/'), INDEX_NAME]);
+  try {
+    rmdirSync(dir);
+  } catch {
+    throw new WikiError('unavailable', 'cannot delete the folder');
+  }
+  rebuildIndexes(home, rules);
+}
+
 /** Removes the old versions kept for `path` (and their folder when empty); gives how many went. */
 function clearHistory(home: string, path: string): number {
   const versions = pageVersions(home, path);
@@ -1520,7 +1521,7 @@ export function deleteWikiPage(home: string, rules: LabelRules, path: string, ba
   const versions = clearHistory(home, path);
   const waiting = allProposals(home).filter((proposal) => proposal.kind !== 'move' && proposal.path === path);
   for (const proposal of waiting) dropProposal(home, proposal.id);
-  rebuildIndexes(home, rules, new Map(), [parentFolder(path)]);
+  rebuildIndexes(home, rules);
   return { versions, proposals: waiting.length };
 }
 
@@ -1580,6 +1581,6 @@ export function readWikiView(home: string, rules: LabelRules, path: string): Wik
 // ---------------------------------------------------------------------------
 // Events: counts and codes only, never a path, a title or a folder
 
-export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed' | 'wiki.deleted' | 'wiki.edited' | 'wiki.created' | 'wiki.moved', payload: Record<string, string | number | boolean>): Promise<void> {
+export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed' | 'wiki.deleted' | 'wiki.edited' | 'wiki.created' | 'wiki.moved' | 'wiki.folder_deleted', payload: Record<string, string | number | boolean>): Promise<void> {
   await appendEvent(sql, { kind, label: 'L0', payload });
 }

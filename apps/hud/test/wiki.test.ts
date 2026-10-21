@@ -17,6 +17,7 @@ import {
   versionText,
   wikiErrorText,
   dropDestination,
+  isEmptyFolder,
   dropFolder,
   movedPath,
   wikilinkTarget,
@@ -138,4 +139,14 @@ test('dragging in the tree: where a page or folder lands, and when it cannot', (
   assert.equal(movedPath('laravel/octane/swoole', 'laravel/octane', 'php'), 'php/swoole');
   assert.equal(movedPath('laravel/swoole', 'laravel/swoole', 'php/swoole'), 'php/swoole');
   assert.equal(movedPath('laravelx/a', 'laravel', 'php'), 'laravelx/a');
+});
+
+test('an empty folder: no page and no sub-folder below it', () => {
+  const folders = ['cucina', 'laravel', 'laravel/octane'];
+  const pages = [{ path: 'laravel/octane/swoole' }];
+  assert.equal(isEmptyFolder('cucina', folders, pages), true);
+  assert.equal(isEmptyFolder('laravel', folders, pages), false);
+  assert.equal(isEmptyFolder('laravel/octane', folders, pages), false);
+  assert.equal(isEmptyFolder('', folders, pages), false);
+  assert.equal(isEmptyFolder('nessuna', folders, pages), false);
 });

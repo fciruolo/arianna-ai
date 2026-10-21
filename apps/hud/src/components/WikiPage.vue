@@ -6,6 +6,7 @@ import {
   approveWikiProposal,
   createWikiFolder,
   createWikiPage,
+  deleteWikiFolder,
   deleteWikiPage,
   discardWikiProposal,
   editWikiPage,
@@ -23,6 +24,7 @@ import {
   dropDestination,
   dropFolder,
   indexPath,
+  isEmptyFolder,
   KIND_TEXT,
   movedPath,
   pathProblem,
@@ -105,6 +107,12 @@ const createPath = ref('');
 const createTitle = ref('');
 const createBusy = ref(false);
 const createProblem = ref<string | null>(null);
+
+/** «Elimina cartella» of the empty folder shown, asked in a dialog. */
+const deletingFolder = ref(false);
+const folderDeleteBusy = ref(false);
+const folderDeleteProblem = ref<string | null>(null);
+const shownFolderEmpty = computed(() => listing.value !== null && shownFolder.value !== null && isEmptyFolder(shownFolder.value, listing.value.folders, listing.value.pages));
 
 /** Dragging a page or folder in the tree: where it is over, and what went wrong. */
 const dragging = ref<WikiDragged | null>(null);
@@ -344,6 +352,24 @@ async function movePage(): Promise<void> {
     pageMoveProblem.value = problemOf(failure);
   } finally {
     pageMoveBusy.value = false;
+  }
+}
+
+async function confirmFolderDelete(): Promise<void> {
+  const folder = shownFolder.value;
+  if (folder === null || folder === '') return;
+  folderDeleteBusy.value = true;
+  folderDeleteProblem.value = null;
+  try {
+    await deleteWikiFolder(folder);
+    deletingFolder.value = false;
+    await loadListing();
+    await show(indexPath(folder.split('/').slice(0, -1).join('/')));
+    notice.value = `Cartella wiki/${folder} eliminata.`;
+  } catch (failure) {
+    folderDeleteProblem.value = problemOf(failure);
+  } finally {
+    folderDeleteBusy.value = false;
   }
 }
 
@@ -628,6 +654,9 @@ onMounted(() => {
               <div class="flex flex-wrap gap-2">
                 <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="startCreate('page')"><Icon name="new" :size="13" />Nuova pagina</button>
                 <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="startCreate('folder')"><Icon name="new" :size="13" />Nuova cartella</button>
+                <button v-if="shownFolderEmpty" type="button" class="btn px-2.5 py-1 text-[13px] hover:text-danger" @click="deletingFolder = true; folderDeleteProblem = null">
+                  <Icon name="delete" :size="13" />Elimina cartella
+                </button>
               </div>
               <form v-if="creating !== null" class="mt-2 flex flex-col gap-2" @submit.prevent="create">
                 <input
@@ -746,6 +775,19 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="deletingFolder && shownFolder !== null && shownFolder !== ''"
+      title="Elimina la cartella"
+      confirm-text="Elimina"
+      danger
+      :busy="folderDeleteBusy"
+      :problem="folderDeleteProblem"
+      @confirm="confirmFolderDelete"
+      @cancel="deletingFolder = false"
+    >
+      <p>La cartella vuota wiki/{{ shownFolder }} va via. Le altre cartelle e le pagine restano come sono.</p>
+    </ConfirmDialog>
 
     <ConfirmDialog
       v-if="deleting && page !== null && page.kind === 'page'"

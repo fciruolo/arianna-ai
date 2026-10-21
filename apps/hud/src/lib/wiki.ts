@@ -175,6 +175,7 @@ function invalidText(detail: string): string | undefined {
   }
   if (detail === 'title') return 'Il titolo non va bene: non vuoto, al più 80 caratteri, senza [ ] | # < >.';
   if (detail === 'too-long') return 'La pagina è troppo lunga.';
+  if (detail === 'not-empty') return 'La cartella non è vuota: sposta o elimina prima le sue pagine e sotto-cartelle.';
   if (detail.includes('deeper')) return 'Le pagine andrebbero oltre tre livelli.';
   if (detail.includes('inside itself')) return 'Una cartella non può andare dentro se stessa.';
   return undefined;
@@ -229,6 +230,12 @@ export function dropFolder(row: WikiDragged): string {
 export function movedPath(path: string, from: string, to: string): string {
   if (path === from) return to;
   return path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
+}
+
+/** Whether a folder of the listing holds nothing: no page and no sub-folder (then «Elimina cartella» is offered). */
+export function isEmptyFolder(folder: string, folders: readonly string[], pages: readonly { path: string }[]): boolean {
+  const inside = (path: string): boolean => path.startsWith(`${folder}/`);
+  return folder !== '' && folders.includes(folder) && !folders.some(inside) && !pages.some((page) => inside(page.path));
 }
 
 /** A version time («2026-10-21T09:30:12») as the page shows it. */
