@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.159.1] - 2026-10-21
+
 ### Corretto
 
 - Un link di YouTube incollato in Pensieri non prende più il titolo di un altro video (D-273): il video non è scaricato, quindi il riordino non dà al modello le note vicine e, se c'è solo il link, titolo («Video YouTube <id>») e riassunto li scrive il codice, anche per un link incollato come pensiero; con parole tue il modello sa che del video non conosce nulla.
