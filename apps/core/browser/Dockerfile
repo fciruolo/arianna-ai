@@ -42,9 +42,14 @@ RUN printf '%s\n' \
 
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/arianna-browser
 # Managed policies of Chromium (D-264, passo 5): with the keyboard of the user
-# no developer tools, incognito, printing, passwords, autofill, downloads nor
-# file dialogs; chrome://, file:// and view-source: blocked.
-COPY --chmod=0444 policies.json /etc/chromium/policies/managed/arianna.json
+# no incognito, printing, passwords, autofill, downloads nor file dialogs;
+# chrome://, devtools://, file:// and view-source: blocked. Not
+# DeveloperToolsAvailability: with it Chromium refuses the new pages of the
+# CDP of the core (the filter of the screen drops F12 and Ctrl+Shift+I/J/C).
+# COPY --chmod would give the folders the mode of the file too (no x): set apart.
+COPY policies.json /etc/chromium/policies/managed/arianna.json
+RUN chmod 0755 /etc/chromium /etc/chromium/policies /etc/chromium/policies/managed \
+ && chmod 0444 /etc/chromium/policies/managed/arianna.json
 
 USER 10001:10001
 ENV HOME=/srv/browser

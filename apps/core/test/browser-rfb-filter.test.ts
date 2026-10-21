@@ -196,3 +196,14 @@ test('keys pressed and clicks are counted in control, never what they were', () 
   filter.push(Buffer.concat([key(0x61), pointer(1)]));
   assert.deepEqual(filter.counts, { keys: 2, clicks: 2 });
 });
+
+test('in control Ctrl+Shift+I, J and C are dropped (the developer tools); Ctrl+C and Shift+I pass', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  filter.push(Buffer.concat([key(0xffe3), key(0xffe1)]));
+  for (const letter of [0x49, 0x69, 0x4a, 0x63]) assert.deepEqual(filter.push(key(letter)).forward, [], letter.toString(16));
+  filter.push(key(0xffe1, false));
+  assert.deepEqual(Buffer.concat(filter.push(key(0x63)).forward), key(0x63));
+  filter.push(Buffer.concat([key(0xffe3, false), key(0xffe2)]));
+  assert.deepEqual(Buffer.concat(filter.push(key(0x49)).forward), key(0x49));
+});

@@ -28,7 +28,10 @@
  *   length would be wrong and the rest of the stream unreadable.
  * - Keys that reach the browser chrome are dropped (droppedKeysym: F1-F35,
  *   Super, Meta, Hyper), and every key while one of those modifiers is down:
- *   Cmd+V on a Mac becomes nothing, not a «v».
+ *   Cmd+V on a Mac becomes nothing, not a «v»; Ctrl+Shift+I, J and C (the
+ *   developer tools, which a policy cannot turn off without stopping the
+ *   CDP of the core: their pages are blocked by the policies of the image
+ *   too).
  * - Keys pressed and clicks are counted, never their values (the event
  *   `browser.control`).
  *
@@ -59,6 +62,11 @@ function chromeModifier(keysym: number): boolean {
 export function droppedKeysym(keysym: number): boolean {
   return (keysym >= 0xffbe && keysym <= 0xffe0) || chromeModifier(keysym);
 }
+
+const CONTROL_KEYS = [0xffe3, 0xffe4];
+const SHIFT_KEYS = [0xffe1, 0xffe2];
+/** I, J and C, either case: with Ctrl and Shift, the developer tools. */
+const DEVTOOLS_LETTERS = [0x49, 0x69, 0x4a, 0x6a, 0x43, 0x63];
 
 /** Keys pressed and clicks forwarded in control, never their values. */
 export interface InputCounts {
@@ -119,6 +127,8 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
   const counts: InputCounts = { keys: 0, clicks: 0 };
   /** Chrome modifiers down now (their keysyms): every key is dropped while one is. */
   const modifiers = new Set<number>();
+  /** Ctrl and Shift down now (forwarded, but read for Ctrl+Shift+I/J/C). */
+  const held = new Set<number>();
   /** The button mask of the last pointer message forwarded, to count a click once. */
   let buttons = 0;
 
@@ -132,6 +142,12 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
       return false;
     }
     if (droppedKeysym(keysym) || modifiers.size > 0) return false;
+    if (CONTROL_KEYS.includes(keysym) || SHIFT_KEYS.includes(keysym)) {
+      if (down) held.add(keysym);
+      else held.delete(keysym);
+    } else if (DEVTOOLS_LETTERS.includes(keysym) && CONTROL_KEYS.some((key) => held.has(key)) && SHIFT_KEYS.some((key) => held.has(key))) {
+      return false;
+    }
     if (down) counts.keys += 1;
     return true;
   };
@@ -215,6 +231,7 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
       mode = next;
       // Keys held when the control changed are forgotten.
       modifiers.clear();
+      held.clear();
       buttons = 0;
     },
     get counts() {

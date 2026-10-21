@@ -154,9 +154,13 @@ test('the image: Chromium in kiosk, with the managed policies of «Prendi il con
   assert.match(script, /^\s+--kiosk \\$/m);
   assert.doesNotMatch(script, /--start-fullscreen/);
   const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
-  assert.match(dockerfile, /^COPY --chmod=0444 policies\.json \/etc\/chromium\/policies\/managed\/arianna\.json$/m);
+  assert.match(dockerfile, /^COPY policies\.json \/etc\/chromium\/policies\/managed\/arianna\.json$/m);
+  assert.match(dockerfile, /chmod 0444 \/etc\/chromium\/policies\/managed\/arianna\.json/);
+  // Before USER: the folders and the file belong to root, readable by Chromium, never writable.
+  assert.ok(dockerfile.indexOf('policies.json') < dockerfile.indexOf('USER 10001'));
   const policies = JSON.parse(readFileSync(join(dir, 'policies.json'), 'utf8')) as Record<string, unknown>;
-  assert.equal(policies.DeveloperToolsAvailability, 2);
+  // Not DeveloperToolsAvailability: with it Chromium refuses the new pages of the CDP of the core (tried 2026-10-21).
+  assert.equal(policies.DeveloperToolsAvailability, undefined);
   assert.equal(policies.IncognitoModeAvailability, 1);
   assert.equal(policies.PrintingEnabled, false);
   assert.equal(policies.PasswordManagerEnabled, false);
