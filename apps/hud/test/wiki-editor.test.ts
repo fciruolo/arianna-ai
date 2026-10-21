@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { citationMarkdown, citationText, docToMarkdown, markdownToDoc, plainEntities, unknownTypes } from '../src/lib/wiki-editor.ts';
+import { Editor, type JSONContent } from '@tiptap/core';
+
+import { citationMarkdown, citationText, cursorInCell, docToMarkdown, flattenCells, markdownToDoc, plainEntities, unknownTypes, WikiCellLines, wikiExtensions } from '../src/lib/wiki-editor.ts';
 
 const PAGE = [
   '## In breve',
@@ -85,4 +87,51 @@ test('to-do lists and a citation with a label inside a table go and come back', 
   assert.match(back, /- \[ \] da fare/);
   assert.match(back, /- \[x\] fatto \[\[inbox\/nota\]\]/);
   assert.match(back, /\[\[inbox\/x\\?\|La X\]\]/);
+});
+
+const TABLE = '| Ingrediente | Quantità |\n| --- | --- |\n| Farina | 500 g |\n\nfine';
+
+/** The cell «500 g» of TABLE with a line break, or a second paragraph, and a citation after it. */
+function withBreak(kind: 'hardBreak' | 'paragraph'): JSONContent {
+  const doc = markdownToDoc(TABLE);
+  const cell = doc.content?.[0]?.content?.[1]?.content?.[1];
+  assert.ok(cell !== undefined);
+  const after: JSONContent[] = [{ type: 'text', text: 'Collegata a ' }, { type: 'wikiCitation', attrs: { target: 'wiki/laravel/octane', label: null } }];
+  cell.content =
+    kind === 'hardBreak'
+      ? [{ type: 'paragraph', content: [{ type: 'text', text: '500 g' }, { type: 'hardBreak' }, ...after] }]
+      : [{ type: 'paragraph', content: [{ type: 'text', text: '500 g' }] }, { type: 'paragraph', content: after }];
+  return doc;
+}
+
+test('a line break or a second paragraph in a table cell goes back to Markdown as a space, never as <br> (D-282)', () => {
+  for (const kind of ['hardBreak', 'paragraph'] as const) {
+    const back = docToMarkdown(withBreak(kind));
+    assert.ok(!back.includes('<br'), `${kind}: ${back}`);
+    assert.match(back, /\| Farina +\| 500 g Collegata a \[\[wiki\/laravel\/octane\]\] +\|/, kind);
+  }
+});
+
+test('flattening the cells leaves a line break outside a table as it is', () => {
+  const doc: JSONContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'uno' }, { type: 'hardBreak' }, { type: 'text', text: 'due' }] }] };
+  assert.deepEqual(flattenCells(doc), doc);
+  assert.match(docToMarkdown(doc), /uno {2}\ndue/);
+});
+
+test('Enter, Shift+Enter and Mod+Enter add no line inside a table cell, and work as usual outside it (D-282)', () => {
+  const editor = new Editor({ element: null, extensions: wikiExtensions(), content: markdownToDoc(TABLE) });
+  try {
+    const add = WikiCellLines.config.addKeyboardShortcuts;
+    assert.ok(add !== undefined);
+    const keys = (add as unknown as (this: { editor: Editor }) => Record<string, () => boolean>).call({ editor });
+    assert.deepEqual(Object.keys(keys).sort(), ['Enter', 'Mod-Enter', 'Shift-Enter']);
+    editor.commands.setTextSelection(5);
+    assert.equal(cursorInCell(editor), true);
+    for (const key of Object.values(keys)) assert.equal(key(), true);
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+    assert.equal(cursorInCell(editor), false);
+    for (const key of Object.values(keys)) assert.equal(key(), false);
+  } finally {
+    editor.destroy();
+  }
 });

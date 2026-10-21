@@ -12,6 +12,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Nella pagina «Wiki»: «Elimina» una pagina dopo una conferma, con le sue versioni e le proposte in attesa (gli indici si aggiornano, le cartelle restano); versioni precedenti con «Ripristina»; nel grafo di Conoscenza le pagine della Wiki hanno colore e forma propri e il filtro «Solo Wiki» (D-280).
 - Eval `evals/notes/wiki.jsonl` con 15 note inventate nel gruppo `notes` di `pnpm eval:models` (D-280).
 
+### Corretto
+
+- Editor della Wiki: Invio dentro una cella di tabella non va più a capo, e un a capo già presente in una cella si salva come spazio invece che come `<br>`, che il core rifiutava come HTML (D-282).
+
 ### Sicurezza
 
 - Le pagine scritte a mano nella Wiki accettano solo citazioni alle tue note e pagine fino a Privata, senza link, immagini, indirizzi né HTML (D-280).

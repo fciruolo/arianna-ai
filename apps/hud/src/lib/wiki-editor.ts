@@ -12,7 +12,7 @@ import { Paragraph } from '@tiptap/extension-paragraph';
 import { Strike } from '@tiptap/extension-strike';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { Text } from '@tiptap/extension-text';
-import { Node, nodeInputRule, nodePasteRule, type AnyExtension, type JSONContent } from '@tiptap/core';
+import { Extension, Node, nodeInputRule, nodePasteRule, type AnyExtension, type Editor, type JSONContent } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
 
 /**
@@ -113,6 +113,71 @@ export const WikiCitation = Node.create({
   renderMarkdown: (node) => citationMarkdown(attrsOf(node.attrs)),
 });
 
+/** Whether the cursor of the editor is inside a cell of a table. */
+export function cursorInCell(editor: Pick<Editor, 'state'>): boolean {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const name = $from.node(depth).type.name;
+    if (name === 'tableCell' || name === 'tableHeader') return true;
+  }
+  return false;
+}
+
+/**
+ * A cell of a table is one line of Markdown: Enter, Shift+Enter and
+ * Mod+Enter add no line inside it, which the serializer would write as
+ * `<br>` and the core would refuse as HTML (D-282).
+ */
+export const WikiCellLines = Extension.create({
+  name: 'wikiCellLines',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    const stay = (): boolean => cursorInCell(this.editor);
+    return { Enter: stay, 'Shift-Enter': stay, 'Mod-Enter': stay };
+  },
+});
+
+/** The inline content of a cell on one line: blocks and line breaks become a space. */
+function cellLine(cell: JSONContent): JSONContent {
+  const inline: JSONContent[] = [];
+  const space = (): void => {
+    const last = inline.at(-1);
+    if (last !== undefined && !(last.type === 'text' && /\s$/.test(last.text ?? ''))) inline.push({ type: 'text', text: ' ' });
+  };
+  const walk = (node: JSONContent): void => {
+    if (node.type === 'hardBreak') {
+      space();
+      return;
+    }
+    if (node.type === 'text') {
+      const text = (node.text ?? '').replace(/\s*\n\s*/g, ' ');
+      if (text !== '') inline.push({ ...node, text });
+      return;
+    }
+    if (node.type === 'wikiCitation') {
+      inline.push(node);
+      return;
+    }
+    // A block (paragraph, list, code…) inside the cell: its content, then a space before the next.
+    if (inline.length > 0) space();
+    for (const child of node.content ?? []) walk(child);
+  };
+  for (const child of cell.content ?? []) walk(child);
+  while (inline.at(-1)?.type === 'text' && inline.at(-1)?.text === ' ') inline.pop();
+  return { ...cell, content: [{ type: 'paragraph', ...(inline.length > 0 ? { content: inline } : {}) }] };
+}
+
+/**
+ * The document with every cell of a table on one line (D-282): a line break
+ * or a second paragraph in a cell, pasted or from an older page, goes back
+ * to Markdown as a space, never as `<br>`.
+ */
+export function flattenCells(doc: JSONContent): JSONContent {
+  if (doc.type === 'tableCell' || doc.type === 'tableHeader') return cellLine(doc);
+  if (doc.content === undefined) return doc;
+  return { ...doc, content: doc.content.map(flattenCells) };
+}
+
 /** The schema of a page: nothing that could load or follow something. */
 export function wikiExtensions(): AnyExtension[] {
   return [
@@ -139,6 +204,7 @@ export function wikiExtensions(): AnyExtension[] {
     TableHeader,
     TableCell,
     WikiCitation,
+    WikiCellLines,
   ];
 }
 
@@ -201,7 +267,7 @@ export function plainEntities(text: string): string {
 
 /** The editor's document back to Markdown, what the save sends to the core. */
 export function docToMarkdown(doc: JSONContent): string {
-  return `${plainEntities(markdown().serialize(doc)).replace(/\s+$/, '')}\n`;
+  return `${plainEntities(markdown().serialize(flattenCells(doc))).replace(/\s+$/, '')}\n`;
 }
 
 /** Whether the document holds a mark or node the schema of a page does not know (never: the schema has no link). */
