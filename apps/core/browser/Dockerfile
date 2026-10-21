@@ -32,6 +32,9 @@ RUN printf '%s\n' \
       tigervnc-standalone-server \
       socat \
       fonts-liberation \
+      fonts-noto-core \
+      fonts-noto-cjk \
+      fonts-noto-color-emoji \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt /var/log/dpkg.log \
  && groupadd --gid 10001 browser \
