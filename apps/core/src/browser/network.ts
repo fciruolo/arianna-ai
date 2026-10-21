@@ -220,6 +220,14 @@ export interface NetworkScope {
   meta?: GatewayMeta;
   /** Who drives the browser (D-264, passo 5): `agent` when missing. */
   driver?: 'agent' | 'user';
+  /**
+   * The Private chat of an access (D-281, context with `browserSite`): Arianna
+   * may send to the site of the access (a form, a POST of the page's scripts)
+   * only while this is true, for the one action the user approved with
+   * «Invia». Without it every request of Arianna there other than GET and
+   * HEAD is refused and counted (`heldSends`).
+   */
+  send?: boolean;
 }
 
 /** Cookies of a site waiting for the first form of the user (D-276): at most this many sites, the oldest go. */
@@ -242,6 +250,8 @@ export interface NetworkHandle {
   settle(page: Page, timeoutMs?: number): Promise<void>;
   /** The site of the access made by the user (D-276), once a form of the user went; null before. */
   authenticated(): string | null;
+  /** Requests of Arianna other than GET and HEAD refused in the Private chat of an access without «Invia» (D-281), so far. */
+  heldSends(): number;
   /** Removes the interception, sends `browser.network`, closes the connections. */
   close(): Promise<void>;
 }
@@ -408,6 +418,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const moved = new Map<string, string>();
   /** The cookie jar of the site of the access (D-276): null until the first form of the user. */
   let session: CookieJar | null = null;
+  /** Sends of Arianna held in the Private chat of an access (D-281): the click that caused one asks the user. */
+  let held = 0;
   /** Cookies of the navigations of the user, waiting for a form to their site; never sent. */
   const pending = new Map<string, CookieJar>();
   let closed = false;
@@ -656,10 +668,19 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await abort('limit');
       return;
     }
-    // 3. No form sent by a frame, main or not; a form of the user to the site of its page excepted (D-276).
+    // 3a. The Private chat of an access (D-281): Arianna sends nothing to the site without «Invia» for this action.
+    const agentInChat = scope.driver !== 'user' && scope.context.browserSite !== undefined && session !== null;
+    if (agentInChat && method !== 'GET' && method !== 'HEAD' && scope.send !== true) {
+      held += 1;
+      if (frame.main) navigated('form');
+      await abort('form');
+      return;
+    }
+    // 3. No form sent by a frame, main or not; a form of the user to the site of its page excepted (D-276),
+    // and one of Arianna in the Private chat of the access with «Invia» (D-281).
     let formSite: string | undefined;
     if (frame.navigation && method !== 'GET') {
-      formSite = frame.main && method === 'POST' && scope.driver === 'user' ? userFormSite(request, url, session?.site) : undefined;
+      formSite = frame.main && method === 'POST' && (scope.driver === 'user' || agentInChat) ? userFormSite(request, url, session?.site) : undefined;
       if (formSite === undefined) {
         if (frame.main) navigated('form');
         await abort('form');
@@ -752,11 +773,18 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     budget,
     rescope(next) {
       const before = scope.driver;
-      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }), ...(next.driver === undefined ? {} : { driver: next.driver }) };
+      scope = {
+        context: next.context,
+        consent: next.consent,
+        ...(next.meta === undefined ? {} : { meta: next.meta }),
+        ...(next.driver === undefined ? {} : { driver: next.driver }),
+        ...(next.send === true ? { send: true } : {}),
+      };
       // Given back without a form: the cookies that waited for one go (D-276).
       if (before === 'user' && next.driver !== 'user') pending.clear();
     },
     authenticated: () => session?.site ?? null,
+    heldSends: () => held,
     counts: () => structuredClone(counts),
     lastNavigation: () => (last === undefined ? undefined : { ...last }),
     async settle(page, timeoutMs = 15_000) {

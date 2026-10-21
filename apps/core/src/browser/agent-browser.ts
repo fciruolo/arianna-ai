@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { spendAllowed, type Context, type PageConsent } from '@arianna/policy';
+import { createContext, spendAllowed, type Context, type PageConsent, type Target } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
@@ -61,8 +61,18 @@ import { connectSession, type BrowserSession, type SessionOptions } from './sess
  * cookies of that site) the pages are Private (L2). A conversation with the
  * browser tools is a work conversation, cleared for L1: a read above the
  * clearance is denied (docs/PRIVACY-POLICY-SPEC.md, rule 9). So every
- * action of Arianna but browser.close answers `authenticated`: the user goes
- * on from the screen, or closes the browser (and its cookies).
+ * action of Arianna there but browser.close answers `authenticated`.
+ *
+ * «Nuova chat Privata» (D-281): given back by the user, the browser with an
+ * access passes to a Private chat born for it (handOver, in the queue of the
+ * actions): its scope is the context of that chat, marked with the site of
+ * the access (`browserSite`), and the consent of that site only. There
+ * Arianna reads and acts, on that site only (`outside-access` elsewhere);
+ * every send of hers to the site (a form, a POST of the page's scripts) is
+ * held by the network until the user approves it: the click or the typing
+ * that caused one answers `confirm-send`, and the action after an «Invia»
+ * (`sendPermit`, used once) may send. A browser with an access is never
+ * taken over by another conversation.
  */
 
 export const TAKE_OVER_MS = 2 * 60_000;
@@ -102,7 +112,9 @@ export interface PageReading {
 export type ActionResult =
   | { ok: true; page: { url: string; site: string; title: string }; reading?: PageReading; typed?: number }
   | { ok: false; reason: ActionFailure; site?: string; network?: ResourceFailure | RequestOutcome }
-  | { ok: false; reason: 'confirm'; url: string; site: string };
+  | { ok: false; reason: 'confirm'; url: string; site: string }
+  /** The Private chat of an access (D-281): the action tried to send data to the site; the user decides with «Invia / No». */
+  | { ok: false; reason: 'confirm-send'; site: string; element: string };
 
 export type ActionFailure =
   | 'busy'
@@ -116,6 +128,8 @@ export type ActionFailure =
    * Arianna neither reads it nor acts in it; only browser.close.
    */
   | 'authenticated'
+  /** The Private chat of an access (D-281): an address or a link outside the site of the access. */
+  | 'outside-access'
   | 'not-installed'
   | 'start-failed'
   | 'not-open'
@@ -162,6 +176,12 @@ export interface BrowserScope {
   context: Context;
   consent: PageConsent;
   meta?: GatewayMeta;
+  /**
+   * The Private chat of an access (D-281): the id of an approval «Invia» of
+   * the user not used yet. The next click, or typing with Enter, may send to
+   * the site of the access, once.
+   */
+  sendPermit?: string;
 }
 
 export type OpenSession = (browser: BrowserManager, id: string, network: Omit<NetworkJob, 'userAgent'>) => Promise<BrowserSession>;
@@ -209,6 +229,8 @@ interface Held {
   reread: boolean;
   /** The last navigation decided when the user took the control: what is refused after it is shown in the chat. */
   seqAtTake: number;
+  /** The work conversation the browser came from, once handed to a Private chat after an access (D-281). */
+  from?: string;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -229,6 +251,8 @@ export class AgentBrowser {
   #running = false;
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
   readonly #closedByUser = new Set<string>();
+  /** Approvals «Invia» already used (D-281): each lets one action send. */
+  readonly #usedPermits = new Set<string>();
 
   constructor(options: AgentBrowserOptions) {
     this.#options = options;
@@ -258,6 +282,45 @@ export class AgentBrowser {
     const held = this.#held;
     if (this.holder !== conversationId || held === null) return null;
     return held.session.network?.authenticated() ?? null;
+  }
+
+  /** The Private chat holding the browser that came from the work conversation `conversationId` (D-281); null when none. */
+  movedFrom(conversationId: string): string | null {
+    const held = this.#held;
+    if (held === null || this.holder === null || held.from !== conversationId) return null;
+    return held.conversationId;
+  }
+
+  /**
+   * «Nuova chat Privata» (D-281): the browser of `from`, with an access made
+   * by the user and Arianna driving, passes to the Private chat `to`, after
+   * the action under way (the queue), never in the middle of one. Its scope
+   * becomes that chat's: a context marked with the site of the access, the
+   * consent of that site only; the next action must read the page. The
+   * screens of `from` close (onReleased). The site of the access, or null
+   * when `from` no longer holds such a browser.
+   */
+  handOver(from: string, to: string): Promise<string | null> {
+    const run = this.#queue.then(() => {
+      this.#forgetClosed();
+      const held = this.#held;
+      if (held?.conversationId !== from || held.driver !== 'agent' || held.from !== undefined) return null;
+      const site = held.session.network?.authenticated() ?? null;
+      if (site === null) return null;
+      const scope: BrowserScope = { conversationId: to, context: createContext('L2', 'L2', { browserSite: site }), consent: { from: 'sites', sites: [site] } };
+      held.conversationId = to;
+      held.from = from;
+      held.scope = scope;
+      held.reread = true;
+      held.elements.clear();
+      held.readAt = undefined;
+      held.session.network?.rescope(networkScope(scope, 'agent'));
+      this.#touch(held);
+      this.#safely(() => { this.#options.onReleased?.(from); });
+      return site;
+    });
+    this.#queue = run.catch(() => undefined);
+    return run;
   }
 
   /** Who drives the browser of `conversationId`; null when it holds none. */
@@ -392,21 +455,31 @@ export class AgentBrowser {
       return { ok: true, page: { url: '', site: '', title: '' } };
     }
     if (held !== null && held.conversationId === scope.conversationId) {
+      const access = held.session.network?.authenticated() ?? null;
+      const chat = scope.context.browserSite;
+      // The Private chat of an access acts only on the browser of that very access (D-281).
+      if (chat !== undefined && access !== chat) return { ok: false, reason: 'not-open' };
       held.scope = scope;
       held.session.network?.rescope(networkScope(scope, 'agent'));
-      // An access made by the user: its pages are Private, never read here (rule 9); closing is allowed.
+      // An access made by the user: its pages are Private, never read in a work conversation (rule 9); closing is allowed.
       // A refused action does not keep the browser alive.
-      if (held.session.network?.authenticated() != null) return { ok: false, reason: 'authenticated' };
+      if (access !== null && chat === undefined) return { ok: false, reason: 'authenticated' };
       // Given back by the user: the page is read again before anything else.
       if (held.reread && action.kind !== 'read') return { ok: false, reason: 'reread' };
+      if (chat !== undefined && outsideAccess(chat, action, held.elements)) return { ok: false, reason: 'outside-access', site: chat };
       held.lastAction = this.#now();
       if (action.kind === 'read') held.reread = false;
+      if (chat !== undefined && (action.kind === 'click' || (action.kind === 'type' && action.submit))) return this.#sending(held, scope, action, chat);
       return this.#bounded(held, this.#run(held, scope, action));
     }
+    // The Private chat of an access opens no browser of its own (D-281): its browser came with the access.
+    if (scope.context.browserSite !== undefined) return { ok: false, reason: 'not-open' };
     if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
     const unwritten = openOutsideConsent(scope.consent, action.url);
     if (unwritten !== undefined) return unwritten;
     if (held !== null) {
+      // A browser with an access made by the user is never taken over: closing it would lose the access.
+      if (held.session.network?.authenticated() != null) return { ok: false, reason: 'busy' };
       if (this.#now() - held.lastAction < (this.#options.takeOverMs ?? TAKE_OVER_MS)) return { ok: false, reason: 'busy' };
       await this.#drop();
       this.#safely(() => { this.#options.onTaken?.(held.conversationId); });
@@ -432,6 +505,30 @@ export class AgentBrowser {
     const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0 };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
+  }
+
+  /**
+   * A click, or typing with Enter, in the Private chat of an access (D-281):
+   * with an «Invia» not used yet the network lets this one action send to the
+   * site; without, a send it caused is held and the action asks the user.
+   */
+  async #sending(held: Held, scope: BrowserScope, action: Extract<BrowserAction, { kind: 'click' | 'type' }>, site: string): Promise<ActionResult> {
+    const network = held.session.network;
+    const element = held.elements.get(action.ref);
+    const label = (element?.label ?? '').trim() || (action.kind === 'type' ? 'campo di testo' : 'elemento senza nome');
+    const permit = scope.sendPermit !== undefined && !this.#usedPermits.has(scope.sendPermit) ? scope.sendPermit : undefined;
+    if (permit !== undefined) {
+      this.#usedPermits.add(permit);
+      network?.rescope({ ...networkScope(scope, 'agent'), send: true });
+    }
+    const before = network?.heldSends() ?? 0;
+    try {
+      const result = await this.#bounded(held, this.#run(held, scope, action));
+      if ((network?.heldSends() ?? 0) > before) return { ok: false, reason: 'confirm-send', site, element: action.kind === 'type' ? `${label} (Invio)` : label };
+      return result;
+    } finally {
+      if (permit !== undefined && this.#held === held) network?.rescope(networkScope(held.scope, 'agent'));
+    }
   }
 
   async #run(held: Held, scope: BrowserScope, action: Exclude<BrowserAction, { kind: 'close' }>): Promise<ActionResult> {
@@ -569,6 +666,38 @@ export class AgentBrowser {
       console.warn('browser: a callback of the agent browser failed');
     }
   }
+}
+
+/**
+ * Whether an action of the Private chat of an access leaves its site (D-281):
+ * an address to open, or a link of the last reading, that is not https on
+ * the site of the access or a subdomain. A link the page moved since the
+ * reading is stopped by the network all the same (L2 towards another site).
+ */
+export function outsideAccess(site: string, action: BrowserAction, elements: ReadonlyMap<number, PageElement>): boolean {
+  const off = (address: string): boolean => {
+    try {
+      const url = new URL(address);
+      const host = url.hostname.toLowerCase().replace(/[.]$/, '');
+      return url.protocol !== 'https:' || !(host === site || host.endsWith('.' + site));
+    } catch {
+      return true;
+    }
+  };
+  if (action.kind === 'open') return off(action.url);
+  if (action.kind === 'click') {
+    const element = elements.get(action.ref);
+    if (element?.kind !== 'link' || element.href === undefined) return false;
+    // Not a page (a fragment, javascript:, mailto:): the click stays on this page, the network refuses the rest.
+    try {
+      const protocol = new URL(element.href).protocol;
+      if (protocol !== 'http:' && protocol !== 'https:') return false;
+    } catch {
+      return false;
+    }
+    return off(element.href);
+  }
+  return false;
 }
 
 /** The scope of the network for who drives: the user's requests carry no task of Arianna. */
@@ -808,12 +937,16 @@ export function parseReading(raw: unknown): PageReading {
 
 /**
  * The gateway on a text browser.type would type (target `web` with `typed`,
- * D-264): vault, scanner and the second check, as a page. True only when the
- * exact text was allowed and spent here.
+ * D-264): vault, scanner and the second check, as a page. In the Private
+ * chat of an access (D-281) `typed: 'session'` with the site of the access:
+ * vault and scanner, towards that site only. True only when the exact text
+ * was allowed and spent here.
  */
 export function gatewayTyped(sql: Sql): AgentBrowserOptions['gateTyped'] {
   return async (text, scope) => {
-    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, { kind: 'web', typed: scope.consent.from }, { ...scope.meta, summary: 'browser typed text' });
+    const site = scope.context.browserSite;
+    const target: Target = site === undefined ? { kind: 'web', typed: scope.consent.from } : { kind: 'web', typed: 'session', site };
+    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, target, { ...scope.meta, summary: 'browser typed text' });
     if (decision.decision !== 'allow') return false;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' && spent.target.typed !== undefined && spent.texts[0] === text;

@@ -118,6 +118,18 @@ export interface Conversation {
    * marks it with an «R». A routine's conversation is otherwise like any other.
    */
   routine: boolean;
+  /**
+   * The Private chat of the agent's browser (D-281, migration 0087): the work
+   * conversation the browser came from after an access made by the user;
+   * null for every other one. Chosen at creation, never changed.
+   */
+  browserOf: string | null;
+  /**
+   * The Private chats of the browser born from this work conversation (D-281),
+   * oldest first: only their ids and when they were born, for the link of the
+   * line in the chat; never their title, which says the site.
+   */
+  browserChats: { id: string; createdAt: string }[];
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
@@ -221,6 +233,9 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.side_of::text AS "sideOf", c.side_message_id::text AS "sideMessageId", c.dashboard_of::text AS "dashboardOf",
   EXISTS (SELECT FROM routines r WHERE r.conversation_id = c.id AND r.status <> 'retired') AS routine,
+  c.browser_of::text AS "browserOf",
+  (SELECT coalesce(json_agg(json_build_object('id', b.id::text, 'createdAt', b.created_at) ORDER BY b.created_at, b.id), '[]'::json)
+     FROM conversations b WHERE b.browser_of = c.id AND b.purged_at IS NULL) AS "browserChats",
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
   CASE WHEN c.agent IS NULL THEN NULL

@@ -583,3 +583,53 @@ describe('attachNetwork: forms and cookies of the user', () => {
     assert.equal(net.handle.authenticated(), null);
   });
 });
+
+// The Private chat of an access (D-281): Arianna reads the site of the access, and sends to it only after «Invia».
+describe('attachNetwork: the Private chat of an access', () => {
+  const html = (): ResourceResult => ({ ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>ok</p>') });
+  const target = (row: unknown[] | undefined) => ({ target: row?.[3], label: row?.[5], decision: row?.[6], rule: row?.[7] });
+  const CHAT_CONTEXT = createContext('L2', 'L2', { browserSite: 'banca-finta.it' });
+  const accessed = async (): Promise<Harness> => {
+    const net = await harness({ answer: () => html() });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    net.handle.rescope({ context: CHAT_CONTEXT, consent: { from: 'sites', sites: ['banca-finta.it'] }, driver: 'agent' });
+    return net;
+  };
+
+  it('pages and reads of the site go as session from the context of the chat; another site never', async () => {
+    const net = await accessed();
+    assert.ok((await net.send({ url: 'https://www.banca-finta.it/conti', main: true, pageUrl: 'https://www.banca-finta.it/' })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-session', label: 'L2', decision: 'allow', rule: 'session' });
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/saldo', type: 'fetch' })).fulfilled);
+    assert.ok((await net.send({ url: 'https://news-finte.it/', main: true })).aborted);
+    assert.ok((await net.send({ url: 'https://cdn-finto.net/app.js', type: 'script' })).aborted);
+    assert.equal(net.handle.heldSends(), 0);
+  });
+
+  it('a send of Arianna to the site (form or POST of a script) is held and counted without «Invia»; with it, it goes', async () => {
+    const net = await accessed();
+    const rows = net.rows.length;
+    assert.ok((await net.send({ url: 'https://banca-finta.it/rinnova', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).aborted);
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/rinnova', type: 'fetch', method: 'POST', body: Buffer.from('{"p":7}') })).aborted);
+    assert.equal(net.handle.heldSends(), 2);
+    // Held before the gateway: nothing logged.
+    assert.equal(net.rows.length, rows);
+    net.handle.rescope({ context: CHAT_CONTEXT, consent: { from: 'sites', sites: ['banca-finta.it'] }, driver: 'agent', send: true });
+    assert.ok((await net.send({ url: 'https://banca-finta.it/rinnova', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-form', label: 'L2', decision: 'allow', rule: 'form' });
+    assert.ok((await net.send({ url: 'https://api.banca-finta.it/rinnova', type: 'fetch', method: 'POST', body: Buffer.from('{"p":7}') })).fulfilled);
+    assert.deepEqual(target(net.rows.at(-1)), { target: 'web-session', label: 'L2', decision: 'allow', rule: 'session' });
+    // Even with «Invia», never a form to another site.
+    assert.ok((await net.send({ url: 'https://raccolta-finta.net/x', main: true, method: 'POST', body: Buffer.from('p=7'), pageUrl: 'https://banca-finta.it/prestiti' })).aborted);
+    assert.equal(net.handle.heldSends(), 2);
+  });
+
+  it('in a work context after the access nothing is held: the user sends as before', async () => {
+    const net = await harness({ answer: () => html() });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    await net.send({ url: 'https://banca-finta.it/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://banca-finta.it/accedi' });
+    assert.ok((await net.send({ url: 'https://banca-finta.it/altro', main: true, method: 'POST', body: Buffer.from('b=2'), pageUrl: 'https://banca-finta.it/conti' })).fulfilled);
+    assert.equal(net.handle.heldSends(), 0);
+  });
+});

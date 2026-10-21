@@ -58,7 +58,8 @@ import { AgentBrowser, gatewayTyped } from './browser/agent-browser.ts';
 import { readBrowserImageLock } from './browser/image.ts';
 import { BrowserManager } from './browser/manager.ts';
 import { BrowserScreens, conversationKindOf } from './browser/screen.ts';
-import { writeClosedByUserLine, writeControlLine, writeTakenLine } from './orchestrator/browser-tool.ts';
+import { writeClosedByUserLine, writeTakenLine } from './orchestrator/browser-tool.ts';
+import { afterControl } from './browser/handoff.ts';
 import { createMcpServer } from './mcp/server.ts';
 import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
@@ -558,10 +559,11 @@ pruneAttachments(sql, attachmentFiles).catch(report);
 
 // The screen of the browser in the chat (D-264, passo 4): view only, a token per conversation holding it.
 // Declared first: it reads the browser below only when asked (lazy), and the browser tells it when it goes.
+const conversationKind = conversationKindOf(sql);
 const browserScreens = new BrowserScreens({
   holder: () => agentBrowser.holder,
   container: () => browserManager.active?.container ?? null,
-  conversation: conversationKindOf(sql),
+  conversation: conversationKind,
   // «Chiudi» in the chat: after the action under way; the line tells the user and the model.
   closeBrowser: async (conversationId) => {
     const closed = await agentBrowser.closeByUser(conversationId);
@@ -569,6 +571,8 @@ const browserScreens = new BrowserScreens({
     return closed;
   },
   site: (conversationId) => agentBrowser.siteOf(conversationId),
+  // «Nuova chat Privata» (D-281): the work conversation shows where its browser went after an access.
+  movedTo: (conversationId) => agentBrowser.movedFrom(conversationId),
   // «Prendi il controllo» (D-264, passo 5): the state is the browser's, the lines tell the user and the model.
   control: {
     take: (conversationId) => agentBrowser.takeControl(conversationId),
@@ -578,7 +582,8 @@ const browserScreens = new BrowserScreens({
     blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
     access: (conversationId) => agentBrowser.accessOf(conversationId),
   },
-  onControl: (conversationId, change) => { writeControlLine(sql, conversationId, change, agentBrowser.accessOf(conversationId)).catch(report); },
+  // Given back after an access in a work conversation, the browser passes to a new Private chat (D-281).
+  onControl: (conversationId, change) => { afterControl({ sql, browser: agentBrowser, kind: conversationKind }, conversationId, change).catch(report); },
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
 });
 // The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.

@@ -18,7 +18,7 @@ import {
 } from '@arianna/agents';
 import { enabledCloudModels, ORCHESTRATOR_AGENT, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig } from '@arianna/config';
 import { JsonFieldStream, LocalModelError, type ChatRequest, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
-import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
 import { answersWithoutDelegation, CHAT_AGENT, characterOn, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
@@ -78,7 +78,7 @@ import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
-import { browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, WAITING_BROWSER, type BrowserToolEnv } from './browser-tool.ts';
+import { browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -255,6 +255,15 @@ export function orchestratorTools(
         // The commitments only there, never in an incognito conversation (what they note outlives it).
         (secretary && !incognito && isSecretaryTool(tool))),
   );
+}
+
+/**
+ * The tools of the Private chat of an access (D-281), while it holds the
+ * browser of that access: the browser tools and user.ask, as the card lists
+ * them; nothing that reads other data or hands the step to another agent.
+ */
+export function browserChatTools(agent: LoadedAgent): ToolId[] {
+  return offerable(agent.card.tools).filter((tool) => isBrowserTool(tool) || CHAT_TOOLS.includes(tool));
 }
 
 const PROFILE_READ = 'profile.read' satisfies ToolId;
@@ -1152,10 +1161,15 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         if (card !== undefined && isCloudRoute(delegationRoute(card))) shareTargets.set(target.name, briefCeiling(card));
       }
       const readsProfile = agent.card.tools.includes(PROFILE_READ);
-      const facts = await listUserFacts(sql);
+      // The Private chat of an access (D-281): while it holds the browser of that access, only the site and the user
+      // enter it. No profile, no knowledge, no other agent: the browser tools and user.ask alone.
+      const browserChat = options.browser === undefined || task.conversationId === null || task.clearance !== 'L2' || task.finance || incognito
+        ? undefined
+        : await browserChatSite(sql, options.browser.agent, task.conversationId);
+      const facts = browserChat === undefined ? await listUserFacts(sql) : [];
       // A private fact says how to ask for it when profile.share is offered at this step (D-213).
       const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, incognito, secretary, false, shareTargets.size > 0).includes(PROFILE_SHARE);
-      const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
+      const profile = browserChat === undefined ? profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts }) : undefined;
       // The switch «Personaggio» of the conversation (D-225): off, neither the character's block nor its lines.
       const character = await characterOn(sql, task.conversationId);
       const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true, character }), ...(profile === undefined ? [] : [profile])];
@@ -1168,7 +1182,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const skills = task.assignee === ORCHESTRATOR_AGENT ? [] : await skillsPart(env, { task, step }, agent, task.assignee, SKILLS_DELIVERY_BYTES.local, tailClearance);
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label), ...tail.map((part) => part.label), ...skills.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
-      let context: Context = contextOf(task, label);
+      // The chat of an access declares its context as one that read L2 only from that site and the user (D-281).
+      let context: Context = browserChat === undefined ? contextOf(task, label) : createContext(task.clearance, label, { browserSite: browserChat });
       // The skills pass the gateway with the rest.
       const decision = await passGateway(
         sql,
@@ -1198,21 +1213,24 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         (part) => part.value,
       );
 
-      const offered = orchestratorTools(
-        agent,
-        delegates.length > 0,
-        !incognito && (await updateOffered(sql, task)),
-        incognito,
-        secretary,
-        readsProfile && profile?.topicsOnly === true,
-        profile !== undefined && shareTargets.size > 0,
-        routinesOffered,
-        // A public page (D-262): only while the step has read nothing above Internal, nor finance data.
-        webFetchOffered(context, incognito),
-        browserOffered(context, incognito, options.browser?.installed() === true),
-      );
-      // A conversation that read private or finance data keeps no browser (D-264, passo 3).
-      if (options.browser !== undefined && task.conversationId !== null && options.browser.agent.holder === task.conversationId && !webFetchOffered(context, incognito)) {
+      const offered =
+        browserChat === undefined
+          ? orchestratorTools(
+              agent,
+              delegates.length > 0,
+              !incognito && (await updateOffered(sql, task)),
+              incognito,
+              secretary,
+              readsProfile && profile?.topicsOnly === true,
+              profile !== undefined && shareTargets.size > 0,
+              routinesOffered,
+              // A public page (D-262): only while the step has read nothing above Internal, nor finance data.
+              webFetchOffered(context, incognito),
+              browserOffered(context, incognito, options.browser?.installed() === true),
+            )
+          : browserChatTools(agent);
+      // A conversation that read private or finance data keeps no browser (D-264, passo 3); the chat of an access keeps its own (D-281).
+      if (browserChat === undefined && options.browser !== undefined && task.conversationId !== null && options.browser.agent.holder === task.conversationId && !webFetchOffered(context, incognito)) {
         await options.browser.agent.release(task.conversationId);
       }
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
@@ -1308,6 +1326,16 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // The browser (D-264, passo 3): never stopped as a repeated call, reading the same page again after a click is the point.
       if (isBrowserTool(answer.tool)) {
         const ran = await browserTool(answer.tool, answer.arguments, { task, context, incognito, ...(options.browser === undefined ? {} : { browser: { browser: options.browser.agent, sql, runId } }) });
+        // A send to the site of an access (D-281): the card «Invia / No», written with the turn.
+        const send = ran.send;
+        if (send !== undefined) {
+          const approvalId = await sql.begin(async (tx) => {
+            await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_SEND });
+            return requestBrowserSend(tx, { taskId: task.id, step, site: send.site, element: send.element });
+          });
+          await show(task, step, 'wait', ran.detail);
+          return { kind: 'confirm', approvalId, usage };
+        }
         // A link to a site the consent does not cover: the card «Apri / No», written with the turn.
         const confirm = ran.confirm;
         if (confirm !== undefined) {
