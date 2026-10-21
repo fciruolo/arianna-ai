@@ -1417,6 +1417,42 @@ export function checkUserPage(home: string, rules: LabelRules, title: string, bo
   return { title: cleanTitle, body: `${text.replace(/\s+$/, '')}\n` };
 }
 
+export interface CitationTarget {
+  /** What goes between `[[` and `]]`: a note's vault id (`inbox/x`) or `wiki/<page>`. */
+  target: string;
+  title: string;
+  kind: 'note' | 'page';
+}
+
+/**
+ * The notes and pages the editor may suggest after «[[» (D-282): the same
+ * the save accepts (notes of kb/ outside the wiki up to L2 that exist, pages
+ * of the wiki up to L2), whose path or title holds every word of `query`.
+ */
+export function wikiCitationTargets(home: string, rules: LabelRules, query: string, limit = 12): CitationTarget[] {
+  const words = folded(query).split(/\s+/).filter((word) => word !== '').slice(0, 8);
+  const matches = (text: string): boolean => words.every((word) => folded(text).includes(word));
+  const found: CitationTarget[] = [];
+  for (const page of visibleWikiTree(home, rules).pages) {
+    if (found.length >= limit) break;
+    if (matches(`${page.path} ${page.title}`)) found.push({ target: `${WIKI_ID}/${page.path}`, title: page.title, kind: 'page' });
+  }
+  const kb = kbReal(home);
+  if (kb === undefined) return found;
+  for (const id of listPageIds(kb)) {
+    if (found.length >= limit) break;
+    if (!isWikiSource(id)) continue;
+    let title: string;
+    try {
+      title = readKnowledgePage(home, rules, id).title;
+    } catch {
+      continue;
+    }
+    if (matches(`${id} ${title}`)) found.push({ target: vaultId(id), title, kind: 'note' });
+  }
+  return found;
+}
+
 /** A page as the user wrote it: the header of the code (always L2), then their body. */
 function composeUserPage(title: string, body: string, now: Date): string {
   const header = ['---', 'label: L2', 'kind: wiki', `title: ${JSON.stringify(title)}`, `updated_at: ${localTimestamp(now)}`, 'edited_by: user', '---'].join('\n');

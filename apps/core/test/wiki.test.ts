@@ -42,6 +42,7 @@ import {
   visibleWikiTree,
   restoreWikiVersion,
   WikiError,
+  wikiCitationTargets,
   wikiCandidates,
   wikiTree,
   type StoredProposal,
@@ -445,6 +446,21 @@ describe('the user writes the wiki', () => {
     // An empty wiki: no index at all.
     assert.equal(existsSync(join(root, 'kb/wiki/_indice.md')), false);
     assert.throws(() => readWikiView(root, RULES, '_indice'), (error) => error instanceof WikiError && error.code === 'not-found');
+  });
+});
+
+describe('what «[[» suggests', () => {
+  it('the notes up to L2 outside the wiki and the visible pages, matching every word; never a note above L2', () => {
+    const root = home({ 'kb/segreti/octane.md': '---\nlabel: L3\ntitle: "Octane segreto"\n---\nsegreto finto\n' });
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/segreti"\nlabel = "L3"'].join('\n\n'));
+    approveWikiProposal(root, strict, proposal(root, {}).id, {}, NOW);
+    const targets = wikiCitationTargets(root, strict, 'octane');
+    assert.deepEqual(targets.map((item) => item.target).sort(), ['inbox/2026-10-21-100000-octane', 'wiki/laravel/octane/swoole']);
+    assert.ok(targets.some((item) => item.kind === 'note' && item.title === 'Octane finto'));
+    assert.deepEqual(wikiCitationTargets(root, strict, 'octane finto').map((item) => item.target), ['inbox/2026-10-21-100000-octane']);
+    assert.deepEqual(wikiCitationTargets(root, strict, 'nessuna-parola'), []);
+    // Every suggestion is one the save accepts.
+    for (const item of wikiCitationTargets(root, strict, '')) checkUserPage(root, strict, 'Titolo', `[[${item.target}]]`);
   });
 });
 

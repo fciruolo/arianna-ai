@@ -181,6 +181,7 @@ import {
   restoreWikiVersion,
   WIKI_STATUS,
   WikiError,
+  wikiCitationTargets,
   visibleWikiTree,
 } from '../wiki.ts';
 import { approveMany, ARCHIVE_STATUS, archiveFolders, ArchiveError, discardArchive, listProposals, MAX_APPROVE_ITEMS, recordArchived, recordDiscarded, type ApproveInput } from '../archivist.ts';
@@ -1166,6 +1167,12 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       } else throw new HttpError(400, 'kind must be page or folder');
       await recordWikiEvent(sql, 'wiki.moved', { kind: body.kind, pages: moved.pages, relinked: moved.relinked }).catch(onError);
       return { body: { path: moved.path } };
+    }),
+    // What the editor suggests after «[[» (D-282): the notes and pages a citation may name, as the save checks them.
+    route('GET', '/api/wiki/targets', (_request, url) => {
+      const { home, rules } = need();
+      const query = (url.searchParams.get('q') ?? '').slice(0, 100);
+      return Promise.resolve({ body: { targets: wikiCitationTargets(home, rules, query) } });
     }),
     // «Elimina cartella»: only an empty folder, after the confirmation in the chat.
     route('POST', '/api/wiki/folder/delete', async (request) => {
