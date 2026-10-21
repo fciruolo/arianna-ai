@@ -48,6 +48,8 @@ function place(props: SuggestionProps<WikiCitationTarget, WikiCitationTarget>): 
 /** «[[»: a list of the notes and pages a citation may name, chosen with the arrows and Enter or a click. */
 const CitationSuggest = Extension.create({
   name: 'wikiCitationSuggest',
+  // Before WikiCellLines (1000): Enter in a cell of a table chooses from the open list instead of being stopped.
+  priority: 1100,
   addProseMirrorPlugins() {
     return [
       Suggestion<WikiCitationTarget, WikiCitationTarget>({
