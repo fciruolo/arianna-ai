@@ -464,7 +464,7 @@ export async function processStepJob(
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
           WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id}
-            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine') OR (kind = 'declassify' AND action = 'share_fact'))`;
+            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           // A card «Piano» (D-235) closes in Fatto here, as the decision would have closed it waiting.

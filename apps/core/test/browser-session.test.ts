@@ -32,7 +32,7 @@ interface FakeBrowser {
 
 function fakeBrowser(options: { contexts?: number; failSend?: boolean } = {}): FakeBrowser {
   const fake: FakeBrowser = { sent: [], detached: 0, closed: 0, browser: undefined as unknown as Browser };
-  const context = { pages: () => [], newPage: () => Promise.reject(new Error('not in this test')) };
+  const context = { pages: () => [], newPage: () => Promise.reject(new Error('not in this test')), on: () => undefined };
   fake.browser = {
     contexts: () => (options.contexts === 0 ? [] : [context]),
     newBrowserCDPSession: () => Promise.resolve({

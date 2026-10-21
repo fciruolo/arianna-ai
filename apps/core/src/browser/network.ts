@@ -1,4 +1,4 @@
-import { spendAllowed, type Context, type Label, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
+import { spendAllowed, type Context, type PageConsent, type ResourceType, type Target } from '@arianna/policy';
 import type { BrowserContext, Frame, Page, Request, Route } from 'playwright-core';
 
 import type { Sql } from '../db/client.ts';
@@ -185,8 +185,32 @@ export interface NetworkJob {
   trace?: (entry: { url: string; type: CountedType; kind: string; outcome: RequestOutcome; reason?: ResourceFailure }) => void;
 }
 
+/** The last main page decided; `seq` grows by one at each, so a caller tells a new one from the same one read again. */
+export interface LastNavigation {
+  seq: number;
+  outcome: RequestOutcome;
+  site?: string;
+  reason?: ResourceFailure;
+}
+
+/** What decides the requests of a job: the session it acts for, its consent and the ids of the gateway log. */
+export interface NetworkScope {
+  context: Context;
+  consent: PageConsent;
+  meta?: GatewayMeta;
+}
+
 export interface NetworkHandle {
   readonly budget: BrowserBudget;
+  /**
+   * The session of the job changed (D-264, passo 3: the browser of a
+   * conversation outlives one answer): the requests from now on are decided
+   * with this context, consent and log ids. A request already deciding keeps
+   * the scope it started with.
+   */
+  rescope(next: NetworkScope): void;
+  /** The last main page decided, for the answer of a tool: its outcome, the site of an allowed address, why it failed. */
+  lastNavigation(): LastNavigation | undefined;
   /** Counts by kind and outcome so far. */
   counts(): Record<string, Record<string, number>>;
   /** After a navigation: waits while the frame is moved to the final address of a redirect. */
@@ -321,7 +345,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     ...(job.timeoutMs === undefined ? {} : { timeoutMs: job.timeoutMs }),
   };
   const download = job.fetchResource ?? fetchResource;
-  const label: Label = job.context.effective;
+  // The session of the job may change between two actions (D-264, passo 3): read at each request, never kept.
+  let scope: NetworkScope = { context: job.context, consent: job.consent, ...(job.meta === undefined ? {} : { meta: job.meta }) };
   const counts: Record<string, Record<string, number>> = {};
   const limitsSent = new Set<LimitKind>();
   /** The final answer of a redirected frame, for the next navigation of that frame only: address without fragment → answer. */
@@ -356,20 +381,22 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     limitsSent.add(kind);
     emit({ kind: 'browser.limit', label: 'L0', payload: { limit: kind }, ...meta() });
   };
-  const meta = (): Pick<NewEvent, 'taskId' | 'runId'> => ({ ...(job.meta?.taskId === undefined ? {} : { taskId: job.meta.taskId }), ...(job.meta?.runId === undefined ? {} : { runId: job.meta.runId }) });
+  const meta = (): Pick<NewEvent, 'taskId' | 'runId'> => ({ ...(scope.meta?.taskId === undefined ? {} : { taskId: scope.meta.taskId }), ...(scope.meta?.runId === undefined ? {} : { runId: scope.meta.runId }) });
+  let last: LastNavigation | undefined;
   const navigated = (outcome: RequestOutcome, site?: string, reason?: ResourceFailure): void => {
+    last = { seq: (last?.seq ?? 0) + 1, outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) };
     // The site only of an address the gateway let go: a refused one may carry what it was refused for.
-    emit({ kind: 'browser.navigate', label, payload: { outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
+    emit({ kind: 'browser.navigate', label: scope.context.effective, payload: { outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) }, ...meta() });
   };
 
   /** One hop of a main page: the gateway as a page (second scanner included), then the download. */
   const pageHop = async (address: string, hop: number, request: ResourceInput): Promise<ResourceResult> => {
     const url = resourceUrl(address, network);
     if (typeof url === 'string') return { ok: false, reason: url };
-    const target: Target = { kind: 'web', page: navigationConsent(job.consent, url.href, hop) };
+    const target: Target = { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
     let allowed: string | undefined;
     try {
-      const decision = await passGateway(job.sql, [{ value: url.href, label, source: 'web:page' }], job.context, target, job.meta);
+      const decision = await passGateway(job.sql, [{ value: url.href, label: scope.context.effective, source: 'web:page' }], scope.context, target, scope.meta);
       if (decision.decision === 'allow') {
         const spent = spendAllowed(decision);
         allowed = spent?.target.kind === 'web' && spent.target.page !== undefined ? spent.texts[0] : undefined;
@@ -385,8 +412,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
 
   /** Whether an iframe may navigate to `address`: always with `public`; with `user` or `sites` only on the sites `navigationConsent` allows after the first page. */
   const frameOnSites = (address: string): boolean => {
-    if (job.consent.from === 'public') return true;
-    const allowedConsent = navigationConsent(job.consent, address, 1);
+    if (scope.consent.from === 'public') return true;
+    const allowedConsent = navigationConsent(scope.consent, address, 1);
     let host: string;
     try {
       host = new URL(address).hostname.toLowerCase().replace(/\.$/, '');
@@ -401,7 +428,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   /** One hop of any other request: gateResource, the gateway as a resource; an iframe on the sites of its consent first. */
   const resourceHop = (request: ResourceInput, frameNavigation: boolean): Promise<ResourceResult> => {
     if (frameNavigation && !frameOnSites(request.url)) return Promise.resolve({ ok: false, reason: 'other-site' });
-    return gateResource({ sql: job.sql, context: job.context, consent: job.consent, request, network, ...(job.meta === undefined ? {} : { meta: job.meta }), signal: stopping.signal, fetchResource: fetchOne });
+    return gateResource({ sql: job.sql, context: scope.context, consent: scope.consent, request, network, ...(scope.meta === undefined ? {} : { meta: scope.meta }), signal: stopping.signal, fetchResource: fetchOne });
   };
 
   /** Follows up to MAX_REDIRECTS hops, each through the gateway and counted in the requests; the final answer and its address. */
@@ -560,7 +587,11 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
 
   return {
     budget,
+    rescope(next) {
+      scope = { context: next.context, consent: next.consent, ...(next.meta === undefined ? {} : { meta: next.meta }) };
+    },
     counts: () => structuredClone(counts),
+    lastNavigation: () => (last === undefined ? undefined : { ...last }),
     async settle(page, timeoutMs = 15_000) {
       for (let hops = 0; hops <= MAX_REDIRECTS; hops += 1) {
         const key = withoutHash(page.url()) ?? page.url();

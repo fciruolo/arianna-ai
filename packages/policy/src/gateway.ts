@@ -56,13 +56,26 @@ export interface ResourceRequest {
   method: ResourceMethod;
 }
 
+/**
+ * Characters (Unicode code points) the agent's browser may type in one field
+ * of a public page at most (D-264, `browser.type`).
+ */
+export const MAX_TYPED_TEXT = 200;
+
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
   | { kind: 'channel'; id: ChannelId }
   /** Without `page`: a query to a fixed service (catalogs, Hugging Face). With `page`: one public page to read (D-262). */
-  | { kind: 'web'; page?: PageConsent; resource?: never }
+  | { kind: 'web'; page?: PageConsent; resource?: never; typed?: never }
   /** One resource of a page of the agent's browser (D-264): never with `page`. */
-  | { kind: 'web'; resource: ResourceRequest; page?: never }
+  | { kind: 'web'; resource: ResourceRequest; page?: never; typed?: never }
+  /**
+   * The text the agent's browser types in a field of a public page (D-264,
+   * `browser.type`): `typed` is the consent the page was opened with (D-262).
+   * The payload is one text of at most `MAX_TYPED_TEXT` characters, checked
+   * as a page: never with `page` or `resource`.
+   */
+  | { kind: 'web'; typed: PageConsent['from']; page?: never; resource?: never }
   /**
    * The address of a link saved by the user, to its own site (D-154). With
    * `list`, `sites` are the sites of the list the caller read: the address
@@ -87,11 +100,13 @@ export type GatewayRule =
   | 'link-invalid'
   | 'page-consent'
   | 'resource-invalid'
+  | 'typed-invalid'
   | 'local'
   | 'cloud'
   | 'link'
   | 'page'
-  | 'resource';
+  | 'resource'
+  | 'typed';
 
 /**
  * What the caller does after a block. `notify-reference`: a channel gets a
@@ -104,7 +119,7 @@ export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
 export type Decision =
   | {
       decision: 'allow';
-      rule: 'local' | 'cloud' | 'link' | 'page' | 'resource';
+      rule: 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed';
       label: Label;
       reason: string;
       /** The exact text checked for each fragment, frozen: this is what is sent. */
@@ -112,7 +127,7 @@ export type Decision =
     }
   | {
       decision: 'block';
-      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource'>;
+      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed'>;
       label: Label;
       reason: string;
       next: NextStep;
@@ -291,6 +306,21 @@ function bodyReadings(body: string): string[] {
   return readings;
 }
 
+/**
+ * The shape of a typed text (D-264), before any text is read: exactly one
+ * string of at most `MAX_TYPED_TEXT` characters, without control characters
+ * (a newline or a tab would submit the form or move to another field, which
+ * is the caller's `submit`, never the text's).
+ */
+function checkTypedShape(payload: readonly Labeled<unknown>[], label: Label): Decision | undefined {
+  if (payload.length !== 1) return block('typed-invalid', label, 'a typed text is exactly one fragment', 'stay-local');
+  const [text] = payload;
+  if (typeof text?.value !== 'string') return block('typed-invalid', label, 'a typed text is a text', 'stay-local');
+  if (Array.from(text.value).length > MAX_TYPED_TEXT) return block('typed-invalid', label, `a typed text is longer than ${String(MAX_TYPED_TEXT)} characters`, 'stay-local');
+  if (/\p{Cc}/u.test(text.value)) return block('typed-invalid', label, 'a typed text has no control characters', 'stay-local');
+  return undefined;
+}
+
 function isPageConsent(value: unknown): value is PageConsent {
   if (typeof value !== 'object' || value === null) return false;
   const page = value as Record<string, unknown>;
@@ -327,6 +357,7 @@ export function isTarget(value: unknown): value is Target {
     case 'channel':
       return CHANNELS.includes(target.id as string);
     case 'web':
+      if (target.typed !== undefined) return target.page === undefined && target.resource === undefined && (target.typed === 'public' || target.typed === 'user' || target.typed === 'sites');
       if (target.resource !== undefined) return target.page === undefined && isResourceRequest(target.resource);
       return target.page === undefined || isPageConsent(target.page);
     case 'link':
@@ -354,9 +385,10 @@ export function localityOf(target: Target): Locality {
   return 'cloud';
 }
 
-/** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`; never the address nor the site of a link. */
+/** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`, `web-typed-public`; never the address nor the site of a link, nor a typed text. */
 export function targetName(target: Target): string {
   if (target.kind === 'web') {
+    if (target.typed !== undefined) return `web-typed-${target.typed}`;
     if (target.resource !== undefined) return `web-resource-${target.resource.of}`;
     return target.page === undefined ? 'web-search' : `web-page-${target.page.from}`;
   }
@@ -421,7 +453,7 @@ export function spendAllowed(decision: unknown): Allowed | undefined {
 }
 
 function block(
-  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource'>,
+  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource' | 'typed'>,
   label: Label,
   reason: string,
   next: NextStep,
@@ -439,7 +471,7 @@ function block(
  * 1. inputs are well formed (a context made by the policy, a known target whose
  *    locality matches what is known about it, a list of fragments);
  * 2. nothing goes to a cloud target (cloud executor, Telegram, phone, push,
- *    web search, link) when a fragment is finance data (`finance:*` source)
+ *    web query, page, resource or typed text, link) when a fragment is finance data (`finance:*` source)
  *    or the context has read some (D-183), whatever the labels;
  * 3. no fragment is L3, whatever the target;
  * 4. every fragment has a text form (text or plain JSON);
@@ -456,7 +488,11 @@ function block(
  *    user, checked by its own rules: the second scan does not read it. Nor
  *    does it read a resource of a page of the agent's browser (D-264): its
  *    shape is checked right after rule 3, then rules 4-7 and the scanner on
- *    its address and body, decoded too, decide.
+ *    its address and body, decoded too, decide. A text the agent's browser
+ *    types in a field (`typed`, D-264) is checked as a page: its shape right
+ *    after rule 3 (one text of at most `MAX_TYPED_TEXT` characters), then
+ *    rules 4-7, its consent (`public` only from an L0 session and an L0
+ *    text), the scanner and the second scan.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -513,6 +549,13 @@ export function gatewayCheck(
   const resource = target.kind === 'web' ? target.resource : undefined;
   if (resource !== undefined) {
     const refused = checkResourceShape(payload, label, resource);
+    if (refused !== undefined) return refused;
+  }
+
+  // A typed text (D-264): its shape first, as for a resource.
+  const typed = target.kind === 'web' ? target.typed : undefined;
+  if (typed !== undefined) {
+    const refused = checkTypedShape(payload, label);
     if (refused !== undefined) return refused;
   }
 
@@ -598,10 +641,16 @@ export function gatewayCheck(
     if (refused !== undefined) return refused;
   }
 
+  // A typed text (D-264): the consent of its page, as for a page; nothing else to check before the scanners.
+  if (typed === 'public' && (context.effective !== 'L0' || label !== 'L0')) {
+    return block('page-consent', label, `text in a public page only from a public session, not ${maxLabel(context.effective, label)}`, 'stay-local');
+  }
+
   const findings = parts.flatMap((part) => scanText(part));
   if (findings.length > 0) {
     const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
-    return block('scanner', label, `scanner matched: ${kinds}`, onBlock === 'notify-reference' ? onBlock : 'wait-user', findings);
+    const next: NextStep = typed !== undefined ? 'stay-local' : onBlock === 'notify-reference' ? onBlock : 'wait-user';
+    return block('scanner', label, `scanner matched: ${kinds}`, next, findings);
   }
 
   // The second scanner (D-113): only upwards, after every deterministic rule.
@@ -620,6 +669,9 @@ export function gatewayCheck(
   const skipped = second.verdict === 'skipped' ? `, second check skipped on a development installation (${second.reason})` : '';
   const catalog = exempt.filter(Boolean).length;
   const unread = catalog === 0 ? '' : `, ${String(catalog)} catalog text${catalog === 1 ? '' : 's'} not read by the second check`;
+  if (typed !== undefined) {
+    return allow({ decision: 'allow', rule: 'typed', label, reason: `${label} text typed in a page, ${typed} consent, scan clean${skipped}${unread}`, texts }, target);
+  }
   if (target.kind === 'web' && target.page !== undefined) {
     return allow({ decision: 'allow', rule: 'page', label, reason: `${label} page address, ${target.page.from} consent, scan clean${skipped}`, texts }, target);
   }

@@ -50,7 +50,7 @@ Regole di validazione (task 1.9, D-034), ognuna con un caso positivo e uno negat
 | `task.create`, `task.plan`, `task.update`, `task.delegate`, `user.ask` | | `task.plan`: approvazione del piano in chat, di tipo `plan` (D-159) |
 | `repo.read`, `repo.write`, `repo.test` (nella cartella del progetto approvato, D-056 e D-058, o nella copia del run) | (`repo.test` non apre nulla solo perché la sandbox del task 1.6 blocca la rete anche all'esecutore locale) | |
 | `file.delete` | | `delete` |
-| `web.search`, `web.fetch` | contenuti non fidati, comunicazione esterna (`web.fetch`: il lato della comunicazione esterna può restare tolto in una scheda solo locale, D-262) | |
+| `web.search`, `web.fetch`, `browser.open`, `browser.read`, `browser.click`, `browser.type`, `browser.scroll`, `browser.close` | contenuti non fidati, comunicazione esterna (`web.fetch` e gli strumenti del browser, D-262 e D-264: il lato della comunicazione esterna può restare tolto in una scheda solo locale, perché li offre solo un passo senza dati Privati) | |
 | `channel.send` | comunicazione esterna | `send_external` |
 | `commitment.add`, `commitment.list`, `commitment.done` (la segretaria, D-144) | (privati per natura: solo in una scheda con `max_label` L2 che gira sul modello locale soltanto) | conferma dell'utente in chat, di tipo `commitment` |
 | `im.add` (gli IM del progetto, D-167 P4b) | (solo locale, come gli impegni: il file lo scrive il codice su questo computer) | nessuna da una conversazione di lavoro (la voce si toglie a mano e la risposta dice dove è andata); conferma dell'utente in chat, di tipo `im`, quando il passo ha letto più di quanto l'IM contiene |

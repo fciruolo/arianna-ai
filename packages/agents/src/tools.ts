@@ -89,6 +89,14 @@ export const TOOLS = {
   'web.search': { description: 'Search the web', opens: ['untrusted_content', 'external_comms'] },
   // Arianna's reader of public pages (D-262, P7): offered only where the step's context is at most L1.
   'web.fetch': { description: 'Fetch a web page', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  // Arianna's browser (D-264, passo 3): a container without network, every request through the core and the
+  // gateway; offered where web.fetch is, and only once the browser image is built.
+  'browser.open': { description: 'Open a public page in the agent browser', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  'browser.read': { description: 'Read the visible text and the numbered elements of the page of the agent browser', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  'browser.click': { description: 'Click a numbered element of the page of the agent browser', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  'browser.type': { description: 'Type a short text, checked by the gateway, in a field of the page of the agent browser', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  'browser.scroll': { description: 'Scroll the page of the agent browser by one screen', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
+  'browser.close': { description: 'Close the agent browser', opens: ['untrusted_content', 'external_comms'], withoutPrivateData: true },
   'channel.send': {
     description: 'Send a message on an external channel (Telegram, phone), through the gateway',
     opens: ['external_comms'],
@@ -122,6 +130,14 @@ export type CloudToolId = (typeof CLOUD_TOOLS)[number];
 
 export function isCloudToolId(value: unknown): value is CloudToolId {
   return (CLOUD_TOOLS as readonly unknown[]).includes(value);
+}
+
+/** The tools of the agent browser (D-264): offered and refused together, as web.fetch. */
+export const BROWSER_TOOLS = ['browser.open', 'browser.read', 'browser.click', 'browser.type', 'browser.scroll', 'browser.close'] as const satisfies readonly ToolId[];
+export type BrowserToolId = (typeof BROWSER_TOOLS)[number];
+
+export function isBrowserTool(tool: ToolId): tool is BrowserToolId {
+  return (BROWSER_TOOLS as readonly string[]).includes(tool);
 }
 
 /** The tools that read finance data (D-183): a card listing one answers only in its own private conversation. */

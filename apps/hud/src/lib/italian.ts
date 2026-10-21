@@ -264,6 +264,8 @@ export function errorText(cause: unknown): string {
 const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
   // web.fetch (D-262): the reason is already Italian, written by the core.
   [/^web · (.+)$/, (reason) => `pagina non letta: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, '')}`],
+  // The browser of Arianna (D-264): the reason is already Italian, written by the core.
+  [/^browser · (.+)$/, (reason) => `browser: ${sentence(reason)}`],
   [/^(\S+) does not take delegated steps$/, (agent) => `${agentName(agent)} non accetta passi delegati`],
   [/^the user did not approve sending the brief to the cloud/, () => 'il brief non è stato approvato per il cloud'],
   [/^the user did not approve the budget for (\S+)/, (model) => `il budget per ${MODEL_TEXT[model] ?? model} non è stato approvato`],
@@ -285,6 +287,28 @@ const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
   [/^page (\S+) already exists/, (path) => `la pagina ${path} esiste già`],
   [/^page (\S+) is too large to read$/, (path) => `la pagina ${path} è troppo grande`],
 ];
+
+/** A sentence of the core inside a line: lower-case initial, no final full stop. */
+function sentence(text: string): string {
+  return `${text.charAt(0).toLowerCase()}${text.slice(1).replace(/\.$/, '')}`;
+}
+
+// The verbs of the browser lines (D-264): `browser · clic · <site>` reads «clic su <site>».
+const BROWSER_VERB: Record<string, string> = { apre: 'apre', legge: 'legge', clic: 'clic su', scorre: 'scorre' };
+
+/**
+ * A line of Arianna's browser (D-264): `browser · apre · <site>`,
+ * `browser · scrive 12 caratteri`, `browser · chiude`. Only the site is known,
+ * never the whole address: no link.
+ */
+function browserLine(detail: string): string | undefined {
+  const match = /^browser · (.+)$/.exec(detail);
+  if (match?.[1] === undefined) return undefined;
+  const [verb = '', ...rest] = match[1].split(' · ');
+  const known = Object.hasOwn(BROWSER_VERB, verb) ? BROWSER_VERB[verb] : undefined;
+  if (known !== undefined && rest.length > 0) return `browser: ${known} ${rest.join(' ')}`;
+  return `browser: ${sentence([verb, ...rest].join(' '))}`;
+}
 
 function toolError(detail: string): string {
   for (const [pattern, text] of TOOL_ERRORS) {
@@ -330,6 +354,8 @@ export function activityText(activity: Activity | SavedActivity): string {
     case 'search':
       return `Cerco nella knowledge base: «${activity.detail}»`;
     case 'read': {
+      const browser = browserLine(activity.detail);
+      if (browser !== undefined) return browser;
       const page = webPage(activity.detail);
       if (page !== undefined) return page.title === undefined ? `Ho letto ${page.site}` : `Ho letto ${page.site} — ${page.title}`;
       return `Leggo ${activity.detail}`;
@@ -348,7 +374,7 @@ export function activityText(activity: Activity | SavedActivity): string {
     case 'delegate':
       return delegateText(activity.detail);
     case 'tool':
-      return `Il Coder usa ${TOOL_TEXT[activity.detail] ?? activity.detail}`;
+      return browserLine(activity.detail) ?? `Il Coder usa ${TOOL_TEXT[activity.detail] ?? activity.detail}`;
     case 'wait':
       return waitText(activity.detail);
   }
@@ -388,6 +414,8 @@ function delegateText(detail: string): string {
 
 // `budget · fable`, or `claude · <ISO time>` for a quota.
 function waitText(detail: string): string {
+  const browser = browserLine(detail);
+  if (browser !== undefined) return browser;
   const workspace = /^workspace · (\S+)$/.exec(detail);
   if (workspace?.[1] !== undefined) return `La cartella ${workspace[1]} ha modifiche non committate: aspetto il tuo via libera`;
   const budget = /^budget · (\S+)$/.exec(detail);

@@ -14,8 +14,10 @@ export {
 export { AGENTS_DIR, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 export {
   APPROVAL_ACTIONS,
+  BROWSER_TOOLS,
   CLOUD_TOOLS,
   FINANCE_TOOLS,
+  isBrowserTool,
   isCloudToolId,
   isFinanceCard,
   isFinanceTool,
@@ -24,6 +26,7 @@ export {
   toolSpec,
   TRIFECTA_SIDES,
   type ApprovalAction,
+  type BrowserToolId,
   type CloudToolId,
   type ToolId,
   type ToolSpec,

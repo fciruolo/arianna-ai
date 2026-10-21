@@ -21,9 +21,9 @@ after(() => {
   rmSync(cards, { recursive: true, force: true });
 });
 
-test('a tool offered only where private data is closed (D-262) never becomes a tool of Claude Code or Codex', () => {
+test('a tool offered only where private data is closed (D-262, D-264) never becomes a tool of Claude Code or Codex', () => {
   const guarded = (Object.keys(TOOLS) as ToolId[]).filter((tool) => toolSpec(tool).withoutPrivateData === true);
-  assert.deepEqual(guarded, ['web.fetch']);
+  assert.deepEqual(guarded, ['web.fetch', 'browser.open', 'browser.read', 'browser.click', 'browser.type', 'browser.scroll', 'browser.close']);
   for (const base of [[], ['repo.read'], ['repo.read', 'repo.write', 'repo.test']] as ToolId[][]) {
     assert.deepEqual(claudeToolsOf([...base, ...guarded]), claudeToolsOf(base));
     assert.equal(codexAccessOf([...base, ...guarded]), codexAccessOf(base));

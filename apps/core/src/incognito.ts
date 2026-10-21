@@ -23,8 +23,8 @@ export const INCOGNITO_WARN_MS = 60_000;
 /** The tools that would keep something after the closing: never offered in an incognito conversation (D-136). */
 // profile.propose writes the profile; profile.share leaves its approval and its label_changes row (D-213).
 // routine.propose writes a routine and its conversation (D-256).
-// web.fetch leaves the address in gateway_log and its site in an event, both append-only (D-262).
-export const INCOGNITO_OFF_TOOLS = ['kb.write', 'task.create', 'task.plan', 'task.update', 'im.add', 'profile.share', 'profile.propose', 'routine.propose', 'web.fetch'] as const;
+// web.fetch leaves the address in gateway_log and its site in an event, both append-only (D-262); the browser too (D-264).
+export const INCOGNITO_OFF_TOOLS = ['kb.write', 'task.create', 'task.plan', 'task.update', 'im.add', 'profile.share', 'profile.propose', 'routine.propose', 'web.fetch', 'browser.open', 'browser.read', 'browser.click', 'browser.type', 'browser.scroll', 'browser.close'] as const;
 
 export type IncognitoCause = 'user' | 'idle' | 'restart';
 

@@ -54,6 +54,10 @@ import { eraseConversation } from './erase.ts';
 import { attachmentsDir, pruneAttachments } from './attachments.ts';
 import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
+import { AgentBrowser, gatewayTyped } from './browser/agent-browser.ts';
+import { readBrowserImageLock } from './browser/image.ts';
+import { BrowserManager } from './browser/manager.ts';
+import { writeTakenLine } from './orchestrator/browser-tool.ts';
 import { createMcpServer } from './mcp/server.ts';
 import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
@@ -548,6 +552,21 @@ const advise = createAdvisor({
 const attachmentFiles = attachmentsDir(config.paths.data);
 pruneAttachments(sql, attachmentFiles).catch(report);
 
+// The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.
+const browserManager = new BrowserManager({
+  home: config.home,
+  onEvent: (event) => { appendEvent(sql, event).catch(report); },
+});
+if (readBrowserImageLock(config.home) !== null) browserManager.cleanup().catch(report);
+const agentBrowser = new AgentBrowser({
+  sql,
+  manager: browserManager,
+  session: { home: config.home, dataDir: config.paths.data },
+  gateTyped: gatewayTyped(sql),
+  onEvent: (event) => { appendEvent(sql, event).catch(report); },
+  onTaken: (conversationId) => { writeTakenLine(sql, conversationId).catch(report); },
+});
+
 const orchestrator = createOrchestrator({
   // D-225, tappa A: a chat reply of a character switched on is written once more, livelier.
   livelyReplies: true,
@@ -583,6 +602,7 @@ const orchestrator = createOrchestrator({
   ...(claude === undefined ? {} : { claude }),
   ...(codex === undefined ? {} : { codex }),
   // The trial chat of a catalog model (D-142): `local-large` of the endpoints pointing at it, as the trials of D-081.
+  browser: { agent: agentBrowser, installed: () => readBrowserImageLock(config.home) !== null },
   trialModel: (modelId) => {
     const endpoints = trialEndpoints(settings.current().local.endpoints, modelId);
     return memory.wrap(
@@ -618,8 +638,11 @@ const worker = {
   stopTask: (taskId: string, cause: StopCause): boolean => workers.some((one) => one.stopTask(taskId, cause)),
 };
 /** Closes an incognito conversation, stopping the step the worker runs for it (D-136). */
-const endIncognito = (conversationId: string, cause: IncognitoCause) =>
-  closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito'), onError: report });
+const endIncognito = async (conversationId: string, cause: IncognitoCause) => {
+  // Never held by an incognito conversation (the tools are off there): released all the same.
+  await agentBrowser.release(conversationId).catch(report);
+  return closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito'), onError: report });
+};
 const live = await startLiveFeed(sql, { onError: report });
 
 // The calls (D-066), on the voice in place: off, they are refused. Limits,
@@ -1324,7 +1347,16 @@ const server = await startApiServer({
   stopChat: (conversationId) => stopConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
   // D-235: "Ferma" of a card, as "Ferma" in the chat.
   stopCard: (cardId) => stopCard(sql, cardId, { stopTask: (taskId) => worker.stopTask(taskId, 'user') }),
-  erase: (conversationId) => eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report }),
+  // Its browser goes first (D-264): the pages of an erased conversation do not stay open.
+  erase: async (conversationId) => {
+    await agentBrowser.release(conversationId).catch(report);
+    try {
+      return await eraseConversation(sql, conversationId, { stopTask: (taskId) => worker.stopTask(taskId, 'erase'), dataDir: config.paths.data, onError: report });
+    } finally {
+      // Again once its step is stopped: one that opened a browser in between does not keep it.
+      await agentBrowser.release(conversationId).catch(report);
+    }
+  },
   incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
   onError: report,
 });
@@ -1493,6 +1525,7 @@ async function shutdown(): Promise<void> {
   await organizer.stop();
   await routineSummarizer.stop();
   await Promise.all(workers.map((one) => one.stop()));
+  await agentBrowser.close();
   memory.stop();
   await localServers.stop();
   await live.close();

@@ -58,7 +58,7 @@ export async function readPage(input: ReadPageInput): Promise<FetchResult> {
     const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, input.meta);
     if (decision.decision !== 'allow') return undefined;
     const spent = spendAllowed(decision);
-    return spent?.target.kind === 'web' ? spent.texts[0] : undefined;
+    return spent?.target.kind === 'web' && spent.target.page !== undefined ? spent.texts[0] : undefined;
   };
   // For a post of X the first address asked is its oEmbed, not the post: the consent is checked on the post first.
   let first = true;

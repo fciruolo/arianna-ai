@@ -94,6 +94,7 @@ export {
   localityOf,
   targetName,
   MAX_RESOURCE_BODY,
+  MAX_TYPED_TEXT,
   RESOURCE_METHODS,
   RESOURCE_TYPES,
   type Allowed,

@@ -1,5 +1,6 @@
 import {
   answerText,
+  isBrowserTool,
   chatMessages,
   offerable,
   promptLabelOf,
@@ -77,6 +78,7 @@ import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
+import { browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, WAITING_BROWSER, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -198,6 +200,8 @@ export interface OrchestratorOptions {
   attachmentsDir?: string;
   /** Tests: the downloader of `web.fetch` (D-262), with fake pages; without it the network of link-fetch.ts. */
   fetchLink?: WebToolEnv['fetchLink'];
+  /** The browser of Arianna (D-264, passo 3) and whether its image is built; absent, the browser tools are never offered. */
+  browser?: { agent: BrowserToolEnv['browser']; installed: () => boolean };
 }
 
 /**
@@ -219,6 +223,8 @@ export interface OrchestratorOptions {
  * in a private one (routineProposalAllowed).
  * `web.fetch` (D-262) only with `web`: a step whose context is at most
  * Internal, without finance data, not incognito (webFetchOffered).
+ * The browser tools (D-264, passo 3) only with `browser`: the same steps as
+ * `web.fetch`, once the browser image is built (browserOffered).
  */
 export function orchestratorTools(
   agent: LoadedAgent,
@@ -230,6 +236,7 @@ export function orchestratorTools(
   shares = false,
   routines = false,
   web = false,
+  browser = false,
 ): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
@@ -240,6 +247,7 @@ export function orchestratorTools(
         (tool !== PROFILE_SHARE || (delegation && !secretary && shares)) &&
         (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary)) &&
         (tool !== WEB_FETCH || (web && !incognito))) ||
+        (browser && !incognito && isBrowserTool(tool)) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -322,7 +330,8 @@ async function historyOf(
     }
   }
   // A profile.share the user decided (D-114, tappa C): the model reads the decision, never the text.
-  const shared = await shareResults(sql, task.id, turns);
+  // A waiting share (D-114) or link to another site (D-264): the model reads the decision of the user.
+  const shared = new Map([...(await shareResults(sql, task.id, turns)), ...(await browserResults(sql, task.id, turns))]);
   // A card sent back (D-235): each note after the turns before it, as the user's.
   const returns = task.conversationId === null ? await loadCardReturns(sql, task.id) : [];
   let nextReturn = 0;
@@ -1090,6 +1099,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         // A confirmation asked at that step and still pending: wait for it again.
         const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ??
           (await shareReplay(sql, ctx, done)) ??
+          (await browserReplay(sql, ctx, done)) ??
           (await proposeReplay(sql, ctx, done)) ??
           (await routineReplay(sql, ctx, done)) ??
           (await executorReplay(done, delegations));
@@ -1199,7 +1209,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         routinesOffered,
         // A public page (D-262): only while the step has read nothing above Internal, nor finance data.
         webFetchOffered(context, incognito),
+        browserOffered(context, incognito, options.browser?.installed() === true),
       );
+      // A conversation that read private or finance data keeps no browser (D-264, passo 3).
+      if (options.browser !== undefined && task.conversationId !== null && options.browser.agent.holder === task.conversationId && !webFetchOffered(context, incognito)) {
+        await options.browser.agent.release(task.conversationId);
+      }
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
       const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
       // A plan of Claude that failed in this task is not asked again by the local model: one call per task.
@@ -1289,6 +1304,23 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       }
       if (isSecretaryTool(answer.tool)) {
         return runSecretaryTool(sql, ctx, { turn, label, tool: answer.tool, args: answer.arguments, usage }, (kind, detail) => show(task, step, kind, detail));
+      }
+      // The browser (D-264, passo 3): never stopped as a repeated call, reading the same page again after a click is the point.
+      if (isBrowserTool(answer.tool)) {
+        const ran = await browserTool(answer.tool, answer.arguments, { task, context, incognito, ...(options.browser === undefined ? {} : { browser: { browser: options.browser.agent, sql, runId } }) });
+        // A link to a site the consent does not cover: the card «Apri / No», written with the turn.
+        const confirm = ran.confirm;
+        if (confirm !== undefined) {
+          const approvalId = await sql.begin(async (tx) => {
+            await recordTurn(tx, { ...turn, label, result: WAITING_BROWSER });
+            return requestBrowserOpen(tx, { taskId: task.id, step, label, url: confirm.url, site: confirm.site });
+          });
+          await show(task, step, 'wait', ran.detail);
+          return { kind: 'confirm', approvalId, usage };
+        }
+        await recordTurn(sql, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
+        await show(task, step, ran.text.startsWith('error: ') ? 'error' : answer.tool === 'browser.read' ? 'read' : 'tool', ran.detail);
+        return { kind: 'continue', usage };
       }
       if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       const tool = answer.tool;

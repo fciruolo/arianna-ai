@@ -408,7 +408,7 @@ test('a close of the session is stopped, never disconnected, even when closing P
   let disconnect: (() => void) | undefined;
   // As a real Playwright: browser.close() ends the CDP pipe, then reports `disconnected`.
   const browser = {
-    contexts: () => [{ pages: () => [], newPage: () => Promise.reject(new Error('not in this test')) }],
+    contexts: () => [{ pages: () => [], newPage: () => Promise.reject(new Error('not in this test')), on: () => undefined }],
     newBrowserCDPSession: () => Promise.resolve({ send: () => Promise.resolve({}) }),
     on: (event: string, listener: () => void) => { if (event === 'disconnected') disconnect = listener; },
     close: async () => {

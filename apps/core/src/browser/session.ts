@@ -21,6 +21,10 @@ export interface BrowserSession {
   /** The network of the job (D-264, passo 2), when the session was opened with one. */
   network?: NetworkHandle;
   openPage(url: string, timeoutMs?: number): Promise<{ title: string; url: string }>;
+  /** The tab the agent acts on: the last one opened (a popup of a click becomes it), a new one when none is left. */
+  currentPage(): Promise<Page>;
+  /** After a refused navigation: a fresh tab in place of the current one, left on Chromium's error page. */
+  resetPage(): Promise<void>;
   screenshot(): Promise<Buffer>;
   close(): Promise<void>;
 }
@@ -91,6 +95,10 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
   const shared = context;
 
   let page: Page | undefined = shared.pages()[0];
+  // A link with target=_blank opens a tab: the agent goes on there, as a person would.
+  shared.on('page', (opened) => {
+    page = opened;
+  });
   const current = async (): Promise<Page> => {
     if (!page || page.isClosed()) page = await shared.newPage();
     return page;
@@ -115,6 +123,16 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
       // A redirect followed by the core moves the frame to its final address: wait for it.
       await network?.settle(target, timeoutMs);
       return { title: await target.title(), url: target.url() };
+    },
+    // Every action of the agent reads the page through here: the idle time starts again.
+    async currentPage() {
+      open.touch();
+      return current();
+    },
+    async resetPage() {
+      const old = page;
+      page = await shared.newPage().catch(() => undefined);
+      if (page && old && !old.isClosed()) await old.close().catch(() => undefined);
     },
     async screenshot() {
       open.touch();

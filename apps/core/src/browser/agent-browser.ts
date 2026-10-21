@@ -1,0 +1,619 @@
+import { randomBytes } from 'node:crypto';
+
+import { spendAllowed, type Context, type PageConsent } from '@arianna/policy';
+import type { Page } from 'playwright-core';
+
+import type { Sql } from '../db/client.ts';
+import type { NewEvent } from '../events.ts';
+import { passGateway, type GatewayMeta } from '../gateway.ts';
+import { siteOf } from '../link-fetch.ts';
+import { BrowserError } from './container.ts';
+import type { BrowserManager } from './manager.ts';
+import { navigationConsent, type NetworkJob, type RequestOutcome } from './network.ts';
+import type { ResourceFailure } from './resource-fetch.ts';
+import { connectSession, type BrowserSession, type SessionOptions } from './session.ts';
+
+/**
+ * The browser of Arianna in a chat (D-264, passo 3). One browser for the
+ * installation (BrowserManager), held by one conversation at a time («Per
+ * conversazione», 2026-10-21): it stays open between the answers of that
+ * conversation until 15 minutes without actions, 30 in all, or
+ * `browser.close`. Another conversation takes it only when it has been
+ * unused for TAKE_OVER_MS («Lo prende se fermo da 2 minuti»): the first one
+ * is told by onTaken; while in use, «occupato».
+ *
+ * Every action runs one at a time. The context and the consent of the
+ * session are those of the step that acts, set again at each action
+ * (NetworkHandle.rescope): a conversation that went from Public to Internal
+ * clicks from then on with the `user` consent.
+ *
+ * What the model gets of a page is read by a fixed script of the core
+ * (READ_SCRIPT), never by code of the model: the visible text and a numbered
+ * list of the elements, never the value of a field; a password field is
+ * listed as not to be used and nothing is typed in it. The numbers are kept
+ * on the elements of the page as an attribute: a hostile page can move them,
+ * and then a click lands on another element of the same page; every
+ * navigation it causes passes the network of the job (D-267) all the same.
+ * The same holds for what the script reads in the world of the page (the
+ * kind of a field, the address of a link): a page can make a password field
+ * look like a text field, or show another address on the card «Apri / No».
+ * The text typed has passed the gateway before, and every page the browser
+ * then loads passes the network: those stay the boundary. The address and
+ * the title of a reading come from Playwright, not from the script.
+ *
+ * In an Internal conversation `browser.open` takes only an address the user
+ * wrote (or opened from a card), as web.fetch: any other waits for the user;
+ * the sites of those addresses count for clicks and redirects only.
+ * Every action has a deadline (ACTION_LIMIT_MS): a page that hangs the
+ * browser loses it, never the queue nor the shutdown of the core.
+ */
+
+export const TAKE_OVER_MS = 2 * 60_000;
+export const MAX_ELEMENTS = 80;
+export const MAX_TYPED = 200;
+/** Text of the page the script returns; the tool cuts it again for the model. */
+const MAX_SCRIPT_TEXT = 20_000;
+const ACTION_MS = 5_000;
+const LOAD_MS = 15_000;
+const NAVIGATION_START_MS = 1_500;
+/** Longest an action may take: a load and the redirects followed after it, with a margin. */
+export const ACTION_LIMIT_MS = 45_000;
+export const REF_ATTRIBUTE = 'data-arianna-ref';
+
+export type ElementKind = 'link' | 'button' | 'field' | 'password' | 'choice' | 'select';
+
+export interface PageElement {
+  ref: number;
+  kind: ElementKind;
+  label: string;
+  /** link: the whole address, for the consent of the core; the model reads only its site. */
+  href?: string;
+  /** field: the type of the input (text, search, email…), `textarea` for a text area. */
+  type?: string;
+}
+
+export interface PageReading {
+  title: string;
+  url: string;
+  text: string;
+  elements: PageElement[];
+  /** Percentage of the page scrolled, 0-100. */
+  scrolled: number;
+}
+
+/** What an action did. `confirm`: a link to a site the consent does not cover, waiting for the user. */
+export type ActionResult =
+  | { ok: true; page: { url: string; site: string; title: string }; reading?: PageReading; typed?: number }
+  | { ok: false; reason: ActionFailure; site?: string; network?: ResourceFailure | RequestOutcome }
+  | { ok: false; reason: 'confirm'; url: string; site: string };
+
+export type ActionFailure =
+  | 'busy'
+  | 'not-installed'
+  | 'start-failed'
+  | 'not-open'
+  | 'no-reading'
+  | 'unknown-element'
+  | 'not-clickable'
+  | 'not-a-field'
+  | 'password-field'
+  | 'too-long'
+  | 'typed-blocked'
+  | 'navigation-blocked'
+  | 'navigation-failed'
+  | 'action-failed';
+
+export type BrowserAction =
+  | { kind: 'open'; url: string }
+  | { kind: 'read' }
+  | { kind: 'click'; ref: number }
+  | { kind: 'type'; ref: number; text: string; submit: boolean }
+  | { kind: 'scroll'; direction: 'up' | 'down' }
+  | { kind: 'close' };
+
+/** The session of the step that acts. */
+export interface BrowserScope {
+  conversationId: string;
+  context: Context;
+  consent: PageConsent;
+  meta?: GatewayMeta;
+}
+
+export type OpenSession = (browser: BrowserManager, id: string, network: Omit<NetworkJob, 'userAgent'>) => Promise<BrowserSession>;
+
+export interface AgentBrowserOptions {
+  sql: Sql;
+  manager: BrowserManager;
+  session: Omit<SessionOptions, 'network'>;
+  /** The gateway on a text to type (target `web` with `typed`): true when it may be typed. */
+  gateTyped: (text: string, scope: BrowserScope) => Promise<boolean>;
+  onEvent?: (event: NewEvent) => void;
+  /** The browser of `conversationId` was closed for another conversation. */
+  onTaken?: (conversationId: string) => void;
+  now?: () => number;
+  takeOverMs?: number;
+  /** Tests: opens the session instead of starting a container. */
+  openSession?: OpenSession;
+  /** Tests: the deadline of an action (ACTION_LIMIT_MS). */
+  actionLimitMs?: number;
+  /** Tests: the network job options the core never sets (fake servers). */
+  network?: Pick<NetworkJob, 'unsafeTestAddresses' | 'resolve' | 'fetchResource' | 'timeoutMs'>;
+}
+
+interface Held {
+  conversationId: string;
+  id: string;
+  session: BrowserSession;
+  lastAction: number;
+  /** The elements of the last reading of the current page, by number. */
+  elements: Map<number, PageElement>;
+  /** The address the reading was made on: a reading of another page does not hold. */
+  readAt: string | undefined;
+}
+
+const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
+  const open = await manager.start(id);
+  return connectSession(open, { ...home, network });
+};
+
+/** Container ids: random, so a new browser never waits for the name of one still being removed. */
+function browserId(): string {
+  return `chat-${randomBytes(6).toString('hex')}`;
+}
+
+export class AgentBrowser {
+  readonly #options: AgentBrowserOptions;
+  readonly #now: () => number;
+  #held: Held | null = null;
+  #queue: Promise<unknown> = Promise.resolve();
+  #running = false;
+
+  constructor(options: AgentBrowserOptions) {
+    this.#options = options;
+    this.#now = options.now ?? Date.now;
+  }
+
+  /** The conversation holding the browser, if any. */
+  get holder(): string | null {
+    this.#forgetClosed();
+    return this.#held?.conversationId ?? null;
+  }
+
+  /** One action, after the ones already running. Never throws. */
+  act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+    // Another conversation while an action runs: «occupato» at once, never a wait behind it.
+    if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return Promise.resolve({ ok: false, reason: 'busy' });
+    const run = this.#queue.then(async () => {
+      this.#running = true;
+      try {
+        return await this.#act(scope, action);
+      } catch {
+        return { ok: false, reason: 'action-failed' } satisfies ActionResult;
+      } finally {
+        this.#running = false;
+      }
+    });
+    this.#queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
+  async release(conversationId: string): Promise<void> {
+    // The session first: an action under way on it then fails at once instead of being waited for.
+    if (this.#held?.conversationId === conversationId) await this.#drop();
+    await this.#queue;
+    if (this.#held?.conversationId === conversationId) await this.#drop();
+  }
+
+  /** At the shutdown of the core. */
+  async close(): Promise<void> {
+    await this.#drop();
+    await this.#queue;
+    await this.#drop();
+  }
+
+  async #act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+    this.#forgetClosed();
+    const held = this.#held;
+    if (action.kind === 'close') {
+      if (held?.conversationId === scope.conversationId) await this.#drop();
+      return { ok: true, page: { url: '', site: '', title: '' } };
+    }
+    if (held !== null && held.conversationId === scope.conversationId) {
+      held.session.network?.rescope(scope);
+      held.lastAction = this.#now();
+      return this.#bounded(held, this.#run(held, scope, action));
+    }
+    if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
+    const unwritten = openOutsideConsent(scope.consent, action.url);
+    if (unwritten !== undefined) return unwritten;
+    if (held !== null) {
+      if (this.#now() - held.lastAction < (this.#options.takeOverMs ?? TAKE_OVER_MS)) return { ok: false, reason: 'busy' };
+      await this.#drop();
+      this.#safely(() => { this.#options.onTaken?.(held.conversationId); });
+    }
+    if (this.#options.manager.state !== 'free') return { ok: false, reason: 'busy' };
+    const id = browserId();
+    let session: BrowserSession;
+    try {
+      const open = this.#options.openSession ?? defaultOpenSession(this.#options.session);
+      session = await open(this.#options.manager, id, {
+        sql: this.#options.sql,
+        context: scope.context,
+        consent: scope.consent,
+        ...(scope.meta === undefined ? {} : { meta: scope.meta }),
+        ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
+        ...this.#options.network,
+      });
+    } catch (error) {
+      if (error instanceof BrowserError && error.code === 'busy') return { ok: false, reason: 'busy' };
+      if (error instanceof BrowserError && (error.code === 'no-lock' || error.code === 'image-mismatch' || error.code === 'bad-image')) return { ok: false, reason: 'not-installed' };
+      return { ok: false, reason: 'start-failed' };
+    }
+    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined };
+    this.#held = next;
+    return this.#bounded(next, this.#run(next, scope, action));
+  }
+
+  async #run(held: Held, scope: BrowserScope, action: Exclude<BrowserAction, { kind: 'close' }>): Promise<ActionResult> {
+    const { session } = held;
+    switch (action.kind) {
+      case 'open': {
+        const unwritten = openOutsideConsent(scope.consent, action.url);
+        if (unwritten !== undefined) return unwritten;
+        held.elements.clear();
+        held.readAt = undefined;
+        try {
+          await session.openPage(action.url, LOAD_MS);
+        } catch {
+          return navigationFailure(session);
+        }
+        return this.#state(held);
+      }
+      case 'read': {
+        const page = await session.currentPage();
+        const parsed = await readPage(page);
+        // The address and the title from Playwright: the script runs in the world of the page, which may lie.
+        const reading = { ...parsed, url: page.url(), title: await page.title().catch(() => parsed.title) };
+        held.elements = new Map(reading.elements.map((element) => [element.ref, element]));
+        held.readAt = reading.url;
+        return { ok: true, page: pageOf(reading.url, reading.title), reading };
+      }
+      case 'scroll': {
+        const page = await session.currentPage();
+        await page.evaluate(scrollScript(action.direction));
+        return this.#state(held);
+      }
+      case 'click': {
+        const element = await this.#element(held, action.ref);
+        if (typeof element === 'string') return { ok: false, reason: element };
+        if (element.kind === 'password' || element.kind === 'select') return { ok: false, reason: 'not-clickable' };
+        if (element.kind === 'link' && element.href !== undefined) {
+          const outside = outsideConsent(scope.consent, element.href);
+          if (outside !== undefined) return { ok: false, reason: 'confirm', url: element.href, site: outside };
+        }
+        const page = await session.currentPage();
+        const done = await withNavigation(page, session, () => page.locator(refSelector(action.ref)).first().click({ timeout: ACTION_MS }));
+        return done ?? this.#state(held);
+      }
+      case 'type': {
+        // Counted in characters as the gateway counts them (code points), not in UTF-16 units.
+        if (Array.from(action.text).length > MAX_TYPED) return { ok: false, reason: 'too-long' };
+        const element = await this.#element(held, action.ref);
+        if (typeof element === 'string') return { ok: false, reason: element };
+        if (element.kind === 'password') return { ok: false, reason: 'password-field' };
+        if (element.kind !== 'field') return { ok: false, reason: 'not-a-field' };
+        if (!(await this.#options.gateTyped(action.text, scope).catch(() => false))) return { ok: false, reason: 'typed-blocked' };
+        const page = await session.currentPage();
+        const field = page.locator(refSelector(action.ref)).first();
+        // Checked again on the element itself: the page may have changed its type since the reading.
+        if (!(await field.evaluate(isTypableScript, undefined, { timeout: ACTION_MS }).catch(() => false))) return { ok: false, reason: 'not-a-field' };
+        await field.fill(action.text, { timeout: ACTION_MS });
+        if (action.submit) {
+          const done = await withNavigation(page, session, () => field.press('Enter', { timeout: ACTION_MS }));
+          if (done) return done;
+        }
+        const state = await this.#state(held);
+        return state.ok ? { ...state, typed: Array.from(action.text).length } : state;
+      }
+    }
+  }
+
+  /**
+   * An action within ACTION_LIMIT_MS: past it the browser is closed (a page
+   * that hangs in a script would hold the queue), and the action fails.
+   */
+  async #bounded(held: Held, work: Promise<ActionResult>): Promise<ActionResult> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => { resolve('late'); }, this.#options.actionLimitMs ?? ACTION_LIMIT_MS);
+    });
+    try {
+      const result = await Promise.race([work, late]);
+      if (result !== 'late') return result;
+      work.catch(() => undefined);
+      if (this.#held === held) await this.#drop();
+      return { ok: false, reason: 'action-failed' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** An element of the last reading, on the page it was read on. */
+  async #element(held: Held, ref: number): Promise<PageElement | 'no-reading' | 'unknown-element'> {
+    const page = await held.session.currentPage();
+    if (held.readAt === undefined || held.readAt !== page.url()) return 'no-reading';
+    return held.elements.get(ref) ?? 'unknown-element';
+  }
+
+  async #state(held: Held): Promise<ActionResult> {
+    const page = await held.session.currentPage();
+    // A new page: its numbers are not those of the last reading.
+    if (held.readAt !== page.url()) held.elements.clear();
+    return { ok: true, page: pageOf(page.url(), await page.title().catch(() => '')) };
+  }
+
+  /** The manager closed the browser (idle, max, disconnected): the conversation holds nothing any more. */
+  #forgetClosed(): void {
+    const held = this.#held;
+    if (held !== null && this.#options.manager.active?.id !== held.id) this.#held = null;
+  }
+
+  async #drop(): Promise<void> {
+    const held = this.#held;
+    this.#held = null;
+    if (held !== null) await held.session.close().catch(() => undefined);
+  }
+
+  #safely(callback: () => void): void {
+    try {
+      callback();
+    } catch {
+      console.warn('browser: a callback of the agent browser failed');
+    }
+  }
+}
+
+function pageOf(url: string, title: string): { url: string; site: string; title: string } {
+  return { url, site: siteOf(url) ?? '', title };
+}
+
+function refSelector(ref: number): string {
+  return `[${REF_ATTRIBUTE}="${String(Math.trunc(ref))}"]`;
+}
+
+/** Why the last navigation failed, from the network of the job. */
+function navigationFailure(session: BrowserSession): ActionResult {
+  const last = session.network?.lastNavigation();
+  if (last?.outcome === 'blocked' || last?.outcome === 'refused' || last?.outcome === 'form' || last?.outcome === 'limit') {
+    return { ok: false, reason: 'navigation-blocked', network: last.reason ?? last.outcome, ...(last.site === undefined ? {} : { site: last.site }) };
+  }
+  return { ok: false, reason: 'navigation-failed', ...(last?.reason === undefined ? {} : { network: last.reason }), ...(last?.site === undefined ? {} : { site: last.site }) };
+}
+
+/**
+ * Runs a click or a key that may start a navigation: waits briefly for one
+ * to start, then for its load and the redirects the core follows. A refused
+ * navigation is reported; undefined when the action ended on a page.
+ */
+async function withNavigation(page: Page, session: BrowserSession, action: () => Promise<void>): Promise<ActionResult | undefined> {
+  const before = session.network?.lastNavigation();
+  const started = page.waitForEvent('framenavigated', { predicate: (frame) => frame === page.mainFrame(), timeout: NAVIGATION_START_MS }).then(() => true, () => false);
+  await action();
+  if (!(await started)) {
+    const after = session.network?.lastNavigation();
+    // The navigation was refused before it could start (the gateway or a form).
+    if (after !== undefined && after.seq !== before?.seq && after.outcome !== 'ok' && after.outcome !== 'http-error') return navigationFailure(session);
+    return undefined;
+  }
+  await page.waitForLoadState('load', { timeout: LOAD_MS }).catch(() => undefined);
+  await session.network?.settle(page, LOAD_MS);
+  // Refused by the network after it started: Chromium shows its error page, which would interrupt the next navigation.
+  const after = session.network?.lastNavigation();
+  if (after !== undefined && after.seq !== before?.seq && after.outcome !== 'ok' && after.outcome !== 'http-error') {
+    const failed = navigationFailure(session);
+    await session.resetPage();
+    return failed;
+  }
+  return undefined;
+}
+
+/**
+ * The site of a link the consent does not cover («Clic solo nello stesso
+ * sito»), as the network decides a main page after the first; undefined when
+ * the click may go. With `public` every public page may go.
+ */
+export function outsideConsent(consent: PageConsent, href: string): string | undefined {
+  if (consent.from === 'public') return undefined;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return undefined;
+  }
+  // Not a page: the click stays on this page (a fragment, javascript:, mailto: refused by the network anyway).
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+  const allowed = navigationConsent(consent, url.href, 0);
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const site = siteOf(url.href) ?? host;
+  if (allowed.from === 'user') {
+    const key = (address: string): string => { try { const parsed = new URL(address); parsed.hash = ''; return parsed.href; } catch { return address; } };
+    return allowed.addresses.some((written) => key(written) === key(url.href)) ? undefined : site;
+  }
+  if (allowed.from === 'sites') return allowed.sites.some((name) => host === name || host.endsWith(`.${name}`)) ? undefined : site;
+  return undefined;
+}
+
+/**
+ * `browser.open` with a `user` consent: only an address of the consent, as
+ * web.fetch (the sites of those addresses are for clicks and redirects); any
+ * other waits for the user on the card «Apri / No». Undefined when it may go.
+ */
+export function openOutsideConsent(consent: PageConsent, address: string): ActionResult | undefined {
+  if (consent.from !== 'user') return undefined;
+  const key = (value: string): string | undefined => {
+    try {
+      const url = new URL(value);
+      url.hash = '';
+      return url.href;
+    } catch {
+      return undefined;
+    }
+  };
+  const wanted = key(address);
+  if (wanted !== undefined && consent.addresses.some((written) => key(written) === wanted)) return undefined;
+  return { ok: false, reason: 'confirm', url: address, site: siteOf(address) ?? address };
+}
+
+/** Whether an element still takes typed text: an input of a text kind or a text area, never password, file or hidden. */
+const isTypableScript = (element: unknown): boolean => {
+  const node = element as { tagName?: string; type?: string; readOnly?: boolean; disabled?: boolean };
+  if (node.disabled === true || node.readOnly === true) return false;
+  if (node.tagName === 'TEXTAREA') return true;
+  return node.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'number', ''].includes((node.type ?? '').toLowerCase());
+};
+
+function scrollScript(direction: 'up' | 'down'): string {
+  return `window.scrollBy({ top: ${direction === 'down' ? '' : '-'}Math.round(window.innerHeight * 0.85), behavior: 'instant' })`;
+}
+
+/**
+ * The fixed script of the reading (runs in the page): numbers the visible
+ * elements, the ones on screen first, and returns the visible text. It never
+ * reads the value of a field: labels come from aria-label, the label
+ * element, placeholder, title, alt, or the text of the element; the value
+ * attribute only of a button.
+ */
+export const READ_SCRIPT = `(() => {
+  const MAX = ${String(MAX_ELEMENTS)};
+  const ATTR = ${JSON.stringify(REF_ATTRIBUTE)};
+  for (const old of document.querySelectorAll('[' + ATTR + ']')) old.removeAttribute(ATTR);
+  const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+  const shown = (element) => {
+    const box = element.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1) return false;
+    const style = getComputedStyle(element);
+    return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0;
+  };
+  const textOf = (element) => clean(element.getAttribute('aria-label') || (element.labels && element.labels[0] ? element.labels[0].innerText : '') || element.getAttribute('placeholder') || element.getAttribute('title') || element.getAttribute('alt') || (element.tagName === 'INPUT' ? '' : element.innerText) || element.getAttribute('name') || '');
+  const kindOf = (element) => {
+    const tag = element.tagName;
+    const role = element.getAttribute('role');
+    if (tag === 'A' || role === 'link') return 'link';
+    if (tag === 'SELECT') return 'select';
+    if (tag === 'TEXTAREA') return 'field';
+    // A text box made of other elements (contenteditable): not typed into, so not listed.
+    if ((role === 'textbox' || role === 'searchbox') && tag !== 'INPUT') return null;
+    if (tag === 'INPUT') {
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'hidden' || type === 'file') return null;
+      if (type === 'password') return 'password';
+      if (type === 'checkbox' || type === 'radio') return 'choice';
+      if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image') return 'button';
+      return 'field';
+    }
+    return 'button';
+  };
+  const height = window.innerHeight;
+  const near = [];
+  const far = [];
+  for (const element of document.querySelectorAll('a[href], button, input, textarea, select, summary, [role=button], [role=link], [role=textbox], [role=searchbox]')) {
+    if (!shown(element)) continue;
+    const kind = kindOf(element);
+    if (kind === null) continue;
+    const box = element.getBoundingClientRect();
+    (box.bottom >= 0 && box.top <= height ? near : far).push([element, kind]);
+  }
+  const chosen = near.concat(far).slice(0, MAX);
+  const order = new Map(chosen.map((entry, index) => [entry[0], index]));
+  const elements = [];
+  let ref = 0;
+  for (const element of document.querySelectorAll('[href], button, input, textarea, select, summary, [role]')) {
+    if (!order.has(element)) continue;
+    const kind = chosen[order.get(element)][1];
+    ref += 1;
+    element.setAttribute(ATTR, String(ref));
+    let label = textOf(element);
+    if (kind === 'button' && element.tagName === 'INPUT') label = clean(element.getAttribute('value') || label);
+    const entry = { ref, kind, label };
+    if (kind === 'link' && element.href) entry.href = String(element.href);
+    if (kind === 'field') entry.type = element.tagName === 'TEXTAREA' ? 'textarea' : (element.getAttribute('type') || 'text').toLowerCase();
+    elements.push(entry);
+  }
+  const top = window.scrollY;
+  const max = Math.max(0, document.documentElement.scrollHeight - height);
+  // The main content when the page marks it, without menus; from the top of the screen once scrolled.
+  const root = document.querySelector('main, [role=main], article') || document.body;
+  let text = root ? root.innerText : '';
+  if (root && top > 0 && document.caretRangeFromPoint) {
+    let from = null;
+    for (const y of [4, 40, 120]) {
+      const caret = document.caretRangeFromPoint(Math.round(window.innerWidth / 2), y);
+      if (caret && root.contains(caret.startContainer)) { from = caret; break; }
+    }
+    if (from) {
+      const range = document.createRange();
+      range.setStart(from.startContainer, from.startOffset);
+      range.setEnd(root, root.childNodes.length);
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const rest = selection.toString();
+        selection.removeAllRanges();
+        if (rest.trim() !== '') text = rest;
+      }
+    }
+  }
+  return {
+    title: document.title,
+    url: location.href,
+    text: String(text || '').slice(0, ${String(MAX_SCRIPT_TEXT)}),
+    elements,
+    scrolled: max === 0 ? 100 : Math.min(100, Math.round((top / max) * 100)),
+  };
+})()`;
+
+const KINDS: readonly string[] = ['link', 'button', 'field', 'password', 'choice', 'select'];
+
+/** Reads the current page with READ_SCRIPT; what the page returns is checked, it is untrusted. */
+export async function readPage(page: Page): Promise<PageReading> {
+  const raw: unknown = await page.evaluate(READ_SCRIPT);
+  return parseReading(raw);
+}
+
+/** The answer of READ_SCRIPT, from a page that may have changed the script's globals: only the expected shape. */
+export function parseReading(raw: unknown): PageReading {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const text = (input: unknown, max: number): string => (typeof input === 'string' ? input.slice(0, max) : '');
+  const elements: PageElement[] = [];
+  if (Array.isArray(value.elements)) {
+    for (const item of value.elements.slice(0, MAX_ELEMENTS) as unknown[]) {
+      const entry = (item ?? {}) as Record<string, unknown>;
+      if (typeof entry.ref !== 'number' || !Number.isInteger(entry.ref) || entry.ref < 1 || typeof entry.kind !== 'string' || !KINDS.includes(entry.kind)) continue;
+      elements.push({
+        ref: entry.ref,
+        kind: entry.kind as ElementKind,
+        label: text(entry.label, 120),
+        ...(entry.kind === 'link' && typeof entry.href === 'string' ? { href: entry.href.slice(0, 2_000) } : {}),
+        ...(entry.kind === 'field' && typeof entry.type === 'string' ? { type: entry.type.slice(0, 20) } : {}),
+      });
+    }
+  }
+  const scrolled = typeof value.scrolled === 'number' && Number.isFinite(value.scrolled) ? Math.max(0, Math.min(100, Math.round(value.scrolled))) : 0;
+  return { title: text(value.title, 300), url: text(value.url, 2_000), text: text(value.text, MAX_SCRIPT_TEXT), elements, scrolled };
+}
+
+/**
+ * The gateway on a text browser.type would type (target `web` with `typed`,
+ * D-264): vault, scanner and the second check, as a page. True only when the
+ * exact text was allowed and spent here.
+ */
+export function gatewayTyped(sql: Sql): AgentBrowserOptions['gateTyped'] {
+  return async (text, scope) => {
+    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, { kind: 'web', typed: scope.consent.from }, { ...scope.meta, summary: 'browser typed text' });
+    if (decision.decision !== 'allow') return false;
+    const spent = spendAllowed(decision);
+    return spent?.target.kind === 'web' && spent.target.typed !== undefined && spent.texts[0] === text;
+  };
+}
