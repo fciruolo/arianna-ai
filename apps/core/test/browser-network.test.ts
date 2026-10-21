@@ -45,6 +45,8 @@ interface FakeRequestSpec {
   unknownFrame?: boolean;
   /** The address of the page of the frame before the navigation (a form is sent from it). */
   pageUrl?: string;
+  /** allHeaders of Playwright never answers (an event of Chromium that does not come). */
+  hangHeaders?: boolean;
 }
 
 interface Outcome {
@@ -69,7 +71,7 @@ function fakeRequest(spec: FakeRequestSpec): unknown {
     },
     redirectedFrom: () => chain(spec.redirects ?? 0),
     headers: () => spec.headers ?? {},
-    allHeaders: () => Promise.resolve(spec.headers ?? {}),
+    allHeaders: () => (spec.hangHeaders === true ? new Promise(() => undefined) : Promise.resolve(spec.headers ?? {})),
     postDataBuffer: () => spec.body ?? null,
   };
 }
@@ -87,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -111,6 +113,8 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
       return Promise.resolve(answer(input));
     },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
+    ...(options.debug === undefined ? {} : { debug: options.debug }),
+    headersTimeoutMs: 50,
     unsafeTestAddresses: [],
   };
   const handle = await attachNetwork(context, job);
@@ -581,6 +585,16 @@ describe('attachNetwork: forms and cookies of the user', () => {
     assert.equal(net.handle.authenticated(), 'banca-finta.it');
     await net.close();
     assert.equal(net.handle.authenticated(), null);
+  });
+});
+
+// A page that did not load in the trial of D-281: a request whose extra headers never come is still answered.
+describe('attachNetwork: requests are always answered', () => {
+  it('allHeaders that never answers: the headers Playwright has are used, the request goes on', async () => {
+    const net = await harness();
+    const sent = await net.send({ url: 'https://example.net/fonts/a.woff2', type: 'font', hangHeaders: true, headers: { accept: '*/*' } });
+    assert.ok(sent.fulfilled);
+    assert.equal(net.fetched.length, 1);
   });
 });
 

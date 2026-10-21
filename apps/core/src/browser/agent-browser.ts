@@ -496,6 +496,8 @@ export class AgentBrowser {
         ...(scope.meta === undefined ? {} : { meta: scope.meta }),
         ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
         ...this.#options.network,
+        // Diagnostics of a page that does not load (D-281 trial): counts by stage and the lag of the event loop, never an address.
+        ...(process.env.ARIANNA_BROWSER_DEBUG === '1' ? { debug: (line: string) => { console.warn(line); } } : {}),
       });
     } catch (error) {
       if (error instanceof BrowserError && error.code === 'busy') return { ok: false, reason: 'busy' };

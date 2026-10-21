@@ -211,7 +211,23 @@ export interface NetworkJob {
    * address, to count by hand what the scanner refused (try-cli.ts).
    */
   trace?: (entry: { url: string; type: CountedType; kind: string; outcome: RequestOutcome; reason?: ResourceFailure }) => void;
+  /**
+   * Diagnostics, off by default: every 5 s while requests are under way, a
+   * line with how many wait at each stage (headers, gateway and download,
+   * fulfil) and how late the event loop is. Counts only, never an address.
+   */
+  debug?: (line: string) => void;
+  /** Tests: how long `allHeaders` of Playwright is waited for (HEADERS_MS). */
+  headersTimeoutMs?: number;
 }
+
+/**
+ * How long the extra headers of a request (`allHeaders`, which waits for an
+ * event of Chromium that may never come for an intercepted request) are
+ * waited for; then the headers Playwright already has. Without the bound a
+ * request could stay unanswered and hold the load of its page.
+ */
+export const HEADERS_MS = 2_000;
 
 /** The last main page decided; `seq` grows by one at each, so a caller tells a new one from the same one read again. */
 export interface LastNavigation {
@@ -371,6 +387,20 @@ function frameObject(request: Request): Frame | undefined {
 function headerOf(headers: Record<string, string>, name: string): string | undefined {
   for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === name) return value;
   return undefined;
+}
+
+/** The headers of a request: all of them when Chromium says them within `ms`, else those Playwright already has. */
+async function boundedHeaders(request: Request, ms: number): Promise<Record<string, string>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => { resolve(undefined); }, ms);
+  });
+  try {
+    const all = await Promise.race([request.allHeaders().catch(() => undefined), late]);
+    return all ?? request.headers();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** A request with the cookie of the jar of the core, or none: never one a caller left on it. */
@@ -632,7 +662,25 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
   };
 
-  const handler = async (route: Route): Promise<void> => {
+  /** Requests under way and the stage each waits at (diagnostics, `debug`). */
+  const stages = new Map<number, string>();
+  let requestSeq = 0;
+  let debugTimer: ReturnType<typeof setInterval> | undefined;
+  if (job.debug !== undefined) {
+    let expected = Date.now() + 5_000;
+    debugTimer = setInterval(() => {
+      const lag = Date.now() - expected;
+      expected = Date.now() + 5_000;
+      if (stages.size === 0) return;
+      const byStage: Record<string, number> = {};
+      for (const stage of stages.values()) byStage[stage] = (byStage[stage] ?? 0) + 1;
+      job.debug?.(`browser: ${String(stages.size)} requests under way ${JSON.stringify(byStage)}, event loop ${String(lag)} ms late`);
+    }, 5_000);
+    debugTimer.unref();
+  }
+  const handler = async (route: Route, seq: number): Promise<void> => {
+    const stage = (name: string): void => { if (job.debug !== undefined) stages.set(seq, name); };
+    stage('start');
     const request = route.request();
     const url = request.url();
     const method = request.method().toUpperCase();
@@ -706,7 +754,9 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await abort('too-many-redirects');
       return;
     }
-    const headers = await request.allHeaders().catch(() => request.headers());
+    stage(`headers:${counted}`);
+    const headers = await boundedHeaders(request, job.headersTimeoutMs ?? HEADERS_MS);
+    stage(`hop:${counted}`);
     const body = request.postDataBuffer();
     const input: ResourceInput = { url, method, headers, type, ...(body === null ? {} : { body }) };
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
@@ -754,6 +804,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const outcome: RequestOutcome = result.status >= 400 ? 'http-error' : 'ok';
     if (frame.main) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
     count(counted, outcome, url, request.resourceType());
+    stage(`fulfil:${counted}`);
     const movedAway = (withoutHash(final) ?? final) !== (withoutHash(url) ?? url);
     if (frame.navigation && movedAway) {
       // The frame goes to its true address and origin. The answer waits there for this frame only;
@@ -767,9 +818,13 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     await route.fulfill({ status: result.status, headers: fulfillHeaders(result, origin, final), body: result.body }).catch(() => undefined);
   };
   const tracked = (route: Route): Promise<void> => {
-    const run = handler(route).catch(async () => {
-      await route.abort('failed').catch(() => undefined);
-    });
+    requestSeq += 1;
+    const seq = requestSeq;
+    const run = handler(route, seq)
+      .catch(async () => {
+        await route.abort('failed').catch(() => undefined);
+      })
+      .finally(() => { stages.delete(seq); });
     inFlight.add(run);
     void run.finally(() => inFlight.delete(run));
     return run;
@@ -807,6 +862,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     async close() {
       if (closed) return;
       closed = true;
+      clearInterval(debugTimer);
       session = null;
       pending.clear();
       stopping.abort();
