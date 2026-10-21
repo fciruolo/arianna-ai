@@ -189,6 +189,7 @@ import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
 import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveClone } from '../voice/clones.ts';
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
+import { isYoutubeVideo } from '../video-url.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
 /**
@@ -1046,6 +1047,7 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       onlyFields(await readJson(request), []);
       const note = readNote(home, rules, params.name ?? '');
       if (note.url === null) throw new HttpError(409, 'the note has no link');
+      if (isYoutubeVideo(note.url)) throw new HttpError(409, 'a video is summarized with «Riassumi il video»');
       if (note.fetchedAt !== null) throw new HttpError(409, 'the link is already downloaded');
       if (note.status !== 'new' && note.status !== 'organized') throw new HttpError(409, 'the note cannot be organized again');
       if (fetch === undefined) throw new HttpError(503, 'notes cannot be organized now');
