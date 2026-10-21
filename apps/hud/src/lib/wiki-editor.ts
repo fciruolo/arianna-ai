@@ -265,9 +265,8 @@ export function plainEntities(text: string): string {
     .join('\n');
 }
 
-/** The editor's document back to Markdown, what the save sends to the core. */
 /**
- * The document without its empty paragraphs between blocks: the serializer
+ * The document without its empty (or blank) paragraphs between blocks: the serializer
  * writes one as `&nbsp;`, which the page then shows as text (the line the
  * editor leaves before a table, D-282). A blank line says the same in Markdown.
  */
@@ -278,6 +277,7 @@ export function withoutEmptyParagraphs(doc: JSONContent): JSONContent {
   return content === undefined ? doc : { ...doc, content };
 }
 
+/** The editor's document back to Markdown, what the save sends to the core. */
 export function docToMarkdown(doc: JSONContent): string {
   return `${plainEntities(markdown().serialize(flattenCells(withoutEmptyParagraphs(doc)))).replace(/\s+$/, '')}\n`;
 }

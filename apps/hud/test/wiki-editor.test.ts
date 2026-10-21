@@ -153,4 +153,12 @@ test('an empty paragraph before a table is not written as &nbsp;, text and the t
   // A paragraph with text is never dropped.
   const kept = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Testo' }] }] };
   assert.deepEqual(withoutEmptyParagraphs(kept), kept);
+  // A line break or a citation alone is content: kept. An empty paragraph inside a quote goes too.
+  const breakOnly = { type: 'paragraph', content: [{ type: 'hardBreak' }] };
+  const citationOnly = { type: 'paragraph', content: [{ type: 'wikiCitation', attrs: { target: 'wiki/laravel/octane' } }] };
+  const quote = { type: 'blockquote', content: [{ type: 'paragraph' }, { type: 'paragraph', content: [{ type: 'text', text: 'Citata' }] }] };
+  assert.deepEqual(withoutEmptyParagraphs({ type: 'doc', content: [breakOnly, citationOnly, quote] }), {
+    type: 'doc',
+    content: [breakOnly, citationOnly, { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Citata' }] }] }],
+  });
 });
