@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { NewsItem } from '../src/lib/design-news.ts';
-import { choiceStatus, commitUrl, markChosen, projectSourceText, type FollowedProject, type ProjectNews } from '../src/lib/followed-projects.ts';
+import { choiceStatus, commitUrl, followedKind, followedUrlProblem, markChosen, projectSourceText, repoFacts, type FollowedProject, type ProjectNews } from '../src/lib/followed-projects.ts';
 
 const item = (key: string, answer: NewsItem['answer'] = null): NewsItem => ({ key, title: key, summary: '', group: 'feat', commits: [{ sha: 'e'.repeat(40), short: 'eeeeeee', message: 'feat: x' }], answer });
 
@@ -49,5 +49,23 @@ describe('followed projects', () => {
 
   it('links a commit to the page of its project', () => {
     assert.equal(commitUrl(project([]), 'f'.repeat(40)), `https://github.com/different-ai/openwork/commit/${'f'.repeat(40)}`);
+  });
+
+  it('tells an account from a repository, and refuses anything else (D-271)', () => {
+    assert.equal(followedKind('https://github.com/CopilotKit'), 'account');
+    assert.equal(followedKind(' https://github.com/copilotkit/ '), 'account');
+    assert.equal(followedKind('https://github.com/copilotkit/copilotkit'), 'project');
+    for (const bad of ['https://gitlab.com/copilotkit', 'https://github.com/a/b/c', 'github.com/copilotkit', 'https://github.com/-x']) {
+      assert.equal(followedKind(bad), null, bad);
+      assert.match(followedUrlProblem(bad) ?? '', /Solo https/);
+    }
+    assert.match(followedUrlProblem('  ') ?? '', /Scrivi/);
+    assert.equal(followedUrlProblem('https://github.com/copilotkit'), undefined);
+  });
+
+  it('says when a new repository was created and its license (D-271)', () => {
+    const repo = { id: 'copilotkit/x', name: 'x', page: 'https://github.com/copilotkit/x', description: '', createdAt: '2026-10-20T10:00:00Z', followed: false };
+    assert.equal(repoFacts({ ...repo, license: 'MIT' }, () => '20 ott'), 'creato il 20 ott · MIT');
+    assert.equal(repoFacts({ ...repo, license: null }, () => '20 ott'), 'creato il 20 ott · licenza non indicata');
   });
 });

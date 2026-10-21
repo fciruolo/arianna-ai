@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Progetti seguiti: si può seguire anche un account GitHub (`https://github.com/<account>`, al più 5) dalla pagina «Sviluppo di Arianna» o con `pnpm projects:followed add`; «Controlla nuovi repository» mostra i repository pubblici creati dall'ultimo controllo (fork e archiviati esclusi) con descrizione, data, licenza e «Segui», che li aggiunge ai progetti seguiti; il primo controllo segna come già visti quelli che ci sono (D-271).
+
 ## [0.153.0] - 2026-10-21
 
 ### Aggiunto
