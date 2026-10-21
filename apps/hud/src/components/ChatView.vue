@@ -1382,14 +1382,16 @@ onBeforeUnmount(() => clearInterval(clock));
                 @open-dashboard="emit('dashboard')"
               />
             </div>
-            <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
-            <!-- «Nuova chat Privata» (D-281): the line of the hand over leads to the Private chat of the access. -->
-            <button
-              v-if="browserChatOf(conversation.browserChats, message) !== undefined"
-              type="button"
-              class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
-              @click="emit('open', browserChatOf(conversation.browserChats, message) ?? '')"
-            ><Icon name="private" :size="12" />Apri la chat Privata</button>
+            <template v-if="message.role === 'system'">
+              <div class="break-words whitespace-pre-wrap">{{ message.body }}</div>
+              <!-- «Nuova chat Privata» (D-281): the line of the hand over leads to the Private chat of the access. -->
+              <button
+                v-if="browserChatOf(conversation.browserChats, message) !== undefined"
+                type="button"
+                class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
+                @click="emit('open', browserChatOf(conversation.browserChats, message) ?? '')"
+              ><Icon name="private" :size="12" />Apri la chat Privata</button>
+            </template>
             <template v-else>
               <!-- «Ha ragionato per…» (D-249): the thinking kept with the answer, opened on a click. -->
               <ThoughtBlock v-if="message.thought != null" :text="message.thought" :live="false" :ms="message.thoughtMs ?? null" />

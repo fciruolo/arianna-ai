@@ -45,7 +45,7 @@ function namesGuard(): PiiGuard & { asked: (readonly (readonly string[] | undefi
   const asked: (readonly (readonly string[] | undefined)[])[] = [];
   return {
     asked,
-    state: 'ready',
+    state: 'ready', warm: () => Promise.resolve(true),
     scan: (texts, fragmentNames = []) => {
       asked.push(fragmentNames);
       const entities = texts.map((text) =>
@@ -70,7 +70,7 @@ configurePiiGuard(namesGuard());
 
 after(() => {
   configureSeriesLines(undefined);
-  configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+  configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
   rmSync(HOME, { recursive: true, force: true });
 });
 

@@ -16,7 +16,7 @@ import { configurePiiGuard } from '../src/pii-guard.ts';
 /** What the fake second scanner finds: nothing, or a person in every text. */
 let rizzoFinds = false;
 configurePiiGuard({
-  state: 'ready',
+  state: 'ready', warm: () => Promise.resolve(true),
   scan: (texts) => Promise.resolve(piiReport(texts, texts.map((text) => (rizzoFinds && text.length > 4 ? [{ kind: 'FULLNAME', start: 0, end: 4, score: 0.99 }] : [])))),
   stop: () => Promise.resolve(),
 });

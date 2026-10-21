@@ -72,7 +72,7 @@ interface Harness {
   access: string | null;
 }
 
-function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' } } = {}): Harness {
+function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' }; warmGuard?: () => Promise<unknown> } = {}): Harness {
   const page: FakePage = { url: 'https://comune-finto.it/servizi', title: 'Servizi', reading: { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: 'Orari', elements: [], scrolled: 0 }, clicked: [], filled: [], pressed: [], typable: true };
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
@@ -104,6 +104,7 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
     now: () => clock.now,
     actionLimitMs: 50,
     openSession,
+    ...(options.warmGuard === undefined ? {} : { warmGuard: options.warmGuard }),
   });
   return h;
 }
@@ -122,6 +123,64 @@ test('a browser is held by one conversation: open, then read, then close', async
   await h.browser.act(scope('a'), { kind: 'close' });
   assert.equal(h.browser.holder, null);
   assert.deepEqual(h.closed, h.opened);
+});
+
+test('the second scanner is ready before a page opens: its load is not counted in the time of the action (D-281)', async () => {
+  let warmed = 0;
+  let ready: () => void = () => undefined;
+  const h = harness({ warmGuard: () => { warmed += 1; return new Promise<void>((resolve) => { ready = resolve; }); } });
+  const opening = h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  // Longer than the deadline of an action (50 ms here): the browser waits without starting.
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(h.opened, []);
+  ready();
+  assert.equal((await opening).ok, true);
+  assert.equal(warmed, 1);
+});
+
+test('reading, scrolling and closing do not start the second scanner; one that cannot start does not stop the browser (D-281)', async () => {
+  let warmed = 0;
+  const h = harness({ warmGuard: () => { warmed += 1; return Promise.reject(new Error('no python')); } });
+  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' })).ok, true);
+  assert.equal(warmed, 1);
+  await h.browser.act(scope('a'), { kind: 'read' });
+  await h.browser.act(scope('a'), { kind: 'scroll', direction: 'down' });
+  await h.browser.act(scope('a'), { kind: 'close' });
+  assert.equal(warmed, 1);
+  assert.equal(h.browser.holder, null);
+});
+
+test('the wait for the second scanner holds no queue: the user takes the control meanwhile, and the action of Arianna is paused (D-281)', async () => {
+  let slow = false;
+  let ready: () => void = () => undefined;
+  const h = harness({ warmGuard: () => (slow ? new Promise<void>((resolve) => { ready = resolve; }) : Promise.resolve()) });
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.act(scope('a'), { kind: 'read' });
+  slow = true;
+  const clicking = h.browser.act(scope('a'), { kind: 'click', ref: 1 });
+  const request = h.browser.takeControl('a');
+  assert.equal(request.waiting, false);
+  assert.equal(await request.done, true);
+  ready();
+  assert.deepEqual(await clicking, { ok: false, reason: 'paused' });
+});
+
+test('released or shut down while an open waits for the second scanner: no browser opens behind it (D-281)', async () => {
+  for (const stop of ['release', 'close'] as const) {
+    let ready: () => void = () => undefined;
+    const h = harness({ warmGuard: () => new Promise<void>((resolve) => { ready = resolve; }) });
+    const opening = h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+    await (stop === 'release' ? h.browser.release('a') : h.browser.close());
+    ready();
+    assert.deepEqual(await opening, { ok: false, reason: 'not-open' }, stop);
+    assert.deepEqual(h.opened, [], stop);
+    assert.equal(h.browser.holder, null, stop);
+  }
+});
+
+test('a second scanner that throws at once does not make an action throw (D-281)', async () => {
+  const h = harness({ warmGuard: () => { throw new Error('no python'); } });
+  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' })).ok, true);
 });
 
 test('an action other than open without a browser is refused, and so is reading before opening', async () => {

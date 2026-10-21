@@ -16,7 +16,7 @@ import { ADDRESS_BLOCKED_TEXT, consentFor, MAX_PAGES, normalizedAddress, NOT_ALL
 import { readPage } from '../src/web-page.ts';
 
 // The second scanner of the addresses (passGateway in the core) finds nothing: the consent is under test here.
-configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 const CANARY = 'ROSSI-CANARY-7731';
 

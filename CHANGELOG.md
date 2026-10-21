@@ -9,6 +9,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - «Nuova chat Privata» dopo un accesso nel browser (D-281): quando restituisci il browser dopo aver fatto l'accesso a un sito, si apre una chat Privata «<sito> · accesso» che prende il browser; lì lavora solo il modello locale di Arianna, che legge le pagine di quel sito e agisce nel browser, solo su quel sito. La conversazione di lavoro resta com'è, con una riga e «Apri la chat Privata»; la riga del browser dice dove è passato. Schermo, «Prendi il controllo» e «Chiudi» seguono il browser nella nuova chat.
 - Scheda «Invia / No» (D-281): prima che Arianna invii dati al sito dell'accesso (un modulo, o ciò che la pagina manda dopo il suo clic) decidi tu; con «Invia» ripete quel clic una volta sola.
 
+### Corretto
+
+- La prima pagina aperta dal browser di Arianna dopo un quarto d'ora di pausa restava bianca («open failed (timeout)») (D-281): il secondo controllo dei dati personali (Rizzo) si ricaricava dentro i 15 s della pagina; ora parte prima, e la sua attesa non conta nel tempo della pagina.
+- Una riga di sistema nella chat compariva due volte (D-281).
+
 ### Sicurezza
 
 - Contesto della chat Privata dell'accesso nel gateway (D-281): da lì escono solo richieste, moduli e testo scritto verso il sito dell'accesso (nuova destinazione `web-typed-session`), mai altro verso il cloud; niente conoscenza, profilo né deleghe in quella chat finché tiene il browser; il browser con un accesso non lo prende un'altra chat; migrazione `0087`.

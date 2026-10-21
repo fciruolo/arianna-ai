@@ -83,6 +83,28 @@ test('started at the first check, then reused: one process for many checks', asy
   await guard.stop();
 });
 
+test('warm starts the service ahead of a check and the check reuses it; off, stopped or never ready is false', async () => {
+  let starts = 0;
+  const fake = fakeChild({ answer: nothingFound });
+  const guard = createPiiGuard({ start: () => { starts++; return fake.child; }, development: false });
+  assert.equal(await guard.warm(), true);
+  assert.equal(guard.state, 'ready');
+  assert.equal(fake.requests.length, 0, 'no text is sent to warm it');
+  assert.equal(await guard.warm(), true);
+  assert.deepEqual(piiVerdict(await guard.scan(['uno']), ['uno']), { verdict: 'clean' });
+  assert.equal(starts, 1);
+  await guard.stop();
+  assert.equal(await guard.warm(), false);
+  assert.equal(starts, 1);
+  assert.equal(await createPiiGuard({ start: undefined, development: false }).warm(), false);
+  let stuckStarts = 0;
+  const stuck = createPiiGuard({ start: () => { stuckStarts++; return fakeChild({ ready: false }).child; }, development: false, startTimeoutMs: 20, killGraceMs: 1 });
+  assert.equal(await stuck.warm(), false);
+  assert.equal(await stuck.warm(), false, 'within the retry time no new start');
+  assert.equal(stuckStarts, 1);
+  await stuck.stop();
+});
+
 test('what the model found reaches the gateway, the names of the agents are ignored', async () => {
   const text = 'Coder scrive a Mario Rossi';
   const fake = fakeChild({

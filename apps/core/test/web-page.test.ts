@@ -11,7 +11,7 @@ import { configurePiiGuard } from '../src/pii-guard.ts';
 import { addressesInText, readPage, redirectConsent } from '../src/web-page.ts';
 
 // The second scanner finds nothing: these tests are about the consent.
-configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 /** A database that takes every gateway_log row and remembers the targets. */
 function fakeSql(rows: unknown[][]): Sql {

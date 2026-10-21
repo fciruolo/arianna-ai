@@ -24,6 +24,12 @@ export interface PiiGuard {
   /** `fragmentNames`: names that are not persons in that fragment alone (D-214), by position. */
   scan(texts: readonly string[], fragmentNames?: readonly (readonly string[] | undefined)[]): Promise<PiiCheck>;
   readonly state: PiiGuardState;
+  /**
+   * Starts the service if it is not running, as a scan would, and resolves when
+   * it is ready (true) or cannot be (false): a caller with a short deadline of
+   * its own waits for the load of the model first (D-281 trial).
+   */
+  warm(): Promise<boolean>;
   stop(): Promise<void>;
 }
 
@@ -279,8 +285,17 @@ export function createPiiGuard(options: PiiGuardOptions): PiiGuard {
     return piiReport(texts, entities, options.names?.() ?? [], fragmentNames);
   }
 
+  function warm(): Promise<boolean> {
+    if (state === 'off' || state === 'stopped') return Promise.resolve(false);
+    if (state === 'failed' && Date.now() - failedAt < retryMs) return Promise.resolve(false);
+    touch();
+    if (child === undefined || ready === undefined) ready = launch();
+    return ready;
+  }
+
   return {
     scan,
+    warm,
     get state() {
       return state;
     },
@@ -346,6 +361,11 @@ export function configurePiiGuard(guard: PiiGuard): void {
 
 export function stopPiiGuard(): Promise<void> {
   return current.stop();
+}
+
+/** The service of the core started ahead of a check with a short deadline; false when it is off or could not start. */
+export function warmPiiGuard(): Promise<boolean> {
+  return current.warm();
 }
 
 /** The second check of `texts`, for passGateway. */

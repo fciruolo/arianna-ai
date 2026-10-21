@@ -7,6 +7,7 @@ import type { Sql } from '../db/client.ts';
 import type { NewEvent } from '../events.ts';
 import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
+import { warmPiiGuard } from '../pii-guard.ts';
 import { BrowserError } from './container.ts';
 import type { BrowserManager } from './manager.ts';
 import { navigationConsent, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
@@ -206,6 +207,11 @@ export interface AgentBrowserOptions {
   openSession?: OpenSession;
   /** Tests: the deadline of an action (ACTION_LIMIT_MS). */
   actionLimitMs?: number;
+  /**
+   * The second scanner, started ahead of the gateway of a page: its load (6-30 s)
+   * is not counted in the time of the page (D-281 trial). Default warmPiiGuard.
+   */
+  warmGuard?: () => Promise<unknown>;
   /** Tests: the network job options the core never sets (fake servers). */
   network?: Pick<NetworkJob, 'unsafeTestAddresses' | 'resolve' | 'fetchResource' | 'timeoutMs'>;
 }
@@ -251,6 +257,9 @@ export class AgentBrowser {
   #running = false;
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
   readonly #closedByUser = new Set<string>();
+  /** Releases by conversation: an action that waited for the second scanner across one is dropped. */
+  readonly #releases = new Map<string, number>();
+  #shutDown = false;
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -387,9 +396,16 @@ export class AgentBrowser {
   }
 
   /** One action, after the ones already running. Never throws. */
-  act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+  async act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
+    // An action that may reach a page waits for the second scanner before the queue (D-281 trial):
+    // its load (6-30 s) is counted neither in the time of the page nor in the deadline of the action,
+    // and the queue stays free meanwhile (the user taking control, a release).
+    const releases = this.#releases.get(scope.conversationId) ?? 0;
+    if (action.kind === 'open' || action.kind === 'click' || action.kind === 'type') await this.#warm();
+    // Released (it became private, or it was deleted) or shut down meanwhile: no browser opens behind the release.
+    if (this.#shutDown || (this.#releases.get(scope.conversationId) ?? 0) !== releases) return { ok: false, reason: 'not-open' };
     // Another conversation while an action runs: «occupato» at once, never a wait behind it.
-    if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return Promise.resolve({ ok: false, reason: 'busy' });
+    if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return { ok: false, reason: 'busy' };
     const run = this.#queue.then(async () => {
       this.#running = true;
       try {
@@ -406,6 +422,7 @@ export class AgentBrowser {
 
   /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
   async release(conversationId: string): Promise<void> {
+    this.#releases.set(conversationId, (this.#releases.get(conversationId) ?? 0) + 1);
     // Closed for a reason of the core: a later action of this conversation hears «not open», not «closed by the user».
     this.#closedByUser.delete(conversationId);
     // The session first: an action under way on it then fails at once instead of being waited for.
@@ -437,6 +454,7 @@ export class AgentBrowser {
 
   /** At the shutdown of the core. */
   async close(): Promise<void> {
+    this.#shutDown = true;
     await this.#drop();
     await this.#queue;
     await this.#drop();
@@ -507,6 +525,15 @@ export class AgentBrowser {
     const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0 };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
+  }
+
+  /** The second scanner ready, or given up on: a scanner that cannot start is the gateway's to refuse, never an error here. */
+  async #warm(): Promise<void> {
+    try {
+      await (this.#options.warmGuard ?? warmPiiGuard)();
+    } catch {
+      // The gateway refuses without it: nothing to do here.
+    }
   }
 
   /**

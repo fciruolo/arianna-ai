@@ -17,7 +17,7 @@ function fakeGuard(answer: (texts: readonly string[]) => PiiCheck): PiiGuard & {
   const asked: (readonly string[])[] = [];
   return {
     asked,
-    state: 'ready',
+    state: 'ready', warm: () => Promise.resolve(true),
     scan: (texts) => {
       asked.push(texts);
       return Promise.resolve(answer(texts));

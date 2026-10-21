@@ -342,7 +342,7 @@ const FIRST_SESSION = '00000000-0000-4000-8000-000000000001';
 /** A fake Rizzo-PII that reads «Mario Bianchi» as a person (D-250); `restore` puts back the clean one of support/database.ts. */
 function personGuard(): void {
   configurePiiGuard({
-    state: 'ready',
+    state: 'ready', warm: () => Promise.resolve(true),
     scan: (texts) =>
       Promise.resolve(piiReport(texts, texts.map((text) => [...text.matchAll(/Mario Bianchi/g)].map((match) => ({ kind: 'FULLNAME', start: match.index, end: match.index + 13, score: 0.97 }))))),
     stop: () => Promise.resolve(),
@@ -350,7 +350,7 @@ function personGuard(): void {
 }
 
 function cleanGuard(): void {
-  configurePiiGuard({ state: 'ready', scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+  configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 }
 
 test('a brief the gateway refuses in the direct chat ends the task with Arianna\'s message, never a wait (D-250)', async () => {
