@@ -532,7 +532,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
    * waiting for a form to that site. Anything else is dropped, as before.
    */
   const keepCookies = (result: ResourceResult, address: string, main: boolean): void => {
-    if (!result.ok || result.setCookies === undefined) return;
+    // An answer that came after the deadline of its request: Chromium never saw it, its cookies are not kept.
+    if (!result.ok || result.setCookies === undefined || isExpired()) return;
     let url: URL;
     try {
       url = new URL(address);
@@ -612,7 +613,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     } catch {
       allowed = undefined;
     }
-    if (isClosed()) return interrupted;
+    if (isClosed() || isExpired()) return interrupted;
     if (allowed !== url.href) return { ok: false, reason: 'blocked' };
     // The browser has an access from here on: everything it asks carries L2.
     if (session === null) {
@@ -678,6 +679,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     let request = first;
     for (let index = already; ; index += 1) {
       if (index > already) {
+        // Refused at its deadline meanwhile: the next redirect is never asked.
+        if (isExpired()) return { result: interrupted, final: request.url, tooMany: false };
         const reached = budget.take(false);
         if (reached !== null) return { result: { ok: false, reason: 'blocked' }, final: request.url, tooMany: false, limited: reached };
       }
@@ -696,6 +699,12 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const stages = new Map<number, string>();
   /** The request a piece of the handler works for, for `mark`. */
   const working = new AsyncLocalStorage<number>();
+  /** Requests refused at their deadline: what their work does later is dropped (no hop, no cookie, no access). */
+  const expired = new Set<number>();
+  const isExpired = (): boolean => {
+    const seq = working.getStore();
+    return seq !== undefined && expired.has(seq);
+  };
   /** The stage of the request under way here (diagnostics only). */
   const mark = (name: string): void => {
     const seq = working.getStore();
@@ -803,6 +812,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       : follow(input, before, (next) => resourceHop(next, frame.navigation));
     const decided = await withDeadline(hops, job.hopTimeoutMs ?? HOP_MS);
     if (decided === 'late') {
+      expired.add(seq);
       if (frame.main) navigated('failed', undefined, 'timeout');
       await abort('failed', 'timeout');
       return;
@@ -870,6 +880,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
         await route.abort('failed').catch(() => undefined);
       })
       .finally(() => { stages.delete(seq); });
+    // Forgotten only once its work is surely over (the download has its own timeout).
+    void run.finally(() => { setTimeout(() => { expired.delete(seq); }, 60_000).unref(); });
     inFlight.add(run);
     void run.finally(() => inFlight.delete(run));
     return run;

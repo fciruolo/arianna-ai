@@ -89,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -111,7 +111,9 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
     fetchResource: (input) => {
       fetched.push(input);
       // A download that never ends (seen in the trial of D-281): only the deadline of the request answers it.
-      return options.hang === true ? new Promise(() => undefined) : Promise.resolve(answer(input));
+      if (options.hang === true) return new Promise(() => undefined);
+      const delay = options.delayMs;
+      return delay === undefined ? Promise.resolve(answer(input)) : new Promise((resolve) => { setTimeout(() => { resolve(answer(input)); }, delay); });
     },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.debug === undefined ? {} : { debug: options.debug }),
@@ -608,6 +610,19 @@ describe('attachNetwork: requests are always answered', () => {
     const image = await net.send({ url: 'https://example.net/a.png' });
     assert.equal(image.aborted, 'timedout');
     assert.deepEqual(net.handle.counts(), { page: { failed: 1 }, image: { failed: 1 } });
+  });
+
+  it('an answer that comes after the deadline: its redirect is never followed and its cookies are never kept', async () => {
+    const net = await harness({ delayMs: 200, answer: () => ({ ok: true, status: 302, headers: [['location', 'https://example.net/next']], body: Buffer.alloc(0), location: 'https://example.net/next', setCookies: ['sid=late'] }) });
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'public' }, driver: 'user' });
+    const sent = await net.send({ url: 'https://example.net/session', main: true, method: 'POST', body: Buffer.from('a=1'), pageUrl: 'https://example.net/accedi' });
+    assert.equal(sent.aborted, 'timedout');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(net.fetched.map((request) => request.url), ['https://example.net/session']);
+    // The form left before the deadline (the access is born with it, as in D-276); the cookie of its late answer is not kept.
+    assert.equal(net.handle.authenticated(), 'example.net');
+    await net.send({ url: 'https://example.net/conti', main: true });
+    assert.equal(net.fetched.at(-1)?.cookie, undefined);
   });
 });
 
