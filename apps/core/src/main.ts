@@ -65,7 +65,8 @@ import { stopConversation } from './chat-stop.ts';
 import { createQueueDispatcher } from './message-queue.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalReload, servedByLocalServer } from './local-reload.ts';
-import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
+import { createLocalServers, localServerEnv, loggedEvent, logTail } from './local-servers.ts';
+import { createOmlxReleases, createVersionRunner, OMLX_PROMPT } from './omlx-release.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
@@ -897,6 +898,32 @@ const followedProjects = createFollowedProjects({
     },
   }),
 });
+// «Server dei modelli (oMLX)» (D-265): the version installed, read by running the command of the oMLX
+// endpoint with --version (nothing else), and the newest release of jundot/omlx from the public API
+// of GitHub once a day or on «Controlla ora» (only the name of the repository leaves, L0 through the
+// gateway). Never an update: the user installs the DMG with the core stopped.
+const omlxReleases = createOmlxReleases({
+  dir: join(config.paths.data, 'catalogs'),
+  get: createGithubClient(),
+  gateway: catalogGateway('settings:omlx-release', 'api.github.com: release di oMLX'),
+  endpoints: () => settings.current().local.endpoints,
+  run: createVersionRunner({ cwd: config.home, env: localServerEnv(process.env) }),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  summarize: createLocalSummarizer({
+    model: localModel,
+    prompt: OMLX_PROMPT,
+    schemaName: 'omlx_release_news',
+    pass: async (data) => {
+      const decision = await passGateway(sql, [{ value: data, label: 'L0', source: 'omlx-release:github' }], createContext('L0'), { kind: 'executor', id: 'local', locality: 'local' }, { summary: 'novità di oMLX' });
+      const [text] = decision.decision === 'allow' ? decision.texts : [];
+      if (text === undefined) throw new Error('the gateway did not let the news reach the local model');
+      return text;
+    },
+  }),
+});
+omlxReleases.start();
 // The examples of the styles and the Italian descriptions of the skills (I-20, D-185): public text, written by Sonnet
 // without tools through the gateway, only when the user asks; kept in data/catalogs and never made again for the same text.
 const askCloudText = createCloudText({ sql, claude, data: config.paths.data });
@@ -1311,6 +1338,7 @@ const server = await startApiServer({
   modelActions,
   modelReload: localReload,
   huggingface,
+  omlxReleases,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home, news: () => designCatalog.news(), projects: followedProjects },
   // "Novità": CHANGELOG.md at the root of the home, read only.
@@ -1473,6 +1501,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   secretaryTicker.stop();
   routineTicker.stop();
+  omlxReleases.stop();
   imWatcher.stop();
   clearInterval(godTicker);
   clearInterval(changesTicker);

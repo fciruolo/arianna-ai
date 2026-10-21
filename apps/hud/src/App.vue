@@ -35,7 +35,8 @@ import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
-import { listMessages, listSides, loadConversation, loadDevPending, loadInstallation, loadQueue, loadTask, openSide, sendMessage } from './lib/api.ts';
+import { listMessages, listSides, loadConversation, loadDevPending, loadInstallation, loadOmlxRelease, loadQueue, loadTask, openSide, sendMessage } from './lib/api.ts';
+import { updateHint } from './lib/omlx-release.ts';
 import { createSideChat } from './lib/side-store.ts';
 import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, calleeOf, conversationCallee, draftCallee, type Callee } from './lib/calls.ts';
@@ -459,6 +460,25 @@ function readDevPending(): void {
 watch(page, readDevPending);
 watch(live, (state) => {
   if (state === 'open') readDevPending();
+});
+
+/**
+ * A stable release of oMLX newer than the one installed (D-265): a dot on
+ * "Impostazioni" and on "Modelli". Read like the questions above; the card of
+ * oMLX sends its state after «Controlla ora». A core without it gives none.
+ */
+const omlxUpdate = ref<string | null>(null);
+/** The text of the dot on the button of the folded bar: the questions first, then oMLX. */
+const barDotText = computed(() => devPendingText.value ?? omlxUpdate.value);
+function readOmlxUpdate(): void {
+  loadOmlxRelease()
+    .then((view) => {
+      omlxUpdate.value = updateHint(view);
+    })
+    .catch(() => undefined);
+}
+watch(live, (state) => {
+  if (state === 'open') readOmlxUpdate();
 });
 
 /** "Nuovo agente" (D-119, tappa T3), reached from the Agents section of the settings. */
@@ -1029,6 +1049,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       :rename="store.rename"
       :status="status"
       :dev-pending="devPending"
+      :omlx-update="omlxUpdate"
       :secretary-open="secretaryOpen"
       :beside="splitOn ? (besideChat?.conversationId ?? null) : null"
       :splittable="splitOffered"
@@ -1066,23 +1087,23 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         <button
           type="button"
           class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 md:hidden"
-          :aria-label="devPendingText === null ? 'Apri il menu' : `Apri il menu. ${devPendingText}`"
+          :aria-label="barDotText === null ? 'Apri il menu' : `Apri il menu. ${barDotText}`"
           @click="showSidebar = true"
         >
           <Icon name="menu" />
-          <span v-if="devPendingText !== null" class="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent" aria-hidden="true" />
+          <span v-if="barDotText !== null" class="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <!-- Left bar folded (D-097): only its icon, here in the top bar; the page takes the whole width. -->
         <button
           v-if="layout.sidebar"
           type="button"
           class="relative -ml-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink md:grid"
-          :aria-label="devPendingText === null ? 'Apri la barra' : `Apri la barra. ${devPendingText}`"
-          :title="devPendingText === null ? 'Apri la barra' : `Apri la barra. ${devPendingText}`"
+          :aria-label="barDotText === null ? 'Apri la barra' : `Apri la barra. ${barDotText}`"
+          :title="barDotText === null ? 'Apri la barra' : `Apri la barra. ${barDotText}`"
           @click="layout.sidebar = false"
         >
           <Icon name="sidebar-expand" />
-          <span v-if="devPendingText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
+          <span v-if="barDotText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <!-- Incognito (D-136): the mask and the word, never a title. -->
         <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[13.5px]">
@@ -1218,7 +1239,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :call-busy="callSession !== null || callStarting || incoming !== null || strayCall !== null" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :call-busy="callSession !== null || callStarting || incoming !== null || strayCall !== null" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :omlx-update="omlxUpdate" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @omlx="omlxUpdate = updateHint($event)" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />

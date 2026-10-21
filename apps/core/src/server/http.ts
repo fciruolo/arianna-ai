@@ -154,6 +154,7 @@ import type { AgentsCatalog } from '../agents-catalog.ts';
 import { cleanBody } from '../git-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
+import { OmlxBusyError, type OmlxReleases } from '../omlx-release.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
@@ -281,6 +282,8 @@ export interface ApiServerOptions {
   modelReload?: Pick<LocalReload, 'dismiss'>;
   /** Search and add models from Hugging Face, promote them, take them out (I-10, D-139); without it the routes answer 404. */
   huggingface?: HuggingFace;
+  /** «Server dei modelli (oMLX)» (D-265): version installed and newest release; without it the routes answer 404. */
+  omlxReleases?: OmlxReleases;
   /** The catalog of Open Design (D-160): download, adopt, discard, read a style; without it the routes answer 404. */
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
@@ -1221,12 +1224,37 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
 }
 
 /**
- * The actions of the "Modelli" page on a local model (I-3, stage M4): a
- * download or a verification starts in the background (202) and its progress
- * comes with GET /api/models/overview; a removal needs the id typed by the
- * user, emptying the bin needs `confirm: true`. Catalog ids only: no route
- * takes a path.
+ * «Server dei modelli (oMLX)» on the "Modelli" page (D-265): what is
+ * installed and the newest release of oMLX, all L0. «Controlla ora» runs in
+ * the background (202) and the page reads again while `checking`; no route
+ * takes a command or an address, and none updates oMLX.
  */
+function omlxReleaseRoutes(releases: OmlxReleases | undefined): Route[] {
+  const need = (): OmlxReleases => {
+    if (releases === undefined) throw new HttpError(404, 'not found');
+    return releases;
+  };
+  return [
+    route('GET', '/api/models/omlx-release', () => Promise.resolve({ body: need().view() })),
+    route('POST', '/api/models/omlx-release/check', async (request) => {
+      const found = need();
+      onlyFields(await readJson(request, 1024), []);
+      try {
+        found.checkNow();
+      } catch (error) {
+        if (error instanceof OmlxBusyError) throw new HttpError(409, 'a check of oMLX is already running');
+        throw error;
+      }
+      return { status: 202, body: { ok: true } };
+    }),
+    route('POST', '/api/models/omlx-release/version', async (request) => {
+      const found = need();
+      onlyFields(await readJson(request, 1024), []);
+      return { body: await found.refreshVersion() };
+    }),
+  ];
+}
+
 /**
  * Hugging Face on the "Modelli" page (I-10, D-139). POST also for the search:
  * the text the user typed never sits in an address. Each request that leaves
@@ -1610,6 +1638,13 @@ function agentsCatalogRoutes(catalog: AgentsCatalog | undefined, reports?: Safet
   ];
 }
 
+/**
+ * The actions of the "Modelli" page on a local model (I-3, stage M4): a
+ * download or a verification starts in the background (202) and its progress
+ * comes with GET /api/models/overview; a removal needs the id typed by the
+ * user, emptying the bin needs `confirm: true`. Catalog ids only: no route
+ * takes a path.
+ */
 function modelActionRoutes(actions: ModelActions | undefined): Route[] {
   const need = (): ModelActions => {
     if (actions === undefined) throw new HttpError(404, 'not found');
@@ -4502,6 +4537,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }),
   );
   table.push(...huggingFaceRoutes(options.huggingface));
+  table.push(...omlxReleaseRoutes(options.omlxReleases));
   table.push(...modelActionRoutes(options.modelActions));
   table.push(
     route('POST', '/api/models/reload/dismiss', async (request) => {

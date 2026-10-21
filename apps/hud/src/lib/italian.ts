@@ -105,6 +105,8 @@ export function reasonText(reason: string | null): string | undefined {
 }
 
 const ERRORS: Record<string, string> = {
+  // «Server dei modelli (oMLX)» (D-265).
+  'a check of oMLX is already running': 'Un controllo di oMLX è già in corso.',
   'the message is empty': 'Il messaggio è vuoto.',
   // «@nome» and «/giro» (D-107, tappa B2, D-219).
   'write what you ask the agents after /giro': 'Scrivi dopo /giro la domanda per gli agenti.',
