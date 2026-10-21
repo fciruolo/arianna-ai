@@ -6,7 +6,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Primo passo del browser dell'agente (D-264): immagine con Chromium costruita in locale con `pnpm browser:build` e fissata per id in `config/browser-image.lock`; il core avvia un browser alla volta in un contenitore senza rete, senza volumi e senza privilegi, lo comanda con Playwright attraverso `docker exec` (nessuna porta aperta sul Mac) e lo chiude dopo 15 minuti senza azioni o al più dopo 30. Gli strumenti in chat arrivano nei passi seguenti.
+- Primo passo del browser dell'agente (D-264): immagine con Chromium costruita in locale con `pnpm browser:build` e fissata per id in `config/browser-image.lock`; il core avvia un browser alla volta in un contenitore senza rete, senza volumi e senza privilegi, lo comanda con Playwright attraverso `docker exec` (nessuna porta, nemmeno dentro il contenitore: solo socket Unix) e lo chiude dopo 15 minuti senza azioni o al più dopo 30. Ogni richiesta del browser (pagine, immagini, CSS, script, font, chiamate JSON) la scarica il core dopo il gateway, senza cookie né Referer, con tetti per tipo e per lavoro; gli indirizzi locali e privati sono rifiutati (D-264, D-267). Gli strumenti in chat arrivano nei passi seguenti.
 
 ### Sicurezza
 

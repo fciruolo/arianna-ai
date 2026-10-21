@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -71,13 +73,46 @@ test('seccomp: an absolute path on one line, spaces and commas allowed', () => {
   }
 });
 
-test('channel: only ports 5900 and 9222, only browser containers', () => {
-  assert.deepEqual(channelArgs('arianna-browser-a', 9222), ['exec', '-i', 'arianna-browser-a', 'socat', 'STDIO', 'TCP:127.0.0.1:9222']);
-  assert.deepEqual(channelArgs('arianna-browser-a', 5900).at(-1), 'TCP:127.0.0.1:5900');
-  for (const port of [22, 5432, 9223, 0, 59000, Number.NaN]) {
-    assert.throws(() => channelArgs('arianna-browser-a', port), code('bad-port'), String(port));
+test('channel: only /tmp/cdp.sock and /tmp/vnc.sock, only browser containers', () => {
+  assert.deepEqual(channelArgs('arianna-browser-a', '/tmp/cdp.sock'), ['exec', '-i', 'arianna-browser-a', 'socat', 'STDIO', 'UNIX-CONNECT:/tmp/cdp.sock']);
+  assert.equal(channelArgs('arianna-browser-a', '/tmp/vnc.sock').at(-1), 'UNIX-CONNECT:/tmp/vnc.sock');
+  for (const socket of ['/tmp/.X11-unix/X1', '/tmp/cdp.sock,fork', 'TCP:127.0.0.1:9222', '/tmp/../tmp/cdp.sock', '', '/run/docker.sock']) {
+    assert.throws(() => channelArgs('arianna-browser-a', socket), code('bad-socket'), socket);
   }
-  assert.throws(() => channelArgs('arianna-postgres', 9222), code('bad-id'));
+  assert.throws(() => channelArgs('arianna-postgres', '/tmp/cdp.sock'), code('bad-id'));
+});
+
+test('entrypoint: no TCP port for CDP or VNC, only the two Unix sockets', () => {
+  const script = readFileSync(join(import.meta.dirname, '..', 'browser', 'entrypoint.sh'), 'utf8');
+  const lines = script.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+  assert.match(lines, /--remote-debugging-pipe/);
+  assert.doesNotMatch(lines, /--remote-debugging-port/);
+  assert.doesNotMatch(lines, /--remote-debugging-address/);
+  assert.doesNotMatch(lines, /--remote-allow-origins/);
+  const rfbports = [...lines.matchAll(/-rfbport\s+(\S+)/g)].map((match) => match[1]);
+  assert.deepEqual(rfbports, ['-1']);
+  assert.match(lines, /-rfbunixpath \/tmp\/vnc\.sock/);
+  assert.ok(lines.includes('UNIX-LISTEN:/tmp/cdp.sock,'));
+  assert.match(lines, /fdin=3,fdout=4/);
+  // socat accepts one connection: no fork, so one CDP session per container.
+  assert.doesNotMatch(lines, /UNIX-LISTEN:[^ ]*fork/);
+  assert.doesNotMatch(lines, /TCP(4|6)?(-LISTEN)?:/);
+});
+
+test('removal: a container already gone counts as removed, one being removed is asked again', async () => {
+  const replies = [new BrowserError('docker', 'docker rm: Error response from daemon: removal of container arianna-browser-a is already in progress'), null];
+  const calls: string[][] = [];
+  const docker: DockerRun = (args) => {
+    calls.push(args);
+    const reply = replies.shift();
+    return reply ? Promise.reject(reply) : Promise.resolve('');
+  };
+  await removeContainers(docker, ['arianna-browser-a'], () => Promise.resolve());
+  assert.equal(calls.length, 2);
+  const gone: DockerRun = () => Promise.reject(new BrowserError('docker', 'docker rm: Error response from daemon: No such container: arianna-browser-a'));
+  await assert.doesNotReject(removeContainers(gone, ['arianna-browser-a']));
+  const broken: DockerRun = () => Promise.reject(new BrowserError('docker', 'docker rm: Cannot connect to the Docker daemon'));
+  await assert.rejects(removeContainers(broken, ['arianna-browser-a']), code('docker'));
 });
 
 test('image check: the local id must be the one of the lock', async () => {

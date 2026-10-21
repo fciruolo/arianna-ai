@@ -1,11 +1,9 @@
 import type { NewEvent } from '../events.ts';
 
-import { browserSeccompPath, readBrowserImageLock, type BrowserImageLock } from './image.ts';
-import { openDockerChannel, waitForCdp, type Channel, type OpenChannel } from './channel.ts';
+import { openDockerChannel, type OpenChannel } from './channel.ts';
 import {
   BrowserError,
   browserRunArgs,
-  CDP_PORT,
   checkImage,
   containerName,
   execDocker,
@@ -13,11 +11,15 @@ import {
   removeContainers,
   type DockerRun,
 } from './container.ts';
+import { browserSeccompPath, readBrowserImageLock, type BrowserImageLock } from './image.ts';
+import { waitForCdp, type CdpPipe } from './transport.ts';
 
 /**
  * One browser for the whole installation (D-264): a second request while one
- * is open gets "browser busy". The container is closed by stop(), after
- * IDLE_MS without actions, or at the latest MAX_MS after its start.
+ * is starting, open, being removed or while the leftovers are cleaned up gets
+ * "browser busy". The container is closed by stop(), when its CDP session
+ * ends, after IDLE_MS without actions, or at the latest MAX_MS after its
+ * start.
  */
 
 export const IDLE_MS = 15 * 60_000;
@@ -25,7 +27,8 @@ export const MAX_MS = 30 * 60_000;
 export const CDP_READY_MS = 20_000;
 const CHECK_EVERY_MS = 30_000;
 
-export type CloseReason = 'stopped' | 'idle' | 'max';
+/** disconnected: the CDP session ended (Playwright closed, or the container stopped). */
+export type CloseReason = 'stopped' | 'idle' | 'max' | 'disconnected';
 
 /** When an open browser must close; pure, with the clock passed in. */
 export class BrowserLifetime {
@@ -55,12 +58,12 @@ export class BrowserLifetime {
 export interface OpenBrowser {
   id: string;
   container: string;
-  /** "/devtools/browser/<uuid>", for the CDP transport. */
-  devtoolsPath: string;
-  /** A new channel to CDP; each WebSocket needs its own. */
-  cdpChannel(): Channel;
+  /** The one CDP session of the container, already answering. */
+  cdp: CdpPipe;
   /** Marks an action: the idle time starts again. */
   touch(): void;
+  /** Closes the browser (the same as stop of the manager). */
+  close(reason?: CloseReason): Promise<void>;
 }
 
 export interface ManagerOptions {
@@ -86,12 +89,6 @@ interface Active {
   timer: { clear(): void };
 }
 
-const defaultEvery = (callback: () => void, ms: number): { clear(): void } => {
-  const handle = setInterval(callback, ms);
-  handle.unref();
-  return { clear: () => { clearInterval(handle); } };
-};
-
 /** A container that must still be removed: the browser stays busy until it is gone. */
 interface Closing {
   id: string;
@@ -100,7 +97,19 @@ interface Closing {
   timer: { clear(): void };
   /** onClose is called for a browser that was open, not for a start that failed. */
   notify: boolean;
+  /** The removal running now, if any: the timer does not start a second one, a second stop waits for it. */
+  removing: Promise<void> | null;
+  /** Failures so far; the event goes out at the first one only. */
+  failures: number;
 }
+
+export type ManagerState = 'free' | 'cleaning' | 'starting' | 'open' | 'closing';
+
+const defaultEvery = (callback: () => void, ms: number): { clear(): void } => {
+  const handle = setInterval(callback, ms);
+  handle.unref();
+  return { clear: () => { clearInterval(handle); } };
+};
 
 export class BrowserManager {
   readonly #options: ManagerOptions;
@@ -110,6 +119,7 @@ export class BrowserManager {
   readonly #every: (callback: () => void, ms: number) => { clear(): void };
   #active: Active | null = null;
   #starting = false;
+  #cleaning = false;
   #closing: Closing | null = null;
 
   constructor(options: ManagerOptions) {
@@ -124,22 +134,28 @@ export class BrowserManager {
     return this.#active?.browser ?? null;
   }
 
-  /** free, starting, open, or closing (a container still to remove). */
-  get state(): 'free' | 'starting' | 'open' | 'closing' {
+  get state(): ManagerState {
     if (this.#closing) return 'closing';
+    if (this.#cleaning) return 'cleaning';
     if (this.#starting) return 'starting';
     return this.#active ? 'open' : 'free';
   }
 
   /**
    * At the start of the core: removes the containers left by a core that
-   * stopped. Refused while this manager has a browser of its own.
+   * stopped. Refused while this manager has a browser of its own, and the
+   * manager is busy while it runs, so no start can slip in between.
    */
   async cleanup(): Promise<string[]> {
     if (this.state !== 'free') throw new BrowserError('busy', 'a browser is in use: nothing to clean up now');
-    const names = await leftoverContainers(this.#docker);
-    await removeContainers(this.#docker, names);
-    return names;
+    this.#cleaning = true;
+    try {
+      const names = await leftoverContainers(this.#docker);
+      await removeContainers(this.#docker, names);
+      return names;
+    } finally {
+      this.#cleaning = false;
+    }
   }
 
   async start(id: string): Promise<OpenBrowser> {
@@ -154,20 +170,21 @@ export class BrowserManager {
       const args = browserRunArgs({ id, image: lock.image, seccompPath: this.#options.seccompPath ?? browserSeccompPath(this.#options.home) });
       created = true;
       await this.#docker(args, 60_000);
-      const devtoolsPath = await waitForCdp(this.#open, container, { timeoutMs: this.#options.cdpReadyMs ?? CDP_READY_MS, now: this.#now });
+      const cdp = await waitForCdp(this.#open, container, { timeoutMs: this.#options.cdpReadyMs ?? CDP_READY_MS, now: this.#now });
       const lifetime = new BrowserLifetime(this.#now(), this.#options.idleMs, this.#options.maxMs);
       const browser: OpenBrowser = {
         id,
         container,
-        devtoolsPath,
-        cdpChannel: () => this.#open(container, CDP_PORT),
+        cdp,
         touch: () => { lifetime.touch(this.#now()); },
+        close: (reason = 'stopped') => this.stop(id, reason),
       };
       const timer = this.#every(() => { this.#check(); }, CHECK_EVERY_MS);
       this.#active = { browser, lifetime, timer };
+      // The session ends with the container: then the browser is closed here too.
+      void cdp.whenClosed.then(() => this.stop(id, 'disconnected')).catch(() => undefined);
       return browser;
     } catch (error) {
-      this.#starting = false;
       // `docker run` may have created the container even when it failed.
       if (created) await this.#close({ id, container, reason: 'stopped', notify: false });
       throw error;
@@ -179,41 +196,66 @@ export class BrowserManager {
   /** Closes the browser; when docker cannot remove it, it stays busy and the removal is tried again. */
   async stop(id: string, reason: CloseReason = 'stopped'): Promise<void> {
     const active = this.#active;
-    if (!active || active.browser.id !== id) return;
+    if (!active || active.browser.id !== id) {
+      // Already closing (the session ended first): wait for the removal under way.
+      const closing = this.#closing;
+      if (closing?.id === id && closing.removing) await closing.removing;
+      return;
+    }
     this.#active = null;
     active.timer.clear();
+    active.browser.cdp.close();
     await this.#close({ id, container: active.browser.container, reason, notify: true });
   }
 
-  async #close(next: Omit<Closing, 'timer'>): Promise<void> {
-    const closing: Closing = { ...next, timer: this.#every(() => { void this.#remove(); }, CHECK_EVERY_MS) };
+  async #close(next: Pick<Closing, 'id' | 'container' | 'reason' | 'notify'>): Promise<void> {
+    const closing: Closing = { ...next, removing: null, failures: 0, timer: this.#every(() => { void this.#remove(); }, CHECK_EVERY_MS) };
     this.#closing = closing;
     await this.#remove();
   }
 
-  /** One attempt to remove the closing container; true when it is gone. */
-  async #remove(): Promise<boolean> {
+  /** One attempt to remove the closing container, or the one already running. */
+  #remove(): Promise<void> {
     const closing = this.#closing;
-    if (!closing) return true;
+    if (!closing) return Promise.resolve();
+    if (closing.removing) return closing.removing;
+    closing.removing = this.#attempt(closing);
+    return closing.removing;
+  }
+
+  async #attempt(closing: Closing): Promise<void> {
     try {
       await removeContainers(this.#docker, [closing.container]);
     } catch (error) {
-      // Only the kind of failure: the message of docker names the container, that is the job.
-      this.#event({ kind: 'browser.remove_failed', label: 'L0', payload: { reason: error instanceof BrowserError ? error.code : 'error' } });
-      return false;
+      closing.failures += 1;
+      // Only the kind of failure, only the first time: the message of docker names the container, that is the job.
+      if (closing.failures === 1) this.#event({ kind: 'browser.remove_failed', label: 'L0', payload: { reason: error instanceof BrowserError ? error.code : 'error' } });
+      return;
+    } finally {
+      closing.removing = null;
     }
-    if (this.#closing !== closing) return true;
+    if (this.#closing !== closing) return;
     this.#closing = null;
     closing.timer.clear();
-    if (closing.notify) this.#options.onClose?.(closing.id, closing.reason);
-    return true;
+    if (closing.notify) this.#safely(() => { this.#options.onClose?.(closing.id, closing.reason); });
   }
 
   #event(event: NewEvent): void {
-    if (this.#options.onEvent) this.#options.onEvent(event);
-    else {
-      const reason = event.payload?.reason;
-      console.warn(`browser: ${event.kind} (${typeof reason === 'string' ? reason : ''})`);
+    this.#safely(() => {
+      if (this.#options.onEvent) this.#options.onEvent(event);
+      else {
+        const reason = event.payload?.reason;
+        console.warn(`browser: ${event.kind} (${typeof reason === 'string' ? reason : ''})`);
+      }
+    });
+  }
+
+  /** A callback of the caller that throws must not become a rejection nobody handles (the timer calls here). */
+  #safely(callback: () => void): void {
+    try {
+      callback();
+    } catch {
+      console.warn('browser: a callback of the manager failed');
     }
   }
 

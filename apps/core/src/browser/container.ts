@@ -10,16 +10,19 @@ import { isImageId } from './image.ts';
  */
 
 export const CONTAINER_PREFIX = 'arianna-browser-';
-/** The only ports the core may reach inside the container: VNC and CDP. */
-export const VNC_PORT = 5900;
-export const CDP_PORT = 9222;
-export const CHANNEL_PORTS: readonly number[] = [VNC_PORT, CDP_PORT];
+/**
+ * The only places the core may reach inside the container: two Unix sockets
+ * written by entrypoint.sh. Nothing in the container listens on TCP.
+ */
+export const CDP_SOCKET = '/tmp/cdp.sock';
+export const VNC_SOCKET = '/tmp/vnc.sock';
+export const CHANNEL_SOCKETS: readonly string[] = [CDP_SOCKET, VNC_SOCKET];
 
 const BROWSER_ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const CONTAINER_NAME = /^arianna-browser-[a-z0-9][a-z0-9-]{0,47}$/;
 
 export class BrowserError extends Error {
-  readonly code: 'busy' | 'no-lock' | 'image-mismatch' | 'bad-id' | 'bad-image' | 'bad-port' | 'docker' | 'cdp-timeout' | 'closed';
+  readonly code: 'busy' | 'no-lock' | 'image-mismatch' | 'bad-id' | 'bad-image' | 'bad-socket' | 'docker' | 'cdp-timeout' | 'closed';
 
   constructor(code: BrowserError['code'], message: string) {
     super(message);
@@ -92,11 +95,11 @@ export function browserRunArgs(input: RunArgsInput): string[] {
   ];
 }
 
-/** The argv of the channel to a port inside the container (without "docker"). */
-export function channelArgs(container: string, port: number): string[] {
+/** The argv of the channel to a socket inside the container (without "docker"). */
+export function channelArgs(container: string, socket: string): string[] {
   if (!isContainerName(container)) throw new BrowserError('bad-id', 'not a container of the browser');
-  if (!CHANNEL_PORTS.includes(port)) throw new BrowserError('bad-port', `only ports ${CHANNEL_PORTS.join(' and ')} can be reached`);
-  return ['exec', '-i', container, 'socat', 'STDIO', `TCP:127.0.0.1:${String(port)}`];
+  if (!CHANNEL_SOCKETS.includes(socket)) throw new BrowserError('bad-socket', `only ${CHANNEL_SOCKETS.join(' and ')} can be reached`);
+  return ['exec', '-i', container, 'socat', 'STDIO', `UNIX-CONNECT:${socket}`];
 }
 
 /** Runs docker with fixed arguments and returns stdout; injectable for tests. */
@@ -133,8 +136,29 @@ export async function leftoverContainers(docker: DockerRun): Promise<string[]> {
   return out.split('\n').map((line) => line.trim()).filter(isContainerName);
 }
 
-export async function removeContainers(docker: DockerRun, names: string[]): Promise<void> {
-  const valid = names.filter(isContainerName);
-  if (valid.length === 0) return;
-  await docker(['rm', '-f', ...valid], 30_000);
+/**
+ * Removes the containers one by one. One already gone counts as removed: the
+ * container ends by itself with its CDP session, and --rm takes it away.
+ */
+export async function removeContainers(docker: DockerRun, names: string[], pause: (ms: number) => Promise<void> = wait): Promise<void> {
+  for (const name of names.filter(isContainerName)) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await docker(['rm', '-f', name], 30_000);
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (/No such container/i.test(message)) break;
+        // --rm is removing it right now: wait a little and ask again.
+        if (/already in progress/i.test(message) && attempt < REMOVAL_ATTEMPTS) {
+          await pause(200);
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
 }
+
+const REMOVAL_ATTEMPTS = 25;
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

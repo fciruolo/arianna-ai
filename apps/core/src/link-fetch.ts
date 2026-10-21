@@ -1,10 +1,8 @@
-import { lookup as dnsLookup } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
-import { request as httpRequest, type IncomingMessage, type RequestOptions } from 'node:http';
-import { request as httpsRequest } from 'node:https';
-import { BlockList, isIP } from 'node:net';
-import type { Readable } from 'node:stream';
-import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
+
+import { checkFetchUrl as checkNetUrl, decodeBody, NetError, publicRequest, type AddressOptions, type PublicResponse, type Resolver } from './public-net.ts';
+
+export { isPrivateAddress, isPrivateName, type Resolver } from './public-net.ts';
 
 /**
  * Downloading the content of a link saved in kb/inbox (D-154), so that the
@@ -91,8 +89,6 @@ export interface FetchedLink {
 
 export type FetchResult = { ok: true; link: FetchedLink } | { ok: false; reason: FetchFailure };
 
-export type Resolver = (host: string) => Promise<{ address: string; family: number }[]>;
-
 export interface FetchOptions {
   timeoutMs?: number;
   maxBytes?: number;
@@ -141,244 +137,32 @@ class FetchError extends Error {
   }
 }
 
-// --- Addresses -------------------------------------------------------------
-
-// Two lists: a BlockList also matches IPv4 addresses against IPv4-mapped IPv6 rules.
-const PRIVATE = new BlockList();
-const PRIVATE6 = new BlockList();
-for (const [net, prefix] of [
-  ['0.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-  ['172.16.0.0', 12],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['192.168.0.0', 16],
-  ['198.18.0.0', 15],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4],
-  ['240.0.0.0', 4],
-] as const) {
-  PRIVATE.addSubnet(net, prefix, 'ipv4');
-}
-for (const [net, prefix] of [
-  // IPv4-compatible (::a.b.c.d, :: and ::1 among them), IPv4-mapped and IPv4-translated: never, whatever IPv4 they carry.
-  ['::', 96],
-  ['::ffff:0:0', 96],
-  ['::ffff:0:0:0', 96],
-  // NAT64, 6to4 and Teredo may lead to any IPv4, private ones included.
-  ['64:ff9b:1::', 48],
-  ['2002::', 16],
-  ['2001::', 32],
-  ['fc00::', 7],
-  ['fe80::', 10],
-  ['fec0::', 10],
-  ['ff00::', 8],
-  ['64:ff9b::', 96],
-  ['100::', 64],
-  ['2001:db8::', 32],
-] as const) {
-  PRIVATE6.addSubnet(net, prefix, 'ipv6');
-}
-
-/** IPv4 inside IPv6 (::ffff:a.b.c.d, ::a.b.c.d): the IPv4 address it carries. */
-function embeddedIpv4(address: string): string | undefined {
-  const dotted = /^::(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
-  if (dotted?.[1] !== undefined) return dotted[1];
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
-  if (hex?.[1] !== undefined && hex[2] !== undefined) {
-    const high = parseInt(hex[1], 16);
-    const low = parseInt(hex[2], 16);
-    return `${String(high >> 8)}.${String(high & 255)}.${String(low >> 8)}.${String(low & 255)}`;
-  }
-  return undefined;
-}
-
-/** Loopback, private, link-local, unique-local, multicast, reserved or documentation: never fetched. */
-export function isPrivateAddress(address: string): boolean {
-  const bare = address.replace(/^\[|\]$/g, '').replace(/%.*$/, '');
-  const family = isIP(bare);
-  if (family === 0) return true;
-  if (family === 4) return PRIVATE.check(bare, 'ipv4');
-  // An IPv4 written inside IPv6 is never fetched, public or not: DNS gives IPv4 as IPv4.
-  if (embeddedIpv4(bare) !== undefined) return true;
-  return PRIVATE6.check(bare, 'ipv6');
-}
-
-/** Names that are this machine or the local network by themselves. */
-export function isPrivateName(host: string): boolean {
-  const name = host.toLowerCase().replace(/\.$/, '');
-  if (name === '' || !name.includes('.')) return true;
-  return name === 'localhost' || /\.(localhost|local|internal|lan|home|arpa|test|invalid|example)$/.test(name);
-}
-
 /**
- * The address checked before any request: http(s) only, no credentials, no
- * port other than the default one, no private name nor literal address.
+ * The address checked before any request (`public-net.ts`): http(s) only, no
+ * credentials, no port other than the default one, no private name nor literal address.
  */
-export function checkFetchUrl(value: string, options: Pick<FetchOptions, 'unsafeTestAddresses'> = {}): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new FetchError('invalid-url');
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new FetchError('invalid-url');
-  if (url.username !== '' || url.password !== '') throw new FetchError('invalid-url');
-  const testing = options.unsafeTestAddresses !== undefined;
-  if (url.port !== '' && !testing) throw new FetchError('invalid-url');
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (isIP(host) !== 0) {
-    if (isPrivateAddress(host) && options.unsafeTestAddresses?.includes(host) !== true) throw new FetchError('private-address');
-  } else if (isPrivateName(host)) {
-    throw new FetchError('private-address');
-  }
-  return url;
+export function checkFetchUrl(value: string, options: AddressOptions = {}): URL {
+  return checkNetUrl(value, options);
 }
 
-const systemResolve: Resolver = async (host) => dnsLookup(host, { all: true, verbatim: true });
-
-type LookupCallback = (error: NodeJS.ErrnoException | null, address: string | { address: string; family: number }[], family?: number) => void;
-
-/** The `lookup` of the socket: resolves, refuses the whole name if any address is private, connects to the checked one. */
-function checkedLookup(resolve: Resolver, allowed: readonly string[]) {
-  return (hostname: string, options: { all?: boolean } | number, callback: LookupCallback): void => {
-    resolve(hostname)
-      .then((addresses) => {
-        if (addresses.length === 0) throw new FetchError('dns');
-        if (addresses.some((entry) => isPrivateAddress(entry.address) && !allowed.includes(entry.address))) throw new FetchError('private-address');
-        const all = typeof options === 'object' && options.all === true;
-        const first = addresses[0];
-        if (all) callback(null, addresses);
-        else if (first !== undefined) callback(null, first.address, first.family);
-      })
-      .catch((error: unknown) => {
-        const wrapped = (error instanceof FetchError ? error : new FetchError('dns')) as FetchError & NodeJS.ErrnoException;
-        callback(wrapped, '', 0);
-      });
-  };
-}
-
-// --- One request ------------------------------------------------------------
-
-interface Response {
-  status: number;
-  location?: string;
-  type: string;
-  charset?: string;
-  body: Buffer;
-  truncated: boolean;
-}
-
-function decoded(response: IncomingMessage): Readable {
-  const encoding = (response.headers['content-encoding'] ?? '').toLowerCase().trim();
-  if (encoding === 'gzip' || encoding === 'x-gzip') return response.pipe(createGunzip());
-  if (encoding === 'deflate') return response.pipe(createInflate());
-  if (encoding === 'br') return response.pipe(createBrotliDecompress());
-  if (encoding === '' || encoding === 'identity') return response;
-  throw new FetchError('bad-response');
-}
-
-function requestOnce(url: URL, options: Required<Pick<FetchOptions, 'maxBytes'>> & FetchOptions, signal: AbortSignal, accept: string): Promise<Response> {
-  return new Promise<Response>((resolvePromise, reject) => {
-    const requestOptions: RequestOptions = {
+function requestOnce(url: URL, options: Required<Pick<FetchOptions, 'maxBytes'>> & FetchOptions, signal: AbortSignal, accept: string): Promise<PublicResponse> {
+  return publicRequest(
+    {
+      url,
       method: 'GET',
-      headers: {
-        'user-agent': options.userAgent ?? userAgent(),
-        accept,
-        'accept-language': 'it,en;q=0.8',
-        'accept-encoding': 'gzip, deflate, br',
-      },
-      agent: false,
-      lookup: checkedLookup(options.resolve ?? systemResolve, options.unsafeTestAddresses ?? []) as unknown as RequestOptions['lookup'],
-      signal,
-    };
-    const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    let settled = false;
-    const fail = (error: unknown): void => {
-      if (settled) return;
-      settled = true;
-      if (error instanceof FetchError) reject(error);
-      else if (signal.aborted) reject(new FetchError('timeout'));
-      else reject(new FetchError('network'));
-    };
-    const req = send(url, requestOptions, (response) => {
-      const status = response.statusCode ?? 0;
-      const location = typeof response.headers.location === 'string' ? response.headers.location : undefined;
-      const [type = '', ...params] = (response.headers['content-type'] ?? '').split(';').map((part) => part.trim());
-      const charset = params.map((param) => /^charset\s*=\s*"?([A-Za-z0-9_.:-]{1,40})"?$/i.exec(param)?.[1]).find((value) => value !== undefined);
-      if (status < 200 || status >= 300) {
-        response.resume();
-        settled = true;
-        resolvePromise({ status, ...(location === undefined ? {} : { location }), type: type.toLowerCase(), body: Buffer.alloc(0), truncated: false });
-        return;
-      }
-      const declared = Number(response.headers['content-length']);
-      // Larger than allowed and not a page: stop before reading. A page is read up to the limit and cut.
-      if (Number.isFinite(declared) && declared > options.maxBytes && !type.toLowerCase().startsWith('text/')) {
-        response.destroy();
-        fail(new FetchError('too-large'));
-        return;
-      }
-      if (!ACCEPTED_TYPES.some((accepted) => accepted === type.toLowerCase())) {
-        response.destroy();
-        fail(new FetchError('unsupported-type'));
-        return;
-      }
-      let stream: Readable;
-      try {
-        stream = decoded(response);
-      } catch (error) {
-        response.destroy();
-        fail(error);
-        return;
-      }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      let truncated = false;
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        resolvePromise({ status, type: type.toLowerCase(), ...(charset === undefined ? {} : { charset }), body: Buffer.concat(chunks), truncated });
-      };
-      stream.on('data', (chunk: Buffer) => {
-        if (settled || truncated) return;
-        const room = options.maxBytes - size;
-        if (chunk.length >= room) {
-          chunks.push(chunk.subarray(0, room));
-          size += room;
-          truncated = true;
-          finish();
-          // Both: a compressed body stops being inflated too.
-          stream.destroy();
-          response.destroy();
-          return;
-        }
-        chunks.push(chunk);
-        size += chunk.length;
-      });
-      stream.on('end', finish);
-      stream.on('error', fail);
-      response.on('error', fail);
-    });
-    req.on('error', fail);
-    req.end();
-  });
-}
-
-function decodeBody(body: Buffer, charset: string | undefined): string {
-  try {
-    return new TextDecoder(charset ?? 'utf-8').decode(body);
-  } catch {
-    return new TextDecoder('utf-8').decode(body);
-  }
+      headers: { 'user-agent': options.userAgent ?? userAgent(), accept, 'accept-language': 'it,en;q=0.8' },
+      maxBytes: options.maxBytes,
+      accept: (type) => ACCEPTED_TYPES.some((accepted) => accepted === type),
+      overflow: 'truncate',
+      ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
+      ...(options.unsafeTestAddresses === undefined ? {} : { unsafeTestAddresses: options.unsafeTestAddresses }),
+    },
+    signal,
+  );
 }
 
 /** GET with the redirects followed by hand, each checked as the first address. */
-async function get(start: URL, options: FetchOptions, signal: AbortSignal, accept: string): Promise<{ url: URL; response: Response }> {
+async function get(start: URL, options: FetchOptions, signal: AbortSignal, accept: string): Promise<{ url: URL; response: PublicResponse }> {
   const settings = { ...options, maxBytes: options.maxBytes ?? FETCH_MAX_BYTES };
   let url = start;
   for (let hop = 0; ; hop += 1) {
@@ -776,7 +560,7 @@ export async function fetchLink(value: string, options: FetchOptions, signal?: A
     if (parts.text === '' && parts.description === undefined) throw new FetchError('empty');
     return { ok: true, link: { url: url.href, site, ...parts, truncated: parts.truncated || response.truncated } };
   } catch (error) {
-    if (error instanceof FetchError) {
+    if (error instanceof FetchError || error instanceof NetError) {
       if (signal?.aborted === true) return { ok: false, reason: 'interrupted' };
       return { ok: false, reason: error.reason };
     }

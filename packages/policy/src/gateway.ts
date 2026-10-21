@@ -33,11 +33,36 @@ export type PageConsent =
   | { from: 'user'; addresses: readonly string[] }
   | { from: 'sites'; sites: readonly string[] };
 
+/**
+ * What a resource of a page of the agent's browser is (D-264): the frame of
+ * an iframe (`document`), a style sheet, a script, an image, a font, or a
+ * call of the page's scripts (`fetch`, fetch and XMLHttpRequest).
+ */
+export const RESOURCE_TYPES = ['document', 'stylesheet', 'script', 'image', 'font', 'fetch'] as const;
+export type ResourceType = (typeof RESOURCE_TYPES)[number];
+export const RESOURCE_METHODS = ['GET', 'HEAD', 'POST'] as const;
+export type ResourceMethod = (typeof RESOURCE_METHODS)[number];
+/** Bytes of a POST body in UTF-8 a resource may carry at most (D-264). */
+export const MAX_RESOURCE_BODY = 64 * 1024;
+
+/**
+ * A resource requested by a page of the agent's browser (D-264): `of` is the
+ * consent the page of the job was opened with (D-262). The payload is the
+ * address, and for a POST its body: `[address]` or `[address, body]`.
+ */
+export interface ResourceRequest {
+  of: PageConsent['from'];
+  type: ResourceType;
+  method: ResourceMethod;
+}
+
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
   | { kind: 'channel'; id: ChannelId }
   /** Without `page`: a query to a fixed service (catalogs, Hugging Face). With `page`: one public page to read (D-262). */
-  | { kind: 'web'; page?: PageConsent }
+  | { kind: 'web'; page?: PageConsent; resource?: never }
+  /** One resource of a page of the agent's browser (D-264): never with `page`. */
+  | { kind: 'web'; resource: ResourceRequest; page?: never }
   /**
    * The address of a link saved by the user, to its own site (D-154). With
    * `list`, `sites` are the sites of the list the caller read: the address
@@ -61,10 +86,12 @@ export type GatewayRule =
   | 'pii-unavailable'
   | 'link-invalid'
   | 'page-consent'
+  | 'resource-invalid'
   | 'local'
   | 'cloud'
   | 'link'
-  | 'page';
+  | 'page'
+  | 'resource';
 
 /**
  * What the caller does after a block. `notify-reference`: a channel gets a
@@ -77,7 +104,7 @@ export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
 export type Decision =
   | {
       decision: 'allow';
-      rule: 'local' | 'cloud' | 'link' | 'page';
+      rule: 'local' | 'cloud' | 'link' | 'page' | 'resource';
       label: Label;
       reason: string;
       /** The exact text checked for each fragment, frozen: this is what is sent. */
@@ -85,7 +112,7 @@ export type Decision =
     }
   | {
       decision: 'block';
-      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page'>;
+      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource'>;
       label: Label;
       reason: string;
       next: NextStep;
@@ -209,6 +236,61 @@ function checkPage(payload: readonly Labeled<unknown>[], texts: readonly string[
   return undefined;
 }
 
+function isResourceRequest(value: unknown): value is ResourceRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const resource = value as Record<string, unknown>;
+  return (
+    Object.keys(resource).every((key) => key === 'of' || key === 'type' || key === 'method') &&
+    (resource.of === 'public' || resource.of === 'user' || resource.of === 'sites') &&
+    RESOURCE_TYPES.some((type) => type === resource.type) &&
+    RESOURCE_METHODS.some((method) => method === resource.method)
+  );
+}
+
+/**
+ * The shape of a resource (D-264), before any text is read: one normalized
+ * address, and a body only with POST, a string of at most 64 KB in UTF-8.
+ */
+function checkResourceShape(payload: readonly Labeled<unknown>[], label: Label, resource: ResourceRequest): Decision | undefined {
+  if (payload.length !== 1 && payload.length !== 2) return block('resource-invalid', label, 'a resource is an address, and a body only with POST', 'stay-local');
+  const [address, body] = payload;
+  if (typeof address?.value !== 'string') return block('resource-invalid', label, 'the address of a resource is a text', 'stay-local');
+  const url = singleAddress([address], [address.value]);
+  if (typeof url === 'string') return block('resource-invalid', label, url, 'stay-local');
+  if (body === undefined) return undefined;
+  if (resource.method !== 'POST') return block('resource-invalid', label, `a ${resource.method} resource has no body`, 'stay-local');
+  if (typeof body.value !== 'string') return block('resource-invalid', label, 'the body of a resource is a text', 'stay-local');
+  if (new TextEncoder().encode(body.value).length > MAX_RESOURCE_BODY) return block('resource-invalid', label, `the body of a resource is larger than ${String(MAX_RESOURCE_BODY)} bytes`, 'stay-local');
+  return undefined;
+}
+
+/**
+ * What else a body says when read as a form or as JSON: %-escapes decoded one
+ * by one (a stray `%` must not hide the rest), `+` as a space, and every key
+ * and string of a JSON body, whose `\u` escapes would hide a value.
+ */
+function bodyReadings(body: string): string[] {
+  const readings: string[] = [];
+  const unescaped = body.replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run.replace(/%([0-9a-fA-F]{2})/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    }
+  });
+  if (unescaped !== body) readings.push(unescaped);
+  if (body.includes('+')) readings.push(unescaped.replace(/\+/g, ' '));
+  const trimmed = body.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      readings.push(...scanParts(JSON.stringify(JSON.parse(trimmed)), true));
+    } catch {
+      // Not JSON: read as it is.
+    }
+  }
+  return readings;
+}
+
 function isPageConsent(value: unknown): value is PageConsent {
   if (typeof value !== 'object' || value === null) return false;
   const page = value as Record<string, unknown>;
@@ -245,6 +327,7 @@ export function isTarget(value: unknown): value is Target {
     case 'channel':
       return CHANNELS.includes(target.id as string);
     case 'web':
+      if (target.resource !== undefined) return target.page === undefined && isResourceRequest(target.resource);
       return target.page === undefined || isPageConsent(target.page);
     case 'link':
       if (target.consent === 'click') return true;
@@ -273,7 +356,10 @@ export function localityOf(target: Target): Locality {
 
 /** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`; never the address nor the site of a link. */
 export function targetName(target: Target): string {
-  if (target.kind === 'web') return target.page === undefined ? 'web-search' : `web-page-${target.page.from}`;
+  if (target.kind === 'web') {
+    if (target.resource !== undefined) return `web-resource-${target.resource.of}`;
+    return target.page === undefined ? 'web-search' : `web-page-${target.page.from}`;
+  }
   if (target.kind === 'link') return `link-${target.consent}`;
   return target.id;
 }
@@ -335,7 +421,7 @@ export function spendAllowed(decision: unknown): Allowed | undefined {
 }
 
 function block(
-  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page'>,
+  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link' | 'page' | 'resource'>,
   label: Label,
   reason: string,
   next: NextStep,
@@ -367,7 +453,10 @@ function block(
  *    fragment read as empty (`markCatalogText`, D-250). A kind that points at a person blocks; no answer blocks too,
  *    except on a development installation (`piiUnavailable(…, true)`), where
  *    the allow says the check was skipped. A link is one address chosen by the
- *    user, checked by its own rules: the second scan does not read it.
+ *    user, checked by its own rules: the second scan does not read it. Nor
+ *    does it read a resource of a page of the agent's browser (D-264): its
+ *    shape is checked right after rule 3, then rules 4-7 and the scanner on
+ *    its address and body, decoded too, decide.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -420,6 +509,13 @@ export function gatewayCheck(
 
   if (label === 'L3') return block('secret', label, 'L3 never leaves the vault: send a vault:// reference', onBlock);
 
+  // A resource of the browser (D-264): its shape first, so that no oversized body is ever read.
+  const resource = target.kind === 'web' ? target.resource : undefined;
+  if (resource !== undefined) {
+    const refused = checkResourceShape(payload, label, resource);
+    if (refused !== undefined) return refused;
+  }
+
   const texts: string[] = [];
   const parts: string[] = [];
   for (const fragment of payload) {
@@ -439,6 +535,20 @@ export function gatewayCheck(
       } catch {
         return block('link-invalid', label, 'an address with a broken escape', 'stay-local');
       }
+    }
+  }
+  // A resource (D-264): its address the same way, its body decoded as a form and as JSON too.
+  let bodyParts: string[] = [];
+  if (resource !== undefined) {
+    const [address = '', body] = texts;
+    try {
+      parts.push(decodeURIComponent(address));
+    } catch {
+      return block('resource-invalid', label, 'an address with a broken escape', 'stay-local');
+    }
+    if (body !== undefined) {
+      bodyParts = [body, ...bodyReadings(body)];
+      parts.push(...bodyParts.slice(1));
     }
   }
 
@@ -466,6 +576,20 @@ export function gatewayCheck(
   }
   if (!canSendTo('cloud', label)) {
     return block('cloud-label', label, `${label} cannot go to a cloud target; at most L1`, onBlock);
+  }
+
+  // A resource (D-264): the consent of its page, then the scanner on the address and the body; never the second scanner.
+  if (resource !== undefined) {
+    if (resource.of === 'public' && (context.effective !== 'L0' || label !== 'L0')) {
+      return block('page-consent', label, `a resource of a public page only from a public session, not ${maxLabel(context.effective, label)}`, 'stay-local');
+    }
+    const findings = [...addressFindings(texts[0] ?? ''), ...bodyParts.flatMap((part) => scanText(part))];
+    if (findings.length > 0) {
+      const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
+      return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
+    }
+    const body = texts.length === 2 ? ', with a body' : '';
+    return allow({ decision: 'allow', rule: 'resource', label, reason: `${label} ${resource.type} ${resource.method} of a page, ${resource.of} consent${body}, scan clean, no second check`, texts }, target);
   }
 
   // A page (D-262): one address the consent covers, scanned as written and decoded.

@@ -1,71 +1,118 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 
-import { readDevtoolsPath, waitForCdp, type Channel, type OpenChannel } from '../src/browser/channel.ts';
+import type { Browser } from 'playwright-core';
+
+import type { Channel, OpenChannel } from '../src/browser/channel.ts';
 import { BrowserError, type DockerRun } from '../src/browser/container.ts';
 import type { BrowserImageLock } from '../src/browser/image.ts';
 import { BrowserLifetime, BrowserManager } from '../src/browser/manager.ts';
-import { cdpTransport } from '../src/browser/transport.ts';
+import { connectSession } from '../src/browser/session.ts';
+import { CdpPipe, cdpTransport, waitForCdp } from '../src/browser/transport.ts';
 
 const IMAGE = `sha256:${'c'.repeat(64)}`;
-const UUID = '9cf73460-fb76-496a-a0ac-a823c97f5056';
 const LOCK: BrowserImageLock = { image: IMAGE, builtAt: '2026-10-21T00:00:00.000Z', chromium: '155.0.8059.79', snapshot: '20261020T000000Z', base: `debian:trixie-slim@sha256:${'d'.repeat(64)}` };
 
 const code = (expected: BrowserError['code']) => (error: unknown): boolean => error instanceof BrowserError && error.code === expected;
 
-/** A fake channel: answers the request with `answer`, records what was written. */
-function fakeOpen(answer: (request: string) => string | null, written: string[] = [], ports: number[] = []): OpenChannel {
-  return (_container, port) => {
-    ports.push(port);
-    const toCore = new PassThrough();
-    const duplex = Object.assign(toCore, {
+type Reply = object | 'close' | null;
+
+interface FakeChannels {
+  open: OpenChannel;
+  sockets: string[];
+  written: string[];
+  closed: number;
+}
+
+/**
+ * Fake channels to the CDP pipe: each NUL-ended message written is answered
+ * by `answer` (an object sent back, 'close' to drop the channel as when the
+ * socket is not there yet, null for silence).
+ */
+function fakeChannels(answer: (message: Record<string, unknown>, attempt: number) => Reply): FakeChannels {
+  const fake: FakeChannels = { open: () => { throw new Error('unset'); }, sockets: [], written: [], closed: 0 };
+  let attempts = 0;
+  fake.open = (_container, socket) => {
+    fake.sockets.push(socket);
+    const attempt = ++attempts;
+    const stream = new PassThrough();
+    const duplex = Object.assign(stream, {
       write: (chunk: string | Buffer) => {
-        const request = chunk.toString();
-        written.push(request);
-        const reply = answer(request);
-        if (reply !== null) setImmediate(() => toCore.push(reply));
+        const text = chunk.toString();
+        fake.written.push(text);
+        for (const part of text.split('\0').filter((piece) => piece !== '')) {
+          const reply = answer(JSON.parse(part) as Record<string, unknown>, attempt);
+          if (reply === 'close') setImmediate(() => stream.destroy());
+          else if (reply !== null) setImmediate(() => stream.push(`${JSON.stringify(reply)}\0`));
+        }
         return true;
       },
     });
-    const channel: Channel = { stream: duplex, close: () => toCore.destroy() };
+    const channel: Channel = { stream: duplex, close: () => { fake.closed += 1; stream.destroy(); } };
     return channel;
   };
+  return fake;
 }
 
-function versionAnswer(url: string): string {
-  const body = JSON.stringify({ Browser: 'Chrome/155', webSocketDebuggerUrl: url });
-  return `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${String(Buffer.byteLength(body))}\r\n\r\n${body}`;
-}
+const chrome = (message: Record<string, unknown>): Reply =>
+  message.method === 'Browser.getVersion' ? { id: message.id, result: { product: 'Chrome/155.0.8059.79' } } : { id: message.id, result: {} };
 
-test('json/version: the devtools path, asked with Host 127.0.0.1:9222 on port 9222', async () => {
+test('pipe: messages ended by NUL, split and joined across chunks', () => {
+  const stream = new PassThrough();
   const written: string[] = [];
-  const ports: number[] = [];
-  const path = await readDevtoolsPath(fakeOpen(() => versionAnswer(`ws://127.0.0.1:9222/devtools/browser/${UUID}`), written, ports), 'arianna-browser-a', 1000);
-  assert.equal(path, `/devtools/browser/${UUID}`);
-  assert.deepEqual(ports, [9222]);
-  assert.match(written[0] ?? '', /^GET \/json\/version HTTP\/1\.1\r\nHost: 127\.0\.0\.1:9222\r\n\r\n$/);
+  const duplex = Object.assign(stream, { write: (chunk: string) => { written.push(chunk); return true; } });
+  const pipe = new CdpPipe({ stream: duplex, close: () => { stream.destroy(); } });
+  const got: unknown[] = [];
+  pipe.onmessage = (message) => { got.push(message); };
+  pipe.send({ id: 1, method: 'Target.getTargets' });
+  assert.deepEqual(written, ['{"id":1,"method":"Target.getTargets"}\0']);
+  stream.emit('data', Buffer.from('{"id":1,"res'));
+  stream.emit('data', Buffer.from('ult":{}}\0{"method":"Target.targetCreated"}\0not json\0[1]\0'));
+  assert.deepEqual(got, [{ id: 1, result: {} }, { method: 'Target.targetCreated' }]);
 });
 
-test('json/version: another host, path or status is refused', async () => {
-  for (const url of [`ws://evil.example:9222/devtools/browser/${UUID}`, `ws://127.0.0.1:9223/devtools/browser/${UUID}`, `ws://127.0.0.1:9222/devtools/page/${UUID}`, 'ws://127.0.0.1:9222/devtools/browser/x']) {
-    await assert.rejects(readDevtoolsPath(fakeOpen(() => versionAnswer(url)), 'arianna-browser-a', 1000), BrowserError, url);
-  }
-  await assert.rejects(readDevtoolsPath(fakeOpen(() => 'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n'), 'arianna-browser-a', 1000), BrowserError);
+test('waitForCdp: Browser.getVersion on /tmp/cdp.sock, the same pipe stays open', async () => {
+  const fake = fakeChannels(chrome);
+  const pipe = await waitForCdp(fake.open, 'arianna-browser-a', { timeoutMs: 1000 });
+  assert.deepEqual(fake.sockets, ['/tmp/cdp.sock']);
+  assert.equal(fake.written[0], '{"id":0,"method":"Browser.getVersion"}\0');
+  assert.equal(pipe.closed, false);
+  assert.equal(fake.closed, 0);
 });
 
-test('waitForCdp: retries until CDP answers, gives up at the ceiling', async () => {
-  let attempts = 0;
-  const late = fakeOpen(() => (++attempts < 3 ? null : versionAnswer(`ws://127.0.0.1:9222/devtools/browser/${UUID}`)));
-  assert.equal(await waitForCdp(late, 'arianna-browser-a', { timeoutMs: 2000, attemptMs: 30, pauseMs: 1 }), `/devtools/browser/${UUID}`);
-  assert.equal(attempts, 3);
-  await assert.rejects(waitForCdp(fakeOpen(() => null), 'arianna-browser-a', { timeoutMs: 100, attemptMs: 20, pauseMs: 1 }), code('cdp-timeout'));
+test('waitForCdp: a channel that closes is tried again; another product is not ready', async () => {
+  const late = fakeChannels((message, attempt) => (attempt < 3 ? 'close' : chrome(message)));
+  await waitForCdp(late.open, 'arianna-browser-a', { timeoutMs: 2000, pauseMs: 1 });
+  assert.equal(late.sockets.length, 3);
+  const other = fakeChannels((message) => ({ id: message.id, result: { product: 'HeadlessShell/1' } }));
+  await assert.rejects(waitForCdp(other.open, 'arianna-browser-a', { timeoutMs: 50, pauseMs: 1 }), code('cdp-timeout'));
 });
 
-test('transport: only a browser devtools path', () => {
-  const channel: Channel = { stream: new PassThrough(), close: () => undefined };
-  assert.throws(() => cdpTransport('/devtools/page/x', channel));
-  assert.throws(() => cdpTransport(`/devtools/browser/${UUID}?x=1`, channel));
+test('waitForCdp: a silent channel is closed by its own timer at the ceiling', async () => {
+  const mute = fakeChannels(() => null);
+  const started = Date.now();
+  await assert.rejects(waitForCdp(mute.open, 'arianna-browser-a', { timeoutMs: 80, pauseMs: 1 }), code('cdp-timeout'));
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(mute.sockets.length, 1);
+  assert.equal(mute.closed, 1);
+});
+
+test('transport: Playwright messages on the pipe, close both ways', async () => {
+  const fake = fakeChannels(chrome);
+  const pipe = await waitForCdp(fake.open, 'arianna-browser-a', { timeoutMs: 1000 });
+  const transport = cdpTransport(pipe);
+  const answer = new Promise<object>((resolve) => { transport.onmessage = resolve; });
+  transport.send({ id: 1, method: 'Browser.getVersion' });
+  assert.deepEqual(await answer, { id: 1, result: { product: 'Chrome/155.0.8059.79' } });
+  const closed = new Promise<void>((resolve) => { transport.onclose = () => { resolve(); }; });
+  transport.close();
+  await closed;
+  assert.ok(pipe.closed);
+  assert.equal(fake.closed, 1);
 });
 
 interface Fake {
@@ -86,7 +133,7 @@ function fakeDocker(imageId = IMAGE): Fake {
   };
 }
 
-const okOpen = fakeOpen(() => versionAnswer(`ws://127.0.0.1:9222/devtools/browser/${UUID}`));
+const okOpen: OpenChannel = (container, socket) => fakeChannels(chrome).open(container, socket);
 const noTimer = (): { clear(): void } => ({ clear: () => undefined });
 
 test('one browser at a time: a second one is busy, free again after stop', async () => {
@@ -94,7 +141,7 @@ test('one browser at a time: a second one is busy, free again after stop', async
   const manager = new BrowserManager({ home: '/h', docker: fake.docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/seccomp.json', every: noTimer });
   const open = await manager.start('job-1');
   assert.equal(open.container, 'arianna-browser-job-1');
-  assert.equal(open.devtoolsPath, `/devtools/browser/${UUID}`);
+  assert.equal(open.cdp.closed, false);
   await assert.rejects(manager.start('job-2'), code('busy'));
   await manager.stop('job-1');
   assert.deepEqual(fake.calls.at(-1), ['rm', '-f', 'arianna-browser-job-1']);
@@ -163,7 +210,7 @@ test('a failed start whose container cannot be removed stays busy too', async ()
   let tick: (() => void) | undefined;
   const events: unknown[] = [];
   const manager = new BrowserManager({
-    home: '/h', docker, openChannel: fakeOpen(() => null), readLock: () => LOCK, seccompPath: '/h/s.json', cdpReadyMs: 30,
+    home: '/h', docker, openChannel: fakeChannels(() => null).open, readLock: () => LOCK, seccompPath: '/h/s.json', cdpReadyMs: 30,
     every: (callback) => {
       tick = callback;
       return { clear: () => { tick = undefined; } };
@@ -209,7 +256,7 @@ test('no start without the lock, or with another local image', async () => {
 
 test('a container whose CDP never answers is removed', async () => {
   const fake = fakeDocker();
-  const manager = new BrowserManager({ home: '/h', docker: fake.docker, openChannel: fakeOpen(() => null), readLock: () => LOCK, seccompPath: '/h/s.json', cdpReadyMs: 50, every: noTimer });
+  const manager = new BrowserManager({ home: '/h', docker: fake.docker, openChannel: fakeChannels(() => null).open, readLock: () => LOCK, seccompPath: '/h/s.json', cdpReadyMs: 50, every: noTimer });
   await assert.rejects(manager.start('a'), code('cdp-timeout'));
   assert.deepEqual(fake.calls.at(-1), ['rm', '-f', 'arianna-browser-a']);
   assert.equal(manager.active, null);
@@ -253,4 +300,126 @@ test('the periodic check stops an idle browser, not an active one', async () => 
   assert.equal(manager.active, null);
   assert.deepEqual(closed, ['a:idle']);
   assert.equal(tick, undefined);
+});
+
+test('cleanup and start never overlap: each is busy while the other runs', async () => {
+  let releasePs: (() => void) | undefined;
+  const docker: DockerRun = (args) => {
+    if (args[0] === 'ps') return new Promise((resolve) => { releasePs = () => { resolve(''); }; });
+    if (args[0] === 'image') return Promise.resolve(`${IMAGE}\n`);
+    return Promise.resolve('');
+  };
+  const manager = new BrowserManager({ home: '/h', docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json', every: noTimer });
+  const cleaning = manager.cleanup();
+  assert.equal(manager.state, 'cleaning');
+  await assert.rejects(manager.start('a'), code('busy'));
+  await assert.rejects(manager.cleanup(), code('busy'));
+  await new Promise((resolve) => setImmediate(resolve));
+  releasePs?.();
+  await cleaning;
+  assert.equal(manager.state, 'free');
+  const starting = manager.start('a');
+  assert.equal(manager.state, 'starting');
+  await assert.rejects(manager.cleanup(), code('busy'));
+  await starting;
+});
+
+test('removal failures: one event only, never two removals at once', async () => {
+  let rm = 0;
+  let releaseRm: (() => void) | undefined;
+  let failing = true;
+  const docker: DockerRun = (args) => {
+    if (args[0] === 'image') return Promise.resolve(`${IMAGE}\n`);
+    if (args[0] === 'rm') {
+      rm += 1;
+      if (failing) return Promise.reject(new BrowserError('docker', 'docker rm: daemon'));
+      return new Promise((resolve) => { releaseRm = () => { resolve(''); }; });
+    }
+    return Promise.resolve('');
+  };
+  const ticks: (() => void)[] = [];
+  const events: unknown[] = [];
+  const manager = new BrowserManager({
+    home: '/h', docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json',
+    every: (callback) => { ticks.push(callback); return { clear: () => { ticks.splice(ticks.indexOf(callback), 1); } }; },
+    onEvent: (event) => { events.push(event); },
+  });
+  await manager.start('a');
+  await manager.stop('a');
+  for (let round = 0; round < 3; round++) {
+    for (const tick of [...ticks]) tick();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(rm, 4);
+  assert.equal(events.length, 1);
+  failing = false;
+  for (const tick of [...ticks]) tick();
+  for (const tick of [...ticks]) tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rm, 5);
+  assert.equal(manager.state, 'closing');
+  releaseRm?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(manager.state, 'free');
+});
+
+test('callbacks of the caller that throw do not break the manager', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    let tick: (() => void) | undefined;
+    let now = 0;
+    const manager = new BrowserManager({
+      home: '/h', docker: fakeDocker().docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json', now: () => now,
+      every: (callback) => { tick = callback; return { clear: () => undefined }; },
+      onClose: () => { throw new Error('caller failed'); },
+      onEvent: () => { throw new Error('caller failed'); },
+    });
+    await manager.start('a');
+    now = 31 * 60_000;
+    tick?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(manager.state, 'free');
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('the end of the CDP session closes the browser and removes the container', async () => {
+  const fake = fakeDocker();
+  const closed: string[] = [];
+  const manager = new BrowserManager({ home: '/h', docker: fake.docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json', every: noTimer, onClose: (id, reason) => { closed.push(`${id}:${reason}`); } });
+  const open = await manager.start('a');
+  open.cdp.close();
+  await new Promise((resolve) => setImmediate(resolve));
+  await open.close();
+  assert.equal(manager.state, 'free');
+  assert.deepEqual(closed, ['a:disconnected']);
+  assert.deepEqual(fake.calls.filter((args) => args[0] === 'rm'), [['rm', '-f', 'arianna-browser-a']]);
+});
+
+test('a close of the session is stopped, never disconnected, even when closing Playwright closes the CDP pipe', async () => {
+  const fake = fakeDocker();
+  const closed: string[] = [];
+  const manager = new BrowserManager({ home: '/h', docker: fake.docker, openChannel: okOpen, readLock: () => LOCK, seccompPath: '/h/s.json', every: noTimer, onClose: (id, reason) => { closed.push(`${id}:${reason}`); } });
+  const open = await manager.start('job');
+  let disconnect: (() => void) | undefined;
+  // As a real Playwright: browser.close() ends the CDP pipe, then reports `disconnected`.
+  const browser = {
+    contexts: () => [{ pages: () => [], newPage: () => Promise.reject(new Error('not in this test')) }],
+    newBrowserCDPSession: () => Promise.resolve({ send: () => Promise.resolve({}) }),
+    on: (event: string, listener: () => void) => { if (event === 'disconnected') disconnect = listener; },
+    close: async () => {
+      open.cdp.close();
+      await new Promise((resolve) => setImmediate(resolve));
+      disconnect?.();
+    },
+  } as unknown as Browser;
+  const session = await connectSession(open, { home: mkdtempSync(join(tmpdir(), 'arianna-manager-session-')), connect: () => Promise.resolve(browser) });
+  await session.close();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(closed, ['job:stopped']);
+  assert.equal(manager.state, 'free');
 });
