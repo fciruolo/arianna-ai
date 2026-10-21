@@ -4466,6 +4466,27 @@ function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
       if (issued.reason === 'too-many-screens') return { status: 409, body: { error: 'too-many-screens' } };
       return { status: 403, body: { error: issued.reason } };
     }),
+    // Whether the conversation holds the browser now: the bar of the chat above the composer.
+    route('GET', SCREEN_PATH, async (_request, url) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const conversationId = url.searchParams.get('conversationId');
+      if (conversationId === null || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      const status = await screens.status(conversationId);
+      if (status === null) throw new HttpError(404, 'not found');
+      return { body: status };
+    }),
+    // «Chiudi» in the chat: the browser of that conversation closes after the action under way.
+    route('POST', '/api/browser/close', async (request) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId']);
+      const { conversationId } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      const closed = await screens.closeByUser(conversationId);
+      if (closed === 'not-found') throw new HttpError(404, 'not found');
+      if (closed === 'no-browser') return { status: 409, body: { error: 'no-browser' } };
+      return { body: { closed: true } };
+    }),
   ];
 }
 

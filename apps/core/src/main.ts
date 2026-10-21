@@ -58,7 +58,7 @@ import { AgentBrowser, gatewayTyped } from './browser/agent-browser.ts';
 import { readBrowserImageLock } from './browser/image.ts';
 import { BrowserManager } from './browser/manager.ts';
 import { BrowserScreens, conversationKindOf } from './browser/screen.ts';
-import { writeTakenLine } from './orchestrator/browser-tool.ts';
+import { writeClosedByUserLine, writeTakenLine } from './orchestrator/browser-tool.ts';
 import { createMcpServer } from './mcp/server.ts';
 import { readPage } from './web-page.ts';
 import { createServiceManager } from './project-services.ts';
@@ -561,6 +561,13 @@ const browserScreens = new BrowserScreens({
   holder: () => agentBrowser.holder,
   container: () => browserManager.active?.container ?? null,
   conversation: conversationKindOf(sql),
+  // «Chiudi» in the chat: after the action under way; the line tells the user and the model.
+  closeBrowser: async (conversationId) => {
+    const closed = await agentBrowser.closeByUser(conversationId);
+    if (closed) await writeClosedByUserLine(sql, conversationId).catch(report);
+    return closed;
+  },
+  site: (conversationId) => agentBrowser.siteOf(conversationId),
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
 });
 // The browser of Arianna (D-264, passo 3): one container at a time, the leftovers of a core that stopped removed at start.

@@ -2874,6 +2874,29 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni, tutte le consigliate):
 2. Apro lo schermo: si vede la pagina in diretta e, mentre Arianna scorre o clicca, cambia.
 3. Clic e tasti sullo schermo non fanno niente.
 
+**Richieste della prova dell'utente (2026-10-21):** «funziona ma vorrei sistemare 2 cose», poi una terza.
+1. **«Guarda» facile da trovare, non solo dentro i passi.**
+   - Sopra la casella di scrittura c'è una riga fissa «Browser aperto · <sito> · Guarda · Chiudi», visibile finché la conversazione tiene il browser.
+   - Rotta leggera `GET /api/browser/screen?conversationId=<id>`, che risponde `{open, site?}`:
+     - `open: false` per le conversazioni Private e in incognito;
+     - 404 per una conversazione che non esiste.
+   - Il sito è quello dell'ultima azione che ha raggiunto una pagina (`AgentBrowser.siteOf`).
+   - La chat legge la rotta all'apertura della conversazione, a ogni riga del browser o messaggio nuovo e ogni 30 s mentre la riga è visibile; con `browser · chiude` la riga sparisce subito.
+   - Il «Guarda» nei passi resta.
+2. **Schermo intero e nuova scheda.** Nella scheda Browser ci sono due pulsanti:
+   - «Schermo intero»: Fullscreen API sullo schermo, Esc per uscire. Il pulsante è nascosto dove `document.fullscreenEnabled` è falso, come Safari su iPhone.
+   - «Apri in una nuova scheda»: apre `/browser/<id>` (`target="_blank" rel="noopener"`), una pagina con il solo schermo su fondo scuro, con sito e stato in alto e «Riprova». Chiede il suo gettone e conta fra i 3 schermi.
+3. **«Chiudi» il browser** («serve pure un pulsante per chiudere il browser»): nella riga fissa e nella scheda Browser, senza conferma.
+   - `POST /api/browser/close {conversationId}`:
+     - 200 `{closed: true}`;
+     - 409 `no-browser` se la conversazione non tiene il browser (un'altra conversazione non può chiuderlo);
+     - 404 per una conversazione che non esiste.
+   - Il core chiude dopo l'azione in corso (la coda seriale), mai a metà.
+   - Si chiudono anche gli schermi.
+   - Il core scrive l'evento `browser.close`, L0, `{conversationId, reason: 'user'}`.
+   - In chat compare la riga di sistema «Browser chiuso da te. Se serve, Arianna lo riapre.», che legge anche il modello.
+   - La prossima azione del browser in quella conversazione riceve una volta «Il browser l'ha chiuso l'utente: riaprilo con browser.open solo se serve.» (`closed-by-user`); `browser.open` lo riapre.
+
 ### Cose non verificate
 
 - noVNC dal telefono: se la chat arriva al telefono su `http://` con un indirizzo di rete (non localhost), il browser del telefono non lo considera un contesto sicuro e noVNC rifiuta di partire. Da vedere nella prova del passo 4.

@@ -12,7 +12,7 @@ import { useMentionMenu } from '../lib/mention-menu.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, shownStreaming, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { computerTask, type ComputerTab } from '../lib/computer.ts';
-import { browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
+import { browserSignal, browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
@@ -48,6 +48,7 @@ import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Dir
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import BrowserBar from './BrowserBar.vue';
 import ComputerButton from './ComputerButton.vue';
 import ComputerPanel from './ComputerPanel.vue';
 import CreditLine from './CreditLine.vue';
@@ -589,6 +590,8 @@ function watchBrowser(site: string | undefined): void {
 }
 /** The site above the screen: the newest live browser line, or the line the user pressed «Guarda» on. */
 const screenSite = computed(() => latestBrowserSite(props.chat) ?? watchedSite.value);
+/** What the bar «Browser aperto» above the composer follows: new browser lines and messages. */
+const browserBar = computed(() => browserSignal(props.chat));
 /** The newest browser line of a list carries «Guarda»; the older ones would only repeat it. */
 function lastBrowserLine(lines: readonly Activity[]): number {
   return lines.findLastIndex((line) => isBrowserLine(line));
@@ -1514,6 +1517,8 @@ onBeforeUnmount(() => clearInterval(clock));
           <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[14px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
           <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
+        <!-- D-264, passo 4: while this conversation holds Arianna's browser, «Guarda» and «Chiudi» at hand. -->
+        <BrowserBar v-if="!incognito" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" />
         <QueuedMessages
           v-if="queue !== undefined"
           :queue="queue"

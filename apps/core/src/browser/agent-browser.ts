@@ -92,6 +92,8 @@ export type ActionFailure =
   | 'not-installed'
   | 'start-failed'
   | 'not-open'
+  /** The user closed the browser from the chat: said once, to the next action of that conversation. */
+  | 'closed-by-user'
   | 'no-reading'
   | 'unknown-element'
   | 'not-clickable'
@@ -154,6 +156,8 @@ interface Held {
   elements: Map<number, PageElement>;
   /** The address the reading was made on: a reading of another page does not hold. */
   readAt: string | undefined;
+  /** The site of the page after the last action that reached one: the bar of the chat shows it (D-264, passo 4). */
+  site?: string;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -172,6 +176,8 @@ export class AgentBrowser {
   #held: Held | null = null;
   #queue: Promise<unknown> = Promise.resolve();
   #running = false;
+  /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
+  readonly #closedByUser = new Set<string>();
 
   constructor(options: AgentBrowserOptions) {
     this.#options = options;
@@ -182,6 +188,12 @@ export class AgentBrowser {
   get holder(): string | null {
     this.#forgetClosed();
     return this.#held?.conversationId ?? null;
+  }
+
+  /** The site the browser of `conversationId` is on, when it holds the browser and an action reached a page. */
+  siteOf(conversationId: string): string | null {
+    const held = this.#held;
+    return this.holder === conversationId ? (held?.site ?? null) : null;
   }
 
   /** One action, after the ones already running. Never throws. */
@@ -204,10 +216,33 @@ export class AgentBrowser {
 
   /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
   async release(conversationId: string): Promise<void> {
+    // Closed for a reason of the core: a later action of this conversation hears «not open», not «closed by the user».
+    this.#closedByUser.delete(conversationId);
     // The session first: an action under way on it then fails at once instead of being waited for.
     if (this.#held?.conversationId === conversationId) await this.#drop();
     await this.#queue;
     if (this.#held?.conversationId === conversationId) await this.#drop();
+  }
+
+  /**
+   * «Chiudi» in the chat (D-264, passo 4): closes the browser of the
+   * conversation, after the action under way if any (the queue), never in the
+   * middle of one. False when the conversation does not hold it, then or once
+   * its turn came (also while its first browser.open is still starting: the
+   * chat asks again at the next line). While it closes, an action of another
+   * conversation waits behind it instead of «occupato»: the close is short.
+   */
+  closeByUser(conversationId: string): Promise<boolean> {
+    if (this.holder !== conversationId) return Promise.resolve(false);
+    const run = this.#queue.then(async () => {
+      this.#forgetClosed();
+      if (this.#held?.conversationId !== conversationId) return false;
+      this.#closedByUser.add(conversationId);
+      await this.#drop();
+      return true;
+    });
+    this.#queue = run.catch(() => undefined);
+    return run;
   }
 
   /** At the shutdown of the core. */
@@ -220,6 +255,9 @@ export class AgentBrowser {
   async #act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
     this.#forgetClosed();
     const held = this.#held;
+    // Closed by the user: the next action hears why, once; browser.open opens it again.
+    const userClosed = this.#closedByUser.delete(scope.conversationId) && held?.conversationId !== scope.conversationId;
+    if (userClosed && action.kind !== 'open' && action.kind !== 'close') return { ok: false, reason: 'closed-by-user' };
     if (action.kind === 'close') {
       if (held?.conversationId === scope.conversationId) await this.#drop();
       return { ok: true, page: { url: '', site: '', title: '' } };
@@ -335,7 +373,10 @@ export class AgentBrowser {
     });
     try {
       const result = await Promise.race([work, late]);
-      if (result !== 'late') return result;
+      if (result !== 'late') {
+        if (result.ok && result.page.site !== '') held.site = result.page.site;
+        return result;
+      }
       work.catch(() => undefined);
       if (this.#held === held) await this.#drop();
       return { ok: false, reason: 'action-failed' };

@@ -60,6 +60,9 @@ export type ScreenCloseKey = keyof typeof SCREEN_CLOSE;
 
 export type ConversationKind = 'work' | 'private' | 'incognito';
 
+/** «Chiudi» of the chat: closed, no browser held by that conversation, or no such conversation. */
+export type CloseResult = 'closed' | 'no-browser' | 'not-found';
+
 export type IssueResult = { ok: true; token: string } | { ok: false; reason: 'not-found' | 'private' | 'incognito' | 'no-browser' | 'too-many-screens' };
 
 /** A WebSocket of `ws`, just upgraded. */
@@ -74,6 +77,13 @@ export interface ScreensOptions {
   container: () => string | null;
   /** The kind of a conversation; null when there is none. */
   conversation: (conversationId: string) => Promise<ConversationKind | null>;
+  /**
+   * Closes the browser of a conversation for the user («Chiudi», after the
+   * action under way): true when it held it (AgentBrowser.closeByUser).
+   */
+  closeBrowser?: (conversationId: string) => Promise<boolean>;
+  /** The site the browser of a conversation is on (AgentBrowser.siteOf), for the bar of the chat. */
+  site?: (conversationId: string) => string | null;
   openChannel?: OpenChannel;
   onEvent?: (event: NewEvent) => void;
   now?: () => number;
@@ -137,6 +147,35 @@ export class BrowserScreens {
     this.#tokens.push({ hash: sha256(token), conversationId, container });
     if (this.#tokens.length > MAX_TOKENS) this.#tokens.shift();
     return { ok: true, token };
+  }
+
+  /**
+   * Whether the browser of `conversationId` is open now, for the bar of the
+   * chat («Browser aperto · Guarda · Chiudi»); null when there is no such
+   * conversation. Never open for a Private or incognito one.
+   */
+  async status(conversationId: string): Promise<{ open: boolean; site?: string } | null> {
+    const kind = await this.#options.conversation(conversationId);
+    if (kind === null) return null;
+    const open = kind === 'work' && !this.#stopped && this.#current(conversationId) !== null;
+    const site = open ? (this.#options.site?.(conversationId) ?? null) : null;
+    return site === null ? { open } : { open, site };
+  }
+
+  /**
+   * «Chiudi» in the chat (D-264, passo 4): only the conversation holding the
+   * browser closes it; its screens close with it. Event `browser.close`, L0,
+   * reason `user`, without content.
+   */
+  async closeByUser(conversationId: string): Promise<CloseResult> {
+    const kind = await this.#options.conversation(conversationId);
+    if (kind === null) return 'not-found';
+    const close = this.#options.closeBrowser;
+    if (close === undefined || this.#options.holder() !== conversationId) return 'no-browser';
+    if (!(await close(conversationId))) return 'no-browser';
+    this.revoke();
+    this.#options.onEvent?.({ kind: 'browser.close', label: 'L0', payload: { conversationId, reason: 'user' } });
+    return 'closed';
   }
 
   /** Whether a token holds now: checked before the upgrade, so a wrong one never gets a WebSocket. */

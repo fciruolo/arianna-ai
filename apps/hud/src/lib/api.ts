@@ -1174,6 +1174,26 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
   return token;
 }
 
+/** Whether the conversation holds Arianna's browser now (D-264, passo 4): the bar above the composer. Never for a Private or incognito one. */
+export async function browserStatus(conversationId: string): Promise<{ open: boolean; site: string | null }> {
+  const { open, site } = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?conversationId=${encodeURIComponent(conversationId)}`);
+  return { open: open === true, site: open === true && typeof site === 'string' && site !== '' ? site : null };
+}
+
+/**
+ * «Chiudi» (D-264, passo 4): closes the browser of the conversation, after
+ * the action under way. A browser already gone (409 `no-browser`) counts as
+ * closed.
+ */
+export async function closeBrowser(conversationId: string): Promise<void> {
+  try {
+    await call('POST', '/api/browser/close', { conversationId });
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 409) return;
+    throw cause;
+  }
+}
+
 /** The activity lines a task saved (D-083), oldest first. */
 export async function listActivities(taskId: string): Promise<SavedActivity[]> {
   return (await call<{ activities: SavedActivity[] }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/activities`)).activities;

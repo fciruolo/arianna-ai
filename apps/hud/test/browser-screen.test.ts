@@ -5,12 +5,48 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { applyActivity, emptyChat } from '../src/lib/chat-state.ts';
-import { browserSite, canRetry, isBrowserLine, latestBrowserSite, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl } from '../src/lib/browser-screen.ts';
+import { browserSignal, browserSite, canRetry, isBrowserLine, latestBrowserSite, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl } from '../src/lib/browser-screen.ts';
 import { COMPUTER_TABS, computerTabs, shownTab } from '../src/lib/computer.ts';
+import { browserConversationFromPath, browserPathFor, conversationFromPath } from '../src/lib/route.ts';
 import type { Activity } from '../src/lib/types.ts';
 
 const C = 'c1';
 const line = (detail: string, extra: Partial<Activity> = {}): Activity => ({ conversationId: C, taskId: 't1', step: 1, kind: 'tool', detail, ...extra });
+const ID = '11111111-1111-4111-8111-111111111111';
+
+describe('the bar «Browser aperto» and the page of its own (prova dell’utente)', () => {
+  it('the signal changes with every browser line and message; «chiude» as the newest browser line hides the bar', () => {
+    let chat = emptyChat(C);
+    const empty = browserSignal(chat);
+    assert.equal(empty.closed, false);
+    chat = applyActivity(chat, line('browser · apre · example.com'));
+    const opened = browserSignal(chat);
+    assert.notEqual(opened.key, empty.key);
+    assert.equal(opened.closed, false);
+    // A line of another tool does not count.
+    chat = applyActivity(chat, line('kb/note.md', { kind: 'read', step: 2 }));
+    assert.equal(browserSignal(chat).key, opened.key);
+    chat = applyActivity(chat, line('browser · chiude', { step: 3 }));
+    assert.equal(browserSignal(chat).closed, true);
+    // Opened again after: no longer closed.
+    chat = applyActivity(chat, line('browser · apre · example.org', { step: 4 }));
+    assert.equal(browserSignal(chat).closed, false);
+    // A failure is not a browser line: it neither counts nor closes.
+    const failed = browserSignal(applyActivity(chat, line('browser · chiude', { kind: 'error', step: 5 })));
+    assert.deepEqual(failed, browserSignal(chat));
+  });
+
+  it('/browser/<id> is the screen alone, of that conversation; any other path is not', () => {
+    assert.equal(browserPathFor(ID), `/browser/${ID}`);
+    assert.equal(browserConversationFromPath(browserPathFor(ID)), ID);
+    assert.equal(browserConversationFromPath(`/browser/${ID}/`), ID);
+    assert.equal(browserConversationFromPath(`/browser/${ID.toUpperCase()}`), ID);
+    assert.equal(browserConversationFromPath('/browser/x'), undefined);
+    assert.equal(browserConversationFromPath(`/c/${ID}`), undefined);
+    assert.equal(browserConversationFromPath(`/browser/${ID}/altro`), undefined);
+    assert.equal(conversationFromPath(browserPathFor(ID)), undefined);
+  });
+});
 
 describe('browser lines', () => {
   it('a line of the browser carries «Guarda», a failure or another tool does not', () => {
@@ -103,5 +139,22 @@ describe('BrowserScreen.vue', () => {
   it('disconnects when it goes away', () => {
     assert.match(source, /onBeforeUnmount\([^)]*\)/);
     assert.match(source, /\.disconnect\(\)/);
+  });
+
+  it('«Schermo intero» only where the Fullscreen API exists; the new tab without opener', () => {
+    assert.match(source, /v-if="canFullscreen"/);
+    assert.match(source, /document\.fullscreenEnabled/);
+    const link = /<a\b[^>]*browserPathFor[^>]*>/.exec(source)?.[0] ?? '';
+    assert.match(link, /target="_blank"/);
+    assert.match(link, /rel="noopener"/);
+  });
+});
+
+describe('main.ts', () => {
+  it('mounts the page of the screen alone on /browser/<id>, the chat otherwise', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'src', 'main.ts'), 'utf8');
+    assert.match(source, /browserConversationFromPath\(window\.location\.pathname\)/);
+    assert.match(source, /createApp\(BrowserPage/);
+    assert.match(source, /createApp\(App\)/);
   });
 });

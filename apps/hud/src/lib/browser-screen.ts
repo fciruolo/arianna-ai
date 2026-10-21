@@ -97,3 +97,27 @@ export function latestBrowserSite(chat: ChatState): string | undefined {
   }
   return found;
 }
+
+/** How often the bar «Browser aperto» asks the core again while it shows (and the page of its own, for the site). */
+export const BROWSER_POLL_MS = 30_000;
+
+/**
+ * What the bar «Browser aperto» above the composer follows in the chat: a
+ * key that changes with every new browser line or message (then it asks the
+ * core again), and whether the newest browser line closed the browser
+ * (`browser · chiude`: the bar goes at once).
+ */
+export function browserSignal(chat: ChatState): { key: string; closed: boolean } {
+  const ids = taskIds(chat);
+  for (const id of Object.keys(chat.activity)) if (!ids.includes(id)) ids.push(id);
+  let count = 0;
+  let last: string | undefined;
+  for (const id of ids) {
+    for (const line of chat.activity[id] ?? []) {
+      if (!isBrowserLine(line)) continue;
+      count += 1;
+      last = line.detail;
+    }
+  }
+  return { key: `${chat.conversationId}:${String(count)}:${String(chat.messages.length)}`, closed: last === 'browser · chiude' };
+}

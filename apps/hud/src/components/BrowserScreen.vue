@@ -2,23 +2,32 @@
 import type RFB from '@novnc/novnc';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, openBrowserScreen } from '../lib/api.ts';
+import { ApiError, closeBrowser, openBrowserScreen } from '../lib/api.ts';
 import { canRetry, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type ScreenState } from '../lib/browser-screen.ts';
+import { errorText } from '../lib/italian.ts';
+import { browserPathFor } from '../lib/route.ts';
+import Icon from './Icon.vue';
 
 /**
  * The live screen of Arianna's browser (D-264, passo 4), view only: noVNC
  * over the core's stream, never a click, a key or the clipboard (no handler
  * for `clipboard`; the core drops keys and mouse too). The 1280×800 screen is
  * scaled to the width of the panel. It opens only when the user asks (the
- * «Browser» tab), and closes when the tab, the panel or the conversation
- * changes.
+ * «Browser» tab, or the page /browser/<id> in a tab of its own), and closes
+ * when the tab, the panel or the conversation changes. «Schermo intero» uses
+ * the Fullscreen API on the screen alone (hidden where the browser has none,
+ * as Safari on the iPhone); «Chiudi il browser» closes Arianna's browser itself.
  */
 const props = defineProps<{
   conversationId: string;
   /** The site of the newest browser line, when known. */
   site: string | null;
+  /** The page of its own (/browser/<id>): fills the window, no «Apri in una nuova scheda». */
+  standalone?: boolean;
 }>();
+const emit = defineEmits<{ closed: [] }>();
 
+const ACTION = 'inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-[12.5px] text-ink hover:bg-surface-2 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent';
 const state = ref<ScreenState>('connecting');
 const target = ref<HTMLElement | null>(null);
 let rfb: RFB | null = null;
@@ -83,12 +92,43 @@ async function connect(): Promise<void> {
   rfb = instance;
 }
 
+// «Schermo intero»: the screen alone, Esc to leave it.
+const screenBox = ref<HTMLElement | null>(null);
+const canFullscreen = typeof document !== 'undefined' && document.fullscreenEnabled;
+async function enterFullscreen(): Promise<void> {
+  try {
+    if (document.fullscreenElement === null) await screenBox.value?.requestFullscreen();
+  } catch {
+    // Refused by the browser: the screen stays as it is.
+  }
+}
+
+// «Chiudi il browser»: Arianna's browser closes after the action under way, the screen with it.
+const closing = ref(false);
+const closeProblem = ref<string | null>(null);
+async function closeIt(): Promise<void> {
+  closing.value = true;
+  closeProblem.value = null;
+  try {
+    await closeBrowser(props.conversationId);
+    attempt += 1;
+    stop();
+    state.value = 'closed';
+    emit('closed');
+  } catch (cause) {
+    closeProblem.value = errorText(cause);
+  } finally {
+    closing.value = false;
+  }
+}
+
 onMounted(() => void connect());
 watch(
   () => props.conversationId,
   () => void connect(),
 );
 onBeforeUnmount(() => {
+  if (document.fullscreenElement !== null && document.fullscreenElement === screenBox.value) void document.exitFullscreen().catch(() => undefined);
   attempt += 1;
   stop();
 });
@@ -105,10 +145,20 @@ onBeforeUnmount(() => {
         <span class="size-2 rounded-full" :class="state === 'live' ? 'animate-pulse bg-ok' : state === 'connecting' ? 'bg-muted' : 'bg-warn'" aria-hidden="true"></span>
         {{ SCREEN_TEXT[state] }}
       </span>
-      <span v-if="site !== null" class="min-w-0 flex-1 truncate text-muted" :title="site">{{ site }}</span>
+      <span class="min-w-0 flex-1 truncate text-muted" :title="site ?? undefined">{{ site ?? '' }}</span>
     </div>
-    <!-- The screen keeps the 1280×800 proportion; noVNC scales the page into it. -->
-    <div class="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-line bg-surface-2">
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button v-if="canFullscreen" type="button" :class="ACTION" :disabled="state !== 'live'" title="Lo schermo a tutto schermo: Esc per uscire" @click="enterFullscreen"><Icon name="fullscreen" :size="13" />Schermo intero</button>
+      <a v-if="standalone !== true" :class="ACTION" :href="browserPathFor(conversationId)" target="_blank" rel="noopener" title="Lo schermo in una scheda tutta sua: conta fra i 3 schermi del browser"><Icon name="external" :size="13" />Apri in una nuova scheda</a>
+      <button type="button" :class="ACTION" :disabled="closing || state === 'refused' || state === 'closed'" title="Chiude il browser di Arianna in questa conversazione, dopo l'azione in corso" @click="closeIt"><Icon name="close" :size="13" />{{ closing ? 'Chiudo…' : 'Chiudi il browser' }}</button>
+      <span v-if="closeProblem !== null" class="text-[12px] text-warn">{{ closeProblem }}</span>
+    </div>
+    <!-- The screen keeps the 1280×800 proportion; noVNC scales the page into it. Full screen: the box alone, on black. -->
+    <div
+      ref="screenBox"
+      class="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-line bg-surface-2 [&:fullscreen]:rounded-none [&:fullscreen]:border-0 [&:fullscreen]:bg-black"
+      :class="standalone === true ? 'mx-auto max-w-[calc((100dvh-9rem)*1.6)]' : ''"
+    >
       <div ref="target" class="absolute inset-0" :class="state === 'live' ? '' : 'invisible'" aria-label="Schermo del browser di Arianna, sola visione"></div>
       <div v-if="state !== 'live'" class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
         <p class="text-[14px] font-medium text-ink">{{ SCREEN_TEXT[state] }}<template v-if="state === 'connecting'">…</template></p>

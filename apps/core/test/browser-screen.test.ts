@@ -45,12 +45,15 @@ interface Harness {
   state: { holder: string | null; container: string | null };
   channels: FakeChannel[];
   events: NewEvent[];
+  /** Conversations whose browser «Chiudi» closed. */
+  closes: string[];
 }
 
 function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: ScreensOptions['limits']; pingMs?: number } = {}): Harness {
   const state: Harness['state'] = { holder: WORK, container: 'arianna-browser-chat-aaaaaaaaaaaa' };
   const channels: FakeChannel[] = [];
   const events: NewEvent[] = [];
+  const closes: string[] = [];
   const openChannel: OpenChannel = (container, socket) => {
     if (options.failOpen === true) throw new Error('docker');
     const fromVnc = new PassThrough();
@@ -66,12 +69,20 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
     holder: () => state.holder,
     container: () => state.container,
     conversation: (id) => Promise.resolve(KINDS[id] ?? null),
+    closeBrowser: (id) => {
+      if (state.holder !== id) return Promise.resolve(false);
+      state.holder = null;
+      state.container = null;
+      closes.push(id);
+      return Promise.resolve(true);
+    },
+    site: (id) => (id === state.holder ? 'comune-finto.it' : null),
     openChannel,
     onEvent: (event) => { events.push(event); },
     ...(options.limits === undefined ? {} : { limits: options.limits }),
     ...(options.pingMs === undefined ? {} : { pingMs: options.pingMs }),
   });
-  return { screens, state, channels, events };
+  return { screens, state, channels, events, closes };
 }
 
 async function token(h: Harness, conversationId = WORK): Promise<string> {
@@ -141,11 +152,11 @@ async function serve(t: TestContext, screens?: BrowserScreens): Promise<number> 
   return server.port;
 }
 
-function post(port: number, body: unknown, headers: Record<string, string> = {}): Promise<{ status: number; body: Record<string, unknown> }> {
+function post(port: number, body: unknown, headers: Record<string, string> = {}, path = '/api/browser/screen'): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
     const text = JSON.stringify(body);
     const req = httpRequest(
-      { host: '127.0.0.1', port, path: '/api/browser/screen', method: 'POST', headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${String(port)}`, ...headers } },
+      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${String(port)}`, ...headers } },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -154,6 +165,18 @@ function post(port: number, body: unknown, headers: Record<string, string> = {})
     );
     req.on('error', reject);
     req.end(text);
+  });
+}
+
+function get(port: number, query: string, headers: Record<string, string> = {}): Promise<{ status: number; body: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path: `/api/browser/screen${query}`, method: 'GET', headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => { resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown> }); });
+    });
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -478,4 +501,73 @@ test('a page that does not answer the ping is dropped; one that answers stays', 
     clearInterval(pong);
     h.screens.close();
   }
+});
+
+test('status: open only for the conversation holding the browser, never for a Private or incognito one', async () => {
+  const h = harness();
+  assert.deepEqual(await h.screens.status(WORK), { open: true, site: 'comune-finto.it' });
+  assert.deepEqual(await h.screens.status(OTHER), { open: false });
+  assert.equal(await h.screens.status(MISSING), null);
+  // Never open nor a site for a Private or incognito one, even holding it.
+  h.state.holder = PRIVATE;
+  assert.deepEqual(await h.screens.status(PRIVATE), { open: false });
+  h.state.holder = INCOGNITO;
+  assert.deepEqual(await h.screens.status(INCOGNITO), { open: false });
+  h.state.holder = WORK;
+  h.screens.close();
+  assert.deepEqual(await h.screens.status(WORK), { open: false });
+});
+
+test('closeByUser: only the conversation holding the browser closes it, its screens close, an event without content', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  const ws = connect(port, `?t=${await token(h)}`);
+  await once(ws, 'open');
+  await until(() => h.channels.length === 1, 'the channel');
+  assert.equal(await h.screens.closeByUser(OTHER), 'no-browser');
+  assert.equal(await h.screens.closeByUser(MISSING), 'not-found');
+  assert.deepEqual(h.closes, []);
+  const ended = closed(ws);
+  assert.equal(await h.screens.closeByUser(WORK), 'closed');
+  assert.deepEqual(h.closes, [WORK]);
+  assert.deepEqual(await ended, { code: SCREEN_CLOSE.browserClosed.code, reason: SCREEN_CLOSE.browserClosed.reason });
+  assert.deepEqual(h.events.find((event) => event.kind === 'browser.close'), { kind: 'browser.close', label: 'L0', payload: { conversationId: WORK, reason: 'user' } });
+  // Once closed, nothing more to close.
+  assert.equal(await h.screens.closeByUser(WORK), 'no-browser');
+});
+
+test('GET /api/browser/screen?conversationId: open or not, 404 for no conversation, 400 for a wrong id, Host checked', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  assert.deepEqual(await get(port, `?conversationId=${WORK}`), { status: 200, body: { open: true, site: 'comune-finto.it' } });
+  assert.deepEqual(await get(port, `?conversationId=${OTHER}`), { status: 200, body: { open: false } });
+  assert.deepEqual(await get(port, `?conversationId=${PRIVATE}`), { status: 200, body: { open: false } });
+  assert.equal((await get(port, `?conversationId=${MISSING}`)).status, 404);
+  assert.equal((await get(port, '?conversationId=x')).status, 400);
+  assert.equal((await get(port, '')).status, 400);
+  assert.equal((await get(port, `?conversationId=${WORK}`, { host: 'evil.example' })).status, 403);
+  assert.equal((await get(port, `?conversationId=${WORK}`, { origin: 'http://evil.example' })).status, 403);
+});
+
+test('POST /api/browser/close: 200 closed for the holder, 409 for another conversation, 404 and 400, Origin and Host checked', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  const close = (body: unknown, headers: Record<string, string> = {}) => post(port, body, headers, '/api/browser/close');
+  assert.equal((await close({ conversationId: WORK }, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await close({ conversationId: WORK }, { host: 'evil.example' })).status, 403);
+  assert.equal((await close({ conversationId: WORK }, { 'content-type': 'text/plain' })).status, 415);
+  assert.equal((await close({ conversationId: WORK, more: 1 })).status, 400);
+  assert.equal((await close({ conversationId: 'x' })).status, 400);
+  assert.equal((await close({ conversationId: MISSING })).status, 404);
+  assert.deepEqual(await close({ conversationId: OTHER }), { status: 409, body: { error: 'no-browser' } });
+  assert.deepEqual(h.closes, []);
+  assert.deepEqual(await close({ conversationId: WORK }), { status: 200, body: { closed: true } });
+  assert.deepEqual(h.closes, [WORK]);
+  assert.deepEqual(await close({ conversationId: WORK }), { status: 409, body: { error: 'no-browser' } });
+});
+
+test('without the screens the status and close routes answer 404', async (t) => {
+  const port = await serve(t);
+  assert.equal((await get(port, `?conversationId=${WORK}`)).status, 404);
+  assert.equal((await post(port, { conversationId: WORK }, {}, '/api/browser/close')).status, 404);
 });
