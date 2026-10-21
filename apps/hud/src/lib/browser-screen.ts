@@ -121,3 +121,52 @@ export function browserSignal(chat: ChatState): { key: string; closed: boolean }
   }
   return { key: `${chat.conversationId}:${String(count)}:${String(chat.messages.length)}`, closed: last === 'browser · chiude' };
 }
+
+/**
+ * «Prendi il controllo» (D-264, passo 5): who drives the browser, as the core
+ * says it for this screen (`you`) or another one (`other`); `user` when the
+ * core was asked without a screen (the bar above the composer).
+ */
+export type ControlState = 'agent' | 'you' | 'other' | 'user';
+
+/** A main page refused while the user drove: its number, never its address. */
+export interface BlockedNavigation {
+  seq: number;
+  outcome: 'blocked' | 'refused' | 'form' | 'limit';
+  site?: string;
+}
+
+/** The fixed warning above the screen while the user drives. */
+export const CONTROL_WARNING = 'Non scrivere dati personali: la pagina è pubblica e il sito li riceve.';
+export const CONTROL_PASSED = 'Il controllo è passato a un altro schermo.';
+/** How often a live screen asks the core who drives and what was refused. */
+export const CONTROL_POLL_MS = 2_500;
+
+/** What the chat says of a navigation the core refused while the user drove (choice of the user, 2026-10-21). */
+export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>): string {
+  switch (blocked.outcome) {
+    case 'form':
+      return 'Modulo non inviato: da questo browser un modulo parte solo verso il sito della pagina, mentre guidi tu.';
+    case 'blocked':
+      return 'Sito non fra quelli che hai scritto: scrivilo in chat se vuoi aprirlo.';
+    case 'limit':
+      return 'Pagina non aperta: il browser ha raggiunto il limite di pagine o di dati di questo lavoro.';
+    case 'refused':
+      return 'Pagina non aperta: l’indirizzo non è raggiungibile da questo browser.';
+  }
+}
+
+const OUTCOMES: readonly BlockedNavigation['outcome'][] = ['blocked', 'refused', 'form', 'limit'];
+
+/** The status of the core as the chat reads it: anything unexpected is dropped. */
+export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null } {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown };
+  const control = body.control === 'agent' || body.control === 'you' || body.control === 'other' || body.control === 'user' ? body.control : null;
+  const raw = (typeof body.blocked === 'object' && body.blocked !== null ? body.blocked : null) as { seq?: unknown; outcome?: unknown; site?: unknown } | null;
+  const outcome = OUTCOMES.find((item) => item === raw?.outcome);
+  let blocked: BlockedNavigation | null = null;
+  if (raw !== null && typeof raw.seq === 'number' && outcome !== undefined) {
+    blocked = typeof raw.site === 'string' && raw.site !== '' ? { seq: raw.seq, outcome, site: raw.site } : { seq: raw.seq, outcome };
+  }
+  return { control, blocked };
+}

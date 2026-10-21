@@ -39,6 +39,7 @@ import type { DashboardTile, Suggestion, TileKind, TileWidth } from './dashboard
 import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
+import { parseControl, type BlockedNavigation, type ControlState } from './browser-screen.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -1174,10 +1175,38 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
   return token;
 }
 
-/** Whether the conversation holds Arianna's browser now (D-264, passo 4): the bar above the composer. Never for a Private or incognito one. */
-export async function browserStatus(conversationId: string): Promise<{ open: boolean; site: string | null }> {
-  const { open, site } = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?conversationId=${encodeURIComponent(conversationId)}`);
-  return { open: open === true, site: open === true && typeof site === 'string' && site !== '' ? site : null };
+/**
+ * Whether the conversation holds Arianna's browser now (D-264, passo 4): the
+ * bar above the composer. Never for a Private or incognito one. With the token
+ * of an open screen (passo 5), whether that screen drives, and the last page
+ * refused while the user drove.
+ */
+export async function browserStatus(conversationId: string, screen?: string): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null }> {
+  const query = `conversationId=${encodeURIComponent(conversationId)}${screen === undefined ? '' : `&screen=${encodeURIComponent(screen)}`}`;
+  const body = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?${query}`);
+  const open = body.open === true;
+  const { control, blocked } = parseControl(body);
+  return { open, site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null, control: open ? control : null, blocked: open ? blocked : null };
+}
+
+/**
+ * «Prendi il controllo» from the screen of `screen` (its token, D-264 passo
+ * 5): `you` when it drives now, `waiting` while Arianna ends the action under
+ * way (then the status says when it is its own). 409 `no-screen` or `no-browser`.
+ */
+export async function takeBrowserControl(conversationId: string, screen: string): Promise<'you' | 'waiting'> {
+  const body = await call<{ control?: unknown; waiting?: unknown }>('POST', '/api/browser/control', { conversationId, action: 'take', screen });
+  return body.waiting === true ? 'waiting' : 'you';
+}
+
+/** «Restituisci ad Arianna» (D-264, passo 5); a control already gone back (409 `not-driving`) counts as returned. */
+export async function returnBrowserControl(conversationId: string): Promise<void> {
+  try {
+    await call('POST', '/api/browser/control', { conversationId, action: 'return' });
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 409) return;
+    throw cause;
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 
-import { browserStatus, closeBrowser } from '../lib/api.ts';
+import { browserStatus, closeBrowser, returnBrowserControl } from '../lib/api.ts';
 import { BROWSER_POLL_MS } from '../lib/browser-screen.ts';
 import { errorText } from '../lib/italian.ts';
 import Icon from './Icon.vue';
@@ -25,6 +25,8 @@ const emit = defineEmits<{ watch: [site: string | undefined] }>();
 
 const open = ref(false);
 const site = ref<string | null>(null);
+/** The user drives the browser from a screen (D-264, passo 5): «Stai guidando tu · Restituisci». */
+const driving = ref(false);
 const closing = ref(false);
 const problem = ref<string | null>(null);
 /** Each read has its number: only the answer of the latest one counts. */
@@ -38,6 +40,7 @@ async function refresh(): Promise<void> {
     if (run !== read) return;
     open.value = status.open;
     site.value = status.site;
+    driving.value = status.control === 'user';
   } catch {
     // A conversation that is gone or a core that does not answer: no bar.
     if (run === read) open.value = false;
@@ -71,6 +74,17 @@ watch(
 );
 onBeforeUnmount(() => clearInterval(timer));
 
+async function giveBack(): Promise<void> {
+  problem.value = null;
+  try {
+    await returnBrowserControl(props.conversationId);
+    driving.value = false;
+    void refresh();
+  } catch (cause) {
+    problem.value = errorText(cause);
+  }
+}
+
 async function closeIt(): Promise<void> {
   closing.value = true;
   problem.value = null;
@@ -89,13 +103,20 @@ async function closeIt(): Promise<void> {
 <template>
   <div v-if="open" class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-[13px]">
     <Icon name="computer" :size="14" class="shrink-0 text-accent" />
-    <span class="shrink-0 font-medium" role="status">Browser aperto</span>
+    <span class="shrink-0 font-medium" role="status">{{ driving ? 'Stai guidando tu' : 'Browser aperto' }}</span>
     <template v-if="site !== null">
       <span class="text-muted" aria-hidden="true">·</span>
       <span class="min-w-0 flex-1 truncate text-muted" :title="site">{{ site }}</span>
     </template>
     <span v-else class="flex-1"></span>
     <span class="flex shrink-0 items-center gap-1.5">
+      <button
+        v-if="driving"
+        type="button"
+        class="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
+        title="Il browser torna ad Arianna, che rilegge la pagina alla prossima richiesta"
+        @click="giveBack"
+      ><Icon name="approve" :size="12" />Restituisci</button>
       <button
         type="button"
         class="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12.5px] text-ink hover:bg-surface"
