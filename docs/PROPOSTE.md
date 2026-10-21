@@ -2897,6 +2897,56 @@ Scelte dell'utente del 2026-10-21 (domande a opzioni, tutte le consigliate):
    - In chat compare la riga di sistema «Browser chiuso da te. Se serve, Arianna lo riapre.», che legge anche il modello.
    - La prossima azione del browser in quella conversazione riceve una volta «Il browser l'ha chiuso l'utente: riaprilo con browser.open solo se serve.» (`closed-by-user`); `browser.open` lo riapre.
 
+### Passo 5, «Prendi il controllo»: piano (2026-10-21)
+
+Scritto dopo il passo 4. Stima 12-15 h, contro le 4-6 della proposta, per tre motivi trovati nel codice.
+
+**Cosa cambia rispetto alla proposta:**
+- **Codifiche del filtro.** noVNC 1.7.0 chiede al server le codifiche `-258` (tasti QEMU, messaggio 255) e `-316` (mouse esteso, 7 byte). Se Xvnc le conferma, il primo tasto chiuderebbe lo schermo e il mouse esteso romperebbe la lettura del flusso. Il filtro quindi riscrive `SetEncodings` senza `-258`, `-316`, `-261` e `-309`, e chiude su un mouse con il bit esteso.
+- **Un gettone per schermo**, consumato al collegamento: dice quale schermo ha preso il controllo.
+- **Chromium in modalità chiosco.** Con la tastiera dell'utente sarebbero raggiungibili F11, gli strumenti per sviluppatori, Ctrl+O/P/S e l'incognito. Quindi:
+  - `--kiosk` al posto di `--start-fullscreen`;
+  - regole gestite in `/etc/chromium/policies/managed/arianna.json`: niente strumenti per sviluppatori, incognito, stampa, password né compilazione automatica; `chrome://*`, `file://*` e `view-source:*` bloccati;
+  - il filtro scarta F1-F12 e Super;
+  - l'immagine va ricostruita.
+
+**Passi:**
+- **A. Filtro:** `setMode('view'|'control')` a schermo aperto; in `control` passano tasti e mouse; gli appunti mai; conteggi di tasti e clic, mai i valori.
+- **B. Stato in `AgentBrowser`:**
+  - `takeControl` va nella coda delle azioni: aspetta quella in corso, al più 45 s, mai a metà;
+  - mentre guida l'utente gli strumenti rispondono `paused`, e un'altra chat riceve sempre `busy`;
+  - `returnControl` obbliga a rileggere la pagina (`reread`);
+  - tasti e clic dell'utente contano come attività per i 15 minuti; il tetto di 30 resta.
+- **C. `BrowserScreens`:**
+  - `take` e `giveBack`;
+  - il controllo torna ad Arianna se lo schermo si chiude (subito, o in 30-60 s per un telefono bloccato), con `revoke`/«Chiudi» e dopo il tempo senza input;
+  - evento `browser.control` L0 (preso; restituito con motivo, durata, tasti e clic contati).
+- **D. Rotte:**
+  - `POST /api/browser/control` con `take` (gettone dello schermo, 200 o 202 se Arianna finisce un'azione) e `return`;
+  - lo stato `control` e l'ultima navigazione fermata (`blocked`) in `GET /api/browser/screen`;
+  - righe di sistema lette anche dal modello;
+  - nel registro del gateway i clic dell'utente senza il task di Arianna.
+- **E. Chat:**
+  - «Prendi il controllo» e «Restituisci ad Arianna»;
+  - avviso fisso «Non scrivere dati personali: la pagina è pubblica e il sito li riceve»;
+  - bordo colorato;
+  - messaggio quando una navigazione è fermata;
+  - sul telefono il pulsante «Tastiera», con un campo nascosto e la nostra mappa dei tasti (`lib/browser-keys.ts`);
+  - «Stai guidando tu · Restituisci» nella riga fissa.
+- **F. Immagine:** chiosco e regole di Chromium; lock aggiornato.
+- **G. Documenti e prova dal vivo,** dal Mac e dal telefono.
+
+Scelte dell'utente del 2026-10-21 (domande a opzioni):
+1. **Moduli e accesso: «come Claude, l'accesso lo fai tu e poi lavora Arianna»**, tutto nel passo 5 («Tutto insieme nel passo 5», non la consigliata: stima totale circa 25-30 h). Quando una pagina chiede l'accesso, Arianna lo dice e propone «Prendi il controllo»; l'utente entra e restituisce.
+   - **Dopo l'accesso il browser è Privato (L2):** tutto ciò che legge è L2. La conversazione diventa Privata: solo modello locale, mai cloud, mai canali esterni. Va decisa nel codice la regola che lascia il browser ad Arianna in una conversazione macchiata solo dal browser autenticato, con test positivi e negativi in `packages/policy`.
+   - **Cookie: «Solo il sito dove hai fatto l'accesso».** Escono solo verso quel sito e i suoi sottodomini; verso gli altri nessun cookie, come oggi. Muoiono con il browser. «Accedi con Google» o SPID, che passano da un altro sito, non funzionano.
+   - **Moduli: «Passano, solo verso quel sito».** Mentre guida l'utente, i moduli verso il sito della pagina partono senza controllo del contenuto. Il gateway registra solo sito, ora e byte, mai il contenuto. I moduli verso un altro sito e quelli di Arianna restano fermi. La password non passa mai dal modello né dai log.
+2. **Link verso altri siti nelle Interne: «Come Arianna, con avviso»** (la consigliata): «Sito non fra quelli che hai scritto: scrivilo in chat se vuoi aprirlo».
+3. **Più schermi: «Passa all'ultimo che lo chiede»** (la consigliata): l'altro schermo torna in sola visione con «Il controllo è passato a un altro schermo».
+4. **Fine del controllo: «5 minuti senza input; Arianna chiude»** (la consigliata): subito se lo schermo si chiude; Arianna, se stava rispondendo, chiude la risposta con quello che ha e riparte alla richiesta successiva rileggendo la pagina.
+
+**Da sapere:** un modulo POST (login, iscrizione) oggi è fermo anche se guida l'utente, perché il core non distingue un clic da uno script; i cookie non escono mai. Le ricerche (moduli GET) funzionano. Nelle Interne un clic dell'utente verso un altro sito oggi è rifiutato dalla rete senza la scheda «Apri / No».
+
 ### Cose non verificate
 
 - noVNC dal telefono: se la chat arriva al telefono su `http://` con un indirizzo di rete (non localhost), il browser del telefono non lo considera un contesto sicuro e noVNC rifiuta di partire. Da vedere nella prova del passo 4.
