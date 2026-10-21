@@ -13,7 +13,7 @@ import type { Sql } from '../src/db/client.ts';
 import type { FetchedLink } from '../src/link-fetch.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { readNote } from '../src/notes.ts';
-import { captureOf, composeOrganized, ORGANIZE_LINK_SCHEMA, ORIGINAL_HEADING, pageInputLine, readOrganized, type OrganizedFields } from '../src/organize.ts';
+import { captureOf, composeOrganized, onlyLinks, ORGANIZE_LINK_SCHEMA, ORGANIZE_PROMPT, ORGANIZE_VIDEO_PROMPT, ORIGINAL_HEADING, pageInputLine, readOrganized, videoLinkFields, type OrganizedFields } from '../src/organize.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 
 const scratch = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
@@ -160,5 +160,20 @@ describe('POST /api/notes/:name/fetch', () => {
     assert.equal((await post('/api/notes/..%2Fsegreto.md/fetch', {})).status, 404);
     assert.equal((await post(`/api/notes/${name}/fetch`, {}, 'https://evil.example')).status, 403);
     assert.equal(fetched.length, 2);
+  });
+});
+
+describe('a YouTube video nobody downloaded (D-273)', () => {
+  it('a text of addresses only, or with words', () => {
+    assert.equal(onlyLinks('https://www.youtube.com/watch?v=-Teltl_7TOI'), true);
+    assert.equal(onlyLinks('  https://youtu.be/-Teltl_7TOI \n https://x.com/a '), true);
+    assert.equal(onlyLinks('https://youtu.be/-Teltl_7TOI da guardare'), false);
+  });
+  it('fields from the code name only the id', () => {
+    const fields = videoLinkFields('-Teltl_7TOI');
+    assert.equal(fields.title, 'Video YouTube -Teltl_7TOI');
+    assert.equal(fields.kind, 'link');
+    assert.equal(fields.context, '');
+    assert.ok(ORGANIZE_VIDEO_PROMPT.startsWith(ORGANIZE_PROMPT));
   });
 });

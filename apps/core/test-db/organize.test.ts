@@ -22,6 +22,7 @@ import {
   ORGANIZE_QUEUE,
   ORGANIZE_RETRY_BASE_MS,
   ORGANIZE_SCHEMA_NAME,
+  ORGANIZE_VIDEO_PROMPT,
   organizeNote,
   ORIGINAL_HEADING,
   type NoteOrganizer,
@@ -584,4 +585,37 @@ test('a YouTube video is never downloaded by the link downloader: not with youtu
   assert.deepEqual(await organizeNote(base, path, new AbortController().signal, { fetch: true }), { ok: true, label: 'L2', linked: 0, fetch: 'none' });
   assert.deepEqual(asked, []);
   assert.doesNotMatch(readFileSync(join(home, path), 'utf8'), /## Contenuto|fetched_at|fetch_failed/);
+});
+
+test('a note that is only the link of a YouTube video: title and summary from the code, no model, nothing copied from another video (D-273)', async () => {
+  const { home } = setup();
+  // Another video in the archive: its title must never become the title of this one.
+  writeFileSync(join(home, 'kb', 'inbox', '2026-10-01-100000-video.md'), '---\nlabel: L2\ntitle: "Link YouTube: Rick Astley - Never Gonna Give You Up"\nstatus: organized\n---\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ Rick Astley video YouTube.\n');
+  const { path } = linkNote(home, 'https://www.youtube.com/watch?v=-Teltl_7TOI');
+  const requests: ChatRequest[] = [];
+  assert.deepEqual(await organizeNote(env(home, fakeModel([], requests)), path, new AbortController().signal), { ok: true, label: 'L2', linked: 0, fetch: 'none' });
+  assert.equal(requests.length, 0);
+  const written = readFileSync(join(home, path), 'utf8');
+  assert.match(written, /\ntitle: "Video YouTube -Teltl_7TOI"\n/);
+  assert.match(written, /non ancora riassunto/);
+  assert.doesNotMatch(written, /Rick Astley|\[\[/);
+});
+
+test('a YouTube link with words of the user: the model, told it knows nothing of the video, without related notes (D-273)', async () => {
+  const { home } = setup('ombrellone balcone');
+  const url = 'https://youtu.be/-Teltl_7TOI';
+  const note = captureNote({ home, rules: RULES, text: `${url} da guardare per il balcone e l'ombrellone`, kind: 'link', url, source: { channel: 'hud', id: 'test' }, now: new Date(2026, 9, 10, 2, 2, 29) });
+  const requests: ChatRequest[] = [];
+  const outcome = await organizeNote(env(home, fakeModel([], requests)), note.path, new AbortController().signal);
+  assert.equal(outcome.ok, true);
+  assert.equal(requests.length, 1);
+  const [system, user] = requests[0]?.messages ?? [];
+  assert.equal(system?.content, ORGANIZE_VIDEO_PROMPT);
+  assert.doesNotMatch(String(user?.content), /"related"/);
+  // Negative: an ordinary thought on the same words still gets its related notes.
+  const other = setup();
+  const seen: ChatRequest[] = [];
+  await organizeNote(env(other.home, fakeModel([], seen)), other.path, new AbortController().signal);
+  assert.match(String(seen[0]?.messages[1]?.content), /"related"/);
+  assert.notEqual(seen[0]?.messages[0]?.content, ORGANIZE_VIDEO_PROMPT);
 });
