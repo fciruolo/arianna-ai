@@ -3074,6 +3074,7 @@ Decisione D-280. Scelte fatte durante la costruzione, dentro la proposta:
 - Dopo una nota archiviata che è un video non parte una seconda proposta: c'è già stata quando il video è stato riassunto.
 - Il percorso si cambia solo per una pagina nuova (e per la destinazione di uno spostamento); un aggiornamento resta sulla sua pagina.
 - «Elimina» nella pagina «Wiki» (scelta dell'utente del 2026-10-21, invece di lasciare l'eliminazione a Finder): con una conferma toglie la pagina, le sue versioni e le proposte in attesa su di lei, e aggiorna gli indici; da Conoscenza le pagine della Wiki non si eliminano.
+- Dopo la prova (2026-10-21) l'utente scrive la Wiki anche lui, subito e senza approvazione: «Modifica» in un campo di testo Markdown (niente editor nuovo né dipendenze), «Sposta o rinomina» diretto di pagine e cartelle, trascinamento nell'albero, «Nuova pagina» e «Nuova cartella». La proposta di spostamento resta per quando la farà il modello. Ogni modifica tiene la versione di prima; un aggiornamento proposto per una pagina cambiata a mano scade, e una pagina scritta a mano non si propone più al modello per un aggiornamento.
 
 ### Tappa A: costruita sul ramo `task/d273-youtube` (da provare)
 
