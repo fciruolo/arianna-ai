@@ -116,7 +116,23 @@ export function labelForPath(rules: LabelRules, path: string): Label {
   );
   // An archived note (D-198) also takes the label of the same place outside the archive: only ever higher.
   const mirror = archiveMirror(normalized);
-  return mirror === undefined ? label : maxLabel(label, labelForPath(rules, mirror));
+  const own = mirror === undefined ? label : maxLabel(label, labelForPath(rules, mirror));
+  // The Wiki (D-280) is compiled from the user's notes: always private, whatever a rule says; only ever higher.
+  return inWiki(normalized) ? maxLabel(own, 'L2') : own;
+}
+
+/**
+ * The Wiki compiled by the local model from the notes (D-280), kept out of
+ * the repository: every page, proposal and old version under it is at least
+ * L2, also when a rule on `kb` or `kb/wiki` says less.
+ */
+export const KB_WIKI = 'kb/wiki';
+
+/** Whether a normalized path is `kb/wiki` or below it, ignoring letter case as the disk may. */
+function inWiki(normalized: string): boolean {
+  const [kb = '', wiki = ''] = KB_WIKI.split('/');
+  const [first = '', second] = normalized.split('/');
+  return second !== undefined && fold(first) === kb && fold(second) === wiki;
 }
 
 /**

@@ -71,6 +71,7 @@ export {
   createLabelRules,
   labelForKbPage,
   KB_ARCHIVE,
+  KB_WIKI,
   labelForPath,
   labelForSource,
   type FolderRule,

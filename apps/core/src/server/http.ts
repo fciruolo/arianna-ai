@@ -160,10 +160,26 @@ import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
-import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, type GraphCache } from '../knowledge.ts';
+import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, readPageFile, type GraphCache } from '../knowledge.ts';
+import {
+  approveWikiProposal,
+  countWikiProposals,
+  discardWikiProposal,
+  isWikiSource,
+  listWikiProposals,
+  proposalSource,
+  proposeMove,
+  readWikiView,
+  recordWikiEvent,
+  restoreWikiVersion,
+  WIKI_STATUS,
+  WikiError,
+  wikiTree,
+} from '../wiki.ts';
 import { approveMany, ARCHIVE_STATUS, archiveFolders, ArchiveError, discardArchive, listProposals, MAX_APPROVE_ITEMS, recordArchived, recordDiscarded, type ApproveInput } from '../archivist.ts';
 import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
-import { checkNoteName, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
+import { checkNoteName, headerFields, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
+import { KB_DIR } from '../orchestrator/kb.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import type { Readiness } from '../readiness.ts';
@@ -274,6 +290,12 @@ export interface ApiServerOptions {
     video?: (path: string) => Promise<boolean>;
     /** The job of the video of a note, as the chat shows it. */
     videoState?: (path: string) => Promise<VideoJobState | undefined>;
+    /**
+     * The Wiki (D-280): `propose` queues a proposal from a note of kb/
+     * (relative to kb/, `inbox/x.md`), `index` the «In breve» of a folder
+     * index. Without it the wiki is read, never proposed.
+     */
+    wiki?: { propose: (page: string, force: boolean) => Promise<boolean>; index: (folder: string) => Promise<boolean> };
     arianna?: AriannaDocs;
   };
   /** data/, where the router's advisor keeps the path of the usage status file (D-207); without it the routes answer 404. */
@@ -950,6 +972,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
     }),
     ...noteRoutes(sql, capture, onError),
     ...knowledgeRoutes(sql, capture, onError),
+    ...wikiRoutes(sql, capture, onError),
   ];
 }
 
@@ -1016,6 +1039,95 @@ function knowledgeRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError
       const deleted = deleteKbPage(home, rules, body.path);
       await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
       return { body: { deleted: true } };
+    }),
+  ];
+}
+
+/**
+ * The Wiki (D-280): the tree, a page or an index to read, the proposals with
+ * their diff, approving (a new page where the user says), discarding, asking
+ * again, moving a folder (a proposal in turn) and restoring an old version.
+ * Everything up to L2, nothing leaves the Mac; events with counts only.
+ */
+function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
+  const need = (): NonNullable<ApiServerOptions['capture']> => {
+    if (capture === undefined) throw new HttpError(404, 'not found');
+    return capture;
+  };
+  const proposer = (): NonNullable<NonNullable<ApiServerOptions['capture']>['wiki']> => {
+    const { wiki } = need();
+    if (wiki === undefined) throw new HttpError(503, 'the wiki cannot be proposed now');
+    return wiki;
+  };
+  return [
+    route('GET', '/api/wiki', () => {
+      const { home } = need();
+      return Promise.resolve({ body: { ...wikiTree(home), proposals: countWikiProposals(home) } });
+    }),
+    route('GET', '/api/wiki/page', (_request, url) => {
+      const { home } = need();
+      return Promise.resolve({ body: { page: readWikiView(home, url.searchParams.get('path') ?? '') } });
+    }),
+    route('GET', '/api/wiki/proposals', () => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: { proposals: listWikiProposals(home, rules) } });
+    }),
+    route('POST', '/api/wiki/proposals/:id/approve', async (request, _url, params) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (body.path !== undefined && typeof body.path !== 'string') throw new HttpError(400, 'path must be a string');
+      const approved = approveWikiProposal(home, rules, params.id ?? '', body.path === undefined ? {} : { path: body.path });
+      await recordWikiEvent(sql, 'wiki.approved', { action: approved.kind, corrected: approved.corrected, points: approved.points, relinked: approved.relinked }).catch(onError);
+      // The «In breve» of the folders touched, by the local model, in the background.
+      const wiki = need().wiki;
+      if (wiki !== undefined) for (const folder of approved.folders) await wiki.index(folder).catch(onError);
+      return { body: { path: approved.path, kind: approved.kind } };
+    }),
+    route('POST', '/api/wiki/proposals/:id/discard', async (request, _url, params) => {
+      const { home } = need();
+      onlyFields(await readJson(request), []);
+      const kind = discardWikiProposal(home, params.id ?? '');
+      await recordWikiEvent(sql, 'wiki.discarded', { action: kind }).catch(onError);
+      return { body: { discarded: true } };
+    }),
+    // «Proponi di nuovo»: the note of the proposal goes back to the local model; the new proposal replaces this one.
+    route('POST', '/api/wiki/proposals/:id/again', async (request, _url, params) => {
+      const { home, rules } = need();
+      onlyFields(await readJson(request), []);
+      const page = proposalSource(home, rules, params.id ?? '');
+      await proposer().propose(page, true);
+      return { status: 202, body: { proposing: true } };
+    }),
+    // «Proponi per la Wiki» of a note (Pensieri, Conoscenza): any page of kb/ up to L2 outside the wiki.
+    route('POST', '/api/wiki/propose', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['page']);
+      if (typeof body.page !== 'string' || !isWikiSource(body.page)) throw new HttpError(400, 'page must be a note of kb/ outside the wiki');
+      // Up to L2 and existing, or the same 404.
+      readKnowledgePage(home, rules, body.page);
+      await proposer().propose(body.page, true);
+      return { status: 202, body: { proposing: true } };
+    }),
+    // «Sposta o rinomina» a folder: a proposal the user approves in «Proposte».
+    route('POST', '/api/wiki/move', async (request) => {
+      const { home } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['from', 'to']);
+      if (typeof body.from !== 'string' || typeof body.to !== 'string') throw new HttpError(400, 'from and to are required');
+      const proposal = proposeMove(home, body.from, body.to);
+      await recordWikiEvent(sql, 'wiki.move_proposed', { pages: proposal.citations }).catch(onError);
+      return { status: 201, body: { id: proposal.id } };
+    }),
+    route('POST', '/api/wiki/restore', async (request) => {
+      const { home } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'version', 'base']);
+      if (typeof body.path !== 'string' || typeof body.version !== 'string' || typeof body.base !== 'string') throw new HttpError(400, 'path, version and base are required');
+      restoreWikiVersion(home, body.path, body.version, body.base);
+      await recordWikiEvent(sql, 'wiki.restored', {}).catch(onError);
+      return { body: { restored: true } };
     }),
   ];
 }
@@ -1102,7 +1214,7 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       return Promise.resolve({ body: { proposals: listProposals(home, rules), folders: archiveFolders(home, rules) } });
     }),
     route('POST', '/api/archive/approve', async (request) => {
-      const { home, rules } = need();
+      const { home, rules, wiki } = need();
       const body = await readJson(request);
       onlyFields(body, ['items']);
       const items = body.items;
@@ -1125,6 +1237,9 @@ function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
           continue;
         }
         await recordArchived(sql, result.archived).catch(onError);
+        // The Wiki (D-280): after every note filed, the local model proposes what it adds; a video was proposed when summarized.
+        const archivedId = result.archived.path.slice(KB_DIR.length + 1);
+        if (wiki !== undefined && headerFields(readPageFile(home, archivedId)?.raw ?? '').get('media') !== 'youtube') await wiki.propose(archivedId, false).catch(onError);
         results.push({ name: result.name, ok: true, path: result.archived.path, relinked: result.archived.relinked });
       }
       return { body: { results } };
@@ -4396,6 +4511,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof FactsError) return { status: FACTS_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof ReleaseError) return { status: RELEASE_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof ArchiveError) return { status: ARCHIVE_STATUS[error.code], message: `${error.code}: ${error.message}` };
+  if (error instanceof WikiError) return { status: WIKI_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof KnowledgeError) {
     const status = { changed: 409, invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };

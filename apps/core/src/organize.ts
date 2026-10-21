@@ -16,6 +16,7 @@ import { machineBusy } from './model-evals.ts';
 import { checkNotePath, headerFields, keptCaptureFields, listNotes, noteLabel, NoteError, rawBody, readNoteFile, replaceNote, sha256 } from './notes.ts';
 import { KB_DIR, parsePage, type Kb, type KbHit } from './orchestrator/kb.ts';
 import { isYoutubeVideo } from './video-url.ts';
+import type { WikiJobOutcome } from './wiki.ts';
 
 /**
  * Organizing a captured note with the local model, in the background
@@ -631,6 +632,13 @@ export interface NoteOrganizerOptions extends OrganizeEnv {
     /** Organized notes without a proposal, queued at start (at most MAX_RESUMED). */
     waiting: () => string[];
   };
+  /**
+   * The Wiki (D-280), on this same queue (jobs with `wiki`): proposals from a
+   * note and the «In breve» of the indexes. Without it nothing is proposed.
+   */
+  wiki?: {
+    run: (payload: Record<string, unknown>, signal: AbortSignal) => Promise<WikiJobOutcome>;
+  };
 }
 
 export interface NoteOrganizer {
@@ -715,6 +723,10 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
       await handleArchive(job);
       return;
     }
+    if (job.payload.wiki !== undefined) {
+      await handleWiki(job);
+      return;
+    }
     const { outcome, yielded } = await watched<OrganizeOutcome>(job, async (signal) => {
       const path = typeof job.payload.path === 'string' ? job.payload.path : '';
       try {
@@ -795,6 +807,40 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
         // Codes and the job only: the path names the note.
         await appendEvent(tx, {
           kind: 'note.archive_failed',
+          label: 'L0',
+          payload: { jobId: job.id, reason: outcome.reason, ...(result === 'retry' ? { retry: true } : {}) },
+        });
+      }
+    });
+  }
+
+  /** A job of the Wiki (D-280): held, given way and retried as a note is; events with codes and counts only. */
+  async function handleWiki(job: Job): Promise<void> {
+    const wiki = options.wiki;
+    const { outcome, yielded } = await watched<WikiJobOutcome>(job, async (signal) => {
+      if (wiki === undefined) return { ok: false, reason: 'skip' };
+      try {
+        return await wiki.run(job.payload, signal);
+      } catch (error) {
+        onError(error);
+        return { ok: false, reason: 'error' };
+      }
+    });
+    if (!outcome.ok && outcome.reason === 'interrupted' && yielded) {
+      await queue.release(job.id, worker);
+      return;
+    }
+    await sql.begin(async (tx) => {
+      if (outcome.ok) {
+        await completeJob(tx, job.id, worker);
+        await appendEvent(tx, { kind: outcome.event.kind, label: 'L0', payload: { jobId: job.id, ...outcome.event.payload } });
+      } else if (outcome.reason === 'skip') {
+        await completeJob(tx, job.id, worker);
+      } else {
+        const result = await failJob(tx, job.id, worker, outcome.reason, outcome.reason === 'unavailable' ? organizeRetryDelayMs(job.attempts) : null);
+        if (result === 'lost') return;
+        await appendEvent(tx, {
+          kind: job.payload.wiki === 'index' ? 'wiki.index_failed' : 'wiki.propose_failed',
           label: 'L0',
           payload: { jobId: job.id, reason: outcome.reason, ...(result === 'retry' ? { retry: true } : {}) },
         });

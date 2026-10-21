@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   createLabelRules,
+  KB_WIKI,
   labelForKbPage,
   labelForPath,
   labelForSource,
@@ -94,6 +95,33 @@ test('the archive never lowers a label: a lower folder outside it gives nothing 
   // Only kb/archivio mirrors: another folder with that name does not.
   assert.equal(labelForPath(rules, 'kb/public/archivio/nota.md'), 'L0');
   assert.equal(labelForPath(rules, 'altro/archivio/public/nota.md'), 'L2');
+});
+
+test('the Wiki is at least L2 whatever a rule says, and can still be raised (D-280)', () => {
+  const rules = createLabelRules({
+    folders: [
+      { path: 'kb', label: 'L0' },
+      { path: 'kb/wiki', label: 'L1' },
+      { path: 'kb/wiki/segreti', label: 'L3' },
+    ],
+    sources: [],
+  });
+  assert.equal(labelForPath(rules, 'kb/wiki/laravel/octane/swoole.md'), 'L2');
+  assert.equal(labelForPath(rules, 'KB/Wiki/laravel/octane.md'), 'L2');
+  assert.equal(labelForPath(rules, 'kb/wiki/.proposte/abc.json'), 'L2');
+  assert.equal(labelForPath(rules, 'kb/wiki'), 'L2');
+  assert.equal(labelForPath(rules, 'kb/wiki/segreti/nota.md'), 'L3');
+  assert.equal(KB_WIKI, 'kb/wiki');
+});
+
+test('only kb/wiki is floored at L2: a folder with a similar name keeps its rule (D-280)', () => {
+  const rules = createLabelRules({
+    folders: [{ path: 'kb', label: 'L0' }],
+    sources: [],
+  });
+  assert.equal(labelForPath(rules, 'kb/wikipedia/nota.md'), 'L0');
+  assert.equal(labelForPath(rules, 'kb/public/wiki/nota.md'), 'L0');
+  assert.equal(labelForPath(rules, 'kb/nota-wiki.md'), 'L0');
 });
 
 test('equivalent spellings of a path get the same label', () => {

@@ -62,7 +62,7 @@ export const DEV_READ_ONLY = [
  * are other checkouts with their own data/, and git lists them as untracked,
  * not ignored.
  */
-export const DEV_ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.user-catalog.yaml', 'kb/inbox', 'kb/progetti', 'kb/archivio', 'repos', '.claude/worktrees'] as const;
+export const DEV_ALWAYS_DENIED = ['data', 'config/arianna.toml', 'config/models.user-catalog.yaml', 'kb/inbox', 'kb/progetti', 'kb/archivio', 'kb/wiki', 'repos', '.claude/worktrees'] as const;
 
 /** Inside the denied data/: the tests write their temporary files here. */
 const TEST_TMP = 'data/test-tmp';

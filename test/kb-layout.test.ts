@@ -10,7 +10,7 @@ import { test } from 'node:test';
 
 import { ROOT } from './support/files.ts';
 
-test('notes in kb/archivio, kb/inbox and kb/progetti are ignored by git, the development documents of kb/ are not', () => {
+test('notes in kb/archivio, kb/inbox, kb/progetti and the Wiki are ignored by git, the development documents of kb/ are not', () => {
   const dir = mkdtempSync(join(tmpdir(), 'arianna-kb-layout-'));
   try {
     copyFileSync(join(ROOT, '.gitignore'), join(dir, '.gitignore'));
@@ -22,7 +22,7 @@ test('notes in kb/archivio, kb/inbox and kb/progetti are ignored by git, the dev
       assert.ok(result.status === 0 || result.status === 1, `git check-ignore failed for ${path}`);
       return result.status === 0;
     };
-    for (const path of ['kb/archivio/private/finanze/2026-10-13-080000-nota.md', 'kb/archivio/nota.md', 'kb/inbox/2026-10-13-080000-nota.md', 'kb/progetti/demo/IM/nota.md']) {
+    for (const path of ['kb/archivio/private/finanze/2026-10-13-080000-nota.md', 'kb/archivio/nota.md', 'kb/inbox/2026-10-13-080000-nota.md', 'kb/progetti/demo/IM/nota.md', 'kb/wiki/laravel/octane/swoole.md', 'kb/wiki/_indice.md', 'kb/wiki/.proposte/abc.json', 'kb/wiki/.storia/laravel__octane/1.md']) {
       assert.equal(ignored(path), true, path);
     }
     for (const path of ['kb/private/finanze/2026-10-13-080000-nota.md', 'kb/public/arianna.md', 'kb/work/clienti/nota.md', 'kb/README.md']) {

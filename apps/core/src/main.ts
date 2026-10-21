@@ -101,7 +101,7 @@ import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
 import { briefCeiling, delegationRoute, localAgentModel, mentionableAgents } from './orchestrator/delegate.ts';
-import { createKb } from './orchestrator/kb.ts';
+import { createKb, KB_DIR } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
@@ -127,6 +127,7 @@ import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
 import { fileSize, filesPresent, trialModels } from './voice/trial.ts';
 import { createVideoWorker, findTool, voiceRunner } from './video-job.ts';
+import { enqueueWikiIndex, enqueueWikiNote, runWikiJob } from './wiki.ts';
 import { trialRefusal } from './orchestrator/trial-chat.ts';
 import { CLOUD_WORKER_NAMES } from './work-diary.ts';
 import { closeRefusedDirectWaits } from './orchestrator/gateway-refusal.ts';
@@ -845,6 +846,8 @@ const organizer = createNoteOrganizer({
     enqueue: (tx, path) => enqueueArchive(tx, path),
     waiting: () => notesToPropose(config.home, rules, MAX_RESUMED),
   },
+  // The Wiki (D-280): proposals from a note and the «In breve» of the indexes, by the local model; the user approves.
+  wiki: { run: (payload, signal) => runWikiJob(archiveEnv, payload, signal) },
   modelReady: () =>
     organizeModelReady(
       settings.current().local.endpoints,
@@ -874,6 +877,7 @@ const videoWorker = createVideoWorker({
     },
   },
   archive: (tx, path) => enqueueArchive(tx, path),
+  wiki: (tx, path) => enqueueWikiNote(tx, path.slice(KB_DIR.length + 1)),
   modelReady: () =>
     organizeModelReady(
       settings.current().local.endpoints,
@@ -1392,7 +1396,7 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), video: (path) => videoWorker.enqueue(path), videoState: (path) => videoWorker.state(path), arianna: ariannaDocs },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), video: (path) => videoWorker.enqueue(path), videoState: (path) => videoWorker.state(path), wiki: { propose: (page, force) => enqueueWikiNote(sql, page, force), index: (folder) => enqueueWikiIndex(sql, folder) }, arianna: ariannaDocs },
   modelEvals,
   advisorData: config.paths.data,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
