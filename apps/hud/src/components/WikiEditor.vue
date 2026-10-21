@@ -278,7 +278,7 @@ onBeforeUnmount(() => {
       role="listbox"
       aria-label="Note e pagine da citare"
     >
-      <li v-if="suggest.items.length === 0" class="px-2 py-1 text-muted">{{ suggest.loading ? 'Cerco…' : 'Nessuna nota o pagina con queste parole.' }}</li>
+      <li v-if="suggest.items.length === 0" class="px-2 py-1 text-muted">{{ suggest.loading ? 'Cerco…' : 'Nessuna nota o pagina con queste parole: prova con una parte del percorso.' }}</li>
       <li
         v-for="(item, at) in suggest.items"
         :key="item.target"

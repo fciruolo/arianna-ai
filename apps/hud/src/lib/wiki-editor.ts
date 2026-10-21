@@ -155,21 +155,46 @@ export function markdownToDoc(text: string): JSONContent {
 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 
+/** The entities of a piece of text outside code back to characters. */
+function decode(text: string): string {
+  return text.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity);
+}
+
+/** A line with its code spans (a run of backticks to the same run) kept as written, the rest decoded. */
+function decodeOutsideSpans(line: string): string {
+  let out = '';
+  let at = 0;
+  while (at < line.length) {
+    const open = line.indexOf('`', at);
+    if (open === -1) break;
+    let run = open;
+    while (line.charAt(run) === '`') run += 1;
+    const ticks = line.slice(open, run);
+    const close = line.indexOf(ticks, run);
+    if (close === -1) break;
+    out += decode(line.slice(at, open)) + line.slice(open, close + ticks.length);
+    at = close + ticks.length;
+  }
+  return out + decode(line.slice(at));
+}
+
 /**
  * The entities the serializer writes (`R&amp;D`, `a &lt; b`) back to the
- * characters, outside fenced code: the page shows the text as written, and
- * the core sees a `<` that opens a tag for what it is and refuses it.
+ * characters, outside code (spans and fenced blocks, also inside quotes and
+ * lists): the page shows the text as written, and the core sees a `<` that
+ * opens a tag for what it is and refuses it. Code stays as the user wrote it.
  */
 export function plainEntities(text: string): string {
-  let fenced = false;
+  let fence: string | null = null;
   return text
     .split('\n')
     .map((line) => {
-      if (/^\s*(```|~~~)/.test(line)) {
-        fenced = !fenced;
+      const marker = /^[\s>]*(-\s+|\d+[.)]\s+)?(`{3,}|~{3,})/.exec(line)?.[2];
+      if (marker !== undefined && (fence === null || marker.startsWith(fence))) {
+        fence = fence === null ? marker : null;
         return line;
       }
-      return fenced ? line : line.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity);
+      return fence !== null ? line : decodeOutsideSpans(line);
     })
     .join('\n');
 }

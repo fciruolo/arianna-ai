@@ -71,6 +71,11 @@ test('the text keeps its characters: no entity in what is saved, except inside f
   assert.match(back, /R&D e a < b, "virgolette" e l'apostrofo\./);
   assert.doesNotMatch(back, /&amp;|&lt;|&quot;|&#39;/);
   assert.equal(plainEntities('```\n&amp;\n```\n&amp;'), '```\n&amp;\n```\n&');
+  // Code keeps what the user wrote: spans, and fences inside a quote or a list.
+  assert.equal(plainEntities('Scrivi `&lt;b&gt;` e `usa &amp;` ma R&amp;D'), 'Scrivi `&lt;b&gt;` e `usa &amp;` ma R&D');
+  assert.equal(plainEntities('> ```\n> &amp;\n> ```\n- ```\n  &lt;\n  ```\n&lt;'), '> ```\n> &amp;\n> ```\n- ```\n  &lt;\n  ```\n<');
+  const code = docToMarkdown(markdownToDoc('Scrivi `&lt;b&gt;` nel codice e `a & b`.'));
+  assert.match(code, /`&lt;b&gt;`/);
   // HTML written as text becomes a tag again: the save refuses it with its line, as in the plain editor.
   assert.match(docToMarkdown(markdownToDoc('Scrivo <b>forte</b>.')), /<b>forte<\/b>/);
 });
