@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Primo passo del browser dell'agente (D-264): immagine con Chromium costruita in locale con `pnpm browser:build` e fissata per id in `config/browser-image.lock`; il core avvia un browser alla volta in un contenitore senza rete, senza volumi e senza privilegi, lo comanda con Playwright attraverso `docker exec` (nessuna porta aperta sul Mac) e lo chiude dopo 15 minuti senza azioni o al più dopo 30. Gli strumenti in chat arrivano nei passi seguenti.
+
+### Sicurezza
+
+- Profilo seccomp del browser dell'agente: quello ufficiale di Docker più tre eccezioni, così la sandbox di Chromium resta accesa senza privilegi in più (D-266); il doctor segnala un'immagine del browser costruita da più di 30 giorni.
+
 ## [0.151.0] - 2026-10-20
 
 ### Aggiunto

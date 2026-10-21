@@ -8,6 +8,9 @@ config/.arianna.toml.*
 # Models added from Hugging Face on the "Modelli" page (I-10, D-139), written by the core
 config/models.user-catalog.yaml
 config/.models.user-catalog.yaml.*
+# Image of the agent's browser built on this machine (D-264), written by pnpm browser:build
+config/browser-image.lock
+config/browser-image.lock.tmp
 
 # Secrets
 .env*

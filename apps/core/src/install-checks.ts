@@ -10,6 +10,7 @@ import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type ModelCatalog, type Project } from '@arianna/config';
 
+import { BROWSER_IMAGE_MAX_AGE_DAYS, browserImageAgeDays, readBrowserImageLock } from './browser/image.ts';
 import type { DoctorCheck } from './doctor.ts';
 import { modelStatus, selectedModels } from './model-files.ts';
 
@@ -344,7 +345,22 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...(await modelsChecks(config)),
     ...guardDirChecks(loadCatalog(config.home), config.paths.data),
     ...projectChecks(config.home, config.projects),
+    ...browserImageChecks(config.home, new Date()),
   ];
+}
+
+/**
+ * D-264: the image of the agent's browser opens untrusted sites, so its
+ * Chromium must stay current. Without config/browser-image.lock there is no
+ * browser (the core refuses to start one) and nothing to check.
+ */
+export function browserImageChecks(home: string, now: Date): DoctorCheck[] {
+  const lock = readBrowserImageLock(home);
+  if (lock === null) return [];
+  const days = browserImageAgeDays(lock, now);
+  const ok = days <= BROWSER_IMAGE_MAX_AGE_DAYS;
+  const age = `Chromium ${lock.chromium}, built ${String(days)} days ago`;
+  return [{ id: 'browser.image', ok, detail: ok ? age : `${age}: rebuild it with pnpm browser:build` }];
 }
 
 /**

@@ -2628,17 +2628,17 @@ Preparata dopo P7 (D-262), che ne è il presupposto. Anteprima: `docs/mockups/br
 - **Un browser alla volta** su tutta l'installazione: sul Mac da 32 GB la RAM è già contesa (D-074). Un secondo lavoro che lo chiede riceve «browser occupato, riprova fra poco».
 - **Opzioni di `docker run`** (tutte fisse nel codice, controllate da un test):
   - `--network none`: il contenitore non ha nessuna scheda di rete. Niente DNS, niente `host.docker.internal`, nessuna strada verso `arianna-postgres` o verso altri contenitori.
-  - `--read-only` con `--tmpfs /tmp:size=256m,noexec` e `--tmpfs /home/browser:size=128m`. **Nessun volume:** né cartelle del Mac né volumi Docker.
+  - `--read-only` con `--tmpfs /tmp:size=256m,noexec` e `--tmpfs /srv/browser:size=128m` (la casa del browser nel contenitore; `/srv` e non `/home` dal passo 1, D-266). **Nessun volume:** né cartelle del Mac né volumi Docker.
   - `--user 10001:10001`, `--cap-drop ALL`, `--security-opt no-new-privileges`, più il profilo seccomp che serve alla sandbox di Chromium (da verificare: in alternativa Chromium gira con `--no-sandbox` e l'isolamento lo dà solo il contenitore, cosa da evitare).
   - `--memory 1g --memory-swap 1g --cpus 1 --pids-limit 256 --shm-size 256m`. Niente `--ipc=host`, che Playwright consiglia ma che condivide la memoria con la VM.
   - `--init`, `--rm` e un nome `arianna-browser-<id del lavoro>`. All'avvio il core toglie i contenitori `arianna-browser-*` rimasti da un core caduto.
-  - Immagine **sempre per digest** (`…@sha256:…`), mai per tag. Il core rifiuta un'immagine diversa da quella scritta in `config/browser-image.lock`.
+  - Immagine **sempre per id** (`sha256:…`, l'id dell'immagine costruita in locale), mai per tag né per nome: un'immagine costruita in locale non ha un digest di registro (dal passo 1, D-266). Il core rifiuta un'immagine diversa da quella scritta in `config/browser-image.lock`.
 - **Dentro il contenitore:**
   - `Xvnc` (TigerVNC) su `:1`, con lo schermo che il server crea da sé, in ascolto solo su 127.0.0.1:5900;
-  - Chromium a schermo intero su quello schermo, con il debug remoto (CDP) solo su 127.0.0.1:9222, `--host-resolver-rules="MAP * ~NOTFOUND"`, `--dns-prefetch-disable`, senza estensioni né sincronizzazione, con un profilo nuovo in `/home/browser` (tmpfs);
+  - Chromium a schermo intero su quello schermo, con il debug remoto (CDP) solo su 127.0.0.1:9222, `--host-resolver-rules="MAP * ~NOTFOUND"`, `--dns-prefetch-disable`, senza estensioni né sincronizzazione, con un profilo nuovo in `/srv/browser` (tmpfs);
   - `socat`, solo per il ponte del punto 1.3.
 - **Come il core parla col contenitore senza rete:** con `docker exec -i <contenitore> socat STDIO TCP:127.0.0.1:<porta>` il core apre un canale verso una porta *interna* passando dal comando Docker, non dalla rete. È la stessa idea del canale privato fra due programmi. Sul Mac non si apre nessuna porta, e solo chi può usare Docker (il core, cioè l'utente stesso) può farlo. Ci sono due canali:
-  - **CDP (9222):** il core comanda il browser. Il client WebSocket di `ws` accetta un canale fatto da noi (`createConnection`), quindi non serve Playwright (da verificare con un prototipo, punto 6, passo 1).
+  - **CDP (9222):** il core comanda il browser. Il client WebSocket di `ws` accetta un canale fatto da noi (`createConnection`). **Dal passo 1 (scelta dell'utente: Playwright come telecomando):** `chromium.connectOverCDP` di `playwright-core` riceve quel WebSocket come transport, quindi sul Mac non si apre nessuna porta, nemmeno su loopback, e non serve un ponte col gettone.
   - **VNC (5900):** lo schermo per la chat (punto 3).
 
 #### 1.2 La rete del browser: la scarica il core, pagina per pagina
@@ -2769,6 +2769,23 @@ Risposte dell'utente del 2026-10-20 e 2026-10-21, con le domande a opzioni.
 3. **Chiusura: «15 minuti senza azioni»** (non la consigliata): tetto di 30 minuti per lavoro invariato.
 4. **Controllo: «Da ogni chat aperta»** (la consigliata): Mac e telefono, con l'avviso e gli appunti sempre spenti.
 5. **Link nelle Interne: «Clic solo nello stesso sito»** (la consigliata): dentro il sito di un indirizzo scritto dall'utente l'agente naviga; un link verso un altro sito si ferma e lo chiede all'utente.
+
+### Passo 2, la rete dal core: piano e scelte (2026-10-21)
+
+Il piano è stato scritto dopo il passo 1 (stima 14-15 h). I punti principali:
+- **`context.route('**/*')` di Playwright, non CDP grezzo.** Accende `Fetch` su pagine, sotto-frame anche fuori processo, popup e service worker; con CDP grezzo andrebbe riscritto tutto questo. Playwright però risponde da sé ai preflight `OPTIONS` e fa proseguire senza di noi le richieste senza frame: oggi le ferma solo `--network none`.
+- **Modulo comune `apps/core/src/public-net.ts`**, estratto da `link-fetch.ts` senza cambiarne i test, e `fetchResource` in `apps/core/src/browser/resource-fetch.ts`. I rimandi non si seguono: tornano al browser e ogni salto ripassa dal gateway.
+- **Nuova destinazione del gateway `web` con `resource`** (`web-resource-<consenso>` nel registro, regole `resource` e `resource-invalid`), senza migrazione. Per le risorse niente Rizzo, che resta per le pagine principali. Corpi POST al più 64 KB, GET con corpo rifiutato. Eval in `evals/gateway/resources.jsonl`.
+- **Tetti per tipo:** pagine 3 MB, CSS 2 MB, JS 5 MB, immagini 5 MB, font 2 MB, fetch/xhr 2 MB. Per lavoro: 30 pagine principali, 2.000 richieste e 50 MB decompressi.
+- **Intestazioni in uscita solo da un elenco:** `Accept`, `Accept-Language` fisso, `Accept-Encoding` fisso, `Content-Type` con POST, `Origin`, `User-Agent`. Tolte `Cookie`, `Authorization`, `Referer`, `Range`, `If-*`, `Sec-CH-*` e `X-*`. In entrata tolte `Set-Cookie`, `WWW-Authenticate` e `Clear-Site-Data`.
+- **Eventi** `browser.navigate` (sito ed esito), `browser.network` a fine lavoro (conteggi) e `browser.limit`; mai indirizzi interi né testi.
+
+Scelte dell'utente del 2026-10-21 (domande a opzioni):
+1. **Porte nel contenitore: «Socket Unix, in questo passo»** (la consigliata). Il reviewer del passo 1 ha notato che una pagina può raggiungere 127.0.0.1:9222 e :5900 nel loopback del contenitore, e che `Fetch` non intercetta i WebSocket. Xvnc va quindi su `-rfbunixpath` con `-rfbport -1`, e Chromium su `--remote-debugging-pipe` collegato da `socat` a un socket Unix in `/tmp`. Il canale diventa `UNIX-CONNECT` e il transport passa a messaggi separati da `\0`, senza più `/json/version`. Test: nessun `--remote-debugging-port`, nessun `--remote-allow-origins`, e loopback rifiutato.
+2. **JSON: «Anche JSON per fetch/xhr»** (la consigliata).
+3. **User-Agent: «Quello di Chromium»** (la consigliata).
+4. **Cookie: «Nessuno»** (la consigliata): nessun cookie esce verso i siti, e il banner ricompare a ogni pagina.
+5. **Iframe: «Come risorse, senza Rizzo»** (la consigliata): gli indirizzi passano da vault e scanner, e contano nei tetti delle 2.000 richieste e dei 50 MB ma non nelle 30 pagine.
 
 ### Cose non verificate
 
