@@ -56,6 +56,13 @@ import { connectSession, type BrowserSession, type SessionOptions } from './sess
  * Arianna (no task in gateway_log). Given back, the first action must be a
  * reading (`reread`): the page is no longer the one Arianna read. Input of
  * the user counts as activity for the 15 minutes; the 30 stay.
+ *
+ * After an access made by the user (D-276: a form of the user, then the
+ * cookies of that site) the pages are Private (L2). A conversation with the
+ * browser tools is a work conversation, cleared for L1: a read above the
+ * clearance is denied (docs/PRIVACY-POLICY-SPEC.md, rule 9). So every
+ * action of Arianna but browser.close answers `authenticated`: the user goes
+ * on from the screen, or closes the browser (and its cookies).
  */
 
 export const TAKE_OVER_MS = 2 * 60_000;
@@ -103,6 +110,12 @@ export type ActionFailure =
   | 'paused'
   /** The user gave the browser back: the page must be read again before anything else. */
   | 'reread'
+  /**
+   * The browser has an access made by the user (D-276): what it shows is
+   * Private (L2), above the clearance of a work conversation (rule 9), so
+   * Arianna neither reads it nor acts in it; only browser.close.
+   */
+  | 'authenticated'
   | 'not-installed'
   | 'start-failed'
   | 'not-open'
@@ -240,6 +253,13 @@ export class AgentBrowser {
     return held.site ?? null;
   }
 
+  /** The site of the access made by the user in the browser of `conversationId` (D-276); null when none. */
+  accessOf(conversationId: string): string | null {
+    const held = this.#held;
+    if (this.holder !== conversationId || held === null) return null;
+    return held.session.network?.authenticated() ?? null;
+  }
+
   /** Who drives the browser of `conversationId`; null when it holds none. */
   driverOf(conversationId: string): Driver | null {
     return this.holder === conversationId ? (this.#held?.driver ?? null) : null;
@@ -375,6 +395,8 @@ export class AgentBrowser {
       held.scope = scope;
       held.session.network?.rescope(networkScope(scope, 'agent'));
       held.lastAction = this.#now();
+      // An access made by the user: its pages are Private, never read here (rule 9); closing is allowed.
+      if (held.session.network?.authenticated() != null) return { ok: false, reason: 'authenticated' };
       // Given back by the user: the page is read again before anything else.
       if (held.reread && action.kind !== 'read') return { ok: false, reason: 'reread' };
       if (action.kind === 'read') held.reread = false;

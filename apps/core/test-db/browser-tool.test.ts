@@ -35,8 +35,10 @@ import {
   WAITING_BROWSER,
   writeClosedByUserLine,
   writeControlLine,
+  writeLoginLine,
   writeTakenLine,
   CONTROL_TEXT,
+  loginLine,
 } from '../src/orchestrator/browser-tool.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -280,8 +282,18 @@ test('writeControlLine: taken and given back leave system lines; the browser clo
   await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'idle' });
   await writeControlLine(db().sql, conversationId, { state: 'returned', reason: 'browser-closed' });
   const rows = await db().sql<{ role: string; label: string; body: string }[]>`
-    SELECT role, label::text, body FROM messages WHERE conversation_id = ${conversationId} ORDER BY created_at, id`;
+    SELECT role, label::text, body FROM messages WHERE conversation_id = ${conversationId} ORDER BY ts, id`;
   assert.deepEqual(rows.map((row) => row.body).sort(), [CONTROL_TEXT.taken, CONTROL_TEXT.idle].sort());
+  assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
+});
+
+test('writeLoginLine (D-276): one system line per site in ten minutes, read by the model too', async () => {
+  const conversationId = await workConversation();
+  await writeLoginLine(db().sql, conversationId, 'banca-finta.it');
+  await writeLoginLine(db().sql, conversationId, 'banca-finta.it');
+  await writeLoginLine(db().sql, conversationId, 'posta-finta.it');
+  const rows = await db().sql<{ body: string; label: string; role: string }[]>`SELECT body, label::text, role FROM messages WHERE conversation_id = ${conversationId}`;
+  assert.deepEqual(rows.map((row) => row.body).sort(), [loginLine('banca-finta.it'), loginLine('posta-finta.it')].sort());
   assert.ok(rows.every((row) => row.role === 'system' && row.label === 'L0'));
 });
 

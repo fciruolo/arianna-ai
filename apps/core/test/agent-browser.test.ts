@@ -68,6 +68,8 @@ interface Harness {
   last: { seq: number; outcome: 'blocked' | 'ok' | 'form'; site?: string } | undefined;
   /** Activity without an action (the user drives). */
   userTouches: number;
+  /** The site of an access made by the user, as the fake network says (D-276). */
+  access: string | null;
 }
 
 function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' } } = {}): Harness {
@@ -75,13 +77,13 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0 };
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null };
   const openSession: OpenSession = (_manager, id) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
     h.opened.push(id);
     const session = {
-      network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), settle: () => Promise.resolve() },
+      network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), authenticated: () => h.access, settle: () => Promise.resolve() },
       openPage: (url: string) => { page.url = url; return Promise.resolve({ title: page.title, url }); },
       currentPage: () => {
         h.touches += 1;
@@ -503,4 +505,22 @@ test('input of the user counts as activity; the site and the refused navigations
   assert.equal(h.browser.blockedOf('b'), null);
   h.browser.returnControl('a');
   assert.equal(h.browser.blockedOf('a'), null);
+});
+
+test('after an access made by the user (D-276) Arianna neither reads nor acts in the browser; she may close it', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://banca-finta.it/accedi' });
+  assert.equal(h.browser.accessOf('a'), null);
+  h.access = 'banca-finta.it';
+  assert.equal(h.browser.accessOf('a'), 'banca-finta.it');
+  assert.equal(h.browser.accessOf('b'), null);
+  for (const action of [{ kind: 'read' }, { kind: 'scroll', direction: 'down' }, { kind: 'click', ref: 1 }, { kind: 'open', url: 'https://banca-finta.it/conti' }, { kind: 'type', ref: 1, text: 'x', submit: false }] as const) {
+    assert.deepEqual(await h.browser.act(scope('a'), action), { ok: false, reason: 'authenticated' }, action.kind);
+  }
+  // Given back after the access: still nothing, the reading is refused too.
+  await h.browser.takeControl('a').done;
+  h.browser.returnControl('a');
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'authenticated' });
+  assert.equal((await h.browser.act(scope('a'), { kind: 'close' })).ok, true);
+  assert.equal(h.browser.holder, null);
 });

@@ -143,7 +143,9 @@ export const CONTROL_PASSED = 'Il controllo è passato a un altro schermo.';
 export const CONTROL_POLL_MS = 2_500;
 
 /** What the chat says of a navigation the core refused while the user drove (choice of the user, 2026-10-21). */
-export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>): string {
+export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>, access?: string | null): string {
+  // After an access (D-276) only the site of the access opens.
+  if (access !== undefined && access !== null && (blocked.outcome === 'blocked' || blocked.outcome === 'form')) return `Dopo l’accesso il browser apre e invia solo verso ${access}: chiudi il browser per andare altrove.`;
   switch (blocked.outcome) {
     case 'form':
       return 'Modulo non inviato: da questo browser un modulo parte solo verso il sito della pagina, mentre guidi tu.';
@@ -158,9 +160,17 @@ export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>): string
 
 const OUTCOMES: readonly BlockedNavigation['outcome'][] = ['blocked', 'refused', 'form', 'limit'];
 
+/** The line under the screen once the user signed in (D-276). */
+export function accessText(site: string): string {
+  return `Accesso fatto su ${site}: le sue pagine sono Private. Arianna non le legge in questa conversazione; i cookie restano solo per ${site}, nella memoria del core, e spariscono con il browser.`;
+}
+
+/** The second line of the warning while the user drives: what a form does (D-276). */
+export const FORM_NOTE = 'Per accedere scrivi le credenziali nella pagina: il modulo parte solo verso il sito della pagina, Arianna non vede né salva quello che scrivi.';
+
 /** The status of the core as the chat reads it: anything unexpected is dropped. */
-export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null } {
-  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown };
+export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null } {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown; access?: unknown };
   const control = body.control === 'agent' || body.control === 'you' || body.control === 'other' || body.control === 'user' ? body.control : null;
   const raw = (typeof body.blocked === 'object' && body.blocked !== null ? body.blocked : null) as { seq?: unknown; outcome?: unknown; site?: unknown } | null;
   const outcome = OUTCOMES.find((item) => item === raw?.outcome);
@@ -168,5 +178,6 @@ export function parseControl(value: unknown): { control: ControlState | null; bl
   if (raw !== null && typeof raw.seq === 'number' && outcome !== undefined) {
     blocked = typeof raw.site === 'string' && raw.site !== '' ? { seq: raw.seq, outcome, site: raw.site } : { seq: raw.seq, outcome };
   }
-  return { control, blocked };
+  const access = typeof body.access === 'string' && body.access !== '' && body.access.length <= 253 ? body.access : null;
+  return { control, blocked, access };
 }

@@ -117,6 +117,8 @@ export interface ScreensOptions {
     input: (conversationId: string) => void;
     driver: (conversationId: string) => Driver | null;
     blocked: (conversationId: string) => BlockedNavigation | null;
+    /** The site of an access made by the user (D-276), for the chat. */
+    access?: (conversationId: string) => string | null;
   };
   /** The control was taken or went back (the system lines of the chat). */
   onControl?: (conversationId: string, change: { state: 'taken' } | { state: 'returned'; reason: ControlEnd }) => void;
@@ -205,7 +207,7 @@ export class BrowserScreens {
    * chat («Browser aperto · Guarda · Chiudi»); null when there is no such
    * conversation. Never open for a Private or incognito one.
    */
-  async status(conversationId: string, token?: string): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation } | null> {
+  async status(conversationId: string, token?: string): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
     const open = kind === 'work' && !this.#stopped && this.#current(conversationId) !== null;
@@ -220,7 +222,8 @@ export class BrowserScreens {
       control = here === null || controller === null ? 'user' : timingSafeEqual(here, controller.hash) ? 'you' : 'other';
     }
     const blocked = this.#options.control?.blocked(conversationId) ?? null;
-    return { open, ...(site === null ? {} : { site }), ...(control === undefined ? {} : { control }), ...(blocked === null ? {} : { blocked }) };
+    const access = this.#options.control?.access?.(conversationId) ?? null;
+    return { open, ...(site === null ? {} : { site }), ...(control === undefined ? {} : { control }), ...(blocked === null ? {} : { blocked }), ...(access === null ? {} : { access }) };
   }
 
   /**

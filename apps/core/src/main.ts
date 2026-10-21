@@ -575,6 +575,7 @@ const browserScreens = new BrowserScreens({
     input: (conversationId) => { agentBrowser.userInput(conversationId); },
     driver: (conversationId) => agentBrowser.driverOf(conversationId),
     blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
+    access: (conversationId) => agentBrowser.accessOf(conversationId),
   },
   onControl: (conversationId, change) => { writeControlLine(sql, conversationId, change).catch(report); },
   onEvent: (event) => { appendEvent(sql, event).catch(report); },

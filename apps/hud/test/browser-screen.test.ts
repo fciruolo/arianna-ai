@@ -167,11 +167,11 @@ describe('main.ts', () => {
 describe('«Prendi il controllo» (D-264, passo 5)', () => {
   it('the status of the core: control and the refused page, anything else dropped', async () => {
     const { parseControl } = await import('../src/lib/browser-screen.ts');
-    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' } });
-    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } });
-    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null });
-    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null });
-    assert.deepEqual(parseControl(null), { control: null, blocked: null });
+    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null });
+    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null });
+    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null });
+    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null });
+    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null });
   });
 
   it('every refused page has its sentence; a link to a site not written says to write it in the chat', async () => {
@@ -201,5 +201,18 @@ describe('«Prendi il controllo» (D-264, passo 5)', () => {
     assert.ok(source.includes('current.viewOnly = !you'));
     assert.ok(!source.includes("addEventListener('clipboard'"));
     assert.ok(source.includes('CONTROL_WARNING'));
+  });
+});
+
+describe('the access made by the user (D-276)', () => {
+  it('the status carries the site of the access; the refused pages say that only that site opens', async () => {
+    const { accessText, blockedText, FORM_NOTE, parseControl } = await import('../src/lib/browser-screen.ts');
+    assert.equal(parseControl({ control: 'you', access: 'banca-finta.it' }).access, 'banca-finta.it');
+    assert.equal(parseControl({ control: 'you', access: 3 }).access, null);
+    assert.match(blockedText({ outcome: 'blocked' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
+    assert.match(blockedText({ outcome: 'form' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
+    assert.match(blockedText({ outcome: 'blocked' }, null), /scrivilo in chat/);
+    assert.match(accessText('banca-finta.it'), /Private/);
+    assert.match(FORM_NOTE, /solo verso il sito della pagina/);
   });
 });

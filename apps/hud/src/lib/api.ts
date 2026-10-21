@@ -1181,12 +1181,12 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
  * of an open screen (passo 5), whether that screen drives, and the last page
  * refused while the user drove.
  */
-export async function browserStatus(conversationId: string, screen?: string): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null }> {
+export async function browserStatus(conversationId: string, screen?: string): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null }> {
   const query = `conversationId=${encodeURIComponent(conversationId)}${screen === undefined ? '' : `&screen=${encodeURIComponent(screen)}`}`;
   const body = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?${query}`);
   const open = body.open === true;
-  const { control, blocked } = parseControl(body);
-  return { open, site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null, control: open ? control : null, blocked: open ? blocked : null };
+  const { control, blocked, access } = parseControl(body);
+  return { open, site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null, control: open ? control : null, blocked: open ? blocked : null, access: open ? access : null };
 }
 
 /**
