@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createContext, type Context, type PageConsent } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
-import { AgentBrowser, outsideAccess, READ_SCRIPT, type BrowserScope, type OpenSession, type PageElement } from '../src/browser/agent-browser.ts';
+import { AgentBrowser, openFailureKind, outsideAccess, READ_SCRIPT, type BrowserScope, type OpenSession, type PageElement } from '../src/browser/agent-browser.ts';
 import { afterControl, browserChatLine, browserChatTitle, HANDOFF_LINE } from '../src/browser/handoff.ts';
 import type { Sql } from '../src/db/client.ts';
 import type { BrowserManager } from '../src/browser/manager.ts';
@@ -164,6 +164,14 @@ test('the chat stays on the site of the access: open and links elsewhere are ref
   assert.deepEqual(await h.browser.act(chat(), { kind: 'open', url: 'https://tracker-finto.net/' }), { ok: false, reason: 'outside-access', site: SITE });
   assert.deepEqual(await h.browser.act(chat(), { kind: 'open', url: 'http://www.biblioteca-finta.it/' }), { ok: false, reason: 'outside-access', site: SITE });
   assert.equal((await h.browser.act(chat(), { kind: 'open', url: 'https://catalogo.biblioteca-finta.it/' })).ok, true);
+});
+
+test('openFailureKind: the kind of a failed open for the log, never the address', () => {
+  assert.equal(openFailureKind(new Error('page.goto: net::ERR_ABORTED at https://www.biblioteca-finta.it/prestiti?u=7')), 'net::ERR_ABORTED');
+  assert.equal(openFailureKind(new Error('page.goto: Navigation to "https://x.it/" is interrupted by another navigation to "https://x.it/a"')), 'interrupted by another navigation');
+  assert.equal(openFailureKind(new Error('page.goto: Timeout 15000ms exceeded.')), 'timeout');
+  assert.equal(openFailureKind(new TypeError('https://www.biblioteca-finta.it/segreto')), 'TypeError');
+  assert.equal(openFailureKind('boom'), 'string');
 });
 
 test('outsideAccess: https on the site or a subdomain only; links that are not pages stay', () => {

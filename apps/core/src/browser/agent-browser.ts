@@ -544,7 +544,9 @@ export class AgentBrowser {
         held.readAt = undefined;
         try {
           await session.openPage(action.url, LOAD_MS);
-        } catch {
+        } catch (error) {
+          // Only the kind of the failure, never the address: what to look at when a page "did not open" (D-281 trial).
+          console.warn(`browser: open failed (${openFailureKind(error)})`);
           return navigationFailure(session);
         }
         return this.#state(held);
@@ -671,6 +673,22 @@ export class AgentBrowser {
       console.warn('browser: a callback of the agent browser failed');
     }
   }
+}
+
+/**
+ * The kind of a failed open, for the log of the core: a Chromium network code
+ * (`net::ERR_ABORTED`), a timeout, an interrupted navigation, or the class of
+ * the error; never its message, which carries the address.
+ */
+export function openFailureKind(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  const code = /net::ERR_[A-Z_]+/.exec(message)?.[0];
+  if (code !== undefined) return code;
+  if (/interrupted by another navigation/i.test(message)) return 'interrupted by another navigation';
+  if (/frame was detached/i.test(message)) return 'frame detached';
+  if (/Timeout \d+ms exceeded/i.test(message)) return 'timeout';
+  if (/Target page, context or browser has been closed/i.test(message)) return 'closed';
+  return error instanceof Error ? error.name : typeof error;
 }
 
 /** The name of the element of a card «Invia / No» (D-281), as stored and as compared: one line, at most 120 characters. */
