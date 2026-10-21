@@ -21,12 +21,18 @@ import {
   composeIndex,
   composeWikiPage,
   countWikiProposals,
+  checkUserPage,
+  createUserWikiPage,
+  createWikiFolder,
   deleteWikiPage,
   discardWikiProposal,
+  editWikiPage,
   indexSummary,
   inertLine,
   isSafeWikiPage,
   listWikiProposals,
+  moveWikiFolder,
+  moveWikiPage,
   pageVersions,
   parseWikiPage,
   proposeMove,
@@ -275,6 +281,119 @@ describe('deleting a page', () => {
   });
 });
 
+describe('the user writes the wiki', () => {
+  it('«Modifica» saves at once over the page as shown, keeps the version before for «Ripristina», and an update waiting expires', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const shown = readWikiView(root, RULES, 'laravel/octane/swoole');
+    const waiting = proposal(root, { kind: 'update', base: shown.version, content: composeWikiPage({ ...PAGE, summary: 'Altro.' }, NOW) });
+    const body = '## In breve\n\nScritto da me, con [[inbox/2026-10-21-100000-octane|la nota]] e [[wiki/laravel/octane/_indice]].\n\n- Un punto **mio**.\n';
+    assert.throws(() => editWikiPage(root, RULES, 'laravel/octane/swoole', sha256('altro'), 'Titolo', body, NOW), (error) => error instanceof WikiError && error.code === 'changed');
+    const edited = editWikiPage(root, RULES, 'laravel/octane/swoole', shown.version, '  Swoole, a mano ', body, NOW);
+    const view = readWikiView(root, RULES, 'laravel/octane/swoole');
+    assert.equal(view.version, edited.version);
+    assert.equal(view.title, 'Swoole, a mano');
+    assert.equal(view.body.trim(), body.trim());
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/octane/swoole.md'), 'utf8'), /^---\nlabel: L2\nkind: wiki\n/);
+    assert.equal(view.versions.length, 1);
+    assert.equal(listWikiProposals(root, RULES).find((item) => item.id === waiting.id)?.state, 'expired');
+    // A page edited by hand is not offered to the model for an update.
+    assert.deepEqual(wikiCandidates(root, RULES, 'Swoole mano'), []);
+    // The index names the new title.
+    assert.match(readFileSync(join(root, 'kb/wiki/laravel/octane/_indice.md'), 'utf8'), /Swoole, a mano/);
+    restoreWikiVersion(root, RULES, 'laravel/octane/swoole', view.versions[0]?.id ?? '', view.version, NOW);
+    assert.equal(readWikiView(root, RULES, 'laravel/octane/swoole').title, PAGE.title);
+  });
+
+  it('refuses what would carry a note out or point outside the user’s notes, naming the line and never the text', () => {
+    const root = home({ 'kb/segreti/chiave.md': '---\nlabel: L3\n---\nsegreto finto\n' });
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/segreti"\nlabel = "L3"'].join('\n\n'));
+    const ok = (body: string): void => {
+      checkUserPage(root, strict, 'Titolo', body);
+    };
+    ok('## Titolo\n\nTesto con [[private/nota]] e [[inbox/2026-10-21-100000-octane.md]].\n\n> citazione\n\n```\ncodice\n```\n');
+    const refused = (title: string, body: string, message: string): void => {
+      assert.throws(() => checkUserPage(root, strict, title, body), (error) => error instanceof WikiError && error.code === 'invalid' && error.message === message, body);
+    };
+    refused('Titolo', 'riga\n[[segreti/chiave]]', 'line 2: citation');
+    refused('Titolo', '[[inbox/mancante]]', 'line 1: citation');
+    refused('Titolo', '[[wiki/nessuna/pagina]]', 'line 1: citation');
+    refused('Titolo', 'Vedi [questo](https://esempio.invalid/?q=1)', 'line 1: link');
+    refused('Titolo', 'ok\n\n![img](x.png)', 'line 3: link');
+    refused('Titolo', 'https://esempio.invalid', 'line 1: link');
+    refused('Titolo', 'www.esempio.invalid', 'line 1: link');
+    refused('Titolo', '<img src=x>', 'line 1: link');
+    refused('Titolo', '![[inbox/2026-10-21-100000-octane]]', 'line 1: link');
+    refused('Titolo', 'un ]] spaiato', 'line 1: link');
+    refused('Titolo', '---\nlabel: L0\n---\n', 'line 1: header');
+    refused('', 'testo', 'title');
+    refused('Titolo [x]', 'testo', 'title');
+    refused('Titolo', 'a'.repeat(40_001), 'too-long');
+  });
+
+  it('«Nuova pagina» and «Nuova cartella»: never over a page or a folder, never where a rule says more than L2; an empty folder stays', () => {
+    const root = home();
+    createWikiFolder(root, RULES, 'cucina');
+    assert.ok(wikiTree(root).folders.includes('cucina'));
+    assert.throws(() => { createWikiFolder(root, RULES, 'cucina'); }, (error) => error instanceof WikiError && error.code === 'exists');
+    assert.throws(() => { createWikiFolder(root, RULES, 'a/b/c'); }, (error) => error instanceof WikiError && error.code === 'invalid');
+    const created = createUserWikiPage(root, RULES, 'cucina/pane', 'Pane fatto in casa', undefined, NOW);
+    assert.equal(readWikiView(root, RULES, 'cucina/pane').version, created.version);
+    assert.match(readFileSync(join(root, 'kb/wiki/cucina/_indice.md'), 'utf8'), /Pane fatto in casa/);
+    assert.throws(() => createUserWikiPage(root, RULES, 'cucina/pane', 'Ancora', undefined, NOW), (error) => error instanceof WikiError && error.code === 'exists');
+    assert.throws(() => createUserWikiPage(root, RULES, 'pane', 'Senza cartella', undefined, NOW), (error) => error instanceof WikiError && error.code === 'invalid');
+    assert.throws(() => createUserWikiPage(root, RULES, 'cucina/x', 'Con un link', 'Vedi https://esempio.invalid', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
+    // Another empty folder survives the rebuild of the indexes.
+    createWikiFolder(root, RULES, 'viaggi');
+    rebuildIndexes(root, RULES);
+    assert.ok(existsSync(join(root, 'kb/wiki/viaggi')));
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/segreti"\nlabel = "L3"'].join('\n\n'));
+    assert.throws(() => { createWikiFolder(root, strict, 'segreti'); }, (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => createUserWikiPage(root, strict, 'segreti/x', 'Segreta', undefined, NOW), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.equal(existsSync(join(root, 'kb/wiki/segreti')), false);
+  });
+
+  it('«Sposta o rinomina» a page at once: versions and links follow, the old folder goes when empty, the update waiting expires', () => {
+    const root = home({ 'kb/private/rimanda.md': '---\nlabel: L2\n---\nVedi [[wiki/laravel/octane/swoole]].\n' });
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const first = readWikiView(root, RULES, 'laravel/octane/swoole');
+    editWikiPage(root, RULES, 'laravel/octane/swoole', first.version, 'Swoole', '## In breve\n\nTesto mio.\n', NOW);
+    const shown = readWikiView(root, RULES, 'laravel/octane/swoole');
+    const waiting = proposal(root, { kind: 'update', base: shown.version, content: composeWikiPage(PAGE, NOW) });
+    assert.throws(() => moveWikiPage(root, RULES, 'laravel/octane/swoole', 'php/swoole', sha256('altro')), (error) => error instanceof WikiError && error.code === 'changed');
+    assert.throws(() => moveWikiPage(root, RULES, 'laravel/octane/swoole', 'swoole', shown.version), (error) => error instanceof WikiError && error.code === 'invalid');
+    assert.throws(() => moveWikiPage(root, RULES, 'laravel/octane/swoole', 'a/b/c/d', shown.version), (error) => error instanceof WikiError && error.code === 'invalid');
+    const moved = moveWikiPage(root, RULES, 'laravel/octane/swoole', 'php/swoole', shown.version);
+    assert.equal(moved.path, 'php/swoole');
+    assert.equal(moved.pages, 1);
+    assert.ok(moved.relinked >= 1);
+    assert.equal(readWikiView(root, RULES, 'php/swoole').title, 'Swoole');
+    assert.equal(pageVersions(root, 'php/swoole').length, 1);
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
+    assert.match(readFileSync(join(root, 'kb/private/rimanda.md'), 'utf8'), /\[\[wiki\/php\/swoole\]\]/);
+    assert.equal(listWikiProposals(root, RULES).find((item) => item.id === waiting.id)?.state, 'expired');
+    createUserWikiPage(root, RULES, 'php/altra', 'Altra', undefined, NOW);
+    const swoole = readWikiView(root, RULES, 'php/swoole');
+    assert.throws(() => moveWikiPage(root, RULES, 'php/swoole', 'php/altra', swoole.version), (error) => error instanceof WikiError && error.code === 'exists');
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/segreti"\nlabel = "L3"'].join('\n\n'));
+    assert.throws(() => moveWikiPage(root, strict, 'php/swoole', 'segreti/swoole', swoole.version), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
+  });
+
+  it('«Sposta o rinomina» a folder at once, as the approved proposal does', () => {
+    const root = home();
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    assert.throws(() => moveWikiFolder(root, RULES, 'nessuna', 'altra'), (error) => error instanceof WikiError && error.code === 'not-found');
+    assert.throws(() => moveWikiFolder(root, RULES, 'laravel', 'laravel/dentro'), (error) => error instanceof WikiError && error.code === 'invalid');
+    const moved = moveWikiFolder(root, RULES, 'laravel/octane', 'php');
+    assert.equal(moved.path, 'php');
+    assert.equal(moved.pages, 1);
+    assert.ok(existsSync(join(root, 'kb/wiki/php/swoole.md')));
+    assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
+    assert.match(readFileSync(join(root, 'kb/wiki/_indice.md'), 'utf8'), /wiki\/php\/_indice/);
+  });
+});
+
 describe('moving a folder', () => {
   it('is a proposal; approved, the pages move and the links follow', () => {
     const root = home();
@@ -318,7 +437,7 @@ describe('the tree, the indexes and the rest of kb/', () => {
     rebuildIndexes(root, RULES, new Map([['laravel', 'Note finte su Laravel.']]));
     assert.equal(indexSummary(readFileSync(join(root, 'kb/wiki/laravel/_indice.md'), 'utf8')), 'Note finte su Laravel.');
     rmSync(join(root, 'kb/wiki/laravel/octane/swoole.md'));
-    rebuildIndexes(root, RULES);
+    rebuildIndexes(root, RULES, new Map(), ['laravel/octane']);
     assert.equal(existsSync(join(root, 'kb/wiki/laravel')), false);
     assert.equal(readWikiView(root, RULES, '_indice').kind, 'index');
   });

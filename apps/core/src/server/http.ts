@@ -164,10 +164,15 @@ import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgeP
 import {
   approveWikiProposal,
   countWikiProposals,
+  createUserWikiPage,
+  createWikiFolder,
   deleteWikiPage,
+  editWikiPage,
   discardWikiProposal,
   isWikiSource,
   listWikiProposals,
+  moveWikiFolder,
+  moveWikiPage,
   proposalSource,
   proposeMove,
   readWikiView,
@@ -1120,6 +1125,46 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       const proposal = proposeMove(home, rules, body.from, body.to);
       await recordWikiEvent(sql, 'wiki.move_proposed', { pages: proposal.citations }).catch(onError);
       return { status: 201, body: { id: proposal.id } };
+    }),
+    // The user writes the wiki too (D-280), at once, no proposal: each change keeps the version before.
+    route('POST', '/api/wiki/edit', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'base', 'title', 'body']);
+      if (typeof body.path !== 'string' || typeof body.base !== 'string' || typeof body.title !== 'string' || typeof body.body !== 'string') throw new HttpError(400, 'path, base, title and body are required');
+      const edited = editWikiPage(home, rules, body.path, body.base, body.title, body.body);
+      await recordWikiEvent(sql, 'wiki.edited', {}).catch(onError);
+      return { body: { version: edited.version } };
+    }),
+    route('POST', '/api/wiki/create', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['kind', 'path', 'title']);
+      if (body.kind === 'folder') {
+        if (typeof body.path !== 'string' || body.title !== undefined) throw new HttpError(400, 'a folder takes a path only');
+        createWikiFolder(home, rules, body.path);
+        await recordWikiEvent(sql, 'wiki.created', { kind: 'folder' }).catch(onError);
+        return { status: 201, body: { path: body.path } };
+      }
+      if (body.kind !== 'page' || typeof body.path !== 'string' || typeof body.title !== 'string') throw new HttpError(400, 'kind, path and title are required');
+      const created = createUserWikiPage(home, rules, body.path, body.title);
+      await recordWikiEvent(sql, 'wiki.created', { kind: 'page' }).catch(onError);
+      return { status: 201, body: created };
+    }),
+    route('POST', '/api/wiki/move-now', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['kind', 'from', 'to', 'base']);
+      if (typeof body.from !== 'string' || typeof body.to !== 'string') throw new HttpError(400, 'from and to are required');
+      let moved;
+      if (body.kind === 'page') {
+        if (typeof body.base !== 'string') throw new HttpError(400, 'base is required');
+        moved = moveWikiPage(home, rules, body.from, body.to, body.base);
+      } else if (body.kind === 'folder' && body.base === undefined) {
+        moved = moveWikiFolder(home, rules, body.from, body.to);
+      } else throw new HttpError(400, 'kind must be page or folder');
+      await recordWikiEvent(sql, 'wiki.moved', { kind: body.kind, pages: moved.pages, relinked: moved.relinked }).catch(onError);
+      return { body: { path: moved.path } };
     }),
     // «Elimina» a page, after the confirmation in the chat: with its old versions and the proposals waiting on it.
     route('POST', '/api/wiki/delete', async (request) => {

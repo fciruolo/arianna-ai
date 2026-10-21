@@ -302,7 +302,39 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.deepEqual(empty.body.folders, []);
   assert.equal(existsSync(join(serverHome, 'kb/wiki/php')), false);
 
+  // The user writes the wiki: a folder, a page, «Modifica», «Sposta o rinomina» of a page and a folder, at once.
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'folder', path: 'cucina' })).status, 201);
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'folder', path: 'cucina' })).status, 409);
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'folder', path: 'cucina', title: 'x' })).status, 400);
+  const created = await send('POST', '/api/wiki/create', { kind: 'page', path: 'cucina/pane', title: 'Pane finto' });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.path, 'cucina/pane');
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'page', path: 'pane', title: 'Senza cartella' })).status, 400);
+  const edit = await send('POST', '/api/wiki/edit', { path: 'cucina/pane', base: created.body.version, title: 'Pane di casa', body: `## In breve\n\nCon [[inbox/${NAME.replace(/\.md$/, '')}]].\n` });
+  assert.equal(edit.status, 200);
+  assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/pane', base: created.body.version, title: 'Ancora', body: 'testo' })).status, 409);
+  const bad = await send('POST', '/api/wiki/edit', { path: 'cucina/pane', base: edit.body.version, title: 'Pane', body: 'riga\nVedi https://esempio.invalid' });
+  assert.equal(bad.status, 400);
+  assert.match(String(bad.body.error), /line 2: link/);
+  assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/pane', base: edit.body.version, title: 'Pane', body: 'x', extra: true })).status, 400);
+  const movedPage = await send('POST', '/api/wiki/move-now', { kind: 'page', from: 'cucina/pane', to: 'forno/pane', base: edit.body.version });
+  assert.equal(movedPage.status, 200);
+  assert.equal(movedPage.body.path, 'forno/pane');
+  assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'page', from: 'forno/pane', to: 'forno/altro' })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'folder', from: 'forno', to: 'cucina/forno' })).status, 200);
+  assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'folder', from: 'cucina', to: 'a/b/c' })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/move-now', { kind: 'altro', from: 'cucina', to: 'dolci' })).status, 400);
+  const after = await send('GET', '/api/wiki');
+  assert.deepEqual((after.body.pages as { path: string }[]).map((page) => page.path), ['cucina/forno/pane']);
+  assert.equal(((await send('GET', '/api/wiki/page?path=cucina/forno/pane')).body.page as { title: string }).title, 'Pane di casa');
+
   const events = await sql<{ kind: string; payload: Record<string, unknown> }[]>`SELECT kind, payload FROM events WHERE kind LIKE 'wiki.%' ORDER BY id`;
+  assert.ok(events.some((event) => event.kind === 'wiki.edited'));
+  assert.ok(events.some((event) => event.kind === 'wiki.created' && event.payload.kind === 'folder'));
+  assert.ok(events.some((event) => event.kind === 'wiki.created' && event.payload.kind === 'page'));
+  assert.ok(events.some((event) => event.kind === 'wiki.moved' && event.payload.kind === 'page' && event.payload.pages === 1));
+  assert.ok(events.some((event) => event.kind === 'wiki.moved' && event.payload.kind === 'folder'));
+  assert.equal((await sql`SELECT 1 FROM events WHERE kind LIKE 'wiki.%' AND (payload::text LIKE '%pane%' OR payload::text LIKE '%cucina%' OR payload::text LIKE '%forno%')`).length, 0);
   assert.ok(events.some((event) => event.kind === 'wiki.deleted' && typeof event.payload.versions === 'number' && typeof event.payload.proposals === 'number'));
   assert.ok(events.some((event) => event.kind === 'wiki.approved' && event.payload.corrected === true));
   assert.ok(events.some((event) => event.kind === 'wiki.discarded'));

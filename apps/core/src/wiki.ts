@@ -554,19 +554,32 @@ function holdsPages(tree: WikiTree, folder: string): boolean {
  * `summaries` given for a folder); a folder without pages loses its index and
  * goes when it is empty. Gives back the folders whose index is new.
  */
-export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map()): string[] {
+export function rebuildIndexes(home: string, rules: LabelRules, summaries: ReadonlyMap<string, string> = new Map(), prune: readonly string[] = []): string[] {
   let tree = wikiTree(home);
-  // Empty folders first, deepest first: a folder with no page anywhere below it goes with its index.
-  for (const folder of [...tree.folders].sort((a, b) => b.split('/').length - a.split('/').length)) {
-    if (holdsPages(tree, folder)) continue;
+  // The folders an operation emptied (`prune` and the folders above them), deepest first: one with no page
+  // below it and nothing in it but its index goes with the index. A folder the user made, empty, stays.
+  const emptied = new Set<string>();
+  for (const folder of prune) {
+    const segments = folder.split('/').filter((segment) => segment !== '');
+    for (let size = segments.length; size >= 1; size -= 1) emptied.add(segments.slice(0, size).join('/'));
+  }
+  for (const folder of [...emptied].sort((a, b) => b.split('/').length - a.split('/').length)) {
+    if (!isWikiFolderPath(folder) || holdsPages(tree, folder)) continue;
     const segments = folder.split('/');
-    removeWikiFile(home, [...segments, INDEX_NAME]);
     const dir = wikiFolder(home, segments, false);
     if (dir === undefined) continue;
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    if (names.some((name) => name !== INDEX_NAME)) continue;
+    removeWikiFile(home, [...segments, INDEX_NAME]);
     try {
       rmdirSync(dir);
     } catch {
-      // Not empty (a file of the user, an old index of a moved folder): left as it is.
+      // Not empty after all: left as it is.
     }
   }
   // Indexes list only what is up to L2: a folder or page a rule raises is neither named nor indexed.
@@ -1242,7 +1255,24 @@ function checkMove(home: string, rules: LabelRules, from: string, to: string): v
 function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, path: string | undefined): Approved {
   const to = path ?? proposal.to ?? '';
   if (proposalState(home, proposal) !== 'fresh') throw new WikiError('expired', 'the folder changed after the proposal: ask for a new one');
-  checkMove(home, rules, proposal.path, to);
+  const moved = moveFolderNow(home, rules, proposal.path, to);
+  dropProposal(home, proposal.id);
+  return { kind: 'move', path: to, corrected: to !== proposal.to, points: 0, relinked: moved.relinked, folders: [parentFolder(to), to].filter((folder, index, all) => all.indexOf(folder) === index) };
+}
+
+export interface Moved {
+  /** Where the page or folder is now. */
+  path: string;
+  /** Pages moved (one for a page). */
+  pages: number;
+  /** Pages of kb/ whose links followed. */
+  relinked: number;
+}
+
+/** Moves a folder of the wiki with its pages, their old versions and the links to them; the indexes follow. */
+function moveFolderNow(home: string, rules: LabelRules, from: string, to: string): Moved {
+  checkMove(home, rules, from, to);
+  const proposal = { path: from };
   const kb = kbReal(home);
   const fromDir = wikiFolder(home, proposal.path.split('/'), false);
   const parent = wikiFolder(home, to.split('/').slice(0, -1), true);
@@ -1278,11 +1308,170 @@ function approveMove(home: string, rules: LabelRules, proposal: StoredProposal, 
     const ids = [...after.filter((id) => id !== toId), fromId];
     relinked += relinkPages(home, rules, fromId, toId, ids, 'L2').pages;
   }
-  dropProposal(home, proposal.id);
   // The indexes of the moved folder still name the old paths: composed again from the tree.
-  rebuildIndexes(home, rules);
-  return { kind: 'move', path: to, corrected: to !== proposal.to, points: 0, relinked, folders: [parentFolder(to), to].filter((folder, index, all) => all.indexOf(folder) === index) };
+  rebuildIndexes(home, rules, new Map(), [parentFolder(from)]);
+  return { path: to, pages: moves.length, relinked };
 }
+
+/** «Sposta o rinomina» a folder by the user, at once (D-280): no proposal; a move proposal waiting on it expires. */
+export function moveWikiFolder(home: string, rules: LabelRules, from: string, to: string): Moved {
+  if (!isWikiFolderPath(from) || wikiFolder(home, from.split('/'), false) === undefined) throw new WikiError('not-found', 'folder not found');
+  return moveFolderNow(home, rules, from, to);
+}
+
+/**
+ * «Sposta o rinomina» a page by the user, at once (D-280): the page as it
+ * was shown (`base`), its old versions and the links to it follow; never over
+ * a page or a folder, never deeper than three levels, never from or to a
+ * place a rule raises above L2. An update proposal waiting on it expires.
+ */
+export function moveWikiPage(home: string, rules: LabelRules, from: string, to: string, base: string): Moved {
+  if (!isWikiPagePath(from) || !wikiPathUpToL2(rules, `${from}.md`)) throw new WikiError('not-found', 'page not found');
+  if (!isWikiPagePath(to)) throw new WikiError('invalid', 'the path must be topic/article or topic/subtopic/article, lowercase words joined by "-"');
+  if (!wikiPathUpToL2(rules, `${to}.md`) || !wikiPathUpToL2(rules, parentFolder(to))) throw new WikiError('not-found', 'folder not found');
+  if (!SHA.test(base)) throw new WikiError('invalid', 'base is required');
+  const current = readWikiPageFile(home, from);
+  if (current === undefined) throw new WikiError('not-found', 'page not found');
+  if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
+  if (to === from) return { path: to, pages: 0, relinked: 0 };
+  if (readWikiPageFile(home, to) !== undefined || wikiFolder(home, to.split('/'), false) !== undefined) throw new WikiError('exists', 'a page or a folder with that path exists already');
+  const kb = kbReal(home);
+  if (kb === undefined) throw new WikiError('unavailable', 'cannot move the page');
+  writeNewFile(home, pageSegments(to), current.raw);
+  if (!removeWikiFile(home, pageSegments(from))) {
+    removeWikiFile(home, pageSegments(to));
+    throw new WikiError('unavailable', 'cannot move the page');
+  }
+  const old = wikiFolder(home, historySegments(from), false);
+  const history = wikiFolder(home, [HISTORY_DIR], false);
+  if (old !== undefined && history !== undefined) {
+    const next = join(history, to.split('/').join('__'));
+    if (lstatSync(next, { throwIfNoEntry: false }) === undefined) {
+      try {
+        renameSync(old, next);
+      } catch {
+        // Left where it is: only not offered.
+      }
+    }
+  }
+  const fromId = `${WIKI_ID}/${from}.md`;
+  const toId = `${WIKI_ID}/${to}.md`;
+  const ids = [...listPageIds(kb).filter((id) => id !== toId), fromId];
+  const relinked = relinkPages(home, rules, fromId, toId, ids, 'L2').pages;
+  rebuildIndexes(home, rules, new Map(), [parentFolder(from)]);
+  return { path: to, pages: 1, relinked };
+}
+
+/** «Nuova cartella» by the user: an empty folder stays until a page goes in it or the user removes it. */
+export function createWikiFolder(home: string, rules: LabelRules, path: string): void {
+  if (!isWikiFolderPath(path)) throw new WikiError('invalid', 'the new place must be topic or topic/subtopic, lowercase words joined by "-"');
+  if (!wikiPathUpToL2(rules, path)) throw new WikiError('not-found', 'folder not found');
+  if (wikiFolder(home, path.split('/'), false) !== undefined || readWikiPageFile(home, path) !== undefined) throw new WikiError('exists', 'a folder with that name exists already');
+  if (path.includes('/') && readWikiPageFile(home, parentFolder(path)) !== undefined) throw new WikiError('exists', 'a page with that path exists already');
+  if (wikiFolder(home, path.split('/'), true) === undefined) throw new WikiError('unavailable', 'cannot write in the wiki');
+}
+
+// ---------------------------------------------------------------------------
+// Pages written by the user (D-280): the header is the code's, the body is checked
+
+/** Longest body the user may save, in characters. */
+export const MAX_USER_BODY = 40_000;
+
+/** The body a new page starts with: the sections of the code, to fill. */
+export const NEW_PAGE_BODY = ['## In breve', '', 'Scrivi qui di cosa parla la pagina.', '', '## Punti', '', '- Un punto. Per citare una nota scrivi il suo percorso fra doppie parentesi quadre, come nelle pagine proposte.', ''].join('\n');
+
+/**
+ * Whether a target of a wikilink the user wrote is one of theirs: a note of
+ * kb/ outside the wiki up to L2 that exists, or a page or index of the wiki
+ * up to L2 that exists.
+ */
+function userLinkOk(home: string, rules: LabelRules, target: string): boolean {
+  if (target.length === 0 || target.length > 300) return false;
+  if (target.toLowerCase().startsWith(`${WIKI_ID}/`)) {
+    const path = target.slice(WIKI_ID.length + 1).replace(/\.md$/, '');
+    try {
+      readWikiView(home, rules, path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const id = target.endsWith('.md') ? target : `${target}.md`;
+  if (!isWikiSource(id)) return false;
+  try {
+    readKnowledgePage(home, rules, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The title and body the user wrote, checked as the approval checks a page
+ * (D-280): citations `[[…]]` only to their notes and pages up to L2 that
+ * exist, no link, image, address or HTML that a renderer would load or
+ * follow, no header of their own. Errors name the line, never its text.
+ */
+export function checkUserPage(home: string, rules: LabelRules, title: string, body: string): { title: string; body: string } {
+  const cleanTitle = title.replace(/\s+/g, ' ').trim();
+  if (cleanTitle === '' || cleanTitle.length > MAX_WIKI_TITLE || /[<>[\]|#]/.test(cleanTitle)) throw new WikiError('invalid', 'title');
+  const text = body.replace(/\r\n?/g, '\n');
+  if (text.length > MAX_USER_BODY) throw new WikiError('invalid', 'too-long');
+  const lines = text.split('\n');
+  if ((lines.find((line) => line.trim() !== '') ?? '').trim() === '---') throw new WikiError('invalid', 'line 1: header');
+  lines.forEach((line, index) => {
+    if (line.includes('\0')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    if (line.includes('![[')) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+    const rest = line.replace(/\[\[([^[\]\n]{1,400})\]\]/g, (_match, inner: string) => {
+      const target = (inner.split('|')[0] ?? '').split('#')[0]?.trim() ?? '';
+      if (!userLinkOk(home, rules, target)) throw new WikiError('invalid', `line ${String(index + 1)}: citation`);
+      return ' ';
+    });
+    if (/\[\[|\]\]|<|!\[|\]\(|:\/\/|\bwww\.|\bmailto:|\bjavascript:|\bdata:/i.test(rest)) throw new WikiError('invalid', `line ${String(index + 1)}: link`);
+  });
+  return { title: cleanTitle, body: `${text.replace(/\s+$/, '')}\n` };
+}
+
+/** A page as the user wrote it: the header of the code (always L2), then their body. */
+function composeUserPage(title: string, body: string, now: Date): string {
+  const header = ['---', 'label: L2', 'kind: wiki', `title: ${JSON.stringify(title)}`, `updated_at: ${localTimestamp(now)}`, 'edited_by: user', '---'].join('\n');
+  return `${header}\n\n${body}`;
+}
+
+/**
+ * «Modifica» by the user, saved at once (D-280): only over the page as it was
+ * shown (`base`); the version before is kept for «Ripristina». An update
+ * proposal waiting on the page expires (it was made for the old text).
+ */
+export function editWikiPage(home: string, rules: LabelRules, path: string, base: string, title: string, body: string, now = new Date()): { version: string } {
+  if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
+  if (!SHA.test(base)) throw new WikiError('invalid', 'base is required');
+  const current = readWikiPageFile(home, path);
+  if (current === undefined) throw new WikiError('not-found', 'page not found');
+  if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
+  const checked = checkUserPage(home, rules, title, body);
+  const content = composeUserPage(checked.title, checked.body, now);
+  keepVersion(home, path, current.raw, now);
+  replaceFile(home, pageSegments(path), content, current.version);
+  rebuildIndexes(home, rules);
+  return { version: sha256(content) };
+}
+
+/** «Nuova pagina» by the user: never over a page or a folder; the folders above it are made. */
+export function createUserWikiPage(home: string, rules: LabelRules, path: string, title: string, body: string = NEW_PAGE_BODY, now = new Date()): { path: string; version: string } {
+  if (!isWikiPagePath(path)) throw new WikiError('invalid', 'the path must be topic/article or topic/subtopic/article, lowercase words joined by "-"');
+  if (!wikiPathUpToL2(rules, `${path}.md`) || !wikiPathUpToL2(rules, parentFolder(path))) throw new WikiError('not-found', 'folder not found');
+  if (readWikiPageFile(home, path) !== undefined || wikiFolder(home, path.split('/'), false) !== undefined) throw new WikiError('exists', 'a page or a folder with that path exists already');
+  const parent = parentFolder(path);
+  if (parent.includes('/') && readWikiPageFile(home, parent) !== undefined) throw new WikiError('exists', 'a page with that path exists already');
+  const checked = checkUserPage(home, rules, title, body);
+  const content = composeUserPage(checked.title, checked.body, now);
+  writeNewFile(home, pageSegments(path), content);
+  rebuildIndexes(home, rules);
+  return { path, version: sha256(content) };
+}
+
+
 
 export interface Deleted {
   /** Old versions removed with the page. */
@@ -1316,7 +1505,7 @@ export function deleteWikiPage(home: string, rules: LabelRules, path: string, ba
   }
   const waiting = allProposals(home).filter((proposal) => proposal.kind !== 'move' && proposal.path === path);
   for (const proposal of waiting) dropProposal(home, proposal.id);
-  rebuildIndexes(home, rules);
+  rebuildIndexes(home, rules, new Map(), [parentFolder(path)]);
   return { versions: versions.length, proposals: waiting.length };
 }
 
@@ -1376,6 +1565,6 @@ export function readWikiView(home: string, rules: LabelRules, path: string): Wik
 // ---------------------------------------------------------------------------
 // Events: counts and codes only, never a path, a title or a folder
 
-export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed' | 'wiki.deleted', payload: Record<string, string | number | boolean>): Promise<void> {
+export async function recordWikiEvent(sql: Queryable, kind: 'wiki.approved' | 'wiki.discarded' | 'wiki.restored' | 'wiki.move_proposed' | 'wiki.deleted' | 'wiki.edited' | 'wiki.created' | 'wiki.moved', payload: Record<string, string | number | boolean>): Promise<void> {
   await appendEvent(sql, { kind, label: 'L0', payload });
 }
