@@ -27,6 +27,8 @@ const props = defineProps<{
   status: StatusSnapshot | null;
   /** Open questions of "Sviluppo di Arianna" without an answer (D-120): a dot on "Impostazioni". */
   devPending: number;
+  /** A stable release of oMLX newer than the one installed (D-265): a plain dot on "Impostazioni". */
+  omlxUpdate?: string | null;
   /** The secretary's conversation is the one open (D-144): its button is marked. */
   secretaryOpen: boolean;
   /** «Affianca» (D-234): the conversation beside the open one, and on which ones it is offered. */
@@ -192,7 +194,7 @@ function itemClass(on: boolean): string {
           <span class="transition-transform" :class="isOpen(group.id, openGroups, current) ? 'rotate-90' : ''"><Icon name="expand" :size="12" /></span>
           {{ group.title }}
           <!-- Questions of "Sviluppo di Arianna" still visible with "Sistema" folded. -->
-          <span v-if="group.id === 'system' && devDot !== null && !isOpen(group.id, openGroups, current)" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? undefined" :aria-label="devLabel ?? undefined" />
+          <span v-if="group.id === 'system' && (devDot !== null || omlxUpdate) && !isOpen(group.id, openGroups, current)" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? omlxUpdate ?? undefined" :aria-label="devLabel ?? omlxUpdate ?? undefined" />
         </button>
         <template v-if="isOpen(group.id, openGroups, current)">
           <button
@@ -214,6 +216,8 @@ function itemClass(on: boolean): string {
               :title="devLabel ?? undefined"
               :aria-label="devLabel ?? undefined"
             >{{ devDot }}</span>
+            <!-- A newer stable release of oMLX (D-265), when no question already marks the entry. -->
+            <span v-else-if="area === 'settings' && omlxUpdate" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="omlxUpdate" :aria-label="omlxUpdate" />
           </button>
         </template>
       </div>

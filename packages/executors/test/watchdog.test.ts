@@ -87,6 +87,48 @@ describe('Watchdog', { timeout: 60_000 }, () => {
     assert.equal((await model.chat({ model: 'local-large', messages: [{ role: 'user', content: 'hi' }] })).text, 'hello');
   });
 
+  it('runs beforeLaunch before the first launch and before each restart (D-263)', async () => {
+    const port = await freePort();
+    let calls = 0;
+    const { watchdog, events } = await supervise(port, {
+      beforeLaunch: () => {
+        calls += 1;
+        return undefined;
+      },
+    });
+    assert.equal(calls, 1);
+    process.kill(pidOf(events), 'SIGKILL');
+    await restarted(watchdog);
+    assert.equal(calls, 2);
+  });
+
+  it('a refusal of beforeLaunch, returned or thrown, starts nothing: event refused with the code, state failed (D-263)', async () => {
+    const port = await freePort();
+    const { watchdog, events } = await supervise(port, { beforeLaunch: () => 'settings-unreadable' });
+    assert.equal(watchdog.state, 'failed');
+    assert.ok(!events.some((event) => event.type === 'spawn'));
+    assert.ok(events.some((event) => event.type === 'refused' && event.reason === 'settings-unreadable'));
+    const thrown = await supervise(await freePort(), {
+      beforeLaunch: () => {
+        throw new Error('/secret/path');
+      },
+    });
+    assert.equal(thrown.watchdog.state, 'failed');
+    assert.ok(thrown.events.some((event) => event.type === 'refused' && event.reason === 'before-launch-error'));
+    assert.ok(!JSON.stringify(thrown.events).includes('secret'));
+  });
+
+  it('a refusal at a restart stops the supervision: no server left running (D-263)', async () => {
+    const port = await freePort();
+    let refuse = false;
+    const { watchdog, events } = await supervise(port, { beforeLaunch: () => (refuse ? 'settings-unwritable' : undefined) });
+    refuse = true;
+    process.kill(pidOf(events), 'SIGKILL');
+    await watchdog.waitForState(['failed']);
+    assert.equal(events.filter((event) => event.type === 'spawn').length, 1);
+    assert.ok(events.some((event) => event.type === 'refused' && event.reason === 'settings-unwritable'));
+  });
+
   it('restarts a server that stops answering', async () => {
     const port = await freePort();
     const { watchdog, events } = await supervise(port);

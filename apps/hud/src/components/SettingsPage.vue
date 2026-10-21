@@ -20,6 +20,7 @@ import {
   type UploadedCharacter,
 } from '../lib/api.ts';
 import { MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
+import type { OmlxReleaseView } from '../lib/omlx-release.ts';
 import { personasBody, personasForm, personasProblem, type PersonaForm } from '../lib/persona.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
@@ -139,8 +140,9 @@ import VoiceListen from './VoiceListen.vue';
  * `directAgents`: the agents one can talk with directly (D-111d), for "Apri una chat" in Agenti (D-133).
  * `theme`: the theme of this browser (D-158), the same choice as the button of the top bar.
  * `callBusy`: a call is starting, ringing or on (D-192): «Ascolta» waits for it to end.
+ * `omlxUpdate`: a newer stable release of oMLX (D-265), a dot on «Modelli».
  */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[]; theme?: Theme; callBusy?: boolean }>();
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; omlxUpdate?: string | null; directAgents?: DirectAgent[]; theme?: Theme; callBusy?: boolean }>();
 const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /**
@@ -160,6 +162,8 @@ const emit = defineEmits<{
   dirty: [dirty: boolean];
   theme: [theme: Theme];
   devPending: [count: number];
+  /** The card of oMLX read its state (D-265): the dot on «Impostazioni» follows it. */
+  omlx: [view: OmlxReleaseView];
   knowledge: [];
   open: [id: string];
 }>();
@@ -913,6 +917,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
             :title="devLabel ?? undefined"
             :aria-label="devLabel ?? undefined"
           >{{ devDot }}</span>
+          <!-- A stable release of oMLX newer than the one installed (D-265). -->
+          <span v-if="item.id === 'models' && omlxUpdate" role="img" class="size-2 rounded-full bg-accent" :title="omlxUpdate" :aria-label="omlxUpdate" />
           <span v-if="dirty(item)" role="img" class="size-[7px] rounded-full bg-warn" title="Modifiche non salvate" aria-label="modifiche non salvate" />
           <span v-if="item.privacy" role="img" class="inline-flex text-warn" :title="PRIVACY_HINT" :aria-label="PRIVACY_HINT"><Icon name="private" :size="14" /></span>
         </a>
@@ -1076,6 +1082,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 @section="openSection"
                 @catalog="reload"
                 @chat-trial="emit('chatTrial', $event)"
+                @omlx="emit('omlx', $event)"
               />
 
               <!-- Agenti (D-116, D-133): the cards on the left, the chosen agent in tabs; its own save bar -->

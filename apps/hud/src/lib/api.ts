@@ -11,6 +11,7 @@ import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } fro
 import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
 import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
+import type { OmlxReleaseView } from './omlx-release.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { ClaudeSkillsStatus } from './claude-skills.ts';
@@ -743,6 +744,21 @@ export async function loadComparisonCases(ids: readonly string[]): Promise<CaseC
 /** Every model, local and cloud, for Impostazioni → Modelli (I-3); read only and L0. */
 export async function loadModelsOverview(): Promise<ModelsOverview> {
   return call<ModelsOverview>('GET', '/api/models/overview');
+}
+
+/** «Server dei modelli (oMLX)» (D-265): the version installed and the newest release, all L0. */
+export async function loadOmlxRelease(): Promise<OmlxReleaseView> {
+  return call<OmlxReleaseView>('GET', '/api/models/omlx-release');
+}
+
+/** «Controlla ora»: the version and GitHub, in the background; the card reads again while `checking`. */
+export async function checkOmlxRelease(): Promise<void> {
+  await call('POST', '/api/models/omlx-release/check', {});
+}
+
+/** Reads the version installed again (`--version` of the oMLX endpoint), without asking GitHub. */
+export async function readOmlxVersion(): Promise<OmlxReleaseView> {
+  return call<OmlxReleaseView>('POST', '/api/models/omlx-release/version', {});
 }
 
 /** Starts a download or verification of a local model in the background (I-3, M4); the progress comes with the overview. */

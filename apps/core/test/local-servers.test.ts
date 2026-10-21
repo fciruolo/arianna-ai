@@ -3,10 +3,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { after, afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -355,6 +355,48 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     await servers.sync([{ ...endpoint('omlx', port), command: ['arianna-no-such-binary'] }]);
     assert.equal(servers.status()[0]?.state, 'failed');
     assert.ok(events.some((event) => event.type === 'spawn-error' && event.code === 'ENOENT'));
+  });
+
+  it('turns the Hugging Face cache of oMLX off in <base-path>/settings.json before starting it, and only for oMLX (D-263)', async () => {
+    const port = await freePort();
+    create();
+    const base = join(tmpRoot, 'omlx-base');
+    const other = join(tmpRoot, 'other-base');
+    await servers.sync([
+      { ...endpoint('omlx', port), command: ['/arianna-no-such-dir/omlx', 'serve', '--base-path', relative(HOME, base)] },
+      { ...endpoint('other', await freePort()), command: ['arianna-no-such-binary', 'serve', '--base-path', relative(HOME, other)] },
+    ]);
+    assert.deepEqual(JSON.parse(readFileSync(join(base, 'settings.json'), 'utf8')), { huggingface: { hf_cache_enabled: false } });
+    assert.equal(existsSync(other), false);
+  });
+
+  it('does not start oMLX when its settings.json cannot be read or written: failed, with a code and no path (D-263)', { skip: process.getuid?.() === 0 }, async () => {
+    create();
+    const broken = join(tmpRoot, 'broken-base');
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, 'settings.json'), '{not json');
+    const locked = join(tmpRoot, 'locked-base');
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o500);
+    try {
+      await servers.sync([
+        { ...endpoint('broken', await freePort()), command: ['/arianna-no-such-dir/omlx', 'serve', '--base-path', relative(HOME, broken)] },
+        { ...endpoint('locked', await freePort()), command: ['/arianna-no-such-dir/omlx', 'serve', '--base-path', relative(HOME, locked)] },
+      ]);
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+    assert.deepEqual(
+      servers.status().map(({ id, state, refused }) => ({ id, state, refused })),
+      [
+        { id: 'broken', state: 'failed', refused: 'omlx-settings-unreadable' },
+        { id: 'locked', state: 'failed', refused: 'omlx-settings-unwritable' },
+      ],
+    );
+    assert.ok(!events.some((event) => event.type === 'spawn' || event.type === 'spawn-error'));
+    assert.ok(events.some((event) => event.type === 'refused' && event.endpoint === 'broken' && loggedEvent(event)));
+    assert.ok(!JSON.stringify(events).includes(tmpRoot));
+    assert.equal(readFileSync(join(broken, 'settings.json'), 'utf8'), '{not json');
   });
 
   it('writes data/<id>.pid while its server runs, and removes it when the core stops it', async () => {

@@ -8,6 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { arch, platform, totalmem } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { flagValue, omlxBaseInsideData, plainFileOrMissing, startsOmlx } from './omlx-settings.ts';
 import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, voicePaths, type AriannaConfig, type ModelCatalog, type Project } from '@arianna/config';
 
 import { BROWSER_IMAGE_MAX_AGE_DAYS, browserImageAgeDays, readBrowserImageLock } from './browser/image.ts';
@@ -121,12 +122,6 @@ function logLevelOf(command: readonly string[]): string | null | undefined {
   return level;
 }
 
-/** Whether a command starts oMLX: `omlx serve`, by path or through a launcher (`uvx omlx serve`). */
-function startsOmlx(command: readonly string[]): boolean {
-  const serve = command.indexOf('serve');
-  return serve > 0 && command.slice(0, serve).some((arg) => /(^|\/)omlx$/.test(arg));
-}
-
 /**
  * The log level of every local oMLX server (D-136, stage 0): only the
  * levels that keep the prompts out of data/<id>.log pass. Without
@@ -146,59 +141,112 @@ export function omlxLogChecks(endpoints: readonly { id: string; command?: readon
     });
 }
 
-/** The value of `flag` in a command, as logLevelOf reads `--log-level`. */
-function flagValue(command: readonly string[], flag: string): string | null | undefined {
-  let value: string | null | undefined;
-  for (const [index, arg] of command.entries()) {
-    if (arg === flag) {
-      const next = command[index + 1];
-      value = next === undefined || next.startsWith('-') ? null : next;
-    } else if (arg.startsWith(`${flag}=`)) {
-      const given = arg.slice(flag.length + 1);
-      value = given === '' ? null : given;
-    }
-  }
-  return value;
-}
-
 /**
  * Flags of `omlx serve` that the core must not meet (D-221): `--api-key`
  * shows the key to `ps` and replaces the one of data/<id>.key, so the core's
- * requests would be refused; `--mcp-config` lets oMLX start MCP servers.
+ * requests would be refused; `--mcp-config` lets oMLX start MCP servers; the
+ * proxy flags replace the dead proxy the core gives it, and oMLX saves them
+ * in its settings.json; `--hf-cache` turns the Hugging Face cache of the home
+ * folder back on (D-263).
  */
-const OMLX_REFUSED_FLAGS = ['--api-key', '--mcp-config'];
+const OMLX_REFUSED_FLAGS = ['--api-key', '--mcp-config', '--http-proxy', '--https-proxy', '--no-proxy', '--hf-cache'];
 
-/** What in oMLX's settings.json would open it again or send its traffic elsewhere (D-221). */
-function omlxSettingsProblems(file: string): string[] {
-  let data: unknown;
+/** A JSON file as an object; null when it cannot be read or is not an object. */
+function readJsonObject(file: string): Record<string, unknown> | null {
   try {
-    data = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+    const data = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+    return typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
   } catch {
-    return ['settings.json cannot be read'];
+    return null;
   }
-  const section = (name: string): Record<string, unknown> => {
-    const value = (data as Record<string, unknown> | null)?.[name];
-    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-  };
-  const set = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && value !== false;
+}
+
+/** Whether a setting is on: anything but missing, null, empty or false (default-deny for odd values). */
+function isSet(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '' && value !== false;
+}
+
+/**
+ * What in the settings of oMLX at `base` would open it again or send its
+ * traffic elsewhere (D-221): settings.json and model_settings.json, key names
+ * of 0.6.3rc2 and 0.7.1. «Disable all authentication» of 0.7 is still
+ * `auth.skip_api_key_verification`; «Allow inference without API key» is
+ * `auth.allow_unauthenticated_inference`, which opens /v1 (chat, stored
+ * responses, web search and fetch, MCP tools) on 127.0.0.1 too. A Splash
+ * launcher (`integrations.splash_path`) or a model served by an external
+ * engine (`models.<id>.external_engine`) hands the prompts to another
+ * program, whose code was not read. A missing file passes: oMLX never wrote it.
+ */
+function omlxSettingsProblems(base: string): string[] {
   const problems: string[] = [];
-  if (section('auth').skip_api_key_verification === true) problems.push('auth.skip_api_key_verification');
-  // oMLX accepts every sub-key as well as the key: one made in its panel opens it to whoever holds it.
-  const subKeys = section('auth').sub_keys;
-  if (Array.isArray(subKeys) && subKeys.length > 0) problems.push('auth.sub_keys');
-  for (const key of ['http_proxy', 'https_proxy', 'no_proxy']) if (set(section('network')[key])) problems.push(`network.${key}`);
-  if (set(section('mcp').config_path)) problems.push('mcp.config_path');
-  if (section('server').distributed_inference_enabled === true) problems.push('server.distributed_inference_enabled');
+  const settingsFile = join(base, 'settings.json');
+  const settingsKind = plainFileOrMissing(settingsFile);
+  // A link could point anywhere: never read through it (D-263).
+  if (settingsKind === 'other') return ['settings.json is a link or not a regular file'];
+  if (settingsKind === 'file') {
+    const data = readJsonObject(settingsFile);
+    if (data === null) return ['settings.json cannot be read'];
+    const section = (name: string): Record<string, unknown> => {
+      const value = data[name];
+      return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+    };
+    if (isSet(section('auth').skip_api_key_verification)) problems.push('auth.skip_api_key_verification');
+    if (isSet(section('auth').allow_unauthenticated_inference)) problems.push('auth.allow_unauthenticated_inference');
+    // oMLX accepts every sub-key as well as the key: one made in its panel opens it to whoever holds it.
+    const subKeys = section('auth').sub_keys;
+    if (Array.isArray(subKeys) && subKeys.length > 0) problems.push('auth.sub_keys');
+    for (const key of ['http_proxy', 'https_proxy', 'no_proxy']) if (isSet(section('network')[key])) problems.push(`network.${key}`);
+    if (isSet(section('mcp').config_path)) problems.push('mcp.config_path');
+    if (isSet(section('server').distributed_inference_enabled)) problems.push('server.distributed_inference_enabled');
+    if (isSet(section('integrations').splash_path)) problems.push('integrations.splash_path');
+    // On by default in oMLX: models of the Hugging Face cache in the home folder, outside data/ (D-263).
+    if (section('huggingface').hf_cache_enabled !== false) problems.push('huggingface.hf_cache_enabled');
+  }
+  const modelsFile = join(base, 'model_settings.json');
+  const modelsKind = plainFileOrMissing(modelsFile);
+  if (modelsKind === 'other') return [...problems, 'model_settings.json is a link or not a regular file'];
+  if (modelsKind === 'file') {
+    const data = readJsonObject(modelsFile);
+    if (data === null) return [...problems, 'model_settings.json cannot be read'];
+    const models = typeof data.models === 'object' && data.models !== null ? Object.values(data.models as Record<string, unknown>) : [];
+    const external = models.filter((model) => typeof model === 'object' && model !== null && isSet((model as Record<string, unknown>).external_engine)).length;
+    // How many, not which: the detail names no model.
+    if (external > 0) problems.push(`external_engine of ${String(external)} model${external === 1 ? '' : 's'} in model_settings.json`);
+  }
   return problems;
+}
+
+/** How deep countGguf looks: model folders hold a model per folder, sometimes one level more. */
+const GGUF_DEPTH = 4;
+
+/**
+ * The GGUF files under `root` (oMLX 0.7 serves every one through Splash,
+ * even with no Splash setting, finding the launcher in the Homebrew folders
+ * by itself), by name only: their content is never read. A missing folder
+ * counts none.
+ */
+function countGguf(root: string, depth = 0): number {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.name.toLowerCase().endsWith('.gguf') && !entry.isDirectory()) count += 1;
+    else if (entry.isDirectory() && depth < GGUF_DEPTH) count += countGguf(join(root, entry.name), depth + 1);
+  }
+  return count;
 }
 
 /**
  * Where every local oMLX keeps its settings, and what they say (D-221): a
  * `--base-path` inside data/ (without it oMLX uses its home folder, which
  * another oMLX or its macOS app may share or redirect), no flag of
- * OMLX_REFUSED_FLAGS, and a settings.json there that does not skip the key,
- * set a proxy, start MCP servers or the cluster. A settings.json not written
- * yet (oMLX never started there) passes.
+ * OMLX_REFUSED_FLAGS, and settings there that do not skip the key, serve
+ * without it, set a proxy, start MCP servers, the cluster or an external
+ * engine. Settings not written yet (oMLX never started there) pass.
  */
 export function omlxSettingsChecks(home: string, data: string, endpoints: readonly { id: string; command?: readonly string[] }[]): DoctorCheck[] {
   return endpoints
@@ -209,28 +257,46 @@ export function omlxSettingsChecks(home: string, data: string, endpoints: readon
       const flags: DoctorCheck = {
         id: `local.${endpoint.id}.flags`,
         ok: refused.length === 0,
-        detail: refused.length === 0 ? 'no --api-key, no --mcp-config' : `remove ${refused.join(', ')}: the key comes from data/${endpoint.id}.key`,
+        detail:
+          refused.length === 0
+            ? 'no --api-key, --mcp-config, proxy or --hf-cache'
+            : `remove ${refused.join(', ')}: the key comes from data/${endpoint.id}.key, and oMLX needs no MCP servers, proxy or Hugging Face cache`,
       };
       const base = flagValue(command, '--base-path');
       const id = `local.${endpoint.id}.base-path`;
+      // oMLX reads --model-dir as a comma-separated list; without it, <base-path>/models.
+      const modelDir = flagValue(command, '--model-dir');
+      const modelDirs = typeof modelDir === 'string' ? modelDir.split(',').map((dir) => dir.trim()).filter((dir) => dir !== '') : [];
+      const ggufCheck = (basePath: string | undefined): DoctorCheck => {
+        const roots = [...modelDirs.map((dir) => resolve(home, dir)), ...(basePath === undefined ? [] : [join(basePath, 'gguf'), ...(modelDirs.length === 0 ? [join(basePath, 'models')] : [])])];
+        const count = roots.reduce((total, root) => total + countGguf(root), 0);
+        return {
+          id: `local.${endpoint.id}.gguf`,
+          ok: count === 0,
+          detail: count === 0 ? 'no GGUF file in the model folders' : `${String(count)} GGUF file${count === 1 ? '' : 's'} in the model folders or in gguf/ of --base-path: oMLX would serve ${count === 1 ? 'it' : 'them'} through Splash, a separate program; remove ${count === 1 ? 'it' : 'them'}`,
+        };
+      };
       if (base === undefined || base === null) {
-        return [flags, { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
+        return [flags, ggufCheck(undefined), { id, ok: false, detail: 'no --base-path: settings and logs of oMLX outside data/; add --base-path data/omlx' }];
       }
-      // Through links too: data/omlx pointing at the home folder of oMLX is not inside data/.
-      const path = existsSync(resolve(home, base)) ? realpathSync(resolve(home, base)) : resolve(home, base);
-      const inside = relative(existsSync(data) ? realpathSync(data) : resolve(data), path);
-      if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
-        return [flags, { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
+      const path = omlxBaseInsideData(home, data, command);
+      if (path === undefined) {
+        return [flags, ggufCheck(undefined), { id, ok: false, detail: `--base-path ${base} is not inside data/: use data/omlx` }];
       }
-      const settingsFile = join(path, 'settings.json');
-      const problems = existsSync(settingsFile) ? omlxSettingsProblems(settingsFile) : [];
+      const problems = omlxSettingsProblems(path);
       return [
         flags,
+        ggufCheck(path),
         { id, ok: true, detail: `--base-path ${base}` },
         {
           id: `local.${endpoint.id}.settings`,
           ok: problems.length === 0,
-          detail: problems.length === 0 ? 'settings.json without skipped key, proxy, MCP or cluster' : `settings.json sets ${problems.join(', ')}: reset in ${base}/settings.json`,
+          detail:
+            problems.length === 0
+              ? plainFileOrMissing(join(path, 'settings.json')) === 'file'
+                ? 'settings without skipped key, keyless inference, proxy, MCP, cluster or external engine, Hugging Face cache off'
+                : 'no settings.json yet: the core writes it, with the Hugging Face cache off, before it starts oMLX'
+              : `oMLX settings in ${base} set ${problems.join(', ')}: reset them${problems.includes('huggingface.hf_cache_enabled') ? ' (restarting oMLX from Arianna turns the Hugging Face cache off)' : ''}`,
         },
       ];
     });

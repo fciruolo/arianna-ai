@@ -18,6 +18,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Il secondo controllo dei dati personali non prende più un nome di sito per un'email (`https://www.comune.torino.it/` fermava il browser dopo «Apri»): un'«email» che è solo un nome di sito, senza nessuna forma di chiocciola vicino (@, %40 anche codificato due volte, &#64;, «chiocciola», « at »), non conta; le email, anche scritte così, e gli IP pubblici restano fermati (D-268, prova dell'utente).
 
+## [0.153.0] - 2026-10-21
+
+### Aggiunto
+
+- Impostazioni → Modelli ha la scheda «Server dei modelli (oMLX)»: versione installata (letta con `--version` dal comando dell'endpoint di oMLX), ultima release stabile di `jundot/omlx` su GitHub con le sue novità raggruppate dal modello locale e il link alla release, la pre-release più recente solo come informazione; controllo da solo una volta al giorno e con «Controlla ora» (esce solo il nome del progetto), pallino su Impostazioni e su Modelli quando c'è una versione stabile più nuova; nessun aggiornamento automatico: prima Claude rilegge il codice della release, poi installi tu il DMG a core fermo (D-265).
+
+## [0.152.0] - 2026-10-21
+
+### Sicurezza
+
+- Il doctor legge le impostazioni di oMLX 0.7.1 (D-221): rifiuta «Allow inference without API key» (`auth.allow_unauthenticated_inference`, che apre la chat anche sul Mac), Splash (`integrations.splash_path`, un modello con `external_engine` o un file GGUF nelle cartelle dei modelli o in `gguf/` della cartella di oMLX, che 0.7.1 farebbe leggere a Splash, un programma a parte che riceverebbe i testi), i flag `--http-proxy`, `--https-proxy` e `--no-proxy`, e controlla anche un comando che lancia `omlx-cli` dall'app per Mac o `python3 -m omlx.cli`.
+- Prima di avviare oMLX il core spegne la sua lettura dei modelli dalla cache di Hugging Face nella home (`huggingface.hf_cache_enabled: false` nel `settings.json` della sua cartella in `data/`, le altre impostazioni restano com'erano); il doctor rifiuta la cache accesa e il flag `--hf-cache` (D-263).
+
 ## [0.151.0] - 2026-10-20
 
 ### Aggiunto

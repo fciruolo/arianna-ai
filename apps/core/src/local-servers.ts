@@ -7,6 +7,7 @@ import type { LocalEndpointConfig } from '@arianna/config';
 import { authorization, ensureLocalKey, Watchdog, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
 import { cleanChildEnv } from './child-env.ts';
+import { ensureOmlxHfCacheOff } from './omlx-settings.ts';
 
 /**
  * The local inference servers (oMLX), started and watched by the core (D-071,
@@ -41,6 +42,8 @@ export interface LocalServerStatus {
   /** Already answering when its watchdog started: the core watches it but never stops it. */
   adopted: boolean;
   state: WatchdogState;
+  /** Why the core did not start it (state `failed`): a fixed code, never a path. */
+  refused?: string;
 }
 
 export interface LocalServersOptions {
@@ -93,6 +96,20 @@ export function localServerEnv(from: NodeJS.ProcessEnv): Record<string, string> 
   return cleanChildEnv(from, ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TMPDIR']);
 }
 
+/**
+ * Before every launch of a server, the first and each restart (D-263): the
+ * Hugging Face cache of oMLX off in its settings.json. Settings that cannot
+ * be read safely or written refuse the launch (state `failed`, a fixed code
+ * the settings page explains), never a path.
+ */
+export function hfCacheRefusal(home: string, dataDir: string, command: readonly string[]): string | undefined {
+  try {
+    return ensureOmlxHfCacheOff(home, dataDir, command) === 'unreadable' ? 'omlx-settings-unreadable' : undefined;
+  } catch {
+    return 'omlx-settings-unwritable';
+  }
+}
+
 /** The watchdog events that go in the event log: L0, ids, states, pids and codes only. */
 export function loggedEvent(event: LocalServerEvent): boolean {
   switch (event.type) {
@@ -103,6 +120,7 @@ export function loggedEvent(event: LocalServerEvent): boolean {
     case 'gave-up':
     case 'spawn-error':
     case 'error':
+    case 'refused':
       return true;
     case 'exit':
       return !event.expected;
@@ -183,6 +201,7 @@ interface Supervised {
   endpoint: Pick<LocalEndpointConfig, 'id' | 'url' | 'command'>;
   watchdog: Watchdog;
   adopted: boolean;
+  refused?: string;
 }
 
 /** What decides the process: the model names change without touching it. */
@@ -214,7 +233,11 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
   /** Keeps data/<id>.pid in step with the process the watchdog started. */
   function track(event: WatchdogEvent): void {
     const entry = supervised.get(event.endpoint);
-    if (entry !== undefined && (event.type === 'adopt' || event.type === 'spawn')) entry.adopted = event.type === 'adopt';
+    if (entry !== undefined && (event.type === 'adopt' || event.type === 'spawn')) {
+      entry.adopted = event.type === 'adopt';
+      delete entry.refused;
+    }
+    if (entry !== undefined && event.type === 'refused') entry.refused = event.reason;
     try {
       if (event.type === 'spawn') {
         const started = processStart(event.pid);
@@ -256,6 +279,7 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       cwd: options.home,
       env: key === undefined ? env : { ...env, OMLX_API_KEY: key },
       ...(key === undefined ? {} : { healthHeaders: authorization(key), refuseOpen: true }),
+      ...(endpoint.command === undefined ? {} : { beforeLaunch: () => hfCacheRefusal(options.home, options.dataDir, endpoint.command ?? []) }),
       logFile: join(options.dataDir, `${endpoint.id}.log`),
       // The first load of a large model from disk takes a while.
       startupTimeoutMs: timing.startupTimeoutMs ?? 180_000,
@@ -311,7 +335,16 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       return order.flatMap((id) => {
         const entry = supervised.get(id);
         if (entry === undefined) return [];
-        return [{ id, url: entry.endpoint.url, managed: entry.endpoint.command !== undefined, adopted: entry.adopted, state: entry.watchdog.state }];
+        return [
+          {
+            id,
+            url: entry.endpoint.url,
+            managed: entry.endpoint.command !== undefined,
+            adopted: entry.adopted,
+            state: entry.watchdog.state,
+            ...(entry.refused === undefined ? {} : { refused: entry.refused }),
+          },
+        ];
       });
     },
 

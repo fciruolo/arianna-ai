@@ -58,7 +58,7 @@ function groupOf(id: string): ReadinessId {
   if (id === 'models' || id === 'models.guard-dir') return 'models';
   if (id === 'models.ram') return 'memory';
   if (/^local\..+\.log-level$/.test(id)) return 'model-log';
-  if (/^local\..+\.(flags|base-path|settings)$/.test(id)) return 'model-server';
+  if (/^local\..+\.(flags|gguf|base-path|settings)$/.test(id)) return 'model-server';
   if (id.startsWith('system.')) return 'programs';
   if (id === 'voice.env') return 'voice';
   if (id === 'projects' || id.startsWith('projects.')) return 'projects';

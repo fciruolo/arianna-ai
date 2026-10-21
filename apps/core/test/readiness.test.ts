@@ -74,6 +74,14 @@ test('checks go under closed groups: a group passes only when all its checks do;
   assert.doesNotMatch(JSON.stringify(groups), /sito|path|detail/);
 });
 
+test('a GGUF file in the model folders fails the model server group, not another one (D-221)', () => {
+  const groups = groupChecks([check('local.omlx.flags', true), check('local.omlx.gguf', false), check('local.omlx.base-path', true), check('local.omlx.settings', true), check('local.omlx.log-level', true)]);
+  assert.deepEqual(groups, [
+    { id: 'model-log', ok: true },
+    { id: 'model-server', ok: false },
+  ]);
+});
+
 test('a required group without checks is a failure, never a silent pass; the voice is required only with [voice]', () => {
   const groups = groupChecks([check('layout.data', true)], requiredGroups({}));
   assert.deepEqual(
