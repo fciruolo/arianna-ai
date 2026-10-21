@@ -1,10 +1,12 @@
 // The projects followed for ideas from the terminal (D-202), the same steps as
 // Impostazioni → Sviluppo di Arianna → Progetti seguiti:
-//   pnpm projects:followed [list]          the projects followed, the release last seen, the last news
-//   pnpm projects:followed add <url>       follows https://github.com/<owner>/<repo> (reads nothing)
+//   pnpm projects:followed [list]          the projects and accounts followed, the last news
+//   pnpm projects:followed add <url>       follows https://github.com/<owner>/<repo>, or the
+//                                          account https://github.com/<owner> (D-271; reads nothing)
 //   pnpm projects:followed remove <url>    stops following it and deletes what was kept
-//   pnpm projects:followed check <url>     reads its releases from the public API of GitHub
-// Only the name of the repository leaves, in the address, checked by the policy of
+//   pnpm projects:followed check <url>     reads the releases of a project, or the new
+//                                          repositories of an account, from the public API of GitHub
+// Only the name of the repository or of the account leaves, in the address, checked by the policy of
 // the gateway; never a clone, never code of the project run. The command has no
 // local model (the core groups the news with it): it writes the raw list by kind.
 // The core and the command share a busy file per project.
@@ -16,10 +18,11 @@ import { resolveHome } from '@arianna/config';
 import { cliWebGateway } from '../apps/core/src/cli-gateway.ts';
 import type { NewsGroup } from '../apps/core/src/design-news.ts';
 import { CatalogError } from '../apps/core/src/git-catalog.ts';
+import { MAX_ACCOUNTS, type AccountView } from '../apps/core/src/followed-accounts.ts';
 import { createFollowedProjects, MAX_PROJECTS, type ProjectView } from '../apps/core/src/followed-projects.ts';
 import { createGithubClient } from '../apps/core/src/github-api.ts';
 
-const USAGE = 'Uso: pnpm projects:followed [list|add <url>|remove <url>|check <url>]';
+const USAGE = 'Uso: pnpm projects:followed [list|add <url>|remove <url>|check <url>] (url: https://github.com/<proprietario>/<repository> o https://github.com/<account>)';
 const GROUP_TEXT: Record<NewsGroup, string> = { feat: 'Funzioni', fix: 'Correzioni', styles: 'Stili', skills: 'Skill', other: 'Altro' };
 
 const projects = createFollowedProjects({
@@ -28,6 +31,20 @@ const projects = createFollowedProjects({
   gateway: (address) => cliWebGateway(address, 'cli:followed-projects'),
   noModel: 'dal terminale le novità non passano dal modello locale',
 });
+
+function printAccounts(list: AccountView[]): void {
+  console.log(`Account seguiti (al più ${String(MAX_ACCOUNTS)}): repository nuovi da seguire con add <indirizzo>`);
+  if (list.length === 0) console.log('  nessuno: pnpm projects:followed add https://github.com/<account>');
+  for (const account of list) {
+    console.log(`${account.page}${account.checkedAt === null ? ' — mai controllato' : ''}`);
+    if (account.checkedAt !== null) console.log(`  Ultimo controllo ${account.checkedAt}: ${safe(account.message ?? '')}`);
+    if (account.fresh.length > 0 && account.freshAt !== null) console.log(`  Nuovi al controllo del ${account.freshAt}:`);
+    for (const repo of account.fresh) {
+      const facts = [`creato il ${repo.createdAt.slice(0, 10)}`, repo.license ?? 'licenza non indicata', ...(repo.followed ? ['già seguito'] : [])].join(', ');
+      console.log(`    - ${repo.page} (${facts})${repo.description === '' ? '' : `: ${safe(repo.description)}`}`);
+    }
+  }
+}
 
 function print(list: ProjectView[], full: boolean): void {
   console.log(`Progetti seguiti (al più ${String(MAX_PROJECTS)} oltre a Open Design):`);
@@ -59,19 +76,23 @@ const [command = 'list', url] = process.argv.slice(2);
 try {
   if (command === 'list') {
     print(projects.list(), true);
+    printAccounts(projects.accounts());
   } else if (url === undefined) {
     console.error(USAGE);
     process.exitCode = 2;
   } else if (command === 'add') {
     projects.add(url);
     print(projects.list(), false);
+    printAccounts(projects.accounts());
   } else if (command === 'remove') {
     projects.remove(url);
     print(projects.list(), false);
+    printAccounts(projects.accounts());
   } else if (command === 'check') {
     projects.check(url);
     await projects.idle();
     print(projects.list(), true);
+    printAccounts(projects.accounts());
   } else {
     console.error(USAGE);
     process.exitCode = 2;

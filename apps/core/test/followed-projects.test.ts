@@ -214,7 +214,7 @@ describe('the list of the projects', () => {
     const projects = createFollowedProjects(deps(dir));
     projects.add('https://github.com/Example/Tool.git');
     assert.ok(projects.list().some((project) => project.id === 'example/tool'));
-    for (const bad of ['https://gitlab.com/a/b', 'http://github.com/a/b', 'https://github.com/a', 'https://github.com/a/b/c', 'file:///tmp/a/b', 42]) {
+    for (const bad of ['https://gitlab.com/a/b', 'http://github.com/a/b', 'https://github.com/a/b/c', 'file:///tmp/a/b', 42]) {
       assert.throws(() => projects.add(bad), (error: unknown) => error instanceof CatalogError && error.code === 'invalid', String(bad));
     }
     assert.throws(() => projects.add('https://github.com/example/tool'), (error: unknown) => error instanceof CatalogError && error.code === 'conflict');

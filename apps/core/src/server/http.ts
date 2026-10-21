@@ -124,6 +124,7 @@ import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
+import { MAX_ACCOUNTS } from '../followed-accounts.ts';
 import { MAX_PROJECTS, PROJECT_KEY, type FollowedProjects, type ProjectNews } from '../followed-projects.ts';
 import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, MAX_USER_NOTE_CHARS, pendingQuestions, readUserNote, recordAnswer, saveAnswer, saveNewsRedo, saveProjectChoice, saveRewrite, saveUserNote, type AnswerGate, type ProjectChoice, type OpenQuestion } from '../dev-progress.ts';
 import { createUserFacts, FACTS_STATUS, FactsError, MAX_FACT_TEXT, MAX_TOPIC } from '../user-facts.ts';
@@ -3911,24 +3912,28 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
       }
       return { status: 201, body: { ...saved, logged } };
     }),
-    // The projects followed for ideas (D-202): public text read from GitHub (L0), with what was already chosen.
+    // The projects followed for ideas (D-202): public text read from GitHub (L0), with what was already chosen;
+    // and the accounts followed (D-271), with their new repositories.
     route('GET', '/api/dev/projects', () => {
       const { home, projects } = need();
       const answers = answersByKey(home);
       const list = (projects?.list() ?? []).map((project) => ({ ...project, news: newsView(project.news, answers) }));
-      return Promise.resolve({ body: { projects: list, max: MAX_PROJECTS } });
+      return Promise.resolve({ body: { projects: list, max: MAX_PROJECTS, accounts: projects?.accounts() ?? [], maxAccounts: MAX_ACCOUNTS } });
     }),
+    // A repository or, since D-271, an account (`https://github.com/<owner>`, whose id has no `/`).
     route('POST', '/api/dev/projects', async (request) => {
       const projects = needProjects();
       const body = await readJson(request, 4 * 1024);
       onlyFields(body, ['url']);
-      return { status: 201, body: { project: projects.add(body.url) } };
+      const added = projects.add(body.url);
+      return { status: 201, body: added.id.includes('/') ? { project: added } : { account: added } };
     }),
     route('DELETE', '/api/dev/projects', async (request) => {
       const projects = needProjects();
       const body = await readJson(request, 4 * 1024);
       onlyFields(body, ['id']);
-      return { body: { project: projects.remove(body.id) } };
+      const removed = projects.remove(body.id);
+      return { body: removed.id.includes('/') ? { project: removed } : { account: removed } };
     }),
     // «Controlla novità»: the check runs in the background; the page reads again while `checking`.
     route('POST', '/api/dev/projects/check', async (request) => {

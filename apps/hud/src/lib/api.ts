@@ -10,7 +10,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, parseReadiness, type InstallationInfo, type ReadinessReport } from './installation.ts';
 import type { NewsPair } from './design-news.ts';
-import type { FollowedProject, ProjectChoice } from './followed-projects.ts';
+import type { FollowedAccount, FollowedProject, ProjectChoice } from './followed-projects.ts';
 import type { OmlxReleaseView } from './omlx-release.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
@@ -1365,8 +1365,8 @@ export async function confirmFactShare(id: string): Promise<UserFact> {
 }
 
 /** "Progetti seguiti" (D-202): the projects followed for ideas, with their last news and what was already chosen. */
-export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number }> {
-  return call<{ projects: FollowedProject[]; max: number }>('GET', '/api/dev/projects');
+export async function loadFollowedProjects(): Promise<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }> {
+  return call<{ projects: FollowedProject[]; max: number; accounts: FollowedAccount[]; maxAccounts: number }>('GET', '/api/dev/projects');
 }
 
 export async function addFollowedProject(url: string): Promise<void> {
@@ -1377,7 +1377,7 @@ export async function removeFollowedProject(id: string): Promise<void> {
   await call('DELETE', '/api/dev/projects', { id });
 }
 
-/** «Controlla novità»: the check runs in the core; the page reads again while the project is `checking`. */
+/** «Controlla novità» of a project or an account (D-271): the check runs in the core; the page reads again while it is `checking`. */
 export async function checkFollowedProject(id: string): Promise<void> {
   await call('POST', '/api/dev/projects/check', { id });
 }
