@@ -53,7 +53,7 @@ Aggiornato: 2026-10-22, sera tardi.
 
 **Risposte dell'utente di stamattina** (già nei documenti): 18 idee decise una per una (D-204), Mentor alla Fase 5, operatore telefonico in Fase 4, permessi lasciati come sono (push all'utente), domanda di Rizzo chiusa.
 
-**Coda dei lavori, in ordine** (corretta il 2026-10-22: D-225 tappa B, personaggi nuovi D-227, ufficio 2D D-229 e campo «+» D-231 erano già uniti nelle 0.122.0-0.125.0): ufficio a stanze 3D (D-106 domande 2-11, three.js da scrivere in DECISIONS prima); D-103 tappe seguenti (Base con i contrasti, feste, temi Cartoon giallo e Salotto animato); D-114 voce (nessun dato di «Su di te» nelle chiamate per ora); altre idee di OpenWork (D-093); D-096 backup per ultimo, prima dei dati veri. Il confronto delle memorie (D-204, idea 13) va prima del task memoria della Fase 2.
+**Coda dei lavori, in ordine** (rifatta il 2026-10-22 sera: tutto quello che c'era prima, cioè D-225 tappa B, personaggi D-227, ufficio 2D D-229 e 3D D-230, campo «+» D-231, temi e feste D-103/D-246, voce di «Su di te» D-260, le idee di OpenWork, è già su `main`): verifica del criterio di uscita della Fase 1A con l'utente (task 1.13: elenco dei passi da far provare); app sul telefono via VPN (task 1.19, 8-12 h); confronto delle memorie (D-204, idea 13, studio prima del task memoria della Fase 2); D-096 backup per ultimo, prima dei dati veri.
 
 ## Dove siamo
 
