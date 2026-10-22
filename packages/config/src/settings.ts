@@ -8,7 +8,7 @@ import { parse as parseToml } from 'smol-toml';
 import type { AgentsSettings } from './agents.ts';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
-import { DATA_DIR, DEFAULT_REMOTE_PORT, DEFAULT_SERVER, parseConfig, type InstallationMode, type ServerConfig } from './config.ts';
+import { DATA_DIR, DEFAULT_REMOTE_PORT, DEFAULT_REMOTE_TLS, DEFAULT_SERVER, parseConfig, type InstallationMode, type ServerConfig } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
 import type { SeriesOverrides } from './series.ts';
@@ -562,14 +562,19 @@ export function renderSettings(settings: Settings): string {
     `port = ${String(server.port)}`,
     '',
     '# The chat on the phone (D-292): a second port, on 127.0.0.1 only, that',
-    '# Tailscale publishes on your tailnet as https://<host> with',
+    '# Tailscale publishes on your tailnet as https://<host> (never funnel).',
+    '# `host` is the name of this Mac on the tailnet, ending in .ts.net: choose',
+    '# it neutral and for good, the passkeys are bound to it. `tls = "own"`: the',
+    '# core ends TLS with the certificate of pnpm remote:cert (no public',
+    '# certificate of the name) and Tailscale forwards TCP:',
+    '#   tailscale serve --bg --tcp=443 tcp://127.0.0.1:7443',
+    '# `tls = "tailscale"`: Tailscale ends HTTPS with its certificate:',
     '#   tailscale serve --bg --https=443 http://127.0.0.1:7443',
-    '# (never funnel). `host` is the name of this Mac on the tailnet, ending in',
-    '# .ts.net. Absent: no remote port. Then pnpm arianna:doctor checks Tailscale.',
+    '# Absent: no remote port. Then pnpm arianna:doctor checks Tailscale.',
     '# Steps in docs/SECURITY.md. Applies at the next restart.',
     ...(server.remote === undefined
-      ? ['#', '# [server.remote]', '# host = "mac-studio.tail1234.ts.net"', `# port = ${String(DEFAULT_REMOTE_PORT)}`]
-      : ['[server.remote]', `host = ${str(server.remote.host)}`, `port = ${String(server.remote.port)}`]),
+      ? ['#', '# [server.remote]', '# host = "mac-studio.tail1234.ts.net"', `# port = ${String(DEFAULT_REMOTE_PORT)}`, `# tls = ${str(DEFAULT_REMOTE_TLS)}`]
+      : ['[server.remote]', `host = ${str(server.remote.host)}`, `port = ${String(server.remote.port)}`, `tls = ${str(server.remote.tls)}`]),
     '',
     '# Telegram (task 1.15, D-044): an external channel behind the gateway, at most',
     '# L1; anything above arrives as a notice pointing to the web chat. Off while',

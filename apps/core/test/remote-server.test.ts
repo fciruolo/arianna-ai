@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { parseLabelRules, resolveHome } from '@arianna/config';
+import { parseLabelRules, remotePaths, resolveHome } from '@arianna/config';
 
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
+import { findOpenssl, generateCertificate, loadRemoteTls } from '../src/remote-cert.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { remoteAccess } from '../src/server/remote.ts';
 import { checkRequest, remoteDoor, securityHeaders } from '../src/server/security.ts';
@@ -41,6 +44,15 @@ after(async () => {
   await server.close();
   rmSync(root, { recursive: true, force: true });
 });
+
+function opensslWorks(binary: string): boolean {
+  try {
+    execFileSync(binary, ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface Answer {
   status: number;
@@ -188,5 +200,45 @@ test('without [server.remote] there is no remote port', async () => {
     assert.equal(plain.remotePort, undefined);
   } finally {
     await plain.close();
+  }
+});
+
+test('tls = "own": the remote port ends TLS with the certificate of data/remote, trusted only through its root', { skip: !opensslWorks(findOpenssl()) }, async () => {
+  const paths = remotePaths(join(root, 'tls'));
+  generateCertificate({ openssl: findOpenssl(), paths, host: NAME, now: new Date() });
+  const tls = loadRemoteTls(paths, NAME, new Date());
+  assert.ok(tls.ok);
+  const own = await startApiServer({
+    sql: undefined as unknown as Sql,
+    live: undefined as unknown as LiveFeed,
+    host: '127.0.0.1',
+    port: 0,
+    staticDir: dist,
+    remote: { host: NAME, port: 0, tls: { cert: tls.cert, key: tls.key } },
+  });
+  const ca = readFileSync(paths.root, 'utf8');
+  const get = (path: string, trust: string | null = ca) =>
+    new Promise<number>((resolve, reject) => {
+      const request = httpsRequest(
+        { agent: false, host: '127.0.0.1', servername: NAME, port: own.remotePort ?? -1, path, headers: { host: NAME, origin: ORIGIN }, ...(trust === null ? {} : { ca: trust }) },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        },
+      );
+      request.on('error', reject);
+      request.end();
+    });
+  try {
+    assert.equal(await get('/'), 200);
+    assert.equal(await get('/api/remote/status'), 200);
+    assert.equal(await get('/api/conversations'), 401);
+    // Without the root the certificate is not trusted; plain HTTP gets no page.
+    await assert.rejects(get('/', null));
+    const plain = await send({ port: own.remotePort ?? -1, path: '/', headers: { host: NAME } }).catch(() => undefined);
+    assert.ok(plain === undefined || plain.status === 400, String(plain?.status));
+    assert.doesNotMatch(plain?.body ?? '', /Arianna/);
+  } finally {
+    await own.close();
   }
 });

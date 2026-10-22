@@ -19,6 +19,7 @@ import {
   loadConfigOrExit,
   loadLabelRules,
   modelPath,
+  remotePaths,
   userHomeOf,
   VOICE_ALIAS,
   voicePaths,
@@ -126,6 +127,7 @@ import { createTelegramSwitch } from './telegram/switch.ts';
 import { createCalls, liveCall } from './voice/calls.ts';
 import { createPusher, vapidKey } from './voice/push.ts';
 import { createPushSwitch } from './push-switch.ts';
+import { loadRemoteTls, WARN_DAYS } from './remote-cert.ts';
 import { createRinger } from './voice/ringer.ts';
 import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
@@ -1307,6 +1309,20 @@ const changesTicker = setInterval(() => {
   if (!stopping) void installChanges.check();
 }, 10 * 60_000);
 changesTicker.unref();
+// The remote port (D-292): with tls = "own" only with a valid certificate of
+// pnpm remote:cert; without it the port stays closed and the core goes on.
+const remoteListener = ((): { host: string; port: number; tls?: { cert: string; key: string } } | undefined => {
+  const remote = config.server.remote;
+  if (remote === undefined) return undefined;
+  if (remote.tls === 'tailscale') return { host: remote.host, port: remote.port };
+  const tls = loadRemoteTls(remotePaths(config.paths.data), remote.host, new Date());
+  if (!tls.ok) {
+    console.error(`Porta remota chiusa: ${tls.problem}.`);
+    return undefined;
+  }
+  if (tls.daysLeft <= WARN_DAYS) console.error(`Il certificato della porta remota scade fra ${String(tls.daysLeft)} giorni: lancia pnpm remote:cert.`);
+  return { host: remote.host, port: remote.port, tls: { cert: tls.cert, key: tls.key } };
+})();
 const server = await startApiServer({
   sql,
   live,
@@ -1314,7 +1330,7 @@ const server = await startApiServer({
   host: config.server.host,
   port: config.server.port,
   // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; until stage B only the page and «not paired».
-  ...(config.server.remote === undefined ? {} : { remote: config.server.remote }),
+  ...(remoteListener === undefined ? {} : { remote: remoteListener }),
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
@@ -1640,7 +1656,8 @@ await telegram.begin(telegramSection());
 
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 if (server.remotePort !== undefined && config.server.remote !== undefined) {
-  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host} (D-292: devices not paired yet, API closed)`);
+  const ends = config.server.remote.tls === 'own' ? 'TLS ended by the core' : 'TLS ended by Tailscale';
+  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host}, ${ends} (D-292: devices not paired yet, API closed)`);
 }
 // D-246: a day forced for the feasts is said at the start, so a value left in the environment is not missed.
 if (process.env.ARIANNA_TODAY !== undefined) {

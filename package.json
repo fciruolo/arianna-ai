@@ -45,6 +45,7 @@
     "characters:pixel-agents": "node scripts/pixel-agents.ts",
     "god:clone": "node scripts/god-clone.ts",
     "browser:build": "node scripts/browser.ts build",
+    "remote:cert": "node scripts/remote-cert.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",
     "hud:build": "pnpm --filter @arianna/hud build",

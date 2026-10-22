@@ -278,8 +278,8 @@ test('the server listens on loopback only', () => {
 test('[server.remote] (D-292): a *.ts.net name and a port on 127.0.0.1, absent means no remote port', () => {
   const server = (body: string) => parseConfig(`${VALID}\n[server]\nport = 7420\n${body}\n`, HOME).server;
   assert.equal(server('').remote, undefined);
-  assert.deepEqual(server('[server.remote]\nhost = "mac-studio.tail1234.ts.net"').remote, { host: 'mac-studio.tail1234.ts.net', port: 7443 });
-  assert.deepEqual(server('[server.remote]\nhost = "mac.tail-a1.ts.net"\nport = 8443').remote, { host: 'mac.tail-a1.ts.net', port: 8443 });
+  assert.deepEqual(server('[server.remote]\nhost = "mac-studio.tail1234.ts.net"').remote, { host: 'mac-studio.tail1234.ts.net', port: 7443, tls: 'own' });
+  assert.deepEqual(server('[server.remote]\nhost = "mac.tail-a1.ts.net"\nport = 8443\ntls = "tailscale"').remote, { host: 'mac.tail-a1.ts.net', port: 8443, tls: 'tailscale' });
   for (const bad of [
     'host = "Mac-Studio.tail1234.ts.net"', // uppercase
     'host = "mac-studio.example.org"', // not on the tailnet
@@ -294,6 +294,8 @@ test('[server.remote] (D-292): a *.ts.net name and a port on 127.0.0.1, absent m
     'host = "mac.tail1234.ts.net"\nport = 7420', // the port of [server]
     'host = "mac.tail1234.ts.net"\nport = 80', // below 1024
     'host = "mac.tail1234.ts.net"\naddress = "0.0.0.0"', // never another address
+    'host = "mac.tail1234.ts.net"\ntls = "none"', // TLS always, ended by one of the two
+    'host = "mac.tail1234.ts.net"\ntls = true',
   ]) {
     assert.throws(() => server(`[server.remote]\n${bad}`), ConfigError, bad);
   }

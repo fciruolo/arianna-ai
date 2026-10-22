@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { extname, join, normalize, sep } from 'node:path';
@@ -456,9 +457,10 @@ export interface ApiServerOptions {
   staticDir?: string;
   /**
    * `[server.remote]` (D-292): a second listener, on 127.0.0.1 only, behind
-   * `tailscale serve`. Absent: none.
+   * `tailscale serve`. Absent: none. With `tls` (mode `own`) the core ends
+   * TLS itself and Tailscale forwards TCP; without it Tailscale ends HTTPS.
    */
-  remote?: { host: string; port: number };
+  remote?: { host: string; port: number; tls?: { cert: string; key: string } };
   /** Errors are reported here, never sent to the client: they may hold data. */
   onError?: (error: unknown) => void;
 }
@@ -5050,12 +5052,16 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const server: Server = createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, (request, response) => {
     void handle(request, response, undefined);
   });
-  const remoteServer: Server | undefined =
+  const remoteTls = options.remote?.tls;
+  const onRemote = (request: IncomingMessage, response: ServerResponse): void => {
+    if (remote !== undefined) void handle(request, response, remote);
+  };
+  const remoteServer: Server | HttpsServer | undefined =
     remote === undefined
       ? undefined
-      : createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, (request, response) => {
-          void handle(request, response, remote);
-        });
+      : remoteTls === undefined
+        ? createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, onRemote)
+        : createHttpsServer({ requestTimeout: 30_000, headersTimeout: 10_000, cert: remoteTls.cert, key: remoteTls.key, minVersion: 'TLSv1.2' }, onRemote);
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // The screen of the browser (D-264, passo 4): RFB from the page, small messages only.
