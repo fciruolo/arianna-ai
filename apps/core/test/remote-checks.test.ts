@@ -126,3 +126,17 @@ test('remoteChecks in mode own: the certificate must be there, for the name and 
   const other = await remoteChecks({ ...config, server: { ...DEFAULT_SERVER, remote: { ...OWN, host: 'altro.tail0000.ts.net' } } }, { run, exists: () => false });
   assert.match(other[1]?.detail ?? '', /non è per altro\.tail0000\.ts\.net/);
 });
+
+test('the real output of tailscale serve --bg --tcp=443 tcp://127.0.0.1:7443 is ok in mode own', () => {
+  const real: unknown = JSON.parse('{"TCP":{"443":{"TCPForward":"127.0.0.1:7443"}}}');
+  assert.deepEqual(analyzeServeStatus(real, OWN), analyzeServeStatus(tcpForward, OWN));
+  assert.equal(analyzeServeStatus(real, OWN).ok, true);
+});
+
+test('the app of Tailscale opening its window instead of answering: a clear message, not «no JSON object»', async () => {
+  const gui = () => Promise.resolve('The Tailscale GUI failed to start: something (Tailscale.CLIError error 3.)\n');
+  const [check] = await remoteChecks({ server: { ...DEFAULT_SERVER, remote: TAILSCALE }, paths: { data: root } }, { run: gui, exists: () => true });
+  assert.equal(check?.ok, false);
+  assert.match(check.detail, /finestra/);
+  assert.doesNotMatch(check.detail, /oggetto JSON/);
+});

@@ -26,6 +26,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Ogni decisione presa dal telefono chiede Face ID per esattamente quell'azione (metodo, percorso e corpo), con una verifica di 5 minuti usata una volta che il server controlla prima di eseguire; dispositivi, impostazioni di privacy, browser dell'agente e azioni sul Mac restano solo dal Mac (D-292, tappa B).
 - In modo `own` il core rifiuta una `data/remote/server.key` che sia un collegamento simbolico, non un file normale o con permessi più larghi di 0600, e lo dice come per il certificato mancante (D-292).
 
+### Corretto
+
+- `pnpm arianna:doctor` lancia il binario dell'app di Tailscale come comando (`TERM=dumb`): senza, l'app provava ad aprire la finestra e `remote.tailscale` falliva; se succede ancora lo dice chiaro (D-292).
+
 ## [0.167.1] - 2026-10-22
 
 ### Corretto

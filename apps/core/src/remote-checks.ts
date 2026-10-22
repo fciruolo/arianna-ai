@@ -96,7 +96,10 @@ export type TailscaleRunner = (binary: string, args: string[]) => Promise<string
 
 const runTailscale: TailscaleRunner = (binary, args) =>
   new Promise((resolve, reject) => {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' };
+    // TERM: the binary of the app (Tailscale.app/Contents/MacOS/Tailscale) acts as the CLI only when it
+    // looks started from a terminal (TERM, TERM_PROGRAM or SHLVL); without, it tries to open the GUI, exits 0
+    // and prints «The Tailscale GUI failed to start» instead of the JSON. «dumb» says nothing else.
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', TERM: 'dumb' };
     execFile(binary, args, { timeout: 10_000, encoding: 'utf8', maxBuffer: 1024 * 1024, env }, (error, stdout) => {
       if (error === null) resolve(stdout);
       else reject(new Error(`${binary} is missing or failed`));
@@ -141,7 +144,9 @@ export async function remoteChecks(
   } catch {
     checks.push({ id: 'remote.tailscale', ok: false, detail: 'Tailscale non risponde: installa l\'app di Tailscale dal Mac App Store o da tailscale.com, accedi e riprova' });
   }
-  if (output !== undefined) {
+  if (output !== undefined && /GUI failed to start/i.test(output)) {
+    checks.push({ id: 'remote.tailscale', ok: false, detail: 'l\'app di Tailscale si è aperta come finestra invece di rispondere come comando: lancia tailscale serve status da un terminale per controllare, o aggiorna l\'app' });
+  } else if (output !== undefined) {
     let json: unknown;
     try {
       // An empty output is an empty configuration.
