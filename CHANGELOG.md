@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.165.0] - 2026-10-22
+
 ### Aggiunto
 
 - Barra sopra lo schermo del browser nella chat (D-286): ← Indietro, → Avanti, ↻ Ricarica e il campo dell'indirizzo; Invio apre l'indirizzo come se l'avessi scritto in chat, e un dato salvato fra i clienti chiede prima «Apri / No». Spenta mentre Arianna usa il browser.
