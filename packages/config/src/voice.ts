@@ -73,7 +73,7 @@ export function parseVoice(value: unknown): VoiceConfig | undefined {
   onlyKeys(voice, ['port', 'voice', 'limits', 'outgoing', 'push'], 'voice');
   const name = voice.voice === undefined ? DEFAULT_VOICE.voice : asString(voice.voice, 'voice.voice');
   if (!VOICE_ID.test(name)) throw new ConfigError('voice.voice: a voice of the tts model, e.g. "if_sara" or "it_female"');
-  const push = parsePush(voice.push);
+  const push = voice.push === undefined ? undefined : parsePush(voice.push, 'voice.push');
   return {
     port: voice.port === undefined ? DEFAULT_VOICE.port : asInteger(voice.port, 'voice.port', 1024, 65535),
     voice: name,
@@ -124,20 +124,23 @@ function parseOutgoing(value: unknown): OutgoingRules {
   };
 }
 
-function parsePush(value: unknown): PushConfig | undefined {
-  if (value === undefined) return undefined;
-  const table = asTable(value, 'voice.push');
-  onlyKeys(table, ['public_key', 'private_key', 'subject'], 'voice.push');
-  const publicKey = asString(table.public_key, 'voice.push.public_key');
+/**
+ * `[push]` or, as written before D-292, `[voice.push]`: the same keys. `where`
+ * is the section, for the messages.
+ */
+export function parsePush(value: unknown, where: 'push' | 'voice.push'): PushConfig {
+  const table = asTable(value, where);
+  onlyKeys(table, ['public_key', 'private_key', 'subject'], where);
+  const publicKey = asString(table.public_key, `${where}.public_key`);
   // 65 bytes in base64url without padding are 87 characters, starting with 0x04 ("B").
   if (!BASE64URL.test(publicKey) || publicKey.length !== 87 || !publicKey.startsWith('B')) {
-    throw new ConfigError('voice.push.public_key: the uncompressed P-256 public key, base64url (pnpm voice:vapid)');
+    throw new ConfigError(`${where}.public_key: the uncompressed P-256 public key, base64url (pnpm voice:vapid)`);
   }
-  const subject = asString(table.subject, 'voice.push.subject');
+  const subject = asString(table.subject, `${where}.subject`);
   if (!/^mailto:[^\s@]+@[^\s@]+$/.test(subject) && !/^https:\/\/\S+$/.test(subject)) {
-    throw new ConfigError('voice.push.subject: a mailto: address or an https: URL');
+    throw new ConfigError(`${where}.subject: a mailto: address or an https: URL`);
   }
-  return { publicKey, privateKey: asVaultRef(table.private_key, 'voice.push.private_key'), subject };
+  return { publicKey, privateKey: asVaultRef(table.private_key, `${where}.private_key`), subject };
 }
 
 /** Where apps/voice lives on disk, everything inside ARIANNA_HOME (D-066). */

@@ -199,12 +199,22 @@ astra = true
 # leave_after = 10
 
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
-# history holds L2 in clear and there is no authentication yet. Access from
-# the phone over the VPN comes with a proxy and authentication (task 1.13).
-# Like [paths] and [database], it applies at the next restart.
+# history holds L2 in clear. Like [paths] and [database], it applies at the
+# next restart.
 [server]
 host = "127.0.0.1"
 port = 7420
+
+# The chat on the phone (D-292): a second port, on 127.0.0.1 only, that
+# Tailscale publishes on your tailnet as https://<host> with
+#   tailscale serve --bg --https=443 http://127.0.0.1:7443
+# (never funnel). `host` is the name of this Mac on the tailnet, ending in
+# .ts.net. Absent: no remote port. Then pnpm arianna:doctor checks Tailscale.
+# Steps in docs/SECURITY.md. Applies at the next restart.
+#
+# [server.remote]
+# host = "mac-studio.tail1234.ts.net"
+# port = 7443
 
 # Telegram (task 1.15, D-044): an external channel behind the gateway, at most
 # L1; anything above arrives as a notice pointing to the web chat. Off while
@@ -251,10 +261,20 @@ port = 7420
 # private_key = "vault://vapid-private-key"
 # subject = "mailto:you@example.org"
 
+# Web Push of the chat notifications and of the calls (D-292), also with
+# the voice off: the same keys as [voice.push], which stays valid; set them
+# in one of the two. Only fixed sentences leave, never the text. Applies
+# without a restart.
+#
+# [push]
+# public_key = "<pnpm voice:vapid>"
+# private_key = "vault://vapid-private-key"
+# subject = "mailto:you@example.org"
+
 # Notifications of the web chat (I-1): a reply, an approval waiting, a
 # failed task. Never the text or the title of a conversation: only a fixed
 # sentence and the link. In a browser tab that is open but not in view, the
-# page shows them; with the chat closed, Web Push of [voice.push], only
+# page shows them; with the chat closed, Web Push of [push], only
 # while no page of the chat is in view. Each browser asks for permission
 # from Impostazioni -> Notifiche. `quiet` is "HH:MM-HH:MM" local time
 # (across midnight too); without it, no quiet hours. Absent: every kind on.

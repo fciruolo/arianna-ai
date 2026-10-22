@@ -21,16 +21,36 @@ export function allowedHosts(host: string, port: number): Set<string> {
   return new Set([`${address}:${String(port)}`, `localhost:${String(port)}`]);
 }
 
+/**
+ * The remote port (D-292): `tailscale serve` forwards https://<name> to it.
+ * The only Host values are the name, with or without the HTTPS port; the
+ * only Origin is the page served from that name.
+ */
+export interface RemoteDoor {
+  /** The `*.ts.net` name of `[server.remote]`. */
+  name: string;
+  hosts: ReadonlySet<string>;
+  origin: string;
+}
+
+export function remoteDoor(name: string): RemoteDoor {
+  return { name, hosts: new Set([name, `${name}:443`]), origin: `https://${name}` };
+}
+
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export function checkRequest(facts: RequestFacts, hosts: ReadonlySet<string>): CheckResult {
+/**
+ * `origin`: the one Origin accepted; absent, the same `http://` host as the
+ * request (the port of this Mac). The remote port passes its fixed origin.
+ */
+export function checkRequest(facts: RequestFacts, hosts: ReadonlySet<string>, origin?: string): CheckResult {
   const host = facts.host?.toLowerCase();
   // DNS rebinding: the attacker's name resolves to 127.0.0.1, but the browser still sends it as Host.
   if (host === undefined || !hosts.has(host)) return { ok: false, status: 403, reason: 'unknown host' };
 
   // Same origin only. A page on another site always sends its own Origin on
   // cross-site POSTs and WebSocket handshakes.
-  if (facts.origin !== undefined && facts.origin !== `http://${host}`) {
+  if (facts.origin !== undefined && facts.origin !== (origin ?? `http://${host}`)) {
     return { ok: false, status: 403, reason: 'cross-origin request' };
   }
   if (facts.upgrade === true && facts.origin === undefined) return { ok: false, status: 403, reason: 'missing origin' };
@@ -43,12 +63,16 @@ export function checkRequest(facts: RequestFacts, hosts: ReadonlySet<string>): C
   return { ok: true };
 }
 
-/** Headers of every response. */
-export function securityHeaders(host: string): Record<string, string> {
+/**
+ * Headers of every response. On the remote port (D-292) `host` is the
+ * configured name, never the request's: the page is HTTPS, so its socket is
+ * `wss://`, and the browser is told to stay on HTTPS.
+ */
+export function securityHeaders(host: string, remote = false): Record<string, string> {
   return {
     'content-security-policy': [
       "default-src 'self'",
-      `connect-src 'self' ws://${host}`,
+      `connect-src 'self' ${remote ? 'wss' : 'ws'}://${host}`,
       "img-src 'self' data:",
       // The voice trial plays the WAV it fetched through a blob: URL (D-066).
       "media-src 'self' blob:",
@@ -64,5 +88,7 @@ export function securityHeaders(host: string): Record<string, string> {
     'cross-origin-opener-policy': 'same-origin',
     'cross-origin-resource-policy': 'same-origin',
     'x-frame-options': 'DENY',
+    // One year, this name only: other machines of the tailnet are not this core's to decide.
+    ...(remote ? { 'strict-transport-security': 'max-age=31536000' } : {}),
   };
 }

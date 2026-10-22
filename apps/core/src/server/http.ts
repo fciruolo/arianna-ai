@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { Duplex } from 'node:stream';
 import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
@@ -220,7 +221,8 @@ import { isYoutubeVideo } from '../video-url.ts';
 import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video-job.ts';
 import type { UserCommand } from '../browser/agent-browser.ts';
 import type { BrowserScreens } from '../browser/screen.ts';
-import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
+import { remoteAccess, REMOTE_LISTEN_HOST } from './remote.ts';
+import { allowedHosts, checkRequest, remoteDoor, securityHeaders, type RemoteDoor } from './security.ts';
 
 /**
  * API, WebSocket and web chat of the core (task 1.11, D-039). `node:http`
@@ -452,6 +454,11 @@ export interface ApiServerOptions {
   browserScreens?: BrowserScreens;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
+  /**
+   * `[server.remote]` (D-292): a second listener, on 127.0.0.1 only, behind
+   * `tailscale serve`. Absent: none.
+   */
+  remote?: { host: string; port: number };
   /** Errors are reported here, never sent to the client: they may hold data. */
   onError?: (error: unknown) => void;
 }
@@ -479,6 +486,8 @@ export interface LocalApi {
 export interface ApiServer {
   /** The bound port, useful with port 0 in tests. */
   readonly port: number;
+  /** The bound remote port (D-292), without `[server.remote]` undefined. */
+  readonly remotePort: number | undefined;
   /** Pages holding the live feed now: with none, a call of Arianna rings by Web Push (D-066). */
   clients(): number;
   /** Pages that said they are in view (I-1): with none, a notice goes by Web Push. */
@@ -4963,19 +4972,31 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     return reached;
   }
   let hosts = allowedHosts(options.host, options.port);
+  // The remote port (D-292): fixed by the configuration, whatever a request says.
+  const remote: RemoteDoor | undefined = options.remote === undefined ? undefined : remoteDoor(options.remote.host);
 
-  async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  /** `door`: the remote port, or undefined for the port of this Mac. Set by the listener, never by a header. */
+  async function handle(request: IncomingMessage, response: ServerResponse, door: RemoteDoor | undefined): Promise<void> {
     const host = request.headers.host?.toLowerCase() ?? '';
-    const headers = securityHeaders(host);
-    const check = checkRequest(
-      { method: request.method ?? 'GET', host: request.headers.host, origin: request.headers.origin, contentType: request.headers['content-type'] },
-      hosts,
-    );
+    const headers = door === undefined ? securityHeaders(host) : securityHeaders(door.name, true);
+    const facts = { method: request.method ?? 'GET', host: request.headers.host, origin: request.headers.origin, contentType: request.headers['content-type'] };
+    const check = door === undefined ? checkRequest(facts, hosts) : checkRequest(facts, door.hosts, door.origin);
     if (!check.ok) {
       sendJson(response, check.status, { error: check.reason }, headers);
       return;
     }
     const url = new URL(request.url ?? '/', `http://${host}`);
+    if (door !== undefined && url.pathname.startsWith('/api/')) {
+      const access = remoteAccess(request, url.pathname);
+      if (access.kind === 'status') {
+        sendJson(response, 200, access.body, headers);
+        return;
+      }
+      if (access.kind === 'refused') {
+        sendJson(response, access.status, access.body, headers);
+        return;
+      }
+    }
     if (request.method === 'GET' && url.pathname === '/api/notifications/stream') {
       openHelperStream(request, response, headers);
       return;
@@ -5027,21 +5048,43 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   }
 
   const server: Server = createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, (request, response) => {
-    void handle(request, response);
+    void handle(request, response, undefined);
   });
+  const remoteServer: Server | undefined =
+    remote === undefined
+      ? undefined
+      : createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, (request, response) => {
+          void handle(request, response, remote);
+        });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // The screen of the browser (D-264, passo 4): RFB from the page, small messages only.
   const screenWss = new WebSocketServer({ noServer: true, maxPayload: SCREEN_MAX_PAYLOAD });
-  server.on('upgrade', (request: IncomingMessage, socket, head) => {
+  server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    upgrade(request, socket, head, undefined);
+  });
+  remoteServer?.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    upgrade(request, socket, head, remote);
+  });
+
+  function upgrade(request: IncomingMessage, socket: Duplex, head: Buffer, door: RemoteDoor | undefined): void {
     socket.on('error', () => {
       socket.destroy();
     });
     const url = new URL(request.url ?? '/', 'http://upgrade');
-    const check = checkRequest(
-      { method: 'GET', host: request.headers.host, origin: request.headers.origin, contentType: undefined, upgrade: true },
-      hosts,
-    );
+    const facts = { method: 'GET', host: request.headers.host, origin: request.headers.origin, contentType: undefined, upgrade: true };
+    const check = door === undefined ? checkRequest(facts, hosts) : checkRequest(facts, door.hosts, door.origin);
+    if (door !== undefined) {
+      // The same single entrance as the HTTP routes: until stage B, no socket from the tailnet.
+      if (!check.ok) {
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+        return;
+      }
+      if (remoteAccess(request, url.pathname, true).kind !== 'allowed') {
+        socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        return;
+      }
+    }
     if (url.pathname === SCREEN_PATH) {
       const screens = options.browserScreens;
       const token = url.searchParams.get('t') ?? '';
@@ -5061,7 +5104,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     wss.handleUpgrade(request, socket, head, (ws) => {
       void connect(ws, url.searchParams.get('after') ?? undefined);
     });
-  });
+  }
 
   async function connect(ws: WebSocket, after: string | undefined): Promise<void> {
     sockets.add(ws);
@@ -5136,9 +5179,28 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
   const port = (server.address() as AddressInfo).port;
   hosts = allowedHosts(options.host, port);
+  if (remoteServer !== undefined && options.remote !== undefined) {
+    const remotePort = options.remote.port;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        remoteServer.once('error', reject);
+        // 127.0.0.1 only, never the host of a configuration: tailscale serve reaches it from this Mac.
+        remoteServer.listen(remotePort, REMOTE_LISTEN_HOST, () => {
+          remoteServer.off('error', reject);
+          resolve();
+        });
+      });
+    } catch (error) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => { resolve(); }));
+      throw error;
+    }
+  }
+  const remotePort = remoteServer === undefined ? undefined : (remoteServer.address() as AddressInfo).port;
 
   return {
     port,
+    remotePort,
     clients: () => sockets.size,
     visiblePages: () => visible.size,
     readingPages: (conversationId) => [...focused.values()].filter((open) => open === conversationId).length,
@@ -5162,7 +5224,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       wss.close();
       screenWss.close();
       server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => { resolve(); }));
+      remoteServer?.closeAllConnections();
+      await Promise.all(
+        [server, ...(remoteServer === undefined ? [] : [remoteServer])].map(
+          (listener) =>
+            new Promise<void>((resolve) => listener.close(() => { resolve(); })),
+        ),
+      );
     },
   };
 }

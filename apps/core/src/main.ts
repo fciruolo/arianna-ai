@@ -1296,6 +1296,8 @@ const server = await startApiServer({
   changes: installChanges,
   host: config.server.host,
   port: config.server.port,
+  // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; until stage B only the page and «not paired».
+  ...(config.server.remote === undefined ? {} : { remote: config.server.remote }),
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
@@ -1620,6 +1622,9 @@ imWatcher.start();
 await telegram.begin(telegramSection());
 
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
+if (server.remotePort !== undefined && config.server.remote !== undefined) {
+  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host} (D-292: devices not paired yet, API closed)`);
+}
 // D-246: a day forced for the feasts is said at the start, so a value left in the environment is not missed.
 if (process.env.ARIANNA_TODAY !== undefined) {
   const forced = themeDay(process.env, new Date());

@@ -275,6 +275,47 @@ test('the server listens on loopback only', () => {
   assert.throws(() => server('tls = true'), ConfigError);
 });
 
+test('[server.remote] (D-292): a *.ts.net name and a port on 127.0.0.1, absent means no remote port', () => {
+  const server = (body: string) => parseConfig(`${VALID}\n[server]\nport = 7420\n${body}\n`, HOME).server;
+  assert.equal(server('').remote, undefined);
+  assert.deepEqual(server('[server.remote]\nhost = "mac-studio.tail1234.ts.net"').remote, { host: 'mac-studio.tail1234.ts.net', port: 7443 });
+  assert.deepEqual(server('[server.remote]\nhost = "mac.tail-a1.ts.net"\nport = 8443').remote, { host: 'mac.tail-a1.ts.net', port: 8443 });
+  for (const bad of [
+    'host = "Mac-Studio.tail1234.ts.net"', // uppercase
+    'host = "mac-studio.example.org"', // not on the tailnet
+    'host = "ts.net"', // no machine name
+    'host = "mac_studio.tail1234.ts.net"', // not a DNS label
+    'host = "-mac.tail1234.ts.net"',
+    'host = "mac.tail1234.ts.net."',
+    'host = "mac.tail1234.ts.net:443"',
+    'host = "https://mac.tail1234.ts.net"',
+    'host = "127.0.0.1"',
+    'port = 7443', // the name is required
+    'host = "mac.tail1234.ts.net"\nport = 7420', // the port of [server]
+    'host = "mac.tail1234.ts.net"\nport = 80', // below 1024
+    'host = "mac.tail1234.ts.net"\naddress = "0.0.0.0"', // never another address
+  ]) {
+    assert.throws(() => server(`[server.remote]\n${bad}`), ConfigError, bad);
+  }
+  // The voice service cannot take the remote port.
+  assert.throws(() => parseConfig(`${VALID}\n[server.remote]\nhost = "mac.tail1234.ts.net"\nport = 7421\n[voice]\n`, HOME), /server\.remote\.port/);
+});
+
+test('[push] (D-292): Web Push without the voice; [voice.push] stays valid, not both', () => {
+  const key = `B${'A'.repeat(86)}`;
+  const section = (name: string) => `[${name}]\npublic_key = "${key}"\nprivate_key = "vault://vapid-private-key"\nsubject = "mailto:me@example.org"\n`;
+  const expected = { publicKey: key, privateKey: 'vault://vapid-private-key', subject: 'mailto:me@example.org' };
+  assert.equal(parseConfig(VALID, HOME).push, undefined);
+  const alone = parseConfig(`${VALID}\n${section('push')}`, HOME);
+  assert.deepEqual(alone.push, expected);
+  assert.equal(alone.voice, undefined);
+  const legacy = parseConfig(`${VALID}\n[voice]\n${section('voice.push')}`, HOME);
+  assert.deepEqual(legacy.push, expected);
+  assert.deepEqual(legacy.voice?.push, expected);
+  assert.throws(() => parseConfig(`${VALID}\n${section('push')}\n[voice]\n${section('voice.push')}`, HOME), /not both/);
+  assert.throws(() => parseConfig(`${VALID}\n[push]\npublic_key = "${key}"\nprivate_key = "plain"\nsubject = "mailto:me@example.org"\n`, HOME), /push\.private_key/);
+});
+
 test('wrong types and malformed TOML are rejected', () => {
   assert.throws(() => parseConfig(VALID.replace('54329', '"54329"'), HOME), ConfigError);
   assert.throws(() => parseConfig(VALID.replace('54329', '70000'), HOME), ConfigError);
