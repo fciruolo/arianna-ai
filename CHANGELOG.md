@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.167.0] - 2026-10-22
+
 ### Cambiato
 
 - Le chiamate possono parlare con la voce di sistema di macOS «Federica (Premium)» al posto di Kokoro (D-290): italiano naturale, niente da scaricare, nessun modello in memoria e nessuna rete; si sceglie con `tts = "macos-federica"` in `[roles]` e una frase alla volta parte subito.
