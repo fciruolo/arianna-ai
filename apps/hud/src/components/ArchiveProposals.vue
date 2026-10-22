@@ -195,14 +195,16 @@ onMounted(refresh);
       class="grid grid-cols-[22px_minmax(0,1fr)] gap-2.5 rounded-xl border bg-surface px-3.5 py-3"
       :class="[item.state === 'expired' ? 'border-dashed border-line' : selected.has(item.name) ? 'border-accent' : 'border-line']"
     >
-      <input
-        type="checkbox"
-        class="mt-1 accent-[var(--accent)]"
-        :checked="selected.has(item.name)"
-        :disabled="item.state === 'expired'"
-        :aria-label="`Seleziona ${item.noteTitle ?? item.title}`"
-        @change="toggle(item.name)"
-      />
+      <label class="contents touch-box">
+        <input
+          type="checkbox"
+          class="mt-1 accent-[var(--accent)]"
+          :checked="selected.has(item.name)"
+          :disabled="item.state === 'expired'"
+          :aria-label="`Seleziona ${item.noteTitle ?? item.title}`"
+          @change="toggle(item.name)"
+        />
+      </label>
       <div class="min-w-0">
         <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <span class="text-[14.5px] font-semibold break-words">{{ item.noteTitle ?? item.title }}</span>

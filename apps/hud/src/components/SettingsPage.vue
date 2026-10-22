@@ -932,7 +932,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
             </label>
           </div>
           <p class="max-w-[78ch] text-muted">
-            {{ chosen.item.lead }}
+            <template v-if="chosen.item.touchLead === undefined">{{ chosen.item.lead }}</template>
+            <template v-else><span class="touch:hidden">{{ chosen.item.lead }}</span><span class="hidden touch:inline">{{ chosen.item.touchLead }}</span></template>
             <span v-if="chosen.item.example !== undefined" class="mt-1 block text-[14px]"><b class="font-semibold text-ink">Esempio:</b> {{ chosen.item.example }}</span>
           </p>
         </header>

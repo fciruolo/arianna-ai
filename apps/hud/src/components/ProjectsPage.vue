@@ -1228,8 +1228,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
     </div>
 
     <!-- The consent of D-135: in the page, never a dialog of the browser -->
-    <div v-if="hiddenConfirm && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="hidden-confirm-title" @keydown.esc="hiddenConfirm = false">
-      <div class="w-full max-w-lg rounded-2xl border border-line-strong bg-surface shadow-[0_24px_60px_#0008]">
+    <div v-if="hiddenConfirm && project" class="phone-overlay-bottom fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="hidden-confirm-title" @keydown.esc="hiddenConfirm = false">
+      <div class="phone-sheet-bottom w-full max-w-lg rounded-2xl border border-line-strong bg-surface shadow-[0_24px_60px_#0008]">
         <div class="flex gap-3 px-5 pt-5">
           <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-warn/15 text-warn"><Icon name="warning" :size="16" /></span>
           <div>
@@ -1250,8 +1250,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
     </div>
 
     <!-- The confirmation of a start or a stop: in the page, never a dialog of the browser -->
-    <div v-if="confirming && confirmation && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="service-confirm-title" @keydown.esc="confirming = null">
-      <div class="w-full max-w-[480px] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
+    <div v-if="confirming && confirmation && project" class="phone-overlay-bottom fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="service-confirm-title" @keydown.esc="confirming = null">
+      <div class="phone-sheet-bottom w-full max-w-[480px] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
         <div class="flex gap-3.5 px-5 pt-5">
           <span class="grid size-9 shrink-0 place-items-center rounded-lg" :class="confirming.stop ? 'bg-danger/15 text-danger' : 'bg-accent/15 text-accent'"><Icon :name="confirming.stop ? 'stop' : 'play'" :size="16" /></span>
           <div>

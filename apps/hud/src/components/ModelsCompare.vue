@@ -239,13 +239,15 @@ const card = 'flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-sur
               <tbody>
                 <tr v-for="row in rows" :key="row.modelId" :class="selected.includes(row.main.id) ? 'bg-accent/6' : ''">
                   <td :class="td">
-                    <input
-                      type="checkbox"
-                      :checked="selected.includes(row.main.id)"
-                      :disabled="!comparable(row.main) || (!selected.includes(row.main.id) && selected.length >= 3)"
-                      :aria-label="`Confronta ${row.main.model.name}`"
-                      @change="toggle(row.main.id)"
-                    />
+                    <label class="contents touch-box">
+                      <input
+                        type="checkbox"
+                        :checked="selected.includes(row.main.id)"
+                        :disabled="!comparable(row.main) || (!selected.includes(row.main.id) && selected.length >= 3)"
+                        :aria-label="`Confronta ${row.main.model.name}`"
+                        @change="toggle(row.main.id)"
+                      />
+                    </label>
                   </td>
                   <td :class="td" class="min-w-[220px]">
                     <span class="font-semibold" :class="!row.main.inCatalog || !row.main.present ? 'text-muted' : ''">{{ row.main.model.name }}</span>

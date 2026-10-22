@@ -1176,8 +1176,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     </div>
 
     <!-- Adopting a role again (D-079, tappa 4): the lines that change, then the user's click; the agent turns off -->
-    <div v-if="reapplying" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="reapply-title">
-      <div class="flex max-h-[90vh] w-full max-w-2xl flex-col gap-3 overflow-auto rounded-xl border border-line-strong bg-surface-2 p-4">
+    <div v-if="reapplying" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="reapply-title">
+      <div class="phone-sheet-bottom flex max-h-[90vh] w-full max-w-2xl flex-col gap-3 overflow-auto rounded-xl border border-line-strong bg-surface-2 p-4">
         <h2 id="reapply-title" class="text-[16px] font-semibold">Riadottare il ruolo di {{ nameOf(reapplying.name) }}?</h2>
         <p class="text-[14px]">
           Il testo del ruolo diventa quello della versione in uso della raccolta<template v-if="reapplying.proposal.to.committedAt"> (del {{ dayText(reapplying.proposal.to.committedAt) }})</template>:
@@ -1222,8 +1222,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     </div>
 
     <!-- Turning on an agent of the catalog without «nessun problema» (D-196): one more confirmation, never a block -->
-    <div v-if="activating" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="activate-title">
-      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+    <div v-if="activating" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="activate-title">
+      <div class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4 phone:w-full">
         <h2 id="activate-title" class="text-[16px] font-semibold">{{ activating.ask.title }}</h2>
         <p class="text-[14px]">{{ activating.ask.text }}</p>
         <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
@@ -1235,8 +1235,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     </div>
 
     <!-- Promotion: what changes, then the user's click -->
-    <div v-if="promoting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="promote-title">
-      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+    <div v-if="promoting" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="promote-title">
+      <div class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4 phone:w-full">
         <h2 id="promote-title" class="text-[16px] font-semibold">Promuovere {{ promoting.name }} a ufficiale?</h2>
         <p class="text-[14px]">L’agente passa fra quelli ufficiali, nella cartella del repository, e diventa attivo. Cosa cambia:</p>
         <ul class="list-disc pl-5 text-[14px]">
@@ -1255,8 +1255,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     </div>
 
     <!-- A promotion taken back -->
-    <div v-if="demoting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="demote-title">
-      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-line-strong bg-surface-2 p-4">
+    <div v-if="demoting" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="demote-title">
+      <div class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-xl border border-line-strong bg-surface-2 p-4 phone:w-full">
         <h2 id="demote-title" class="text-[16px] font-semibold">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
         <ul class="list-disc pl-5 text-[14px]">
           <li>la scheda esce dal repository e torna fra i tuoi agenti, spenta: Arianna non gli passa più lavoro finché non lo riattivi;</li>
@@ -1284,8 +1284,8 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
     />
 
     <!-- Deletion: the name typed by the user -->
-    <div v-if="deleting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-      <form class="flex max-w-lg flex-col gap-3 rounded-xl border border-danger/60 bg-surface-2 p-4" @submit.prevent="remove">
+    <div v-if="deleting" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+      <form class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-xl border border-danger/60 bg-surface-2 p-4 phone:w-full" @submit.prevent="remove">
         <h2 id="delete-title" class="text-[16px] font-semibold">Eliminare {{ deleting.name }}?</h2>
         <p class="text-[14px]">L’agente sparisce dalla pagina e Arianna non lo vede più. Scheda e prompt vanno nel cestino degli agenti, sul Mac: da lì si recuperano solo a mano.</p>
         <label class="flex flex-col gap-1 text-[13px] text-muted">

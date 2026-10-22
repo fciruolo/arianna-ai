@@ -39,6 +39,19 @@ export function centerInBand(width: number, top: number, bottom: number, wx: num
   return { k, x: width / 2 - wx * k, y: (low + high) / 2 - wy * k };
 }
 
+/**
+ * The move down of the centre of the 3D view (D-294) that puts it in the
+ * middle of the band between `top` and `bottom`: the camera's «vola al nodo»
+ * then lands the node under the header and above the note's sheet, not in
+ * the middle of the whole screen. 0 for a band that is not there.
+ */
+export function bandShift(height: number, top: number, bottom: number): number {
+  if (!Number.isFinite(height) || !Number.isFinite(top) || !Number.isFinite(bottom) || height <= 0) return 0;
+  const low = Math.max(0, Math.min(top, bottom));
+  const high = Math.min(height, Math.max(top, bottom));
+  return high > low ? low + high - height : 0;
+}
+
 /** The phone's two ways to see the knowledge: the graph or a list of its nodes. */
 export type PhoneView = 'graph' | 'list';
 

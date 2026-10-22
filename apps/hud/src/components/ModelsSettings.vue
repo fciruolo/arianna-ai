@@ -566,16 +566,17 @@ const factKey = 'text-[13px] text-muted';
             </button>
             <!-- The one switch of a cloud model (D-192) -->
             <span class="pr-3">
-              <input
-                v-if="entry.view.locality === 'cloud' && rowOf(entry.view.alias) !== undefined"
-                :checked="rowOf(entry.view.alias)?.enabled"
-                type="checkbox"
-                role="switch"
-                class="switch"
-                :aria-label="`${entry.name} acceso`"
-                :title="rowOf(entry.view.alias)?.enabled ? 'Acceso' : 'Spento'"
-                @change="setEnabled(entry.view.alias, $event)"
-              />
+              <label v-if="entry.view.locality === 'cloud' && rowOf(entry.view.alias) !== undefined" class="contents touch-box">
+                <input
+                  :checked="rowOf(entry.view.alias)?.enabled"
+                  type="checkbox"
+                  role="switch"
+                  class="switch"
+                  :aria-label="`${entry.name} acceso`"
+                  :title="rowOf(entry.view.alias)?.enabled ? 'Acceso' : 'Spento'"
+                  @change="setEnabled(entry.view.alias, $event)"
+                />
+              </label>
             </span>
           </div>
         </div>
@@ -814,8 +815,8 @@ const factKey = 'text-[13px] text-muted';
     </div>
 
     <!-- The confirmation of an action: what happens, how much, where -->
-    <div v-if="confirming" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">
-      <form class="flex max-w-lg flex-col gap-3 rounded-[14px] border border-line-strong bg-surface-2 p-4" @submit.prevent="confirmAction">
+    <div v-if="confirming" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">
+      <form class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-[14px] border border-line-strong bg-surface-2 p-4 phone:w-full" @submit.prevent="confirmAction">
         <h2 id="model-action-title" class="text-[16px] font-semibold [overflow-wrap:anywhere]">{{ confirming.title }}</h2>
         <p v-for="line in confirming.lines" :key="line" class="text-[14px]">{{ line }}</p>
         <label v-if="confirming.typed !== undefined" class="flex flex-col gap-1 text-[13px] text-muted">

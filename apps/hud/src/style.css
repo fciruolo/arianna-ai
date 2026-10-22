@@ -321,6 +321,26 @@ body,
   .btn {
     min-height: 44px;
   }
+  /*
+   * A box to tick (D-294): the label around it is what the finger hits, as
+   * tall as a tap; the box drawn keeps its size, a little bigger only where
+   * the browser draws it at 13 px. A box without a label gets its 44 px from
+   * a `touch-box` around it.
+   */
+  label:has(> input:is([type="checkbox"], [type="radio"]):not(.sr-only)) {
+    min-height: 44px;
+  }
+  input:is([type="checkbox"], [type="radio"]):not(.switch, .sr-only) {
+    min-width: 18px;
+    min-height: 18px;
+  }
+  .touch-box {
+    display: inline-grid;
+    place-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -10px;
+  }
 }
 
 /*

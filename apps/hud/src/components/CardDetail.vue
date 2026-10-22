@@ -771,7 +771,7 @@ function absoluteTime(at: string): string {
             </div>
             <ul v-if="checklist.length > 0" class="mb-2 flex flex-col gap-0.5">
               <li v-for="item in checklist" :key="item.id" class="group flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-surface-2">
-                <input type="checkbox" class="size-4 shrink-0 accent-[var(--accent)] touch:size-5" :checked="item.done" :aria-label="`Fatta: ${item.body}`" @change="toggleItem(item)" />
+                <label class="contents touch-box"><input type="checkbox" class="size-4 shrink-0 accent-[var(--accent)] touch:size-5" :checked="item.done" :aria-label="`Fatta: ${item.body}`" @change="toggleItem(item)" /></label>
                 <input
                   :value="item.body"
                   :maxlength="MAX_ITEM"

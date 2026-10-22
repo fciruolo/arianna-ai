@@ -479,7 +479,8 @@ onBeforeUnmount(() => {
             />
             <div class="mt-2.5 flex flex-wrap items-center gap-2">
               <p id="thought-help" class="min-w-0 flex-1 text-[13px] text-muted">
-                ⌘/Ctrl+Invio per salvare · il modello locale scrive titolo, riassunto, collegamenti e tag, il tuo testo resta in fondo
+                <!-- D-294: a finger has no ⌘ to press; «Salva» is the button beside. -->
+                <span class="touch:hidden">⌘/Ctrl+Invio per salvare · </span>il modello locale scrive titolo, riassunto, collegamenti e tag, il tuo testo resta in fondo
                 <span v-if="counter !== undefined" :class="tooLarge ? 'text-danger' : ''"> · {{ counter }}</span>
               </p>
               <button

@@ -18,6 +18,7 @@ import {
   proposeWikiAgain,
   restoreWikiPage,
 } from '../lib/api.ts';
+import { coarsePointer, wikiEmptyText } from '../lib/touch-hints.ts';
 import {
   ancestorsOf,
   breadcrumb,
@@ -295,9 +296,9 @@ async function show(next: View, force = false): Promise<void> {
     pageError.value =
       failure instanceof ApiError && failure.status === 404
         ? folder === ''
-          ? 'La Wiki è ancora vuota: le pagine arrivano dalle proposte del modello locale, o le scrivi tu con «Nuova cartella» e «Nuova pagina» (clic destro nell’albero).'
+          ? wikiEmptyText('wiki', coarsePointer())
           : emptyFolder
-            ? 'Cartella ancora vuota: crea qui una pagina (clic destro sulla cartella) o trascinane una dall’albero.'
+            ? wikiEmptyText('folder', coarsePointer())
             : 'Questa pagina non c’è più.'
         : problemOf(failure);
   } finally {
@@ -1107,7 +1108,7 @@ onBeforeUnmount(() => {
           <p v-if="inline.problem !== null" class="mt-0.5 text-xs text-danger" role="alert">{{ inline.problem }}</p>
         </form>
 
-        <p v-if="listing !== null && rows.length === 0 && inline === null" class="px-2 py-1 text-[13px] text-muted" @contextmenu.prevent="onEmptyMenu">Nessuna pagina ancora. Clic destro qui o «+» per crearne.</p>
+        <p v-if="listing !== null && rows.length === 0 && inline === null" class="px-2 py-1 text-[13px] text-muted" @contextmenu.prevent="onEmptyMenu">Nessuna pagina ancora. <span class="touch:hidden">Clic destro qui o «+» per crearne.</span><span class="hidden touch:inline">Tocca «+» qui sopra per crearne.</span></p>
 
         <template v-for="row in rows" :key="keyOf(row.node)">
           <div
@@ -1363,7 +1364,7 @@ onBeforeUnmount(() => {
               Pagine che il modello locale propone dalle tue note e dai video riassunti (le approvi in «Proposte»), e pagine che scrivi tu. Restano sul Mac, sempre Private.
             </p>
             <p class="mt-1.5">
-              Una pagina si scrive direttamente e si salva da sola. Nel testo «/» apre i blocchi, «[[» cita una nota o un’altra pagina, la maniglia ⋮⋮ sposta un blocco. Clic destro su una voce dell’albero (o «…») per creare, rinominare, spostare, duplicare o eliminare.
+              Una pagina si scrive direttamente e si salva da sola. Nel testo «/» apre i blocchi, «[[» cita una nota o un’altra pagina<span class="touch:hidden">, la maniglia ⋮⋮ sposta un blocco. Clic destro su una voce dell’albero (o «…») per creare, rinominare, spostare, duplicare o eliminare.</span><span class="hidden touch:inline">. Il «⋯» di una voce dell’albero crea, rinomina, sposta, duplica o elimina.</span>
             </p>
           </section>
 

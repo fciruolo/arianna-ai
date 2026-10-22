@@ -438,8 +438,8 @@ watch(
     </div>
 
     <!-- The new label of a folder: what changes, and "scende" when it goes down; written only with Conferma -->
-    <div v-if="relabel" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="relabel-title" @keydown.esc="!relabel.busy && (relabel = null)">
-      <div class="w-full max-w-[500px] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
+    <div v-if="relabel" class="phone-overlay-bottom fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="relabel-title" @keydown.esc="!relabel.busy && (relabel = null)">
+      <div class="phone-sheet-bottom w-full max-w-[500px] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
         <div class="flex gap-3.5 px-5 pt-5">
           <span class="grid size-9 shrink-0 place-items-center rounded-lg" :class="lowers(relabel.folder.label, relabel.to) ? 'bg-danger/15 text-danger' : 'bg-warn/15 text-warn'"><Icon name="warning" :size="16" /></span>
           <div>
