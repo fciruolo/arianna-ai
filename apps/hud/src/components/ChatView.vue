@@ -14,7 +14,8 @@ import { activityLines, liveEdits, shownStreaming, type ChatState, type LiveEdit
 import { computerTask, type ComputerTab } from '../lib/computer.ts';
 import { browserChatOf, browserSignal, browserSite, isBrowserLine, latestBrowserSite } from '../lib/browser-screen.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
-import { draftKeeper, keepsDraft, modelDigit, modelForDigit, modelKeyText, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
+import { draftKeeper, enterSends, keepsDraft, modelDigit, modelForDigit, modelKeyText, phoneComposer, plusEntries, pruneDrafts, type DraftStorage, type PlusEntry } from '../lib/composer.ts';
+import { onRemoteOrigin } from '../lib/remote.ts';
 import { cloudTargets, longMessageStep, PLAIN_DEFAULT_MODEL, PLAIN_MODELS, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { listImClosings, loadPinned } from '../lib/api.ts';
@@ -41,7 +42,7 @@ import {
   withSaved,
   type SavedNotes,
 } from '../lib/message-actions.ts';
-import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
+import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { isAddingLine, isEventLine, participantPose, withText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, QueueView, StatusSnapshot, Task } from '../lib/types.ts';
@@ -953,12 +954,16 @@ function onKey(event: KeyboardEvent): void {
       return;
     }
   }
-  if (event.key === 'Enter' && !event.shiftKey) {
+  // On the phone (D-293) the Enter of the keyboard goes to a new line; the button sends.
+  if (enterSends(event, phoneComposer((query) => window.matchMedia(query).matches))) {
     event.preventDefault();
     // A held key never sends again.
     if (!event.repeat) submit();
   }
 }
+
+/** From the phone (D-292) the agent's browser is only on the Mac: its bar is not offered (D-293). */
+const remoteOrigin = onRemoteOrigin(window.location);
 
 function onInput(): void {
   commandHint.value = null;
@@ -1491,7 +1496,7 @@ onBeforeUnmount(() => clearInterval(clock));
       <span>Conversazione archiviata: ripristinala per scrivere.</span>
       <button type="button" class="btn btn-primary" @click="emit('restore')"><Icon name="restore" :size="16" />Ripristina</button>
     </div>
-    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5 short:pt-2 short:pb-2.5">
+    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 max-md:px-2 max-md:pt-2 max-md:pb-[calc(0.25rem+var(--safe-bottom))] md:px-5.5 short:pt-2 short:pb-2.5">
       <div class="relative mx-auto max-w-[780px]">
         <!-- The «@» menu (D-107, tappa B2): who the message goes to instead of Arianna -->
         <MentionMenu
@@ -1527,7 +1532,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
         <!-- D-264, passo 4: while this conversation holds Arianna's browser, «Guarda» and «Chiudi» at hand. -->
-        <BrowserBar v-if="!incognito" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" @open="emit('open', $event)" />
+        <BrowserBar v-if="!incognito && !remoteOrigin" :conversation-id="conversation.id" :signal="browserBar.key" :closed="browserBar.closed" @watch="watchBrowser" @open="emit('open', $event)" />
         <QueuedMessages
           v-if="queue !== undefined"
           :queue="queue"
@@ -1540,7 +1545,7 @@ onBeforeUnmount(() => clearInterval(clock));
         />
         <AttachmentChips :items="attachmentItems" @remove="removeAttachment" />
         <form
-          class="flex items-end gap-2 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-2"
+          class="flex items-end gap-2 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-2 max-md:gap-1 max-md:py-1 max-md:pr-1 max-md:pl-1"
           @submit.prevent="submit()"
         >
           <input
@@ -1576,7 +1581,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <button
             v-if="working"
             type="button"
-            class="grid size-[38px] shrink-0 place-items-center rounded-full border border-line-strong text-ink hover:border-danger hover:text-danger disabled:opacity-40"
+            class="grid size-[38px] shrink-0 place-items-center rounded-full border border-line-strong text-ink hover:border-danger hover:text-danger disabled:opacity-40 touch:size-11"
             :disabled="stopping"
             aria-label="Ferma la risposta"
             title="Ferma la risposta in corso; i messaggi in coda restano in pausa"
@@ -1588,7 +1593,7 @@ onBeforeUnmount(() => clearInterval(clock));
             type="submit"
             :title="working ? 'Mettilo in coda: parte quando finisce la risposta in corso' : undefined"
             :disabled="sending || (draft.trim() === '' && attachmentItems.length === 0)"
-            class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
+            class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40 touch:size-11"
             aria-label="Invia"
           >
             <Icon name="send" />
@@ -1605,7 +1610,7 @@ onBeforeUnmount(() => clearInterval(clock));
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p v-if="modelNote !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-muted">{{ modelNote }}</p>
-      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted short:mt-1.5">
+      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted max-md:hidden short:mt-1.5">
         <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · incognito: /nota spento, "Copia" funziona</span>
         <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span>
@@ -1613,6 +1618,13 @@ onBeforeUnmount(() => clearInterval(clock));
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
         </span>
       </p>
+      <!-- The phone (D-293): one line on the label, no keys the phone has not; «ⓘ» opens the legend. -->
+      <button type="button" class="mt-1 flex min-h-8 w-full items-center gap-1.5 px-1.5 text-left text-[12.5px] text-muted md:hidden" @click="emit('legend')">
+        <LabelBadge :label="conversation.clearance" dot />
+        <span class="min-w-0 flex-1 truncate">{{ LABEL_TEXT[conversation.clearance] }}: {{ cloud ? `può andare a ${targetName}, niente dati privati` : trial !== null ? `risponde solo ${trial}, sul Mac` : conversation.mode === 'work' ? 'può uscire verso il cloud' : 'resta sul Mac' }}</span>
+        <Icon name="info" :size="15" />
+        <span class="sr-only">Cosa vogliono dire le etichette?</span>
+      </button>
     </div>
     <ComputerPanel
       v-if="computerOpen"

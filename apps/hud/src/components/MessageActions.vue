@@ -111,7 +111,7 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
   <!-- `relative`: the sr-only status below is absolute; without a positioned box here it hangs off the page and makes it scroll past the chat. -->
   <span class="msg-actions relative inline-flex items-center gap-2.5 font-mono text-[12px] text-muted" :class="{ 'msg-actions-busy': busy }">
     <button type="button" class="action" :class="{ 'text-warn': copyState === 'unavailable' }" :title="COPY_HINT" @click="copy">
-      <Icon :name="copyState === 'copied' ? 'saved' : 'copy'" :size="12" />{{ COPY_TEXT[copyState] }}
+      <Icon :name="copyState === 'copied' ? 'saved' : 'copy'" :size="12" class="action-icon" /><span class="action-text">{{ COPY_TEXT[copyState] }}</span>
     </button>
     <button
       v-if="canSave"
@@ -123,19 +123,19 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
       :aria-busy="saving"
       @click="save"
     >
-      <Icon :name="saved ? 'saved' : 'inbox'" :size="12" />{{ saved ? SAVED_TEXT : saving ? SAVING_TEXT : SAVE_TO_INBOX_TEXT }}
+      <Icon :name="saved ? 'saved' : 'inbox'" :size="12" class="action-icon" /><span class="action-text">{{ saved ? SAVED_TEXT : saving ? SAVING_TEXT : SAVE_TO_INBOX_TEXT }}</span>
     </button>
     <button v-if="canSave && saved && note !== null" type="button" class="action" :title="`${OPEN_IN_KNOWLEDGE_HINT}: ${note}`" @click="emit('openKnowledge', inboxNodeId(note))">
-      <Icon name="knowledge" :size="12" />{{ OPEN_IN_KNOWLEDGE_TEXT }}
+      <Icon name="knowledge" :size="12" class="action-icon" /><span class="action-text">{{ OPEN_IN_KNOWLEDGE_TEXT }}</span>
     </button>
     <button v-if="side !== undefined" type="button" class="action" :title="SIDE_HINT" @click="emit('side', message.id)">
-      <Icon name="panel" :size="12" />{{ side === 'reopen' ? SIDE_REOPEN_TEXT : SIDE_ACTION_TEXT }}
+      <Icon name="panel" :size="12" class="action-icon" /><span class="action-text">{{ side === 'reopen' ? SIDE_REOPEN_TEXT : SIDE_ACTION_TEXT }}</span>
     </button>
     <button v-if="pin === 'pin'" type="button" class="action" :title="PIN_HINT" @click="emit('pin', message.id)">
-      <Icon name="pin" :size="12" />{{ PIN_TEXT }}
+      <Icon name="pin" :size="12" class="action-icon" /><span class="action-text">{{ PIN_TEXT }}</span>
     </button>
     <button v-else-if="pin === 'pinned'" type="button" class="action text-ok" @click="emit('openDashboard')">
-      <Icon name="dashboard" :size="12" />{{ PINNED_TEXT }}
+      <Icon name="dashboard" :size="12" class="action-icon" /><span class="action-text">{{ PINNED_TEXT }}</span>
     </button>
     <span v-if="error !== null" class="text-warn">{{ error }}</span>
     <span role="status" class="sr-only">{{ announcement }}</span>
@@ -182,5 +182,28 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
 }
 .action[aria-busy='true'] {
   cursor: progress;
+}
+/* The phone (D-293): only the icons, each a target for a finger; the words stay for screen readers. */
+@media (max-width: 47.98rem) {
+  .msg-actions {
+    gap: 0.125rem;
+  }
+  .action {
+    justify-content: center;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+  .action-icon {
+    width: 17px;
+    height: 17px;
+  }
+  .action-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 </style>
