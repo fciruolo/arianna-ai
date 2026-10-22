@@ -20,7 +20,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
     SETTINGS_INDEX.map((group) => group.items.map((entry) => entry.title)),
     [
       ['Modelli', 'Agenti', 'Personaggi', 'Su di te', 'Skill e stili', 'Catalogo agenti'],
-      ['Voce e chiamate', 'Notifiche', 'Segretaria'],
+      ['Voce e chiamate', 'Notifiche', 'Dispositivi', 'Segretaria'],
       ['Progetti', 'Regole dei progetti'],
       ['Claude e Codex', 'Link da riassumere', 'Siti che il Coder può leggere'],
       ['Server dei modelli', 'Aspetto e installazione'],

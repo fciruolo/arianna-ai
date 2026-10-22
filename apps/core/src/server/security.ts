@@ -41,7 +41,8 @@ const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
  * `origin`: the one Origin accepted; absent, the same `http://` host as the
- * request (the port of this Mac). The remote port passes its fixed origin.
+ * request (the port of this Mac). The remote port passes its fixed origin,
+ * and there a write without Origin is refused too: the session is a cookie.
  */
 export function checkRequest(facts: RequestFacts, hosts: ReadonlySet<string>, origin?: string): CheckResult {
   const host = facts.host?.toLowerCase();
@@ -56,6 +57,8 @@ export function checkRequest(facts: RequestFacts, hosts: ReadonlySet<string>, or
   if (facts.upgrade === true && facts.origin === undefined) return { ok: false, status: 403, reason: 'missing origin' };
 
   if (STATE_CHANGING.has(facts.method)) {
+    // The remote port (D-292) carries a session cookie: a write there must say where it comes from.
+    if (origin !== undefined && facts.origin === undefined) return { ok: false, status: 403, reason: 'missing origin' };
     // A form or a "simple" fetch cannot send application/json without a preflight, which gets no CORS headers.
     const type = facts.contentType?.split(';', 1)[0]?.trim().toLowerCase();
     if (type !== 'application/json') return { ok: false, status: 415, reason: 'content type must be application/json' };

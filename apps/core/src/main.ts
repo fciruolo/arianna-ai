@@ -128,6 +128,8 @@ import { createCalls, liveCall } from './voice/calls.ts';
 import { createPusher, vapidKey } from './voice/push.ts';
 import { createPushSwitch } from './push-switch.ts';
 import { loadRemoteTls, WARN_DAYS } from './remote-cert.ts';
+import { createRemoteDevices } from './remote/devices.ts';
+import { createDeviceStore } from './remote/store.ts';
 import { createRinger } from './voice/ringer.ts';
 import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
@@ -1330,8 +1332,10 @@ const server = await startApiServer({
   changes: installChanges,
   host: config.server.host,
   port: config.server.port,
-  // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; until stage B only the page and «not paired».
+  // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; the API only with the session of a paired device (stage B).
   ...(remoteListener === undefined ? {} : { remote: remoteListener }),
+  // Pairing, passkeys and sessions of the phone (D-292, stage B); Impostazioni → Dispositivi works with the remote port closed too.
+  ...(config.server.remote === undefined ? {} : { remoteDevices: createRemoteDevices({ store: createDeviceStore(sql), host: config.server.remote.host }) }),
   onRemoteError: (error) => {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'errore';
     console.error(`Porta remota chiusa: non si apre su 127.0.0.1:${String(config.server.remote?.port)} (${code}); il core continua senza.`);
@@ -1662,7 +1666,7 @@ await telegram.begin(telegramSection());
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 if (server.remotePort !== undefined && config.server.remote !== undefined) {
   const ends = config.server.remote.tls === 'own' ? 'TLS ended by the core' : 'TLS ended by Tailscale';
-  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host}, ${ends} (D-292: devices not paired yet, API closed)`);
+  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host}, ${ends} (D-292: API with the session of a paired device)`);
 }
 // D-246: a day forced for the feasts is said at the start, so a value left in the environment is not missed.
 if (process.env.ARIANNA_TODAY !== undefined) {

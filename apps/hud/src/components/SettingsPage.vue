@@ -110,6 +110,7 @@ import SkillsCatalog from './SkillsCatalog.vue';
 import ClaudeSkills from './ClaudeSkills.vue';
 import AgentsCatalog from './AgentsCatalog.vue';
 import Icon from './Icon.vue';
+import DevicesPage from './DevicesPage.vue';
 import ProfileFacts from './ProfileFacts.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
@@ -944,6 +945,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         <AgentsCatalog v-else-if="active === 'agents-catalog'" />
         <!-- «Su di te» (D-114): the facts of the profile, in the database, not in arianna.toml -->
         <ProfileFacts v-else-if="active === 'about-you'" />
+        <!-- The phones of the remote port (D-292, stage B): in the database, not in arianna.toml -->
+        <DevicesPage v-else-if="active === 'devices'" />
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
         <ChangesPage v-else-if="active === 'changes'" @section="openSection" />
         <UsagePage v-else-if="active === 'usage'" />

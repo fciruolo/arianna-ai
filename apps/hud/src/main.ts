@@ -2,17 +2,17 @@ import { createApp } from 'vue';
 
 import App from './App.vue';
 import BrowserPage from './components/BrowserPage.vue';
-import UnpairedPage from './components/UnpairedPage.vue';
-import { onRemoteOrigin, registerWorker, remotePaired } from './lib/remote.ts';
+import RemoteAccessPage from './components/RemoteAccessPage.vue';
+import { onRemoteOrigin, registerWorker, remoteSession } from './lib/remote.ts';
 import { browserConversationFromPath } from './lib/route.ts';
 import './style.css';
 
 async function start(): Promise<void> {
-  // From the phone (D-292): the page installs as an app; without pairing, only the notice.
+  // From the phone (D-292): the page installs as an app; without a session, the code, the passkey or Face ID.
   if (onRemoteOrigin(window.location)) {
     registerWorker().catch(() => undefined);
-    if (!(await remotePaired())) {
-      createApp(UnpairedPage, { onRetry: () => { window.location.reload(); } }).mount('#app');
+    if (!(await remoteSession())) {
+      createApp(RemoteAccessPage).mount('#app');
       return;
     }
   }

@@ -95,6 +95,12 @@ test('the remote door accepts only its name, with or without :443, and only its 
   }
   // The socket of a remote page needs the origin too.
   assert.equal(checkRequest({ ...facts(NAME), upgrade: true }, door.hosts, door.origin).ok, false);
+  // CSRF with the session cookie (stage B): a write needs the origin and JSON; on the port of this Mac a write without Origin stays as it was.
+  const write = { method: 'POST', host: NAME, origin: undefined, contentType: 'application/json' };
+  assert.deepEqual(checkRequest(write, door.hosts, door.origin), { ok: false, status: 403, reason: 'missing origin' });
+  assert.deepEqual(checkRequest({ ...write, origin: ORIGIN }, door.hosts, door.origin), { ok: true });
+  assert.equal(checkRequest({ ...write, origin: ORIGIN, contentType: 'text/plain' }, door.hosts, door.origin).ok, false);
+  assert.deepEqual(checkRequest({ ...write, host: '127.0.0.1:7420' }, new Set(['127.0.0.1:7420'])), { ok: true });
 });
 
 test('the headers of the remote port: wss:// of the name and HSTS; the port of this Mac unchanged', () => {
@@ -106,16 +112,17 @@ test('the headers of the remote port: wss:// of the name and HSTS; the port of t
   assert.equal(local['strict-transport-security'], undefined);
 });
 
-test('remoteAccess: until stage B only the state, never the API or a socket', () => {
+test('remoteAccess without a device service: only the state, never the API or a socket', async () => {
   const request = { method: 'GET', headers: {} };
-  assert.deepEqual(remoteAccess(request, '/api/remote/status'), { kind: 'status', body: { paired: false } });
-  for (const path of ['/api/conversations', '/api/ws', '/api/notifications/stream', '/api/remote/status/x', '/api/push/subscribe']) {
-    assert.equal(remoteAccess(request, path).kind, 'refused', path);
+  const empty = () => Promise.resolve({});
+  assert.deepEqual(await remoteAccess(request, '/api/remote/status', undefined, empty), { kind: 'answer', status: 200, body: { session: false } });
+  for (const path of ['/api/conversations', '/api/ws', '/api/notifications/stream', '/api/remote/status/x', '/api/push/subscribe', '/api/remote/pair']) {
+    assert.equal((await remoteAccess(request, path, undefined, empty)).kind, 'refused', path);
   }
-  assert.equal(remoteAccess({ method: 'POST', headers: {} }, '/api/remote/status').kind, 'refused');
-  assert.equal(remoteAccess(request, '/api/remote/status', true).kind, 'refused');
+  assert.equal((await remoteAccess({ method: 'POST', headers: {} }, '/api/remote/status', undefined, empty)).kind, 'refused');
+  assert.equal((await remoteAccess(request, '/api/ws', undefined, empty, true)).kind, 'refused');
   // A header claiming a session or a Tailscale user changes nothing.
-  assert.equal(remoteAccess({ method: 'GET', headers: { cookie: 'session=x', 'tailscale-user-login': 'a@example.org' } }, '/api/conversations').kind, 'refused');
+  assert.equal((await remoteAccess({ method: 'GET', headers: { cookie: '__Host-arianna-session=x', 'tailscale-user-login': 'a@example.org' } }, '/api/conversations', undefined, empty)).kind, 'refused');
 });
 
 test('the remote port serves the files of the chat and the state of the pairing', async () => {
@@ -131,7 +138,7 @@ test('the remote port serves the files of the chat and the state of the pairing'
   assert.equal((await remote('/impostazioni')).status, 200);
   const state = await remote('/api/remote/status', { origin: ORIGIN });
   assert.equal(state.status, 200);
-  assert.deepEqual(JSON.parse(state.body), { paired: false });
+  assert.deepEqual(JSON.parse(state.body), { session: false });
 });
 
 test('every other route of the API is refused on the remote port with device-not-paired', async () => {
@@ -159,7 +166,7 @@ test('the remote port refuses another Host or Origin before anything else', asyn
   assert.equal((await remote('/api/capture', { origin: ORIGIN, 'content-type': 'application/json', 'x-forwarded-for': '127.0.0.1', 'x-forwarded-host': `127.0.0.1:${String(server.port)}` }, 'POST', '{"text":"x"}')).status, 401);
 });
 
-test('no WebSocket on the remote port: 401 with the right origin, 403 with another', async () => {
+test('no WebSocket on the remote port without a session: 401 with the right origin, 403 with another', async () => {
   const handshake = (headers: Record<string, string>) =>
     remote('/api/ws', { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', ...headers });
   assert.equal((await handshake({ origin: ORIGIN })).status, 401);

@@ -109,8 +109,10 @@ export type PushKind = 'call' | 'reply' | 'approval' | 'failure' | 'reminder';
 
 export interface Pusher {
   readonly publicKey: string;
-  subscribe(subscription: Subscription): Promise<void>;
-  unsubscribe(endpoint: string): Promise<void>;
+  /** `deviceId`: the paired phone it came from (D-292), absent on the Mac. */
+  subscribe(subscription: Subscription, deviceId?: string): Promise<void>;
+  /** `deviceId`: from the phone, only a subscription of that device. */
+  unsubscribe(endpoint: string, deviceId?: string): Promise<void>;
   /** An empty push to every subscribed browser, after the gateway allowed the fixed sentence of `kind`. */
   notify(kind: PushKind, options?: { skip?: ReadonlySet<string> }): Promise<number>;
 }
@@ -140,18 +142,31 @@ export function createPusher(options: PusherOptions): Pusher {
   const post = options.post ?? postPush;
   return {
     publicKey: options.publicKey,
-    async subscribe(subscription) {
+    async subscribe(subscription, deviceId) {
+      // From the phone (D-292), the paired device it belongs to: «Scollega» stops its notices.
       await sql`
-        INSERT INTO push_subscriptions (endpoint, p256dh, auth) VALUES (${subscription.endpoint}, ${subscription.p256dh}, ${subscription.auth})
-        ON CONFLICT (endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, removed_at = NULL`;
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth, device_id) VALUES (${subscription.endpoint}, ${subscription.p256dh}, ${subscription.auth}, ${deviceId ?? null})
+        ON CONFLICT (endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, device_id = EXCLUDED.device_id, removed_at = NULL`;
     },
-    async unsubscribe(endpoint) {
+    async unsubscribe(endpoint, deviceId) {
+      // From the phone (D-292) only a subscription of that device.
+      if (deviceId !== undefined) {
+        await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint} AND device_id = ${deviceId} AND removed_at IS NULL`;
+        return;
+      }
       await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint} AND removed_at IS NULL`;
     },
     async notify(kind, notifyOptions = {}) {
       const skip = notifyOptions.skip ?? new Set<string>();
       // The browsers of the Mac while its helper shows the notice (D-128): left out, never a call.
-      const subscriptions = (await sql<{ endpoint: string }[]>`SELECT endpoint FROM push_subscriptions WHERE removed_at IS NULL ORDER BY id`).filter(
+      const subscriptions = (
+        await sql<{ endpoint: string }[]>`
+          SELECT s.endpoint FROM push_subscriptions s
+          WHERE s.removed_at IS NULL
+            -- A phone unlinked meanwhile (D-292) gets nothing, whatever the race with its subscription.
+            AND (s.device_id IS NULL OR EXISTS (SELECT FROM remote_devices d WHERE d.id = s.device_id AND d.revoked_at IS NULL))
+          ORDER BY s.id`
+      ).filter(
         ({ endpoint }) => kind === 'call' || !skip.has(endpoint),
       );
       if (subscriptions.length === 0 || !(await options.gate(PUSH_TEXTS[kind], kind))) return 0;
