@@ -5,6 +5,7 @@ import { createAnonymizeGroup } from './anonymize-group.ts';
 import { canary, matchesCanary } from './canary.ts';
 import { contract, matchesContract } from './contract.ts';
 import { createFinanceGroup, financePrompt } from './finance-group.ts';
+import { createNotesGroup } from './notes-group.ts';
 import { evaluateGateway } from './gateway.ts';
 import { ariannaPrompt, createOrchestratorGroup } from './orchestrator-group.ts';
 import { evaluateRouter, matchesRouterExpectation } from './router.ts';
@@ -55,6 +56,8 @@ export const GROUPS: readonly EvalGroup[] = [
   orchestrator(),
   createFinanceGroup({ model: configuredModel, prompt: () => financePrompt(configured().home) }),
   createAnonymizeGroup(configuredModel),
+  // The Wiki proposed from the notes (D-280): evals/notes/wiki.jsonl.
+  createNotesGroup(configuredModel),
   {
     name: 'extraction',
     tier: 'models',

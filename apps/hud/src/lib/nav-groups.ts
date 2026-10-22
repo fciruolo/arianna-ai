@@ -16,6 +16,7 @@ export type NavArea =
   | 'thoughts'
   | 'routines'
   | 'knowledge'
+  | 'wiki'
   | 'finance'
   | 'god'
   | 'followed'
@@ -30,7 +31,7 @@ export interface NavGroup {
 
 export const NAV_GROUPS: readonly NavGroup[] = [
   { id: 'work', title: 'Lavoro', areas: ['dashboard', 'secretary', 'projects', 'clients', 'cardwall', 'studio'] },
-  { id: 'personal', title: 'Personale', areas: ['thoughts', 'routines', 'knowledge', 'finance'] },
+  { id: 'personal', title: 'Personale', areas: ['thoughts', 'routines', 'knowledge', 'wiki', 'finance'] },
   { id: 'system', title: 'Sistema', areas: ['god', 'followed', 'office', 'settings'] },
 ];
 

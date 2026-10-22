@@ -86,6 +86,13 @@ export function isFollowedPath(pathname: string): boolean {
   return pathname === FOLLOWED_PATH || pathname === `${FOLLOWED_PATH}/`;
 }
 
+/** The Wiki (D-280): pages proposed by the local model from the notes, approved by the user. */
+export const WIKI_PATH = '/wiki';
+
+export function isWikiPath(pathname: string): boolean {
+  return pathname === WIKI_PATH || pathname === `${WIKI_PATH}/`;
+}
+
 /** Inside the page: the address changes and the app follows it, as with "back" (MockupLink does the same). */
 export function goTo(path: string): void {
   window.history.pushState(null, '', path);

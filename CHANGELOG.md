@@ -4,6 +4,26 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.161.0] - 2026-10-22
+
+### Aggiunto
+
+- La Wiki proposta dal modello locale (D-280, tappa B di D-273): dopo ogni video riassunto, ogni nota archiviata e col pulsante «Proponi per la Wiki», il modello propone di creare o aggiornare una pagina di `kb/wiki` (ad albero, al più 3 livelli, con un indice per cartella) citando solo le tue note; tu approvi, scarti o chiedi di nuovo dalla pagina «Wiki» (comando `/wiki`), vedendo le righe cambiate.
+- Nella pagina «Wiki» scrivi anche tu, subito (D-280): «Modifica» del titolo e del testo in Markdown, «Sposta o rinomina» di pagine e cartelle, trascinamento nell'albero, «Nuova pagina» e «Nuova cartella»; ogni modifica tiene la versione di prima. Le cartelle restano anche vuote e si tolgono con «Elimina cartella».
+- Editor della Wiki «come Notion» (D-282): scrivi già formattato con la barra dei pulsanti (titoli, grassetto, corsivo, elenchi, citazioni, codice, tabelle), le citazioni sono etichette e «[[» suggerisce le tue note e pagine; l'interruttore «Markdown» mostra il testo nudo. Dipendenza nuova: TipTap 3.31.4.
+- Nella pagina «Wiki»: «Elimina» una pagina dopo una conferma, con le sue versioni e le proposte in attesa (gli indici si aggiornano, le cartelle restano); versioni precedenti con «Ripristina»; nel grafo di Conoscenza le pagine della Wiki hanno colore e forma propri e il filtro «Solo Wiki» (D-280).
+- Eval `evals/notes/wiki.jsonl` con 15 note inventate nel gruppo `notes` di `pnpm eval:models` (D-280).
+
+### Corretto
+
+- Editor della Wiki: Invio dentro una cella di tabella non va più a capo, e un a capo già presente in una cella si salva come spazio invece che come `<br>`, che il core rifiutava come HTML (D-282).
+- Editor della Wiki: la riga vuota prima di una tabella non compare più nella pagina come «&nbsp;» (D-282).
+
+### Sicurezza
+
+- Le pagine scritte a mano nella Wiki accettano solo citazioni alle tue note e pagine fino a Privata, senza link, immagini, indirizzi né HTML (D-280).
+- `kb/wiki` è sempre almeno L2 nella policy anche con una regola più bassa, resta fuori da git, è negata a `pnpm dev:codex` e non è mai una cartella dell'Archivista (D-280).
+
 ## [0.160.0] - 2026-10-22
 
 ### Aggiunto

@@ -6,8 +6,8 @@ import { DEFAULT_OPEN, NAV_GROUPS, groupOf, isOpen, parseOpen, toggle } from '..
 test('every area belongs to exactly one group', () => {
   const areas = NAV_GROUPS.flatMap((group) => group.areas);
   assert.equal(new Set(areas).size, areas.length);
-  // Fourteen with the Dashboard (D-248), the routines (D-254) and «Seguiti» (D-272).
-  assert.equal(areas.length, 14);
+  // Fifteen with the Dashboard (D-248), the routines (D-254), «Seguiti» (D-272) and the Wiki (D-280).
+  assert.equal(areas.length, 15);
 });
 
 test('groupOf finds the group of an area and none for the chat', () => {
@@ -15,6 +15,7 @@ test('groupOf finds the group of an area and none for the chat', () => {
   assert.equal(groupOf('dashboard'), 'work');
   assert.equal(groupOf('finance'), 'personal');
   assert.equal(groupOf('routines'), 'personal');
+  assert.equal(groupOf('wiki'), 'personal');
   assert.equal(groupOf('settings'), 'system');
   assert.equal(groupOf(null), null);
 });

@@ -632,6 +632,8 @@ export interface VideoWorkerOptions extends VideoEnv {
   onError?: (error: unknown) => void;
   /** The Archivist (D-195): proposes where the note of a video goes, as for any note organized. */
   archive?: (tx: Queryable, path: string) => Promise<boolean>;
+  /** The Wiki (D-280): after every video summarized, the local model proposes what it adds to the wiki. */
+  wiki?: (tx: Queryable, path: string) => Promise<boolean>;
 }
 
 export interface VideoWorker {
@@ -738,6 +740,7 @@ export function createVideoWorker(options: VideoWorkerOptions): VideoWorker {
         // Codes only: never the address, the title or the channel.
         await appendEvent(tx, { kind: 'note.video_fetched', label: 'L0', payload: { jobId: job.id, source: outcome.source, minutes: outcome.minutes } });
         if (options.archive !== undefined) await options.archive(tx, path);
+        if (options.wiki !== undefined) await options.wiki(tx, path);
       } else if (outcome.reason === 'done') {
         await completeJob(tx, job.id, worker);
       } else {

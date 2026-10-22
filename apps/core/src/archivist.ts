@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirS
 import { join } from 'node:path';
 
 import { LocalModelError } from '@arianna/executors';
-import { createContext, isAtMost, KB_ARCHIVE, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, KB_ARCHIVE, KB_WIKI, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { localTimestamp } from './capture.ts';
 import type { Queryable } from './db/client.ts';
@@ -112,7 +112,8 @@ export function archiveFolders(home: string, rules: LabelRules): ArchiveFolder[]
   const base = kbBase(home);
   if (base === undefined) return [];
   const found: ArchiveFolder[] = [];
-  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE].map((path) => path.toLowerCase()));
+  // Nor kb/wiki: the Wiki is compiled from the notes (D-280), a note is never filed into it.
+  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE, KB_WIKI].map((path) => path.toLowerCase()));
   const walk = (dir: string, path: string, depth: number): void => {
     if (depth > MAX_FOLDER_DEPTH) return;
     let entries;
@@ -833,7 +834,7 @@ export function relocateArchived(home: string, rules: LabelRules): Relocated {
   const base = kbBase(home);
   if (base === undefined) return result;
   const ids = listPageIds(base);
-  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE].map((path) => path.slice(KB_DIR.length + 1).toLowerCase()));
+  const skip = new Set([KB_INBOX, KB_PROJECT_NOTES, KB_ARCHIVE, KB_WIKI].map((path) => path.slice(KB_DIR.length + 1).toLowerCase()));
   let current = [...ids];
   for (const id of ids) {
     const segments = id.split('/');

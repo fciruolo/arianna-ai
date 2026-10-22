@@ -32,6 +32,7 @@ import ThoughtsPage from './components/ThoughtsPage.vue';
 import DashboardPage from './components/DashboardPage.vue';
 import RoutinesPage from './components/RoutinesPage.vue';
 import FollowedPage from './components/FollowedPage.vue';
+import WikiPage from './components/WikiPage.vue';
 import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
@@ -69,6 +70,8 @@ import {
   isRoutinesPath,
   isFollowedPath,
   FOLLOWED_PATH,
+  isWikiPath,
+  WIKI_PATH,
   ROUTINES_PATH,
   isVoiceTrialPath,
   knowledgeFocus,
@@ -430,9 +433,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -531,6 +534,11 @@ function openDashboard(): void {
 /** «Seguiti» (D-272): what Arianna follows on GitHub for ideas, in one page. */
 function openFollowed(): void {
   openPage('followed', FOLLOWED_PATH, 'Seguiti');
+}
+
+/** The Wiki (D-280): pages proposed by the local model from the notes, approved by the user. */
+function openWiki(): void {
+  openPage('wiki', WIKI_PATH, 'Wiki');
 }
 
 /** The routines (D-110 tappa A, D-254). */
@@ -668,6 +676,7 @@ function runCommand(action: PageCommandAction, from = current.value): void {
   }
   if (action.page === 'thoughts') openThoughts();
   else if (action.page === 'followed') openFollowed();
+  else if (action.page === 'wiki') openWiki();
   else if (action.page === 'knowledge') openKnowledge();
   else openSettings();
 }
@@ -737,6 +746,10 @@ function followMain(): void {
   }
   if (isFollowedPath(window.location.pathname)) {
     openFollowed();
+    return;
+  }
+  if (isWikiPath(window.location.pathname)) {
+    openWiki();
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
@@ -1078,6 +1091,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @dashboard="openDashboard"
       @god="openGod"
       @knowledge="openKnowledge()"
+      @wiki="openWiki"
       @office="openOffice"
       @projects="openProjects()"
       @clients="openClients()"
@@ -1140,6 +1154,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'dashboard'">Arianna / <b class="font-medium text-ink">Dashboard</b></template>
           <template v-else-if="page === 'routines'">Arianna / <b class="font-medium text-ink">Routine</b></template>
           <template v-else-if="page === 'followed'">Arianna / <b class="font-medium text-ink">Seguiti</b></template>
+          <template v-else-if="page === 'wiki'">Arianna / <b class="font-medium text-ink">Wiki</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
@@ -1261,6 +1276,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       <DashboardPage v-else-if="page === 'dashboard'" @open="openConversation" @chat="openChat()" />
       <RoutinesPage v-else-if="page === 'routines'" :version="routinesVersion" @open="openConversation" />
       <FollowedPage v-else-if="page === 'followed'" @omlx="omlxUpdate = updateHint($event)" />
+      <WikiPage v-else-if="page === 'wiki'" @open-graph="openKnowledge" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />

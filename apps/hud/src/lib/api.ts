@@ -40,6 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
+import type { WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -1341,6 +1342,87 @@ export async function discardArchive(name: string, version: string): Promise<voi
 /** "Proponi di nuovo": the Archivist proposes again where the thought goes. */
 export async function proposeArchiveAgain(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/archive`, {});
+}
+
+/** The Wiki (D-280): folders, pages and how many proposals wait. */
+export async function loadWiki(): Promise<WikiListing> {
+  return call<WikiListing>('GET', '/api/wiki');
+}
+
+/** One page of the Wiki (`laravel/octane/swoole`), or the index of a folder (`laravel/_indice`, `_indice`). */
+export async function loadWikiPage(path: string): Promise<WikiPageView> {
+  return (await call<{ page: WikiPageView }>('GET', `/api/wiki/page?path=${encodeURIComponent(path)}`)).page;
+}
+
+/** The proposals of the local model, newest first, each with its diff. */
+export async function loadWikiProposals(): Promise<WikiProposal[]> {
+  return (await call<{ proposals: WikiProposal[] }>('GET', '/api/wiki/proposals')).proposals;
+}
+
+/** «Approva»: `path` only when the user changed the place of a new page or the destination of a move. */
+export async function approveWikiProposal(id: string, path?: string): Promise<{ path: string; kind: string }> {
+  return call<{ path: string; kind: string }>('POST', `/api/wiki/proposals/${encodeURIComponent(id)}/approve`, path === undefined ? {} : { path });
+}
+
+export async function discardWikiProposal(id: string): Promise<void> {
+  await call('POST', `/api/wiki/proposals/${encodeURIComponent(id)}/discard`, {});
+}
+
+/** «Proponi di nuovo»: the local model writes a new proposal from the same note. */
+export async function proposeWikiAgain(id: string): Promise<void> {
+  await call('POST', `/api/wiki/proposals/${encodeURIComponent(id)}/again`, {});
+}
+
+/** «Ripristina» an old version, only if the page is still the version shown (`base`). */
+export async function restoreWikiPage(path: string, version: string, base: string): Promise<void> {
+  await call('POST', '/api/wiki/restore', { path, version, base });
+}
+
+/** «Modifica» of a page of the Wiki by the user, over the page as shown (`base`): the version before is kept. Gives the new version. */
+export async function editWikiPage(path: string, base: string, title: string, body: string): Promise<string> {
+  return (await call<{ version: string }>('POST', '/api/wiki/edit', { path, base, title, body })).version;
+}
+
+/** «Nuova pagina» of the Wiki by the user (`topic/article`): it starts with the sections to fill. */
+export async function createWikiPage(path: string, title: string): Promise<{ path: string; version: string }> {
+  return call<{ path: string; version: string }>('POST', '/api/wiki/create', { kind: 'page', path, title });
+}
+
+/** «Nuova cartella» of the Wiki by the user: it stays, empty, until a page goes in it. */
+export async function createWikiFolder(path: string): Promise<void> {
+  await call('POST', '/api/wiki/create', { kind: 'folder', path });
+}
+
+/** «Sposta o rinomina» (or a drag in the tree) of a page — as shown, `base` — or of a folder, at once. Gives where it is now. */
+export async function moveWikiNow(kind: 'page' | 'folder', from: string, to: string, base?: string): Promise<string> {
+  return (await call<{ path: string }>('POST', '/api/wiki/move-now', kind === 'page' ? { kind, from, to, base } : { kind, from, to })).path;
+}
+
+/** A note or page the editor of the Wiki suggests after «[[» (D-282). */
+export interface WikiCitationTarget {
+  target: string;
+  title: string;
+  kind: 'note' | 'page';
+}
+
+/** The notes and pages a citation may name, whose path or title holds the words typed after «[[». */
+export async function loadWikiTargets(query: string): Promise<WikiCitationTarget[]> {
+  return (await call<{ targets: WikiCitationTarget[] }>('GET', `/api/wiki/targets?q=${encodeURIComponent(query)}`)).targets;
+}
+
+/** «Elimina cartella»: only an empty folder of the Wiki. */
+export async function deleteWikiFolder(path: string): Promise<void> {
+  await call('POST', '/api/wiki/folder/delete', { path });
+}
+
+/** «Elimina» a page of the Wiki as it was shown (`base`): its old versions and the proposals waiting on it go too. */
+export async function deleteWikiPage(path: string, base: string): Promise<void> {
+  await call('POST', '/api/wiki/delete', { path, base });
+}
+
+/** «Proponi per la Wiki» of a note of kb/ (`inbox/x.md`): the local model prepares a proposal in the background. */
+export async function proposeForWiki(page: string): Promise<void> {
+  await call('POST', '/api/wiki/propose', { page });
 }
 
 /** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */

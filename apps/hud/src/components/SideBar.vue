@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -50,6 +50,8 @@ const emit = defineEmits<{
   /** The Dashboard (D-248). */
   dashboard: [];
   knowledge: [];
+  /** The Wiki (D-280). */
+  wiki: [];
   projects: [];
   clients: [];
   finance: [];
@@ -84,6 +86,8 @@ const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> 
   // The routines (D-110 tappa A, D-254): recurring reports, each in its own chat marked «R».
   routines: { label: 'Routine', icon: 'routine', title: 'Appuntamenti ricorrenti: il resoconto arriva nella chat della routine' },
   knowledge: { label: 'Conoscenza', icon: 'knowledge' },
+  // The Wiki (D-280): pages the local model proposes from the notes; the user approves them.
+  wiki: { label: 'Wiki', icon: 'wiki', title: 'Pagine compilate dal modello locale dalle tue note, da approvare' },
   // The finances (I-18, D-183): private, they never leave this Mac.
   finance: { label: 'Finanze', icon: 'finance' },
   // GOD (D-127): Arianna developed from inside Arianna, in a clone of its code.
@@ -130,6 +134,7 @@ function go(area: NavArea): void {
     case 'thoughts': emit('thoughts'); break;
     case 'routines': emit('routines'); break;
     case 'knowledge': emit('knowledge'); break;
+    case 'wiki': emit('wiki'); break;
     case 'finance': emit('finance'); break;
     case 'god': emit('god'); break;
     case 'followed': emit('followed'); break;

@@ -3084,6 +3084,22 @@ Fatte il 2026-10-21, prima di scrivere il codice, sul registro PyPI, sulle relea
 - **Parakeet** (mlx-audio 0.5.7): `generate(audio, chunk_duration=…, overlap_duration=…)` spezza l'audio lungo e restituisce le frasi con `start` in secondi: le righe della trascrizione hanno il loro minuto.
 - **Il «byte» della riga di `gateway_log`** è quello di ogni riga del registro: lunghezza e sha256 dell'indirizzo che esce, mai l'indirizzo. I byte ricevuti dal proxy restano un tetto (400 MB), non una colonna nuova.
 
+### Tappa B: costruita sul ramo `task/d273-wiki` (da provare)
+
+Decisione D-280. Scelte fatte durante la costruzione, dentro la proposta:
+
+- Le proposte e le versioni sono file in `kb/wiki/.proposte/` e `kb/wiki/.storia/` (cartelle nascoste), non tabelle: nessuna migrazione, e la Wiki resta tutta in una cartella L2 fuori da git.
+- `kb/wiki` è almeno L2 anche nella policy, non solo per la riga `label: L2` delle pagine.
+- I job della Wiki usano la coda dei pensieri (`note.organize`): stessa attesa del modello e stessa precedenza a chiamate e task.
+- Il modello cita note numerate (`nota-1`…) da un enum; le pagine da aggiornare e quelle collegate vengono anch'esse da un enum. Il percorso di una pagina nuova lo scrive il modello e lo normalizza il codice (minuscole, `-`, al più 3 livelli).
+- Una pagina modificata a mano non viene più proposta per un aggiornamento: riscriverla perderebbe ciò che l'utente ha scritto.
+- Dopo una nota archiviata che è un video non parte una seconda proposta: c'è già stata quando il video è stato riassunto.
+- Il percorso si cambia solo per una pagina nuova (e per la destinazione di uno spostamento); un aggiornamento resta sulla sua pagina.
+- «Elimina» nella pagina «Wiki» (scelta dell'utente del 2026-10-21, invece di lasciare l'eliminazione a Finder): con una conferma toglie la pagina, le sue versioni e le proposte in attesa su di lei, e aggiorna gli indici; da Conoscenza le pagine della Wiki non si eliminano.
+- Dopo la prova (2026-10-21) l'utente scrive la Wiki anche lui, subito e senza approvazione: «Modifica» in un campo di testo Markdown (niente editor nuovo né dipendenze), «Sposta o rinomina» diretto di pagine e cartelle, trascinamento nell'albero, «Nuova pagina» e «Nuova cartella». La proposta di spostamento resta per quando la farà il modello. Ogni modifica tiene la versione di prima; un aggiornamento proposto per una pagina cambiata a mano scade, e una pagina scritta a mano non si propone più al modello per un aggiornamento.
+- Le cartelle restano anche vuote (scelta dell'utente dopo la prova, «Sì, restano»): si tolgono solo con «Elimina cartella», che compare su una cartella vuota.
+- Editor «come Notion» (scelta dell'utente dopo la prova): TipTap, scritto già formattato con barra dei pulsanti, citazioni come etichette e «[[» che suggerisce note e pagine; sotto resta Markdown e un interruttore «Markdown» mostra il testo nudo (D-282).
+
 ### Tappa A: costruita sul ramo `task/d273-youtube` (da provare)
 
 Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte fatte durante la costruzione, dentro la proposta:

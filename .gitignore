@@ -39,6 +39,8 @@ kb/inbox/
 kb/progetti/
 # Notes approved by the Archivist (D-198): the user's thoughts, filed by folder, never in git
 kb/archivio/
+# The Wiki compiled from the notes (D-280): pages, proposals and old versions, always private
+kb/wiki/
 
 # Repositories the Coder may work on (cloud.allowlist): the user's projects, never in this git
 repos/
