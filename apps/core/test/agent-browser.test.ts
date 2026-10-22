@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { Context, PageConsent } from '@arianna/policy';
+import { createContext, type Context, type PageConsent } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
 import { AgentBrowser, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
@@ -628,4 +628,29 @@ test('the check before the page (D-283): a saved value in the address of open or
   const done = await h.browser.act({ ...scope('a'), saved: { opened, approved: new Set(['client:c1:name']) } }, { kind: 'open', url });
   assert.equal(done.ok, true);
   assert.deepEqual(asked.at(-1), ['client:c1:name']);
+});
+
+test('the check before the page is never made in the Private chat of an access, which the gateway does not compare (D-283 review)', async () => {
+  let asked = 0;
+  const h = harness({ savedIn: (_address, approved) => { asked += 1; return approved.has('client:c1:name') ? [] : ['client:c1:name']; } });
+  // The work conversation, before the access: asked, and refused.
+  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://biblioteca-finta.it/' })).ok, false);
+  const before = asked;
+  // Opened from a card, then an access made by the user, then the Private chat.
+  await h.browser.act({ ...scope('a'), saved: { opened: null, approved: new Set(['client:c1:name']) } }, { kind: 'open', url: 'https://biblioteca-finta.it/' });
+  h.access = 'biblioteca-finta.it';
+  assert.equal(await h.browser.handOver('a', 'chat'), 'biblioteca-finta.it');
+  const chat: BrowserScope = { conversationId: 'chat', context: createContext('L2', 'L2', { browserSite: 'biblioteca-finta.it' }), consent: { from: 'sites', sites: ['biblioteca-finta.it'] } };
+  await h.browser.act(chat, { kind: 'read' });
+  const opened = await h.browser.act(chat, { kind: 'open', url: 'https://biblioteca-finta.it/prestiti?nome=Lunardi' });
+  assert.notEqual(!opened.ok ? opened.reason : 'ok', 'confirm-private');
+  // Asked once more for the open from the card, never in the chat.
+  assert.equal(asked, before + 2);
+});
+
+test('a check before the page that throws is counted, and the network decides the page (D-283 review)', async () => {
+  const h = harness({ savedIn: () => { throw new TypeError('not loaded'); } });
+  const opened = await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.equal(opened.ok, true);
+  assert.equal(h.browser.savedCheckFailures, 2);
 });

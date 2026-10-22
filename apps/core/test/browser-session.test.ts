@@ -8,7 +8,7 @@ import { after, test } from 'node:test';
 import type { Browser, ConnectOverCDPOptions } from 'playwright-core';
 
 import type { CloseReason, OpenBrowser } from '../src/browser/manager.ts';
-import { artifactsDir, connectSession, reducedUserAgent, type ConnectCdp } from '../src/browser/session.ts';
+import { artifactsDir, connectSession, reducedUserAgent, RETIRE_MS, type ConnectCdp } from '../src/browser/session.ts';
 import { CdpPipe } from '../src/browser/transport.ts';
 
 const roots: string[] = [];
@@ -30,9 +30,13 @@ interface FakeBrowser {
   browser: Browser;
 }
 
-function fakeBrowser(options: { contexts?: number; failSend?: boolean; pages?: unknown[]; newPage?: () => Promise<unknown> } = {}): FakeBrowser {
+function fakeBrowser(options: { contexts?: number; failSend?: boolean; pages?: unknown[]; newPage?: () => Promise<unknown>; onPage?: (listener: (page: unknown) => void) => void } = {}): FakeBrowser {
   const fake: FakeBrowser = { sent: [], detached: 0, closed: 0, browser: undefined as unknown as Browser };
-  const context = { pages: () => options.pages ?? [], newPage: options.newPage ?? (() => Promise.reject(new Error('not in this test'))), on: () => undefined };
+  const context = {
+    pages: () => options.pages ?? [],
+    newPage: options.newPage ?? (() => Promise.reject(new Error('not in this test'))),
+    on: (event: string, listener: (page: unknown) => void) => { if (event === 'page') options.onPage?.(listener); },
+  };
   fake.browser = {
     contexts: () => (options.contexts === 0 ? [] : [context]),
     newBrowserCDPSession: () => Promise.resolve({
@@ -81,9 +85,11 @@ test('session: downloads refused on a CDP session that stays attached, Playwrigh
 });
 
 /** A tab that writes what is done to it, in order; `fails` makes its goto fail. */
-function fakeTab(name: string, steps: string[], options: { url?: string; fails?: boolean; closeHangs?: boolean } = {}) {
+function fakeTab(name: string, steps: string[], options: { url?: string; fails?: boolean; closeHangs?: boolean; opener?: unknown } = {}) {
   let closed = false;
   return {
+    name,
+    opener: () => Promise.resolve(options.opener ?? null),
     isClosed: () => closed,
     // A tab on Chromium's error page may take 40 s and more to close (D-283 trial): `closeHangs` never ends.
     close: () => { closed = true; steps.push(`${name}:close`); return options.closeHangs === true ? new Promise<void>(() => undefined) : Promise.resolve(); },
@@ -120,17 +126,41 @@ test('session: after a failed page the new tab is in front, never the empty one 
   assert.deepEqual(steps, ['failing:front', 'failing:goto https://comune-finto.it/', 'new', 'created:front', 'failing:close']);
 });
 
-test('session: a refused page fails at once, without waiting for its tab to close; so does a reset (D-283 trial)', async () => {
+test('session: a refused page fails within the bound of a tab that never closes; the next action is on the new tab, a tab opened by the left one is not the agent\'s (D-283)', async () => {
   const steps: string[] = [];
+  // The first tab of the kiosk window: its close never ends (tried on 2026-10-22).
   const failing = fakeTab('failing', steps, { fails: true, closeHangs: true });
   const tabs: unknown[] = [failing];
   let made = 0;
-  const fake = fakeBrowser({ pages: tabs, newPage: () => { made += 1; const created = fakeTab(`created${String(made)}`, steps, { url: 'about:blank', closeHangs: true }); tabs.push(created); return Promise.resolve(created); } });
+  let emit: (page: unknown) => void = () => undefined;
+  const fake = fakeBrowser({
+    pages: tabs,
+    newPage: () => { made += 1; const created = fakeTab(`created${String(made)}`, steps, { url: 'https://comune-finto.it/' }); tabs.push(created); return Promise.resolve(created); },
+    onPage: (listener) => { emit = listener; },
+  });
   const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
-  const within = <T>(work: Promise<T>): Promise<T | 'late'> => Promise.race([work, new Promise<'late'>((resolve) => setTimeout(() => { resolve('late'); }, 1_000))]);
-  assert.notEqual(await within(session.openPage('https://comune-finto.it/').catch(() => 'refused')), 'late');
+  const within = async <T>(work: Promise<T>, ms: number): Promise<T | 'late'> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([work, new Promise<'late'>((resolve) => { timer = setTimeout(() => { resolve('late'); }, ms); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const started = Date.now();
+  assert.notEqual(await within(session.openPage('https://comune-finto.it/').catch(() => 'refused'), RETIRE_MS + 1_000), 'late');
+  assert.ok(Date.now() - started >= RETIRE_MS - 100);
   assert.ok(steps.includes('failing:close'));
-  assert.notEqual(await within(session.resetPage()), 'late');
+  // The next action is on the new tab, never on the left one.
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'created1');
+  // A popup of the left tab (a script of its page, still alive) is not the agent's tab.
+  emit(fakeTab('popup', steps, { opener: failing }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'created1');
+  // A popup of the agent's tab is.
+  emit(fakeTab('own', steps, { opener: await session.currentPage() }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'own');
 });
 
 test('session: the artifacts go in the configured data folder when it is known', () => {

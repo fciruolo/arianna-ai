@@ -283,6 +283,22 @@ test('«Apri» on a card of web.fetch: the step resumes and reads the page; the 
   assert.deepEqual(actions.map((row) => `${row.action}:${row.outcome}`), ['open:ok', 'read:ok']);
   const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${task.id}`;
   assert.equal(count?.n, 1);
+  // A card asked before any browser holds for the first one only within 15 minutes of the decision.
+  const { approvedSaved, rememberAsked } = await import('../src/orchestrator/saved-ask.ts');
+  const first = { browsers: [], none: true };
+  const ref = ((ask.detail.values as { ref: string }[])[0] ?? { ref: '' }).ref;
+  const other = (await createConversation(sql, { mode: 'work' })).id;
+  const { task: later } = await postUserMessage(sql, other, `Cerca ${address}`);
+  const card = (age: string) => sql<{ id: string }[]>`
+    INSERT INTO approvals (task_id, kind, action, detail, label, state, decided_at, decided_via)
+    VALUES (${later.id}, 'browser', 'browser.private', ${sql.json({ values: [{ ref, kind: 'name', client: 'x' }], tool: 'web.fetch', step: 1 })}, 'L2', 'approved', now() - ${age}::interval, 'web')
+    RETURNING id::text`;
+  const [old] = await card('16 minutes');
+  rememberAsked(old?.id ?? '', [ref]);
+  assert.equal((await approvedSaved(sql, other, { for: first })).size, 0);
+  const [fresh] = await card('1 minute');
+  rememberAsked(fresh?.id ?? '', [ref]);
+  assert.deepEqual(await approvedSaved(sql, other, { for: first }), new Set([ref]));
 });
 
 test('«Apri» on a card of the browser holds for web.fetch of the same value in the conversation (D-283)', async () => {

@@ -291,6 +291,8 @@ export class AgentBrowser {
   #shutDown = false;
   /** When the last browser of each conversation opened (D-283): a card asked with it holds for the next one. In memory. */
   readonly #lastOpened = new Map<string, number>();
+  /** Checks of saved values before a page that could not be made (D-283), so far. */
+  #savedFailures = 0;
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -303,6 +305,11 @@ export class AgentBrowser {
   get holder(): string | null {
     this.#forgetClosed();
     return this.#held?.conversationId ?? null;
+  }
+
+  /** Checks of saved values before a page that failed (D-283): the network decided those pages. */
+  get savedCheckFailures(): number {
+    return this.#savedFailures;
   }
 
   /** When the browser of `conversationId` opened (now()), when it holds one; null otherwise (D-283). */
@@ -548,6 +555,9 @@ export class AgentBrowser {
     if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
     const unwritten = openOutsideConsent(scope.consent, action.url);
     if (unwritten !== undefined) return unwritten;
+    // A saved value in the address (D-283): the card before any container starts, with what was let go for it.
+    const savedFirst = this.#savedIn(action.url, scope, scope.saved !== undefined && scope.saved.opened === null ? scope.saved.approved : new Set());
+    if (savedFirst !== undefined) return savedFirst;
     if (held !== null) {
       // A browser with an access made by the user is never taken over: closing it would lose the access.
       if (held.session.network?.authenticated() != null) return { ok: false, reason: 'busy' };
@@ -620,7 +630,7 @@ export class AgentBrowser {
         const unwritten = openOutsideConsent(scope.consent, action.url);
         if (unwritten !== undefined) return unwritten;
         // A saved value in the address (D-283): the card at once, before any navigation.
-        const savedHere = this.#savedIn(action.url, held);
+        const savedHere = this.#savedIn(action.url, scope, held.saved);
         if (savedHere !== undefined) return savedHere;
         held.elements.clear();
         held.readAt = undefined;
@@ -661,7 +671,7 @@ export class AgentBrowser {
         if (element.kind === 'link' && element.href !== undefined) {
           const outside = outsideConsent(scope.consent, element.href);
           if (outside !== undefined) return { ok: false, reason: 'confirm', url: element.href, site: outside };
-          const savedHere = this.#savedIn(element.href, held);
+          const savedHere = this.#savedIn(element.href, scope, held.saved);
           if (savedHere !== undefined) return savedHere;
         }
         const page = await session.currentPage();
@@ -698,12 +708,16 @@ export class AgentBrowser {
   }
 
   /** The card of saved values for an address (D-283), when it has some not let go for this browser; undefined otherwise. */
-  #savedIn(address: string, held: Held): ActionResult | undefined {
+  #savedIn(address: string, scope: BrowserScope, approved: ReadonlySet<string>): ActionResult | undefined {
+    // The Private chat of an access (D-281) is never compared by the gateway: no card there.
+    if (scope.context.browserSite !== undefined) return undefined;
     let saved: readonly string[];
     try {
-      saved = this.#options.savedIn?.(address, held.saved) ?? [];
-    } catch {
-      // Not loaded: the gateway of the network refuses the page, as for any other check it cannot make.
+      saved = this.#options.savedIn?.(address, approved) ?? [];
+    } catch (error) {
+      // Not loaded, or broken: the gateway of the network decides the page, as for any check it cannot make here.
+      this.#savedFailures += 1;
+      console.warn(`browser: the check of saved values before a page failed (${error instanceof Error ? error.name : typeof error})`);
       return undefined;
     }
     if (saved.length === 0) return undefined;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { addressReadings, savedForm, savedMatcher, type KnownPrivate, type SavedValue } from '@arianna/policy';
+import { addressReadings, savedForm, savedMatcher, scanText, type KnownPrivate, type SavedValue } from '@arianna/policy';
 
 import { onClientsChanged } from './clients.ts';
 import type { Queryable } from './db/client.ts';
@@ -197,7 +197,10 @@ export const knownPrivate: KnownPrivate = {
  * load, as `knownPrivate`.
  */
 export function savedInAddress(address: string, approved: ReadonlySet<string>): string[] {
-  const refs = new Set(addressReadings(address).flatMap((reading) => knownPrivate.find(reading)));
+  const readings = addressReadings(address);
+  // The scanner first, as in the gateway: an address it refuses (an IBAN, a tax code) gets no card, it never leaves.
+  if (readings.some((reading) => scanText(reading).length > 0)) return [];
+  const refs = new Set(readings.flatMap((reading) => knownPrivate.find(reading)));
   return [...refs].filter((ref) => !approved.has(ref)).sort();
 }
 

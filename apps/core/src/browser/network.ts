@@ -223,6 +223,12 @@ export interface NetworkJob {
   headersTimeoutMs?: number;
   /** Tests: how long the gateway and the download of one request may take in all (HOP_MS). */
   hopTimeoutMs?: number;
+  /**
+   * A tab the agent left (session.ts, D-283 review): every request of its
+   * frames is refused before the gateway, and its navigations are never the
+   * last one of the agent.
+   */
+  isRetired?: (page: Page) => boolean;
 }
 
 /**
@@ -389,6 +395,17 @@ function originOf(address: string): string | undefined {
 function corsAllows(answer: Answer, origin: string | undefined): boolean {
   const allowed = answer.headers.find(([name]) => name === 'access-control-allow-origin')?.[1].trim();
   return allowed === '*' || (allowed !== undefined && origin !== undefined && allowed === origin.trim());
+}
+
+/** Whether a request comes from a tab the agent left (D-283 review): its frame belongs to a retired page. */
+function isLeftTab(request: Request, isRetired: ((page: Page) => boolean) | undefined): boolean {
+  if (isRetired === undefined) return false;
+  try {
+    const frame = frameObject(request);
+    return frame !== undefined && isRetired(frame.page());
+  } catch {
+    return false;
+  }
 }
 
 /** The frame of a request, when Playwright knows it. */
@@ -750,6 +767,11 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await route.abort(reason === undefined ? 'blockedbyclient' : abortCode(reason)).catch(() => undefined);
     };
     if (closed) {
+      await abort('refused');
+      return;
+    }
+    // 0. A tab the agent left: nothing of it leaves, and it is not the agent's navigation.
+    if (isLeftTab(request, job.isRetired)) {
       await abort('refused');
       return;
     }

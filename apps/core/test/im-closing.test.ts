@@ -89,17 +89,19 @@ describe('items between two meetings (D-167, P4b)', () => {
   });
 
   it('closing: done, in part (Parte N+1 next), not done (postponed and copied), then the IM is closed', () => {
+    // A fixed moment before the next call (16 October 15:00, the next on 22 October 10:00): never the clock of the run.
+    const NOW = new Date(2026, 9, 20, 9, 0);
     const pagamento = item(33, 'Pagamento');
     const csv = item(33, 'Esportazione CSV');
     const fatture = item(33, 'Fatture');
     const login = item(33, 'Login');
     assert.ok(pagamento && csv && fatture && login);
-    closeImItem(PROJECTS, P, ENV, 33, pagamento, 'part');
-    closeImItem(PROJECTS, P, ENV, 33, csv, 'not-done');
-    closeImItem(PROJECTS, P, ENV, 33, fatture, 'done');
-    assert.equal(finishImClosing(PROJECTS, P, ENV, 33), false);
-    closeImItem(PROJECTS, P, ENV, 33, login, 'done');
-    assert.equal(finishImClosing(PROJECTS, P, ENV, 33), true);
+    closeImItem(PROJECTS, P, ENV, 33, pagamento, 'part', NOW);
+    closeImItem(PROJECTS, P, ENV, 33, csv, 'not-done', NOW);
+    closeImItem(PROJECTS, P, ENV, 33, fatture, 'done', NOW);
+    assert.equal(finishImClosing(PROJECTS, P, ENV, 33, NOW), false);
+    closeImItem(PROJECTS, P, ENV, 33, login, 'done', NOW);
+    assert.equal(finishImClosing(PROJECTS, P, ENV, 33, NOW), true);
 
     const closed = readIm(PROJECTS, P, ENV, 33);
     assert.equal(closed.status, 'chiuso');

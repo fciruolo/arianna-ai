@@ -100,7 +100,8 @@ export async function approvedPrivateSteps(sql: Queryable, taskId: string): Prom
  * none if the conversation never had one). A card holds for that browser,
  * and for the one the conversation opens right after it: `browsers` are the
  * opening times whose cards count, `none` whether the cards asked before any
- * browser count (for the first browser of the conversation).
+ * browser count (for the first browser of the conversation, and only those
+ * decided in the last SAVED_WINDOW_MS, as for web.fetch).
  */
 export interface SavedFor {
   browsers: readonly number[];
@@ -124,7 +125,7 @@ export async function approvedSaved(sql: Queryable, conversationId: string, opti
     WHERE a.kind = 'browser' AND a.action = ${SAVED_ACTION} AND a.state = 'approved' AND t.conversation_id = ${conversationId}
       AND a.decided_at IS NOT NULL
       AND ((a.detail ->> 'browser') = ANY(${browsers}::text[])
-        OR (${none} AND a.detail -> 'browser' IS NULL)
+        OR (${none} AND a.detail -> 'browser' IS NULL AND a.decided_at >= now() - make_interval(secs => ${SAVED_WINDOW_MS / 1000}::float8))
         OR (${recent}::float8 IS NOT NULL AND a.decided_at >= now() - make_interval(secs => ${recent}::float8)))`;
   // Only a value still as it was when the user decided: a field changed since asks again.
   const approved = new Set<string>();

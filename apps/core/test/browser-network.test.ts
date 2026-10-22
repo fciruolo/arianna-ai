@@ -89,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number; isRetired?: (page: unknown) => boolean } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -117,6 +117,7 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
     },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.debug === undefined ? {} : { debug: options.debug }),
+    ...(options.isRetired === undefined ? {} : { isRetired: options.isRetired }),
     headersTimeoutMs: 50,
     hopTimeoutMs: 100,
     unsafeTestAddresses: [],
@@ -152,6 +153,24 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
 const logged = (rows: unknown[][]) => rows.map((values) => [values[3], values[7]]);
 
 describe('attachNetwork', () => {
+  it('refuses every request of a tab the agent left, before the gateway, and never takes its navigation as the agent\'s (D-283 review)', async () => {
+    const left = { name: 'left' };
+    const kept = { name: 'kept' };
+    const net = await harness({ isRetired: (page) => page === left });
+    const frameOf = (page: object) => ({ url: () => 'about:blank', parentFrame: () => null, page: () => page });
+    const refused = await net.send({ url: 'https://example.com/pagina', main: true, frame: frameOf(left) });
+    assert.equal(refused.aborted, 'blockedbyclient');
+    const image = await net.send({ url: 'https://example.com/logo.png', frame: { ...frameOf(left), parentFrame: () => ({}) } });
+    assert.equal(image.aborted, 'blockedbyclient');
+    assert.deepEqual([net.rows, net.fetched], [[], []]);
+    assert.equal(net.handle.lastNavigation(), undefined);
+    // The tab of the agent goes on as before.
+    const page = await net.send({ url: 'https://example.com/pagina', main: true, frame: frameOf(kept) });
+    assert.ok(page.fulfilled !== undefined);
+    assert.equal(net.handle.lastNavigation()?.outcome, 'ok');
+    await net.close();
+  });
+
   it('refuses a scheme other than http(s) first, before counting it', async () => {
     const net = await harness();
     for (const url of ['ws://example.com/socket', 'ftp://example.com/a', 'blob:https://example.com/1', 'chrome://settings']) {

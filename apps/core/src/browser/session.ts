@@ -31,6 +31,9 @@ export interface BrowserSession {
   close(): Promise<void>;
 }
 
+/** How long a tab the agent leaves is waited for to close (D-283 review): it is retired anyway. */
+export const RETIRE_MS = 2_000;
+
 /** Where Playwright keeps its artifacts (traces, videos: none used), inside the data folder, never the temp folder of the Mac. */
 export const ARTIFACTS_SUBDIR = join('tmp', 'browser');
 
@@ -76,6 +79,15 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
   });
   let context: BrowserContext | undefined;
   let network: NetworkHandle | undefined;
+  /**
+   * Tabs the agent left (D-283 review): being closed, or that would not close.
+   * The first tabs of the kiosk window, on Chromium's error page since the
+   * start (no network), never finish closing (tried on 2026-10-22: no request
+   * was under way, the close itself does not end). Such a tab stays alive in
+   * the same context: the network refuses every request of its frames, its
+   * navigations are not the agent's, and a tab it opens is never the agent's.
+   */
+  const retired = new WeakSet<Page>();
   try {
     context = browser.contexts()[0];
     if (!context) throw new Error('the browser has no context');
@@ -84,7 +96,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'deny' });
     if (options.network) {
       const { userAgent } = await cdp.send('Browser.getVersion');
-      network = await attachNetwork(context, { ...options.network, userAgent: reducedUserAgent(userAgent) });
+      network = await attachNetwork(context, { ...options.network, userAgent: reducedUserAgent(userAgent), isRetired: (tab) => retired.has(tab) });
     }
   } catch (error) {
     closing = true;
@@ -97,9 +109,25 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
   const shared = context;
 
   let page: Page | undefined = shared.pages()[0];
-  // A link with target=_blank opens a tab: the agent goes on there, as a person would.
+  /** Leaves a tab: retired at once, closed with a short bound (a tab of the kiosk window never closes). */
+  const retire = async (tab: Page): Promise<void> => {
+    retired.add(tab);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([tab.close().catch(() => undefined), new Promise<void>((resolve) => { timer = setTimeout(resolve, RETIRE_MS); })]);
+    clearTimeout(timer);
+  };
+  // A link with target=_blank opens a tab: the agent goes on there, as a person would; never one a left tab opened.
   shared.on('page', (opened) => {
-    page = opened;
+    void opened.opener().then(
+      (opener) => {
+        if (opener !== null && retired.has(opener)) {
+          void retire(opened);
+          return;
+        }
+        page = opened;
+      },
+      () => undefined,
+    );
   });
   /**
    * A new tab for the agent, in front, and the empty tabs behind it closed: when the first tab of
@@ -110,9 +138,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
   const fresh = async (): Promise<Page> => {
     const created = await shared.newPage();
     await created.bringToFront().catch(() => undefined);
-    for (const other of shared.pages()) {
-      if (other !== created && other.url() === 'about:blank') void other.close().catch(() => undefined);
-    }
+    await Promise.all(shared.pages().filter((other) => other !== created && other.url() === 'about:blank').map((other) => retire(other)));
     return created;
   };
   const current = async (): Promise<Page> => {
@@ -135,9 +161,9 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
         // the next action gets a fresh tab (opened first, so the window never has none).
         // If even the new tab fails, the error of the navigation is the one that counts.
         page = await fresh().catch(() => undefined);
-        // Not waited for: closing the tab left on Chromium's error page can take 40 s and more (tried on
-        // 2026-10-22, D-283 trial), which held the action until its deadline and lost the browser.
-        if (page) void target.close().catch(() => undefined);
+        // Retired, and closed with a bound: the first tab of the kiosk window never finishes closing (D-283
+        // trial, 2026-10-22), which held the action until its deadline of 45 s and lost the browser.
+        if (page) await retire(target);
         throw error;
       }
       // A redirect followed by the core moves the frame to its final address: wait for it.
@@ -152,8 +178,8 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     async resetPage() {
       const old = page;
       page = await fresh().catch(() => undefined);
-      // Not waited for, as in openPage: the tab on the error page may take long to close.
-      if (page && old && !old.isClosed()) void old.close().catch(() => undefined);
+      // Retired with a bound, as in openPage.
+      if (page && old && !old.isClosed()) await retire(old);
     },
     touch() {
       open.touch();
