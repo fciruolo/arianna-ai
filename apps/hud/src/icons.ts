@@ -76,6 +76,7 @@ import {
   Repeat,
   RotateCcw,
   Route,
+  ScanFace,
   Search,
   Send,
   Server,
@@ -124,6 +125,8 @@ export const ICONS = {
   'theme-dark': Moon,
   'theme-system': Monitor,
   approve: Check,
+  // A decision taken from the phone asks Face ID (D-292); the button says so (D-293).
+  'face-id': ScanFace,
   saved: Check,
   warning: TriangleAlert,
   project: Folder,

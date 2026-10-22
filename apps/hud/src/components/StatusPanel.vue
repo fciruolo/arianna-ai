@@ -96,7 +96,7 @@ function wornBy(packId: string): string[] {
 <template>
   <aside class="flex min-w-0 flex-col gap-4 overflow-y-auto bg-surface px-4 py-[18px]" :class="asPage ? '' : 'border-l border-line'" :aria-label="asPage ? 'Attende te' : 'Pannello di stato'">
     <!-- On top, as in the left bar (D-097): the agents, how many are at work, and the button that folds the bar. -->
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" :class="{ 'order-2': asPage }">
       <h2 class="font-hud text-[15px] leading-none font-semibold tracking-[0.12em] uppercase">Agenti</h2>
       <small class="flex-1 font-mono text-[12px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
       <button v-if="!asPage" type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
@@ -105,7 +105,7 @@ function wornBy(packId: string): string[] {
     </div>
 
     <!-- The agents at work (or waiting for the user) as cards; the free ones as low rows, so the rest of the panel stays in view. -->
-    <section aria-label="Agenti">
+    <section aria-label="Agenti" :class="{ 'order-2': asPage }">
       <div class="flex flex-col gap-2">
         <div v-for="id in busyIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2.5 rounded-[12px] border border-line bg-surface-2 px-2.5 py-1 shadow-[inset_3px_0_0_var(--accent)] 3xl:gap-3 3xl:rounded-[14px] 3xl:p-2.5">
           <div class="grid h-16 w-14 place-items-end justify-center rounded-[10px] bg-[radial-gradient(circle_at_50%_85%,var(--glow),transparent_70%)] pb-1">
@@ -139,10 +139,13 @@ function wornBy(packId: string): string[] {
       </div>
     </section>
 
+    <!-- «Attende te» on the phone (D-293): what waits for the user first, then the agents. -->
+    <p v-if="asPage && approvals.length === 0 && !somethingWaits" class="order-1 rounded-[14px] border border-line bg-surface-2 px-3.5 py-3 text-[15px] text-muted">Niente attende te in questo momento.</p>
     <button
       v-if="somethingWaits"
       type="button"
       class="flex items-center gap-2 rounded-[10px] border border-warn/60 bg-surface-2 px-3 py-2 text-left text-xs hover:border-warn"
+      :class="{ 'order-1 min-h-11 text-[15px]': asPage }"
       aria-haspopup="dialog"
       @click="showPending = true"
     >
@@ -151,7 +154,7 @@ function wornBy(packId: string): string[] {
       <span class="font-mono text-[12px] text-warn">{{ pendingCount }}</span>
     </button>
 
-    <section v-if="approvals.length > 0">
+    <section v-if="approvals.length > 0" :class="{ 'order-1': asPage }">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
         Attende te <small class="font-mono text-[12px] tracking-[0.06em] normal-case">{{ approvals.length }} da altre conversazioni</small>
       </h3>
@@ -160,21 +163,21 @@ function wornBy(packId: string): string[] {
       </div>
     </section>
 
-    <section v-if="remoteDecisions.length > 0">
+    <section v-if="remoteDecisions.length > 0" :class="{ 'order-1': asPage }">
       <h3 class="hud-title mb-2.5">Decise altrove</h3>
       <ul class="flex flex-col gap-2">
         <li v-for="decision in remoteDecisions" :key="decision.approvalId" class="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs">
           <span class="font-semibold">{{ decision.action === undefined ? 'Richiesta' : (ACTION_TEXT[decision.action] ?? decision.action) }}</span>
           <span :class="decision.state === 'approved' ? 'text-ok' : 'text-danger'">{{ DECISION_TEXT[decision.state] }}</span>
           <span class="text-muted">da {{ REMOTE_CHANNEL_TEXT[decision.via] }} · {{ timeOf(decision.ts) }}</span>
-          <button type="button" class="ml-auto rounded p-0.5 text-muted hover:text-ink" aria-label="Nascondi" @click="emit('dismiss', decision.approvalId)">
+          <button type="button" class="ml-auto rounded p-0.5 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center" aria-label="Nascondi" @click="emit('dismiss', decision.approvalId)">
             <Icon name="close" :size="14" />
           </button>
         </li>
       </ul>
     </section>
 
-    <section>
+    <section :class="{ 'order-3': asPage }">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
         Instradamento <small class="font-mono text-[12px] tracking-[0.06em] normal-case">ultima delega</small>
       </h3>
@@ -202,9 +205,9 @@ function wornBy(packId: string): string[] {
       </div>
     </section>
 
-    <RecentDelegations :status="status" @open="(id) => emit('open', id)" />
+    <RecentDelegations :class="{ 'order-3': asPage }" :status="status" @open="(id) => emit('open', id)" />
 
-    <section>
+    <section :class="{ 'order-3': asPage }">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
         Gateway <small class="font-mono text-[12px] tracking-[0.06em] normal-case">oggi</small>
       </h3>
@@ -234,7 +237,7 @@ function wornBy(packId: string): string[] {
       </div>
     </section>
 
-    <section>
+    <section v-if="!asPage">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
         Personaggi
         <button type="button" class="font-mono text-[12px] tracking-[0.06em] normal-case hover:text-ink" @click="emit('refreshCharacters')">rileggi</button>

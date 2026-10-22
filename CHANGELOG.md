@@ -10,6 +10,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- «Attende te» sul telefono mette prima le decisioni in attesa e quelle decise altrove, poi gli agenti; dal telefono il pulsante di approvazione porta l’icona di Face ID e la carta dice che ogni decisione la chiede (D-293, tappa 4).
 - Sul telefono l’elenco delle conversazioni ha righe più alte e un «⋯» (o la pressione lunga) che apre un foglio in basso con Fissa, Rinomina, Archivia ed Elimina; nella conversazione il campo resta sopra la tastiera, «+», invia e ferma sono da 44 px, il tasto «a capo» va a capo (si invia col pulsante), le righe d’aiuto sui tasti lasciano il posto a una riga sull’etichetta, e le azioni dei messaggi diventano icone (D-293, tappa 3).
 - La chat sul telefono segue la tastiera: sotto i 768 px la pagina resta nella parte visibile della finestra, con i margini dell’isola e della riga della casa (`viewport-fit=cover`), e i campi a 16 px con il dito, così Safari non ingrandisce (D-293, tappa 1).
 

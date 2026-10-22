@@ -31,6 +31,7 @@ import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, br
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
+import { onRemoteOrigin } from '../lib/remote.ts';
 
 const props = defineProps<{
   approval: Approval;
@@ -217,6 +218,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     busy.value = false;
   }
 }
+
+/** On the phone (D-292) the core asks Face ID for each decision; the card says it (D-293). */
+const remoteOrigin = onRemoteOrigin(window.location);
 </script>
 
 <template>
@@ -421,10 +425,12 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
-      <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+      <button type="button" :disabled="busy" class="btn btn-primary max-md:flex-1" @click="choose('approved')">
+        <Icon :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
+    <!-- From the phone (D-292) every decision asks Face ID: said before the tap (D-293). -->
+    <p v-if="remoteOrigin" class="flex items-center gap-1.5 px-[15px] pb-2.5 text-[12.5px] text-muted"><Icon name="face-id" :size="14" />Dal telefono ogni decisione chiede Face ID.</p>
   </article>
 </template>
