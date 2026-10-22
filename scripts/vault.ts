@@ -8,12 +8,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadConfig } from '@arianna/config';
+import { loadConfigOrExit } from '@arianna/config';
 import { hashMasterPassword, MIN_MASTER_PASSWORD, VAULT_DIR, VAULT_FILE } from '@arianna/vault';
 
 const RECIPIENT = /^age1[02-9ac-hj-np-z]{58}$/;
 
-const dir = join(loadConfig().paths.data, VAULT_DIR);
+const dir = join(loadConfigOrExit().paths.data, VAULT_DIR);
 const [command, recipient] = process.argv.slice(2);
 
 if (command === 'init') {

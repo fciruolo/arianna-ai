@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, DATA_DIR, loadConfig, resolveHome, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths } from '@arianna/config';
+import { CONFIG_FILE, DATA_DIR, loadConfigOrExit, resolveHome, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths } from '@arianna/config';
 
 import { generateVapidKeys } from '../apps/core/src/voice/push.ts';
 
@@ -20,7 +20,7 @@ if (!['sync', 'lock', 'test', 'vapid'].includes(command ?? '') || extra.length >
 }
 
 // `lock` and `test` work before arianna.toml exists, with the default data/.
-const config = existsSync(join(resolveHome(), CONFIG_FILE)) ? loadConfig() : undefined;
+const config = existsSync(join(resolveHome(), CONFIG_FILE)) ? loadConfigOrExit() : undefined;
 const home = config?.home ?? resolveHome();
 const paths = voicePaths(home, config?.paths.data ?? join(home, DATA_DIR));
 // uv and the tests get a short environment: no secret of the shell reaches them.

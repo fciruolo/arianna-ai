@@ -10,12 +10,13 @@ import {
   catalogModelName,
   CLOUD_MODELS,
   cloudModelName,
+  configErrorText,
   DEFAULT_VOICE,
   enabledCloudModels,
   guardPaths,
   loadCatalog,
   loadCloudCatalog,
-  loadConfig,
+  loadConfigOrExit,
   loadLabelRules,
   modelPath,
   userHomeOf,
@@ -168,7 +169,7 @@ if (Number.isInteger(restartAfter) && restartAfter > 0) {
   for (let waited = 0; waited < 300_000 && !gone(); waited += 200) await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-const config = loadConfig();
+const config = loadConfigOrExit();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
 // The user's agents (D-119): the active ones join the map, under the L1/A1 ceiling.
 // A card from a role of the catalog of agents (D-079) reads the role from the catalog, made further below.
@@ -359,8 +360,9 @@ const settings = watchConfig({
     if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
   },
   onError: (error) => {
-    // A ConfigError names a key and a rule, never a value read elsewhere.
-    if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
+    // A ConfigError names a key and a rule, never a value read elsewhere; a refused project in Italian (D-289).
+    const text = configErrorText(error);
+    if (text !== undefined) console.error(text);
     else report(error);
     console.error('arianna.toml: not reloaded, the previous configuration stays; no project, cloud executor or Telegram bot is open until the file is valid');
   },

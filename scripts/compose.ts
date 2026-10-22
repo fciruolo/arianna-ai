@@ -5,11 +5,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { loadConfig } from '@arianna/config';
+import { loadConfigOrExit } from '@arianna/config';
 
 import { composeGuard } from './compose-guard.ts';
 
-const config = loadConfig();
+const config = loadConfigOrExit();
 
 /** The folder git names for `flag`; null outside a repository or without git (an installation copied without .git). */
 const git = (flag: string): string | null => {

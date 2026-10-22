@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, loadConfig, resolveHome } from '@arianna/config';
+import { CONFIG_FILE, loadConfigOrExit, resolveHome } from '@arianna/config';
 import { createContext, gatewayCheck } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
@@ -18,7 +18,7 @@ let guard: PiiGuard | undefined;
 export async function cliWebGateway(value: string, source: string): Promise<void> {
   if (guard === undefined) {
     const home = resolveHome();
-    guard = cliPiiGuard(existsSync(join(home, CONFIG_FILE)) ? loadConfig() : undefined);
+    guard = cliPiiGuard(existsSync(join(home, CONFIG_FILE)) ? loadConfigOrExit() : undefined);
   }
   const decision = gatewayCheck([{ value, label: 'L0', source }], createContext('L0'), { kind: 'web' }, knownSecrets, await guard.scan([value]));
   if (decision.decision !== 'allow') throw new Error(`gateway ${decision.rule}: ${decision.reason}`);

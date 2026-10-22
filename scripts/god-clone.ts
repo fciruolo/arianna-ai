@@ -5,21 +5,18 @@
 // fast-forward. Refuses a clone that is not a development copy (data of an
 // installation, the passwords of the database). Then says how to register the
 // project `arianna` in Arianna, if it is not there yet.
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { sanitizeForTerminal as safe } from '@arianna/agents';
-import { loadConfig, resolveHome, type AriannaConfig } from '@arianna/config';
+import { CONFIG_FILE, loadConfigOrExit, resolveHome, type AriannaConfig } from '@arianna/config';
 
 import { GOD_CONTAINER, GOD_PROJECT, GodCloneError, syncGodClone } from '../apps/core/src/god/clone.ts';
 import { prepareGodClone } from '../apps/core/src/god/prepare.ts';
 
 const home = resolveHome();
-let config: AriannaConfig | undefined;
-try {
-  config = loadConfig();
-} catch {
-  // Without config/arianna.toml (a fresh clone): the default data folder.
-}
+// Without config/arianna.toml (a fresh clone): the default data folder. A file that is there but refused stops here (D-289), never a silent fall back to data/.
+const config: AriannaConfig | undefined = existsSync(join(home, CONFIG_FILE)) ? loadConfigOrExit() : undefined;
 const data = config?.paths.data ?? join(home, 'data');
 
 try {

@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, DATA_DIR, guardPaths, loadCatalog, loadConfig, modelFolderText, modelPath, resolveHome, uvEnvironment, type CatalogEntry } from '@arianna/config';
+import { CONFIG_FILE, DATA_DIR, guardPaths, loadCatalog, loadConfigOrExit, modelFolderText, modelPath, resolveHome, uvEnvironment, type CatalogEntry } from '@arianna/config';
 
 import { guardEnv } from '../apps/core/src/pii-guard.ts';
 
@@ -21,7 +21,7 @@ if (!['sync', 'lock', 'test', 'trial'].includes(command ?? '') || extra.length >
 }
 
 // Everything works before arianna.toml exists, with the default data/.
-const config = existsSync(join(resolveHome(), CONFIG_FILE)) ? loadConfig() : undefined;
+const config = existsSync(join(resolveHome(), CONFIG_FILE)) ? loadConfigOrExit() : undefined;
 const home = config?.home ?? resolveHome();
 const data = config?.paths.data ?? join(home, DATA_DIR);
 const paths = guardPaths(home, data);

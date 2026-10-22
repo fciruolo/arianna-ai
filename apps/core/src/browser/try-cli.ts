@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadConfig, resolveHome } from '@arianna/config';
+import { loadConfigOrExit, resolveHome } from '@arianna/config';
 import { createContext, gatewayCheck, piiUnavailable, type ResourceType } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
@@ -143,7 +143,7 @@ async function stepOne(): Promise<void> {
  * count its false positives.
  */
 async function stepTwo(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfigOrExit();
   const sql = connect(config, await resolveLogin(config, 'app'));
   configurePiiGuard(cliPiiGuard(config));
   const since = new Date();

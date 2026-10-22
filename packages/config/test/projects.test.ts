@@ -6,7 +6,7 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { defaultFolderLabel, homeRelativePath, managementFolders, parseConfig, projectNamed, projectParts, projectProblemText, resolveHome, workParts, type Project } from '../src/index.ts';
+import { configErrorText, defaultFolderLabel, homeRelativePath, managementFolders, parseConfig, projectNamed, projectParts, projectProblemText, resolveHome, workParts, type Project } from '../src/index.ts';
 
 const ROOT = join(resolveHome({}), 'data', 'test-tmp', `projects-${randomUUID()}`);
 after(() => {
@@ -202,5 +202,24 @@ describe('refusals of the project list in Italian (D-228)', () => {
     assert.equal(projectProblemText('roles.orchestrator: unknown model'), undefined);
     assert.equal(projectProblemText('project[0].path: something new'), undefined);
     assert.equal(projectProblemText('voice.port: must differ from server.port'), undefined);
+  });
+
+  it('a command prints a refused project in Italian, any other refusal as the code says it (D-289)', () => {
+    const caught = (sections: string): unknown => {
+      try {
+        parseConfig(`${VALID}\n${sections}\n`, home, undefined, user);
+      } catch (error) {
+        return error;
+      }
+      return assert.fail(`not refused: ${sections}`);
+    };
+    const absolute = configErrorText(caught(project('negozio', join(user, 'Sites', 'negozio'))));
+    assert.match(absolute ?? '', /^config\/arianna\.toml, progetti \(il 1° \[\[project\]\] del file\): Scrivi la cartella come ~\/Sites\/negozio:/);
+    assert.match(configErrorText(caught(project('altrove', join(ROOT, 'altrove')))) ?? '', /^config\/arianna\.toml, progetti \(il 1° \[\[project\]\] del file\): .*altrove sul disco/);
+    assert.match(configErrorText(caught(`${project('a', '~/a')}\n${project('B', '~/b')}`)) ?? '', /^config\/arianna\.toml, progetti \(il 2° \[\[project\]\] del file\): Il nome/);
+    assert.match(configErrorText(caught(`${project('a', '~/a')}\n${project('a', '~/b')}`)) ?? '', /^config\/arianna\.toml, progetti: Il progetto a compare due volte\.$/);
+    assert.equal(configErrorText(caught('[server]\nhost = "0.0.0.0"\n')), 'server.host: must be one of 127.0.0.1, ::1');
+    assert.equal(configErrorText(new Error('project[0].path: a project must be under your home')), undefined, 'only a ConfigError');
+    assert.equal(configErrorText('project[0].path: x'), undefined);
   });
 });

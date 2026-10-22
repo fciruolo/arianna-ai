@@ -16,6 +16,7 @@ import { parseNotifications, type NotificationsConfig } from './notifications.ts
 import { parsePersonas, type Personas } from './personas.ts';
 import { parseSeries, type SeriesOverrides } from './series.ts';
 import { parseProjectRules, type ProjectRules } from './project-rules.ts';
+import { configErrorText } from './project-messages.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseParticipants, type ParticipantsConfig } from './participants.ts';
@@ -236,4 +237,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AriannaConfig 
     throw new ConfigError(`${CONFIG_FILE} is missing: run pnpm arianna:init (pnpm arianna:init --defaults for development)`);
   }
   return parseConfig(readFileSync(path, 'utf8'), home, loadCatalog(home), userHomeOf(env));
+}
+
+/**
+ * `loadConfig` for a command the user runs (`pnpm start`, `pnpm db:up`…,
+ * D-289): a refused arianna.toml prints its reason, a refused project in
+ * Italian with what to do, without the stack trace, and exits with 1. Any
+ * other error is thrown as it is.
+ */
+export function loadConfigOrExit(env: NodeJS.ProcessEnv = process.env): AriannaConfig {
+  try {
+    return loadConfig(env);
+  } catch (error) {
+    const text = configErrorText(error);
+    if (text === undefined) throw error;
+    console.error(text);
+    process.exit(1);
+  }
 }

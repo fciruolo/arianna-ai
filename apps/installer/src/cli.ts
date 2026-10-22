@@ -15,13 +15,13 @@ import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 
 import {
+  configErrorText,
   DEFAULT_SETTINGS,
   loadCatalog,
   loadConfig,
   MODEL_DIRS,
   modelsRoot,
   parseProjects,
-  projectProblemText,
   resolveHome,
   userHomeOf,
   type AriannaConfig,
@@ -227,9 +227,9 @@ try {
   }
 } catch (error) {
   // Our errors name a file and a code; anything else only its class.
-  // D-228: a refused project in config/arianna.toml in Italian, with what to do.
-  const project = error instanceof Error && error.name === 'ConfigError' ? projectProblemText(error.message) : undefined;
-  if (project !== undefined) console.error(`config/arianna.toml, progetti: ${project}`);
-  else console.error(error instanceof Error && ['ModelError', 'Error', 'ConfigError', 'VaultError', 'LoginError'].includes(error.name) ? error.message : 'unexpected error');
+  // A refused config/arianna.toml as every command prints it (D-289): a refused project in Italian with what to do (D-228), any other refusal as the code says it.
+  const config = configErrorText(error);
+  if (config !== undefined) console.error(config);
+  else console.error(error instanceof Error && ['ModelError', 'Error', 'VaultError', 'LoginError'].includes(error.name) ? error.message : 'unexpected error');
   process.exitCode = 1;
 }

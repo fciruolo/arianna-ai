@@ -36,3 +36,19 @@ export function projectProblemText(message: string): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * What a command prints for an arianna.toml it cannot use (D-289): a refused
+ * project in Italian with what to do (D-228), any other refusal as the code
+ * says it (it names a key and a rule, never a value read elsewhere);
+ * `undefined` for an error that is not a refusal of the configuration.
+ */
+export function configErrorText(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'ConfigError') return undefined;
+  const project = projectProblemText(error.message);
+  if (project === undefined) return error.message;
+  // In a file written by hand with several projects, which one: counted from 1, as the user reads the file.
+  const index = /^project\[(\d+)\]/.exec(error.message)?.[1];
+  const which = index === undefined ? '' : ` (il ${String(Number(index) + 1)}° [[project]] del file)`;
+  return `config/arianna.toml, progetti${which}: ${project}`;
+}

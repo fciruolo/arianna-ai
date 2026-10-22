@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- `pnpm start`, `pnpm db:up`, `pnpm db:migrate` e gli altri comandi con un `config/arianna.toml` non valido scrivono una riga sola senza la traccia di Node: un progetto con un percorso non accettato (completo, fuori dalla tua cartella utente…) in italiano con cosa scrivere, come già la pagina Progetti e il wizard (D-289).
+
 ## [0.166.0] - 2026-10-22
 
 ### Corretto

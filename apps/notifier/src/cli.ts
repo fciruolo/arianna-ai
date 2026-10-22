@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, loadConfig, resolveHome } from '@arianna/config';
+import { CONFIG_FILE, loadConfigOrExit, resolveHome } from '@arianna/config';
 
 import { headIconPng } from '../../hud/characters/originals.ts';
 import { iconFiles, infoPlist, loopbackUrl, serverUrl } from './bundle.ts';
@@ -37,7 +37,7 @@ if (!existsSync(join(home, CONFIG_FILE))) {
   console.error('notifier:build: config/arianna.toml is missing: run pnpm arianna:init');
   process.exit(1);
 }
-const config = loadConfig();
+const config = loadConfigOrExit();
 const server = serverUrl(config.server.host, config.server.port);
 const chatOption = argument('--chat');
 const chat = chatOption === undefined ? server : loopbackUrl(chatOption);
