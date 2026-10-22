@@ -418,6 +418,9 @@ describe('the user writes the wiki', () => {
     // An old file in .storia that says more than L2 is not shown.
     write(root, { 'kb/wiki/.storia/cucina__pane/20260101-000000-000.md': '---\nlabel: L3\ntitle: "Segreta"\n---\n\nsegreto finto\n' });
     assert.throws(() => compareWikiVersion(root, RULES, 'cucina/pane', '20260101-000000-000'), (error) => error instanceof WikiError && error.code === 'not-found');
+    // «Ripristina» reads it with the same function: refused as not written by the code.
+    assert.throws(() => { restoreWikiVersion(root, RULES, 'cucina/pane', '20260101-000000-000', readWikiView(root, RULES, 'cucina/pane').version, NOW); }, (error) => error instanceof WikiError && error.code === 'edited');
+    assert.throws(() => { restoreWikiVersion(root, RULES, 'cucina/pane', '20990101-000000-000', 'non-uno-sha', NOW); }, (error) => error instanceof WikiError && error.code === 'not-found');
   });
 
   it('«Duplica» is a new page with the text of the page, checked as any page the user writes (D-284)', () => {

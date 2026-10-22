@@ -1373,12 +1373,12 @@ export async function proposeWikiAgain(id: string): Promise<void> {
   await call('POST', `/api/wiki/proposals/${encodeURIComponent(id)}/again`, {});
 }
 
-/** «Ripristina» an old version, only if the page is still the version shown (`base`). */
 /** «Confronta» an old version with the page now (D-285): what changes, title included, and the page compared (`base`). */
 export async function compareWikiVersion(path: string, version: string): Promise<VersionComparison> {
   return (await call<{ comparison: VersionComparison }>('GET', `/api/wiki/version?path=${encodeURIComponent(path)}&version=${encodeURIComponent(version)}`)).comparison;
 }
 
+/** «Ripristina» an old version, only if the page is still the version shown (`base`). */
 export async function restoreWikiPage(path: string, version: string, base: string): Promise<void> {
   await call('POST', '/api/wiki/restore', { path, version, base });
 }

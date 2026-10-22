@@ -34,6 +34,7 @@ import {
   TREE_WIDTH,
   treeMenu,
   sameLinesText,
+  versionErrorText,
   wikiDiffRows,
 } from '../src/lib/wiki.ts';
 
@@ -283,4 +284,11 @@ test('«Confronta» and «Proposte»: the lines that do not change are closed in
   // No change: no rows.
   assert.deepEqual(wikiDiffRows([], 12), []);
   assert.equal(sameLinesText(1), '1 riga uguale');
+});
+
+test('a version gone or not restorable says so, the rest as the other errors of the Wiki (D-285)', () => {
+  assert.match(versionErrorText(404, 'not-found: version not found'), /non c’è più/);
+  assert.match(versionErrorText(409, 'edited: that version is not a page the code wrote'), /non si ripristina/);
+  assert.equal(versionErrorText(409, 'changed: the page changed'), wikiErrorText(409, 'changed: the page changed'));
+  assert.doesNotMatch(versionErrorText(500, 'x'), /non c’è più/);
 });

@@ -452,3 +452,10 @@ export function wikiDiffRows(hunks: WikiDiff['hunks'], oldTotal?: number): WikiD
   if (oldTotal !== undefined && hunks.length > 0 && oldTotal + 1 > next) rows.push({ kind: 'gap', text: sameLinesText(oldTotal + 1 - next) });
   return rows;
 }
+
+/** An error of «Confronta» or «Ripristina» of a version in Italian: a version gone (beyond the 20 kept) says so (D-285). */
+export function versionErrorText(status: number, message: string): string {
+  if (status === 404) return 'Questa versione non c’è più: l’elenco delle versioni è aggiornato.';
+  if (message.startsWith('edited')) return 'Questa versione non è una pagina scritta da Arianna o da te: non si ripristina.';
+  return wikiErrorText(status, message);
+}

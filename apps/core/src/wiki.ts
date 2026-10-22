@@ -1641,15 +1641,30 @@ export function deleteWikiPage(home: string, rules: LabelRules, path: string, ba
  * one the user saw (`base`); the version it had is kept in turn, so a restore
  * can be undone.
  */
-export function restoreWikiVersion(home: string, rules: LabelRules, path: string, version: string, base: string, now = new Date()): void {
-  if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
-  if (typeof base !== 'string' || !SHA.test(base)) throw new WikiError('invalid', 'base is required');
+/**
+ * An old version of a page as «Ripristina» and «Confronta» read it (D-280,
+ * D-285): a page up to L2 that no rule raises above, a version id of .storia
+ * and its file, else `not-found`. `l2` says whether the old file is L2 only
+ * (its label line L2, no other label): only such a version is restored or shown.
+ */
+function readableVersion(home: string, rules: LabelRules, path: string, version: string): { raw: string; l2: boolean } {
+  if (typeof path !== 'string' || !isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
   const old = readWikiFile(home, [...historySegments(path), `${version}.md`]);
   if (old === undefined) throw new WikiError('not-found', 'version not found');
+  const labels = parsePage(old.raw).header.labels;
+  return { raw: old.raw, l2: headerFields(old.raw).get('label') === 'L2' && labels.length > 0 && labels.every((label) => label === 'L2') };
+}
+
+export function restoreWikiVersion(home: string, rules: LabelRules, path: string, version: string, base: string, now = new Date()): void {
+  if (typeof base !== 'string' || !SHA.test(base)) {
+    readableVersion(home, rules, path, version);
+    throw new WikiError('invalid', 'base is required');
+  }
+  const old = readableVersion(home, rules, path, version);
   const current = readWikiPageFile(home, path);
   if (current === undefined || current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
   // Back to the version as it was, its label line included: never lower than L2.
-  if (headerFields(old.raw).get('label') !== 'L2') throw new WikiError('edited', 'that version is not a page the code wrote');
+  if (!old.l2) throw new WikiError('edited', 'that version is not a page the code wrote');
   keepVersion(home, path, current.raw, now);
   replaceFile(home, pageSegments(path), old.raw, current.version);
   rebuildIndexes(home, rules);
@@ -1692,13 +1707,10 @@ function comparedText(raw: string, fallback: string): { title: string; text: str
  * rule above L2, a version id of .storia, an old file that is L2 only.
  */
 export function compareWikiVersion(home: string, rules: LabelRules, path: string, version: string): VersionComparison {
-  if (typeof path !== 'string' || !isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
+  const old = readableVersion(home, rules, path, version);
+  if (!old.l2) throw new WikiError('not-found', 'version not found');
   const current = readWikiPageFile(home, path);
   if (current === undefined || !parsePage(current.raw).header.labels.every((label) => label === 'L2')) throw new WikiError('not-found', 'page not found');
-  const old = readWikiFile(home, [...historySegments(path), `${version}.md`]);
-  if (old === undefined) throw new WikiError('not-found', 'version not found');
-  const labels = parsePage(old.raw).header.labels;
-  if (labels.length === 0 || !labels.every((label) => label === 'L2')) throw new WikiError('not-found', 'version not found');
   const then = comparedText(old.raw, path);
   const now = comparedText(current.raw, path);
   const at = pageVersions(home, path).find((item) => item.id === version)?.at ?? '';

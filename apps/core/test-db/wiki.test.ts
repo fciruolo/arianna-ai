@@ -349,6 +349,12 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.ok(comparison.diff.added > 0);
   assert.equal((await send('GET', '/api/wiki/version?path=cucina/torta&version=20990101-000000-000')).status, 404);
   assert.equal((await send('GET', '/api/wiki/version?path=cucina/torta')).status, 404);
+  // A file of .storia that says more than L2 is never shown over HTTP.
+  mkdirSync(join(serverHome, 'kb/wiki/.storia/cucina__torta'), { recursive: true });
+  writeFileSync(join(serverHome, 'kb/wiki/.storia/cucina__torta/20260101-000000-000.md'), '---\nlabel: L3\ntitle: "Segreta"\n---\n\nsegreto finto\n');
+  const secret = await send('GET', '/api/wiki/version?path=cucina/torta&version=20260101-000000-000');
+  assert.equal(secret.status, 404);
+  assert.doesNotMatch(JSON.stringify(secret.body), /segreto|Segreta/);
   assert.equal((await send('POST', '/api/wiki/delete', { path: 'cucina/torta', base: tortaSecond.body.version })).status, 200);
   const movedPage = await send('POST', '/api/wiki/move-now', { kind: 'page', from: 'cucina/pane', to: 'forno/pane', base: edit.body.version });
   assert.equal(movedPage.status, 200);

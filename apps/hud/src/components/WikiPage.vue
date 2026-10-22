@@ -44,6 +44,7 @@ import {
   tidyPath,
   TREE_WIDTH,
   treeMenu,
+  versionErrorText,
   versionText,
   wikiDiffRows,
   wikiErrorText,
@@ -223,7 +224,7 @@ function onTitleKey(event: KeyboardEvent): void {
 }
 
 /** Leaving with text that cannot be saved (an error, or the page changed): asked first, then `go`. */
-const leaving = ref<{ go: () => void } | null>(null);
+const leaving = ref<{ go: () => void; text?: string; confirm?: string } | null>(null);
 
 /** Whether leaving now loses text that cannot be saved. */
 const unsavable = (): boolean => unsaved() && (saveState.value === 'changed' || saveState.value === 'problem');
@@ -807,18 +808,46 @@ const restoring = ref<string | null>(null);
 const restoreProblem = ref<string | null>(null);
 const restoreBusy = ref(false);
 
-async function confirmRestore(): Promise<void> {
+/** A version gone from «Versioni precedenti» (beyond the 20 kept, or the page deleted) says so, and the list is read again. */
+function versionProblem(failure: unknown): string {
+  if (!(failure instanceof ApiError)) return problemOf(failure);
+  if (failure.status !== 404) return versionErrorText(failure.status, failure.message);
+  const current = page.value;
+  if (current?.kind === 'page') {
+    void loadWikiPage(current.path)
+      .then((fresh) => {
+        if (page.value === current) current.versions = fresh.versions;
+      })
+      .catch(() => undefined);
+  }
+  return versionErrorText(404, failure.message);
+}
+
+/** Text written here that cannot be saved (an error, or the page changed) goes when a version comes back: asked first. */
+const RESTORE_LOSES = 'Il testo scritto qui non è salvato e il ripristino lo sostituisce: va perso. Copialo prima, se ti serve.';
+
+async function confirmRestore(force = false): Promise<void> {
   if (page.value === null || restoring.value === null) return;
+  await flush();
+  if (!force && unsavable()) {
+    leaving.value = {
+      text: RESTORE_LOSES,
+      confirm: 'Ripristina comunque',
+      go: () => {
+        void confirmRestore(true);
+      },
+    };
+    return;
+  }
   restoreBusy.value = true;
   restoreProblem.value = null;
   try {
-    await flush();
     await restoreWikiPage(page.value.path, restoring.value, page.value.version);
     restoring.value = null;
     await show({ kind: 'page', path: page.value.path }, true);
     await loadListing();
   } catch (failure) {
-    restoreProblem.value = problemOf(failure);
+    restoreProblem.value = versionProblem(failure);
   } finally {
     restoreBusy.value = false;
   }
@@ -946,16 +975,21 @@ const rowClass = { added: 'bg-ok/10', removed: 'bg-danger/10', context: '', gap:
 
 // «Confronta» an old version with the page now (D-285)
 
-const comparing = ref<{ id: string; at: string; data: VersionComparison | null; problem: string | null; busy: boolean } | null>(null);
+const comparing = ref<{ id: string; at: string; data: VersionComparison | null; problem: string | null; busy: boolean; unsaved: boolean } | null>(null);
 const comparePanel = ref<HTMLElement | null>(null);
 
 /** The diff of the version with the page as it is now: what waits is saved first, so «adesso» is what the user sees. */
 async function compare(id: string, at: string): Promise<void> {
   const current = page.value;
   if (current === null || current.kind !== 'page') return;
-  comparing.value = { id, at, data: null, problem: null, busy: false };
+  // One at a time: the plain «Ripristina» asks in its window, the comparison has its own button.
+  restoring.value = null;
+  comparing.value = { id, at, data: null, problem: null, busy: false, unsaved: false };
   try {
     await flush();
+    // What cannot be saved is not on the Mac yet: the comparison shows the page as saved, and says so.
+    const asked = comparing.value as { id: string; unsaved: boolean } | null;
+    if (asked?.id === id) asked.unsaved = unsavable();
     const data = await compareWikiVersion(current.path, id);
     // «Chiudi», another «Confronta» or another page meanwhile: this answer is not shown.
     // TypeScript keeps the value from before the await: read again, it may be null now.
@@ -966,19 +1000,29 @@ async function compare(id: string, at: string): Promise<void> {
     comparePanel.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   } catch (failure) {
     const shown = comparing.value as { id: string; problem: string | null } | null;
-    if (shown?.id === id) shown.problem = problemOf(failure);
+    if (shown?.id === id) shown.problem = versionProblem(failure);
   }
 }
 
 /** «Ripristina questa versione»: only over the page as compared (its sha256); the version of now stays among the old ones. */
-async function restoreCompared(): Promise<void> {
+async function restoreCompared(force = false): Promise<void> {
   const now = comparing.value;
   const current = page.value;
   if (now === null || now.data === null || current === null || now.busy) return;
+  await flush();
+  if (!force && unsavable()) {
+    leaving.value = {
+      text: RESTORE_LOSES,
+      confirm: 'Ripristina comunque',
+      go: () => {
+        void restoreCompared(true);
+      },
+    };
+    return;
+  }
   now.busy = true;
   now.problem = null;
   try {
-    await flush();
     await restoreWikiPage(current.path, now.id, now.data.base);
     comparing.value = null;
     await show({ kind: 'page', path: current.path }, true);
@@ -988,7 +1032,7 @@ async function restoreCompared(): Promise<void> {
     now.problem =
       failure instanceof ApiError && failure.message.startsWith('changed')
         ? 'La pagina è cambiata dopo il confronto: confronta di nuovo prima di ripristinare.'
-        : problemOf(failure);
+        : versionProblem(failure);
     now.busy = false;
   }
 }
@@ -1363,8 +1407,8 @@ onBeforeUnmount(() => {
               <ul class="mt-1.5 flex flex-col gap-1">
                 <li v-for="version in page.versions" :key="version.id" class="flex items-center gap-2">
                   <span class="font-mono text-[12.5px] text-muted">{{ versionText(version.at) }}</span>
-                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :aria-pressed="comparing?.id === version.id" @click="compare(version.id, version.at)"><Icon name="compare" :size="12" />Confronta</button>
-                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="restoring = version.id; restoreProblem = null"><Icon name="retry" :size="12" />Ripristina</button>
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :aria-pressed="comparing?.id === version.id" :disabled="comparing?.busy === true || restoreBusy" @click="compare(version.id, version.at)"><Icon name="compare" :size="12" />Confronta</button>
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :disabled="comparing?.busy === true || restoreBusy" @click="restoring = version.id; restoreProblem = null; comparing = null"><Icon name="retry" :size="12" />Ripristina</button>
                 </li>
               </ul>
             </details>
@@ -1374,6 +1418,9 @@ onBeforeUnmount(() => {
               <h2 id="wiki-compare-title" class="text-[15px] font-semibold">Versione del {{ versionText(comparing.at) }} e pagina di adesso</h2>
               <p class="text-[13px] text-muted">
                 <span class="text-danger">−</span> c’era nella versione e adesso non c’è più · <span class="text-ok">+</span> c’è adesso e nella versione non c’era. La prima riga è il titolo.
+              </p>
+              <p v-if="comparing.unsaved" class="flex items-center gap-1.5 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]" role="status">
+                <Icon name="warning" :size="14" />Il testo non salvato non è nel confronto: «adesso» è la pagina com’è salvata sul Mac.
               </p>
               <p v-if="comparing.data === null && comparing.problem === null" class="text-sm text-muted">Confronto le due versioni…</p>
               <template v-if="comparing.data !== null">
@@ -1401,7 +1448,7 @@ onBeforeUnmount(() => {
                   type="button"
                   class="btn btn-primary px-3 py-1 text-[13.5px]"
                   :disabled="comparing.busy"
-                  @click="restoreCompared"
+                  @click="restoreCompared()"
                 >
                   <Icon name="retry" :size="14" />Ripristina questa versione
                 </button>
@@ -1459,14 +1506,15 @@ onBeforeUnmount(() => {
       confirm-text="Ripristina"
       :busy="restoreBusy"
       :problem="restoreProblem"
-      @confirm="confirmRestore"
+      @confirm="confirmRestore()"
       @cancel="restoring = null"
     >
       <p>La pagina «{{ page.title }}» torna com’era il {{ versionText(page.versions.find((version) => version.id === restoring)?.at ?? '') }}. La versione di adesso resta fra le precedenti.</p>
     </ConfirmDialog>
 
-    <ConfirmDialog v-if="leaving !== null" title="Modifiche non salvate" confirm-text="Lascia la pagina" danger @confirm="leave" @cancel="leaving = null">
-      <p>{{ saveState === 'changed' ? 'La pagina è cambiata intanto e quello che hai scritto non si può salvare sopra.' : saveProblem ?? 'Quello che hai scritto non è salvato.' }} Se lasci la pagina, il testo scritto qui va perso: copialo prima, se ti serve.</p>
+    <ConfirmDialog v-if="leaving !== null" title="Modifiche non salvate" :confirm-text="leaving.confirm ?? 'Lascia la pagina'" danger @confirm="leave" @cancel="leaving = null">
+      <p v-if="leaving.text !== undefined">{{ leaving.text }}</p>
+      <p v-else>{{ saveState === 'changed' ? 'La pagina è cambiata intanto e quello che hai scritto non si può salvare sopra.' : saveProblem ?? 'Quello che hai scritto non è salvato.' }} Se lasci la pagina, il testo scritto qui va perso: copialo prima, se ti serve.</p>
     </ConfirmDialog>
   </div>
 </template>
