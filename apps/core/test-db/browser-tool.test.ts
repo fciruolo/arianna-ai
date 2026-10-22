@@ -324,3 +324,13 @@ test('writeClosedByUserLine: «Chiudi» in the chat leaves a system line without
     SELECT role, task_id::text AS "taskId", label::text, body FROM messages WHERE conversation_id = ${conversationId}`;
   assert.deepEqual([...rows], [{ role: 'system', taskId: null, label: 'L0', body: CLOSED_BY_USER_TEXT }]);
 });
+
+test('D-286: the sites the user chose in the browser join the user consent of Arianna; never a consent of sites', async () => {
+  const conversationId = await workConversation();
+  const { task } = await postUserMessage(db().sql, conversationId, `Apri ${CATALOGO} per favore`);
+  const browser = fakeBrowser([PAGE]);
+  browser.userAddressesOf = (id) => (id === conversationId ? ['https://altro.example/'] : []);
+  const model = scripted([OPEN(CATALOGO), REPLY('Fatto.')]);
+  await drain(task.id, model, browser);
+  assert.deepEqual(browser.calls[0]?.scope.consent, { from: 'user', addresses: [CATALOGO, 'https://altro.example/'] } satisfies PageConsent);
+});

@@ -91,7 +91,12 @@ function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { se
     h.job = job;
     const session = {
       // The bar of the screen (D-286): back, forward and reload as recorded; no page ahead for `forward`.
-      history: (command: string) => { h.history.push(command); return Promise.resolve(command === 'forward' ? null : { title: page.title, url: page.url }); },
+      history: async (command: string) => {
+        h.history.push(command);
+        // A page that is slow to load holds the command, as `wait` holds a script.
+        if (page.wait !== undefined) await page.wait;
+        return command === 'forward' ? null : { title: page.title, url: page.url };
+      },
       currentUrl: () => page.url,
       network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), authenticated: () => h.access, settle: () => Promise.resolve() },
       // An address under /rifiutata is refused by the fake network: Chromium's error, as a blocked navigation.
@@ -155,7 +160,7 @@ test('the scope of every action goes to the network: a conversation that became 
   await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
   const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
   await h.browser.act(scope('a', consent, INTERNAL), { kind: 'read' });
-  assert.deepEqual(h.scopes.at(-1), { context: INTERNAL, consent, driver: 'agent', meta: { saved: { approved: new Set() } } });
+  assert.deepEqual(h.scopes.at(-1), { context: INTERNAL, consent, driver: 'agent', meta: { saved: { approved: new Set() } }, conversationId: 'a' });
 });
 
 test('another conversation gets busy while the browser was used less than 2 minutes ago, and takes it after', async () => {
@@ -707,10 +712,33 @@ test('the bar of the screen (D-286): back, forward, reload and an address as the
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'click', ref: 1 }), { ok: false, reason: 'reread' });
   // An address written in the bar: a saved value asks first, «Apri» lets it go for this browser.
   const asked = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' });
-  assert.deepEqual(asked, { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'cerca-finto.it' });
-  const opened = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi', confirmed: true });
+  assert.ok(!asked.ok && asked.reason === 'confirm-private');
+  assert.deepEqual(asked.saved, ['client:c1:name']);
+  assert.equal(asked.site, 'cerca-finto.it');
+  assert.match(asked.ask ?? '', /^[0-9a-f]{32}$/);
+  // «Apri» only with the token of the question asked for that address: another token, or another address, asks again.
+  const forged = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi', ask: 'f'.repeat(32) });
+  assert.equal(!forged.ok && forged.reason, 'confirm-private');
+  const fresh = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' });
+  const other = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi+bis', ...(!fresh.ok && fresh.reason === 'confirm-private' && fresh.ask !== undefined ? { ask: fresh.ask } : {}) });
+  assert.equal(!other.ok && other.reason, 'confirm-private');
+  const again = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' });
+  const opened = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi', ...(!again.ok && again.reason === 'confirm-private' && again.ask !== undefined ? { ask: again.ask } : {}) });
   assert.equal(opened.ok, true);
   assert.deepEqual([...(h.scopes.at(-1)?.meta?.saved?.approved ?? [])], ['client:c1:name']);
+  // A public consent covers every site already: nothing to note.
+  assert.deepEqual(h.browser.userAddressesOf('a'), []);
+  // An Internal conversation: the address written in the bar, on a new site, noted as its site.
+  const internal = { conversationId: 'a', context: INTERNAL, consent: { from: 'user' as const, addresses: ['https://comune-finto.it/servizi'] } };
+  await h.browser.act(internal, { kind: 'read' });
+  assert.equal((await h.browser.userCommand('a', { kind: 'open', url: 'https://nuovo-finto.it/pagina' })).ok, true);
+  assert.deepEqual(h.browser.userAddressesOf('a'), ['https://nuovo-finto.it/']);
+  // A page on a site the conversation already covers: no note.
+  assert.equal((await h.browser.userCommand('a', { kind: 'open', url: 'https://comune-finto.it/altra' })).ok, true);
+  assert.deepEqual(h.browser.userAddressesOf('a'), ['https://nuovo-finto.it/']);
+  // A token is used once.
+  const reused = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi', ...(!again.ok && again.reason === 'confirm-private' && again.ask !== undefined ? { ask: again.ask } : {}) });
+  assert.equal(reused.ok, true, 'let go for this browser: no question any more');
   // Not an address: nothing opens.
   assert.deepEqual(await h.browser.userCommand('a', { kind: 'open', url: 'javascript:alert(1)' }), { ok: false, reason: 'navigation-failed' });
 });
@@ -734,11 +762,63 @@ test('the pages the user opens while driving are the conversation\'s for Arianna
   const h = harness();
   await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
   assert.deepEqual(h.browser.userAddressesOf('a'), []);
-  h.job?.onUserAddress?.('https://altro-finto.it/pagina');
-  h.job?.onUserAddress?.('https://terzo-finto.it/');
-  h.job?.onUserAddress?.('https://altro-finto.it/pagina');
-  assert.deepEqual(h.browser.userAddressesOf('a'), ['https://altro-finto.it/pagina', 'https://terzo-finto.it/']);
-  assert.deepEqual(h.browser.userAddressesOf('b'), []);
+  // Noted as sites, for the conversation of the scope that navigated (never the one holding the browser later).
+  h.job?.onUserAddress?.('https://altro-finto.it/pagina', 'a');
+  h.job?.onUserAddress?.('https://terzo-finto.it/x', 'a');
+  h.job?.onUserAddress?.('https://altro-finto.it/altra', 'a');
+  h.job?.onUserAddress?.('https://quarto-finto.it/', 'b');
+  assert.deepEqual(h.browser.userAddressesOf('a'), ['https://altro-finto.it/', 'https://terzo-finto.it/']);
+  assert.deepEqual(h.browser.userAddressesOf('b'), ['https://quarto-finto.it/']);
+  // The conversation becomes private or is deleted: its pages go.
+  await h.browser.release('a');
+  assert.deepEqual(h.browser.userAddressesOf('a'), []);
+});
+
+test('a click or a key of the user chooses one navigation, within a short time; the bar and Arianna never (D-286)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  // Arianna drives: no gesture to take.
+  assert.equal(h.scopes.at(-1)?.takeGesture, undefined);
+  await h.browser.takeControl('a').done;
+  const user = h.scopes.at(-1);
+  assert.equal(user?.driver, 'user');
+  assert.equal(user.conversationId, 'a');
+  const take = user.takeGesture;
+  assert.ok(take !== undefined);
+  // Taking the control is no click on a page: nothing to take yet.
+  assert.equal(take(), false);
+  h.browser.userGesture('a');
+  assert.equal(take(), true);
+  // Taken once: a meta refresh or a script after it has none.
+  assert.equal(take(), false);
+  h.browser.userGesture('a');
+  h.clock.now += 2_000;
+  assert.equal(take(), false, 'too late');
+  // Another conversation's gesture: nothing.
+  h.browser.userGesture('b');
+  assert.equal(take(), false);
+  // A command of the bar: as the user's, without a gesture.
+  h.browser.userGesture('a');
+  await h.browser.userCommand('a', { kind: 'reload' });
+  const during = h.scopes.filter((next) => next.driver === 'user').at(-2);
+  assert.equal(during?.takeGesture, undefined);
+});
+
+test('the bar of the user does not say Arianna is acting; nothing after a shutdown (D-286)', async () => {
+  let release: () => void = () => undefined;
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  h.page.wait = new Promise<void>((resolve) => { release = resolve; });
+  // The fake history waits for the page script: a command under way.
+  const realHistory = h.history;
+  const pending = h.browser.userCommand('a', { kind: 'reload' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.browser.actingFor('a'), false);
+  release();
+  await pending;
+  assert.equal(realHistory.length, 1);
+  await h.browser.close();
+  assert.deepEqual(await h.browser.userCommand('a', { kind: 'reload' }), { ok: false, reason: 'not-open' });
 });
 
 test('a free browser of another conversation and a saved value: the card, and the browser is neither closed nor taken (D-283 review)', async () => {

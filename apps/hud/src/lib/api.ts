@@ -1221,21 +1221,21 @@ export async function takeBrowserControl(conversationId: string, screen: string)
  * A command of the bar of the screen (D-286), from the open screen of
  * `screen` (its token): the page it opened, or why not (`confirm-private`:
  * the address carries a value the user saved, `values` what it is and whose;
- * sent again with `confirmed` after «Apri»). 409 `no-screen` or `no-browser`.
+ * sent again with the token of that question, `ask`, after «Apri»). 409 `no-screen` or `no-browser`.
  */
 export async function navigateBrowser(
   conversationId: string,
   screen: string,
   command: 'back' | 'forward' | 'reload' | 'open',
   url?: string,
-  confirmed = false,
-): Promise<{ ok: true; url: string } | { ok: false; reason: string; values: { kind: string; client: string }[] }> {
-  const body = await call<{ ok?: unknown; url?: unknown; reason?: unknown; values?: unknown }>('POST', '/api/browser/navigate', {
+  ask?: string,
+): Promise<{ ok: true; url: string } | { ok: false; reason: string; values: { kind: string; client: string }[]; ask: string | null }> {
+  const body = await call<{ ok?: unknown; url?: unknown; reason?: unknown; values?: unknown; ask?: unknown }>('POST', '/api/browser/navigate', {
     conversationId,
     screen,
     command,
     ...(command === 'open' && url !== undefined ? { url } : {}),
-    ...(command === 'open' && confirmed ? { confirmed: true } : {}),
+    ...(command === 'open' && ask !== undefined ? { ask } : {}),
   });
   if (body.ok === true && typeof body.url === 'string') return { ok: true, url: body.url };
   const values = Array.isArray(body.values)
@@ -1244,7 +1244,7 @@ export async function navigateBrowser(
         return typeof entry.kind === 'string' && typeof entry.client === 'string' ? [{ kind: entry.kind, client: entry.client }] : [];
       })
     : [];
-  return { ok: false, reason: typeof body.reason === 'string' ? body.reason : 'error', values };
+  return { ok: false, reason: typeof body.reason === 'string' ? body.reason : 'error', values, ask: typeof body.ask === 'string' ? body.ask : null };
 }
 
 /** «Restituisci ad Arianna» (D-264, passo 5); a control already gone back (409 `not-driving`) counts as returned. */

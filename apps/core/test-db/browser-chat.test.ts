@@ -252,6 +252,8 @@ test('orchestrator in the chat of an access: only the browser tools, the context
   const { task } = await postUserMessage(db().sql, chat, 'Rinnova i miei prestiti.');
   const browser = fakeBrowser(chat, [READING, { ok: false, reason: 'confirm-send', site: SITE, element: 'Rinnova' }, PAGE]);
   const model = scripted([READ, CLICK(1), CLICK(1), REPLY('Ho rinnovato «Il nome della rosa».')]);
+  // Sites the user chose elsewhere (D-286) never widen the consent of the chat of an access.
+  (browser as unknown as { userAddressesOf: () => readonly string[] }).userAddressesOf = () => ['https://altro.example/'];
   assert.equal((await drain(task.id, model, browser)).at(-1), 'waiting-approval');
   const offered = toolsOf(model.requests[0]);
   assert.ok(offered.includes('browser.read') && offered.includes('user.ask'), offered.join(', '));

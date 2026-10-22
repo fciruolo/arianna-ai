@@ -68,16 +68,16 @@ const acting = ref(false);
 const commanding = ref(false);
 const barProblem = ref<string | null>(null);
 /** The address waits for «Apri / No»: it carries a value the user saved (D-283). */
-const savedAsk = ref<{ url: string; lines: string[] } | null>(null);
+const savedAsk = ref<{ url: string; lines: string[]; ask: string } | null>(null);
 const barOff = (): boolean => state.value !== 'live' || acting.value || commanding.value || screenToken === null;
 
-async function command(kind: BarCommand, url?: string, confirmed = false): Promise<void> {
+async function command(kind: BarCommand, url?: string, ask?: string): Promise<void> {
   const token = screenToken;
   if (token === null) return;
   barProblem.value = null;
   commanding.value = true;
   try {
-    const done = await navigateBrowser(props.conversationId, token, kind, url, confirmed);
+    const done = await navigateBrowser(props.conversationId, token, kind, url, ask);
     if (token !== screenToken) return;
     if (done.ok) {
       pageUrl.value = done.url;
@@ -85,9 +85,9 @@ async function command(kind: BarCommand, url?: string, confirmed = false): Promi
       address.value = done.url;
       return;
     }
-    if (done.reason === 'confirm-private' && url !== undefined) {
+    if (done.reason === 'confirm-private' && url !== undefined && done.ask !== null) {
       const lines = done.values.map((value) => `${SAVED_KIND_TEXT[value.kind] ?? 'un dato salvato'}${value.client.trim() === '' ? ' di un cliente' : ` di ${value.client}`}`);
-      savedAsk.value = { url, lines: [...new Set(lines)] };
+      savedAsk.value = { url, lines: [...new Set(lines)], ask: done.ask };
       return;
     }
     barProblem.value = commandText(done.reason);
@@ -111,7 +111,7 @@ function openWritten(): void {
 function answerSaved(open: boolean): void {
   const asked = savedAsk.value;
   savedAsk.value = null;
-  if (asked !== null && open) void command('open', asked.url, true);
+  if (asked !== null && open) void command('open', asked.url, asked.ask);
 }
 
 /** noVNC takes keys and pointer only while this screen drives. */

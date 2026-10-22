@@ -241,7 +241,7 @@ export interface NetworkJob {
    * A navigation of the main page the user made while driving went (D-286):
    * its address, for the conversation (AgentBrowser keeps it in memory).
    */
-  onUserAddress?: (address: string) => void;
+  onUserAddress?: (address: string, conversationId: string | undefined) => void;
 }
 
 /**
@@ -285,6 +285,16 @@ export interface NetworkScope {
    * HEAD is refused and counted (`heldSends`).
    */
   send?: boolean;
+  /**
+   * A click or a key of the user on the screen that drives, not used yet
+   * (D-286): taken by the first navigation of the main page of the agent's
+   * tab to a site the consent does not cover, which then counts as chosen
+   * by the user. Without it (a script, a meta refresh, a timer, a command of
+   * the bar) such a navigation stays refused as before.
+   */
+  takeGesture?: () => boolean;
+  /** The conversation the scope is of: the one a page the user chose is noted for (D-286). */
+  conversationId?: string;
 }
 
 /** Cookies of a site waiting for the first form of the user (D-276): at most this many sites, the oldest go. */
@@ -408,6 +418,22 @@ function originOf(address: string): string | undefined {
 function corsAllows(answer: Answer, origin: string | undefined): boolean {
   const allowed = answer.headers.find(([name]) => name === 'access-control-allow-origin')?.[1].trim();
   return allowed === '*' || (allowed !== undefined && origin !== undefined && allowed === origin.trim());
+}
+
+/** Whether a `user` consent covers a main page the user navigates to (D-286): written, or on the site of one written. */
+export function coveredBy(consent: PageConsent, address: string): boolean {
+  if (consent.from !== 'user') return true;
+  const allowed = navigationConsent(consent, address, 0);
+  if (allowed.from === 'user') return allowed.addresses.some((written) => withoutHash(written) === withoutHash(address));
+  if (allowed.from === 'sites') {
+    try {
+      const host = new URL(address).hostname.toLowerCase().replace(/\.$/, '');
+      return allowed.sites.some((site) => host === site || host.endsWith(`.${site}`));
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -621,8 +647,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
 
   /** One hop of a main page: the gateway as a page (second scanner included), then the download. */
   /**
-   * One hop of a main page. `written`: the address of a navigation of the
-   * user while driving (D-286), which counts as written by the user in the
+   * One hop of a main page. `written`: the address of a navigation the user
+   * chose while driving (D-286: a gesture of the user, see `takeGesture`), which counts as written by the user in the
    * conversation: its site enters the `user` consent (its redirects stay on it).
    */
   const pageHop = async (address: string, hop: number, request: ResourceInput, written?: string): Promise<ResourceResult> => {
@@ -656,13 +682,6 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     if (isClosed()) return interrupted;
     if (allowed !== url.href) return { ok: false, reason: 'blocked' };
     // The address the user chose is the conversation's from now on (D-286): its site counts for Arianna too.
-    if (written !== undefined && !onAccess && scope.consent.from === 'user') {
-      try {
-        job.onUserAddress?.(written);
-      } catch {
-        console.warn('browser: an address of the user could not be noted');
-      }
-    }
     const cookie = onAccess ? jar.header(url, Date.now()) : undefined;
     const result = await fetchOne(withCookie({ ...request, url: allowed, type: 'document' }, cookie), network, stopping.signal);
     keepCookies(result, allowed, true);
@@ -879,8 +898,13 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       return;
     }
     const before = redirectsBefore(request);
-    // A page the user chose while driving (D-286): the address as asked counts as written by the user.
-    const written = frame.main && scope.driver === 'user' && method === 'GET' ? (withoutHash(url) ?? undefined) : undefined;
+    // A page the user chose while driving (D-286): a navigation of the main page of the agent's tab to a site
+    // the consent does not cover, right after a click or a key of the user (taken once), counts as written.
+    // A script, a meta refresh, a timer or a command of the bar has no gesture: refused as before.
+    const userScope = scope;
+    const chosen =
+      frame.main && userScope.driver === 'user' && method === 'GET' && userScope.consent.from === 'user' && session === null && isAgentNavigation(request, job) && !coveredBy(userScope.consent, url) && userScope.takeGesture?.() === true;
+    const written = chosen ? (withoutHash(url) ?? undefined) : undefined;
     if (before > MAX_REDIRECTS) {
       if (frame.main && isAgentNavigation(request, job)) navigated('too-many-redirects');
       await abort('too-many-redirects');
@@ -924,6 +948,15 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       else if (result.reason === 'saved-private' && !isLeftTab(request, job.isRetired)) savedStopped += 1;
       await abort(outcome, result.reason);
       return;
+    }
+    // The page the user chose went (D-286): its site is the conversation's from now on, noted with it.
+    if (written !== undefined) {
+      try {
+        const chosenSite = new URL(written);
+        job.onUserAddress?.(`${chosenSite.protocol}//${chosenSite.host}/`, userScope.conversationId);
+      } catch {
+        console.warn('browser: an address of the user could not be noted');
+      }
     }
     if (tooMany) {
       if (frame.main && isAgentNavigation(request, job)) navigated('too-many-redirects', siteOf(final));
@@ -991,6 +1024,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
         ...(next.meta === undefined ? {} : { meta: next.meta }),
         ...(next.driver === undefined ? {} : { driver: next.driver }),
         ...(next.send === true ? { send: true } : {}),
+        ...(next.takeGesture === undefined ? {} : { takeGesture: next.takeGesture }),
+        ...(next.conversationId === undefined ? {} : { conversationId: next.conversationId }),
       };
       // Given back without a form: the cookies that waited for one go (D-276).
       if (before === 'user' && next.driver !== 'user') pending.clear();

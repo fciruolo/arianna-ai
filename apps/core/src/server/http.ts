@@ -4732,18 +4732,18 @@ function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
     route('POST', '/api/browser/navigate', async (request) => {
       if (screens === undefined) throw new HttpError(404, 'not found');
       const body = await readJson(request);
-      onlyFields(body, ['conversationId', 'screen', 'command', 'url', 'confirmed']);
-      const { conversationId, screen, command, url, confirmed } = body;
+      onlyFields(body, ['conversationId', 'screen', 'command', 'url', 'ask']);
+      const { conversationId, screen, command, url, ask } = body;
       if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
       if (typeof screen !== 'string' || screen.length > 64) throw new HttpError(400, 'screen must be the token of an open screen');
-      if (confirmed !== undefined && typeof confirmed !== 'boolean') throw new HttpError(400, 'confirmed must be a boolean');
+      if (ask !== undefined && (typeof ask !== 'string' || !/^[0-9a-f]{32}$/.test(ask))) throw new HttpError(400, 'ask must be the token of a question of the bar');
       let asked: UserCommand;
       if (command === 'back' || command === 'forward' || command === 'reload') {
-        if (url !== undefined || confirmed !== undefined) throw new HttpError(400, `${command} takes no address`);
+        if (url !== undefined || ask !== undefined) throw new HttpError(400, `${command} takes no address`);
         asked = { kind: command };
       } else if (command === 'open') {
         if (typeof url !== 'string' || url.trim() === '' || url.length > 2_000) throw new HttpError(400, 'url must be an address');
-        asked = { kind: 'open', url: url.trim(), ...(confirmed === true ? { confirmed: true } : {}) };
+        asked = { kind: 'open', url: url.trim(), ...(ask === undefined ? {} : { ask }) };
       } else {
         throw new HttpError(400, 'command must be back, forward, reload or open');
       }

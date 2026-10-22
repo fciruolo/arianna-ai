@@ -585,7 +585,7 @@ const browserScreens = new BrowserScreens({
     if (done.ok) return { ok: true, url: done.page.url, site: done.page.site };
     // A saved value: what it is and whose for the question of the bar, never the reference.
     if (done.reason === 'confirm-private') {
-      return { ok: false, reason: done.reason, ...(done.site === undefined ? {} : { site: done.site }), values: savedAskValues(done.saved).map(({ kind, client }) => ({ kind, client })) };
+      return { ok: false, reason: done.reason, ...(done.site === undefined ? {} : { site: done.site }), ...(done.ask === undefined ? {} : { ask: done.ask }), values: savedAskValues(done.saved).map(({ kind, client }) => ({ kind, client })) };
     }
     return { ok: false, reason: done.reason };
   },
@@ -596,6 +596,8 @@ const browserScreens = new BrowserScreens({
     take: (conversationId) => agentBrowser.takeControl(conversationId),
     give: (conversationId) => agentBrowser.returnControl(conversationId),
     input: (conversationId) => { agentBrowser.userInput(conversationId); },
+    // D-286: a click or a key of the user chooses the next page of the agent's tab.
+    gesture: (conversationId) => { agentBrowser.userGesture(conversationId); },
     driver: (conversationId) => agentBrowser.driverOf(conversationId),
     blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
     access: (conversationId) => agentBrowser.accessOf(conversationId),

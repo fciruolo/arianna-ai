@@ -9,7 +9,7 @@ import type { BrowserContext, Route } from 'playwright-core';
 
 import type { Sql } from '../src/db/client.ts';
 import type { NewEvent } from '../src/events.ts';
-import { attachNetwork, BrowserBudget, movePage, navigationConsent, resourceTypeOf, type NetworkJob } from '../src/browser/network.ts';
+import { attachNetwork, BrowserBudget, movePage, navigationConsent, resourceTypeOf, withWritten, type NetworkJob } from '../src/browser/network.ts';
 import type { ResourceInput, ResourceResult } from '../src/browser/resource-fetch.ts';
 import { configurePiiGuard } from '../src/pii-guard.ts';
 
@@ -89,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number; isRetired?: (page: unknown) => boolean; isAgentTab?: (page: unknown) => boolean; onUserAddress?: (address: string) => void } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number; isRetired?: (page: unknown) => boolean; isAgentTab?: (page: unknown) => boolean; onUserAddress?: (address: string, conversationId: string | undefined) => void } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -155,41 +155,87 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
 const logged = (rows: unknown[][]) => rows.map((values) => [values[3], values[7]]);
 
 describe('attachNetwork', () => {
-  it('a page the user clicks while driving opens on a site of no address written, and becomes the conversation\'s (D-286)', async () => {
-    const noted: string[] = [];
+  /** A user driving with gestures handed one at a time, as the filter of the screen gives them. */
+  const userWith = (net: Harness, consent: PageConsent, gestures: { left: number }) => {
+    net.handle.rescope({
+      context: createContext('L1', 'L1'),
+      consent,
+      driver: 'user',
+      conversationId: 'conv-a',
+      takeGesture: () => {
+        if (gestures.left === 0) return false;
+        gestures.left -= 1;
+        return true;
+      },
+    });
+  };
+  const html: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>pagina</p>') });
+
+  it('a page the user clicks while driving opens on a new site, and its site becomes the conversation\'s (D-286)', async () => {
+    const noted: [string, string | undefined][] = [];
     const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
-    const page: Answer = (input) => (input.url.includes('salto')
-      ? { ok: true, status: 302, headers: [['location', 'https://terzo.example.org/altro']], body: Buffer.alloc(0), location: 'https://terzo.example.org/altro' }
-      : { ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>pagina</p>') });
-    const net = await harness({ consent, level: 'L1', answer: page, onUserAddress: (address) => noted.push(address) });
+    const net = await harness({ consent, level: 'L1', answer: html, onUserAddress: (address, conversation) => noted.push([address, conversation]) });
     // Arianna driving: another site stays refused ("clic solo nello stesso sito").
-    const refused = await net.send({ url: 'https://altro.example.net/pagina', main: true });
-    assert.equal(refused.aborted, 'blockedbyclient');
-    assert.deepEqual(noted, []);
-    // The user driving: the same click opens, and the address is noted for the conversation.
-    net.handle.rescope({ context: createContext('L1', 'L1'), consent, driver: 'user' });
+    assert.equal((await net.send({ url: 'https://altro.example.net/pagina', main: true })).aborted, 'blockedbyclient');
+    const gestures = { left: 1 };
+    userWith(net, consent, gestures);
+    // A page of a site already covered takes no gesture and notes nothing.
+    assert.ok((await net.send({ url: 'https://example.com/altra', main: true })).fulfilled !== undefined);
+    assert.equal(gestures.left, 1);
+    // The click of the user: the new site opens, noted as a site for the conversation of the scope.
     const opened = await net.send({ url: 'https://altro.example.net/pagina#sezione', main: true });
     assert.ok(opened.fulfilled !== undefined);
-    assert.deepEqual(noted, ['https://altro.example.net/pagina']);
+    assert.deepEqual(noted, [['https://altro.example.net/', 'conv-a']]);
     assert.equal(net.handle.lastNavigation()?.outcome, 'ok');
-    // Its redirect to another site is not the user's choice: refused.
-    const redirected = await net.send({ url: 'https://altro.example.net/salto', main: true });
-    assert.equal(redirected.aborted, 'blockedbyclient');
-    // An iframe of another site and a resource follow the rules of before.
-    const frame = await net.send({ url: 'https://quarto.example.org/embed', main: false, type: 'document' });
-    assert.equal(frame.aborted, 'blockedbyclient');
     await net.close();
   });
 
-  it('a click of the user never lets the scanner or a public consent change: a value it refuses stays refused (D-286)', async () => {
+  it('without a gesture of the user a navigation to a new site stays refused and is not noted: a script, a meta refresh, a command of the bar (D-286)', async () => {
     const noted: string[] = [];
     const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
-    const net = await harness({ consent, level: 'L1', onUserAddress: (address) => noted.push(address) });
+    const net = await harness({ consent, level: 'L1', answer: html, onUserAddress: (address) => noted.push(address) });
+    // A script or a timer of the page: driver user, no gesture left.
+    userWith(net, consent, { left: 0 });
+    assert.equal((await net.send({ url: 'https://altro.example.net/pagina', main: true })).aborted, 'blockedbyclient');
+    // One click, then the meta refresh of the page it opened: the second has no gesture.
+    userWith(net, consent, { left: 1 });
+    assert.ok((await net.send({ url: 'https://altro.example.net/pagina', main: true })).fulfilled !== undefined);
+    assert.equal((await net.send({ url: 'https://terzo.example.org/', main: true })).aborted, 'blockedbyclient');
+    // A command of the bar (Ricarica, Indietro): the user's scope without gestures at all.
     net.handle.rescope({ context: createContext('L1', 'L1'), consent, driver: 'user' });
-    const refused = await net.send({ url: 'https://altro.example.net/?iban=IT60X0542811101000000123456', main: true });
-    assert.equal(refused.aborted, 'blockedbyclient');
+    assert.equal((await net.send({ url: 'https://quarto.example.org/', main: true })).aborted, 'blockedbyclient');
+    assert.deepEqual(noted, ['https://altro.example.net/']);
+    await net.close();
+  });
+
+  it('a click of the user: its redirect to another site, an iframe, the scanner, an origin tab and a refused page note nothing new (D-286)', async () => {
+    const noted: string[] = [];
+    const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
+    const answer: Answer = (input) => (input.url.includes('salto')
+      ? { ok: true, status: 302, headers: [['location', 'https://terzo.example.org/altro']], body: Buffer.alloc(0), location: 'https://terzo.example.org/altro' }
+      : { ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>pagina</p>') });
+    const agent = { name: 'agent' };
+    const origin = { name: 'origin' };
+    const net = await harness({ consent, level: 'L1', answer, onUserAddress: (address) => noted.push(address), isAgentTab: (page) => page === agent });
+    const frameOf = (page: object) => ({ url: () => 'about:blank', parentFrame: () => null, page: () => page });
+    userWith(net, consent, { left: 10 });
+    // Its redirect to another site is not the user's choice: refused, and nothing noted.
+    assert.equal((await net.send({ url: 'https://altro.example.net/salto', main: true, frame: frameOf(agent) })).aborted, 'blockedbyclient');
+    // The scanner refuses what it always refused.
+    assert.equal((await net.send({ url: 'https://altro.example.net/?iban=IT60X0542811101000000123456', main: true, frame: frameOf(agent) })).aborted, 'blockedbyclient');
+    // The tab a popup came from is not the agent's: no choice of the user there.
+    assert.equal((await net.send({ url: 'https://quinto.example.org/', main: true, frame: frameOf(origin) })).aborted, 'blockedbyclient');
+    // An iframe of another site follows the rules of before.
+    assert.equal((await net.send({ url: 'https://quarto.example.org/embed', main: false, type: 'document', frame: { ...frameOf(agent), parentFrame: () => ({}) } })).aborted, 'blockedbyclient');
     assert.deepEqual(noted, []);
     await net.close();
+  });
+
+  it('withWritten: a `user` consent takes the address, `sites` (the Private chat of an access) and `public` stay as they are (D-286)', () => {
+    assert.deepEqual(withWritten({ from: 'user', addresses: ['https://a.example.org/'] }, 'https://b.example.org/x'), { from: 'user', addresses: ['https://b.example.org/x', 'https://a.example.org/'] });
+    assert.deepEqual(withWritten({ from: 'sites', sites: ['banca-finta.it'] }, 'https://b.example.org/x'), { from: 'sites', sites: ['banca-finta.it'] });
+    assert.deepEqual(withWritten({ from: 'public' }, 'https://b.example.org/x'), { from: 'public' });
+    assert.deepEqual(withWritten({ from: 'user', addresses: ['https://a.example.org/'] }, undefined), { from: 'user', addresses: ['https://a.example.org/'] });
   });
 
   it('the navigations of a tab that is not the agent\'s now (the origin of a popup) are not its navigation; the agent\'s are (D-283 review)', async () => {
@@ -614,6 +660,10 @@ describe('attachNetwork: forms and cookies of the user', () => {
     // Every refusal is a row of the gateway, L2: never a cookie nor a request.
     for (const row of net.rows.slice(1)) assert.equal(columns(row).label, 'L2');
     assert.ok(net.rows.slice(1).every((row) => columns(row).decision === 'block'));
+    // A click of the user to another site (D-286), with a gesture: refused all the same after the access.
+    net.handle.rescope({ context: createContext('L1', 'L0'), consent: { from: 'user', addresses: ['https://banca-finta.it/accedi'] }, driver: 'user', takeGesture: () => true });
+    assert.ok((await net.send({ url: 'https://altro-sito-finto.it/', main: true })).aborted);
+    asUser(net);
     // A resource of the site goes, as `session`, with no cookie when the jar has none for it.
     assert.ok((await net.send({ url: 'https://static.banca-finta.it/app.css', type: 'stylesheet' })).fulfilled);
     assert.equal(columns(net.rows.at(-1)).target, 'web-session');

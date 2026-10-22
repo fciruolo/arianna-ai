@@ -9,7 +9,7 @@ import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
 import { BrowserError } from './container.ts';
 import type { BrowserManager } from './manager.ts';
-import { navigationConsent, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
+import { coveredBy, navigationConsent, withWritten, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
 import type { ResourceFailure } from './resource-fetch.ts';
 import { connectSession, type BrowserSession, type SessionOptions } from './session.ts';
 
@@ -125,7 +125,7 @@ export type ActionResult =
   /** The Private chat of an access (D-281): the action tried to send data to the site; the user decides with «Invia / No». */
   | { ok: false; reason: 'confirm-send'; site: string; element: string }
   /** A saved private value of the user would leave (D-283): its references, never the values; the user decides with «Apri / No». */
-  | { ok: false; reason: 'confirm-private'; saved: readonly string[]; site?: string };
+  | { ok: false; reason: 'confirm-private'; saved: readonly string[]; site?: string; ask?: string };
 
 export type ActionFailure =
   | 'busy'
@@ -159,8 +159,15 @@ export type ActionFailure =
   | 'navigation-failed'
   | 'action-failed';
 
-/** A command of the bar above the screen (D-286). `confirmed`: «Apri» on the question of a saved value. */
-export type UserCommand = { kind: 'back' | 'forward' | 'reload' } | { kind: 'open'; url: string; confirmed?: boolean };
+/** A command of the bar above the screen (D-286). `ask`: «Apri» on the question of a saved value, by the token of that question. */
+export type UserCommand = { kind: 'back' | 'forward' | 'reload' } | { kind: 'open'; url: string; ask?: string };
+
+/** How long after a click or a key of the user a navigation counts as chosen by the user (D-286). */
+export const GESTURE_MS = 1_500;
+/** How long a question of the bar about a saved value waits for «Apri» (D-286). */
+export const ASK_MS = 5 * 60_000;
+/** Conversations whose pages chosen by the user are kept at most (D-286): the oldest go. */
+export const MAX_USER_CONVERSATIONS = 50;
 
 /** Addresses the user opened in one conversation kept at most (D-286): the gateway takes 200 in a consent. */
 export const MAX_USER_ADDRESSES = 100;
@@ -274,6 +281,9 @@ interface Held {
   previous: number | null;
   /** The saved private values the user let go for this browser (D-283); the network reads this very set. */
   saved: Set<string>;
+  /** The last click or key of the user on the screen that drives (D-286), and whether a navigation took it. */
+  gestureAt: number;
+  gestureUsed: boolean;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -299,6 +309,10 @@ export class AgentBrowser {
   readonly #lastOpened = new Map<string, number>();
   /** Addresses the user opened while driving or from the bar (D-286), by conversation, newest first. In memory. */
   readonly #userAddresses = new Map<string, string[]>();
+  /** Questions of the bar about a saved value (D-286), by token: «Apri» holds only for the one asked. */
+  readonly #asks = new Map<string, { conversationId: string; url: string; refs: readonly string[]; at: number }>();
+  /** A command of the bar of the user runs (D-286): the chat does not say Arianna is acting. */
+  #userRunning = false;
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -429,7 +443,8 @@ export class AgentBrowser {
       held.reread = false;
       held.seqAtTake = held.session.network?.lastNavigation()?.seq ?? 0;
       // The requests of the user carry no task of Arianna in gateway_log.
-      held.session.network?.rescope(networkScope(held.scope, 'user', held.saved));
+      held.gestureUsed = true;
+      held.session.network?.rescope(networkScope(held.scope, 'user', held.saved, held, this.#now));
       this.#touch(held);
       return true;
     });
@@ -461,6 +476,19 @@ export class AgentBrowser {
   }
 
   /**
+   * A click or a key of the user on the screen that drives (D-286, from the
+   * filter of the screen): the first navigation of the agent's tab to a new
+   * site within GESTURE_MS counts as chosen by the user. A move of the mouse
+   * is none.
+   */
+  userGesture(conversationId: string): void {
+    const held = this.#held;
+    if (held === null || held.conversationId !== conversationId || held.driver !== 'user') return;
+    held.gestureAt = this.#now();
+    held.gestureUsed = false;
+  }
+
+  /**
    * The addresses the user opened in the browser of `conversationId` while
    * driving or from the bar of the screen (D-286): written by the user for
    * the consent, as long as the core runs. Newest first.
@@ -471,7 +499,7 @@ export class AgentBrowser {
 
   /** Whether an action of Arianna runs now in the browser of `conversationId` (D-286: the bar of the screen is off meanwhile). */
   actingFor(conversationId: string): boolean {
-    return this.#running && this.#held?.conversationId === conversationId && this.#held.driver === 'agent';
+    return this.#running && !this.#userRunning && this.#held?.conversationId === conversationId && this.#held.driver === 'agent';
   }
 
   /** The address of the page the browser of `conversationId` shows, for the bar of the screen (D-286); null when none. */
@@ -492,12 +520,15 @@ export class AgentBrowser {
    * action reads the page first.
    */
   async userCommand(conversationId: string, command: UserCommand): Promise<ActionResult | { ok: false; reason: 'agent-busy' }> {
-    if (this.holder !== conversationId) return { ok: false, reason: 'not-open' };
+    if (this.#shutDown || this.holder !== conversationId) return { ok: false, reason: 'not-open' };
     if (this.#running) return { ok: false, reason: 'agent-busy' };
     const run = this.#queue.then(async () => {
       this.#forgetClosed();
       const held = this.#held;
-      if (held?.conversationId !== conversationId) return { ok: false, reason: 'not-open' } satisfies ActionResult;
+      if (this.#shutDown || held?.conversationId !== conversationId) return { ok: false, reason: 'not-open' } satisfies ActionResult;
+      /** Values let go by «Apri» for this command: taken back if the page does not go. */
+      const lent: string[] = [];
+      let written: string | undefined;
       if (command.kind === 'open') {
         let url: URL;
         try {
@@ -507,22 +538,41 @@ export class AgentBrowser {
         }
         if (url.protocol !== 'http:' && url.protocol !== 'https:') return { ok: false, reason: 'navigation-failed' } satisfies ActionResult;
         const asked = this.#savedRefs(url.href, held.scope, held.saved);
-        if (asked.length > 0 && command.confirmed !== true) {
-          const site = siteOf(url.href);
-          return { ok: false, reason: 'confirm-private', saved: asked, ...(site === undefined ? {} : { site }) } satisfies ActionResult;
+        if (asked.length > 0) {
+          // «Apri» only on the question asked for this very address in this conversation, and only once.
+          const question = command.ask === undefined ? undefined : this.#asks.get(command.ask);
+          if (command.ask !== undefined) this.#asks.delete(command.ask);
+          const answered = question !== undefined && question.conversationId === conversationId && question.url === url.href && this.#now() - question.at <= ASK_MS;
+          if (!answered || asked.some((ref) => !question.refs.includes(ref))) {
+            const token = randomBytes(16).toString('hex');
+            this.#pruneAsks();
+            this.#asks.set(token, { conversationId, url: url.href, refs: asked, at: this.#now() });
+            const site = siteOf(url.href);
+            return { ok: false, reason: 'confirm-private', saved: asked, ask: token, ...(site === undefined ? {} : { site }) } satisfies ActionResult;
+          }
+          for (const ref of asked) if (!held.saved.has(ref)) { held.saved.add(ref); lent.push(ref); }
         }
-        // «Apri» on the bar: the values of this address go for this browser, as a card would let them.
-        for (const ref of asked) held.saved.add(ref);
+        written = url.href;
       }
       const wasAgent = held.driver === 'agent';
       this.#running = true;
-      held.session.network?.rescope(networkScope(held.scope, 'user', held.saved));
+      this.#userRunning = true;
+      // As the user's, without a gesture: only the address written in the bar counts as written (back, forward and reload never choose a site).
+      const userScope = networkScope({ ...held.scope, consent: withWritten(held.scope.consent, written) }, 'user', held.saved);
+      held.session.network?.rescope(userScope);
+      let result: ActionResult = { ok: false, reason: 'action-failed' };
       try {
-        return await this.#bounded(held, this.#command(held, command));
+        result = await this.#bounded(held, this.#command(held, command));
+        // A new site only: one the consent already covered needs no note.
+        if (result.ok && written !== undefined && !coveredBy(held.scope.consent, written)) this.#noteUserAddress(written, conversationId);
+        return result;
       } catch {
-        return { ok: false, reason: 'action-failed' } satisfies ActionResult;
+        return result;
       } finally {
+        // The values of «Apri» stay only if the page went.
+        if (!result.ok) for (const ref of lent) held.saved.delete(ref);
         this.#running = false;
+        this.#userRunning = false;
         if (this.#held === held) {
           this.#touch(held);
           if (wasAgent && held.driver === 'agent') {
@@ -530,6 +580,8 @@ export class AgentBrowser {
             held.reread = true;
             held.elements.clear();
             held.readAt = undefined;
+          } else if (held.driver === 'user') {
+            held.session.network?.rescope(networkScope(held.scope, 'user', held.saved, held, this.#now));
           }
         }
       }
@@ -580,6 +632,8 @@ export class AgentBrowser {
 
   /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
   async release(conversationId: string): Promise<void> {
+    // It became private or was deleted: the pages the user chose there go too (D-286).
+    this.#userAddresses.delete(conversationId);
     // Closed for a reason of the core: a later action of this conversation hears «not open», not «closed by the user».
     this.#closedByUser.delete(conversationId);
     // The session first: an action under way on it then fails at once instead of being waited for.
@@ -684,7 +738,7 @@ export class AgentBrowser {
         meta: { ...scope.meta, saved: { approved: saved } },
         ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
         // A page the user opens while driving is the conversation's (D-286).
-        onUserAddress: (address: string) => { this.#noteUserAddress(address); },
+        onUserAddress: (address: string, conversationId: string | undefined) => { this.#noteUserAddress(address, conversationId); },
         ...this.#options.network,
         // Diagnostics of a page that does not load (D-281 trial): counts by stage and the lag of the event loop, never an address.
         ...(process.env.ARIANNA_BROWSER_DEBUG === '1' ? { debug: (line: string) => { console.warn(line); } } : {}),
@@ -696,7 +750,7 @@ export class AgentBrowser {
     }
     const opened = this.#now();
     this.#lastOpened.set(scope.conversationId, opened);
-    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened, previous, saved };
+    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened, previous, saved, gestureAt: 0, gestureUsed: true };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action, true));
   }
@@ -813,11 +867,26 @@ export class AgentBrowser {
     }
   }
 
-  #noteUserAddress(address: string): void {
-    const conversationId = this.#held?.conversationId;
+  /** Notes a page the user chose, as its site, for the conversation whose scope navigated (D-286). */
+  #noteUserAddress(address: string, conversationId: string | undefined): void {
     if (conversationId === undefined) return;
+    let site: string;
+    try {
+      const url = new URL(address);
+      site = `${url.protocol}//${url.host}/`;
+    } catch {
+      return;
+    }
     const known = this.#userAddresses.get(conversationId) ?? [];
-    this.#userAddresses.set(conversationId, [address, ...known.filter((other) => other !== address)].slice(0, MAX_USER_ADDRESSES));
+    this.#userAddresses.delete(conversationId);
+    this.#userAddresses.set(conversationId, [site, ...known.filter((other) => other !== site)].slice(0, MAX_USER_ADDRESSES));
+    while (this.#userAddresses.size > MAX_USER_CONVERSATIONS) this.#userAddresses.delete(this.#userAddresses.keys().next().value ?? '');
+  }
+
+  #pruneAsks(): void {
+    const now = this.#now();
+    for (const [token, question] of this.#asks) if (now - question.at > ASK_MS) this.#asks.delete(token);
+    while (this.#asks.size > 20) this.#asks.delete(this.#asks.keys().next().value ?? '');
   }
 
   /** The references of saved values in an address not let go (D-283); none in the Private chat of an access, or when the check fails. */
@@ -975,9 +1044,18 @@ export function outsideAccess(site: string, action: BrowserAction, elements: Rea
  * of Arianna; both are compared with the saved values (D-283), with those the
  * user let go for this browser.
  */
-function networkScope(scope: BrowserScope, driver: Driver, saved: ReadonlySet<string>): NetworkScope {
+function networkScope(scope: BrowserScope, driver: Driver, saved: ReadonlySet<string>, gesture?: Held, now: () => number = Date.now): NetworkScope {
   const meta: GatewayMeta = driver === 'agent' ? { ...scope.meta, saved: { approved: saved } } : { saved: { approved: saved } };
-  return { context: scope.context, consent: scope.consent, driver, meta };
+  // The user driving from the screen (D-286): a click or a key of theirs, taken once, chooses a page.
+  const takeGesture =
+    gesture === undefined
+      ? undefined
+      : (): boolean => {
+          if (gesture.gestureUsed || now() - gesture.gestureAt > GESTURE_MS) return false;
+          gesture.gestureUsed = true;
+          return true;
+        };
+  return { context: scope.context, consent: scope.consent, driver, meta, conversationId: scope.conversationId, ...(takeGesture === undefined ? {} : { takeGesture }) };
 }
 
 function pageOf(url: string, title: string): { url: string; site: string; title: string } {

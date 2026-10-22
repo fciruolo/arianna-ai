@@ -100,7 +100,7 @@ export type CloseResult = 'closed' | 'no-browser' | 'not-found';
 export type CommandOutcome =
   | { ok: true; url: string; site: string }
   /** `values`: for a saved value (`confirm-private`), what it is and whose, never the value nor its reference. */
-  | { ok: false; reason: string; site?: string; values?: readonly { kind: string; client: string }[] };
+  | { ok: false; reason: string; site?: string; values?: readonly { kind: string; client: string }[]; ask?: string };
 /** A command of the bar as the chat asks it, checked: `NavigateResult` adds why it was refused before the browser. */
 export type NavigateResult = CommandOutcome | { ok: false; reason: 'not-found' | 'no-browser' | 'no-screen' };
 
@@ -138,6 +138,8 @@ export interface ScreensOptions {
     take: (conversationId: string) => ControlRequest;
     give: (conversationId: string) => boolean;
     input: (conversationId: string) => void;
+    /** A click or a key of the user on the screen that drives (D-286): AgentBrowser.userGesture; a move of the mouse is none. */
+    gesture?: (conversationId: string) => void;
     driver: (conversationId: string) => Driver | null;
     blocked: (conversationId: string) => BlockedNavigation | null;
     /** The site of an access made by the user (D-276), for the chat. */
@@ -522,6 +524,7 @@ export class BrowserScreens {
         if (after.keys !== before.keys || after.clicks !== before.clicks || step.forward.some((part) => part[0] === 4 || part[0] === 5)) {
           screen.lastInput = this.#now();
           this.#safely(() => { this.#options.control?.input(screen.conversationId); });
+          if (after.keys !== before.keys || after.clicks !== before.clicks) this.#safely(() => { this.#options.control?.gesture?.(screen.conversationId); });
         }
       }
       if (step.close !== undefined) {
