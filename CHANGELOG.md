@@ -17,6 +17,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Una pagina del browser di Arianna fermata dal gateway non fa più aspettare 45 secondi né chiudere il browser con «l’azione nel browser non è riuscita»: la scheda rimasta sulla pagina d’errore si chiude senza aspettarla, e una lettura senza pagina risponde subito (D-283).
 - Un indirizzo scritto con un punto finale («…S.r.l.») vale come scritto dall’utente anche col punto (D-283).
+- Lo schermo del browser nella chat mostra sempre la pagina di Arianna: prima, sulla prima pagina aperta, poteva restare vuoto (D-283).
 
 ### Sicurezza
 

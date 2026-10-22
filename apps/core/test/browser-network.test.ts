@@ -171,6 +171,22 @@ describe('attachNetwork', () => {
     await net.close();
   });
 
+  it('a tab left while its request was decided gets no answer, and its page is not the agent\'s navigation (D-283 review)', async () => {
+    const tab = { name: 'tab' };
+    let left = false;
+    const net = await harness({ isRetired: (page) => left && page === tab, delayMs: 30 });
+    const frame = { url: () => 'about:blank', parentFrame: () => null, page: () => tab };
+    const sending = net.send({ url: 'https://example.com/pagina', main: true, frame });
+    // Left during the download.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    left = true;
+    const outcome = await sending;
+    assert.equal(outcome.fulfilled, undefined);
+    assert.equal(outcome.aborted, 'blockedbyclient');
+    assert.equal(net.handle.lastNavigation(), undefined);
+    await net.close();
+  });
+
   it('refuses a scheme other than http(s) first, before counting it', async () => {
     const net = await harness();
     for (const url of ['ws://example.com/socket', 'ftp://example.com/a', 'blob:https://example.com/1', 'chrome://settings']) {

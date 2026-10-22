@@ -225,8 +225,10 @@ export interface NetworkJob {
   hopTimeoutMs?: number;
   /**
    * A tab the agent left (session.ts, D-283 review): every request of its
-   * frames is refused before the gateway, and its navigations are never the
-   * last one of the agent.
+   * frames that Playwright attributes to a frame is refused before the
+   * gateway, an answer that arrives after it was left is not given to it, and
+   * its navigations are never the last one of the agent. A request without a
+   * frame (a service worker) is not attributed: it goes as any other.
    */
   isRetired?: (page: Page) => boolean;
 }
@@ -801,7 +803,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const reached = budget.take(frame.main);
     if (reached !== null) {
       limit(reached);
-      if (frame.main) navigated('limit');
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit');
       await abort('limit');
       return;
     }
@@ -809,7 +811,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const agentInChat = scope.driver !== 'user' && scope.context.browserSite !== undefined && session !== null;
     if (agentInChat && method !== 'GET' && method !== 'HEAD' && scope.send !== true) {
       held += 1;
-      if (frame.main) navigated('form');
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('form');
       await abort('form');
       return;
     }
@@ -819,7 +821,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     if (frame.navigation && method !== 'GET') {
       formSite = frame.main && method === 'POST' && (scope.driver === 'user' || agentInChat) ? userFormSite(request, url, session?.site) : undefined;
       if (formSite === undefined) {
-        if (frame.main) navigated('form');
+        if (frame.main && !isLeftTab(request, job.isRetired)) navigated('form');
         await abort('form');
         return;
       }
@@ -831,7 +833,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
     const before = redirectsBefore(request);
     if (before > MAX_REDIRECTS) {
-      if (frame.main) navigated('too-many-redirects');
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('too-many-redirects');
       await abort('too-many-redirects');
       return;
     }
@@ -850,7 +852,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       expired.add(seq);
       // Forgotten only when its late work is really over, however long the gateway or the download take.
       void hops.finally(() => { expired.delete(seq); }).catch(() => undefined);
-      if (frame.main) navigated('failed', undefined, 'timeout');
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('failed', undefined, 'timeout');
       await abort('failed', 'timeout');
       return;
     }
@@ -861,7 +863,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
     if (limited !== undefined) {
       limit(limited);
-      if (frame.main) navigated('limit');
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit');
       await abort('limit');
       return;
     }
@@ -869,21 +871,26 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       // `blocked`: the gateway refused this hop (its row says why); anything else: the network or the answer.
       const outcome: RequestOutcome = result.reason === 'blocked' || result.reason === 'saved-private' ? 'blocked' : result.reason === 'private-address' || result.reason === 'invalid-url' || result.reason === 'invalid-request' || result.reason === 'body-too-large' || result.reason === 'unreadable-body' || result.reason === 'insecure-redirect' || result.reason === 'other-site' ? 'refused' : 'failed';
       // The site only of an address the gateway let go (a failure of the network after it).
-      if (frame.main) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason, savedRefs.get(seq));
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason, savedRefs.get(seq));
       else if (result.reason === 'saved-private') savedStopped += 1;
       await abort(outcome, result.reason);
       return;
     }
     if (tooMany) {
-      if (frame.main) navigated('too-many-redirects', siteOf(final));
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('too-many-redirects', siteOf(final));
       await abort('too-many-redirects');
       return;
     }
     const over = budget.addBytes(result.body.length);
     if (over !== null) {
       limit(over);
-      if (frame.main) navigated('limit', siteOf(final));
+      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit', siteOf(final));
       await abort('limit');
+      return;
+    }
+    // The tab was left while its request was decided (D-283 review): nothing of the answer reaches it.
+    if (isLeftTab(request, job.isRetired)) {
+      await abort('refused');
       return;
     }
     const origin = headerOf(headers, 'origin');
@@ -894,7 +901,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       return;
     }
     const outcome: RequestOutcome = result.status >= 400 ? 'http-error' : 'ok';
-    if (frame.main) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
+    if (frame.main && !isLeftTab(request, job.isRetired)) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
     count(counted, outcome, url, request.resourceType());
     stage(`fulfil:${counted}`);
     const movedAway = (withoutHash(final) ?? final) !== (withoutHash(url) ?? url);

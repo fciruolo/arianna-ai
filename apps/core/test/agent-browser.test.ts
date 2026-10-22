@@ -644,13 +644,39 @@ test('the check before the page is never made in the Private chat of an access, 
   await h.browser.act(chat, { kind: 'read' });
   const opened = await h.browser.act(chat, { kind: 'open', url: 'https://biblioteca-finta.it/prestiti?nome=Lunardi' });
   assert.notEqual(!opened.ok ? opened.reason : 'ok', 'confirm-private');
-  // Asked once more for the open from the card, never in the chat.
-  assert.equal(asked, before + 2);
+  // Asked once more for the open from the card (once for a new browser), never in the chat.
+  assert.equal(asked, before + 1);
 });
 
-test('a check before the page that throws is counted, and the network decides the page (D-283 review)', async () => {
-  const h = harness({ savedIn: () => { throw new TypeError('not loaded'); } });
-  const opened = await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
-  assert.equal(opened.ok, true);
-  assert.equal(h.browser.savedCheckFailures, 2);
+test('a check before the page that throws: only the kind of the error is written, and the network decides the page (D-283 review)', async () => {
+  let calls = 0;
+  const h = harness({ savedIn: () => { calls += 1; throw new TypeError('not loaded'); } });
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (line: string) => { warnings.push(line); };
+  try {
+    const opened = await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi?q=Lunardi' });
+    assert.equal(opened.ok, true);
+  } finally {
+    console.warn = warn;
+  }
+  // Once for a new browser, before it starts.
+  assert.equal(calls, 1);
+  assert.deepEqual(warnings, ['browser: the check of saved values before a page failed (TypeError)']);
+});
+
+test('the check before the page: a card starts no browser, and a busy browser answers busy before any check (D-283 review)', async () => {
+  let calls = 0;
+  const h = harness({ savedIn: () => { calls += 1; return ['client:c1:name']; } });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'cerca-finto.it' });
+  // No container asked, the manager free.
+  assert.deepEqual(h.opened, []);
+  assert.equal(h.browser.holder, null);
+  // Another conversation holds the browser, in use: «occupato», and nothing checked nor taken.
+  const busy = harness({ savedIn: (_address, approved) => { calls += 1; return approved.has('client:c1:name') ? [] : ['client:c1:name']; } });
+  await busy.browser.act({ ...scope('b'), saved: { opened: null, approved: new Set(['client:c1:name']) } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  const before = calls;
+  assert.deepEqual(await busy.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' }), { ok: false, reason: 'busy' });
+  assert.equal(calls, before);
+  assert.equal(busy.browser.holder, 'b');
 });

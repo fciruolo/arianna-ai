@@ -100,18 +100,22 @@ function fakeTab(name: string, steps: string[], options: { url?: string; fails?:
   };
 }
 
-test('session: the tab of the agent is in front before it opens a page, and an empty first tab not listed at the connection is closed (D-281)', async () => {
+test('session: the agent opens its pages in a new tab of its own, in front; the tabs Chromium had are left (D-281, D-283 third trial)', async () => {
   for (const listed of [true, false]) {
     const steps: string[] = [];
     const first = fakeTab('first', steps, { url: 'about:blank' });
+    // Chromium's own tab on its error page, outside the window (tried on 2026-10-22): never the agent's.
+    const error = fakeTab('error', steps, { url: 'chrome-error://chromewebdata/', closeHangs: true });
     const created = fakeTab('created', steps);
-    // Chromium lists its first tab late: by the time the agent's tab exists, both are there.
-    const tabs: unknown[] = listed ? [first] : [];
-    const fake = fakeBrowser({ pages: tabs, newPage: () => { steps.push('new'); tabs.push(first, created); return Promise.resolve(created); } });
+    // Chromium lists its first tabs late: by the time the agent's tab exists, they are there.
+    const tabs: unknown[] = listed ? [error, first] : [];
+    const fake = fakeBrowser({ pages: tabs, newPage: () => { steps.push('new'); if (!listed) tabs.push(error, first); tabs.push(created); return Promise.resolve(created); } });
     const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
     await session.openPage('https://comune-finto.it/');
-    if (listed) assert.deepEqual(steps, ['first:front', 'first:goto https://comune-finto.it/']);
-    else assert.deepEqual(steps, ['new', 'created:front', 'first:close', 'created:front', 'created:goto https://comune-finto.it/']);
+    assert.equal(steps[0], 'new', String(listed));
+    assert.ok(steps.includes('first:close') && steps.includes('error:close'), String(listed));
+    assert.ok(!steps.includes('first:goto https://comune-finto.it/') && !steps.includes('error:goto https://comune-finto.it/'), String(listed));
+    assert.deepEqual(steps.slice(-2), ['created:front', 'created:goto https://comune-finto.it/'], String(listed));
   }
 });
 
@@ -119,23 +123,26 @@ test('session: after a failed page the new tab is in front, never the empty one 
   const steps: string[] = [];
   const failing = fakeTab('failing', steps, { fails: true });
   const created = fakeTab('created', steps, { url: 'about:blank' });
-  const tabs: unknown[] = [failing];
-  const fake = fakeBrowser({ pages: tabs, newPage: () => { steps.push('new'); tabs.push(created); return Promise.resolve(created); } });
+  const tabs: unknown[] = [];
+  const order = [failing, created];
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { const next = order.shift(); steps.push('new'); tabs.push(next); return Promise.resolve(next); } });
   const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
   await assert.rejects(session.openPage('https://comune-finto.it/'));
-  assert.deepEqual(steps, ['failing:front', 'failing:goto https://comune-finto.it/', 'new', 'created:front', 'failing:close']);
+  const failed = steps.indexOf('failing:goto https://comune-finto.it/');
+  assert.deepEqual(steps.slice(failed), ['failing:goto https://comune-finto.it/', 'new', 'created:front', 'created:front', 'failing:close', 'created:front']);
 });
 
 test('session: a refused page fails within the bound of a tab that never closes; the next action is on the new tab, a tab opened by the left one is not the agent\'s (D-283)', async () => {
   const steps: string[] = [];
   // The first tab of the kiosk window: its close never ends (tried on 2026-10-22).
   const failing = fakeTab('failing', steps, { fails: true, closeHangs: true });
-  const tabs: unknown[] = [failing];
+  const tabs: unknown[] = [];
   let made = 0;
   let emit: (page: unknown) => void = () => undefined;
   const fake = fakeBrowser({
     pages: tabs,
-    newPage: () => { made += 1; const created = fakeTab(`created${String(made)}`, steps, { url: 'https://comune-finto.it/' }); tabs.push(created); return Promise.resolve(created); },
+    // The first new tab is the one that fails, then the agent's next ones.
+    newPage: () => { const next = made === 0 ? failing : fakeTab(`created${String(made)}`, steps, { url: 'https://comune-finto.it/' }); made += 1; tabs.push(next); return Promise.resolve(next); },
     onPage: (listener) => { emit = listener; },
   });
   const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
@@ -157,10 +164,35 @@ test('session: a refused page fails within the bound of a tab that never closes;
   emit(fakeTab('popup', steps, { opener: failing }));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'created1');
+  // A tab without opener (its opener closed meanwhile, or opened by anyone else) is not the agent's either: it is retired.
+  emit(fakeTab('orphan', steps, { opener: null }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'created1');
+  assert.ok(steps.includes('orphan:close'));
   // A popup of the agent's tab is.
   emit(fakeTab('own', steps, { opener: await session.currentPage() }));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'own');
+});
+
+test('session: a reset and a new tab wait at most the bound for tabs that never close (D-283 review)', async () => {
+  const steps: string[] = [];
+  const old = fakeTab('old', steps, { closeHangs: true });
+  const blank = fakeTab('blank', steps, { url: 'about:blank', closeHangs: true });
+  const tabs: unknown[] = [old, blank];
+  let made = 0;
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { made += 1; const created = fakeTab(`new${String(made)}`, steps); tabs.push(created); return Promise.resolve(created); } });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  // The first tab of the agent is a new one: the empty tab behind it is left, with the bound.
+  let started = Date.now();
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'new1');
+  assert.ok(Date.now() - started < RETIRE_MS + 1_000);
+  assert.ok(steps.includes('blank:close') && steps.includes('old:close'));
+  // A reset whose old tab never closes: the bound again, then the new tab.
+  started = Date.now();
+  await session.resetPage();
+  assert.ok(Date.now() - started < RETIRE_MS + 1_000);
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'new2');
 });
 
 test('session: the artifacts go in the configured data folder when it is known', () => {

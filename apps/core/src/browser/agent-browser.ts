@@ -291,8 +291,6 @@ export class AgentBrowser {
   #shutDown = false;
   /** When the last browser of each conversation opened (D-283): a card asked with it holds for the next one. In memory. */
   readonly #lastOpened = new Map<string, number>();
-  /** Checks of saved values before a page that could not be made (D-283), so far. */
-  #savedFailures = 0;
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -305,11 +303,6 @@ export class AgentBrowser {
   get holder(): string | null {
     this.#forgetClosed();
     return this.#held?.conversationId ?? null;
-  }
-
-  /** Checks of saved values before a page that failed (D-283): the network decided those pages. */
-  get savedCheckFailures(): number {
-    return this.#savedFailures;
   }
 
   /** When the browser of `conversationId` opened (now()), when it holds one; null otherwise (D-283). */
@@ -555,21 +548,25 @@ export class AgentBrowser {
     if (action.kind !== 'open') return { ok: false, reason: 'not-open' };
     const unwritten = openOutsideConsent(scope.consent, action.url);
     if (unwritten !== undefined) return unwritten;
-    // A saved value in the address (D-283): the card before any container starts, with what was let go for it.
-    const savedFirst = this.#savedIn(action.url, scope, scope.saved !== undefined && scope.saved.opened === null ? scope.saved.approved : new Set());
-    if (savedFirst !== undefined) return savedFirst;
     if (held !== null) {
       // A browser with an access made by the user is never taken over: closing it would lose the access.
       if (held.session.network?.authenticated() != null) return { ok: false, reason: 'busy' };
       if (this.#now() - held.lastAction < (this.#options.takeOverMs ?? TAKE_OVER_MS)) return { ok: false, reason: 'busy' };
+    } else if (this.#options.manager.state !== 'free') {
+      return { ok: false, reason: 'busy' };
+    }
+    // A new browser (D-283): the values let go for it before it opened (cards asked with the last browser of
+    // the conversation, or before any), read by the caller for `opened: null`; never those of another browser.
+    const saved = new Set<string>(scope.saved !== undefined && scope.saved.opened === null ? scope.saved.approved : []);
+    // A saved value in the address (D-283): the card before any container starts or another browser is taken; once.
+    const savedFirst = this.#savedIn(action.url, scope, saved);
+    if (savedFirst !== undefined) return savedFirst;
+    if (held !== null) {
       await this.#drop();
       this.#safely(() => { this.#options.onTaken?.(held.conversationId); });
     }
     if (this.#options.manager.state !== 'free') return { ok: false, reason: 'busy' };
     const id = browserId();
-    // A new browser (D-283): the values let go for it before it opened (cards asked with the last browser of
-    // the conversation, or before any), read by the caller for `opened: null`; never those of another browser.
-    const saved = new Set<string>(scope.saved !== undefined && scope.saved.opened === null ? scope.saved.approved : []);
     const previous = this.#lastOpened.get(scope.conversationId) ?? null;
     let session: BrowserSession;
     try {
@@ -593,7 +590,7 @@ export class AgentBrowser {
     this.#lastOpened.set(scope.conversationId, opened);
     const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened, previous, saved };
     this.#held = next;
-    return this.#bounded(next, this.#run(next, scope, action));
+    return this.#bounded(next, this.#run(next, scope, action, true));
   }
 
   /**
@@ -623,14 +620,15 @@ export class AgentBrowser {
     }
   }
 
-  async #run(held: Held, scope: BrowserScope, action: Exclude<BrowserAction, { kind: 'close' }>): Promise<ActionResult> {
+  /** One action on the browser. `savedChecked`: the address of an open was compared with the saved values already (D-283). */
+  async #run(held: Held, scope: BrowserScope, action: Exclude<BrowserAction, { kind: 'close' }>, savedChecked = false): Promise<ActionResult> {
     const { session } = held;
     switch (action.kind) {
       case 'open': {
         const unwritten = openOutsideConsent(scope.consent, action.url);
         if (unwritten !== undefined) return unwritten;
         // A saved value in the address (D-283): the card at once, before any navigation.
-        const savedHere = this.#savedIn(action.url, scope, held.saved);
+        const savedHere = savedChecked ? undefined : this.#savedIn(action.url, scope, held.saved);
         if (savedHere !== undefined) return savedHere;
         held.elements.clear();
         held.readAt = undefined;
@@ -716,7 +714,6 @@ export class AgentBrowser {
       saved = this.#options.savedIn?.(address, approved) ?? [];
     } catch (error) {
       // Not loaded, or broken: the gateway of the network decides the page, as for any check it cannot make here.
-      this.#savedFailures += 1;
       console.warn(`browser: the check of saved values before a page failed (${error instanceof Error ? error.name : typeof error})`);
       return undefined;
     }
