@@ -82,6 +82,8 @@ export const RESOURCE_FAILURES = [
   // A redirect of a script call towards another origin that does not allow the page (CORS, network.ts).
   'cors',
   'blocked',
+  // The gateway found a private value the user saved (D-283), not approved in this conversation.
+  'saved-private',
   'interrupted',
 ] as const;
 export type ResourceFailure = (typeof RESOURCE_FAILURES)[number];

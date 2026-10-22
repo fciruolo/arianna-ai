@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { after, test } from 'node:test';
+import { after, beforeEach, test } from 'node:test';
 
 import { type Answer } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
@@ -22,11 +22,16 @@ import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { DAY_LIMIT, MAX_PAGES_PER_DAY, MAX_PAGES_PER_TASK, NOT_USER_ADDRESS, TASK_LIMIT, userAddresses, WEB_FETCH_EVENT } from '../src/orchestrator/web-tool.ts';
 import { activitiesSaved } from '../src/reply.ts';
+import { refreshSavedPrivate } from '../src/saved-private.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
+// The saved private values (D-283), compared on every address of web.fetch: loaded as the core does at start.
+beforeEach(async () => {
+  await refreshSavedPrivate(db().sql);
+});
 const ROOT = resolveHome({});
 const HOME = join(ROOT, 'data', 'test-tmp', `web-fetch-${randomUUID()}`);
 const agents = committedAgents(ROOT);

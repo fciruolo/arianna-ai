@@ -66,6 +66,7 @@ import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { configureWornNames, passGateway } from './gateway.ts';
+import { startSavedPrivate } from './saved-private.ts';
 import { nameLabelOf, type LeaveRule } from './participants.ts';
 import { stopConversation } from './chat-stop.ts';
 import { createQueueDispatcher } from './message-queue.ts';
@@ -526,6 +527,9 @@ const mcpServer = createMcpServer({
 // The files of the runs' tokens (D-261), 0700 under data/: those a stopped core left go now, their tokens died with it.
 const mcpDir = join(config.paths.data, MCP_DIR);
 await removeStaleMcp(mcpDir).catch(report);
+// The private values the user saved (D-283): compared in the browser and in web.fetch instead of the
+// second scanner, built again after every change of a client. Until they load, those exits are refused.
+await startSavedPrivate(sql, report).catch(report);
 // A server that cannot start leaves the core up: runs get no MCP session (`open` refuses), undefined here.
 let mcpUrl: string | undefined;
 try {

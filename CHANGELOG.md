@@ -4,6 +4,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Scheda «Apri / No» per i dati salvati (D-283): quando il browser di Arianna o `web.fetch` farebbero uscire un dato di un tuo cliente o contatto (nome, ragione sociale, nome e cognome, via col civico, email, PEC, telefono, partita IVA, codice fiscale, IBAN), la chat ti chiede se può uscire, con il tipo del dato e il cliente; con «Apri» vale per il browser di quella conversazione finché si chiude (per `web.fetch` senza browser, 15 minuti), con «No» Arianna prosegue senza.
+
+### Cambiato
+
+- Nel browser di Arianna e in `web.fetch` l'indirizzo delle pagine e il testo scritto nei campi non passano più da Rizzo-PII: al suo posto un confronto esatto con i clienti e i contatti salvati, rifatto a ogni loro modifica, che non scambia vie, aziende o siti per persone e non aspetta l'avvio del modello (D-283).
+- Il browser di Arianna non avvia più il secondo controllo prima di aprire una pagina (D-283).
+
+### Sicurezza
+
+- Password, chiavi del vault e dati riconosciuti dallo scanner (IBAN, codice fiscale, carte) restano bloccati sempre, prima del confronto con i dati salvati; le richieste di sfondo di una pagina con un dato salvato non approvato sono fermate senza chiedere e contate; un blocco per un dato salvato non lascia hash né byte nel registro del gateway (D-283).
+
 ## [0.163.0] - 2026-10-22
 
 ### Aggiunto

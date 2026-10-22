@@ -21,12 +21,18 @@ import {
   type WebToolEnv,
 } from '../src/orchestrator/web-tool.ts';
 import { configurePiiGuard } from '../src/pii-guard.ts';
+import { useSavedValues } from '../src/saved-private.ts';
 import type { Task } from '../src/tasks.ts';
 import { committedAgents } from './support/committed-agents.ts';
 import { resolveHome } from '@arianna/config';
 
 // The second scanner finds nothing: these tests are about the consent and the limits.
 configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
+
+// The saved private values of the user (D-283): one fake client.
+useSavedValues([{ ref: 'client:c1:name', value: 'Ferramenta Lunardi Srl' }]);
+/** References the fake database says the user let go with «Apri». */
+let approvedRefs: string[] = [];
 
 const arianna = committedAgents(resolveHome({})).get('arianna');
 const TASK = { id: '00000000-0000-4000-8000-000000000001', conversationId: '00000000-0000-4000-8000-000000000002' } as Task;
@@ -53,6 +59,7 @@ function fake(messages: { body: string; label: Label }[] = [], counts = { task: 
   const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join('?');
     if (query.includes('FROM messages')) return Promise.resolve(messages);
+    if (query.includes('FROM approvals')) return Promise.resolve(approvedRefs.map((ref) => ({ ref })));
     if (query.includes("FROM events WHERE kind = 'web.fetch'")) return Promise.resolve([counts]);
     if (query.includes('INSERT INTO events')) {
       events.push({ label: values[4], payload: values[5] });
@@ -231,6 +238,32 @@ describe('webFetch (D-262)', () => {
     const result = await run(db, createContext('L1', 'L0'), LISTINO, { failure: { ok: false, reason: 'blocked' } });
     assert.equal(result.text, `error: web.fetch: ${FETCH_FAILURE_TEXT.blocked}`);
     assert.deepEqual(db.events.map((event) => (event.payload as { outcome: string }).outcome), ['blocked']);
+  });
+
+  it('an address with a saved private value asks the user, before the network; the gateway row names no value (D-283)', async () => {
+    const db = fake();
+    const result = await run(db, createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardi+Srl');
+    assert.deepEqual(result.private, { saved: ['client:c1:name'] });
+    assert.match(result.text, /^error: web\.fetch: the address carries data the user saved/);
+    assert.doesNotMatch(result.text, /Lunardi/);
+    assert.deepEqual(db.fetched, ['https://cerca.example/?q=Ferramenta+Lunardi+Srl']);
+    assert.deepEqual(db.gateway.map((values) => [values[3], values[6], values[7]]), [['web-page-public', 'block', 'saved-private']]);
+    assert.ok(db.gateway.every((values) => !JSON.stringify(values).includes('Lunardi')));
+  });
+
+  it('a saved value the user let go passes, and a similar name passes without asking (D-283)', async () => {
+    approvedRefs = ['client:c1:name'];
+    try {
+      const db = fake();
+      const result = await run(db, createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardi+Srl');
+      assert.ok(result.page !== undefined, result.text);
+    } finally {
+      approvedRefs = [];
+    }
+    const db = fake();
+    const similar = await run(db, createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardini');
+    assert.ok(similar.page !== undefined, similar.text);
+    assert.equal(similar.private, undefined);
   });
 
   it('without the network part it reads nothing', async () => {

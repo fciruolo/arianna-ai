@@ -247,6 +247,8 @@ export interface LastNavigation {
   outcome: RequestOutcome;
   site?: string;
   reason?: ResourceFailure;
+  /** `saved-private` (D-283): the references of the saved values the gateway found, for the card «Apri / No»; never the values. */
+  saved?: readonly string[];
 }
 
 /** What decides the requests of a job: the session it acts for, its consent and the ids of the gateway log. */
@@ -288,6 +290,8 @@ export interface NetworkHandle {
   authenticated(): string | null;
   /** Requests of Arianna other than GET and HEAD refused in the Private chat of an access without «Invia» (D-281), so far. */
   heldSends(): number;
+  /** Requests in the background (not a main page) stopped for a saved private value of the user (D-283), so far. */
+  savedStopped(): number;
   /** Removes the interception, sends `browser.network`, closes the connections. */
   close(): Promise<void>;
 }
@@ -484,6 +488,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   let session: CookieJar | null = null;
   /** Sends of Arianna held in the Private chat of an access (D-281): the click that caused one asks the user. */
   let held = 0;
+  /** Requests in the background stopped for a saved private value (D-283). */
+  let savedStopped = 0;
+  /** The references a main page was refused for (D-283), by request, until its navigation is recorded. */
+  const savedRefs = new Map<number, readonly string[]>();
   /** Cookies of the navigations of the user, waiting for a form to their site; never sent. */
   const pending = new Map<string, CookieJar>();
   let closed = false;
@@ -518,8 +526,8 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   };
   const meta = (): Pick<NewEvent, 'taskId' | 'runId'> => ({ ...(scope.meta?.taskId === undefined ? {} : { taskId: scope.meta.taskId }), ...(scope.meta?.runId === undefined ? {} : { runId: scope.meta.runId }) });
   let last: LastNavigation | undefined;
-  const navigated = (outcome: RequestOutcome, site?: string, reason?: ResourceFailure): void => {
-    last = { seq: (last?.seq ?? 0) + 1, outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }) };
+  const navigated = (outcome: RequestOutcome, site?: string, reason?: ResourceFailure, saved?: readonly string[]): void => {
+    last = { seq: (last?.seq ?? 0) + 1, outcome, ...(site === undefined ? {} : { site }), ...(reason === undefined ? {} : { reason }), ...(saved === undefined ? {} : { saved }) };
     // The site only of an address the gateway let go: a refused one may carry what it was refused for.
     // After an access (D-276) never: what the user does on that site says something of the user.
     const logged = session === null ? site : undefined;
@@ -577,6 +585,11 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       if (decision.decision === 'allow') {
         const spent = spendAllowed(decision);
         allowed = spent?.target.kind === 'web' && (spent.target.page !== undefined || spent.target.session !== undefined) ? spent.texts[0] : undefined;
+      } else if (decision.rule === 'saved-private' && decision.saved !== undefined) {
+        // A saved private value (D-283): the action that caused it asks the user.
+        const seq = working.getStore();
+        if (seq !== undefined) savedRefs.set(seq, decision.saved);
+        return isClosed() ? interrupted : { ok: false, reason: 'saved-private' };
       }
     } catch {
       allowed = undefined;
@@ -832,9 +845,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
     if (!result.ok) {
       // `blocked`: the gateway refused this hop (its row says why); anything else: the network or the answer.
-      const outcome: RequestOutcome = result.reason === 'blocked' ? 'blocked' : result.reason === 'private-address' || result.reason === 'invalid-url' || result.reason === 'invalid-request' || result.reason === 'body-too-large' || result.reason === 'unreadable-body' || result.reason === 'insecure-redirect' || result.reason === 'other-site' ? 'refused' : 'failed';
+      const outcome: RequestOutcome = result.reason === 'blocked' || result.reason === 'saved-private' ? 'blocked' : result.reason === 'private-address' || result.reason === 'invalid-url' || result.reason === 'invalid-request' || result.reason === 'body-too-large' || result.reason === 'unreadable-body' || result.reason === 'insecure-redirect' || result.reason === 'other-site' ? 'refused' : 'failed';
       // The site only of an address the gateway let go (a failure of the network after it).
-      if (frame.main) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason);
+      if (frame.main) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason, savedRefs.get(seq));
+      else if (result.reason === 'saved-private') savedStopped += 1;
       await abort(outcome, result.reason);
       return;
     }
@@ -881,7 +895,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       .catch(async () => {
         await route.abort('failed').catch(() => undefined);
       })
-      .finally(() => { stages.delete(seq); });
+      .finally(() => { stages.delete(seq); savedRefs.delete(seq); });
     inFlight.add(run);
     void run.finally(() => inFlight.delete(run));
     return run;
@@ -905,6 +919,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     },
     authenticated: () => session?.site ?? null,
     heldSends: () => held,
+    savedStopped: () => savedStopped,
     counts: () => structuredClone(counts),
     lastNavigation: () => (last === undefined ? undefined : { ...last }),
     async settle(page, timeoutMs = 15_000) {
@@ -926,7 +941,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       await context.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => undefined);
       // The counts are final only when every request under way has ended or stopped.
       await Promise.allSettled([...inFlight]);
-      emit({ kind: 'browser.network', label: 'L0', payload: { pages: budget.pages, requests: budget.requests, bytes: budget.bytes, counts: structuredClone(counts), limits: [...limitsSent] }, ...meta() });
+      emit({ kind: 'browser.network', label: 'L0', payload: { pages: budget.pages, requests: budget.requests, bytes: budget.bytes, counts: structuredClone(counts), limits: [...limitsSent], ...(savedStopped === 0 ? {} : { saved: savedStopped }) }, ...meta() });
       if (ownPool) pool.destroy();
     },
   };

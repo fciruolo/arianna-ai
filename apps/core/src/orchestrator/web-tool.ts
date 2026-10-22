@@ -7,6 +7,7 @@ import { appendEvent } from '../events.ts';
 import { FETCH_FAILURE_TEXT, siteOf } from '../link-fetch.ts';
 import type { Task } from '../tasks.ts';
 import { addressesInText, readPage, type ReadPageInput } from '../web-page.ts';
+import { approvedSaved } from './saved-ask.ts';
 
 /**
  * `web.fetch` of Arianna in a chat (D-262, P7): one public page, read through
@@ -26,6 +27,11 @@ import { addressesInText, readPage, type ReadPageInput } from '../web-page.ts';
  * and the conversation: the whole address is in gateway_log, as for every
  * exit. The text comes back as untrusted public content, labelled L0: it
  * never raises the label of the conversation.
+ *
+ * The address is compared with the private values the user saved (D-283)
+ * instead of the second scanner: one found and not approved does not leave,
+ * and the user decides with the card «Apri / No» (`private`); an «Apri» holds
+ * for 15 minutes in the conversation, and while its browser is open.
  */
 export const WEB_FETCH = 'web.fetch' satisfies ToolId;
 export const WEB_FETCH_EVENT = 'web.fetch';
@@ -53,6 +59,8 @@ export interface WebToolEnv {
   signal?: AbortSignal;
   /** Tests: the downloader, with fake servers. */
   fetchLink?: ReadPageInput['fetchLink'];
+  /** When the browser of the conversation opened (D-283): what the user let go for it holds here too. */
+  browserOpened?: number | null;
 }
 
 export interface WebPage {
@@ -66,6 +74,8 @@ export interface WebFetchResult {
   label: Label;
   /** The page read, for the line of the chat. */
   page?: WebPage;
+  /** A saved private value of the user in the address (D-283): its references, for the card «Apri / No». */
+  private?: { saved: readonly string[] };
 }
 
 function failure(text: string): WebFetchResult {
@@ -160,12 +170,15 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
   const read = await pagesRead(web.sql, task.id);
   if (read.task >= MAX_PAGES_PER_TASK) return failure(TASK_LIMIT);
   if (read.day >= MAX_PAGES_PER_DAY) return failure(DAY_LIMIT);
+  // What the user let go with «Apri» (D-283): in the last 15 minutes, or while the browser of the conversation is open.
+  const opened = web.browserOpened ?? null;
+  const approved = task.conversationId === null ? new Set<string>() : await approvedSaved(web.sql, task.conversationId, { browser: opened, recent: true });
   const result = await readPage({
     sql: web.sql,
     address,
     context,
     consent,
-    meta: { taskId: task.id, ...(web.runId === undefined ? {} : { runId: web.runId }) },
+    meta: { taskId: task.id, ...(web.runId === undefined ? {} : { runId: web.runId }), saved: { approved } },
     ...(web.signal === undefined ? {} : { signal: web.signal }),
     ...(web.fetchLink === undefined ? {} : { fetchLink: web.fetchLink }),
   });
@@ -178,6 +191,13 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
     ...(web.runId === undefined ? {} : { runId: web.runId }),
     payload: { conversationId: task.conversationId, site, outcome: result.ok ? 'ok' : result.reason },
   });
+  if (!result.ok && result.saved !== undefined && result.saved.length > 0) {
+    return {
+      text: `error: ${WEB_FETCH}: the address carries data the user saved for a client or a contact: the user decides in the chat whether it may leave.`,
+      label: 'L0',
+      private: { saved: result.saved },
+    };
+  }
   if (!result.ok) return failure(FETCH_FAILURE_TEXT[result.reason]);
   const { link } = result;
   return {

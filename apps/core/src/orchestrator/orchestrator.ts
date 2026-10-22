@@ -78,6 +78,7 @@ import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
+import { requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
 import { browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
@@ -1326,6 +1327,16 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // The browser (D-264, passo 3): never stopped as a repeated call, reading the same page again after a click is the point.
       if (isBrowserTool(answer.tool)) {
         const ran = await browserTool(answer.tool, answer.arguments, { task, context, incognito, ...(options.browser === undefined ? {} : { browser: { browser: options.browser.agent, sql, runId } }) });
+        // A saved private value of the user (D-283): the card «Apri / No», written with the turn.
+        const saved = ran.private;
+        if (saved !== undefined) {
+          const approvalId = await sql.begin(async (tx) => {
+            await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
+            return requestSavedPrivate(tx, { taskId: task.id, step, tool: answer.tool, refs: saved.saved, browser: saved.browser });
+          });
+          await show(task, step, 'wait', ran.detail);
+          return { kind: 'confirm', approvalId, usage };
+        }
         // A send to the site of an access (D-281): the card «Invia / No», written with the turn.
         const send = ran.send;
         if (send !== undefined) {
@@ -1380,7 +1391,9 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         return waits ? { kind: 'wait-user', reason: REPEATING, usage } : { kind: 'continue', usage };
       }
       // A page (D-262) is read before the transaction, for up to 15 s on the network: read again after a crash, it counts once more.
-      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
+      // The browser of the conversation (D-283): what the user let go for it holds for web.fetch too.
+      const browserOpened = options.browser === undefined || task.conversationId === null ? null : options.browser.agent.openedAt(task.conversationId);
+      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserOpened, ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
@@ -1413,6 +1426,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           const written = await writeRoutineProposal(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.routine });
           return { ...ran, approvalId: written.approvalId };
         }
+        // A saved private value of the user in the address of web.fetch (D-283): the card «Apri / No» with the turn.
+        if (ran.private !== undefined) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
+          return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserOpened }) };
+        }
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
           return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.confirm }) };
@@ -1422,7 +1440,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       });
       if (result.approvalId !== undefined) {
         // The IM number only: the title stays in the approval. A fact: the tool's name only (D-213).
-        if (result.share !== undefined || result.propose !== undefined || result.routine !== undefined) await show(task, step, 'wait', tool);
+        if (result.private !== undefined) await show(task, step, 'wait', 'web · C’è un dato che hai salvato fra i clienti: chiedo a te se può uscire.');
+        else if (result.share !== undefined || result.propose !== undefined || result.routine !== undefined) await show(task, step, 'wait', tool);
         else await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
@@ -1506,6 +1525,9 @@ export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<s
   const lastWrite =
     tool === 'kb.read' || tool === 'kb.search'
       ? turns.findLastIndex(wrotePage)
+      // A page the user decided on with «Apri / No» (D-283): the same web.fetch may run again after it.
+      : tool === WEB_FETCH
+        ? turns.findLastIndex((past) => past.result === WAITING_PRIVATE)
       : tool === UPDATE
         ? turns.findLastIndex((past) => canonical(past.answer.action === 'call' ? past.answer.arguments : null) !== key && updatedCard(past, args))
         : -1;

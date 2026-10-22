@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BROWSER_NO, BROWSER_YES, browserClick, browserSend, SEND_NO, SEND_NOTE, SEND_YES } from '../src/lib/browser-approval.ts';
+import { BROWSER_NO, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../src/lib/browser-approval.ts';
 import { activityLink, activityText } from '../src/lib/italian.ts';
 import { ACTION_TEXT } from '../src/lib/labels.ts';
 import { pendingAskText } from '../src/lib/pending-text.ts';
@@ -58,4 +58,27 @@ test('the card «Invia / No» of the Private chat of an access (D-281): site and
   assert.equal([SEND_YES, SEND_NO].join(' / '), 'Invia / No');
   assert.match(SEND_NOTE, /una volta sola/);
   assert.equal(ACTION_TEXT['browser.send'], 'Invio questi dati al sito?');
+});
+
+test('the card «Apri / No» of a saved value (D-283): what it is and whose, never the value, only for browser.private', () => {
+  const card = (action: string, detail: Record<string, unknown>) => browserPrivate({ kind: 'browser', action, detail });
+  const values = [
+    { ref: 'client:c1:name', kind: 'name', client: 'Ferramenta Lunardi Srl' },
+    { ref: 'contact:k1:contact-email', kind: 'contact-email', client: 'Ferramenta Lunardi Srl' },
+  ];
+  assert.deepEqual(card('browser.private', { values, tool: 'browser.open', step: 3 }), {
+    lines: ['il nome di Ferramenta Lunardi Srl', 'l’email di un contatto di Ferramenta Lunardi Srl'],
+    web: false,
+  });
+  assert.equal(card('browser.private', { values, tool: 'web.fetch', step: 3 })?.web, true);
+  // A reference whose client is gone, or a kind the chat does not know.
+  assert.deepEqual(card('browser.private', { values: [{ ref: 'client:c9:iban', kind: 'iban', client: '' }, { ref: 'x', kind: 'nuovo' }], step: 1 })?.lines, ['l’IBAN di un cliente', 'un dato salvato di un cliente']);
+  assert.equal(card('browser.private', { values: [], step: 1 }), undefined);
+  assert.equal(card('browser.private', { values: [{ ref: 'x' }], step: 1 }), undefined);
+  assert.equal(card('browser.send', { values, step: 1 }), undefined);
+  // Never read as a link card.
+  assert.equal(browserClick({ kind: 'browser', detail: { values, step: 1 } }), undefined);
+  assert.equal([PRIVATE_YES, PRIVATE_NO].join(' / '), 'Apri / No');
+  assert.match(PRIVATE_NOTE, /finché lo chiudi/);
+  assert.equal(ACTION_TEXT['browser.private'], 'Lascio uscire questo dato salvato?');
 });

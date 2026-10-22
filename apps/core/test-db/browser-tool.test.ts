@@ -82,6 +82,7 @@ interface FakeBrowser {
   holder: string | null;
   act: (scope: BrowserScope, action: BrowserAction) => Promise<ActionResult>;
   release: (conversationId: string) => Promise<void>;
+  openedAt: (conversationId: string) => number | null;
 }
 
 const PAGE: ActionResult = { ok: true, page: { url: CATALOGO, site: 'example.com', title: 'Catalogo finto' } };
@@ -100,6 +101,8 @@ function fakeBrowser(results: ActionResult[] = []): FakeBrowser {
       if (fake.holder === conversationId) fake.holder = null;
       return Promise.resolve();
     },
+    // When its browser opened (D-283): none here, so no saved value is let go.
+    openedAt: () => null,
   };
   return fake;
 }

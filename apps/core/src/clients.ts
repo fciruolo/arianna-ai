@@ -43,6 +43,36 @@ export const PROJECT_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
 export const MAX_CONTACTS = 50;
 export const MAX_PROJECTS = 50;
 
+/**
+ * What wants to know that the clients or their contacts changed: the saved
+ * private values the gateway compares in the browser (D-283), built again
+ * after each change. Called after the commit, never with data.
+ */
+const listeners = new Set<() => void>();
+
+/** Calls `listener` after every change of a client or a contact; the returned function stops it. */
+export function onClientsChanged(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+function changed(): void {
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch {
+      console.warn('clients: a listener of the changes failed');
+    }
+  }
+}
+
+/** `work`, then the listeners of the changes once it committed. */
+async function notifying<T>(work: Promise<T>): Promise<T> {
+  const result = await work;
+  changed();
+  return result;
+}
+
 export class ClientError extends Error {
   override name = 'ClientError';
   readonly code: 'not-found' | 'invalid' | 'conflict';
@@ -325,7 +355,7 @@ export async function clientOfProject(sql: Queryable, project: string): Promise<
 export async function createClient(sql: Sql, input: Record<string, unknown>): Promise<{ id: string }> {
   const checked = checkClient(input);
   if (!checked.ok) throw invalid(checked.issues);
-  return guarded(() =>
+  return notifying(guarded(() =>
     sql.begin(async (tx) => {
       const values = columnsOf(tx, checked.value);
       const [row] = await tx<{ id: string }[]>`INSERT INTO clients ${tx(values)} RETURNING id::text`;
@@ -333,12 +363,12 @@ export async function createClient(sql: Sql, input: Record<string, unknown>): Pr
       await appendEvent(tx, { kind: 'client.created', payload: { clientId: row.id } });
       return row;
     }),
-  );
+  ));
 }
 
 /** A change of some fields: merged over the client as it is and checked as a whole. An archived client is restored first. */
 export async function updateClient(sql: Sql, id: string, input: Record<string, unknown>): Promise<{ id: string; changed: string[] }> {
-  return guarded(() =>
+  return notifying(guarded(() =>
     sql.begin(async (tx) => {
       const row = await loadRow(tx, id, true);
       if (row.status === 'archived') throw new ClientError('conflict', 'the client is archived: restore it first');
@@ -353,12 +383,12 @@ export async function updateClient(sql: Sql, id: string, input: Record<string, u
       await appendEvent(tx, { kind: 'client.updated', payload: { clientId: id, fields: changed } });
       return { id, changed };
     }),
-  );
+  ));
 }
 
 /** "Archivia" and "Ripristina": an archived client leaves the list of the active ones, never the database. */
 export async function archiveClient(sql: Sql, id: string, archived: boolean): Promise<{ id: string; status: ClientStatus }> {
-  return guarded(() =>
+  return notifying(guarded(() =>
     sql.begin(async (tx) => {
       const row = await loadRow(tx, id, true);
       if ((row.status === 'archived') === archived) return { id, status: row.status };
@@ -373,7 +403,7 @@ export async function archiveClient(sql: Sql, id: string, archived: boolean): Pr
       await appendEvent(tx, { kind: archived ? 'client.archived' : 'client.restored', payload: archived ? { clientId: id, from: row.status } : { clientId: id } });
       return { id, status };
     }),
-  );
+  ));
 }
 
 async function touch(tx: Queryable, id: string): Promise<void> {
@@ -396,7 +426,7 @@ export async function addContact(sql: Sql, id: string, input: Record<string, unk
   const checked = checkContact(input);
   if (!checked.ok) throw invalid(checked.issues);
   const contact = checked.value;
-  return sql.begin(async (tx) => {
+  return notifying(sql.begin(async (tx) => {
     await openClient(tx, id);
     const [count] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM client_contacts WHERE client_id = ${id} AND removed_at IS NULL`;
     if ((count?.count ?? 0) >= MAX_CONTACTS) throw new ClientError('conflict', `a client holds ${String(MAX_CONTACTS)} contacts at most`);
@@ -409,11 +439,11 @@ export async function addContact(sql: Sql, id: string, input: Record<string, unk
     await touch(tx, id);
     await appendEvent(tx, { kind: 'client.contact.added', payload: { clientId: id, contactId: row.id } });
     return contactOf(row);
-  });
+  }));
 }
 
 export async function updateContact(sql: Sql, id: string, contactId: string, input: Record<string, unknown>): Promise<ClientContact> {
-  return sql.begin(async (tx) => {
+  return notifying(sql.begin(async (tx) => {
     await openClient(tx, id);
     const [current] = await tx.unsafe<ContactRow[]>(`SELECT ${CONTACT_SELECT} FROM client_contacts WHERE id = $1 AND client_id = $2 AND removed_at IS NULL FOR UPDATE`, [contactId, id]);
     if (current === undefined) throw new ClientError('not-found', 'no such contact');
@@ -431,11 +461,11 @@ export async function updateContact(sql: Sql, id: string, contactId: string, inp
     await touch(tx, id);
     await appendEvent(tx, { kind: 'client.contact.changed', payload: { clientId: id, contactId } });
     return contactOf(row);
-  });
+  }));
 }
 
 export async function removeContact(sql: Sql, id: string, contactId: string): Promise<void> {
-  await sql.begin(async (tx) => {
+  await notifying(sql.begin(async (tx) => {
     await openClient(tx, id);
     const [row] = await tx<{ id: string }[]>`
       UPDATE client_contacts SET removed_at = now(), is_primary = false, updated_at = now()
@@ -443,7 +473,7 @@ export async function removeContact(sql: Sql, id: string, contactId: string): Pr
     if (row === undefined) throw new ClientError('not-found', 'no such contact');
     await touch(tx, id);
     await appendEvent(tx, { kind: 'client.contact.removed', payload: { clientId: id, contactId } });
-  });
+  }));
 }
 
 /** Links an approved project to the client: a project belongs to one client at most. */

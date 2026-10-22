@@ -27,7 +27,7 @@ import {
 } from '../lib/plan-approval.ts';
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
-import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserSend, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
+import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
@@ -164,6 +164,8 @@ const routine = computed(() => routineProposal(props.approval, Intl.DateTimeForm
 const browser = computed(() => browserClick(props.approval));
 /** A send to the site of an access, in its Private chat (D-281): nothing leaves before «Invia». */
 const send = computed(() => browserSend(props.approval));
+/** A value saved for a client or a contact that would leave (D-283): nothing leaves before «Apri». */
+const saved = computed(() => browserPrivate(props.approval));
 const isDeclassify = computed(() => props.approval.kind === 'declassify' && share.value === undefined);
 /** A workspace approval names the repository and the files with uncommitted changes. */
 const workspace = computed(() => {
@@ -261,6 +263,16 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           Arianna vuole premere <strong>«{{ send.element }}»</strong>: così il sito riceve dati a tuo nome.
         </p>
         <p class="text-xs text-muted">{{ SEND_NOTE }}</p>
+      </template>
+      <template v-else-if="saved !== undefined">
+        <p>
+          {{ saved.web ? 'L’indirizzo della pagina che Arianna vuole leggere contiene' : 'Arianna vuole far uscire dal suo browser' }}
+          un dato che hai salvato fra i clienti:
+        </p>
+        <ul class="flex flex-col gap-0.5">
+          <li v-for="line in saved.lines" :key="line" class="text-[15px]"><strong>{{ line }}</strong></li>
+        </ul>
+        <p class="text-xs text-muted">{{ PRIVATE_NOTE }}</p>
       </template>
       <template v-else-if="browser !== undefined">
         <p class="text-[15px]">
@@ -407,9 +419,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon name="approve" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

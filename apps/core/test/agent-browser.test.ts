@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { Context, PageConsent } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
-import { AgentBrowser, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession } from '../src/browser/agent-browser.ts';
+import { AgentBrowser, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
 import type { Sql } from '../src/db/client.ts';
 import type { BrowserManager } from '../src/browser/manager.ts';
 import type { NetworkScope } from '../src/browser/network.ts';
@@ -70,21 +70,24 @@ interface Harness {
   userTouches: number;
   /** The site of an access made by the user, as the fake network says (D-276). */
   access: string | null;
+  /** The saved values let go each time a text was gated (D-283). */
+  typedApproved: string[][];
 }
 
-function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' }; warmGuard?: () => Promise<unknown> } = {}): Harness {
+function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' } } = {}): Harness {
   const page: FakePage = { url: 'https://comune-finto.it/servizi', title: 'Servizi', reading: { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: 'Orari', elements: [], scrolled: 0 }, clicked: [], filled: [], pressed: [], typable: true };
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null };
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null, typedApproved: [] };
   const openSession: OpenSession = (_manager, id) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
     h.opened.push(id);
     const session = {
       network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), authenticated: () => h.access, settle: () => Promise.resolve() },
-      openPage: (url: string) => { page.url = url; return Promise.resolve({ title: page.title, url }); },
+      // An address under /rifiutata is refused by the fake network: Chromium's error, as a blocked navigation.
+      openPage: (url: string) => (url.includes('/rifiutata') ? Promise.reject(new Error('net::ERR_BLOCKED_BY_CLIENT')) : (page.url = url, Promise.resolve({ title: page.title, url }))),
       currentPage: () => {
         h.touches += 1;
         return Promise.resolve(fakePage(page));
@@ -98,13 +101,12 @@ function harness(options: { gate?: boolean; failOpen?: boolean; last?: { seq: nu
     sql: undefined as unknown as Sql,
     manager,
     session: { home: '/nowhere' },
-    gateTyped: (text) => { h.typed.push(text); return Promise.resolve(options.gate ?? true); },
+    gateTyped: (text, _scope, approved) => { h.typed.push(text); h.typedApproved.push([...approved]); return Promise.resolve(options.gate ?? true); },
     onTaken: (conversationId) => { h.taken.push(conversationId); },
     onReleased: (conversationId) => { h.released.push(conversationId); },
     now: () => clock.now,
     actionLimitMs: 50,
     openSession,
-    ...(options.warmGuard === undefined ? {} : { warmGuard: options.warmGuard }),
   });
   return h;
 }
@@ -125,62 +127,11 @@ test('a browser is held by one conversation: open, then read, then close', async
   assert.deepEqual(h.closed, h.opened);
 });
 
-test('the second scanner is ready before a page opens: its load is not counted in the time of the action (D-281)', async () => {
-  let warmed = 0;
-  let ready: () => void = () => undefined;
-  const h = harness({ warmGuard: () => { warmed += 1; return new Promise<void>((resolve) => { ready = resolve; }); } });
-  const opening = h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
-  // Longer than the deadline of an action (50 ms here): the browser waits without starting.
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  assert.deepEqual(h.opened, []);
-  ready();
-  assert.equal((await opening).ok, true);
-  assert.equal(warmed, 1);
-});
-
-test('reading, scrolling and closing do not start the second scanner; one that cannot start does not stop the browser (D-281)', async () => {
-  let warmed = 0;
-  const h = harness({ warmGuard: () => { warmed += 1; return Promise.reject(new Error('no python')); } });
+test('no action starts the second scanner any more: the saved values take its place in the browser (D-283)', async () => {
+  const h = harness();
+  const started = Date.now();
   assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' })).ok, true);
-  assert.equal(warmed, 1);
-  await h.browser.act(scope('a'), { kind: 'read' });
-  await h.browser.act(scope('a'), { kind: 'scroll', direction: 'down' });
-  await h.browser.act(scope('a'), { kind: 'close' });
-  assert.equal(warmed, 1);
-  assert.equal(h.browser.holder, null);
-});
-
-test('the wait for the second scanner holds no queue: the user takes the control meanwhile, and the action of Arianna is paused (D-281)', async () => {
-  let slow = false;
-  let ready: () => void = () => undefined;
-  const h = harness({ warmGuard: () => (slow ? new Promise<void>((resolve) => { ready = resolve; }) : Promise.resolve()) });
-  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
-  await h.browser.act(scope('a'), { kind: 'read' });
-  slow = true;
-  const clicking = h.browser.act(scope('a'), { kind: 'click', ref: 1 });
-  const request = h.browser.takeControl('a');
-  assert.equal(request.waiting, false);
-  assert.equal(await request.done, true);
-  ready();
-  assert.deepEqual(await clicking, { ok: false, reason: 'paused' });
-});
-
-test('released or shut down while an open waits for the second scanner: no browser opens behind it (D-281)', async () => {
-  for (const stop of ['release', 'close'] as const) {
-    let ready: () => void = () => undefined;
-    const h = harness({ warmGuard: () => new Promise<void>((resolve) => { ready = resolve; }) });
-    const opening = h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
-    await (stop === 'release' ? h.browser.release('a') : h.browser.close());
-    ready();
-    assert.deepEqual(await opening, { ok: false, reason: 'not-open' }, stop);
-    assert.deepEqual(h.opened, [], stop);
-    assert.equal(h.browser.holder, null, stop);
-  }
-});
-
-test('a second scanner that throws at once does not make an action throw (D-281)', async () => {
-  const h = harness({ warmGuard: () => { throw new Error('no python'); } });
-  assert.equal((await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' })).ok, true);
+  assert.ok(Date.now() - started < 1_000);
 });
 
 test('an action other than open without a browser is refused, and so is reading before opening', async () => {
@@ -195,7 +146,7 @@ test('the scope of every action goes to the network: a conversation that became 
   await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
   const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
   await h.browser.act(scope('a', consent, INTERNAL), { kind: 'read' });
-  assert.deepEqual(h.scopes.at(-1), { context: INTERNAL, consent, driver: 'agent' });
+  assert.deepEqual(h.scopes.at(-1), { context: INTERNAL, consent, driver: 'agent', meta: { saved: { approved: new Set() } } });
 });
 
 test('another conversation gets busy while the browser was used less than 2 minutes ago, and takes it after', async () => {
@@ -498,10 +449,11 @@ test('takeControl: only the conversation holding the browser; then Arianna is pa
   assert.equal(await request.done, true);
   assert.equal(h.browser.driverOf('a'), 'user');
   assert.equal(h.browser.driverOf('b'), null);
-  // The requests of the user go on with the scope of Arianna, without her task.
+  // The requests of the user go on with the scope of Arianna, without her task; compared with the saved values all the same (D-283).
   const last = h.scopes.at(-1);
   assert.equal(last?.driver, 'user');
-  assert.equal(last.meta, undefined);
+  assert.equal(last.meta?.taskId, undefined);
+  assert.ok(last.meta?.saved !== undefined);
   const paused = await h.browser.act(scope('a'), { kind: 'read' });
   assert.deepEqual(paused, { ok: false, reason: 'paused' });
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'close' }), { ok: false, reason: 'paused' });
@@ -582,4 +534,46 @@ test('after an access made by the user (D-276) Arianna neither reads nor acts in
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'authenticated' });
   assert.equal((await h.browser.act(scope('a'), { kind: 'close' })).ok, true);
   assert.equal(h.browser.holder, null);
+});
+
+test('a saved private value in an address or a typed text asks the user, with its references only (D-283)', async () => {
+  const h = harness({ gate: { saved: ['client:c1:name'] } });
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  h.page.reading = { title: 'Cerca', url: 'https://comune-finto.it/servizi', text: '', elements: [{ ref: 1, kind: 'field', label: 'Cerca', type: 'search' }], scrolled: 0 };
+  await h.browser.act(scope('a'), { kind: 'read' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'type', ref: 1, text: 'Ferramenta Lunardi Srl', submit: false }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'] });
+  assert.deepEqual(h.page.filled, []);
+  // A page refused by the network for a saved value: the open asks the user too.
+  const blocked = harness();
+  blocked.last = { seq: 1, outcome: 'blocked', reason: 'saved-private', saved: ['contact:k1:contact-name'] } as Harness['last'];
+  const opening = await blocked.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/rifiutata?q=Ottavio+Brenta' });
+  assert.deepEqual(opening, { ok: false, reason: 'confirm-private', saved: ['contact:k1:contact-name'] });
+  // Refused for another reason: no card.
+  blocked.last = { seq: 2, outcome: 'blocked' };
+  assert.equal((await blocked.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/rifiutata' })).ok, false);
+  assert.notEqual((await blocked.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/rifiutata' }) as { reason: string }).reason, 'confirm-private');
+});
+
+test('the values the user let go hold for the browser they were read for, until it closes (D-283)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  const opened = h.browser.openedAt('a');
+  assert.equal(typeof opened, 'number');
+  assert.equal(h.browser.openedAt('b'), null);
+  h.page.reading = { title: 'Cerca', url: 'https://comune-finto.it/servizi', text: '', elements: [{ ref: 1, kind: 'field', label: 'Cerca', type: 'search' }], scrolled: 0 };
+  // Approved for an older browser: not merged.
+  await h.browser.act({ ...scope('a'), saved: { opened: (opened ?? 0) - 1, approved: new Set(['client:old:name']) } }, { kind: 'read' });
+  await h.browser.act({ ...scope('a'), saved: { opened: opened ?? 0, approved: new Set(['client:c1:name']) } }, { kind: 'type', ref: 1, text: 'Ferramenta Lunardi Srl', submit: false });
+  assert.deepEqual(h.typedApproved.at(-1), ['client:c1:name']);
+  // A later action without the approvals in its scope keeps them: the set belongs to the browser.
+  await h.browser.act(scope('a'), { kind: 'type', ref: 1, text: 'orari', submit: false });
+  assert.deepEqual(h.typedApproved.at(-1), ['client:c1:name']);
+  assert.deepEqual([...(h.scopes.at(-1)?.meta?.saved?.approved ?? [])], ['client:c1:name']);
+  // Closed, a new browser starts with none.
+  await h.browser.act(scope('a'), { kind: 'close' });
+  h.clock.now += 1;
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.act(scope('a'), { kind: 'read' });
+  await h.browser.act({ ...scope('a'), saved: { opened: opened ?? 0, approved: new Set(['client:c1:name']) } }, { kind: 'type', ref: 1, text: 'orari', submit: false });
+  assert.deepEqual(h.typedApproved.at(-1), []);
 });

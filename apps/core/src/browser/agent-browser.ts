@@ -7,7 +7,6 @@ import type { Sql } from '../db/client.ts';
 import type { NewEvent } from '../events.ts';
 import { passGateway, type GatewayMeta } from '../gateway.ts';
 import { siteOf } from '../link-fetch.ts';
-import { warmPiiGuard } from '../pii-guard.ts';
 import { BrowserError } from './container.ts';
 import type { BrowserManager } from './manager.ts';
 import { navigationConsent, type NetworkJob, type NetworkScope, type RequestOutcome } from './network.ts';
@@ -74,6 +73,15 @@ import { connectSession, type BrowserSession, type SessionOptions } from './sess
  * that caused one answers `confirm-send`, and the action after an «Invia»
  * (`sendPermit`, used once) may send. A browser with an access is never
  * taken over by another conversation.
+ *
+ * The saved private values of the user (D-283): the address of a page and a
+ * typed text are compared by the gateway with the clients and contacts the
+ * user saved, instead of the second scanner (which is no longer started for
+ * the browser). An action that would let one out answers `confirm-private`
+ * with its references, and the chat asks «Apri / No». The values the user
+ * let go hold for this browser until it closes (`saved` of the scope, merged
+ * into the browser it was read for); every request of the browser, the
+ * user's included while driving, is compared with the others.
  */
 
 export const TAKE_OVER_MS = 2 * 60_000;
@@ -115,7 +123,9 @@ export type ActionResult =
   | { ok: false; reason: ActionFailure; site?: string; network?: ResourceFailure | RequestOutcome }
   | { ok: false; reason: 'confirm'; url: string; site: string }
   /** The Private chat of an access (D-281): the action tried to send data to the site; the user decides with «Invia / No». */
-  | { ok: false; reason: 'confirm-send'; site: string; element: string };
+  | { ok: false; reason: 'confirm-send'; site: string; element: string }
+  /** A saved private value of the user would leave (D-283): its references, never the values; the user decides with «Apri / No». */
+  | { ok: false; reason: 'confirm-private'; saved: readonly string[] };
 
 export type ActionFailure =
   | 'busy'
@@ -183,7 +193,16 @@ export interface BrowserScope {
    * on that same element may send to the site of the access, once.
    */
   sendPermit?: { id: string; element: string };
+  /**
+   * The saved private values the user let go with «Apri» (D-283) while the
+   * browser opened at `opened` (`openedAt`) was open: merged into that
+   * browser only, never into a newer one.
+   */
+  saved?: { opened: number; approved: ReadonlySet<string> };
 }
+
+/** The gateway on a typed text: true when it may be typed; the references of saved values to ask the user about (D-283). */
+export type TypedVerdict = boolean | { saved: readonly string[] };
 
 export type OpenSession = (browser: BrowserManager, id: string, network: Omit<NetworkJob, 'userAgent'>) => Promise<BrowserSession>;
 
@@ -191,8 +210,8 @@ export interface AgentBrowserOptions {
   sql: Sql;
   manager: BrowserManager;
   session: Omit<SessionOptions, 'network'>;
-  /** The gateway on a text to type (target `web` with `typed`): true when it may be typed. */
-  gateTyped: (text: string, scope: BrowserScope) => Promise<boolean>;
+  /** The gateway on a text to type (target `web` with `typed`), with the saved values the user let go in this browser (D-283). */
+  gateTyped: (text: string, scope: BrowserScope, approved: ReadonlySet<string>) => Promise<TypedVerdict>;
   onEvent?: (event: NewEvent) => void;
   /** The browser of `conversationId` was closed for another conversation. */
   onTaken?: (conversationId: string) => void;
@@ -207,11 +226,6 @@ export interface AgentBrowserOptions {
   openSession?: OpenSession;
   /** Tests: the deadline of an action (ACTION_LIMIT_MS). */
   actionLimitMs?: number;
-  /**
-   * The second scanner, started ahead of the gateway of a page: its load (6-30 s)
-   * is not counted in the time of the page (D-281 trial). Default warmPiiGuard.
-   */
-  warmGuard?: () => Promise<unknown>;
   /** Tests: the network job options the core never sets (fake servers). */
   network?: Pick<NetworkJob, 'unsafeTestAddresses' | 'resolve' | 'fetchResource' | 'timeoutMs'>;
 }
@@ -237,6 +251,10 @@ interface Held {
   seqAtTake: number;
   /** The work conversation the browser came from, once handed to a Private chat after an access (D-281). */
   from?: string;
+  /** When this browser opened (now()): the approvals of saved values decided since then hold for it (D-283). */
+  opened: number;
+  /** The saved private values the user let go for this browser (D-283); the network reads this very set. */
+  saved: Set<string>;
 }
 
 const defaultOpenSession = (home: Omit<SessionOptions, 'network'>): OpenSession => async (manager, id, network) => {
@@ -257,8 +275,6 @@ export class AgentBrowser {
   #running = false;
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
   readonly #closedByUser = new Set<string>();
-  /** Releases by conversation: an action that waited for the second scanner across one is dropped. */
-  readonly #releases = new Map<string, number>();
   #shutDown = false;
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
@@ -272,6 +288,12 @@ export class AgentBrowser {
   get holder(): string | null {
     this.#forgetClosed();
     return this.#held?.conversationId ?? null;
+  }
+
+  /** When the browser of `conversationId` opened (now()), when it holds one; null otherwise (D-283). */
+  openedAt(conversationId: string): number | null {
+    const held = this.#held;
+    return this.holder === conversationId && held !== null ? held.opened : null;
   }
 
   /** The site the browser of `conversationId` is on, when it holds the browser and an action reached a page. */
@@ -323,7 +345,7 @@ export class AgentBrowser {
       held.reread = true;
       held.elements.clear();
       held.readAt = undefined;
-      held.session.network?.rescope(networkScope(scope, 'agent'));
+      held.session.network?.rescope(networkScope(scope, 'agent', held.saved));
       this.#touch(held);
       this.#safely(() => { this.#options.onReleased?.(from); });
       return site;
@@ -364,7 +386,7 @@ export class AgentBrowser {
       held.reread = false;
       held.seqAtTake = held.session.network?.lastNavigation()?.seq ?? 0;
       // The requests of the user carry no task of Arianna in gateway_log.
-      held.session.network?.rescope(networkScope(held.scope, 'user'));
+      held.session.network?.rescope(networkScope(held.scope, 'user', held.saved));
       this.#touch(held);
       return true;
     });
@@ -384,7 +406,7 @@ export class AgentBrowser {
     held.reread = true;
     held.elements.clear();
     held.readAt = undefined;
-    held.session.network?.rescope(networkScope(held.scope, 'agent'));
+    held.session.network?.rescope(networkScope(held.scope, 'agent', held.saved));
     this.#touch(held);
     return true;
   }
@@ -397,13 +419,8 @@ export class AgentBrowser {
 
   /** One action, after the ones already running. Never throws. */
   async act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
-    // An action that may reach a page waits for the second scanner before the queue (D-281 trial):
-    // its load (6-30 s) is counted neither in the time of the page nor in the deadline of the action,
-    // and the queue stays free meanwhile (the user taking control, a release).
-    const releases = this.#releases.get(scope.conversationId) ?? 0;
-    if (action.kind === 'open' || action.kind === 'click' || action.kind === 'type') await this.#warm();
-    // Released (it became private, or it was deleted) or shut down meanwhile: no browser opens behind the release.
-    if (this.#shutDown || (this.#releases.get(scope.conversationId) ?? 0) !== releases) return { ok: false, reason: 'not-open' };
+    // Shut down: no browser opens any more.
+    if (this.#shutDown) return { ok: false, reason: 'not-open' };
     // Another conversation while an action runs: «occupato» at once, never a wait behind it.
     if (this.#running && this.#held !== null && this.#held.conversationId !== scope.conversationId) return { ok: false, reason: 'busy' };
     const run = this.#queue.then(async () => {
@@ -422,7 +439,6 @@ export class AgentBrowser {
 
   /** Closes the browser of a conversation (it became private, or it was deleted); nothing when it holds none. */
   async release(conversationId: string): Promise<void> {
-    this.#releases.set(conversationId, (this.#releases.get(conversationId) ?? 0) + 1);
     // Closed for a reason of the core: a later action of this conversation hears «not open», not «closed by the user».
     this.#closedByUser.delete(conversationId);
     // The session first: an action under way on it then fails at once instead of being waited for.
@@ -478,7 +494,9 @@ export class AgentBrowser {
       // The Private chat of an access acts only on the browser of that very access (D-281).
       if (chat !== undefined && access !== chat) return { ok: false, reason: 'not-open' };
       held.scope = scope;
-      held.session.network?.rescope(networkScope(scope, 'agent'));
+      // The values the user let go while this very browser was open (D-283): never those of an older one.
+      if (scope.saved !== undefined && scope.saved.opened === held.opened) for (const ref of scope.saved.approved) held.saved.add(ref);
+      held.session.network?.rescope(networkScope(scope, 'agent', held.saved));
       // An access made by the user: its pages are Private, never read in a work conversation (rule 9); closing is allowed.
       // A refused action does not keep the browser alive.
       if (access !== null && chat === undefined) return { ok: false, reason: 'authenticated' };
@@ -504,6 +522,8 @@ export class AgentBrowser {
     }
     if (this.#options.manager.state !== 'free') return { ok: false, reason: 'busy' };
     const id = browserId();
+    // A new browser: no value let go yet (D-283), whatever an older one had.
+    const saved = new Set<string>();
     let session: BrowserSession;
     try {
       const open = this.#options.openSession ?? defaultOpenSession(this.#options.session);
@@ -511,7 +531,7 @@ export class AgentBrowser {
         sql: this.#options.sql,
         context: scope.context,
         consent: scope.consent,
-        ...(scope.meta === undefined ? {} : { meta: scope.meta }),
+        meta: { ...scope.meta, saved: { approved: saved } },
         ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
         ...this.#options.network,
         // Diagnostics of a page that does not load (D-281 trial): counts by stage and the lag of the event loop, never an address.
@@ -522,18 +542,9 @@ export class AgentBrowser {
       if (error instanceof BrowserError && (error.code === 'no-lock' || error.code === 'image-mismatch' || error.code === 'bad-image')) return { ok: false, reason: 'not-installed' };
       return { ok: false, reason: 'start-failed' };
     }
-    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0 };
+    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened: this.#now(), saved };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
-  }
-
-  /** The second scanner ready, or given up on: a scanner that cannot start is the gateway's to refuse, never an error here. */
-  async #warm(): Promise<void> {
-    try {
-      await (this.#options.warmGuard ?? warmPiiGuard)();
-    } catch {
-      // The gateway refuses without it: nothing to do here.
-    }
   }
 
   /**
@@ -551,7 +562,7 @@ export class AgentBrowser {
     const permit = asked !== undefined && asked.element === named && !this.#usedPermits.has(asked.id) ? asked.id : undefined;
     if (permit !== undefined) {
       this.#usedPermits.add(permit);
-      network?.rescope({ ...networkScope(scope, 'agent'), send: true });
+      network?.rescope({ ...networkScope(scope, 'agent', held.saved), send: true });
     }
     const before = network?.heldSends() ?? 0;
     try {
@@ -559,7 +570,7 @@ export class AgentBrowser {
       if ((network?.heldSends() ?? 0) > before) return { ok: false, reason: 'confirm-send', site, element: named };
       return result;
     } finally {
-      if (permit !== undefined && this.#held === held) network?.rescope(networkScope(held.scope, 'agent'));
+      if (permit !== undefined && this.#held === held) network?.rescope(networkScope(held.scope, 'agent', held.saved));
     }
   }
 
@@ -613,7 +624,9 @@ export class AgentBrowser {
         if (typeof element === 'string') return { ok: false, reason: element };
         if (element.kind === 'password') return { ok: false, reason: 'password-field' };
         if (element.kind !== 'field') return { ok: false, reason: 'not-a-field' };
-        if (!(await this.#options.gateTyped(action.text, scope).catch(() => false))) return { ok: false, reason: 'typed-blocked' };
+        const verdict = await this.#options.gateTyped(action.text, scope, held.saved).catch(() => false);
+        if (typeof verdict === 'object') return { ok: false, reason: 'confirm-private', saved: verdict.saved };
+        if (!verdict) return { ok: false, reason: 'typed-blocked' };
         const page = await session.currentPage();
         const field = page.locator(refSelector(action.ref)).first();
         // Checked again on the element itself: the page may have changed its type since the reading.
@@ -757,9 +770,14 @@ export function outsideAccess(site: string, action: BrowserAction, elements: Rea
   return false;
 }
 
-/** The scope of the network for who drives: the user's requests carry no task of Arianna. */
-function networkScope(scope: BrowserScope, driver: Driver): NetworkScope {
-  return { context: scope.context, consent: scope.consent, driver, ...(driver === 'agent' && scope.meta !== undefined ? { meta: scope.meta } : {}) };
+/**
+ * The scope of the network for who drives: the user's requests carry no task
+ * of Arianna; both are compared with the saved values (D-283), with those the
+ * user let go for this browser.
+ */
+function networkScope(scope: BrowserScope, driver: Driver, saved: ReadonlySet<string>): NetworkScope {
+  const meta: GatewayMeta = driver === 'agent' ? { ...scope.meta, saved: { approved: saved } } : { saved: { approved: saved } };
+  return { context: scope.context, consent: scope.consent, driver, meta };
 }
 
 function pageOf(url: string, title: string): { url: string; site: string; title: string } {
@@ -773,6 +791,8 @@ function refSelector(ref: number): string {
 /** Why the last navigation failed, from the network of the job. */
 function navigationFailure(session: BrowserSession): ActionResult {
   const last = session.network?.lastNavigation();
+  // A saved private value of the user in the address (D-283): the user decides.
+  if (last?.reason === 'saved-private' && last.saved !== undefined && last.saved.length > 0) return { ok: false, reason: 'confirm-private', saved: last.saved };
   if (last?.outcome === 'blocked' || last?.outcome === 'refused' || last?.outcome === 'form' || last?.outcome === 'limit') {
     return { ok: false, reason: 'navigation-blocked', network: last.reason ?? last.outcome, ...(last.site === undefined ? {} : { site: last.site }) };
   }
@@ -1000,10 +1020,12 @@ export function parseReading(raw: unknown): PageReading {
  * was allowed and spent here.
  */
 export function gatewayTyped(sql: Sql): AgentBrowserOptions['gateTyped'] {
-  return async (text, scope) => {
+  return async (text, scope, approved) => {
     const site = scope.context.browserSite;
     const target: Target = site === undefined ? { kind: 'web', typed: scope.consent.from } : { kind: 'web', typed: 'session', site };
-    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, target, { ...scope.meta, summary: 'browser typed text' });
+    const decision = await passGateway(sql, [{ value: text, label: scope.context.effective, source: 'browser:typed' }], scope.context, target, { ...scope.meta, summary: 'browser typed text', saved: { approved } });
+    // A saved private value of the user (D-283): the user decides with «Apri / No».
+    if (decision.decision === 'block' && decision.rule === 'saved-private' && decision.saved !== undefined) return { saved: decision.saved };
     if (decision.decision !== 'allow') return false;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' && spent.target.typed !== undefined && spent.texts[0] === text;

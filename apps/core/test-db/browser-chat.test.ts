@@ -64,6 +64,7 @@ interface FakeBrowser {
   act: (scope: BrowserScope, action: BrowserAction) => Promise<ActionResult>;
   accessOf: (conversationId: string) => string | null;
   release: (conversationId: string) => Promise<void>;
+  openedAt: (conversationId: string) => number | null;
 }
 
 const PAGE: ActionResult = { ok: true, page: { url: `https://www.${SITE}/prestiti`, site: SITE, title: 'I tuoi prestiti' } };
@@ -88,6 +89,8 @@ function fakeBrowser(holder: string, results: ActionResult[]): FakeBrowser {
       if (fake.holder === conversationId) fake.holder = null;
       return Promise.resolve();
     },
+    // When its browser opened (D-283): none here, so no saved value is let go.
+    openedAt: () => null,
   };
   return fake;
 }
@@ -227,8 +230,8 @@ test('0087: the text typed in the site of the access from its chat is logged as 
   const { chat } = await pair();
   const gate = gatewayTyped(db().sql);
   const context = createContext('L2', 'L2', { browserSite: SITE });
-  assert.equal(await gate('Il nome della rosa', { conversationId: chat, context, consent: { from: 'sites', sites: [SITE] } }), true);
-  assert.equal(await gate('Il nome della rosa', { conversationId: chat, context: createContext('L2', 'L2'), consent: { from: 'sites', sites: [SITE] } }), false);
+  assert.equal(await gate('Il nome della rosa', { conversationId: chat, context, consent: { from: 'sites', sites: [SITE] } }, new Set()), true);
+  assert.equal(await gate('Il nome della rosa', { conversationId: chat, context: createContext('L2', 'L2'), consent: { from: 'sites', sites: [SITE] } }, new Set()), false);
   // Without the mark the text goes as an ordinary typed text of a page, and L2 stays local.
   const rows = await db().sql<{ target: string; label: string; decision: string; rule: string }[]>`
     SELECT target, label::text, decision, rule FROM gateway_log WHERE target LIKE 'web-typed-%' ORDER BY id DESC LIMIT 2`;

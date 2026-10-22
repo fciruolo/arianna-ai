@@ -25,6 +25,7 @@ import { knownSecrets } from '@arianna/vault';
 import { loadApproval } from './approvals.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { piiCheckOf } from './pii-guard.ts';
+import { knownPrivate } from './saved-private.ts';
 
 export interface GatewayMeta {
   taskId?: string;
@@ -38,6 +39,14 @@ export interface GatewayMeta {
    * without them is checked as before.
    */
   names?: readonly string[];
+  /**
+   * The agent's browser and web.fetch of a chat (D-283): the address of a
+   * page and a typed text are compared with the private values the user saved
+   * (clients and contacts) instead of the second scanner, and a resource or a
+   * request of the site of an access with one of them is stopped. `approved`:
+   * the references the user let go with «Apri» in this conversation.
+   */
+  saved?: { approved: ReadonlySet<string> };
 }
 
 /** Text forms of a payload; undefined when a fragment has none. */
@@ -113,13 +122,14 @@ export async function passGateway(
   // Every value the vault revealed in this process is checked, local targets included.
   // First without the second scanner: when another rule decides, apps/guard is not
   // even started. Only an exit that every other rule lets go asks it (D-113).
-  let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'));
+  const saved = meta.saved === undefined ? undefined : { known: knownPrivate, approved: meta.saved.approved };
+  let decision = gatewayCheck(payload, context, target, knownSecrets, piiUnavailable('off'), saved);
   if (decision.decision === 'block' && decision.rule === 'pii-unavailable') {
     const texts = textsOf(payload);
     // A text of the adopted catalogs marked by the catalog in its own fragment goes as empty (D-250): Rizzo never reads it.
     if (texts !== undefined) {
       const scanned = piiScanTexts(texts, piiExemptions(payload));
-      decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(scanned, fragmentNamesOf(payload, namesFor(meta))));
+      decision = gatewayCheck(payload, context, target, knownSecrets, await piiCheckOf(scanned, fragmentNamesOf(payload, namesFor(meta))), saved);
     }
   }
   if (!isTarget(target)) return decision;
@@ -127,8 +137,9 @@ export async function passGateway(
   // Allowed: the texts that will be sent. Blocked: what was offered, for the record.
   // A blocked secret leaves no hash: a guessable value could be found from it.
   // Nor does a personal datum the second scanner found (a short sentence with a
-  // name can be guessed the same way), nor invalid input, decided before the checks.
-  const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'pii' || decision.rule === 'invalid-input');
+  // name can be guessed the same way), nor invalid input, decided before the checks,
+  // nor a saved private value of the user (D-283): a name or a phone is guessable too.
+  const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'pii' || decision.rule === 'saved-private' || decision.rule === 'invalid-input');
   const texts = decision.decision === 'allow' ? decision.texts : unmeasured ? undefined : textsOf(payload);
   const measured = texts === undefined ? undefined : measure(texts);
   // A form of the user (D-276): its address is the payload, the size of its body what leaves.

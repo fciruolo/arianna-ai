@@ -8,6 +8,7 @@ import { sendElement, type ActionResult, type AgentBrowser, type BrowserAction, 
 import type { StepContext, StepOutcome } from '../engine.ts';
 import type { Task } from '../tasks.ts';
 import type { Turn } from './turns.ts';
+import { approvedSaved, SAVED_ACTION, savedResultText, WAITING_PRIVATE } from './saved-ask.ts';
 import { MAX_PAGE_TEXT, userAddresses, webFetchOffered } from './web-tool.ts';
 
 /**
@@ -29,6 +30,11 @@ import { MAX_PAGE_TEXT, userAddresses, webFetchOffered } from './web-tool.ts';
  * (`chat`, the site of the access). The consent is that site only, what the
  * browser reads is L2, and a send to the site waits for the card «Invia /
  * No» (`send`, approval `browser.send`).
+ *
+ * The saved private values of the user (D-283): an address or a typed text
+ * with a value saved for a client or a contact waits for the card «Apri /
+ * No» (`private`, approval `browser.private`); with «Apri» the value holds for
+ * the browser of the conversation until it closes.
  */
 
 export const BROWSER_ACTION_EVENT = 'browser.action';
@@ -80,6 +86,8 @@ export interface BrowserToolResult {
   confirm?: { url: string; site: string };
   /** The Private chat of an access (D-281): a send to the site waiting for the card «Invia / No». */
   send?: { site: string; element: string };
+  /** A saved private value of the user would leave (D-283): its references, for the card «Apri / No». */
+  private?: { saved: readonly string[]; browser: number | null };
 }
 
 const ACTION_OF: Record<BrowserToolId, BrowserAction['kind']> = {
@@ -121,6 +129,7 @@ export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'],
   'outside-access': 'In questa chat il browser apre solo pagine del sito dove hai fatto l’accesso.',
   confirm: 'Questo indirizzo non l’hai scritto tu: chiedo a te se aprirlo.',
   'confirm-send': 'Per inviare dati al sito chiedo prima a te.',
+  'confirm-private': 'C’è un dato che hai salvato fra i clienti: chiedo a te se può uscire.',
 };
 
 function failure(tool: BrowserToolId, text: string, label: Label = 'L0'): BrowserToolResult {
@@ -149,7 +158,7 @@ export async function approvedAddresses(sql: Queryable, task: Task): Promise<str
   if (task.conversationId === null) return [];
   const rows = await sql<{ url: string }[]>`
     SELECT a.detail->>'url' AS url FROM approvals a JOIN tasks t ON t.id = a.task_id
-    WHERE a.kind = 'browser' AND a.state = 'approved' AND t.conversation_id = ${task.conversationId}
+    WHERE a.kind = 'browser' AND a.action = 'browser.click' AND a.state = 'approved' AND t.conversation_id = ${task.conversationId}
       AND (t.id = ${task.id} OR t.created_at < (SELECT created_at FROM tasks WHERE id = ${task.id}))
     ORDER BY a.requested_at DESC LIMIT 50`;
   return rows.map((row) => row.url).filter((url) => typeof url === 'string');
@@ -292,8 +301,14 @@ export async function browserTool(
   if (action.kind !== 'close' && (await actionsDone(browser.sql, task.id)) >= MAX_ACTIONS_PER_TASK) return failure(tool, TASK_LIMIT, label);
   const consent: PageConsent = chat === undefined ? await browserConsent(browser.sql, task, context) : { from: 'sites', sites: [chat] };
   const sendPermit = chat === undefined ? undefined : await approvedSend(browser.sql, task.id);
+  // The saved values the user let go while this browser was open (D-283); none for a browser still to open.
+  const opened = browser.browser.openedAt(task.conversationId);
+  const saved = opened === null ? undefined : { opened, approved: await approvedSaved(browser.sql, task.conversationId, { browser: opened }) };
   const meta = { taskId: task.id, ...(browser.runId === undefined ? {} : { runId: browser.runId }) };
-  const result = await browser.browser.act({ conversationId: task.conversationId, context, consent, meta, ...(sendPermit === undefined ? {} : { sendPermit }) }, action);
+  const result = await browser.browser.act(
+    { conversationId: task.conversationId, context, consent, meta, ...(sendPermit === undefined ? {} : { sendPermit }), ...(saved === undefined ? {} : { saved }) },
+    action,
+  );
   const outcome = result.ok ? 'ok' : result.reason;
   await appendEvent(browser.sql, {
     kind: BROWSER_ACTION_EVENT,
@@ -309,6 +324,15 @@ export async function browserTool(
         label: 'L0',
         detail: `browser · ${FAILURE_TEXT.confirm}`,
         confirm: { url: result.url, site: result.site },
+      };
+    }
+    if (result.reason === 'confirm-private') {
+      return {
+        text: `error: ${tool}: this would let out data the user saved for a client or a contact: the user decides in the chat whether it may leave.`,
+        label,
+        detail: `browser · ${FAILURE_TEXT['confirm-private']}`,
+        // The browser the card is for: its «Apri» holds for this one only.
+        private: { saved: result.saved, browser: browser.browser.openedAt(task.conversationId) },
       };
     }
     if (result.reason === 'confirm-send') {
@@ -398,14 +422,19 @@ async function browserAsksByStep(sql: Queryable, taskId: string): Promise<Map<nu
   return asks;
 }
 
-const WAITING_RESULTS: readonly string[] = [WAITING_BROWSER, WAITING_SEND];
+const WAITING_RESULTS: readonly string[] = [WAITING_BROWSER, WAITING_SEND, WAITING_PRIVATE];
 
-/** The turns' results as the model reads them: a waiting click, or a waiting send (D-281), becomes the user's decision. */
+/** The turns' results as the model reads them: a waiting click, a waiting send (D-281) or a saved value (D-283, browser or web.fetch) becomes the user's decision. */
 export async function browserResults(sql: Queryable, taskId: string, turns: readonly Turn[]): Promise<Map<number, string>> {
   const results = new Map<number, string>();
   if (!turns.some((turn) => turn.result !== null && WAITING_RESULTS.includes(turn.result))) return results;
   const asks = await browserAsksByStep(sql, taskId);
   for (const turn of turns) {
+    if (turn.result === WAITING_PRIVATE) {
+      const ask = asks.get(turn.step);
+      results.set(turn.step, savedResultText(ask?.action === SAVED_ACTION ? ask.state : 'rejected'));
+      continue;
+    }
     if (turn.result === WAITING_SEND) {
       const ask = asks.get(turn.step);
       results.set(turn.step, ask?.action === 'browser.send' ? browserSendText(ask.state, ask.site) : browserSendText('rejected', '?'));

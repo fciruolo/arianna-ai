@@ -71,7 +71,8 @@ export async function gateResource(input: ResourceGateInput): Promise<ResourceRe
   let spent;
   try {
     const decision = await passGateway(input.sql, payload, context, target, input.meta);
-    if (decision.decision !== 'allow') return { ok: false, reason: 'blocked' };
+    // A saved private value of the user (D-283): stopped without asking, and counted by the network.
+    if (decision.decision !== 'allow') return { ok: false, reason: decision.rule === 'saved-private' ? 'saved-private' : 'blocked' };
     spent = spendAllowed(decision);
   } catch {
     // A gateway that cannot decide (its log not writable) is a refusal, never a network error.

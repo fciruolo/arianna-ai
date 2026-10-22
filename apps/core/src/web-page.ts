@@ -20,6 +20,11 @@ import { fetchLink, siteOf, xPostUrl, type FetchOptions, type FetchResult } from
  *
  * What comes back is untrusted public content: the caller gives it to a model
  * as data, never as instructions, labelled L0.
+ *
+ * With `meta.saved` (D-283, web.fetch of a chat) the gateway compares each
+ * address with the private values the user saved instead of the second
+ * scanner: an address with one not approved is refused, and the result
+ * carries its references (`saved`) for the card «Apri / No».
  */
 
 /** The fragment of an address: the label of the session, never above it (an address the model wrote in a Public session is L0). */
@@ -50,12 +55,17 @@ export interface ReadPageInput {
   fetchLink?: (address: string, options: FetchOptions, signal?: AbortSignal) => Promise<FetchResult>;
 }
 
+/** What readPage gives: the page, or why not; `saved` with a refusal for saved private values (D-283). */
+export type ReadPageResult = FetchResult & { saved?: readonly string[] };
+
 /** Downloads one page through the gateway. Never throws for a refusal: it is a reason (`blocked` for the gateway). */
-export async function readPage(input: ReadPageInput): Promise<FetchResult> {
+export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
   const { sql, address, context, consent } = input;
+  let saved: readonly string[] | undefined;
   const allowed = async (page: PageConsent, next: string): Promise<string | undefined> => {
     const target: Target = { kind: 'web', page };
     const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, input.meta);
+    if (decision.decision === 'block' && decision.rule === 'saved-private' && decision.saved !== undefined) saved = decision.saved;
     if (decision.decision !== 'allow') return undefined;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' && spent.target.page !== undefined ? spent.texts[0] : undefined;
@@ -69,7 +79,7 @@ export async function readPage(input: ReadPageInput): Promise<FetchResult> {
     } catch {
       return { ok: false, reason: 'invalid-url' };
     }
-    if ((await allowed(consent, normalized)) !== normalized) return { ok: false, reason: 'blocked' };
+    if ((await allowed(consent, normalized)) !== normalized) return { ok: false, reason: 'blocked', ...(saved === undefined ? {} : { saved }) };
     first = false;
   }
   const authorize = async (next: string): Promise<string | undefined> => {
@@ -78,7 +88,8 @@ export async function readPage(input: ReadPageInput): Promise<FetchResult> {
     return allowed(page, next);
   };
   const download = input.fetchLink ?? fetchLink;
-  return download(address, { authorize }, input.signal);
+  const result = await download(address, { authorize }, input.signal);
+  return !result.ok && saved !== undefined ? { ...result, saved } : result;
 }
 
 /** Every http(s) address written in a text (the user's messages, a brief), normalized, at most `limit`. */
