@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.167.1] - 2026-10-22
+
 ### Corretto
 
 - Impostazioni → Modelli: una voce di macOS si dice «installata» o «non installata» (con i passi per aggiungerla), non più «sul disco» anche quando manca (D-291).
