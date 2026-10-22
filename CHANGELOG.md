@@ -10,6 +10,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- Le tre schermate di accesso dal telefono (codice, passkey, Face ID) hanno il testo in alto, il pulsante a tutta larghezza in basso, i tre trattini del passo e il nome della macchina su Tailscale, e seguono la tastiera (D-293, tappa 8).
 - Tutte le pagine si usano sul telefono, a una colonna e con bersagli da 44 px: l’Ufficio con la scena da scorrere col dito e l’elenco degli agenti da toccare; la Conoscenza con trascinamento e pizzico sul grafo e un «Elenco» dei nodi con i vicini; lo Studio con «Chat | Anteprima» e il mockup scalato alla larghezza; Progetti, Clienti e Finanze con tabelle in schede o che scorrono nel loro riquadro; la Cardwall una colonna alla volta; le Routine in vista giorno con la striscia della settimana; Wiki, GOD, Pensieri, Dashboard, Seguiti e le sezioni delle Impostazioni ritoccate (D-293, tappa 7).
 - Impostazioni sul telefono: l’indice a righe da 48 px con la freccia, «‹ Impostazioni» grande, la barra di salvataggio più bassa; dal telefono «Dispositivi» dice «Solo sul Mac» e non si apre, le sezioni che fanno uscire dati si leggono ma si cambiano dal Mac, come vuole la porta remota del core (D-293, tappa 6).
 - Sul telefono Cerca, Nuova conversazione, la legenda e le altre finestre grandi occupano lo schermo intero, le conferme brevi diventano un foglio in basso, i pannelli laterali, le chiamate e gli avvisi rispettano isola e riga della casa (D-293, tappa 5).
