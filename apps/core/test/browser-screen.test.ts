@@ -50,7 +50,7 @@ interface Harness {
   /** Conversations whose browser «Chiudi» closed. */
   closes: string[];
   /** Who drives (the fake AgentBrowser of passo 5), and what was asked of it. */
-  driver: { value: 'agent' | 'user'; gives: number; inputs: number; gestures: number; wait?: Promise<void> };
+  driver: { value: 'agent' | 'user'; gives: number; inputs: number; gestures: number; wait?: Promise<void>; login?: boolean; loginAsked?: number };
   controls: { conversationId: string; state: string; reason?: string }[];
   /** Commands of the bar of the screen (D-286) the fake AgentBrowser got. */
   commands: unknown[];
@@ -115,6 +115,10 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
       gesture: () => { driver.gestures += 1; },
       driver: (id) => (state.holder === id ? driver.value : null),
       blocked: (id) => (state.holder === id && driver.value === 'user' ? { seq: 3, outcome: 'form' } : null),
+      loginForm: (id) => {
+        driver.loginAsked = (driver.loginAsked ?? 0) + 1;
+        return Promise.resolve(state.holder === id && driver.login === true);
+      },
     },
     onControl: (conversationId, change) => { controls.push({ conversationId, ...change }); },
     ...(options.idleMs === undefined ? {} : { controlIdleMs: options.idleMs }),
@@ -839,4 +843,24 @@ test('a gesture of the user is a click, Enter or Space of the screen that drives
   socket.emit('message', Buffer.from([5, 1, 0, 10, 0, 20]), true);
   await tick();
   assert.equal(h.driver.gestures, 2);
+});
+
+test('status: «login» only to the screen that drives, when the page shows a login form (D-287)', async () => {
+  const h = harness();
+  const first = await token(h);
+  const second = await token(h);
+  attachFake(h, first).emit('message', HANDSHAKE, true);
+  attachFake(h, second).emit('message', HANDSHAKE, true);
+  h.driver.login = true;
+  // Arianna drives: no check of the page, no note.
+  assert.equal((await h.screens.status(WORK, first))?.login, undefined);
+  assert.equal(h.driver.loginAsked ?? 0, 0);
+  const taken = await h.screens.take(WORK, first);
+  assert.ok(taken.ok && (await taken.done));
+  assert.equal((await h.screens.status(WORK, first))?.login, true);
+  assert.equal((await h.screens.status(WORK, second))?.login, undefined);
+  assert.equal((await h.screens.status(WORK))?.login, undefined);
+  // A page without a login form.
+  h.driver.login = false;
+  assert.equal((await h.screens.status(WORK, first))?.login, undefined);
 });

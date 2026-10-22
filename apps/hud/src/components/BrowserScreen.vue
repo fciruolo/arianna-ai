@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type RFB from '@novnc/novnc';
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { ApiError, browserStatus, closeBrowser, navigateBrowser, openBrowserScreen, returnBrowserControl, takeBrowserControl } from '../lib/api.ts';
 import { SAVED_KIND_TEXT } from '../lib/browser-approval.ts';
 import { keysymsOf, SPECIAL_KEYS } from '../lib/browser-keys.ts';
-import { accessText, accessWarning, barAddress, blockedText, canRetry, commandText, CONTROL_PASSED, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type BarCommand, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
+import { accessText, accessWarning, barAddress, blockedText, canRetry, commandText, CONTROL_PASSED, escapeTarget, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type BarCommand, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
 import { errorText } from '../lib/italian.ts';
 import { browserPathFor } from '../lib/route.ts';
 import Icon from './Icon.vue';
@@ -28,6 +28,12 @@ import Icon from './Icon.vue';
  * lib/browser-keys.ts). The core is asked every few seconds who drives and
  * which page it refused, so another screen taking the control, the minutes
  * without input or the end of the browser show here.
+ *
+ * Esc while this screen drives (D-287) goes to the page, never to the panel
+ * around it, whose Esc would close the screen and give the browser back:
+ * noVNC sends it when the screen holds the keyboard, and this component does
+ * when nothing else of the chat holds it. «Restituisci ad Arianna» ends the
+ * control. The note on login forms shows only when the page has one.
  */
 const props = defineProps<{
   conversationId: string;
@@ -49,6 +55,9 @@ const control = ref<ControlState | null>(null);
 const access = ref<string | null>(null);
 /** The screen of the Private chat of an access (D-281): there Arianna reads the pages. */
 const chat = ref(false);
+/** The page the user drives shows a login form (D-287): the note on what such a form does. */
+const login = ref(false);
+const root = ref<HTMLElement | null>(null);
 /** Asked, waiting for Arianna to end her action. */
 const asking = ref(false);
 const notice = ref<string | null>(null);
@@ -159,6 +168,7 @@ async function readStatus(): Promise<void> {
     pageUrl.value = status.url;
     if (!editing.value) address.value = status.url ?? '';
     chat.value = status.chat;
+    login.value = status.login;
     if (before === 'you' && status.control === 'other') notice.value = CONTROL_PASSED;
     if (before === 'you' && status.control === 'agent') notice.value = 'Il browser è tornato ad Arianna.';
     if (status.control === 'you' || !status.open) asking.value = false;
@@ -174,8 +184,10 @@ async function readStatus(): Promise<void> {
       notice.value = null;
       noticeOfBlock = false;
     }
-    // The keyboard to the screen only when the control just passed to it.
-    applyControl(before !== 'you' && status.control === 'you');
+    // The keyboard to the screen only when the control just passed to it, once the bar shows its new buttons.
+    const passed = before !== 'you' && status.control === 'you';
+    applyControl();
+    if (passed) void nextTick(() => applyControl(true));
   } catch {
     // A core that does not answer: the next read tries again.
   }
@@ -195,6 +207,7 @@ function stop(): void {
   control.value = null;
   access.value = null;
   chat.value = false;
+  login.value = false;
   pageUrl.value = null;
   liveSite.value = null;
   savedAsk.value = null;
@@ -275,7 +288,9 @@ async function takeIt(): Promise<void> {
     if (answer === 'you') {
       control.value = 'you';
       asking.value = false;
-      applyControl(true);
+      applyControl();
+      // After the render: «Prendi il controllo» held the keyboard, and it goes away (D-287).
+      void nextTick(() => applyControl(true));
     }
   } catch (cause) {
     asking.value = false;
@@ -314,6 +329,28 @@ function sendSpecial(event: KeyboardEvent): void {
   current.sendKey(key.keysym, key.code);
 }
 
+/**
+ * Esc while this screen drives (D-287): to the page. Before the panel's own
+ * Esc (capture), which would close the screen and give the browser back.
+ */
+function onEscape(event: KeyboardEvent): void {
+  const current = rfb;
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  const node = event.target instanceof HTMLElement ? event.target : null;
+  const where = escapeTarget(event, {
+    driving: driving() && current !== null,
+    screen: target.value !== null && active !== null && target.value.contains(active),
+    free: active === null || active === document.body || (root.value !== null && root.value.contains(active)),
+    field: node !== null && (node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)),
+  });
+  // The screen holds the keyboard: noVNC sends Esc and stops it there.
+  if (where !== 'page' || current === null || !driving()) return;
+  event.preventDefault();
+  event.stopPropagation();
+  current.sendKey(SPECIAL_KEYS.Escape?.keysym ?? 0xff1b, 'Escape');
+  if (!editing.value) current.focus({ preventScroll: true });
+}
+
 // «Schermo intero»: the screen alone, Esc to leave it.
 const screenBox = ref<HTMLElement | null>(null);
 const canFullscreen = typeof document !== 'undefined' && document.fullscreenEnabled;
@@ -344,12 +381,16 @@ async function closeIt(): Promise<void> {
   }
 }
 
-onMounted(() => void connect());
+onMounted(() => {
+  window.addEventListener('keydown', onEscape, true);
+  void connect();
+});
 watch(
   () => props.conversationId,
   () => void connect(),
 );
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onEscape, true);
   stopPolling();
   if (document.fullscreenElement !== null && document.fullscreenElement === screenBox.value) void document.exitFullscreen().catch(() => undefined);
   attempt += 1;
@@ -358,7 +399,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2">
+  <div ref="root" class="flex flex-col gap-2">
     <div class="flex items-center gap-2 text-[13px]">
       <span
         class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line px-2 py-0.5 font-mono text-[12px]"
@@ -389,7 +430,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="control === 'you'" class="rounded-lg border border-warn px-3 py-1.5 text-[13px] text-warn" role="status">
       <p class="font-medium">{{ access === null ? CONTROL_WARNING : accessWarning(access) }}</p>
-      <p v-if="access === null" class="text-[12.5px]">{{ FORM_NOTE }}</p>
+      <p v-if="access === null && login" class="text-[12.5px]">{{ FORM_NOTE }}</p>
     </div>
     <p v-if="access !== null" class="text-[12.5px] text-muted" role="status">{{ accessText(access, chat) }}</p>
     <p v-if="notice !== null" class="text-[12.5px] text-muted" role="status">{{ notice }}</p>
@@ -454,7 +495,7 @@ onBeforeUnmount(() => {
         <button v-if="canRetry(state)" type="button" class="mt-1 rounded-lg border border-line px-3 py-1 text-[13px] text-ink hover:bg-surface-2" @click="connect">Riprova</button>
       </div>
     </div>
-    <p v-if="control === 'you'" class="text-[12px] text-muted">Guidi tu: tasti e clic di questo schermo arrivano al browser, gli appunti mai. Dopo 5 minuti senza tasti né clic il browser torna ad Arianna.</p>
+    <p v-if="control === 'you'" class="text-[12px] text-muted">Guidi tu: tasti e clic di questo schermo arrivano al browser (anche Esc), gli appunti mai; per smettere, «Restituisci ad Arianna». Dopo 5 minuti senza tasti né clic il browser torna ad Arianna.</p>
     <p v-else class="text-[12px] text-muted">Sola visione: clic e tasti sullo schermo non arrivano al browser finché non prendi il controllo. Il collegamento passa solo dal core e si chiude con il browser.</p>
   </div>
 </template>

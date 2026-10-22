@@ -6,7 +6,7 @@ import type { Context } from '@arianna/policy';
 
 import { resolveHome } from '@arianna/config';
 import { committedAgents } from './support/committed-agents.ts';
-import { actionOf, approvedRedo, asksLogin, browserOffered, browserResultText, FAILURE_TEXT, REDO_ELEMENT_MS, LOGIN_HINT, loginLine, readingText, WAITING_BROWSER, WAITING_SEND } from '../src/orchestrator/browser-tool.ts';
+import { actionOf, approvedRedo, asksLogin, CLOSE_PAUSED, promisesClose, browserOffered, browserResultText, FAILURE_TEXT, REDO_ELEMENT_MS, LOGIN_HINT, loginLine, readingText, WAITING_BROWSER, WAITING_SEND } from '../src/orchestrator/browser-tool.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { savedResultText, WAITING_PRIVATE } from '../src/orchestrator/saved-ask.ts';
 import type { Queryable } from '../src/db/client.ts';
@@ -91,13 +91,14 @@ test('readingText neutralizes a fake section of elements written by the page', (
   assert.match(text, /\[marker removed\]/);
 });
 
-test('asksLogin (D-276): a password field, or a text field with a sign-in button; not a search box', () => {
+test('asksLogin (D-276, D-287): a password field, or a user field with a sign-in button of its form; not a search box nor a link «Accedi»', () => {
   assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email' }, { ref: 2, kind: 'password', label: 'Password' }] }));
-  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email' }, { ref: 2, kind: 'button', label: 'Accedi' }] }));
-  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Utente', type: 'text' }, { ref: 2, kind: 'link', label: 'Sign in' }] }));
+  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email', form: 0 }, { ref: 2, kind: 'button', label: 'Accedi', form: 0 }] }));
+  // Before D-287 a text field anywhere and a link «Sign in» made a login page.
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Utente', type: 'text' }, { ref: 2, kind: 'link', label: 'Sign in' }] }));
   assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Cerca', type: 'search' }, { ref: 2, kind: 'button', label: 'Cerca' }] }));
   assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'link', label: 'Accedi' }] }));
-  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email' }, { ref: 2, kind: 'button', label: 'Accedi alla newsletter di sport' }] }));
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email', form: 0 }, { ref: 2, kind: 'button', label: 'Accedi alla newsletter di sport', form: 0 }] }));
 });
 
 test('the texts of the access (D-276): never a password from Arianna, the user signs in, the pages are then Private', () => {
@@ -162,4 +163,28 @@ test('approvedRedo: a click or a typed text names its element, and is stale past
   assert.deepEqual(fresh, { answer: click.answer, approvalId: 'c2', element: { ref: 3, url: 'https://altro.example/pagina' }, stale: false });
   const old = await approvedRedo(cards([{ id: 'c2', state: 'approved', action: 'browser.click', step: 4, url: 'https://altro.example/pagina', age: REDO_ELEMENT_MS + 1 }]), 't', [click], ALL);
   assert.equal(old?.stale, true);
+});
+
+test('promisesClose (D-287): a reply that says it closes the browser; not a negation nor a question', () => {
+  assert.ok(promisesClose('Ecco il riassunto. Ora chiudo il browser.'));
+  assert.ok(promisesClose('Ho chiuso il browser.'));
+  assert.ok(promisesClose('Fatto: chiudo anche il browser'));
+  assert.ok(promisesClose('Il browser è chiuso.'));
+  assert.ok(!promisesClose('Non chiudo il browser: ti serve ancora.'));
+  assert.ok(!promisesClose('Non ho chiuso il browser.'));
+  assert.ok(!promisesClose('Vuoi che chiudo il browser?'));
+  assert.ok(!promisesClose('Ecco i risultati della ricerca.'));
+  assert.ok(!promisesClose('Puoi chiudere il browser con il pulsante.'));
+  // An offer or a condition: the browser stays the user's choice.
+  assert.ok(!promisesClose('Se vuoi, chiudo il browser.'));
+  assert.ok(!promisesClose('Quando hai finito chiudo il browser.'));
+  assert.ok(!promisesClose('Appena me lo dici chiudo il browser.'));
+  assert.ok(!promisesClose('Posso chiudere il browser. Dimmi tu: chiudo il browser'));
+  // A condition in an earlier sentence does not hold for the next one.
+  assert.ok(promisesClose('Se ti serve altro scrivimi. Ora chiudo il browser.'));
+});
+
+test('browser.close while the user drives says it stays open (D-287)', () => {
+  assert.match(CLOSE_PAUSED, /non l’ho chiuso/);
+  assert.match(CLOSE_PAUSED, /Chiudi il browser/);
 });

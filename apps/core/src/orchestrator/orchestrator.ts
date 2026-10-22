@@ -79,7 +79,7 @@ import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineP
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
 import { approvedPrivateSteps, REFUSED_SAVED, refusedSaved, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
-import { approvedRedo, PAGE_CHANGED, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
+import { approvedRedo, BROWSER_ACTION_EVENT, PAGE_CHANGED, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, promisesClose, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -1304,6 +1304,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           return { kind: 'wait-user', reason: undelivered(result.reason), usage };
         }
         await recordTurn(sql, { ...turn, label, messageId: result.message.id });
+        // A reply that says it closes the browser closes it (D-287): the local model wrote it without browser.close.
+        const agentBrowser = options.browser?.agent;
+        if (agentBrowser !== undefined && agentBrowser.holder === task.conversationId && promisesClose(text) && (await agentBrowser.closeAfterReply(task.conversationId))) {
+          await appendEvent(sql, { kind: BROWSER_ACTION_EVENT, label: 'L0', taskId: task.id, runId, payload: { conversationId: task.conversationId, action: 'close', outcome: 'ok', from: 'reply' } }).catch(() => undefined);
+        }
         return { kind: 'answered', messageId: result.message.id, usage };
       }
 

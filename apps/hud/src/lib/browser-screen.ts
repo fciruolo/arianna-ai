@@ -210,12 +210,12 @@ export function browserChatOf(chats: readonly { id: string; createdAt: string }[
   return found;
 }
 
-/** The second line of the warning while the user drives: what a form does (D-276). */
+/** The second line of the warning while the user drives: what a form does (D-276); only when the page shows a login form (D-287). */
 export const FORM_NOTE = 'Unica eccezione, l’accesso: utente e password scrivili solo nel modulo d’accesso del sito che conosci. Partono solo verso quel sito; Arianna non li vede né li salva.';
 
 /** The status of the core as the chat reads it: anything unexpected is dropped. */
-export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean } {
-  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown; access?: unknown; chat?: unknown };
+export function parseControl(value: unknown): { control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; login: boolean } {
+  const body = (typeof value === 'object' && value !== null ? value : {}) as { control?: unknown; blocked?: unknown; access?: unknown; chat?: unknown; login?: unknown };
   const control = body.control === 'agent' || body.control === 'you' || body.control === 'other' || body.control === 'user' ? body.control : null;
   const raw = (typeof body.blocked === 'object' && body.blocked !== null ? body.blocked : null) as { seq?: unknown; outcome?: unknown; site?: unknown } | null;
   const outcome = OUTCOMES.find((item) => item === raw?.outcome);
@@ -224,7 +224,23 @@ export function parseControl(value: unknown): { control: ControlState | null; bl
     blocked = typeof raw.site === 'string' && raw.site !== '' ? { seq: raw.seq, outcome, site: raw.site } : { seq: raw.seq, outcome };
   }
   const access = typeof body.access === 'string' && body.access !== '' && body.access.length <= 253 ? body.access : null;
-  return { control, blocked, access, chat: body.chat === true };
+  // A login form on the page the user drives (D-287): only for the screen that drives.
+  return { control, blocked, access, chat: body.chat === true, login: control === 'you' && body.login === true };
+}
+
+/**
+ * Where Esc goes while the user drives the browser (D-287): to the page, as
+ * a key of the screen, never to the panel around it (whose Esc would close
+ * the screen and give the browser back). `screen`: the screen of the browser
+ * holds the keyboard (noVNC sends Esc itself); `free`: nothing else of the
+ * chat holds it (the page, or a button of the screen's own bar). A field
+ * keeps its Esc, a dialog of the chat too, and a word being composed (IME)
+ * is not a key.
+ */
+export function escapeTarget(event: { key: string; isComposing?: boolean }, state: { driving: boolean; screen: boolean; free: boolean; field: boolean }): 'page' | 'screen' | 'chat' {
+  if (event.key !== 'Escape' || event.isComposing === true || !state.driving || state.field) return 'chat';
+  if (state.screen) return 'screen';
+  return state.free ? 'page' : 'chat';
 }
 
 // The bar above the screen (D-286): ← Indietro, → Avanti, ↻ Ricarica and the address of the page.

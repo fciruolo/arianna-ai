@@ -25,6 +25,12 @@ export interface BrowserSession {
   history(command: 'back' | 'forward' | 'reload', timeoutMs?: number): Promise<{ title: string; url: string } | null>;
   /** The address of the tab of the agent now, for the bar of the screen; null before its first tab. */
   currentUrl(): string | null;
+  /**
+   * The tab of the agent as it is, never a new one and without counting as
+   * activity (D-287: the screen of the user asks every few seconds whether it
+   * shows a login form); null when there is none.
+   */
+  peekPage?(): Page | null;
   /** The tab the agent acts on: the last one opened (a popup of a click becomes it), a new one when none is left. */
   currentPage(): Promise<Page>;
   /** After a refused navigation: a fresh tab in place of the current one, left on Chromium's error page. */
@@ -256,6 +262,9 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     },
     currentUrl() {
       return page !== undefined && !page.isClosed() ? page.url() : null;
+    },
+    peekPage() {
+      return page !== undefined && !page.isClosed() && !retired.has(page) ? page : null;
     },
     // Every action of the agent reads the page through here: the idle time starts again.
     async currentPage() {

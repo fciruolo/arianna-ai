@@ -144,6 +144,8 @@ export interface ScreensOptions {
     blocked: (conversationId: string) => BlockedNavigation | null;
     /** The site of an access made by the user (D-276), for the chat. */
     access?: (conversationId: string) => string | null;
+    /** Whether the page the user drives shows a login form (AgentBrowser.loginFormOf, D-287): the note on forms only then. */
+    loginForm?: (conversationId: string) => Promise<boolean>;
   };
   /** The control was taken or went back (the system lines of the chat). */
   onControl?: (conversationId: string, change: { state: 'taken' } | { state: 'returned'; reason: ControlEnd }) => void;
@@ -235,7 +237,7 @@ export class BrowserScreens {
   async status(
     conversationId: string,
     token?: string,
-  ): Promise<{ open: boolean; site?: string; url?: string; acting?: true; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string; chat?: true } | null> {
+  ): Promise<{ open: boolean; site?: string; url?: string; acting?: true; control?: ControlState; blocked?: BlockedNavigation; access?: string; login?: true; movedTo?: string; chat?: true } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
     const open = screened(kind) && !this.#stopped && this.#current(conversationId) !== null;
@@ -257,6 +259,8 @@ export class BrowserScreens {
     }
     const blocked = this.#options.control?.blocked(conversationId) ?? null;
     const access = this.#options.control?.access?.(conversationId) ?? null;
+    // Only to the screen that drives (D-287): the note on what a login form does, when the page shows one.
+    const login = control === 'you' && (await this.#options.control?.loginForm?.(conversationId).catch(() => false)) === true;
     return {
       open,
       ...(site === null ? {} : { site }),
@@ -265,6 +269,7 @@ export class BrowserScreens {
       ...(control === undefined ? {} : { control }),
       ...(blocked === null ? {} : { blocked }),
       ...(access === null ? {} : { access }),
+      ...(login ? { login: true as const } : {}),
       // The Private chat of an access (D-281): there Arianna reads the pages, with the local model.
       ...(kind === 'browser' ? { chat: true } : {}),
     };

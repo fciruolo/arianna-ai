@@ -368,3 +368,18 @@ test('after «Apri» the core makes the approved call itself, before the model r
   const third = scripted([FETCH(address)]);
   assert.equal((await drain(later.id, third, other.browser)).at(-1), 'waiting-approval');
 });
+
+test('a reply that says «chiudo il browser» closes it (D-287); a reply that does not keeps it open', async () => {
+  const sql = db().sql;
+  const address = 'https://comune-finto.it/servizi';
+  const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+  const w = world();
+  const first = await postUserMessage(sql, conversationId, `Apri ${address}`);
+  assert.equal((await drain(first.task.id, scripted([OPEN(address), READ, REPLY('Ecco la pagina dei servizi.')]), w.browser)).at(-1), 'answered');
+  assert.equal(w.browser.holder, conversationId);
+  const second = await postUserMessage(sql, conversationId, 'Grazie, basta così');
+  assert.equal((await drain(second.task.id, scripted([REPLY('Prego! Ora chiudo il browser.')]), w.browser)).at(-1), 'answered');
+  assert.equal(w.browser.holder, null);
+  const [event] = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'browser.action' AND task_id = ${second.task.id}`;
+  assert.deepEqual(event?.payload, { conversationId, action: 'close', outcome: 'ok', from: 'reply' });
+});

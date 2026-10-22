@@ -603,6 +603,7 @@ const browserScreens = new BrowserScreens({
     driver: (conversationId) => agentBrowser.driverOf(conversationId),
     blocked: (conversationId) => agentBrowser.blockedOf(conversationId),
     access: (conversationId) => agentBrowser.accessOf(conversationId),
+    loginForm: (conversationId) => agentBrowser.loginFormOf(conversationId),
   },
   // Given back after an access in a work conversation, the browser passes to a new Private chat (D-281).
   onControl: (conversationId, change) => { afterControl({ sql, browser: agentBrowser, kind: conversationKind }, conversationId, change).catch(report); },

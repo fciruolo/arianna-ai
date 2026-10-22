@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- «La pagina … chiede un accesso» solo davanti a un vero modulo d'accesso (D-287): un campo password visibile, o un campo per l'utente col suo pulsante «Accedi» nello stesso modulo; non più per un link «Accedi», una casella di ricerca o il banner dei cookie, né per un mini accesso chiuso in un menu o messo fuori dalla pagina.
+- La nota «Unica eccezione, l'accesso…» mentre guidi il browser compare solo quando la pagina ha un modulo d'accesso (D-287).
+- Arianna distingue i risultati di una ricerca dal logo e dai menu (D-287): ogni elemento della pagina dice dove sta (contenuto principale, intestazione, menu, barra laterale, piè di pagina) e i link che sono titoli sono segnati; «clicca sul primo risultato» è il primo titolo del contenuto principale.
+- Quando Arianna scrive «chiudo il browser» il browser si chiude davvero (D-287); se lo stai guidando tu, Arianna dice che resta aperto e che lo chiudi tu con «Chiudi il browser».
+- Esc mentre guidi il browser arriva alla pagina (per esempio per chiudere una finestra del sito) invece di chiudere il pannello e restituire il browser (D-287); appena prendi il controllo lo schermo prende la tastiera.
+
 ## [0.166.1] - 2026-10-22
 
 ### Corretto

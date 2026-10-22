@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createContext, type Context, type PageConsent } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
-import { AgentBrowser, openOutsideConsent, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
+import { AgentBrowser, asksLogin, LOGIN_SCRIPT, openOutsideConsent, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
 import type { Sql } from '../src/db/client.ts';
 import type { BrowserManager } from '../src/browser/manager.ts';
 import type { NetworkScope } from '../src/browser/network.ts';
@@ -25,6 +25,11 @@ interface FakePage {
   hang?: boolean;
   /** A script of the page that ends when this does: an action under way. */
   wait?: Promise<void>;
+  /** What LOGIN_SCRIPT returns on this page (D-287). */
+  login?: unknown;
+  /** How many times LOGIN_SCRIPT ran, and a wait that holds it (D-287). */
+  loginRuns?: number;
+  loginWait?: Promise<void>;
 }
 
 function fakePage(state: FakePage): Page {
@@ -40,8 +45,11 @@ function fakePage(state: FakePage): Page {
     url: () => state.url,
     title: () => Promise.resolve(state.title),
     evaluate: async (script: unknown) => {
+      if (script === LOGIN_SCRIPT) state.loginRuns = (state.loginRuns ?? 0) + 1;
       if (state.hang === true) return new Promise<never>(() => undefined);
+      if (script === LOGIN_SCRIPT && state.loginWait !== undefined) await state.loginWait;
       if (state.wait !== undefined) await state.wait;
+      if (script === LOGIN_SCRIPT) return state.login;
       return script === READ_SCRIPT ? state.reading : undefined;
     },
     locator,
@@ -105,6 +113,7 @@ function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { se
         h.touches += 1;
         return Promise.resolve(fakePage(page));
       },
+      peekPage: () => fakePage(page),
       touch: () => { h.userTouches += 1; },
       close: () => { h.closed.push(id); active = null; return Promise.resolve(); },
     } as unknown as BrowserSession;
@@ -907,4 +916,101 @@ test('a gesture of the user during a command of the bar is kept; an older one is
   await pending;
   const user = h.scopes.filter((next) => next.driver === 'user').at(-1);
   assert.equal(user?.takeGesture?.(), true);
+});
+
+// D-287: the note on login forms on the screen of the user, and a reply that says it closes the browser.
+test('loginFormOf: only while the user drives, from LOGIN_SCRIPT, without counting as activity', async () => {
+  const h = harness();
+  h.page.login = { elements: [{ ref: 1, kind: 'password', label: 'Password' }] };
+  assert.equal(await h.browser.loginFormOf('a'), false);
+  await h.browser.act({ ...scope('a'), meta: { taskId: 't1' } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  // Arianna drives: no note.
+  assert.equal(await h.browser.loginFormOf('a'), false);
+  assert.equal(await h.browser.takeControl('a').done, true);
+  const touches = h.touches;
+  assert.equal(await h.browser.loginFormOf('a'), true);
+  assert.equal(await h.browser.loginFormOf('b'), false);
+  assert.equal(h.touches, touches);
+  // A page with only a link «Accedi» and a search box: no login form.
+  h.page.login = { elements: [{ ref: 1, kind: 'field', label: 'Cerca', type: 'text' }, { ref: 2, kind: 'button', label: 'Cerca', form: 0 }] };
+  assert.equal(await h.browser.loginFormOf('a'), false);
+  // A page that does not answer: no note.
+  h.page.hang = true;
+  assert.equal(await h.browser.loginFormOf('a'), false);
+});
+
+test('closeAfterReply: closes the browser of the conversation with Arianna driving, never while the user drives', async () => {
+  const h = harness();
+  assert.equal(await h.browser.closeAfterReply('a'), false);
+  await h.browser.act({ ...scope('a'), meta: { taskId: 't1' } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.equal(await h.browser.closeAfterReply('b'), false);
+  assert.equal(h.browser.holder, 'a');
+  assert.equal(await h.browser.takeControl('a').done, true);
+  assert.equal(await h.browser.closeAfterReply('a'), false);
+  assert.equal(h.browser.holder, 'a');
+  assert.equal(h.browser.returnControl('a'), true);
+  assert.equal(await h.browser.closeAfterReply('a'), true);
+  assert.equal(h.browser.holder, null);
+  assert.equal(h.closed.length, 1);
+  // Closed by Arianna, not by the user: the next action hears «not open».
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'not-open' });
+});
+
+test('asksLogin (D-287): a password field, or a user field and a sign-in button in one form; not a link «Accedi», a search box or a cookie banner', () => {
+  // A real login form.
+  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email', form: 0 }, { ref: 2, kind: 'password', label: 'Password', form: 0 }, { ref: 3, kind: 'button', label: 'Accedi', form: 0 }] }));
+  // The first page of a login in two steps.
+  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Nome utente', type: 'text', form: 1 }, { ref: 2, kind: 'button', label: 'Accedi', form: 1 }] }));
+  assert.ok(asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Indirizzo', type: 'email', form: 0 }, { ref: 2, kind: 'button', label: 'Sign in', form: 0 }] }));
+  // A shop: a search box in the header and a link «Accedi» (ferramentalombardi.it, 2026-10-22).
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Cerca prodotti', type: 'text', form: 0 }, { ref: 2, kind: 'button', label: 'Cerca', form: 0 }, { ref: 3, kind: 'link', label: 'Accedi' }] }));
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'link', label: 'Accedi' }, { ref: 2, kind: 'link', label: 'Login' }] }));
+  // A cookie banner.
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'button', label: 'Accetta tutti' }, { ref: 2, kind: 'button', label: 'Rifiuta' }, { ref: 3, kind: 'link', label: 'Accedi' }] }));
+  // A user field and a button «Accedi» in different forms, or a field outside any form.
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email', form: 0 }, { ref: 2, kind: 'button', label: 'Iscriviti', form: 0 }, { ref: 3, kind: 'button', label: 'Accedi', form: 1 }] }));
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Email', type: 'email' }, { ref: 2, kind: 'button', label: 'Accedi' }] }));
+  // A text field that is not for a user.
+  assert.ok(!asksLogin({ elements: [{ ref: 1, kind: 'field', label: 'Cosa cerchi?', type: 'text', form: 0 }, { ref: 2, kind: 'button', label: 'Accedi', form: 0 }] }));
+});
+
+test('parseReading keeps area, heading and form only in their shape (D-287)', () => {
+  const reading = parseReading({
+    elements: [
+      { ref: 1, kind: 'link', label: 'Logo', href: 'https://a-finto.it/', area: 'header', form: 0 },
+      { ref: 2, kind: 'link', label: 'Risultato', href: 'https://b-finto.it/', area: 'main', heading: true },
+      { ref: 3, kind: 'button', label: 'Accedi', area: 'altrove', heading: true, form: 2 },
+      { ref: 4, kind: 'field', label: 'Email', type: 'email', form: -1, area: 7 },
+    ],
+  });
+  assert.deepEqual(reading.elements, [
+    { ref: 1, kind: 'link', label: 'Logo', href: 'https://a-finto.it/', area: 'header' },
+    { ref: 2, kind: 'link', label: 'Risultato', href: 'https://b-finto.it/', area: 'main', heading: true },
+    { ref: 3, kind: 'button', label: 'Accedi', form: 2 },
+    { ref: 4, kind: 'field', label: 'Email', type: 'email' },
+  ]);
+});
+
+test('loginFormOf: never two checks at once; while one runs, the last answer (D-287)', async () => {
+  const h = harness();
+  h.page.login = { elements: [{ ref: 1, kind: 'password', label: 'Password' }] };
+  await h.browser.act({ ...scope('a'), meta: { taskId: 't1' } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.equal(await h.browser.takeControl('a').done, true);
+  assert.equal(await h.browser.loginFormOf('a'), true);
+  assert.equal(h.page.loginRuns, 1);
+  // A page whose script does not end: the first check runs on past its deadline.
+  let release = (): void => undefined;
+  h.page.loginWait = new Promise<void>((resolve) => { release = resolve; });
+  h.page.login = { elements: [] };
+  const first = h.browser.loginFormOf('a');
+  // While it runs, the next reads get the last answer and start no script.
+  assert.equal(await h.browser.loginFormOf('a'), true);
+  assert.equal(await h.browser.loginFormOf('a'), true);
+  assert.equal(h.page.loginRuns, 2);
+  release();
+  assert.equal(await first, false);
+  delete h.page.loginWait;
+  // Ended: a new check runs again.
+  assert.equal(await h.browser.loginFormOf('a'), false);
+  assert.equal(h.page.loginRuns, 3);
 });

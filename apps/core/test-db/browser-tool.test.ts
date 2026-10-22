@@ -24,6 +24,8 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import {
   BROWSER_ACTION_EVENT,
   browserConsent,
+  CLOSE_PAUSED,
+  FAILURE_TEXT,
   CLOSED_BY_USER_TEXT,
   browserResultText,
   accessReturnedLine,
@@ -261,6 +263,17 @@ test(`${String(MAX_ACTIONS_PER_TASK)} actions per answer: the next one is refuse
   const closed = await browserTool('browser.close', {}, { task: await mustLoad(task.id), context: createContext('L1', 'L1'), browser: { browser: browser as unknown as AgentBrowser, sql: db().sql } });
   assert.equal(closed.text, 'Browser closed.');
   assert.equal(browser.calls.length, 1);
+});
+
+test('browser.close while the user drives: the browser stays open and the model is told so; another action keeps the paused text (D-287)', async () => {
+  const conversationId = await workConversation();
+  const { task } = await postUserMessage(db().sql, conversationId, `Apri ${CATALOGO}`);
+  const browser = fakeBrowser([{ ok: false, reason: 'paused' }, { ok: false, reason: 'paused' }]);
+  const env = { task: await mustLoad(task.id), context: createContext('L1', 'L1'), browser: { browser: browser as unknown as AgentBrowser, sql: db().sql } };
+  const closed = await browserTool('browser.close', {}, env);
+  assert.equal(closed.text, `error: browser.close: ${CLOSE_PAUSED}`);
+  const read = await browserTool('browser.read', {}, env);
+  assert.equal(read.text, `error: browser.read: ${FAILURE_TEXT.paused}`);
 });
 
 test('private data or incognito: the tools are not offered, and browserTool refuses them', async () => {

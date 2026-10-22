@@ -1188,11 +1188,11 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
 export async function browserStatus(
   conversationId: string,
   screen?: string,
-): Promise<{ open: boolean; site: string | null; url: string | null; acting: boolean; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; movedTo: string | null }> {
+): Promise<{ open: boolean; site: string | null; url: string | null; acting: boolean; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; login: boolean; movedTo: string | null }> {
   const query = `conversationId=${encodeURIComponent(conversationId)}${screen === undefined ? '' : `&screen=${encodeURIComponent(screen)}`}`;
   const body = await call<{ open: unknown; site?: unknown; url?: unknown; acting?: unknown }>('GET', `/api/browser/screen?${query}`);
   const open = body.open === true;
-  const { control, blocked, access, chat } = parseControl(body);
+  const { control, blocked, access, chat, login } = parseControl(body);
   return {
     open,
     site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null,
@@ -1203,6 +1203,7 @@ export async function browserStatus(
     blocked: open ? blocked : null,
     access: open ? access : null,
     chat: open && chat,
+    login: open && login,
     movedTo: open ? null : parseMovedTo(body),
   };
 }

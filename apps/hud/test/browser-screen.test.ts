@@ -148,7 +148,9 @@ describe('BrowserScreen.vue', () => {
   it('gives the keyboard to the screen only when the control passes to it, never on the reads of the status nor while the bar is written in (D-286)', () => {
     assert.match(source, /function applyControl\(focus = false\)/);
     assert.match(source, /if \(you && focus && !editing\.value && keyboardIsFree\(\)\) current\.focus/);
-    assert.match(source, /applyControl\(before !== 'you' && status\.control === 'you'\)/);
+    assert.match(source, /const passed = before !== 'you' && status\.control === 'you';/);
+    // After the render (D-287): «Prendi il controllo» held the keyboard, and it goes away.
+    assert.match(source, /if \(passed\) void nextTick\(\(\) => applyControl\(true\)\)/);
     // The label follows the page of the core, not only the lines of the chat.
     assert.match(source, /liveSite \?\? site/);
     // The notice of a refused page goes when a page opens again (D-286); a command of the bar sets the site at once.
@@ -182,11 +184,35 @@ describe('main.ts', () => {
 describe('«Prendi il controllo» (D-264, passo 5)', () => {
   it('the status of the core: control and the refused page, anything else dropped', async () => {
     const { parseControl } = await import('../src/lib/browser-screen.ts');
-    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null, chat: false });
-    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null, chat: false });
-    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null, chat: false });
-    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null, chat: false });
-    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null, chat: false });
+    assert.deepEqual(parseControl({ open: true, control: 'you', blocked: { seq: 4, outcome: 'form' } }), { control: 'you', blocked: { seq: 4, outcome: 'form' }, access: null, chat: false, login: false });
+    assert.deepEqual(parseControl({ control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' } }), { control: 'other', blocked: { seq: 2, outcome: 'blocked', site: 'altro-finto.it' }, access: null, chat: false, login: false });
+    assert.deepEqual(parseControl({ control: 'admin', blocked: { seq: '4', outcome: 'form' } }), { control: null, blocked: null, access: null, chat: false, login: false });
+    assert.deepEqual(parseControl({ blocked: { seq: 1, outcome: 'ok' } }), { control: null, blocked: null, access: null, chat: false, login: false });
+    assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null, chat: false, login: false });
+  });
+
+  it('a login form on the page (D-287): only for the screen that drives', async () => {
+    const { parseControl } = await import('../src/lib/browser-screen.ts');
+    assert.equal(parseControl({ control: 'you', login: true }).login, true);
+    assert.equal(parseControl({ control: 'other', login: true }).login, false);
+    assert.equal(parseControl({ control: 'you', login: 'yes' }).login, false);
+    assert.equal(parseControl({ control: 'you' }).login, false);
+  });
+
+  it('Esc while the user drives goes to the page, never to the panel around the screen (D-287)', async () => {
+    const { escapeTarget } = await import('../src/lib/browser-screen.ts');
+    const esc = { key: 'Escape' };
+    // The screen holds the keyboard: noVNC sends it.
+    assert.equal(escapeTarget(esc, { driving: true, screen: true, free: true, field: false }), 'screen');
+    // Nothing of the chat holds the keyboard (after «Prendi il controllo»): the page gets it.
+    assert.equal(escapeTarget(esc, { driving: true, screen: false, free: true, field: false }), 'page');
+    // A field keeps its Esc; something else of the chat (a dialog) too; an IME is not a key.
+    assert.equal(escapeTarget(esc, { driving: true, screen: false, free: true, field: true }), 'chat');
+    assert.equal(escapeTarget(esc, { driving: true, screen: false, free: false, field: false }), 'chat');
+    assert.equal(escapeTarget({ key: 'Escape', isComposing: true }, { driving: true, screen: true, free: true, field: false }), 'chat');
+    // Not driving: Esc is the chat's, as before (it closes the panel).
+    assert.equal(escapeTarget(esc, { driving: false, screen: false, free: true, field: false }), 'chat');
+    assert.equal(escapeTarget({ key: 'Enter' }, { driving: true, screen: false, free: true, field: false }), 'chat');
   });
 
   it('every refused page has its sentence; a page the gateway refused says so (D-286: a click of the user opens any site)', async () => {
@@ -216,6 +242,9 @@ describe('«Prendi il controllo» (D-264, passo 5)', () => {
     assert.ok(source.includes('current.viewOnly = !you'));
     assert.ok(!source.includes("addEventListener('clipboard'"));
     assert.ok(source.includes('CONTROL_WARNING'));
+    // D-287: the note on login forms only when the page has one; Esc caught before the panel.
+    assert.ok(source.includes('v-if="access === null && login"'));
+    assert.ok(source.includes("window.addEventListener('keydown', onEscape, true)"));
   });
 });
 

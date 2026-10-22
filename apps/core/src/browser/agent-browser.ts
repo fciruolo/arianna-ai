@@ -90,6 +90,8 @@ export const MAX_TYPED = 200;
 /** Text of the page the script returns; the tool cuts it again for the model. */
 const MAX_SCRIPT_TEXT = 20_000;
 const ACTION_MS = 5_000;
+/** How long the check of a login form on the screen of the user may take (D-287): it runs every few seconds. */
+const LOGIN_CHECK_MS = 1_000;
 const LOAD_MS = 15_000;
 const NAVIGATION_START_MS = 1_500;
 /** Longest an action may take: a load and the redirects followed after it, with a margin. */
@@ -106,7 +108,20 @@ export interface PageElement {
   href?: string;
   /** field: the type of the input (text, search, email…), `textarea` for a text area. */
   type?: string;
+  /**
+   * Where the element is (D-287), from the landmarks of the page: `main` (main,
+   * article), `nav`, `aside`, `header` and `footer` of the page; absent when
+   * the page marks none around it.
+   */
+  area?: ElementArea;
+  /** A link that is a heading or holds one (D-287), as the title of a search result. */
+  heading?: true;
+  /** The form the element belongs to, numbered within one reading (D-287): a login is a user field and its button in one form. */
+  form?: number;
 }
+
+export type ElementArea = 'main' | 'nav' | 'aside' | 'header' | 'footer';
+const AREAS: readonly string[] = ['main', 'nav', 'aside', 'header', 'footer'];
 
 export interface PageReading {
   title: string;
@@ -300,6 +315,12 @@ export class AgentBrowser {
   readonly #options: AgentBrowserOptions;
   readonly #now: () => number;
   #held: Held | null = null;
+  /**
+   * The check of a login form under way and its last answer (D-287): the
+   * screen asks every few seconds, and a page that hangs never ends the
+   * script; while one runs, the next read gets the last answer.
+   */
+  #loginCheck: { session: BrowserSession; running: boolean; answer: boolean } | null = null;
   #queue: Promise<unknown> = Promise.resolve();
   #running = false;
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
@@ -548,6 +569,52 @@ export class AgentBrowser {
     if (this.holder !== conversationId || held === null) return null;
     const url = held.session.currentUrl();
     return url !== null && /^https?:/i.test(url) ? url : null;
+  }
+
+  /**
+   * Whether the page the user drives shows a login form now (D-287): the
+   * screen shows the note on what a login form does only then. LOGIN_SCRIPT,
+   * outside the queue (it reads, it acts on nothing) and within a second;
+   * false when the user does not drive the browser of `conversationId`, or
+   * when the page does not answer. Never two at once: while the script of an
+   * earlier check has not ended, the last answer of this browser.
+   */
+  async loginFormOf(conversationId: string): Promise<boolean> {
+    const held = this.#held;
+    if (this.#shutDown || this.holder !== conversationId || held === null || held.driver !== 'user') return false;
+    const page = held.session.peekPage?.() ?? null;
+    if (page === null || !/^https?:/i.test(page.url())) return false;
+    const last = this.#loginCheck?.session === held.session ? this.#loginCheck : null;
+    if (last?.running === true) return last.answer;
+    const check = { session: held.session, running: true, answer: last?.answer ?? false };
+    this.#loginCheck = check;
+    // The script itself, not the deadline, ends the check: a hung page keeps it running.
+    const script = page.evaluate(LOGIN_SCRIPT).finally(() => { check.running = false; });
+    try {
+      check.answer = asksLogin(parseReading(await withLimit(script, LOGIN_CHECK_MS)));
+    } catch {
+      check.answer = false;
+    }
+    return check.answer;
+  }
+
+  /**
+   * Closes the browser after an answer of Arianna that says she closes it
+   * (D-287: the local model wrote «chiudo il browser» without browser.close).
+   * In the queue, as browser.close: only the browser of `conversationId`, and
+   * never while the user drives it. True when it closed one.
+   */
+  closeAfterReply(conversationId: string): Promise<boolean> {
+    if (this.#shutDown || this.holder !== conversationId) return Promise.resolve(false);
+    const run = this.#queue.then(async () => {
+      this.#forgetClosed();
+      const held = this.#held;
+      if (held?.conversationId !== conversationId || held.driver !== 'agent') return false;
+      await this.#drop();
+      return true;
+    });
+    this.#queue = run.catch(() => undefined);
+    return run.catch(() => false);
   }
 
   /**
@@ -1239,22 +1306,62 @@ function scrollScript(direction: 'up' | 'down'): string {
 }
 
 /**
- * The fixed script of the reading (runs in the page): numbers the visible
- * elements, the ones on screen first, and returns the visible text. It never
- * reads the value of a field: labels come from aria-label, the label
- * element, placeholder, title, alt, or the text of the element; the value
- * attribute only of a button.
+ * The helpers of the scripts of the core in the page (READ_SCRIPT,
+ * LOGIN_SCRIPT). Only parents, children and attributes, never `closest` nor
+ * a selector inside an element: the tests run them on a page made of plain
+ * objects (D-287).
+ *
+ * `shown`: a box of some size, visible, and not wholly outside the document
+ * (D-287: ferramentalombardi.it keeps a real login form in a drop-down
+ * parked at x = -9296; left of 0, above 0, or right of the width one can
+ * scroll to).
+ * `clipped`: an element outside the box of a parent that cuts what overflows
+ * (`overflow: hidden` or `clip`: a menu closed by `max-height: 0`, a panel
+ * slid away, a slide of a carousel), D-287: it is not on screen, so it is not
+ * listed, and a closed mini login does not make a login page. A box that
+ * scrolls (`auto`, `scroll`) does not cut: its elements stay listed. A fixed
+ * element (or one inside a fixed box) is never taken as cut: the overflow of
+ * the parents above it does not hold it. An absolute element whose container
+ * is above the parent that cuts may still be taken as cut (a known limit).
+ * `areaOf`: the first landmark around the element; a header or footer inside
+ * a section (an article, a sidebar) is the section's, not the page's.
  */
-export const READ_SCRIPT = `(() => {
-  const MAX = ${String(MAX_ELEMENTS)};
-  const ATTR = ${JSON.stringify(REF_ATTRIBUTE)};
-  for (const old of document.querySelectorAll('[' + ATTR + ']')) old.removeAttribute(ATTR);
+const PAGE_HELPERS = `
   const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
   const shown = (element) => {
     const box = element.getBoundingClientRect();
     if (box.width < 1 || box.height < 1) return false;
+    // Wholly outside the document (a menu parked at left: -9999px): never on screen, however far one scrolls.
+    const left = box.left + (window.scrollX || 0);
+    const top = box.top + (window.scrollY || 0);
+    const width = Math.max((document.documentElement && document.documentElement.scrollWidth) || 0, window.innerWidth || 0);
+    if (left + box.width <= 0 || top + box.height <= 0 || left >= width) return false;
     const style = getComputedStyle(element);
     return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0;
+  };
+  const cuts = new Map();
+  const cutOf = (node) => {
+    if (!cuts.has(node)) {
+      const style = getComputedStyle(node);
+      const cut = (value) => value === 'hidden' || value === 'clip';
+      const x = style.display !== 'contents' && cut(style.overflowX);
+      const y = style.display !== 'contents' && cut(style.overflowY);
+      cuts.set(node, x || y ? { x, y, box: node.getBoundingClientRect() } : null);
+    }
+    return cuts.get(node);
+  };
+  const clipped = (element) => {
+    const box = element.getBoundingClientRect();
+    // A fixed element is not cut by the overflow of its parents (a dialog, a banner).
+    if (getComputedStyle(element).position === 'fixed') return false;
+    for (let node = element.parentElement; node && node.tagName !== 'HTML' && node.tagName !== 'BODY'; node = node.parentElement) {
+      if (getComputedStyle(node).position === 'fixed') return false;
+      const cut = cutOf(node);
+      if (!cut) continue;
+      if (cut.x && (box.right <= cut.box.left || box.left >= cut.box.right)) return true;
+      if (cut.y && (box.bottom <= cut.box.top || box.top >= cut.box.bottom)) return true;
+    }
+    return false;
   };
   const textOf = (element) => clean(element.getAttribute('aria-label') || (element.labels && element.labels[0] ? element.labels[0].innerText : '') || element.getAttribute('placeholder') || element.getAttribute('title') || element.getAttribute('alt') || (element.tagName === 'INPUT' ? '' : element.innerText) || element.getAttribute('name') || '');
   const kindOf = (element) => {
@@ -1275,13 +1382,79 @@ export const READ_SCRIPT = `(() => {
     }
     return 'button';
   };
+  const labelOf = (element, kind) => (kind === 'button' && element.tagName === 'INPUT' ? clean(element.getAttribute('value') || textOf(element)) : textOf(element));
+  const SECTIONS = ['ARTICLE', 'ASIDE', 'MAIN', 'NAV', 'SECTION'];
+  const inSection = (node) => {
+    for (let up = node.parentElement; up; up = up.parentElement) if (SECTIONS.includes(up.tagName)) return true;
+    return false;
+  };
+  const areaOf = (element) => {
+    for (let node = element; node && node.getAttribute; node = node.parentElement) {
+      const tag = node.tagName;
+      const role = node.getAttribute('role');
+      if (tag === 'MAIN' || role === 'main' || tag === 'ARTICLE' || role === 'article') return 'main';
+      if (tag === 'NAV' || role === 'navigation') return 'nav';
+      if (tag === 'ASIDE' || role === 'complementary') return 'aside';
+      if (role === 'banner' || (tag === 'HEADER' && !inSection(node))) return 'header';
+      if (role === 'contentinfo' || (tag === 'FOOTER' && !inSection(node))) return 'footer';
+    }
+    return undefined;
+  };
+  const HEADINGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+  const isHeading = (node) => HEADINGS.includes(node.tagName) || (node.getAttribute && node.getAttribute('role') === 'heading');
+  const holdsHeading = (node, depth) => {
+    if (depth > 6 || !node.children) return false;
+    for (const child of node.children) if (isHeading(child) || holdsHeading(child, depth + 1)) return true;
+    return false;
+  };
+  const headingOf = (element) => {
+    for (let node = element.parentElement; node; node = node.parentElement) if (isHeading(node)) return true;
+    return holdsHeading(element, 0);
+  };
+  const forms = [];
+  const formOf = (element) => {
+    let form = element.form || null;
+    for (let node = element.parentElement; !form && node; node = node.parentElement) if (node.tagName === 'FORM') form = node;
+    if (!form) return undefined;
+    if (!forms.includes(form)) forms.push(form);
+    return forms.indexOf(form);
+  };
+  const describe = (element, kind, ref) => {
+    const entry = { ref, kind, label: labelOf(element, kind) };
+    if (kind === 'link' && element.href) entry.href = String(element.href);
+    if (kind === 'field') entry.type = element.tagName === 'TEXTAREA' ? 'textarea' : (element.getAttribute('type') || 'text').toLowerCase();
+    const area = areaOf(element);
+    if (area) entry.area = area;
+    if (kind === 'link' && headingOf(element)) entry.heading = true;
+    if (kind !== 'link') {
+      const form = formOf(element);
+      if (form !== undefined) entry.form = form;
+    }
+    return entry;
+  };
+`;
+
+/**
+ * The fixed script of the reading (runs in the page): numbers the visible
+ * elements, the ones on screen first, and returns the visible text. It never
+ * reads the value of a field: labels come from aria-label, the label
+ * element, placeholder, title, alt, or the text of the element; the value
+ * attribute only of a button. An element cut away by a parent is not
+ * listed (D-287). Each element says where it is (`area`), a link whether it
+ * is a heading (`heading`), the others their form (`form`), D-287.
+ */
+export const READ_SCRIPT = `(() => {
+  const MAX = ${String(MAX_ELEMENTS)};
+  const ATTR = ${JSON.stringify(REF_ATTRIBUTE)};
+  for (const old of document.querySelectorAll('[' + ATTR + ']')) old.removeAttribute(ATTR);
+  ${PAGE_HELPERS}
   const height = window.innerHeight;
   const near = [];
   const far = [];
   for (const element of document.querySelectorAll('a[href], button, input, textarea, select, summary, [role=button], [role=link], [role=textbox], [role=searchbox]')) {
     if (!shown(element)) continue;
     const kind = kindOf(element);
-    if (kind === null) continue;
+    if (kind === null || clipped(element)) continue;
     const box = element.getBoundingClientRect();
     (box.bottom >= 0 && box.top <= height ? near : far).push([element, kind]);
   }
@@ -1294,12 +1467,7 @@ export const READ_SCRIPT = `(() => {
     const kind = chosen[order.get(element)][1];
     ref += 1;
     element.setAttribute(ATTR, String(ref));
-    let label = textOf(element);
-    if (kind === 'button' && element.tagName === 'INPUT') label = clean(element.getAttribute('value') || label);
-    const entry = { ref, kind, label };
-    if (kind === 'link' && element.href) entry.href = String(element.href);
-    if (kind === 'field') entry.type = element.tagName === 'TEXTAREA' ? 'textarea' : (element.getAttribute('type') || 'text').toLowerCase();
-    elements.push(entry);
+    elements.push(describe(element, kind, ref));
   }
   const top = window.scrollY;
   const max = Math.max(0, document.documentElement.scrollHeight - height);
@@ -1335,6 +1503,50 @@ export const READ_SCRIPT = `(() => {
   };
 })()`;
 
+/**
+ * The fixed script that tells whether the page shows a login form (D-287),
+ * for the screen of the user who drives: the visible fields and buttons with
+ * their form, never a value, never the text of the page, and no number left
+ * on the page (Arianna's reading stays as it was). The core keeps only the
+ * answer of asksLogin.
+ */
+export const LOGIN_SCRIPT = `(() => {
+  const MAX = ${String(MAX_ELEMENTS)};
+  ${PAGE_HELPERS}
+  const elements = [];
+  for (const element of document.querySelectorAll('input, button, [role=button]')) {
+    if (elements.length >= MAX) break;
+    if (!shown(element)) continue;
+    const kind = kindOf(element);
+    if ((kind !== 'password' && kind !== 'field' && kind !== 'button') || clipped(element)) continue;
+    elements.push(describe(element, kind, elements.length + 1));
+  }
+  return { elements };
+})()`;
+
+/** Words of a button that signs in, as a whole label (D-276). */
+const LOGIN_WORDS = /^(accedi|entra|login|log in|sign in|signin|accesso|area riservata|continua con la password)$/i;
+/** The label of a field for the user of an account (D-287): not a search box, not the name of a newsletter. */
+const USER_FIELD = /\b(e-?mail|utente|username|user|login|account|codice cliente)\b/i;
+
+/**
+ * Whether a page shows a login form (D-276, narrowed by D-287): a password
+ * field on screen, or one form with a field for the user (an email, or a
+ * text field named as a user) and a button named as a sign in (the first
+ * page of a login in two steps). A link «Accedi» in the header, a search box
+ * next to it or a cookie banner are not a login. Read on what the scripts of
+ * the core return, which a hostile page may shape: it only adds a hint.
+ */
+export function asksLogin(reading: Pick<PageReading, 'elements'>): boolean {
+  if (reading.elements.some((element) => element.kind === 'password')) return true;
+  const userForms = new Set<number>();
+  for (const element of reading.elements) {
+    if (element.kind !== 'field' || element.form === undefined) continue;
+    if (element.type === 'email' || ((element.type === 'text' || element.type === 'tel') && USER_FIELD.test(element.label))) userForms.add(element.form);
+  }
+  return reading.elements.some((element) => element.kind === 'button' && element.form !== undefined && userForms.has(element.form) && LOGIN_WORDS.test(element.label.trim()));
+}
+
 const KINDS: readonly string[] = ['link', 'button', 'field', 'password', 'choice', 'select'];
 
 /** Reads the current page with READ_SCRIPT; what the page returns is checked, it is untrusted. */
@@ -1358,6 +1570,9 @@ export function parseReading(raw: unknown): PageReading {
         label: text(entry.label, 120),
         ...(entry.kind === 'link' && typeof entry.href === 'string' ? { href: entry.href.slice(0, 2_000) } : {}),
         ...(entry.kind === 'field' && typeof entry.type === 'string' ? { type: entry.type.slice(0, 20) } : {}),
+        ...(typeof entry.area === 'string' && AREAS.includes(entry.area) ? { area: entry.area as ElementArea } : {}),
+        ...(entry.kind === 'link' && entry.heading === true ? { heading: true as const } : {}),
+        ...(entry.kind !== 'link' && typeof entry.form === 'number' && Number.isInteger(entry.form) && entry.form >= 0 && entry.form < 1_000 ? { form: entry.form } : {}),
       });
     }
   }
