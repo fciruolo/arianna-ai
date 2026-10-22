@@ -339,6 +339,9 @@ test('after «Apri» the core makes the approved call itself, before the model r
   assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
   assert.equal(model.requests.length, 2);
   // The page was opened before the model read anything, and the model read its outcome.
+  const events = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'browser.redo'`;
+  assert.deepEqual(events.map((event) => [event.payload.tool, event.payload.outcome]), [['browser.open', 'redone']]);
+  assert.doesNotMatch(JSON.stringify(events), /duckduckgo|Ruffo/);
   assert.deepEqual(w.pages.map((page) => page.rule), ['page']);
   const turns = await sql<{ step: number; result: string | null }[]>`SELECT step, result FROM task_turns WHERE task_id = ${task.id} ORDER BY step`;
   assert.equal(turns.length, 3);
@@ -356,6 +359,10 @@ test('after «Apri» the core makes the approved call itself, before the model r
   const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${refused.id}`;
   assert.equal(count?.n, 1);
   assert.ok(sawText(again.requests[2], REFUSED_SAVED));
+  // After «No» the core made nothing again: no page asked to the network, no redo.
+  assert.deepEqual(other.pages, []);
+  const redone = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM events WHERE task_id = ${refused.id} AND kind = 'browser.redo'`;
+  assert.equal(redone[0]?.n, 0);
   // A new message of the user: the same value asks again.
   const { task: later } = await postUserMessage(sql, no, `Riprova ${address}`);
   const third = scripted([FETCH(address)]);

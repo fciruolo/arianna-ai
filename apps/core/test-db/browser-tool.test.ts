@@ -31,6 +31,7 @@ import {
   MAX_ACTIONS_PER_TASK,
   NOT_HERE,
   TAKEN_TEXT,
+  PAGE_CHANGED,
   TASK_LIMIT,
   WAITING_BROWSER,
   writeClosedByUserLine,
@@ -83,6 +84,7 @@ interface FakeBrowser {
   act: (scope: BrowserScope, action: BrowserAction) => Promise<ActionResult>;
   release: (conversationId: string) => Promise<void>;
   openedAt: (conversationId: string) => number | null;
+  sameElement: (conversationId: string, ref: number, href?: string) => Promise<boolean>;
   userAddressesOf: (conversationId: string) => readonly string[];
   lastOpenedAt: (conversationId: string) => number | null;
   savedFor: (conversationId: string) => { opened: number | null; browsers: number[]; none: boolean };
@@ -106,6 +108,8 @@ function fakeBrowser(results: ActionResult[] = []): FakeBrowser {
     },
     // When its browser opened (D-283): none here, so no saved value is let go.
     openedAt: () => null,
+    // The element of a click made again after «Apri» (D-286): as it was read.
+    sameElement: () => Promise.resolve(true),
     userAddressesOf: () => [],
     lastOpenedAt: () => null,
     savedFor: () => ({ opened: null, browsers: [], none: true }),
@@ -334,4 +338,22 @@ test('D-286: the sites the user chose in the browser join the user consent of Ar
   const model = scripted([OPEN(CATALOGO), REPLY('Fatto.')]);
   await drain(task.id, model, browser);
   assert.deepEqual(browser.calls[0]?.scope.consent, { from: 'user', addresses: ['https://altro.example/', CATALOGO] } satisfies PageConsent);
+});
+
+test('D-286: after «Apri» on a link the click is made again only on the element as it was read; a page that changed goes back to the model', async () => {
+  const conversationId = await workConversation();
+  const { task } = await postUserMessage(db().sql, conversationId, `Apri ${CATALOGO} e segui il link alla scheda.`);
+  const browser = fakeBrowser([PAGE, { ok: false, reason: 'confirm', url: ALTRO, site: 'altro.example' }]);
+  browser.sameElement = () => Promise.resolve(false);
+  const model = scripted([OPEN(CATALOGO), CLICK(3), REPLY('La pagina è cambiata, la rileggo dopo.')]);
+  assert.equal((await drain(task.id, model, browser)).at(-1), 'waiting-approval');
+  const [approval] = await db().sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${task.id}`;
+  await recordDecision(db().sql, approval?.id ?? '', 'approved', 'web');
+  assert.equal((await drain(task.id, model, browser)).at(-1), 'answered');
+  // No click made again: two actions only, and the model read that the page changed.
+  assert.equal(browser.calls.length, 2);
+  assert.equal(await turnResult(task.id, 3), PAGE_CHANGED);
+  assert.ok(sawText(model.requests[2], PAGE_CHANGED));
+  const [redo] = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'browser.redo'`;
+  assert.deepEqual([redo?.payload.tool, redo?.payload.outcome], ['browser.click', 'page-changed']);
 });

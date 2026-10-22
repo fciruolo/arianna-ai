@@ -410,14 +410,21 @@ interface BrowserAsk {
   state: string;
   site: string;
   action: string;
+  /** The address of a card for a link (`browser.click`). */
+  url?: string;
+  /** Milliseconds since the card was asked. */
+  age: number;
 }
 
 async function browserAsksByStep(sql: Queryable, taskId: string): Promise<Map<number, BrowserAsk>> {
-  const rows = await sql<{ id: string; state: string; site: string | null; step: number | null; action: string }[]>`
-    SELECT id::text, state::text, detail->>'site' AS site, (detail->>'step')::int AS step, action
+  const rows = await sql<{ id: string; state: string; site: string | null; step: number | null; action: string; url: string | null; age: number | null }[]>`
+    SELECT id::text, state::text, detail->>'site' AS site, (detail->>'step')::int AS step, action, detail->>'url' AS url,
+      (extract(epoch FROM now() - requested_at) * 1000)::float8 AS age
     FROM approvals WHERE task_id = ${taskId} AND kind = 'browser'`;
   const asks = new Map<number, BrowserAsk>();
-  for (const row of rows) if (row.step !== null) asks.set(row.step, { id: row.id, state: row.state, site: row.site ?? '?', action: row.action });
+  for (const row of rows) {
+    if (row.step !== null) asks.set(row.step, { id: row.id, state: row.state, site: row.site ?? '?', action: row.action, ...(row.url === null ? {} : { url: row.url }), age: row.age ?? Number.POSITIVE_INFINITY });
+  }
   return asks;
 }
 
@@ -425,6 +432,26 @@ const WAITING_RESULTS: readonly string[] = [WAITING_BROWSER, WAITING_SEND, WAITI
 
 /** The calls the core makes again itself after «Apri» (D-286): the approved action, before the model reads anything. */
 const REDONE_TOOLS: readonly string[] = ['browser.open', 'browser.click', 'browser.type', 'web.fetch'];
+
+/**
+ * How long after the card a click or a typed text is made again by the core
+ * (D-286): the reading it acted on is no longer worth more; past it the model
+ * decides. An open and a web.fetch have no other limit than the card's.
+ */
+export const REDO_ELEMENT_MS = 5 * 60_000;
+
+/** What the model reads when the core does not make a click or a typed text again: the page changed (D-286). */
+export const PAGE_CHANGED = 'error: the page changed since the user was asked: read it again with browser.read, then make the action again if it is still what the user wants (the user already agreed).';
+
+/** The call to make again after «Apri», with the card it waited for (D-286). */
+export interface Redo {
+  answer: Extract<Turn['answer'], { action: 'call' }>;
+  approvalId: string;
+  /** A click or a typed text: the element to check first; the address of the card of a link. */
+  element?: { ref: number; url?: string };
+  /** Too old a card for an element: the model decides. */
+  stale: boolean;
+}
 
 /**
  * The call to make again right now (D-286, second trial in Chrome: the local
@@ -435,14 +462,19 @@ const REDONE_TOOLS: readonly string[] = ['browser.open', 'browser.click', 'brows
  * step, and the model reads its outcome after. Undefined otherwise (a «No»,
  * a card still waiting, a later turn already there).
  */
-export async function approvedRedo(sql: Queryable, taskId: string, turns: readonly Turn[]): Promise<Turn['answer'] | undefined> {
+export async function approvedRedo(sql: Queryable, taskId: string, turns: readonly Turn[], tools: readonly string[]): Promise<Redo | undefined> {
   const last = turns.reduce<Turn | undefined>((latest, turn) => (latest === undefined || turn.step > latest.step ? turn : latest), undefined);
   if (last === undefined || (last.result !== WAITING_BROWSER && last.result !== WAITING_PRIVATE)) return undefined;
-  if (last.answer.action !== 'call' || !REDONE_TOOLS.includes(last.answer.tool)) return undefined;
+  const answer = last.answer;
+  if (answer.action !== 'call' || !REDONE_TOOLS.includes(answer.tool) || !tools.includes(answer.tool)) return undefined;
   const ask = (await browserAsksByStep(sql, taskId)).get(last.step);
   if (ask?.state !== 'approved') return undefined;
   if ((last.result === WAITING_PRIVATE) !== (ask.action === SAVED_ACTION)) return undefined;
-  return last.answer;
+  if (last.result === WAITING_BROWSER && ask.action !== 'browser.click') return undefined;
+  if (answer.tool !== 'browser.click' && answer.tool !== 'browser.type') return { answer, approvalId: ask.id, stale: false };
+  const ref = answer.arguments.ref;
+  if (typeof ref !== 'number') return undefined;
+  return { answer, approvalId: ask.id, element: { ref, ...(answer.tool === 'browser.click' && ask.url !== undefined ? { url: ask.url } : {}) }, stale: ask.age > REDO_ELEMENT_MS };
 }
 
 /** The turns' results as the model reads them: a waiting click, a waiting send (D-281) or a saved value (D-283, browser or web.fetch) becomes the user's decision. */

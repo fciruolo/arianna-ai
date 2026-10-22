@@ -6,9 +6,11 @@ import type { Context } from '@arianna/policy';
 
 import { resolveHome } from '@arianna/config';
 import { committedAgents } from './support/committed-agents.ts';
-import { actionOf, asksLogin, browserOffered, browserResultText, FAILURE_TEXT, LOGIN_HINT, loginLine, readingText, WAITING_BROWSER } from '../src/orchestrator/browser-tool.ts';
+import { actionOf, approvedRedo, asksLogin, browserOffered, browserResultText, FAILURE_TEXT, REDO_ELEMENT_MS, LOGIN_HINT, loginLine, readingText, WAITING_BROWSER, WAITING_SEND } from '../src/orchestrator/browser-tool.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
-import { savedResultText } from '../src/orchestrator/saved-ask.ts';
+import { savedResultText, WAITING_PRIVATE } from '../src/orchestrator/saved-ask.ts';
+import type { Queryable } from '../src/db/client.ts';
+import type { Turn } from '../src/orchestrator/turns.ts';
 
 const arianna = committedAgents(resolveHome({})).get('arianna');
 
@@ -124,4 +126,40 @@ test('a browser busy in another chat: the model is told it cannot try again by i
   assert.match(FAILURE_TEXT.busy, /non posso riprovare/);
   assert.match(FAILURE_TEXT.busy, /chiudere il browser dell’altra chat/);
   assert.doesNotMatch(FAILURE_TEXT.busy, /riprova fra poco/);
+});
+
+/** A database that answers the cards of a task: rows as approvals would give them. */
+function cards(rows: { id: string; state: string; action: string; step: number; url?: string; age?: number }[]): Queryable {
+  return ((() => Promise.resolve(rows.map((row) => ({ id: row.id, state: row.state, site: 'altro.example', step: row.step, action: row.action, url: row.url ?? null, age: row.age ?? 1_000 })))) as unknown) as Queryable;
+}
+const callTurn = (step: number, tool: string, args: Record<string, unknown>, result: string): Turn =>
+  ({ step, runId: 'run', label: 'L1', answer: { action: 'call', tool, arguments: args }, thought: null, thoughtMs: null, result, messageId: null }) as unknown as Turn;
+const ALL = ['browser.open', 'browser.click', 'browser.type', 'web.fetch', 'browser.read'];
+
+test('approvedRedo: the core makes again only the call of a card the user approved, as the last turn (D-286)', async () => {
+  const open = callTurn(2, 'browser.open', { url: 'https://altro.example/' }, WAITING_PRIVATE);
+  const approved = await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.private', step: 2 }]), 't', [open], ALL);
+  assert.deepEqual(approved, { answer: open.answer, approvalId: 'c1', stale: false });
+  // «No», a card still waiting, expired: nothing made again (after «No» the open is never redone).
+  for (const state of ['rejected', 'pending', 'expired']) {
+    assert.equal(await approvedRedo(cards([{ id: 'c1', state, action: 'browser.private', step: 2 }]), 't', [open], ALL), undefined, state);
+  }
+  // No card at that step, or a card of another kind.
+  assert.equal(await approvedRedo(cards([]), 't', [open], ALL), undefined);
+  assert.equal(await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.click', step: 2 }]), 't', [open], ALL), undefined);
+  assert.equal(await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.send', step: 2 }]), 't', [callTurn(2, 'browser.click', { ref: 3 }, WAITING_BROWSER)], ALL), undefined);
+  // «Invia» of a chat of an access (D-281) is never made again by the core.
+  assert.equal(await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.send', step: 2 }]), 't', [callTurn(2, 'browser.click', { ref: 3 }, WAITING_SEND)], ALL), undefined);
+  // A tool no longer offered to this step.
+  assert.equal(await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.private', step: 2 }]), 't', [open], ['browser.read']), undefined);
+  // A later turn already there: the model went on.
+  assert.equal(await approvedRedo(cards([{ id: 'c1', state: 'approved', action: 'browser.private', step: 2 }]), 't', [open, callTurn(3, 'browser.read', {}, 'letto')], ALL), undefined);
+});
+
+test('approvedRedo: a click or a typed text names its element, and is stale past REDO_ELEMENT_MS (D-286)', async () => {
+  const click = callTurn(4, 'browser.click', { ref: 3 }, WAITING_BROWSER);
+  const fresh = await approvedRedo(cards([{ id: 'c2', state: 'approved', action: 'browser.click', step: 4, url: 'https://altro.example/pagina' }]), 't', [click], ALL);
+  assert.deepEqual(fresh, { answer: click.answer, approvalId: 'c2', element: { ref: 3, url: 'https://altro.example/pagina' }, stale: false });
+  const old = await approvedRedo(cards([{ id: 'c2', state: 'approved', action: 'browser.click', step: 4, url: 'https://altro.example/pagina', age: REDO_ELEMENT_MS + 1 }]), 't', [click], ALL);
+  assert.equal(old?.stale, true);
 });

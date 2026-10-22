@@ -873,3 +873,38 @@ test('a command of the bar takes away a pending gesture; a site the user chose w
   assert.deepEqual(reload?.consent, { from: 'user', addresses: ['https://nuovo-finto.it/', 'https://comune-finto.it/servizi'] });
   assert.equal(reload.takeGesture, undefined);
 });
+
+test('sameElement: the element of a reading still there as read, before a click is made again (D-286)', async () => {
+  const h = harness();
+  const link = { ref: 1, kind: 'link', label: 'Scheda', href: 'https://altro-finto.it/scheda' };
+  h.page.reading = { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: '', elements: [link], scrolled: 0 };
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.act(scope('a'), { kind: 'read' });
+  assert.equal(await h.browser.sameElement('a', 1, 'https://altro-finto.it/scheda#top'), true);
+  // Another conversation, another number, another address of the card: no.
+  assert.equal(await h.browser.sameElement('b', 1), false);
+  assert.equal(await h.browser.sameElement('a', 2), false);
+  assert.equal(await h.browser.sameElement('a', 1, 'https://terzo-finto.it/'), false);
+  // The page moved the element: another label or address at that number.
+  h.page.reading = { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: '', elements: [{ ...link, label: 'Elimina' }], scrolled: 0 };
+  assert.equal(await h.browser.sameElement('a', 1), false);
+  // The page changed since the reading: no reading worth anything.
+  h.page.reading = { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: '', elements: [link], scrolled: 0 };
+  await h.browser.act(scope('a'), { kind: 'read' });
+  h.page.url = 'https://comune-finto.it/altra';
+  assert.equal(await h.browser.sameElement('a', 1), false);
+});
+
+test('a gesture of the user during a command of the bar is kept; an older one is gone (D-286)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.takeControl('a').done;
+  h.page.wait = new Promise<void>((resolve) => { setTimeout(resolve, 5); });
+  const pending = h.browser.userCommand('a', { kind: 'reload' });
+  await new Promise((resolve) => setImmediate(resolve));
+  h.clock.now += 1;
+  h.browser.userGesture('a');
+  await pending;
+  const user = h.scopes.filter((next) => next.driver === 'user').at(-1);
+  assert.equal(user?.takeGesture?.(), true);
+});

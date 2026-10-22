@@ -75,8 +75,8 @@ export function droppedKeysym(keysym: number): boolean {
 }
 
 const CONTROL_KEYS = [0xffe3, 0xffe4];
-/** Enter, keypad Enter and Space: the keys that follow a link or press a button (D-286). */
-const ACTIVATION_KEYS = [0xff0d, 0xff8d, 0x20];
+/** Enter and keypad Enter: the keys that follow a link or send a form (D-286); Space is a key of a text too. */
+const ACTIVATION_KEYS = [0xff0d, 0xff8d];
 const SHIFT_KEYS = [0xffe1, 0xffe2];
 /** I, J and C, either case: with Ctrl and Shift, the developer tools. */
 const DEVTOOLS_LETTERS = [0x49, 0x69, 0x4a, 0x6a, 0x43, 0x63];
@@ -115,8 +115,8 @@ export interface RfbFilter {
   /** Keys pressed and clicks forwarded so far in control. */
   readonly counts: Readonly<InputCounts>;
   /**
-   * Enter, keypad Enter and Space pressed so far in control (D-286): with the
-   * clicks, the only keys that choose a page (a key of a text does not).
+   * Enter and keypad Enter pressed so far in control (D-286): with the
+   * clicks, the only keys that choose a page (a key of a text does not, Space neither).
    */
   readonly activations: number;
   push(chunk: Buffer): FilterStep;

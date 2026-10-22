@@ -525,7 +525,7 @@ export class BrowserScreens {
         if (after.keys !== before.keys || after.clicks !== before.clicks || step.forward.some((part) => part[0] === 4 || part[0] === 5)) {
           screen.lastInput = this.#now();
           this.#safely(() => { this.#options.control?.input(screen.conversationId); });
-          // A click, Enter or Space chooses a page (D-286); a key of a text never.
+          // A click or Enter chooses a page (D-286); a key of a text, Space included, never.
           if (after.clicks !== before.clicks || filter.activations !== activationsBefore) this.#safely(() => { this.#options.control?.gesture?.(screen.conversationId); });
         }
       }

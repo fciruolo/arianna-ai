@@ -358,6 +358,7 @@ export class AgentBrowser {
     const held = this.#held;
     if (this.holder !== conversationId || held === null) return null;
     // The page the tab shows now (D-286: back and forward from the cache of Chromium have no navigation of the network).
+    // For the bar and the label of the screen only: no decision of consent is made on it.
     const shown = held.session.currentUrl();
     if (shown !== null && /^https?:/i.test(shown)) {
       const site = siteOf(shown);
@@ -503,6 +504,39 @@ export class AgentBrowser {
     return this.#userAddresses.get(conversationId) ?? [];
   }
 
+  /**
+   * Whether the element `ref` of the last reading is still the same on the
+   * page (D-286: before the core makes a click or a typed text again after
+   * «Apri»): the page is the one read, the page is read again in its place,
+   * and the element at that number has the same kind, label and address (the
+   * address of the card of a link, `href`, too). The new reading takes the
+   * place of the old one. False otherwise, or when the browser is not this
+   * conversation's with Arianna driving. In the queue of the actions.
+   */
+  sameElement(conversationId: string, ref: number, href?: string): Promise<boolean> {
+    if (this.#shutDown || this.holder !== conversationId) return Promise.resolve(false);
+    const run = this.#queue.then(async () => {
+      const held = this.#held;
+      if (held?.conversationId !== conversationId || held.driver !== 'agent' || held.reread) return false;
+      const before = held.elements.get(ref);
+      const page = await held.session.currentPage();
+      if (before === undefined || held.readAt === undefined || held.readAt !== page.url()) return false;
+      let reading: PageReading;
+      try {
+        reading = await withLimit(readPage(page), ACTION_MS);
+      } catch {
+        return false;
+      }
+      held.elements = new Map(reading.elements.map((element) => [element.ref, element]));
+      held.readAt = page.url();
+      const after = held.elements.get(ref);
+      if (after === undefined || after.kind !== before.kind || after.label !== before.label || after.href !== before.href) return false;
+      return href === undefined || (after.href !== undefined && withoutFragment(after.href) === withoutFragment(href));
+    });
+    this.#queue = run.catch(() => undefined);
+    return run.catch(() => false);
+  }
+
   /** Whether an action of Arianna runs now in the browser of `conversationId` (D-286: the bar of the screen is off meanwhile). */
   actingFor(conversationId: string): boolean {
     return this.#running && !this.#userRunning && this.#held?.conversationId === conversationId && this.#held.driver === 'agent';
@@ -564,6 +598,7 @@ export class AgentBrowser {
       this.#running = true;
       this.#userRunning = true;
       // A command of the bar is no click on the page: a gesture before it is gone, and none is left after it.
+      const commandStart = this.#now();
       held.gestureUsed = true;
       // As the user's, without a gesture: only the address written in the bar counts as written (back, forward and reload never choose a site).
       const userScope = networkScope({ ...held.scope, consent: withWritten(held.scope.consent, written) }, 'user', held.saved);
@@ -581,7 +616,8 @@ export class AgentBrowser {
         if (!result.ok) for (const ref of lent) held.saved.delete(ref);
         this.#running = false;
         this.#userRunning = false;
-        held.gestureUsed = true;
+        // A click of the user during the command keeps its gesture; an older one is gone.
+        if (held.gestureAt < commandStart) held.gestureUsed = true;
         if (this.#held === held) {
           this.#touch(held);
           if (wasAgent && held.driver === 'agent') {
@@ -1090,6 +1126,27 @@ function refSelector(ref: number): string {
 function towards(result: ActionResult, site: string | undefined): ActionResult {
   if (result.ok || result.reason !== 'confirm-private' || site === undefined || site === '') return result;
   return { ...result, site };
+}
+
+/** `work` within `ms`, or a rejection: a script of the page that never answers holds nothing. */
+async function withLimit<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('late')); }, ms); })]);
+  } finally {
+    clearTimeout(timer);
+    work.catch(() => undefined);
+  }
+}
+
+function withoutFragment(address: string): string {
+  try {
+    const url = new URL(address);
+    url.hash = '';
+    return url.href;
+  } catch {
+    return address;
+  }
 }
 
 /** Why the last navigation failed, from the network of the job. */

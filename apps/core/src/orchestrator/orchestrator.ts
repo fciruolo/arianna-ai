@@ -79,7 +79,7 @@ import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineP
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
 import { approvedPrivateSteps, REFUSED_SAVED, refusedSaved, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
-import { approvedRedo, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
+import { approvedRedo, PAGE_CHANGED, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -1241,8 +1241,21 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const planner: Planner = plannerModel === undefined ? 'self' : 'claude';
       // After «Apri» of a card of the browser (D-286): the core makes the approved call again itself, as this step,
       // and the model reads its outcome after; never the old page first.
-      const redo = await approvedRedo(sql, task.id, turns);
-      const redone = redo !== undefined && redo.action === 'call' && tools.includes(redo.tool) ? redo : undefined;
+      const redo = await approvedRedo(sql, task.id, turns, tools);
+      // A click or a typed text only on the element as it was read, within REDO_ELEMENT_MS (D-286): otherwise the model reads the page again.
+      if (redo?.element !== undefined) {
+        const agentBrowser = options.browser?.agent;
+        const same = !redo.stale && agentBrowser !== undefined && task.conversationId !== null && (await agentBrowser.sameElement(task.conversationId, redo.element.ref, redo.element.url));
+        if (!same) {
+          await recordTurn(sql, { taskId: task.id, step, runId, answer: redo.answer, label, result: PAGE_CHANGED });
+          await appendEvent(sql, { kind: 'browser.redo', label: 'L0', taskId: task.id, runId, payload: { approvalId: redo.approvalId, tool: redo.answer.tool, outcome: 'page-changed' } });
+          await show(task, step, 'error', 'browser · la pagina è cambiata: la rileggo');
+          return { kind: 'continue', usage: { steps: 0 } };
+        }
+      }
+      const redone = redo?.answer;
+      // The call made again by the core is recorded as such (D-286): the card and the tool, never its arguments.
+      if (redo !== undefined) await appendEvent(sql, { kind: 'browser.redo', label: 'L0', taskId: task.id, runId, payload: { approvalId: redo.approvalId, tool: redo.answer.tool, outcome: 'redone' } });
       if (redone === undefined) await show(task, step, 'thinking');
       // The reply of this step, opened before the model writes (D-249): its thinking and text go live; it is stored only if the step answers.
       const live = task.conversationId === null || redone !== undefined ? undefined : await openReply(sql, task.id, { runId });
