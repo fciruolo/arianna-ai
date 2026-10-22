@@ -305,12 +305,41 @@ def speak_parts(family: str, text: str) -> list[str]:
         # The speech of macOS obeys commands written as [[...]] (silence, volume, rate): a reply that
         # quotes a mail or a page must not drive the voice, so the brackets are taken out.
         text = SPEECH_COMMAND.sub(" ", text)
-        return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", text).split("\n")) if part]
+        sentences = (piece.strip() for piece in SENTENCE_END.sub("\\1\n", text).split("\n"))
+        return [short for part in sentences if part for short in short_pieces(part)]
     if family in QWEN3_FAMILIES:
         # CustomVoice generates the whole text at once and drifts on long ones: a sentence
         # each. Digits it reads in English or Chinese, then goes on in that language: words.
         return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", numbers_in_words(text)).split("\n")) if part]
     return [text]
+
+
+# Characters `say` gets at once (D-290): it cannot stop inside a piece, so a long
+# sentence without stops would hold an interruption until written (about 1 s here).
+SAY_PIECE_CHARS = 160
+# A comma, a dash or a closing bracket: a pause the voice makes anyway.
+SOFT_BREAK = re.compile(r"[,)\u2013\u2014-]\s")
+# Any space, the no-break one and tabs too: a word is never cut at one of them.
+SPACE = re.compile(r"\s")
+
+
+def short_pieces(text: str, limit: int = SAY_PIECE_CHARS) -> list[str]:
+    """A sentence in pieces of at most `limit` characters: at the last comma or
+    dash before the limit, else the last space; a word longer than that is cut.
+    Pure, for the tests."""
+    pieces = []
+    while len(text) > limit:
+        head = text[: limit + 1]
+        soft = [match.end() for match in SOFT_BREAK.finditer(head)]
+        spaces = [match.start() for match in SPACE.finditer(head)]
+        cut = soft[-1] if soft and soft[-1] > limit // 3 else (spaces[-1] if spaces else 0)
+        if cut <= 0:
+            cut = limit
+        pieces.append(text[:cut].strip())
+        text = text[cut:].strip()
+    if text:
+        pieces.append(text)
+    return [piece for piece in pieces if piece]
 
 
 # Qwen3-TTS-12Hz makes 12.5 audio tokens a second.

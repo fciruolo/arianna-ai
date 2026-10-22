@@ -24,7 +24,7 @@ import {
 import { loadAgent, type LoadedAgent } from '@arianna/agents';
 import { Secret } from '@arianna/vault';
 
-import { changedSections, createSettingsPage, SettingsError, type SettingsChange, type SettingsPage } from '../src/settings-page.ts';
+import { changedSections, createSettingsPage, present, SettingsError, type SettingsChange, type SettingsPage } from '../src/settings-page.ts';
 import { skillRefusals } from '../src/skills-catalog.ts';
 import { createUserAgents } from '../src/user-agents.ts';
 
@@ -765,5 +765,17 @@ describe('notifications (I-1)', () => {
     for (const notifications of bad) assert.throws(() => page.update({ fingerprint: fingerprint(), values: { notifications } }), refused('invalid'), JSON.stringify(notifications));
     assert.equal(text(), before);
     assert.deepEqual(changes, []);
+  });
+});
+
+describe('present (D-290)', () => {
+  const federica = { id: 'macos-federica', runtime: 'system' as const, voice: 'Federica (Premium)', files: [] };
+  it('a voice of macOS is present only when installed, never from its empty list of files', () => {
+    assert.equal(present(root, federica, ['Alice', 'Federica (Premium)']), true);
+    assert.equal(present(root, federica, ['Alice']), false);
+    assert.equal(present(root, federica), false);
+  });
+  it('a model with files is still read from the disk', () => {
+    assert.equal(present(root, { id: 'nothing-here', runtime: 'mlx', files: [{ path: 'w.bin', url: 'https://example.org/w', sizeBytes: 1, sha256: 'a'.repeat(64) }] }, ['Federica (Premium)']), false);
   });
 });

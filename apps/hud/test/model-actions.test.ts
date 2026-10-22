@@ -73,6 +73,11 @@ describe('actionButtons', () => {
     assert.equal(actionButtons(local('fake-a', MISSING))[0]?.text, 'Scarica');
     assert.deepEqual(kinds(local('fake-a')), ['verify', 'remove']);
   });
+  it('a voice of macOS (D-291) has nothing to download, verify or remove', () => {
+    const voice = { runtime: 'system', sizeBytes: 0, hasFiles: false, missingBytes: 0 } as const;
+    assert.deepEqual(kinds(local('macos-federica', voice)), []);
+    assert.deepEqual(kinds(local('macos-federica', { ...voice, present: false, state: 'missing' })), []);
+  });
 
   it('a partial download is resumed and can be removed; wrong files after a verification are downloaded again', () => {
     const partial = local('fake-a', { present: false, state: 'missing', missingBytes: 6_000_000_000 });

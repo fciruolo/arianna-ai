@@ -259,7 +259,7 @@ test('an invalid result is refused before anything is written', () => {
   assert.equal(currentSettings(home, EMPTY_CATALOG), undefined);
 });
 
-// D-290: a voice of macOS for the calls, when installed; else Kokoro.
+// D-290: a voice of macOS for the calls, when installed; else nothing suggested.
 const VOICES = parseCatalog(`${CATALOG_TEXT}  - id: kokoro-fake
     family: kokoro
     runtime: mlx
@@ -277,9 +277,10 @@ const VOICES = parseCatalog(`${CATALOG_TEXT}  - id: kokoro-fake
     files: []
 `);
 
-test('the voice of the calls (D-290): the voice of macOS when installed, else Kokoro; defaults only with the first', async () => {
+test('the voice of the calls (D-290): the voice of macOS when installed, else none with Invio; defaults only with the first', async () => {
   assert.equal(suggestedTts(VOICES, ['Alice', 'Finta (Premium)'])?.id, 'macos-fake');
-  assert.equal(suggestedTts(VOICES, ['Alice'])?.id, 'kokoro-fake');
+  // Kokoro is never suggested: Invio would choose a download (arianna:install pulls it).
+  assert.equal(suggestedTts(VOICES, ['Alice']), undefined);
   assert.equal(suggestedTts(CATALOG, ['Finta (Premium)']), undefined);
   assert.deepEqual(defaultSettings(DEFAULT_SETTINGS, VOICES, ['Finta (Premium)']).roles, { tts: 'macos-fake' });
   // Without the voice of macOS the defaults stay without tts: Kokoro would only be a download.
@@ -291,9 +292,22 @@ test('the voice of the calls (D-290): the voice of macOS when installed, else Ko
   assert.ok(installed.said.some((line) => line.includes('macos-fake (macos-say, system')));
   const missing = scripted(['', '', '', '', '', '', '', '', '']);
   const withoutVoice = await runWizard(missing, context({ catalog: VOICES, systemVoices: [] }));
-  assert.equal(withoutVoice?.roles.tts, 'kokoro-fake');
-  // A voice of macOS that is not installed is not offered.
+  assert.equal(withoutVoice?.roles.tts, undefined);
+  // A voice of macOS that is not installed is not offered, and the wizard says how to add it.
   assert.ok(!missing.said.some((line) => line.includes('macos-fake')));
+  assert.ok(missing.said.some((line) => line.includes('Finta (Premium) non è installata') && line.includes('Gestisci voci')));
+  assert.ok(!installed.said.some((line) => line.includes('non è installata')));
+  // Kokoro stays a choice, by its number; and a Kokoro already in [roles] is kept by Invio.
+  const chosen = await runWizard(scripted(['', '', '1', '', '', '', '', '', '']), context({ catalog: VOICES, systemVoices: [] }));
+  assert.equal(chosen?.roles.tts, 'kokoro-fake');
+  const kept = await runWizard(scripted(['', '', '', '', '', '', '', '', '']), context({ catalog: VOICES, systemVoices: [], settings: { ...DEFAULT_SETTINGS, roles: { tts: 'kokoro-fake' } } }));
+  assert.equal(kept?.roles.tts, 'kokoro-fake');
+  // Invio on a voice of macOS already chosen but not found now keeps it, and says so.
+  const absent = scripted(['', '', '', '', '', '', '', '', '']);
+  const stays = await runWizard(absent, context({ catalog: VOICES, systemVoices: [], settings: { ...DEFAULT_SETTINGS, roles: { tts: 'macos-fake' } } }));
+  assert.equal(stays?.roles.tts, 'macos-fake');
+  assert.ok(absent.said.some((line) => line.includes('Con Invio resta macos-fake')));
+  assert.ok(!absent.said.some((line) => line.includes('resta vuota')));
 });
 
 test('installed executors are looked up on PATH, never run', () => {

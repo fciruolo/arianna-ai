@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 from arianna_voice.call_request import parse_call
-from arianna_voice.models import SYSTEM_FAMILY, ModelError, ModelRef, Models, speak_parts
+from arianna_voice.models import SAY_PIECE_CHARS, SYSTEM_FAMILY, ModelError, ModelRef, Models, short_pieces, speak_parts
 from arianna_voice.system_voice import SystemVoice, SystemVoiceError, parse_voice_list, wav_pcm16
 from arianna_voice.trial import RequestError, parse_speak
 from arianna_voice.wav import AudioError
@@ -87,6 +87,21 @@ class PureTest(unittest.TestCase):
 
     def test_one_sentence_at_a_time(self) -> None:
         self.assertEqual(speak_parts(SYSTEM_FAMILY, "Ciao! Ho 3 cose da dirti.  Va bene?"), ["Ciao!", "Ho 3 cose da dirti.", "Va bene?"])
+
+    def test_a_long_sentence_without_stops_goes_in_short_pieces(self) -> None:
+        # One piece is written by `say` without a pause: an interruption waits at most one piece.
+        words = " ".join(f"parola{index}" for index in range(80))
+        parts = speak_parts(SYSTEM_FAMILY, words + ".")
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(0 < len(part) <= SAY_PIECE_CHARS for part in parts))
+        self.assertEqual(" ".join(parts), words + ".")
+        # At the last comma when there is one, never inside a word.
+        commas = "uno, " + "a" * 20 + " " + ("bb " * 30) + "fine, " + ("cc " * 40)
+        first = speak_parts(SYSTEM_FAMILY, commas)[0]
+        self.assertTrue(first.endswith("fine,"), first)
+        self.assertEqual(short_pieces("x" * 400), ["x" * 160, "x" * 160, "x" * 80])
+        self.assertEqual(short_pieces("Breve."), ["Breve."])
+        self.assertTrue(all(piece.startswith("parola") for piece in short_pieces("\u00a0".join(["parola"] * 40))))
 
     def test_embedded_speech_commands_are_taken_out(self) -> None:
         # A reply quoting a mail with [[slnc 60000]] must not silence or bend the voice.

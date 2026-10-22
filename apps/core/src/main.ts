@@ -712,9 +712,10 @@ const live = await startLiveFeed(sql, { onError: report });
 // The calls (D-066), on the voice in place: off, they are refused. Limits,
 // voice and outgoing rules are read at each call (D-071).
 const voiceSettings = () => settings.current().voice ?? DEFAULT_VOICE;
-// The voices of macOS (D-290), read once now and again at most once a minute in the background.
+// The voices of macOS (D-290), read in the background now and again at most once a minute:
+// the start does not wait on `say` (up to 10 s), a voice is "not installed" until the first list.
 const macVoices = systemVoices();
-await macVoices.refresh();
+void macVoices.refresh();
 // Read at each request, like the roles: a new catalog entry needs no restart.
 const candidates = () =>
   trialModels(
@@ -772,6 +773,7 @@ const settingsPage = createSettingsPage({
   userHome: userHomeOf(),
   dataDir: config.paths.data,
   running: () => settings.current(),
+  systemVoices: () => macVoices.names(),
   agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
   // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
   // Computed at each request, with the disabled cards too: skills are assigned before turning an agent on.
@@ -1453,6 +1455,7 @@ const server = await startApiServer({
       adapters: () => adapters,
       actions: modelActions,
       reload: () => localReload.view(),
+      systemVoices: () => macVoices.names(),
     }),
   modelActions,
   modelReload: localReload,

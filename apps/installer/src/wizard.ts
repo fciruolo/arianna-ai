@@ -66,11 +66,16 @@ function offered(model: CatalogEntry, systemVoices: readonly string[]): boolean 
 
 /**
  * The speech model to suggest (D-290): a voice of macOS when one of the catalog
- * is installed (nothing to download, little memory), else Kokoro.
+ * is installed (nothing to download, little memory). None otherwise: Invio
+ * must not pick Kokoro, which `arianna:install` would then download.
  */
 export function suggestedTts(catalog: ModelCatalog, systemVoices: readonly string[]): CatalogEntry | undefined {
-  const candidates = catalog.models.filter((model) => model.roles.includes('tts') && offered(model, systemVoices));
-  return candidates.find((model) => model.runtime === 'system') ?? candidates.find((model) => model.family === 'kokoro');
+  return catalog.models.find((model) => model.roles.includes('tts') && model.runtime === 'system' && offered(model, systemVoices));
+}
+
+/** The voices of macOS of the catalog that are not installed, to say how to add them (D-290). */
+function missingSystemVoices(catalog: ModelCatalog, systemVoices: readonly string[]): string[] {
+  return catalog.models.flatMap((model) => (model.runtime === 'system' && model.voice !== undefined && !systemVoices.includes(model.voice) ? [model.voice] : []));
 }
 
 /**
@@ -112,15 +117,18 @@ async function confirm(io: Prompter, question: string, fallback: boolean): Promi
 }
 
 /** Index of the chosen option, or `undefined` for "none" (0). */
-async function choose(io: Prompter, question: string, options: string[], fallback: number | undefined): Promise<number | undefined> {
+/** What `choose` returns when Invio keeps a value that is not among the options. */
+const KEEP = -1;
+
+async function choose(io: Prompter, question: string, options: string[], fallback: number | undefined, keep?: string): Promise<number | undefined> {
   options.forEach((option, index) => {
     io.say(`  ${String(index + 1)}. ${option}`);
   });
   io.say('  0. nessuno');
-  const shown = fallback === undefined ? '0' : String(fallback + 1);
+  const shown = keep ?? (fallback === undefined ? '0' : String(fallback + 1));
   for (;;) {
     const answer = await io.ask(`${question} [${shown}] `);
-    if (answer === '') return fallback;
+    if (answer === '') return keep === undefined ? fallback : KEEP;
     const number = Number(answer);
     if (Number.isInteger(number) && number >= 0 && number <= options.length) return number === 0 ? undefined : number - 1;
     io.say(`Scrivi un numero fra 0 e ${String(options.length)}.`);
@@ -157,10 +165,21 @@ async function stepModels(io: Prompter, context: WizardContext, settings: Settin
     if (candidates.length === 0) continue;
     io.say(`Modello per ${label}:`);
     const current = candidates.findIndex((model) => model.id === roles.get(role));
+    const absent = role === 'tts' ? missingSystemVoices(context.catalog, systemVoices) : [];
+    // A voice of macOS already in [roles] but not found now (removed, or `say` failed): Invio keeps it, said aloud.
+    const kept = role === 'tts' && current < 0 ? context.catalog.models.find((model) => model.id === roles.get(role) && model.runtime === 'system') : undefined;
+    if (absent.length > 0 && suggestedTts(context.catalog, systemVoices) === undefined) {
+      const voices = absent.length === 1 ? `La voce di macOS ${absent.join('')} non è installata` : `Le voci di macOS ${absent.join(', ')} non sono installate`;
+      io.say(`  ${voices}: si aggiungono in Impostazioni di Sistema → Accessibilità → Contenuti letti ad alta voce → Voce di sistema → Gestisci voci (Italiano), poi rilanci pnpm arianna:init --reconfigure.`);
+      if (kept !== undefined) io.say(`  Con Invio resta ${kept.id}, già scelta: le chiamate partono quando la voce è installata.`);
+      else if (current < 0) io.say('  Con Invio la voce delle chiamate resta vuota; le altre scelte sono modelli da scaricare.');
+    }
     const suggested = role === 'tts' ? suggestedTts(context.catalog, systemVoices) : undefined;
-    const preferred = suggested === undefined ? candidates.findIndex((model) => model.status === 'verified') : candidates.indexOf(suggested);
+    // The voice of the calls is suggested only when it is a voice of macOS: nothing to download.
+    const preferred = role === 'tts' ? (suggested === undefined ? -1 : candidates.indexOf(suggested)) : candidates.findIndex((model) => model.status === 'verified');
     const fallback = current >= 0 ? current : preferred >= 0 ? preferred : undefined;
-    const picked = await choose(io, 'Scelta', candidates.map(describe), fallback);
+    const picked = await choose(io, 'Scelta', candidates.map(describe), fallback, kept?.id);
+    if (picked === KEEP) continue;
     const entry = picked === undefined ? undefined : candidates[picked];
     if (entry === undefined) roles.delete(role);
     else roles.set(role, entry.id);

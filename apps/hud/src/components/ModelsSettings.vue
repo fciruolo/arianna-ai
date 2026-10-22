@@ -156,7 +156,9 @@ const changes = computed(() => unsavedCount(props.form, props.base));
 const memory = computed(() => (overview.value === null ? null : memorySummary(overview.value.memory, overview.value.local)));
 const localCount = computed(() => {
   const local = overview.value?.local ?? [];
-  return { total: local.length, present: local.filter((model) => model.present).length, loaded: local.filter((model) => model.state === 'loaded').length, missing: local.filter((model) => !model.present).map((model) => model.id) };
+  // A voice of macOS (D-291) is installed in the system, never downloaded: not counted here.
+  const files = local.filter((model) => model.runtime !== 'system');
+  return { total: files.length, present: files.filter((model) => model.present).length, loaded: files.filter((model) => model.state === 'loaded').length, missing: files.filter((model) => !model.present).map((model) => model.id) };
 });
 const cloudCount = computed(() => {
   const cloud = overview.value?.cloud ?? [];
@@ -482,7 +484,7 @@ const factKey = 'text-[13px] text-muted';
           <label :for="`models-role-${role}`" class="text-[14px] font-medium">{{ ROLE_TEXT[role].task }}</label>
           <select :id="`models-role-${role}`" v-model="form.roles[role]" class="field min-w-0 px-2.5 py-1.5 text-[14px]">
             <option :value="undefined">— nessuno —</option>
-            <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : ' (da scaricare)' }}</option>
+            <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : model.runtime === 'system' ? ' (non installata)' : ' (da scaricare)' }}</option>
             <!-- A model of the file the catalog no longer has stays visible. -->
             <option v-if="form.roles[role] !== undefined && !roleOptions(catalog, role).some((model) => model.id === form.roles[role])" :value="form.roles[role]">
               {{ form.roles[role] }} (non più nel catalogo)
@@ -593,7 +595,7 @@ const factKey = 'text-[13px] text-muted';
               </div>
             </div>
             <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-line bg-line @2xl:grid-cols-3">
-              <div :class="fact"><dt :class="factKey">Spazio su disco</dt><dd class="text-[14.5px]">{{ sizeText(current.view.sizeBytes) }}<span v-if="!current.view.present" class="text-warn"> · da scaricare</span></dd></div>
+              <div :class="fact"><dt :class="factKey">Spazio su disco</dt><dd class="text-[14.5px]"><template v-if="current.view.runtime === 'system'">nessuno, è una voce di macOS</template><template v-else>{{ sizeText(current.view.sizeBytes) }}<span v-if="!current.view.present" class="text-warn"> · da scaricare</span></template></dd></div>
               <div :class="fact"><dt :class="factKey">Memoria che occupa</dt><dd class="text-[14.5px]">almeno {{ current.view.ramMinGib }} GB</dd></div>
               <div :class="fact"><dt :class="factKey">Quanto testo ricorda</dt><dd class="text-[14.5px]" :class="{ 'text-muted': current.view.contextTokens === null }">{{ pagesText(current.view.contextTokens) }}</dd></div>
               <div :class="fact"><dt :class="factKey">Affidabilità</dt><dd class="text-[14.5px]" :class="current.view.status === 'verified' ? '' : 'text-warn'">{{ reliabilityText(current.view.status) }}</dd></div>
@@ -607,6 +609,8 @@ const factKey = 'text-[13px] text-muted';
                   ><template v-if="place.gib !== null">, circa {{ place.gib }} GB</template><template v-if="place.busy">, sta lavorando adesso</template>
                 </template>
               </template>
+              <template v-else-if="current.view.runtime === 'system' && current.view.present">Voce di macOS installata: la legge il Mac, niente da scaricare.</template>
+              <template v-else-if="current.view.runtime === 'system'">La voce non è installata su questo Mac: aggiungila in Impostazioni di Sistema → Accessibilità → Contenuti letti ad alta voce → Voce di sistema → Gestisci voci (Italiano), poi torna qui. Niente da scaricare da Arianna.</template>
               <template v-else-if="current.view.present">Sul disco, non in memoria: si carica alla prima richiesta.</template>
               <template v-else>I file non sono ancora sul Mac: «Scarica» li prende da internet.<template v-if="current.view.suitedRoles.length > 0"> Si può già scegliere in «Chi fa cosa».</template></template>
             </p>

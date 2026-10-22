@@ -237,6 +237,8 @@ export interface SettingsPageOptions {
   dataDir: string;
   /** The configuration in use (`settings.current()`). */
   running: () => AriannaConfig;
+  /** The voices of macOS installed now (D-290); absent, none is. */
+  systemVoices?: () => readonly string[];
   /** Agent → the cloud models its card allows (D-116): `[agents]` names only these agents and models. */
   agentModels: () => Record<string, readonly CloudModel[]>;
   /** Agent → why it may receive no skills, null when it may (D-161); absent, no agent may. */
@@ -868,8 +870,12 @@ function configMessage(error: unknown): string | undefined {
   return error instanceof Error && error.name === 'ConfigError' ? error.message : undefined;
 }
 
-/** Every file of the model in its folder (data/models/<id> or data/guard/models/<id>, D-203) with its size (sizes, not sha256). */
-export function present(dataDir: string, entry: Pick<CatalogEntry, 'id' | 'dir' | 'files'>): boolean {
+/**
+ * Every file of the model in its folder (data/models/<id> or data/guard/models/<id>, D-203) with its size (sizes, not sha256).
+ * A voice of macOS has no files (D-290): it is present when `systemVoices` (the installed ones) names it.
+ */
+export function present(dataDir: string, entry: Pick<CatalogEntry, 'id' | 'dir' | 'files' | 'runtime' | 'voice'>, systemVoices: readonly string[] = []): boolean {
+  if (entry.runtime === 'system') return entry.voice !== undefined && systemVoices.includes(entry.voice);
   const folder = modelPath(dataDir, entry);
   return entry.files.every((file) => {
     try {
@@ -992,7 +998,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       ramMinGib: entry.ramMinGib,
       roles: [...entry.roles],
       status: entry.status,
-      present: present(options.dataDir, entry),
+      present: present(options.dataDir, entry, options.systemVoices?.()),
     }));
     try {
       const settings = readSettings(file.text, options.home, file.catalog, options.userHome);

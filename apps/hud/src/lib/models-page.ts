@@ -164,6 +164,13 @@ export const LOCAL_STATE_TEXT: Record<LocalState, { text: string; tone: Tone }> 
   missing: { text: 'da scaricare', tone: 'warn' },
 };
 
+/** A voice of macOS (D-290) has nothing on the disk: it is installed in the system, or not. */
+export const SYSTEM_STATE_TEXT: Record<LocalState, { text: string; tone: Tone }> = {
+  loaded: { text: 'installata', tone: 'ok' },
+  'on-disk': { text: 'installata', tone: 'ok' },
+  missing: { text: 'non installata', tone: 'warn' },
+};
+
 export const CLOUD_STATE_TEXT: Record<CloudState, { text: string; tone: Tone }> = {
   on: { text: 'acceso', tone: 'ok' },
   off: { text: 'spento', tone: 'muted' },
@@ -229,7 +236,7 @@ export function entryOf(view: ModelView): ModelEntry {
       sub: `${provider} · Mac · ${view.family}`,
       provider,
       badge: badgeOf(provider === 'Sconosciuto' ? view.id : provider),
-      state: LOCAL_STATE_TEXT[view.state],
+      state: (view.runtime === 'system' ? SYSTEM_STATE_TEXT : LOCAL_STATE_TEXT)[view.state],
       roles: view.roles,
       agents: view.agents,
       inUse: view.roles.length > 0,

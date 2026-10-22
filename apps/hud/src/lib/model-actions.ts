@@ -88,7 +88,8 @@ export function actionButtons(view: LocalModelView, running?: ModelAction): Acti
     const text = wrong.length > 0 && view.missingBytes === 0 ? 'Riscarica i file sbagliati' : view.hasFiles && view.missingBytes < view.sizeBytes ? 'Riprendi lo scaricamento' : 'Scarica';
     buttons.push({ kind: 'download', text, ...(other === undefined ? {} : { blocked: other }) });
   }
-  if (view.present) buttons.push({ kind: 'verify', text: 'Verifica', ...(other === undefined ? {} : { blocked: other }) });
+  // A voice of macOS (D-291) has no files to verify.
+  if (view.present && view.runtime !== 'system') buttons.push({ kind: 'verify', text: 'Verifica', ...(other === undefined ? {} : { blocked: other }) });
   if (view.loaded.length > 0) {
     const busy = view.loaded.some((place) => place.busy);
     buttons.push({ kind: 'unload', text: 'Scarica dalla memoria', ...(busy ? { blocked: 'Una richiesta lo sta usando adesso.' } : {}) });

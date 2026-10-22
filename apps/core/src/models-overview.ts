@@ -292,6 +292,8 @@ export interface ModelsOverviewOptions {
   actions?: Pick<ModelActions, 'list' | 'trash' | 'disk'>;
   /** oMLX reloading after a download (D-201, local-reload.ts). */
   reload?: () => ReloadView;
+  /** The voices of macOS installed now (D-290); absent, none is. */
+  systemVoices?: () => readonly string[];
 }
 
 /**
@@ -333,11 +335,12 @@ export async function loadModelsOverview(sql: Queryable, options: ModelsOverview
   } catch {
     errors.evals = 'the trials cannot be read';
   }
+  const voices = options.systemVoices?.() ?? [];
   return buildModelsOverview({
     catalog,
     cloudCatalog,
     config: options.config(),
-    present: (entry) => present(options.dataDir, entry),
+    present: (entry) => present(options.dataDir, entry, voices),
     memory: options.memory?.(),
     lastEvals: trials,
     adapters: options.adapters(),

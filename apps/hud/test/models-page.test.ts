@@ -137,6 +137,12 @@ describe('modelEntries', () => {
     assert.deepEqual(modelEntries(null), []);
   });
 
+  it('a voice of macOS (D-291) is installed or not, never on the disk', () => {
+    const voice = (present: boolean) => modelEntries({ ...overview, local: [local('macos-federica', { runtime: 'system', present, state: present ? 'on-disk' : 'missing' })], cloud: [] })[0]?.state;
+    assert.deepEqual(voice(true), { text: 'installata', tone: 'ok' });
+    assert.deepEqual(voice(false), { text: 'non installata', tone: 'warn' });
+  });
+
   it('names, providers, states and badges', () => {
     const qwen = byKey('local:qwen3.8-27b-4bit');
     assert.equal(qwen.provider, 'Qwen');

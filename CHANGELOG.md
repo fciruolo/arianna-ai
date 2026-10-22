@@ -4,6 +4,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Impostazioni → Modelli: una voce di macOS si dice «installata» o «non installata» (con i passi per aggiungerla), non più «sul disco» anche quando manca (D-291).
+- `pnpm arianna:init`: senza Federica installata, Invio lascia vuota la voce delle chiamate invece di scegliere Kokoro, che `arianna:install` poi scaricava; il wizard dice come installare la voce (D-291).
+- Il core parte senza aspettare l'elenco delle voci di `say` (fino a 10 s) (D-291).
+- Chiamate con la voce del Mac: una frase lunga senza punteggiatura va a `say` in pezzi di al più 160 caratteri, così un'interruzione non aspetta la fine della frase (D-291).
+
 ## [0.167.0] - 2026-10-22
 
 ### Cambiato
