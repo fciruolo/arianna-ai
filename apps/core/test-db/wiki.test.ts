@@ -324,6 +324,20 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.equal(bad.status, 400);
   assert.match(String(bad.body.error), /line 2: link/);
   assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/pane', base: edit.body.version, title: 'Pane', body: 'x', extra: true })).status, 400);
+  // D-284: the page saves by itself within a writing session, one version in .storia per session; «Duplica» creates with a body.
+  const torta = await send('POST', '/api/wiki/create', { kind: 'page', path: 'cucina/torta', title: 'Torta (copia)', body: '## In breve\n\nCopia.\n' });
+  assert.equal(torta.status, 201);
+  assert.match(((await send('GET', '/api/wiki/page?path=cucina/torta')).body.page as { body: string }).body, /Copia\./);
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'page', path: 'cucina/crostata', title: 'Crostata', body: 7 })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/create', { kind: 'folder', path: 'dolci', body: 'x' })).status, 400);
+  const tortaFirst = await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: torta.body.version, title: 'Torta', body: 'uno\n', session: 'sessione-di-prova-0001' });
+  assert.equal(tortaFirst.status, 200);
+  const tortaSecond = await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaFirst.body.version, title: 'Torta', body: 'due\n', session: 'sessione-di-prova-0001' });
+  assert.equal(tortaSecond.status, 200);
+  assert.equal(((await send('GET', '/api/wiki/page?path=cucina/torta')).body.page as { versions: unknown[] }).versions.length, 1);
+  assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 'corto' })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 12 })).status, 400);
+  assert.equal((await send('POST', '/api/wiki/delete', { path: 'cucina/torta', base: tortaSecond.body.version })).status, 200);
   const movedPage = await send('POST', '/api/wiki/move-now', { kind: 'page', from: 'cucina/pane', to: 'forno/pane', base: edit.body.version });
   assert.equal(movedPage.status, 200);
   assert.equal(movedPage.body.path, 'forno/pane');

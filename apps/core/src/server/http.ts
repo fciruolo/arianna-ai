@@ -181,6 +181,7 @@ import {
   restoreWikiVersion,
   WIKI_STATUS,
   WikiError,
+  WikiWriteSessions,
   wikiCitationTargets,
   visibleWikiTree,
 } from '../wiki.ts';
@@ -1058,6 +1059,8 @@ function knowledgeRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError
  * Everything up to L2, nothing leaves the Mac; events with counts only.
  */
 function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
+  // The writing sessions of the pages (D-284), in memory: one version in .storia per session.
+  const writeSessions = new WikiWriteSessions();
   const need = (): NonNullable<ApiServerOptions['capture']> => {
     if (capture === undefined) throw new HttpError(404, 'not found');
     return capture;
@@ -1132,24 +1135,28 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
     route('POST', '/api/wiki/edit', async (request) => {
       const { home, rules } = need();
       const body = await readJson(request);
-      onlyFields(body, ['path', 'base', 'title', 'body']);
+      onlyFields(body, ['path', 'base', 'title', 'body', 'session']);
       if (typeof body.path !== 'string' || typeof body.base !== 'string' || typeof body.title !== 'string' || typeof body.body !== 'string') throw new HttpError(400, 'path, base, title and body are required');
-      const edited = editWikiPage(home, rules, body.path, body.base, body.title, body.body);
+      if (body.session !== undefined && typeof body.session !== 'string') throw new HttpError(400, 'session must be a string');
+      // The chat saves by itself while the user writes (D-284): one version in .storia per writing session.
+      const edited = editWikiPage(home, rules, body.path, body.base, body.title, body.body, new Date(), body.session === undefined ? undefined : { sessions: writeSessions, token: body.session });
       await recordWikiEvent(sql, 'wiki.edited', {}).catch(onError);
       return { body: { version: edited.version } };
     }),
     route('POST', '/api/wiki/create', async (request) => {
       const { home, rules } = need();
       const body = await readJson(request);
-      onlyFields(body, ['kind', 'path', 'title']);
+      onlyFields(body, ['kind', 'path', 'title', 'body']);
       if (body.kind === 'folder') {
-        if (typeof body.path !== 'string' || body.title !== undefined) throw new HttpError(400, 'a folder takes a path only');
+        if (typeof body.path !== 'string' || body.title !== undefined || body.body !== undefined) throw new HttpError(400, 'a folder takes a path only');
         createWikiFolder(home, rules, body.path);
         await recordWikiEvent(sql, 'wiki.created', { kind: 'folder' }).catch(onError);
         return { status: 201, body: { path: body.path } };
       }
       if (body.kind !== 'page' || typeof body.path !== 'string' || typeof body.title !== 'string') throw new HttpError(400, 'kind, path and title are required');
-      const created = createUserWikiPage(home, rules, body.path, body.title);
+      if (body.body !== undefined && typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
+      // «Duplica» (D-284): a new page with the text of the page duplicated, checked as any page the user writes.
+      const created = createUserWikiPage(home, rules, body.path, body.title, body.body);
       await recordWikiEvent(sql, 'wiki.created', { kind: 'page' }).catch(onError);
       return { status: 201, body: created };
     }),

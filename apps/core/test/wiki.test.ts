@@ -42,6 +42,7 @@ import {
   visibleWikiTree,
   restoreWikiVersion,
   WikiError,
+  WikiWriteSessions,
   wikiCitationTargets,
   wikiCandidates,
   wikiTree,
@@ -312,6 +313,54 @@ describe('the user writes the wiki', () => {
     assert.match(readFileSync(join(root, 'kb/wiki/laravel/octane/_indice.md'), 'utf8'), /Swoole, a mano/);
     restoreWikiVersion(root, RULES, 'laravel/octane/swoole', view.versions[0]?.id ?? '', view.version, NOW);
     assert.equal(readWikiView(root, RULES, 'laravel/octane/swoole').title, PAGE.title);
+  });
+
+  it('the page that saves by itself keeps one version per writing session (D-284)', () => {
+    const root = home();
+    const created = createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', undefined, NOW);
+    const sessions = new WikiWriteSessions();
+    const token = 'sessione-di-prova-0001';
+    const save = (base: string, text: string, at: Date, session: string | null = token): string =>
+      editWikiPage(root, RULES, 'cucina/pane', base, 'Pane', `## In breve\n\n${text}\n`, at, session === null ? undefined : { sessions, token: session }).version;
+    const later = (minutes: number): Date => new Date(NOW.getTime() + minutes * 60_000);
+    // Positive: three saves of one session, a version only for the first.
+    let version = save(created.version, 'uno', later(0));
+    version = save(version, 'due', later(1));
+    version = save(version, 'tre', later(9));
+    assert.equal(pageVersions(root, 'cucina/pane').length, 1);
+    // More than 10 minutes without saves: a new version.
+    version = save(version, 'quattro', later(20));
+    assert.equal(pageVersions(root, 'cucina/pane').length, 2);
+    // A new opening of the page (another token): a new version.
+    version = save(version, 'cinque', later(21), 'altra-apertura-0000002');
+    assert.equal(pageVersions(root, 'cucina/pane').length, 3);
+    // Negative: the page changed by something else after the session's last save (a restore here): a new version, even with the same token.
+    const restored = readWikiView(root, RULES, 'cucina/pane');
+    restoreWikiVersion(root, RULES, 'cucina/pane', restored.versions[0]?.id ?? '', version, later(22));
+    const afterRestore = readWikiView(root, RULES, 'cucina/pane');
+    const count = afterRestore.versions.length;
+    save(afterRestore.version, 'sei', later(22), 'altra-apertura-0000002');
+    assert.equal(pageVersions(root, 'cucina/pane').length, count + 1);
+    // Without a session, every save keeps a version, as before.
+    const plain = readWikiView(root, RULES, 'cucina/pane');
+    save(plain.version, 'sette', later(23), null);
+    assert.equal(pageVersions(root, 'cucina/pane').length, count + 2);
+    // A token that is not one: refused before anything is written.
+    const shown = readWikiView(root, RULES, 'cucina/pane');
+    for (const bad of ['corto', 'con spazi dentro e basta', `x${'a'.repeat(70)}`]) {
+      assert.throws(() => save(shown.version, 'otto', later(24), bad), (error) => error instanceof WikiError && error.code === 'invalid' && error.message === 'session', bad);
+    }
+    assert.equal(readWikiView(root, RULES, 'cucina/pane').version, shown.version);
+  });
+
+  it('«Duplica» is a new page with the text of the page, checked as any page the user writes (D-284)', () => {
+    const root = home();
+    const body = '## In breve\n\nCon [[inbox/2026-10-21-100000-octane|la nota]].\n';
+    createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', body, NOW);
+    const copy = createUserWikiPage(root, RULES, 'cucina/pane-copia', 'Pane (copia)', readWikiView(root, RULES, 'cucina/pane').body, NOW);
+    assert.equal(readWikiView(root, RULES, copy.path).body.trim(), body.trim());
+    assert.equal(readWikiView(root, RULES, copy.path).title, 'Pane (copia)');
+    assert.throws(() => createUserWikiPage(root, RULES, 'cucina/pane-copia-2', 'Pane (copia)', '<script>x</script>', NOW), (error) => error instanceof WikiError && error.code === 'invalid');
   });
 
   it('refuses what would carry a note out or point outside the user’s notes, naming the line and never the text', () => {

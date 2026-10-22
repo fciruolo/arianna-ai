@@ -1485,23 +1485,69 @@ function composeUserPage(title: string, body: string, now: Date): string {
   return `${header}\n\n${body}`;
 }
 
+/** After this long without a save, the next save of a writing session keeps a version again (D-284). */
+export const WRITE_SESSION_IDLE_MS = 10 * 60_000;
+/** The token of a writing session, made by the chat at each opening of a page. */
+const SESSION_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
+/** At most this many pages remembered: the oldest go first. */
+const MAX_WRITE_SESSIONS = 500;
+
+/**
+ * The writing sessions of the pages (D-284), in memory only: the page saves
+ * by itself 1.5 s after the last change, and only the first save of a
+ * session keeps the version before in .storia, so the 20 versions stay
+ * useful. A new session starts at each opening of the page (a new token),
+ * after WRITE_SESSION_IDLE_MS without saves, or when the page is no longer
+ * what the session wrote last (an approval, a restore, another tab).
+ */
+export class WikiWriteSessions {
+  private readonly last = new Map<string, { token: string; at: number; version: string }>();
+
+  /** Whether a save of `path` by `token` over `version` keeps the version before (a new session). */
+  starts(path: string, token: string, version: string, now: Date): boolean {
+    const seen = this.last.get(path);
+    return seen === undefined || seen.token !== token || seen.version !== version || now.getTime() - seen.at > WRITE_SESSION_IDLE_MS;
+  }
+
+  saved(path: string, token: string, version: string, now: Date): void {
+    this.last.delete(path);
+    this.last.set(path, { token, at: now.getTime(), version });
+    while (this.last.size > MAX_WRITE_SESSIONS) {
+      const oldest = this.last.keys().next().value;
+      if (oldest === undefined) break;
+      this.last.delete(oldest);
+    }
+  }
+}
+
+/** A save inside a writing session of the chat (D-284). */
+export interface WriteSession {
+  sessions: WikiWriteSessions;
+  token: string;
+}
+
 /**
  * «Modifica» by the user, saved at once (D-280): only over the page as it was
- * shown (`base`); the version before is kept for «Ripristina». An update
- * proposal waiting on the page expires (it was made for the old text).
+ * shown (`base`); the version before is kept for «Ripristina», once per
+ * writing session when `session` is given (D-284). An update proposal
+ * waiting on the page expires (it was made for the old text).
  */
-export function editWikiPage(home: string, rules: LabelRules, path: string, base: string, title: string, body: string, now = new Date()): { version: string } {
+export function editWikiPage(home: string, rules: LabelRules, path: string, base: string, title: string, body: string, now = new Date(), session?: WriteSession): { version: string } {
   if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
   if (!SHA.test(base)) throw new WikiError('invalid', 'base is required');
+  if (session !== undefined && !SESSION_TOKEN.test(session.token)) throw new WikiError('invalid', 'session');
   const current = readWikiPageFile(home, path);
   if (current === undefined) throw new WikiError('not-found', 'page not found');
   if (current.version !== base) throw new WikiError('changed', 'the page changed after it was shown: reload it');
   const checked = checkUserPage(home, rules, title, body);
   const content = composeUserPage(checked.title, checked.body, now);
+  const keep = session === undefined || session.sessions.starts(path, session.token, current.version, now);
   replaceFile(home, pageSegments(path), content, current.version);
-  keepVersion(home, path, current.raw, now);
+  if (keep) keepVersion(home, path, current.raw, now);
+  const version = sha256(content);
+  session?.sessions.saved(path, session.token, version, now);
   rebuildIndexes(home, rules);
-  return { version: sha256(content) };
+  return { version };
 }
 
 /** «Nuova pagina» by the user: never over a page or a folder; the folders above it are made. */
