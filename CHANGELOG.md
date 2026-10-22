@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Wiki come Notion (D-284): clic destro su una voce dell'albero (o «…», Maiusc+F10, tasto menù) con Nuova pagina, Nuova cartella, Rinomina in linea, Sposta in…, Duplica, Copia citazione ed Elimina; sulla parte vuota Nuova pagina e Nuova cartella alla radice.
+- Nell'editor della Wiki (D-284): menù «/» per i blocchi (titoli, elenchi, da fare, citazione, codice, tabella, linea, citazione di nota), barra sulla selezione (grassetto, corsivo, barrato, codice, titoli) e maniglia ⋮⋮ per trascinare un blocco, che con un clic lo elimina, duplica o trasforma.
+
+### Cambiato
+
+- La pagina della Wiki si scrive sempre, senza «Modifica»: titolo grande in alto e testo si salvano da soli 1,5 s dopo l'ultima modifica («Salvataggio…/Salvato»), con una sola versione precedente per sessione di scrittura; se la pagina è cambiata sotto, avviso «La pagina è cambiata: ricarica» col testo lasciato nell'editor (D-284).
+- Layout della Wiki come Notion (D-284): albero laterale a tutta altezza, ridimensionabile e richiudibile (larghezza ricordata nel browser), percorso in alto, pagina centrata, «Proposte (n)» come voce dell'albero; sul telefono l'albero è un pannello.
+
 ## [0.161.0] - 2026-10-22
 
 ### Aggiunto

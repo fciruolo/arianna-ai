@@ -843,14 +843,13 @@ body::before {
     background: var(--glow);
     color: var(--accent);
   }
+  /* D-284: the page is the editor, as in Notion: no box around the text, the page scrolls as a whole. */
   .wiki-editor-host {
-    min-height: 320px;
-    max-height: 70vh;
-    overflow-y: auto;
+    min-height: 40vh;
   }
   .wiki-editor-content {
-    min-height: 300px;
-    font-size: 14.5px;
+    min-height: 40vh;
+    font-size: 15.5px;
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
@@ -925,6 +924,7 @@ body::before {
   }
   /* A citation [[nota]]: a label, one piece, never a link. */
   .wiki-editor-content .wiki-citation {
+    cursor: pointer;
     display: inline-block;
     padding: 0 0.4em;
     border: 1px solid var(--accent);
@@ -932,9 +932,18 @@ body::before {
     color: var(--accent);
     font-size: 0.92em;
     line-height: 1.45;
-    cursor: default;
   }
   .wiki-editor-content .wiki-citation.ProseMirror-selectednode {
+    background: var(--glow);
+  }
+  /* The handle «⋮⋮» of a block: only where there is a pointer that hovers. */
+  @media (hover: none) {
+    .wiki-handle {
+      display: none;
+    }
+  }
+  .wiki-editor-content .ProseMirror-selectednode:not(.wiki-citation) {
+    border-radius: 0.25rem;
     background: var(--glow);
   }
   .wiki-editor-content ul[data-type="taskList"] {
@@ -945,7 +954,8 @@ body::before {
     display: flex;
     gap: 0.5em;
   }
-  .wiki-editor-content p.is-editor-empty:first-child::before {
+  .wiki-editor-content p.is-editor-empty:first-child::before,
+  .wiki-editor-content.ProseMirror-focused :is(p, h1, h2, h3).is-empty::before {
     content: attr(data-placeholder);
     float: left;
     height: 0;

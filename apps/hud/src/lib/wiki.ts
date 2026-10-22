@@ -175,6 +175,7 @@ function invalidText(detail: string): string | undefined {
   }
   if (detail === 'title') return 'Il titolo non va bene: non vuoto, al più 80 caratteri, senza [ ] | # < >.';
   if (detail === 'too-long') return 'La pagina è troppo lunga.';
+  if (detail === 'session') return 'La sessione di scrittura non è valida: ricarica la pagina.';
   if (detail === 'not-empty') return 'La cartella non è vuota: sposta o elimina prima le sue pagine e sotto-cartelle.';
   if (detail.includes('deeper')) return 'Le pagine andrebbero oltre tre livelli.';
   if (detail.includes('inside itself')) return 'Una cartella non può andare dentro se stessa.';
@@ -242,4 +243,166 @@ export function isEmptyFolder(folder: string, folders: readonly string[], pages:
 export function versionText(at: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(at);
   return match === null ? at : `${match[3] ?? ''}/${match[2] ?? ''}/${match[1] ?? ''} ${match[4] ?? ''}:${match[5] ?? ''}`;
+}
+
+// ---------------------------------------------------------------------------
+// The Wiki as Notion (D-284): the tree on the side, its menu, the path on top
+
+/** The width of the tree on the side: what the user can drag it to, and where it starts. */
+export const TREE_WIDTH = { min: 200, max: 480, start: 264 } as const;
+
+/** A width of the tree within what it may be; the start for anything that is not a number. */
+export function clampTreeWidth(value: unknown): number {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(number)) return TREE_WIDTH.start;
+  return Math.round(Math.min(TREE_WIDTH.max, Math.max(TREE_WIDTH.min, number)));
+}
+
+/** The folder a page or the index of a folder sits in: `laravel/octane/swoole` → `laravel/octane`. */
+export function folderOf(path: string): string {
+  if (path === '_indice') return '';
+  if (path.endsWith('/_indice')) return path.slice(0, -'/_indice'.length);
+  return path.split('/').slice(0, -1).join('/');
+}
+
+/** The path on top of the page: Wiki › Laravel › Octane, each a folder to open. */
+export function breadcrumb(path: string): { text: string; folder: string }[] {
+  const folder = folderOf(path);
+  const out = [{ text: 'Wiki', folder: '' }];
+  if (folder === '') return out;
+  const segments = folder.split('/');
+  segments.forEach((_segment, index) => {
+    const at = segments.slice(0, index + 1).join('/');
+    out.push({ text: folderName(at), folder: at });
+  });
+  return out;
+}
+
+/** An entry of the menu of the tree (right click, «…»). */
+export interface WikiMenuItem {
+  id: string;
+  text: string;
+  /** Why it cannot be used here, in Italian: the entry is shown off, with the reason. */
+  off?: string;
+  danger?: boolean;
+  /** A heading over the entries that follow («Trasforma in»): not an entry. */
+  group?: boolean;
+  /** The entry that is the state now («Trasforma in» marks the kind of the block). */
+  on?: boolean;
+}
+
+const DEEP = 'Qui non c’è posto per una cartella: al più argomento › sotto-argomento › articolo.';
+
+/**
+ * The menu of a row of the tree, or of the empty part (`null`: the root).
+ * A page makes its new pages and folders in its own folder; a folder in
+ * itself. `empty` says whether the folder holds nothing (only then it can be
+ * deleted).
+ */
+export function treeMenu(node: WikiDragged | null, empty = false): WikiMenuItem[] {
+  if (node === null) {
+    return [
+      { id: 'new-page', text: 'Nuova pagina' },
+      { id: 'new-folder', text: 'Nuova cartella' },
+    ];
+  }
+  const where = node.kind === 'folder' ? node.path : folderOf(node.path);
+  const deep = where.split('/').length >= 2;
+  const items: WikiMenuItem[] = [
+    { id: 'new-page', text: 'Nuova pagina' },
+    { id: 'new-folder', text: 'Nuova cartella', ...(deep ? { off: DEEP } : {}) },
+    { id: 'rename', text: 'Rinomina' },
+    { id: 'move', text: 'Sposta in…' },
+  ];
+  if (node.kind === 'page') items.push({ id: 'duplicate', text: 'Duplica' });
+  items.push({ id: 'cite', text: 'Copia citazione' });
+  items.push({ id: 'delete', text: 'Elimina', danger: true, ...(node.kind === 'folder' && !empty ? { off: 'La cartella non è vuota: sposta o elimina prima le sue pagine e sotto-cartelle.' } : {}) });
+  return items;
+}
+
+/** The citation of a page or a folder to paste in another page: `[[wiki/laravel/octane/swoole]]`. */
+export function citationOf(node: WikiDragged): string {
+  return node.kind === 'page' ? `[[wiki/${node.path}]]` : `[[wiki/${indexPath(node.path)}]]`;
+}
+
+/**
+ * What a name typed in the tree for a new page or folder in `folder` makes:
+ * the path (the name tidied, as the core takes it) and, for a page, the
+ * title as typed. A name may say a folder too («Docker/Volumi»); a page at
+ * the root needs one. A problem in Italian when it cannot be.
+ */
+export function newItemPath(folder: string, typed: string, kind: 'page' | 'folder'): { path: string; title: string } | { problem: string } {
+  const text = typed.replace(/\s+/g, ' ').trim();
+  if (text === '') return { problem: kind === 'page' ? 'Scrivi il titolo della pagina.' : 'Scrivi il nome della cartella.' };
+  const parts = text.split('/').map((part) => part.trim());
+  const title = parts.at(-1) ?? '';
+  if (title === '') return { problem: 'Dopo «/» scrivi il nome.' };
+  if (title.length > 80) return { problem: 'Al più 80 caratteri.' };
+  const path = tidyPath([folder, ...parts].filter((part) => part !== '').join('/'));
+  if (kind === 'page' && !path.includes('/')) return { problem: 'Una pagina sta in una cartella: scrivi «Argomento/Titolo».' };
+  const problem = pathProblem(path, kind);
+  if (problem !== undefined) return { problem: path.split('/').length > (kind === 'page' ? 3 : 2) ? 'Andrebbe oltre tre livelli: argomento › sotto-argomento › articolo.' : problem };
+  return { path, title };
+}
+
+/** The new path of a folder renamed in the tree: the same parent, the name tidied. */
+export function renamedFolder(path: string, name: string): string {
+  const parent = folderOf(path);
+  const last = tidyPath(name.replace(/\//g, ' '));
+  return parent === '' ? last : `${parent}/${last}`;
+}
+
+/** Where «Duplica» puts the copy: next to the page, `<nome>-copia`, then `-copia-2`… never over a page or folder taken. */
+export function copyPath(path: string, taken: ReadonlySet<string>): string {
+  const folder = folderOf(path);
+  const name = path.split('/').at(-1) ?? path;
+  for (let n = 1; n < 100; n += 1) {
+    const suffix = n === 1 ? '-copia' : `-copia-${String(n)}`;
+    const candidate = `${folder}/${name.slice(0, 40 - suffix.length).replace(/-+$/, '')}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${folder}/${name.slice(0, 28).replace(/-+$/, '')}-copia-100`;
+}
+
+/** The title of the copy: «<titolo> (copia)», within the 80 characters of a title. */
+export function copyTitle(title: string): string {
+  const suffix = ' (copia)';
+  return `${title.slice(0, 80 - suffix.length).trim()}${suffix}`;
+}
+
+/** The folders «Sposta in…» offers for a page or a folder: only where it may go, '' for the root. */
+export function moveChoices(item: WikiDragged, folders: readonly string[]): { folder: string; to: string }[] {
+  const out: { folder: string; to: string }[] = [];
+  for (const folder of ['', ...[...folders].sort()]) {
+    const where = dropDestination(item, folder);
+    if (where !== null && 'to' in where) out.push({ folder, to: where.to });
+  }
+  return out;
+}
+
+/** «Salvataggio…», «Salvato» and the rest, as the page shows them next to the path. */
+export type SaveState = 'idle' | 'waiting' | 'saving' | 'saved' | 'changed' | 'problem';
+
+export const SAVE_TEXT: Record<SaveState, string> = {
+  idle: '',
+  waiting: 'Modifiche non salvate',
+  saving: 'Salvataggio…',
+  saved: 'Salvato',
+  changed: 'La pagina è cambiata: ricarica',
+  problem: 'Non salvata',
+};
+
+/** How long the page waits after the last change before saving by itself. */
+export const SAVE_DELAY_MS = 1500;
+
+/** Random hex: `getRandomValues` works also where `randomUUID` does not (a page not in a secure context). */
+function randomText(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** A new token for a writing session (D-284): one per opening of a page, as the core takes it. */
+export function sessionToken(random: () => string = randomText): string {
+  return random().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64).padEnd(16, '0');
 }

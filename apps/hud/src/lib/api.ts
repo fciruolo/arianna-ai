@@ -1378,14 +1378,17 @@ export async function restoreWikiPage(path: string, version: string, base: strin
   await call('POST', '/api/wiki/restore', { path, version, base });
 }
 
-/** «Modifica» of a page of the Wiki by the user, over the page as shown (`base`): the version before is kept. Gives the new version. */
-export async function editWikiPage(path: string, base: string, title: string, body: string): Promise<string> {
-  return (await call<{ version: string }>('POST', '/api/wiki/edit', { path, base, title, body })).version;
+/**
+ * A save of a page of the Wiki by the user, over the page as shown (`base`). With `session` (D-284, the page
+ * that saves by itself) the core keeps the version before only once per writing session. Gives the new version.
+ */
+export async function editWikiPage(path: string, base: string, title: string, body: string, session?: string): Promise<string> {
+  return (await call<{ version: string }>('POST', '/api/wiki/edit', session === undefined ? { path, base, title, body } : { path, base, title, body, session })).version;
 }
 
-/** «Nuova pagina» of the Wiki by the user (`topic/article`): it starts with the sections to fill. */
-export async function createWikiPage(path: string, title: string): Promise<{ path: string; version: string }> {
-  return call<{ path: string; version: string }>('POST', '/api/wiki/create', { kind: 'page', path, title });
+/** «Nuova pagina» of the Wiki by the user (`topic/article`): it starts with the sections to fill, or with `body` («Duplica», D-284). */
+export async function createWikiPage(path: string, title: string, body?: string): Promise<{ path: string; version: string }> {
+  return call<{ path: string; version: string }>('POST', '/api/wiki/create', body === undefined ? { kind: 'page', path, title } : { kind: 'page', path, title, body });
 }
 
 /** «Nuova cartella» of the Wiki by the user: it stays, empty, until a page goes in it. */
