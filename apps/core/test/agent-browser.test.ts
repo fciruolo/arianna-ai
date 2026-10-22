@@ -594,3 +594,18 @@ test('released or shut down while an open is under way: no browser stays open be
   assert.deepEqual(await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' }), { ok: false, reason: 'not-open' });
   assert.deepEqual(h.opened, []);
 });
+
+test('reading a tab with no page (blank, or the error page of a refused open) runs no script and keeps the browser (D-283 trial)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  for (const url of ['chrome-error://chromewebdata/', 'about:blank']) {
+    h.page.url = url;
+    // A script there would never answer: the read must not run it.
+    h.page.hang = true;
+    assert.deepEqual(await h.browser.act(scope('a'), { kind: 'read' }), { ok: false, reason: 'no-page' }, url);
+    assert.equal(h.browser.holder, 'a', url);
+  }
+  h.page.hang = false;
+  h.page.url = 'https://comune-finto.it/servizi';
+  assert.equal((await h.browser.act(scope('a'), { kind: 'read' })).ok, true);
+});

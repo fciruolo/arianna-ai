@@ -1393,8 +1393,10 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       }
       // A page (D-262) is read before the transaction, for up to 15 s on the network: read again after a crash, it counts once more.
       // The browser of the conversation (D-283): what the user let go for it holds for web.fetch too.
-      const browserOpened = options.browser === undefined || task.conversationId === null ? null : options.browser.agent.openedAt(task.conversationId);
-      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserOpened, ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
+      const browserAgent = options.browser === undefined || task.conversationId === null ? undefined : options.browser.agent;
+      const browserSaved = browserAgent === undefined || task.conversationId === null ? undefined : browserAgent.savedFor(task.conversationId);
+      const browserLast = browserAgent === undefined || task.conversationId === null ? null : browserAgent.lastOpenedAt(task.conversationId);
+      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserLast, ...(browserSaved === undefined ? {} : { browserSaved }), ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
@@ -1430,7 +1432,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         // A saved private value of the user in the address of web.fetch (D-283): the card «Apri / No» with the turn.
         if (ran.private !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
-          return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserOpened, site: ran.private.site ?? null }) };
+          return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserLast, site: ran.private.site ?? null }) };
         }
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });

@@ -65,6 +65,8 @@ interface FakeBrowser {
   accessOf: (conversationId: string) => string | null;
   release: (conversationId: string) => Promise<void>;
   openedAt: (conversationId: string) => number | null;
+  lastOpenedAt: (conversationId: string) => number | null;
+  savedFor: (conversationId: string) => { opened: number | null; browsers: number[]; none: boolean };
 }
 
 const PAGE: ActionResult = { ok: true, page: { url: `https://www.${SITE}/prestiti`, site: SITE, title: 'I tuoi prestiti' } };
@@ -91,6 +93,8 @@ function fakeBrowser(holder: string, results: ActionResult[]): FakeBrowser {
     },
     // When its browser opened (D-283): none here, so no saved value is let go.
     openedAt: () => null,
+    lastOpenedAt: () => null,
+    savedFor: () => ({ opened: null, browsers: [], none: true }),
   };
   return fake;
 }

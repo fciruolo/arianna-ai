@@ -1,6 +1,6 @@
 import { spendAllowed, type Context, type Label, type PageConsent, type Target } from '@arianna/policy';
 
-import { linkInText } from './capture.ts';
+import { checkCaptureUrl, linkInText } from './capture.ts';
 import type { Sql } from './db/client.ts';
 import { passGateway, type GatewayMeta } from './gateway.ts';
 import { fetchLink, siteOf, xPostUrl, type FetchOptions, type FetchResult } from './link-fetch.ts';
@@ -102,6 +102,15 @@ export function addressesInText(text: string, limit = 200): string[] {
   for (const match of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
     const address = linkInText(match[0]);
     if (address !== undefined) found.add(address);
+    // A final dot may be part of the address («…?q=Rossi+S.r.l.»), not the end of the sentence: both count as written.
+    const dotted = /^(.*\.)[,;:!?*_»”’…\]}]*$/.exec(match[0])?.[1];
+    if (dotted !== undefined && address !== undefined && found.size < limit) {
+      try {
+        found.add(checkCaptureUrl(dotted));
+      } catch {
+        // Not an address with its dot: the one without counts.
+      }
+    }
     if (found.size >= limit) break;
   }
   return [...found];

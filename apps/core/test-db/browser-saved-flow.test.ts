@@ -1,0 +1,228 @@
+// The card «Apri / No» of a saved value (D-283) with the real AgentBrowser
+// and the real gateway, as in the trial of the user: the user writes an
+// address with a client in it («…+S.r.l.», with the final dot), Arianna opens
+// it, the gateway stops it for the saved value, the browser closes before the
+// user answers, the user presses «Apri», and the next browser of the
+// conversation opens the page and reads it with no new card. The session is a
+// fake that asks the gateway for every page as the network of the browser
+// does (network.ts, pageHop): nothing starts, nothing leaves this machine.
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, afterEach, test } from 'node:test';
+
+import { type Answer } from '@arianna/agents';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import type { ChatRequest, LocalModel } from '@arianna/executors';
+import { spendAllowed } from '@arianna/policy';
+import type { Page } from 'playwright-core';
+
+import { AgentBrowser, gatewayTyped, READ_SCRIPT, type OpenSession } from '../src/browser/agent-browser.ts';
+import type { BrowserManager } from '../src/browser/manager.ts';
+import { navigationConsent, type LastNavigation, type NetworkScope } from '../src/browser/network.ts';
+import type { BrowserSession } from '../src/browser/session.ts';
+import { createClient } from '../src/clients.ts';
+import { createConversation, postUserMessage } from '../src/conversations.ts';
+import { processStepJob, recordDecision, STEP_QUEUE } from '../src/engine.ts';
+import { passGateway } from '../src/gateway.ts';
+import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { siteOf } from '../src/link-fetch.ts';
+import { createKb } from '../src/orchestrator/kb.ts';
+import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { savedResultText } from '../src/orchestrator/saved-ask.ts';
+import { refreshSavedPrivate, resetSavedPrivate } from '../src/saved-private.ts';
+import { addressesInText } from '../src/web-page.ts';
+import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
+
+const db = useTestDatabase();
+const ROOT = resolveHome({});
+const HOME = join(ROOT, 'data', 'test-tmp', `browser-saved-flow-${randomUUID()}`);
+const agents = committedAgents(ROOT);
+const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
+const CONFIG = loadConfig();
+const OPTIONS = { allowedActions: () => agents.get('arianna')?.card.approvals ?? [], agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }) };
+
+after(() => {
+  rmSync(HOME, { recursive: true, force: true });
+});
+afterEach(() => {
+  resetSavedPrivate();
+});
+
+function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
+  const requests: ChatRequest[] = [];
+  return {
+    requests,
+    chat(request) {
+      requests.push(request);
+      const next = answers[requests.length - 1];
+      if (next === undefined) return Promise.reject(new Error('no answer scripted'));
+      const value = { thought: 'Ragiono.', ...next };
+      return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', usage: { promptTokens: 10, completionTokens: 5 }, endpoint: 'stub', model: 'stub', durationMs: 1 });
+    },
+  };
+}
+
+interface World {
+  browser: AgentBrowser;
+  /** Every page the fake network asked the gateway for, with its outcome. */
+  pages: { url: string; rule: string }[];
+  opened: number;
+}
+
+/** The real AgentBrowser over a fake session whose pages pass the real gateway with the scope of the network. */
+function world(): World {
+  let active: { id: string } | null = null;
+  const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
+  const w: World = { browser: undefined as unknown as AgentBrowser, pages: [], opened: 0 };
+  const openSession: OpenSession = (_manager, id, job) => {
+    active = { id };
+    w.opened += 1;
+    let scope: NetworkScope = { context: job.context, consent: job.consent, ...(job.meta === undefined ? {} : { meta: job.meta }) };
+    let last: LastNavigation | undefined;
+    let url = 'about:blank';
+    const page = {
+      url: () => url,
+      title: () => Promise.resolve(url === 'about:blank' ? '' : 'Risultati finti'),
+      evaluate: (script: unknown) => Promise.resolve(script === READ_SCRIPT ? { title: 'Risultati finti', url, text: 'Ferramenta Lunardi Srl, Bolzano', elements: [], scrolled: 0 } : undefined),
+      locator: () => ({ first: () => ({}) }),
+      mainFrame: () => ({}),
+    } as unknown as Page;
+    const session = {
+      network: {
+        rescope: (next: NetworkScope) => { scope = next; },
+        lastNavigation: () => (last === undefined ? undefined : { ...last }),
+        authenticated: () => null,
+        settle: () => Promise.resolve(),
+        heldSends: () => 0,
+      },
+      // As pageHop of network.ts: the gateway as a page, with the scope of the network.
+      openPage: async (address: string) => {
+        const target = { kind: 'web', page: navigationConsent(scope.consent, address, 0) } as const;
+        const decision = await passGateway(db().sql, [{ value: address, label: scope.context.effective, source: 'web:page' }], scope.context, target, scope.meta);
+        w.pages.push({ url: address, rule: decision.rule });
+        const seq = (last?.seq ?? 0) + 1;
+        if (decision.decision !== 'allow') {
+          last = decision.rule === 'saved-private' && decision.saved !== undefined ? { seq, outcome: 'blocked', reason: 'saved-private', saved: decision.saved } : { seq, outcome: 'blocked', reason: 'blocked' };
+          throw new Error('net::ERR_BLOCKED_BY_CLIENT');
+        }
+        spendAllowed(decision);
+        url = address;
+        last = { seq, outcome: 'ok', ...(siteOf(address) === undefined ? {} : { site: siteOf(address) ?? '' }) };
+        return { title: 'Risultati finti', url };
+      },
+      currentPage: () => Promise.resolve(page),
+      resetPage: () => Promise.resolve(),
+      close: () => { active = null; return Promise.resolve(); },
+    } as unknown as BrowserSession;
+    return Promise.resolve(session);
+  };
+  w.browser = new AgentBrowser({ sql: db().sql, manager, session: { home: HOME }, gateTyped: gatewayTyped(db().sql), openSession });
+  return w;
+}
+
+async function drain(taskId: string, model: LocalModel, browser: AgentBrowser): Promise<string[]> {
+  const queue = createJobQueue(db().sql);
+  const executor = createOrchestrator({
+    sql: db().sql,
+    agents,
+    kb: createKb({ home: HOME, rules: RULES }),
+    model: () => model,
+    settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas: {} }),
+    rules: RULES,
+    browser: { agent: browser, installed: () => true },
+  });
+  const results: string[] = [];
+  for (let guard = 0; guard < 40; guard += 1) {
+    const job = await queue.claim(STEP_QUEUE, 'test-worker');
+    if (job === undefined) return results;
+    if (job.payload.taskId !== taskId) {
+      await completeJob(db().sql, job.id, 'test-worker');
+      continue;
+    }
+    results.push(await processStepJob(db().sql, executor, job, 'test-worker', OPTIONS));
+  }
+  throw new Error('drain did not end');
+}
+
+const OPEN = (url: string): Answer => ({ action: 'call', tool: 'browser.open', arguments: { url } });
+const READ: Answer = { action: 'call', tool: 'browser.read', arguments: {} };
+const REPLY = (text: string): Answer => ({ action: 'reply', text });
+const sawText = (request: ChatRequest | undefined, text: string) => request?.messages.some((part) => part.content.includes(text)) === true;
+
+test('an address the user wrote with a final dot counts as written, with and without it', () => {
+  const address = 'https://duckduckgo.com/?q=Ferramenta+Lunardi+S.r.l.';
+  assert.deepEqual(addressesInText(`Cerca ${address}`), ['https://duckduckgo.com/?q=Ferramenta+Lunardi+S.r.l', address]);
+  // A dot that only ends the sentence still gives the address without it.
+  assert.ok(addressesInText('Guarda https://example.com/listino.').includes('https://example.com/listino'));
+  // No dot: only the address.
+  assert.deepEqual(addressesInText('Guarda https://example.com/listino'), ['https://example.com/listino']);
+});
+
+for (const closed of [true, false]) {
+  test(`«Apri» on a saved value lets the same page open and be read, with no new card (browser ${closed ? 'closed' : 'open'} before the answer, D-283)`, async () => {
+    const sql = db().sql;
+    const tag = randomUUID().slice(0, 8);
+    // Saved without dots, written with them: the same client.
+    await createClient(sql, { displayName: `Ferramenta Lunardi${tag} Srl` });
+    await refreshSavedPrivate(sql);
+    const address = `https://duckduckgo.com/?q=Ferramenta+Lunardi${tag}+S.r.l.`;
+    const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+    const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
+    const w = world();
+    const model = scripted([OPEN(address), OPEN(address), READ, REPLY('Ecco cosa ho trovato.')]);
+
+    const first = await drain(task.id, model, w.browser);
+    assert.equal(first.at(-1), 'waiting-approval');
+    // Written by the user, final dot included: no card «Apri / No» for the address, only the one of the saved value.
+    const asks = await sql<{ id: string; action: string; detail: Record<string, unknown> }[]>`
+      SELECT id::text, action, detail FROM approvals WHERE task_id = ${task.id} ORDER BY requested_at`;
+    assert.deepEqual(asks.map((ask) => ask.action), ['browser.private']);
+    assert.equal(asks[0]?.detail.site, 'duckduckgo.com');
+    assert.deepEqual(w.pages.map((page) => page.rule), ['saved-private']);
+
+    // The browser goes before the user answers (it was idle, or an action failed): the card holds for the next one.
+    if (closed) {
+      assert.equal(await w.browser.closeByUser(conversationId), true);
+      assert.equal(w.browser.holder, null);
+    }
+    await recordDecision(sql, asks[0].id, 'approved', 'web');
+    const second = await drain(task.id, model, w.browser);
+    assert.equal(second.at(-1), 'answered');
+    assert.ok(sawText(model.requests[1], savedResultText('approved')));
+    // The page opened and was read; the gateway never stopped it again, and no other card was asked.
+    assert.deepEqual(w.pages.map((page) => page.rule), ['saved-private', 'page']);
+    assert.equal(w.opened, closed ? 2 : 1);
+    const outcomes = await sql<{ action: string; outcome: string }[]>`
+      SELECT payload ->> 'action' AS action, payload ->> 'outcome' AS outcome FROM events WHERE task_id = ${task.id} AND kind = 'browser.action' ORDER BY id`;
+    assert.deepEqual(outcomes.map((row) => `${row.action}:${row.outcome}`), ['open:confirm-private', 'open:ok', 'read:ok']);
+    const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${task.id}`;
+    assert.equal(count?.n, 1);
+  });
+}
+
+test('a card of a browser before the last one does not hold for a new browser', async () => {
+  const sql = db().sql;
+  const tag = randomUUID().slice(0, 8);
+  await createClient(sql, { displayName: `Officina Glicini${tag}` });
+  await refreshSavedPrivate(sql);
+  const address = `https://duckduckgo.com/?q=Officina+Glicini${tag}`;
+  const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+  const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
+  const w = world();
+  const model = scripted([OPEN(address)]);
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
+  const [ask] = await sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${task.id}`;
+  await recordDecision(sql, ask?.id ?? '', 'approved', 'web');
+  // Two browsers later (the one after the card, then another): the card holds no more.
+  await w.browser.closeByUser(conversationId);
+  const scope = { conversationId, context: (await import('@arianna/policy')).createContext('L1', 'L1'), consent: { from: 'user', addresses: [address, 'https://example.com/'] } } as const;
+  await w.browser.act(scope, { kind: 'open', url: 'https://example.com/' });
+  await w.browser.closeByUser(conversationId);
+  const holds = w.browser.savedFor(conversationId);
+  assert.equal(holds.opened, null);
+  const { approvedSaved } = await import('../src/orchestrator/saved-ask.ts');
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: holds }), new Set());
+});

@@ -117,6 +117,7 @@ export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'],
   'not-open': 'Il browser non è aperto: aprilo prima con browser.open.',
   'closed-by-user': 'Il browser l’ha chiuso l’utente: riaprilo con browser.open solo se serve.',
   'no-reading': 'Prima leggi la pagina con browser.read: i numeri cambiano con la pagina.',
+  'no-page': 'Nel browser non c’è una pagina aperta: apri prima un indirizzo con browser.open.',
   'unknown-element': 'Nessun elemento con quel numero nell’ultima lettura.',
   'not-clickable': 'Quell’elemento non si clicca.',
   'not-a-field': 'Quell’elemento non è un campo di testo.',
@@ -301,9 +302,10 @@ export async function browserTool(
   if (action.kind !== 'close' && (await actionsDone(browser.sql, task.id)) >= MAX_ACTIONS_PER_TASK) return failure(tool, TASK_LIMIT, label);
   const consent: PageConsent = chat === undefined ? await browserConsent(browser.sql, task, context) : { from: 'sites', sites: [chat] };
   const sendPermit = chat === undefined ? undefined : await approvedSend(browser.sql, task.id);
-  // The saved values the user let go while this browser was open (D-283); none for a browser still to open.
-  const opened = browser.browser.openedAt(task.conversationId);
-  const saved = opened === null ? undefined : { opened, approved: await approvedSaved(browser.sql, task.conversationId, { browser: opened }) };
+  // The saved values the user let go for this browser (D-283), or for the one this action opens: the same set
+  // goes to its network.
+  const holds = chat === undefined ? browser.browser.savedFor(task.conversationId) : undefined;
+  const saved = holds === undefined ? undefined : { opened: holds.opened, approved: await approvedSaved(browser.sql, task.conversationId, { for: holds }) };
   const meta = { taskId: task.id, ...(browser.runId === undefined ? {} : { runId: browser.runId }) };
   const result = await browser.browser.act(
     { conversationId: task.conversationId, context, consent, meta, ...(sendPermit === undefined ? {} : { sendPermit }), ...(saved === undefined ? {} : { saved }) },
@@ -332,7 +334,7 @@ export async function browserTool(
         label,
         detail: `browser · ${FAILURE_TEXT['confirm-private']}`,
         // The browser the card is for: its «Apri» holds for this one only.
-        private: { saved: result.saved, browser: browser.browser.openedAt(task.conversationId), ...(result.site === undefined ? {} : { site: result.site }) },
+        private: { saved: result.saved, browser: browser.browser.lastOpenedAt(task.conversationId), ...(result.site === undefined ? {} : { site: result.site }) },
       };
     }
     if (result.reason === 'confirm-send') {

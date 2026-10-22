@@ -59,8 +59,10 @@ export interface WebToolEnv {
   signal?: AbortSignal;
   /** Tests: the downloader, with fake servers. */
   fetchLink?: ReadPageInput['fetchLink'];
-  /** When the browser of the conversation opened (D-283): what the user let go for it holds here too. */
-  browserOpened?: number | null;
+  /** Which cards of saved values hold for the browser of the conversation (D-283): what the user let go for it holds here too. */
+  browserSaved?: { browsers: readonly number[]; none: boolean };
+  /** The browser a card asked now belongs to: the one open, or the last one of the conversation (D-283). */
+  browserLast?: number | null;
 }
 
 export interface WebPage {
@@ -171,8 +173,7 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
   if (read.task >= MAX_PAGES_PER_TASK) return failure(TASK_LIMIT);
   if (read.day >= MAX_PAGES_PER_DAY) return failure(DAY_LIMIT);
   // What the user let go with «Apri» (D-283): in the last 15 minutes, or while the browser of the conversation is open.
-  const opened = web.browserOpened ?? null;
-  const approved = task.conversationId === null ? new Set<string>() : await approvedSaved(web.sql, task.conversationId, { browser: opened, recent: true });
+  const approved = task.conversationId === null ? new Set<string>() : await approvedSaved(web.sql, task.conversationId, { ...(web.browserSaved === undefined ? {} : { for: web.browserSaved }), recent: true });
   const result = await readPage({
     sql: web.sql,
     address,

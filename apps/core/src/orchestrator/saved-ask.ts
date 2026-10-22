@@ -94,22 +94,37 @@ export async function approvedPrivateSteps(sql: Queryable, taskId: string): Prom
 }
 
 /**
- * The references the user let go with «Apri» in the conversation: those of
- * the cards asked for the browser open now (`browser`, when it opened: the
- * card keeps it, so neither a late decision nor the clock of the database
- * moves it to another browser), and with `recent` also those decided in the
- * last SAVED_WINDOW_MS by the clock of the database (web.fetch).
+ * Which cards hold for a browser (D-283): a card keeps the browser of the
+ * conversation it was asked with (`browser` in its detail: when that browser
+ * opened, or when the last one of the conversation opened if none was open;
+ * none if the conversation never had one). A card holds for that browser,
+ * and for the one the conversation opens right after it: `browsers` are the
+ * opening times whose cards count, `none` whether the cards asked before any
+ * browser count (for the first browser of the conversation).
  */
-export async function approvedSaved(sql: Queryable, conversationId: string, options: { browser?: number | null; recent?: boolean }): Promise<Set<string>> {
-  const browser = options.browser == null ? null : String(options.browser);
+export interface SavedFor {
+  browsers: readonly number[];
+  none: boolean;
+}
+
+/**
+ * The references the user let go with «Apri» in the conversation: those of
+ * the cards that hold for the browser (`for`, the time of the database never
+ * enters), and with `recent` also those decided in the last SAVED_WINDOW_MS
+ * by the clock of the database (web.fetch).
+ */
+export async function approvedSaved(sql: Queryable, conversationId: string, options: { for?: SavedFor; recent?: boolean }): Promise<Set<string>> {
+  const browsers = (options.for?.browsers ?? []).map((opened) => String(opened));
+  const none = options.for?.none === true;
   const recent = options.recent === true ? SAVED_WINDOW_MS / 1000 : null;
-  if (browser === null && recent === null) return new Set();
+  if (browsers.length === 0 && !none && recent === null) return new Set();
   const rows = await sql<{ id: string; ref: string | null }[]>`
     SELECT a.id::text AS id, value ->> 'ref' AS ref
     FROM approvals a JOIN tasks t ON t.id = a.task_id, jsonb_array_elements(a.detail -> 'values') AS value
     WHERE a.kind = 'browser' AND a.action = ${SAVED_ACTION} AND a.state = 'approved' AND t.conversation_id = ${conversationId}
       AND a.decided_at IS NOT NULL
-      AND ((${browser}::text IS NOT NULL AND a.detail ->> 'browser' = ${browser}::text)
+      AND ((a.detail ->> 'browser') = ANY(${browsers}::text[])
+        OR (${none} AND a.detail -> 'browser' IS NULL)
         OR (${recent}::float8 IS NOT NULL AND a.decided_at >= now() - make_interval(secs => ${recent}::float8)))`;
   // Only a value still as it was when the user decided: a field changed since asks again.
   const approved = new Set<string>();

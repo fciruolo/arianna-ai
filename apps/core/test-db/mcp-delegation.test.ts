@@ -310,7 +310,8 @@ test('web_fetch (D-262): the session has the addresses of the user\'s message, n
   const { prompt } = await delegate({ url, message: 'Leggi https://example.com/docs. e dimmi cosa dice', delegation });
   assert.ok(prompt.includes('https://model.example/invented'));
   const [session] = opened;
-  assert.deepEqual(session?.input.userAddresses, ['https://example.com/docs']);
+  // The final dot may be the address's own (D-283): both forms are the user's; never the brief's.
+  assert.deepEqual(session?.input.userAddresses, ['https://example.com/docs', 'https://example.com/docs.']);
 });
 
 test('userAddressesOf (D-262): the direct chat\'s message is the request; a message above the clearance does not count', async () => {

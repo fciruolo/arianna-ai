@@ -147,6 +147,8 @@ export type ActionFailure =
   /** The user closed the browser from the chat: said once, to the next action of that conversation. */
   | 'closed-by-user'
   | 'no-reading'
+  /** The tab shows no page (blank, or Chromium's error page after a refused open): nothing to read. */
+  | 'no-page'
   | 'unknown-element'
   | 'not-clickable'
   | 'not-a-field'
@@ -194,11 +196,13 @@ export interface BrowserScope {
    */
   sendPermit?: { id: string; element: string };
   /**
-   * The saved private values the user let go with «Apri» (D-283) while the
-   * browser opened at `opened` (`openedAt`) was open: merged into that
-   * browser only, never into a newer one.
+   * The saved private values the user let go with «Apri» (D-283), read for
+   * the browser opened at `opened` (`openedAt`), or with `opened: null` for
+   * the browser this action opens (`savedFor`): merged into that browser
+   * only, never into another one. The network of the browser reads the very
+   * set it is merged into.
    */
-  saved?: { opened: number; approved: ReadonlySet<string> };
+  saved?: { opened: number | null; approved: ReadonlySet<string> };
 }
 
 /** The gateway on a typed text: true when it may be typed; the references of saved values to ask the user about (D-283). */
@@ -251,8 +255,10 @@ interface Held {
   seqAtTake: number;
   /** The work conversation the browser came from, once handed to a Private chat after an access (D-281). */
   from?: string;
-  /** When this browser opened (now()): the approvals of saved values decided since then hold for it (D-283). */
+  /** When this browser opened (now()): the cards of saved values asked with it hold for it (D-283). */
   opened: number;
+  /** When the browser of this conversation before it opened, if any: the cards asked with that one hold for this one too. */
+  previous: number | null;
   /** The saved private values the user let go for this browser (D-283); the network reads this very set. */
   saved: Set<string>;
 }
@@ -276,6 +282,8 @@ export class AgentBrowser {
   /** Conversations whose browser the user closed: their next action hears it once (D-264, passo 4). */
   readonly #closedByUser = new Set<string>();
   #shutDown = false;
+  /** When the last browser of each conversation opened (D-283): a card asked with it holds for the next one. In memory. */
+  readonly #lastOpened = new Map<string, number>();
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -294,6 +302,26 @@ export class AgentBrowser {
   openedAt(conversationId: string): number | null {
     const held = this.#held;
     return this.holder === conversationId && held !== null ? held.opened : null;
+  }
+
+  /** The browser a card of saved values asked now belongs to (D-283): the one open, or the last one the conversation had; null if none. */
+  lastOpenedAt(conversationId: string): number | null {
+    return this.openedAt(conversationId) ?? this.#lastOpened.get(conversationId) ?? null;
+  }
+
+  /**
+   * Which cards of saved values hold for the browser of `conversationId`
+   * (D-283): with one open, those asked with it and with the browser before
+   * it (`opened` its time); without, those for the browser the next action
+   * opens (`opened: null`): asked with the last one, or before any.
+   */
+  savedFor(conversationId: string): { opened: number | null; browsers: number[]; none: boolean } {
+    const held = this.#held;
+    if (this.holder === conversationId && held !== null) {
+      return { opened: held.opened, browsers: [held.opened, ...(held.previous === null ? [] : [held.previous])], none: held.previous === null };
+    }
+    const last = this.#lastOpened.get(conversationId);
+    return { opened: null, browsers: last === undefined ? [] : [last], none: last === undefined };
   }
 
   /** The site the browser of `conversationId` is on, when it holds the browser and an action reached a page. */
@@ -522,8 +550,10 @@ export class AgentBrowser {
     }
     if (this.#options.manager.state !== 'free') return { ok: false, reason: 'busy' };
     const id = browserId();
-    // A new browser: no value let go yet (D-283), whatever an older one had.
-    const saved = new Set<string>();
+    // A new browser (D-283): the values let go for it before it opened (cards asked with the last browser of
+    // the conversation, or before any), read by the caller for `opened: null`; never those of another browser.
+    const saved = new Set<string>(scope.saved !== undefined && scope.saved.opened === null ? scope.saved.approved : []);
+    const previous = this.#lastOpened.get(scope.conversationId) ?? null;
     let session: BrowserSession;
     try {
       const open = this.#options.openSession ?? defaultOpenSession(this.#options.session);
@@ -542,7 +572,9 @@ export class AgentBrowser {
       if (error instanceof BrowserError && (error.code === 'no-lock' || error.code === 'image-mismatch' || error.code === 'bad-image')) return { ok: false, reason: 'not-installed' };
       return { ok: false, reason: 'start-failed' };
     }
-    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened: this.#now(), saved };
+    const opened = this.#now();
+    this.#lastOpened.set(scope.conversationId, opened);
+    const next: Held = { conversationId: scope.conversationId, id, session, lastAction: this.#now(), elements: new Map(), readAt: undefined, driver: 'agent', scope, reread: false, seqAtTake: 0, opened, previous, saved };
     this.#held = next;
     return this.#bounded(next, this.#run(next, scope, action));
   }
@@ -593,6 +625,13 @@ export class AgentBrowser {
       }
       case 'read': {
         const page = await session.currentPage();
+        // No page yet (a refused open leaves a blank tab, or Chromium's error page): nothing to read, and no
+        // script is run there (an evaluate on such a tab may never answer and cost the browser, D-283 trial).
+        if (!/^https?:/i.test(page.url())) {
+          held.elements.clear();
+          held.readAt = undefined;
+          return { ok: false, reason: 'no-page' };
+        }
         const parsed = await readPage(page);
         // The address and the title from Playwright: the script runs in the world of the page, which may lie.
         const reading = { ...parsed, url: page.url(), title: await page.title().catch(() => parsed.title) };

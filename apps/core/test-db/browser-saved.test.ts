@@ -180,6 +180,8 @@ interface FakeBrowser {
   act: (scope: BrowserScope, action: BrowserAction) => Promise<ActionResult>;
   release: (conversationId: string) => Promise<void>;
   openedAt: (conversationId: string) => number | null;
+  lastOpenedAt: (conversationId: string) => number | null;
+  savedFor: (conversationId: string) => { opened: number | null; browsers: number[]; none: boolean };
 }
 
 const CERCA = 'https://cerca.example/';
@@ -201,6 +203,8 @@ function fakeBrowser(results: ActionResult[]): FakeBrowser {
       return Promise.resolve();
     },
     openedAt: (conversationId) => (fake.holder === conversationId ? fake.opened : null),
+    lastOpenedAt: (conversationId) => (fake.holder === conversationId ? fake.opened : null),
+    savedFor: (conversationId) => (fake.holder === conversationId ? { opened: fake.opened, browsers: [fake.opened], none: false } : { opened: null, browsers: [], none: true }),
   };
   return fake;
 }
@@ -257,12 +261,12 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   // The event of the request names the action only.
   const [requested] = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'approval.requested' ORDER BY id DESC LIMIT 1`;
   assert.doesNotMatch(JSON.stringify(requested?.payload ?? {}), new RegExp(`${tag}|Brenta`));
-  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened }), new Set());
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: { browsers: [browser.opened], none: false } }), new Set());
 
   await recordDecision(sql, approval.id, 'approved', 'web');
-  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened }), new Set([ref]));
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: { browsers: [browser.opened], none: false } }), new Set([ref]));
   // Asked for another browser: not for this one.
-  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened + 1 }), new Set());
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: { browsers: [browser.opened + 1], none: false } }), new Set());
   // For web.fetch: in the last 15 minutes.
   assert.deepEqual(await approvedSaved(sql, conversationId, { recent: true }), new Set([ref]));
   const second = await drain(task.id, model, browser);
@@ -276,7 +280,7 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   // The «Apri» was for that value: the field changed, the new value asks again.
   await updateClient(sql, id, { displayName: `Officina Brenta Due ${tag}` });
   await refreshSavedPrivate(sql);
-  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened }), new Set());
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: { browsers: [browser.opened], none: false } }), new Set());
   // Neither the value nor its hash in the approval.
   const [stored] = await sql<{ detail: unknown }[]>`SELECT detail FROM approvals WHERE id = ${approval.id}`;
   assert.doesNotMatch(JSON.stringify(stored?.detail), /[0-9a-f]{64}/);
@@ -297,5 +301,5 @@ test('the card «Apri / No»: with «No» the model reads the refusal and nothin
   await recordDecision(sql, approval?.id ?? '', 'rejected', 'web');
   assert.equal((await drain(task.id, model, browser)).at(-1), 'answered');
   assert.ok(sawText(model.requests[1], savedResultText('rejected')));
-  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened, recent: true }), new Set());
+  assert.deepEqual(await approvedSaved(sql, conversationId, { for: { browsers: [browser.opened], none: false }, recent: true }), new Set());
 });

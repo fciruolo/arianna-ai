@@ -120,7 +120,8 @@ describe('redirectConsent', () => {
 
 describe('addressesInText', () => {
   it('finds every http(s) address, without the punctuation of the sentence', () => {
-    assert.deepEqual(addressesInText('Leggi https://example.com/listino. Poi (https://example.org/a?b=1) e file:///etc/passwd'), ['https://example.com/listino', 'https://example.org/a?b=1']);
+    // A final dot may be the address's own («…+S.r.l.», D-283): both forms count as written.
+    assert.deepEqual(addressesInText('Leggi https://example.com/listino. Poi (https://example.org/a?b=1) e file:///etc/passwd'), ['https://example.com/listino', 'https://example.com/listino.', 'https://example.org/a?b=1']);
     assert.deepEqual(addressesInText('niente link qui'), []);
     assert.equal(addressesInText(Array.from({ length: 5 }, (_, index) => `https://e${String(index)}.example/`).join(' '), 3).length, 3);
   });
