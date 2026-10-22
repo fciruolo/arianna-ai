@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import type { WikiMenuItem } from '../lib/wiki.ts';
 
@@ -7,8 +7,10 @@ import type { WikiMenuItem } from '../lib/wiki.ts';
  * The menu of the Wiki (D-284), ours and not the browser's: right click (or
  * «…», Maiusc+F10, the menu key) on a row of the tree, a click on the handle
  * of a block. It opens where it is asked, inside the window; the arrows move
- * among the entries, Esc, Tab, a click outside or a choice close it. An entry
- * that cannot be used here is shown off with its reason.
+ * among all the entries, the ones off too (they say why with their reason),
+ * Esc, Tab, a click outside or a choice close it. A heading («Trasforma in»)
+ * makes a group of the entries after it; entries with a state now (`on`) are
+ * radio entries.
  */
 const props = defineProps<{ items: readonly WikiMenuItem[]; x: number; y: number; label: string }>();
 const emit = defineEmits<{ choose: [id: string]; close: [] }>();
@@ -16,8 +18,18 @@ const emit = defineEmits<{ choose: [id: string]; close: [] }>();
 const menu = ref<HTMLElement | null>(null);
 const place = ref({ top: `${String(props.y)}px`, left: `${String(props.x)}px` });
 
+/** The entries in sections: before the first heading, then one group per heading. */
+const sections = computed(() => {
+  const out: { label: string | null; items: WikiMenuItem[] }[] = [{ label: null, items: [] }];
+  for (const item of props.items) {
+    if (item.group === true) out.push({ label: item.text, items: [] });
+    else out.at(-1)?.items.push(item);
+  }
+  return out.filter((section) => section.items.length > 0);
+});
+
 function entries(): HTMLButtonElement[] {
-  return [...(menu.value?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)') ?? [])];
+  return [...(menu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]') ?? [])];
 }
 
 function move(step: number): void {
@@ -48,7 +60,8 @@ onMounted(async () => {
     const top = props.y + rect.height + 8 > window.innerHeight ? Math.max(8, props.y - rect.height) : props.y;
     place.value = { top: `${String(top)}px`, left: `${String(left)}px` };
   }
-  entries()[0]?.focus({ preventScroll: true });
+  // The first entry that can be used; an entry off only when there is none.
+  (entries().find((entry) => entry.getAttribute('aria-disabled') !== 'true') ?? entries()[0])?.focus({ preventScroll: true });
   document.addEventListener('pointerdown', onDocument, true);
   window.addEventListener('resize', shut);
   window.addEventListener('blur', shut);
@@ -70,6 +83,11 @@ function onKey(event: KeyboardEvent): void {
   } else return;
   event.preventDefault();
 }
+
+function choose(item: WikiMenuItem): void {
+  // An entry off stays: its reason is read, nothing happens.
+  if (item.off === undefined) emit('choose', item.id);
+}
 </script>
 
 <template>
@@ -82,24 +100,26 @@ function onKey(event: KeyboardEvent): void {
     @keydown="onKey"
     @contextmenu.prevent
   >
-    <template v-for="item in props.items" :key="item.id">
-      <p v-if="item.group === true" class="px-2.5 pt-1.5 pb-0.5 text-[12px] text-muted" role="presentation">{{ item.text }}</p>
+    <div v-for="(section, at) in sections" :key="section.label ?? `s${String(at)}`" :role="section.label === null ? undefined : 'group'" :aria-labelledby="section.label === null ? undefined : `wiki-menu-group-${String(at)}`">
+      <p v-if="section.label !== null" :id="`wiki-menu-group-${String(at)}`" class="px-2.5 pt-1.5 pb-0.5 text-[12px] text-muted">{{ section.label }}</p>
       <button
-        v-else
+        v-for="item in section.items"
+        :key="item.id"
         type="button"
-        role="menuitem"
-        class="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-2 focus-visible:bg-surface-2 disabled:cursor-default disabled:hover:bg-transparent"
-        :class="[item.off !== undefined ? 'text-muted' : item.danger === true ? 'text-danger' : 'text-ink', item.on === true ? 'font-semibold' : '']"
-        :disabled="item.off !== undefined"
+        :role="item.on === undefined ? 'menuitem' : 'menuitemradio'"
+        :aria-checked="item.on === undefined ? undefined : item.on"
+        :aria-disabled="item.off === undefined ? undefined : 'true'"
         :aria-describedby="item.off !== undefined ? `wiki-menu-off-${item.id}` : undefined"
-        @click="emit('choose', item.id)"
+        class="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-2 focus-visible:bg-surface-2"
+        :class="[item.off !== undefined ? 'cursor-default text-muted' : item.danger === true ? 'text-danger' : 'text-ink', item.on === true ? 'font-semibold' : '']"
+        @click="choose(item)"
       >
         <span class="flex items-center justify-between gap-3">
           <span>{{ item.text }}</span>
-          <span v-if="item.on === true" class="text-accent" aria-label="(adesso)">✓</span>
+          <span v-if="item.on === true" class="text-accent" aria-hidden="true">✓</span>
         </span>
         <span v-if="item.off !== undefined" :id="`wiki-menu-off-${item.id}`" class="mt-0.5 block text-[12px] leading-snug">{{ item.off }}</span>
       </button>
-    </template>
+    </div>
   </div>
 </template>

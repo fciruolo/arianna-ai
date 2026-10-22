@@ -231,7 +231,10 @@ export function startBlockDrag(view: EditorView, pos: number, event: DragEvent, 
   event.dataTransfer.setData('text/plain', node.textContent);
   event.dataTransfer.effectAllowed = 'copyMove';
   if (image !== null) event.dataTransfer.setDragImage(image, 0, 0);
-  // `node`: the drop replaces exactly the block dragged, whatever the selection is by then.
-  (view as unknown as { dragging: { slice: typeof slice; move: boolean; node: NodeSelection } | null }).dragging = { slice, move: true, node: selection };
+  // prosemirror-view 1.42.6 declares `dragging` as { slice, move }, while its drop handler also reads `node`
+  // (its own Dragging class has it): with `node` the drop replaces exactly the block dragged, whatever the
+  // selection is by then. A variable of the wider type is assignable without a cast.
+  const drag: NonNullable<EditorView['dragging']> & { node: NodeSelection } = { slice, move: true, node: selection };
+  view.dragging = drag;
   return true;
 }

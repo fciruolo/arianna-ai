@@ -924,7 +924,6 @@ body::before {
   }
   /* A citation [[nota]]: a label, one piece, never a link. */
   .wiki-editor-content .wiki-citation {
-    cursor: pointer;
     display: inline-block;
     padding: 0 0.4em;
     border: 1px solid var(--accent);

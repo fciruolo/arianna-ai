@@ -131,8 +131,8 @@ const saveState = ref<SaveState>('idle');
 const saveProblem = ref<string | null>(null);
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | null = null;
-/** Whether this writing session saved already (its version is then in .storia). */
-let sessionSaved = false;
+/** A move of the page open, or of a folder above it, waiting for the core: saves wait for it (then go to the new path). */
+let pathMove: Promise<void> | null = null;
 const editorRef = ref<{ focus: () => void } | null>(null);
 /** A page just made in the tree: its editor takes the cursor as soon as it is ready. */
 const focusNew = ref(false);
@@ -147,7 +147,8 @@ function schedule(): void {
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = undefined;
   if (!unsaved()) return;
-  saveState.value = 'waiting';
+  // While a save is going, «Salvataggio…» stays: the text written meanwhile goes with the next one.
+  if (saving === null) saveState.value = 'waiting';
   saveTimer = setTimeout(() => {
     void saveNow();
   }, SAVE_DELAY_MS);
@@ -159,7 +160,7 @@ async function saveNow(): Promise<void> {
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = undefined;
   // Every save in flight first, not only one: two waiting callers would otherwise both send over the same version.
-  while (saving !== null) await saving;
+  while (saving !== null || pathMove !== null) await (saving ?? pathMove);
   const current = page.value;
   if (current === null || current.kind !== 'page' || saveState.value === 'changed' || !unsaved()) return;
   const title = draftTitle.value;
@@ -172,7 +173,7 @@ async function saveNow(): Promise<void> {
   saveState.value = 'saving';
   saving = (async () => {
     try {
-      const version = await editWikiPage(current.path, current.version, title, body, session.value);
+      const { version, kept } = await editWikiPage(current.path, current.version, title, body, session.value);
       // The page reloaded meanwhile («Ricarica», another page): this answer is for the one before.
       if (page.value !== current) return;
       current.version = version;
@@ -181,10 +182,9 @@ async function saveNow(): Promise<void> {
       saveProblem.value = null;
       const entry = listing.value?.pages.find((item) => item.path === current.path);
       if (entry !== undefined && entry.title !== title.trim()) entry.title = title.replace(/\s+/g, ' ').trim();
-      saveState.value = 'saved';
-      // The first save of a writing session kept a version: «Versioni precedenti» shows it.
-      if (!sessionSaved) {
-        sessionSaved = true;
+      saveState.value = draftTitle.value === title && draftBody.value === body ? 'saved' : 'waiting';
+      // A version went to .storia (and the oldest beyond 20 may have gone): «Versioni precedenti» reads the list again.
+      if (kept) {
         void loadWikiPage(current.path)
           .then((fresh) => {
             if (page.value === current) current.versions = fresh.versions;
@@ -205,7 +205,7 @@ async function saveNow(): Promise<void> {
   })();
   await saving;
   // Written meanwhile: the next save goes on its own.
-  if (saveIs('saved') && unsaved()) schedule();
+  if (saveIs('waiting') && saveTimer === undefined && unsaved()) schedule();
 }
 
 /** Before leaving the page: what waits is saved now. */
@@ -220,8 +220,17 @@ function onTitleKey(event: KeyboardEvent): void {
   }
 }
 
-/** Leaving with text that cannot be saved (an error, or the page changed): asked first. */
-const leaving = ref<{ next: View } | null>(null);
+/** Leaving with text that cannot be saved (an error, or the page changed): asked first, then `go`. */
+const leaving = ref<{ go: () => void } | null>(null);
+
+/** Whether leaving now loses text that cannot be saved. */
+const unsavable = (): boolean => unsaved() && (saveState.value === 'changed' || saveState.value === 'problem');
+
+function leave(): void {
+  const go = leaving.value?.go;
+  leaving.value = null;
+  go?.();
+}
 
 function onBeforeUnload(event: BeforeUnloadEvent): void {
   if (unsaved()) event.preventDefault();
@@ -234,8 +243,12 @@ let pageRequest = 0;
 async function show(next: View, force = false): Promise<void> {
   if (!force) {
     await flush();
-    if (unsaved() && (saveState.value === 'changed' || saveState.value === 'problem')) {
-      leaving.value = { next };
+    if (unsavable()) {
+      leaving.value = {
+        go: () => {
+          void show(next, true);
+        },
+      };
       return;
     }
   }
@@ -265,7 +278,6 @@ async function show(next: View, force = false): Promise<void> {
     savedTitle = loaded.title;
     savedBody = loaded.body;
     session.value = sessionToken();
-    sessionSaved = false;
     saveState.value = 'idle';
     // Only the page just made takes the cursor; the next opening reads first.
     const fresh = focusNew.value;
@@ -314,12 +326,18 @@ function choose(node: WikiNode): void {
 /** A citation of the page: another page of the Wiki here, a note in Conoscenza. */
 function follow(target: string): void {
   const where = wikilinkTarget(target);
-  if ('wiki' in where) void showPath(where.wiki);
-  else {
-    void flush().then(() => {
-      emit('open-graph', where.note);
-    });
+  if ('wiki' in where) {
+    void showPath(where.wiki);
+    return;
   }
+  // A note opens in Conoscenza, outside the Wiki: what waits is saved first, and text that cannot be is asked about.
+  void flush().then(() => {
+    const go = (): void => {
+      emit('open-graph', where.note);
+    };
+    if (unsavable()) leaving.value = { go };
+    else go();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -411,14 +429,33 @@ function openMenu(x: number, y: number, node: WikiDragged | null, back: HTMLElem
   menu.value = { x, y, node, items: treeMenu(node, node?.kind === 'folder' ? emptyFolder(node.path) : false), back };
 }
 
+/** The name of the row an element is in: where the focus goes back after the menu, never the arrow (tabindex -1). */
+function rowName(element: Element | null): HTMLElement | null {
+  return element?.closest('.wiki-row')?.querySelector<HTMLElement>('.wiki-row-name') ?? null;
+}
+
 function onRowMenu(event: MouseEvent, node: WikiDragged): void {
-  openMenu(event.clientX, event.clientY, node, event.currentTarget instanceof HTMLElement ? event.currentTarget.querySelector('button') : null);
+  openMenu(event.clientX, event.clientY, node, event.currentTarget instanceof HTMLElement ? rowName(event.currentTarget) : null);
 }
 
 function onDotsMenu(event: MouseEvent, node: WikiDragged | null): void {
   const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const rect = target?.getBoundingClientRect();
-  openMenu(rect === undefined ? event.clientX : rect.left, rect === undefined ? event.clientY : rect.bottom + 4, node, target);
+  openMenu(rect === undefined ? event.clientX : rect.left, rect === undefined ? event.clientY : rect.bottom + 4, node, rowName(target) ?? target);
+}
+
+/** Whether the menu is open on this row (or on the root, `null`): `aria-expanded` of its «…». */
+function menuOn(node: WikiDragged | null): boolean {
+  if (menu.value === null) return false;
+  if (node === null || menu.value.node === null) return node === menu.value.node;
+  return menu.value.node.kind === node.kind && menu.value.node.path === node.path;
+}
+
+/** The element the last menu came from: the focus goes back there when what it opened closes. */
+let lastBack: HTMLElement | null = null;
+function focusBack(): void {
+  if (lastBack?.isConnected === true) lastBack.focus({ preventScroll: true });
+  lastBack = null;
 }
 
 function onRowKey(event: KeyboardEvent, node: WikiNode): void {
@@ -450,13 +487,17 @@ function nameOf(node: WikiDragged): string {
 
 async function chooseMenu(id: string): Promise<void> {
   const node = menu.value?.node ?? null;
+  lastBack = menu.value?.back ?? null;
   menu.value = null;
   if (id === 'new-page' || id === 'new-folder') startNew(node, id === 'new-page' ? 'page' : 'folder');
   else if (node === null) return;
   else if (id === 'rename') startRename(node, nameOf(node));
   else if (id === 'move') startMove(node);
   else if (id === 'duplicate') await duplicate(node);
-  else if (id === 'cite') await cite(node);
+  else if (id === 'cite') {
+    await cite(node);
+    focusBack();
+  }
   else if (id === 'delete') await startDelete(node);
 }
 
@@ -497,6 +538,7 @@ function inlinePlaceholder(): string {
 
 function cancelInline(): void {
   inline.value = null;
+  focusBack();
 }
 
 function onInlineBlur(): void {
@@ -571,10 +613,8 @@ async function submitRename(node: WikiDragged | null, value: string): Promise<vo
         inline.value = null;
         return;
       }
-      await flush();
-      const now2 = await moveWikiNow('folder', node.path, to);
+      await moveNow({ kind: 'folder', path: node.path }, to, 'Cartella', 'rinominata:');
       inline.value = null;
-      await afterMove(node.path, now2, 'Cartella', 'rinominata:');
     }
   } catch (failure) {
     if (inline.value === now) {
@@ -599,11 +639,8 @@ async function confirmMove(): Promise<void> {
   now.busy = true;
   now.problem = null;
   try {
-    await flush();
-    const base = now.node.kind === 'page' ? (await loadWikiPage(now.node.path)).version : undefined;
-    const where = await moveWikiNow(now.node.kind, now.node.path, now.chosen, base);
+    await moveNow(now.node, now.chosen, now.node.kind === 'page' ? 'Pagina' : 'Cartella');
     moving.value = null;
-    await afterMove(now.node.path, where, now.node.kind === 'page' ? 'Pagina' : 'Cartella');
   } catch (failure) {
     now.problem = problemOf(failure);
     now.busy = false;
@@ -613,11 +650,62 @@ async function confirmMove(): Promise<void> {
 /** After a move: the tree, the proposals and the page shown at its new place. */
 async function afterMove(from: string, to: string, what: string, verb = 'spostata in'): Promise<void> {
   await Promise.all([loadListing(), loadProposals()]);
-  if (shownPath.value !== null) {
-    const moved = movedPath(shownPath.value, from, to);
-    if (moved !== shownPath.value) await showPath(moved);
-  }
+  await followMove(from, to);
   say(`${what} ${verb} wiki/${to}.`);
+}
+
+/**
+ * A page or folder moved now, at once (D-280). What waits on the page open is
+ * saved first; saves written during the move wait for the core's answer and
+ * then go to the new path, so nothing is written on the old one.
+ */
+async function moveNow(item: WikiDragged, to: string, what: string, verb?: string): Promise<void> {
+  await flush();
+  let release = (): void => undefined;
+  pathMove = new Promise((done) => {
+    release = done;
+  });
+  try {
+    const base = item.kind === 'page' ? (await loadWikiPage(item.path)).version : undefined;
+    const where = await moveWikiNow(item.kind, item.path, to, base);
+    await afterMove(item.path, where, what, verb);
+  } finally {
+    pathMove = null;
+    release();
+  }
+}
+
+/**
+ * The page open follows a move of itself or of a folder above it: when its
+ * text did not change, in place, with what is being written; when the core
+ * rewrote it (links that followed) and the user wrote meanwhile, the page
+ * says it changed and keeps the text; otherwise it opens again.
+ */
+async function followMove(from: string, to: string): Promise<void> {
+  if (shownPath.value === null) return;
+  const moved = movedPath(shownPath.value, from, to);
+  if (moved === shownPath.value) return;
+  const current = page.value;
+  if (view.value.kind !== 'page' || current?.kind !== 'page') {
+    // Forced: the saves wait for this move, a flush here would wait for itself.
+    await show(moved === '_indice' || moved.endsWith('/_indice') ? { kind: 'index', path: moved } : { kind: 'page', path: moved }, true);
+    return;
+  }
+  try {
+    const fresh = await loadWikiPage(moved);
+    if (page.value !== current) return;
+    if (fresh.version !== current.version && !unsaved()) {
+      await show({ kind: 'page', path: moved }, true);
+      return;
+    }
+    if (fresh.version !== current.version) saveState.value = 'changed';
+    current.path = moved;
+    current.versions = fresh.versions;
+    view.value = { kind: 'page', path: moved };
+    open.value = new Set([...open.value, ...ancestorsOf(moved)]);
+  } catch (failure) {
+    say(problemOf(failure));
+  }
 }
 
 // «Duplica»: a new page «<titolo> (copia)» next to it, with the same text
@@ -770,10 +858,7 @@ async function dropOn(folder: string): Promise<void> {
     return;
   }
   try {
-    await flush();
-    const base = item.kind === 'page' ? (await loadWikiPage(item.path)).version : undefined;
-    const now = await moveWikiNow(item.kind, item.path, where.to, base);
-    await afterMove(item.path, now, item.kind === 'page' ? 'Pagina' : 'Cartella');
+    await moveNow(item, where.to, item.kind === 'page' ? 'Pagina' : 'Cartella');
   } catch (failure) {
     treeNotice.value = problemOf(failure);
   }
@@ -894,7 +979,7 @@ onBeforeUnmount(() => {
         >
           <Icon name="wiki" :size="15" /><span class="truncate">Wiki</span>
         </button>
-        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink" title="Nuova pagina o cartella alla radice" aria-label="Nuova pagina o cartella alla radice" aria-haspopup="menu" @click="onDotsMenu($event, null)">
+        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink" title="Nuova pagina o cartella alla radice" aria-label="Nuova pagina o cartella alla radice" aria-haspopup="menu" :aria-expanded="menuOn(null)" @click="onDotsMenu($event, null)">
           <Icon name="new" :size="15" />
         </button>
         <button type="button" class="hidden size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink md:grid" title="Chiudi l’albero" aria-label="Chiudi l’albero" @click="setClosed(true)">
@@ -930,7 +1015,7 @@ onBeforeUnmount(() => {
 
         <template v-for="row in rows" :key="keyOf(row.node)">
           <div
-            class="group flex items-center rounded-md"
+            class="wiki-row group flex items-center rounded-md"
             :class="[dropOver !== null && dropOver === dropFolder(row.node) && dragging !== null ? 'bg-accent/15' : '', rowShown(row.node) ? 'bg-surface' : 'hover:bg-surface/70']"
             :style="{ paddingLeft: `${String(row.depth * 14)}px` }"
             :draggable="inline?.at !== keyOf(row.node)"
@@ -960,7 +1045,7 @@ onBeforeUnmount(() => {
                 type="text"
                 maxlength="80"
                 autocomplete="off"
-            class="w-full rounded-md border border-line bg-surface px-1.5 py-0.5 text-[14px] outline-none"
+                class="w-full rounded-md border border-line bg-surface px-1.5 py-0.5 text-[14px] outline-none"
                 :aria-label="inlinePlaceholder()"
                 :disabled="inline.busy"
                 @keydown.esc.prevent="cancelInline"
@@ -971,7 +1056,7 @@ onBeforeUnmount(() => {
             <button
               v-else
               type="button"
-              class="min-w-0 flex-1 truncate rounded-md px-1.5 py-1 text-left"
+              class="wiki-row-name min-w-0 flex-1 truncate rounded-md px-1.5 py-1 text-left"
               :class="[row.node.kind === 'folder' ? 'font-medium' : '', rowShown(row.node) ? 'text-accent' : '']"
               :title="`wiki/${row.node.path} · clic destro per le azioni`"
               :aria-current="rowShown(row.node) ? 'page' : undefined"
@@ -998,6 +1083,7 @@ onBeforeUnmount(() => {
                 :title="`Azioni su ${row.node.name}`"
                 :aria-label="`Azioni su ${row.node.name}`"
                 aria-haspopup="menu"
+                :aria-expanded="menuOn({ kind: row.node.kind, path: row.node.path })"
                 @click="onDotsMenu($event, { kind: row.node.kind, path: row.node.path })"
               >
                 <Icon name="more" :size="14" />
@@ -1011,7 +1097,7 @@ onBeforeUnmount(() => {
               type="text"
               maxlength="120"
               autocomplete="off"
-            class="w-full rounded-md border border-line bg-surface px-2 py-1 text-[14px] outline-none"
+              class="w-full rounded-md border border-line bg-surface px-2 py-1 text-[14px] outline-none"
               :placeholder="inlinePlaceholder()"
               :aria-label="inlinePlaceholder()"
               :disabled="inline.busy"
@@ -1097,6 +1183,7 @@ onBeforeUnmount(() => {
           title="Azioni sulla pagina"
           aria-label="Azioni sulla pagina"
           aria-haspopup="menu"
+          :aria-expanded="menuOn({ kind: 'page', path: page.path })"
           @click="onDotsMenu($event, { kind: 'page', path: page.path })"
         >
           <Icon name="more" :size="16" />
@@ -1243,7 +1330,7 @@ onBeforeUnmount(() => {
       :problem="moving.problem"
       :disabled="moving.chosen === ''"
       @confirm="confirmMove"
-      @cancel="moving = null"
+      @cancel="moving = null; focusBack()"
     >
       <p v-if="moving.choices.length === 0">Non c’è un’altra cartella dove possa andare: al più argomento › sotto-argomento › articolo.</p>
       <template v-else>
@@ -1262,12 +1349,12 @@ onBeforeUnmount(() => {
       :busy="folderDeleteBusy"
       :problem="folderDeleteProblem"
       @confirm="confirmFolderDelete"
-      @cancel="deletingFolder = null"
+      @cancel="deletingFolder = null; focusBack()"
     >
       <p>La cartella vuota wiki/{{ deletingFolder }} va via. Le altre cartelle e le pagine restano come sono.</p>
     </ConfirmDialog>
 
-    <ConfirmDialog v-if="deleting !== null" title="Elimina la pagina" confirm-text="Elimina" danger :busy="deleteBusy" :problem="deleteProblem" @confirm="confirmDelete" @cancel="deleting = null">
+    <ConfirmDialog v-if="deleting !== null" title="Elimina la pagina" confirm-text="Elimina" danger :busy="deleteBusy" :problem="deleteProblem" @confirm="confirmDelete" @cancel="deleting = null; focusBack()">
       <p>
         La pagina «{{ deleting.title }}» va via per sempre dal Mac{{ deleting.versions === 0 ? '' : deleting.versions === 1 ? ', con la sua versione precedente,' : `, con le sue ${String(deleting.versions)} versioni precedenti,` }} insieme alle proposte in attesa su di lei. Le note che cita restano. Gli indici delle cartelle si aggiornano; la cartella resta.
       </p>
@@ -1285,7 +1372,7 @@ onBeforeUnmount(() => {
       <p>La pagina «{{ page.title }}» torna com’era il {{ versionText(page.versions.find((version) => version.id === restoring)?.at ?? '') }}. La versione di adesso resta fra le precedenti.</p>
     </ConfirmDialog>
 
-    <ConfirmDialog v-if="leaving !== null" title="Modifiche non salvate" confirm-text="Lascia la pagina" danger @confirm="show(leaving.next, true)" @cancel="leaving = null">
+    <ConfirmDialog v-if="leaving !== null" title="Modifiche non salvate" confirm-text="Lascia la pagina" danger @confirm="leave" @cancel="leaving = null">
       <p>{{ saveState === 'changed' ? 'La pagina è cambiata intanto e quello che hai scritto non si può salvare sopra.' : saveProblem ?? 'Quello che hai scritto non è salvato.' }} Se lasci la pagina, il testo scritto qui va perso: copialo prima, se ti serve.</p>
     </ConfirmDialog>
   </div>

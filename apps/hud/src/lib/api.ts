@@ -1380,10 +1380,12 @@ export async function restoreWikiPage(path: string, version: string, base: strin
 
 /**
  * A save of a page of the Wiki by the user, over the page as shown (`base`). With `session` (D-284, the page
- * that saves by itself) the core keeps the version before only once per writing session. Gives the new version.
+ * that saves by itself) the core keeps the version before only once per writing session. Gives the new version,
+ * and whether a version went to «Versioni precedenti».
  */
-export async function editWikiPage(path: string, base: string, title: string, body: string, session?: string): Promise<string> {
-  return (await call<{ version: string }>('POST', '/api/wiki/edit', session === undefined ? { path, base, title, body } : { path, base, title, body, session })).version;
+export async function editWikiPage(path: string, base: string, title: string, body: string, session?: string): Promise<{ version: string; kept: boolean }> {
+  const saved = await call<{ version: string; kept?: boolean }>('POST', '/api/wiki/edit', session === undefined ? { path, base, title, body } : { path, base, title, body, session });
+  return { version: saved.version, kept: saved.kept === true };
 }
 
 /** «Nuova pagina» of the Wiki by the user (`topic/article`): it starts with the sections to fill, or with `body` («Duplica», D-284). */

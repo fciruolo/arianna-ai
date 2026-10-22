@@ -334,6 +334,8 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.equal(tortaFirst.status, 200);
   const tortaSecond = await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaFirst.body.version, title: 'Torta', body: 'due\n', session: 'sessione-di-prova-0001' });
   assert.equal(tortaSecond.status, 200);
+  assert.equal(tortaFirst.body.kept, true);
+  assert.equal(tortaSecond.body.kept, false);
   assert.equal(((await send('GET', '/api/wiki/page?path=cucina/torta')).body.page as { versions: unknown[] }).versions.length, 1);
   assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 'corto' })).status, 400);
   assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 12 })).status, 400);

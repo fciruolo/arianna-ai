@@ -353,6 +353,36 @@ describe('the user writes the wiki', () => {
     assert.equal(readWikiView(root, RULES, 'cucina/pane').version, shown.version);
   });
 
+  it('the writing sessions remember at most 500 pages: the oldest is forgotten, and its next save keeps a version (D-284)', () => {
+    const sessions = new WikiWriteSessions();
+    const token = 'sessione-di-prova-0001';
+    for (let n = 0; n <= 500; n += 1) sessions.saved(`argomento/pagina-${String(n)}`, token, 'v', NOW);
+    // Positive: the newest is still the same session.
+    assert.equal(sessions.starts('argomento/pagina-500', token, 'v', NOW), false);
+    assert.equal(sessions.starts('argomento/pagina-1', token, 'v', NOW), false);
+    // Negative: the first, beyond the 500, starts a new session.
+    assert.equal(sessions.starts('argomento/pagina-0', token, 'v', NOW), true);
+    // A save moves a page to the newest: saving pagina-1 again keeps it when another goes.
+    sessions.saved('argomento/pagina-1', token, 'v', NOW);
+    sessions.saved('argomento/pagina-501', token, 'v', NOW);
+    assert.equal(sessions.starts('argomento/pagina-1', token, 'v', NOW), false);
+    assert.equal(sessions.starts('argomento/pagina-2', token, 'v', NOW), true);
+  });
+
+  it('a page made in the tree starts empty (`body: ""`), as in Notion (D-284)', () => {
+    const root = home();
+    const created = createUserWikiPage(root, RULES, 'cucina/vuota', 'Vuota', '', NOW);
+    const view = readWikiView(root, RULES, created.path);
+    assert.equal(view.body.trim(), '');
+    assert.equal(view.title, 'Vuota');
+    assert.match(readFileSync(join(root, 'kb/wiki/cucina/vuota.md'), 'utf8'), /^---\nlabel: L2\nkind: wiki\n/);
+    // The first save of the empty page keeps the empty version, then the text goes in.
+    const sessions = new WikiWriteSessions();
+    const saved = editWikiPage(root, RULES, created.path, view.version, 'Vuota', 'Ora c’è testo.\n', NOW, { sessions, token: 'sessione-di-prova-0002' });
+    assert.equal(saved.kept, true);
+    assert.equal(editWikiPage(root, RULES, created.path, saved.version, 'Vuota', 'Ancora.\n', NOW, { sessions, token: 'sessione-di-prova-0002' }).kept, false);
+  });
+
   it('«Duplica» is a new page with the text of the page, checked as any page the user writes (D-284)', () => {
     const root = home();
     const body = '## In breve\n\nCon [[inbox/2026-10-21-100000-octane|la nota]].\n';

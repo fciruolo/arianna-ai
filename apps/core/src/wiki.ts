@@ -1532,7 +1532,7 @@ export interface WriteSession {
  * writing session when `session` is given (D-284). An update proposal
  * waiting on the page expires (it was made for the old text).
  */
-export function editWikiPage(home: string, rules: LabelRules, path: string, base: string, title: string, body: string, now = new Date(), session?: WriteSession): { version: string } {
+export function editWikiPage(home: string, rules: LabelRules, path: string, base: string, title: string, body: string, now = new Date(), session?: WriteSession): { version: string; kept: boolean } {
   if (!isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`)) throw new WikiError('not-found', 'page not found');
   if (!SHA.test(base)) throw new WikiError('invalid', 'base is required');
   if (session !== undefined && !SESSION_TOKEN.test(session.token)) throw new WikiError('invalid', 'session');
@@ -1547,7 +1547,8 @@ export function editWikiPage(home: string, rules: LabelRules, path: string, base
   const version = sha256(content);
   session?.sessions.saved(path, session.token, version, now);
   rebuildIndexes(home, rules);
-  return { version };
+  // `kept`: a version went to .storia (and the oldest beyond 20 may have gone): the chat reads the list again.
+  return { version, kept: keep };
 }
 
 /** «Nuova pagina» by the user: never over a page or a folder; the folders above it are made. */

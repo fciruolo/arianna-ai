@@ -80,7 +80,7 @@ export const WikiCitation = Node.create({
     const attrs = attrsOf(node.attrs);
     return [
       'span',
-      { 'data-wiki-citation': '', 'data-target': attrs.target, ...(attrs.label === null ? {} : { 'data-label': attrs.label }), class: 'wiki-citation', title: citationMarkdown(attrs) },
+      { 'data-wiki-citation': '', 'data-target': attrs.target, ...(attrs.label === null ? {} : { 'data-label': attrs.label }), class: 'wiki-citation', title: `${citationMarkdown(attrs)} · ⌘ o Ctrl + clic per aprire` },
       citationText(attrs),
     ];
   },

@@ -18,7 +18,7 @@ import WikiMenu from './WikiMenu.vue';
  * quote, code, table, line, citation of a note); selecting text shows a bar
  * (bold, italic, strike, code, headings); the handle «⋮⋮» on the left of a
  * block drags it, and a click on it deletes, duplicates or turns it into
- * another kind. Citations `[[nota]]` are labels; a click follows them.
+ * another kind. Citations `[[nota]]` are labels; Cmd (Ctrl) + click follows them.
  * Underneath it is Markdown, the text the core checks; «Markdown» switches
  * to the plain text. No command for links, images or HTML exists: the
  * schema has none. The right click stays the system's (copy, paste, spelling).
@@ -352,6 +352,13 @@ const blockItems = computed<WikiMenuItem[]>(() => {
   ];
 });
 
+/** Esc or a click outside: the menu goes, the cursor goes back in the text. */
+function closeBlockMenu(): void {
+  blockMenu.value = null;
+  handle.shown = false;
+  editor.value?.commands.focus();
+}
+
 function chooseBlock(id: string): void {
   const current = editor.value;
   const at = blockMenu.value;
@@ -384,9 +391,10 @@ function create(text: string): void {
     content: markdownToDoc(text),
     editorProps: {
       attributes: { class: 'wiki-editor-content', 'aria-label': 'Testo della pagina', spellcheck: 'true' },
-      // A citation is a label that leads: to the page of the Wiki, or to the note in Conoscenza.
-      handleClickOn: (_view, _pos, node) => {
-        if (node.type.name !== 'wikiCitation') return false;
+      // A citation leads, as in Notion, with Cmd (Ctrl) + click: to the page of the Wiki, or to the note in Conoscenza.
+      // A plain click places the cursor, as on any other text.
+      handleClickOn: (_view, _pos, node, _nodePos, event) => {
+        if (node.type.name !== 'wikiCitation' || !(event.metaKey || event.ctrlKey)) return false;
         const target = typeof node.attrs.target === 'string' ? node.attrs.target : '';
         if (target !== '') emit('follow', target);
         return true;
@@ -490,7 +498,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2 text-[12.5px] text-muted">
-      <span class="min-w-0 flex-1">«/» per i blocchi · «[[» per citare · ⋮⋮ a sinistra per spostare un blocco. Niente link, immagini o indirizzi: la pagina resta sul Mac.</span>
+      <span class="min-w-0 flex-1">«/» per i blocchi · «[[» per citare (⌘ o Ctrl + clic la apre) · ⋮⋮ a sinistra per spostare un blocco. Niente link, immagini o indirizzi: la pagina resta sul Mac.</span>
       <label class="flex items-center gap-1.5">
         <input type="checkbox" :checked="mode === 'markdown'" @change="toggle" />
         Markdown
@@ -523,7 +531,7 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <WikiMenu v-if="blockMenu !== null" :items="blockItems" :x="blockMenu.x" :y="blockMenu.y" label="Azioni del blocco" @choose="chooseBlock" @close="blockMenu = null; handle.shown = false" />
+    <WikiMenu v-if="blockMenu !== null" :items="blockItems" :x="blockMenu.x" :y="blockMenu.y" label="Azioni del blocco" @choose="chooseBlock" @close="closeBlockMenu" />
 
     <ul
       v-if="slash.open && mode === 'rich'"

@@ -1141,7 +1141,7 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       // The chat saves by itself while the user writes (D-284): one version in .storia per writing session.
       const edited = editWikiPage(home, rules, body.path, body.base, body.title, body.body, new Date(), body.session === undefined ? undefined : { sessions: writeSessions, token: body.session });
       await recordWikiEvent(sql, 'wiki.edited', {}).catch(onError);
-      return { body: { version: edited.version } };
+      return { body: { version: edited.version, kept: edited.kept } };
     }),
     route('POST', '/api/wiki/create', async (request) => {
       const { home, rules } = need();
