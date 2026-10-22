@@ -88,7 +88,7 @@ const picker = ref<HTMLInputElement | null>(null);
 const previewBox = ref<HTMLElement | null>(null);
 function choose(id: string): void {
   selected.value = id;
-  if (!window.matchMedia('(max-width: 47.98rem)').matches) return;
+  if (!window.matchMedia('(width < 48rem)').matches) return;
   void nextTick(() => previewBox.value?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
 }
 const accept = DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`).join(',');

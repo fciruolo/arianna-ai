@@ -6,7 +6,7 @@
 import type { StudioView } from './studio.ts';
 
 /** The phone of the chat: the same edge as the `phone:` variant of style.css (below 48rem). */
-export const PHONE_QUERY = '(max-width: 47.98rem)';
+export const PHONE_QUERY = '(width < 48rem)';
 
 /** The width each view draws the page at on the phone; the desktop has no width of its own on a big screen. */
 export const PHONE_PAGE_WIDTH: Record<StudioView, number> = { desktop: 1280, tablet: 820, mobile: 390 };

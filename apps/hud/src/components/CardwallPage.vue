@@ -416,17 +416,16 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       v-if="wall !== null && state.view === 'board' && columns.length > 0"
       ref="columnTabs"
       class="-mx-4 flex shrink-0 snap-x gap-1.5 overflow-x-auto px-4 pb-0.5 md:hidden"
-      role="tablist"
+      role="group"
       aria-label="Colonna mostrata"
     >
       <button
         v-for="column in columns"
         :key="column.id"
         type="button"
-        role="tab"
         class="flex min-h-11 shrink-0 snap-start items-center gap-1.5 rounded-full border px-3.5 text-[14.5px]"
         :class="column.id === shownColumn ? 'border-accent bg-accent text-accent-ink' : column.id === 'failed' ? 'border-line-strong text-danger' : 'border-line-strong text-muted'"
-        :aria-selected="column.id === shownColumn"
+        :aria-pressed="column.id === shownColumn"
         @click="showColumn(column.id)"
       >
         {{ column.title }}<span class="text-[13px] tabular-nums opacity-80">{{ groups.get(column.id)?.length ?? 0 }}</span>

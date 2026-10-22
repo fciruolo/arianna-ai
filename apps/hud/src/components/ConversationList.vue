@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { groupByDay } from '../lib/day-groups.ts';
 import { SESSION_COPY } from '../lib/draft.ts';
@@ -127,6 +127,37 @@ function onRowClick(id: string): void {
 }
 function closeSheet(): void {
   sheet.value = null;
+}
+/** The sheet takes the focus when it opens and gives it back to what opened it (review of D-293). */
+const sheetBox = ref<HTMLElement | null>(null);
+let opener: HTMLElement | null = null;
+watch(
+  () => sheet.value !== null,
+  async (open) => {
+    if (open) {
+      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      await nextTick();
+      sheetBox.value?.querySelector<HTMLElement>('button')?.focus();
+    } else if (opener !== null && opener.isConnected && editing.value === null) {
+      opener.focus();
+      opener = null;
+    }
+  },
+);
+/** Tab stays inside the sheet while it is open. */
+function trapTab(event: KeyboardEvent): void {
+  if (event.key !== 'Tab' || sheetBox.value === null) return;
+  const buttons = [...sheetBox.value.querySelectorAll<HTMLElement>('button')];
+  const first = buttons[0];
+  const last = buttons.at(-1);
+  if (first === undefined || last === undefined) return;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 function sheetAction(action: 'pin' | 'rename' | 'archive' | 'erase'): void {
   const chosen = sheet.value;
@@ -446,7 +477,9 @@ function confirmArchive(id: string): void {
       <div v-if="sheet !== null" class="fixed inset-0 z-50 bg-black/50" aria-hidden="true" @click="closeSheet" />
       <div
         v-if="sheet !== null"
+        ref="sheetBox"
         role="dialog"
+        @keydown="trapTab"
         aria-modal="true"
         :aria-label="`Azioni su ${titleOf(sheet.conversation)}`"
         class="fixed inset-x-2 bottom-[calc(var(--safe-bottom)+0.5rem)] z-50 flex flex-col gap-2"

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AREAS, NAV_GROUPS } from '../src/lib/nav-groups.ts';
-import { PHONE_TABS, TAB_AREAS, moreGroups, remoteLimit, tabBadge, tabBarShown, tabOf, type AppPage } from '../src/lib/phone-nav.ts';
+import { pendingCountOf, PHONE_TABS, TAB_AREAS, moreGroups, remoteLimit, tabBadge, tabBarShown, tabOf, type AppPage } from '../src/lib/phone-nav.ts';
 import { isMorePath, isPendingPath, MORE_PATH, PENDING_PATH } from '../src/lib/route.ts';
 import { SETTINGS_INDEX } from '../src/lib/settings-index.ts';
 
@@ -80,4 +80,15 @@ test('the two pages of the phone have an address of their own', () => {
   assert.equal(isPendingPath('/attende'), false);
   assert.equal(isMorePath(MORE_PATH), true);
   assert.equal(isMorePath('/altro/x'), false);
+});
+
+test('the number of «Attende te» counts as the page does', () => {
+  assert.equal(pendingCountOf(undefined, []), 0);
+  assert.equal(pendingCountOf(2, []), 2);
+  // An approval of a waiting task is counted once, with its task.
+  assert.equal(pendingCountOf(1, [{ taskId: 't1' }]), 1);
+  assert.equal(pendingCountOf(1, [{ taskId: null }]), 2);
+  // Never fewer than the approvals listed.
+  assert.equal(pendingCountOf(0, [{ taskId: 't1' }, { taskId: 't2' }]), 2);
+  assert.equal(pendingCountOf(Number.NaN, [{ taskId: null }]), 1);
 });

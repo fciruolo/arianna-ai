@@ -184,7 +184,7 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
   cursor: progress;
 }
 /* The phone (D-293): only the icons, each a target for a finger; the words stay for screen readers. */
-@media (max-width: 47.98rem) {
+@media (width < 48rem) {
   .msg-actions {
     gap: 0.125rem;
   }

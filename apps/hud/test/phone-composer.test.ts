@@ -68,11 +68,11 @@ test('on the phone the Enter of the keyboard goes to a new line', () => {
 
 test('the phone is a finger on a narrow screen', () => {
   const only = (...queries: string[]) => (query: string) => queries.includes(query);
-  assert.equal(phoneComposer(only('(pointer: coarse)', '(max-width: 47.98rem)')), true);
+  assert.equal(phoneComposer(only('(pointer: coarse)', '(width < 48rem)')), true);
   // An iPad: a finger on a wide screen keeps Enter to send.
   assert.equal(phoneComposer(only('(pointer: coarse)')), false);
   // A narrow window of the Mac.
-  assert.equal(phoneComposer(only('(max-width: 47.98rem)')), false);
+  assert.equal(phoneComposer(only('(width < 48rem)')), false);
 });
 
 test('a long press starts after its time without moving', () => {

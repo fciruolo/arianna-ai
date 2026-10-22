@@ -333,5 +333,5 @@ export function enterSends(event: { key: string; shiftKey: boolean; isComposing?
 
 /** The phone for the composer: a finger and a narrow screen, read from the media queries of the page. */
 export function phoneComposer(matches: (query: string) => boolean): boolean {
-  return matches('(pointer: coarse)') && matches('(max-width: 47.98rem)');
+  return matches('(pointer: coarse)') && matches('(width < 48rem)');
 }

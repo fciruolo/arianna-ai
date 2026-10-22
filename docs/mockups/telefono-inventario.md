@@ -26,10 +26,12 @@ Gravità: **A** rende la pagina inutilizzabile, **M** la rende scomoda, **B** è
 | 14 | Pagine dense | Progetti (griglie fisse, tabelle, `w-[480px]`), Finanze (tabelle dei movimenti), Confronto modelli, Consumi (`min-w-[640px]`), Cardwall a colonne, Conoscenza (grafo su canvas, 2132 righe senza un punto di rottura) | `ProjectsPage.vue`, `Finance*.vue`, `ModelsCompare.vue`, `UsagePage.vue`, `CardwallPage.vue`, `KnowledgePage.vue` | M |
 | 15 | Wiki | L'albero è già a cassetto; restano la barra degli strumenti dell'editor (pulsanti da 2 rem) e le tabelle a layout fisso | `WikiPage.vue`, `WikiEditor.vue`, `style.css` | M |
 | 16 | Tema sul telefono | `theme-color` fisso `#0e1b1f` anche col tema chiaro; barra di stato `default` (non usa lo spazio sotto l'isola) | `index.html` | B |
-| 17 | Solo Mac | Ufficio, Studio, browser dell'agente e Dispositivi sono pensati per il Mac (canvas, iframe, `localOnly` di D-292): sul telefono vanno detti «solo sul Mac», non mostrati rotti | `OfficePage.vue`, `StudioPage.vue`, `BrowserPage.vue` | B |
+| 17 | Solo Mac | Ufficio, Studio, browser dell'agente e Dispositivi sono pensati per il Mac (canvas, iframe, `localOnly` di D-292): Ufficio e Studio vanno adattati (scelta dell’utente del 2026-10-22); il browser dell’agente e Dispositivi, rifiutati dalla porta remota, vanno detti «solo sul Mac», non mostrati rotti | `OfficePage.vue`, `StudioPage.vue`, `BrowserPage.vue` | B |
 | 18 | Schermate di accesso | Già a misura di telefono (`min-h-dvh`, codice a 26 px); mancano safe-area, pulsante a tutta larghezza da 48 px, e il nome del Mac a cui ci si collega | `RemoteAccessPage.vue` | B |
 
 ## Scelte del mockup
+
+Aggiornamento del 2026-10-22: l’utente ha approvato il mockup, ma Ufficio, Studio e Conoscenza vanno adattati al telefono come le altre pagine; le righe «meglio sul Mac» di `telefono.html` sono superate. La costruzione è descritta nella riga D-293 di `docs/DECISIONS.md`.
 
 - **Punto di rottura: sotto `md` (48 rem, 768 px)**, lo stesso che oggi fa diventare cassetto la barra sinistra: un solo confine, nessun terzo stato. Una variante `phone` in `style.css` (`@custom-variant phone (@media (max-width: 47.99rem))`) e, a parte, `@media (pointer: coarse)` per le misure del tocco (44 px) anche sull'iPad.
 - **Barra in basso a 5 voci:** *Chat* (lista delle conversazioni, la cosa più usata), *Attende te* (approvazioni con Face ID e agenti al lavoro, col numero: è il motivo principale per aprire Arianna fuori casa), *Pensieri* (catturare un'idea al volo, D-080), *Dashboard* (lo stato in un colpo d'occhio, D-248), *Altro* (tutte le altre aree nei tre gruppi di `nav-groups.ts`, con Impostazioni in fondo). Si nasconde dentro una conversazione e con la tastiera aperta.
@@ -49,7 +51,7 @@ Ogni tappa è un ramo e una prova sull'iPhone; il desktop non cambia finché non
 | 4. Attende te | Pagina con approvazioni, decise altrove e agenti al lavoro (il contenuto di `StatusPanel`), pulsanti a tutta larghezza, «Approva con Face ID» sull'origine remota | nuovo `PendingPage.vue`, `StatusPanel.vue`, `ApprovalCard.vue`, `PendingDecisions.vue` | 5 |
 | 5. Fogli e pannelli | Cerca, Nuova conversazione, conferme, legenda come fogli a schermo intero; safe-area per pannelli, chiamate e toast (toast in alto sotto l'isola) | `SearchDialog.vue`, `NewConversationDialog.vue`, `ConfirmDialog.vue`, `LabelLegend.vue`, `SidePanel.vue`, `ComputerPanel.vue`, `CallView.vue`, `IncomingCall.vue`, `NoticeToasts.vue` | 5 |
 | 6. Impostazioni | Elenco a righe da 48 px, intestazione con «‹ Impostazioni», barra di salvataggio sopra la safe-area, campi a tutta larghezza | `SettingsPage.vue`, `SettingsSaveBar.vue` | 4 |
-| 7. Pagine dense | Routine, Pensieri, Dashboard, Wiki in lettura a una colonna; Progetti, Clienti, Finanze con tabelle che diventano righe; Ufficio, Studio, Conoscenza col cartello «Meglio sul Mac» e un riassunto | pagine relative | 8-12 |
+| 7. Pagine dense | Routine, Pensieri, Dashboard, Wiki in lettura a una colonna; Progetti, Clienti, Finanze con tabelle che diventano righe; Ufficio (scena scorrevole ed elenco degli agenti), Studio («Chat | Anteprima»), Conoscenza (gesti e «Elenco» dei nodi) adattati come le altre: l’utente ha scelto il 2026-10-22 niente cartello «Meglio sul Mac», che nel mockup resta superato | pagine relative | 8-12 |
 | 8. Accesso | Ritocchi di `RemoteAccessPage.vue` come nel mockup | `RemoteAccessPage.vue` | 1 |
 
 Totale: circa 40-44 ore.

@@ -299,7 +299,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           </div>
         </div>
         <!-- Shown on request (D-194); still read as the description of the office when hidden. -->
-        <div v-show="showKeys" id="office-keys" class="mt-2 phone:hiddenrounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
+        <div v-show="showKeys" id="office-keys" class="mt-2 phone:hidden rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
           <dl v-if="shownView === '3d'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
             <dt><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">S</kbd></dt>
             <dd>cammina avanti e indietro</dd>

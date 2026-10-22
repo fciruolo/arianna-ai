@@ -97,7 +97,7 @@ import {
 import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import type { NavArea } from './lib/nav-groups.ts';
-import { tabBadge, tabBarShown, tabOf, type AppPage, type PhoneTab } from './lib/phone-nav.ts';
+import { pendingCountOf, tabBadge, tabBarShown, tabOf, type AppPage, type PhoneTab } from './lib/phone-nav.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import { activeTheme, applyTheme } from './lib/themes.ts';
 import { officeFeast } from './lib/office/feasts.ts';
@@ -243,8 +243,8 @@ function characterOf(who: Callee): CharacterChoice | undefined {
   return (who.agent === null ? undefined : characters.value?.agents[who.agent]) ?? characters.value?.agents.arianna;
 }
 
-// Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser (D-097).
-const showSidebar = ref(false);
+// The right bar is a drawer below 3xl; collapsed bars on wide ones, remembered in this browser (D-097).
+// Below md the left bar gives way to the bar at the bottom of the phone (D-293): it is no drawer any more.
 const showPanel = ref(false);
 let storage: Storage | undefined;
 try {
@@ -275,10 +275,9 @@ function measureWidth(): void {
   wideSplit.value = splitFits(window.innerWidth);
 }
 
-/** The fold button of the left bar: a thin column on wide screens, the drawer closes on narrow ones. */
+/** The fold button of the left bar: it becomes a thin column (the bar exists from md, D-293). */
 function foldSidebar(): void {
   if (wide(48)) layout.value.sidebar = true;
-  showSidebar.value = false;
 }
 
 /** The right bar: a column from 3xl, a drawer below (D-150); its button is in the top bar. */
@@ -297,11 +296,9 @@ const newWith = ref<string | undefined>(undefined);
 /** The project "+ Nuovo" opens on («Parla con…» from an island of the office, D-212); undefined: the first one. */
 const newProject = ref<string | undefined>(undefined);
 function openSearch(): void {
-  showSidebar.value = false;
   showSearch.value = true;
 }
 function openNew(agent?: string, project?: string): void {
-  showSidebar.value = false;
   void store.refreshProjects();
   newWith.value = agent;
   newProject.value = project;
@@ -334,7 +331,6 @@ function focusComposer(): void {
 }
 /** "Nuovo" and "/nuova" (D-108): a draft only in the page; the conversation is created with the first message. */
 function openDraft(choice: DraftChoice, replace = false): void {
-  showSidebar.value = false;
   page.value = 'chat';
   store.openDraft(choice);
   if (choice.incognito === true) {
@@ -455,7 +451,6 @@ const clockText = computed(() => {
 const page = ref<AppPage>('chat');
 
 function openPage(name: Exclude<AppPage, 'chat'>, path: string, title: string): void {
-  showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
   if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState(null, '', path);
@@ -773,11 +768,13 @@ function followMain(): void {
     openRoutines();
     return;
   }
-  if (isPendingPath(window.location.pathname)) {
+  // The two pages of the phone (D-293): on a wide screen the left and right bars hold the same, so the chat opens instead.
+  if ((isPendingPath(window.location.pathname) || isMorePath(window.location.pathname)) && wide(48)) {
+    window.history.replaceState(null, '', '/');
+  } else if (isPendingPath(window.location.pathname)) {
     openPending();
     return;
-  }
-  if (isMorePath(window.location.pathname)) {
+  } else if (isMorePath(window.location.pathname)) {
     openMore();
     return;
   }
@@ -934,7 +931,6 @@ onBeforeUnmount(() => {
 });
 
 async function openConversation(id: string): Promise<void> {
-  showSidebar.value = false;
   page.value = 'chat';
   await store.open(id);
 }
@@ -944,13 +940,11 @@ const secretaryOpen = computed(() => page.value === 'chat' && current.value?.sec
 
 /** "Segretaria" of the left bar (D-144): its one private conversation, created the first time. */
 async function openSecretary(): Promise<void> {
-  showSidebar.value = false;
   page.value = 'chat';
   await store.openSecretary();
 }
 
 async function createConversation(mode: 'work' | 'private', project?: string): Promise<void> {
-  showSidebar.value = false;
   page.value = 'chat';
   await store.create(mode, project);
 }
@@ -966,7 +960,7 @@ const conversationOpen = computed(() => chat.value !== null || draft.value !== n
 const phoneTab = computed<PhoneTab>(() => tabOf(page.value));
 const showTabBar = computed(() => tabBarShown({ page: page.value, conversationOpen: conversationOpen.value, keyboard: keyboardOpen.value }));
 /** Everything that waits for the user outside an incognito conversation: the number on «Attende te». */
-const pendingBadgeText = computed(() => tabBadge(withoutIncognito(approvals.value).length));
+const pendingBadgeText = computed(() => tabBadge(pendingCountOf(status.value?.waiting, withoutIncognito(approvals.value))));
 
 /** Back to the list of the conversations: the open one closes, the address becomes the root. */
 function phoneHome(): void {
@@ -1067,7 +1061,6 @@ function splitOffered(conversation: Conversation): boolean {
 function openBeside(id: string): void {
   const conversation = [...conversations.value, ...systemChats.value, ...archived.value].find((item) => item.id === id);
   if (conversation === undefined || !splitOffered(conversation)) return;
-  showSidebar.value = false;
   // No side thread while two conversations stand side by side (D-234): its panel would cover the one on the right.
   side.close();
   shownPane.value = 'right';
@@ -1152,11 +1145,10 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
 
 <template>
   <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
-    <!-- Left bar (D-097): a column on wide screens, a drawer otherwise. -->
+    <!-- Left bar (D-097): a column from md; below it the phone has its bar at the bottom (D-293). -->
     <SideBar
-      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:relative md:z-auto md:w-auto md:translate-x-0"
-      :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
-      :inert="!showSidebar && !wideSidebar"
+      class="relative max-md:hidden"
+      :class="{ 'md:hidden': layout.sidebar }"
       :live="live"
       :page="page === 'new-agent' ? 'settings' : page"
       :conversations="conversations"
@@ -1172,7 +1164,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       :splittable="splitOffered"
       @split="openBeside"
       @fold="foldSidebar"
-      @home="openChat(); showSidebar = false"
+      @home="openChat()"
       @search="openSearch"
       @create="openNew"
       @secretary="openSecretary"
@@ -1195,7 +1187,6 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @pin="store.pin"
       @erase="eraseConversation"
     />
-    <div v-if="showSidebar" class="fixed inset-0 z-20 bg-black/50 md:hidden" aria-hidden="true" @click="showSidebar = false" />
 
     <!-- Main -->
     <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">

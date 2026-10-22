@@ -32,7 +32,7 @@
  * a finger rather than a mouse, at any width (the iPad too): the sizes for a
  * tap. Neither ever matches on the Mac at its usual widths.
  */
-@custom-variant phone (@media (max-width: 47.98rem));
+@custom-variant phone (@media (width < 48rem));
 @custom-variant touch (@media (pointer: coarse));
 /*
  * `dark:` follows the theme the chat shows, as the tokens below do (D-158):
@@ -239,7 +239,7 @@ body,
  * page for the keyboard, it pans it, and the field of the chat would end up
  * under the keys. The page itself never scrolls; its areas do.
  */
-@media (max-width: 47.98rem) {
+@media (width < 48rem) {
   html,
   body {
     overflow: hidden;
@@ -263,7 +263,7 @@ body,
  * `phone-overlay-bottom` + `phone-sheet-bottom`: a short question becomes a
  * sheet at the bottom; `phone-panel`: a panel from the side covers the screen.
  */
-@media (max-width: 47.98rem) {
+@media (width < 48rem) {
   .phone-overlay,
   .phone-overlay-bottom,
   .phone-panel {

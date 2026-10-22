@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { KEYBOARD_MIN_PX, keyboardHeight, themeColorOf, viewportStyle, watchViewport } from '../src/lib/viewport.ts';
+import { KEYBOARD_MIN_PX, keyboardHeight, themeColorOf, viewportStyle, watchViewport, zoomed } from '../src/lib/viewport.ts';
 
 test('the keyboard covers what the visual viewport lost', () => {
   assert.equal(keyboardHeight({ layout: 844, height: 508, offsetTop: 0 }), 336);
-  // iOS panned the page up to show the caret: the pan is not keyboard.
-  assert.equal(keyboardHeight({ layout: 844, height: 508, offsetTop: 40 }), 296);
+  // iOS panned the page up to show a field low in the page: the keyboard is still open.
+  assert.equal(keyboardHeight({ layout: 844, height: 508, offsetTop: 40 }), 336);
+  assert.equal(keyboardHeight({ layout: 844, height: 508, offsetTop: 336 }), 336);
 });
 
 test('a small drop is the browser bars, not a keyboard', () => {
@@ -77,6 +78,22 @@ test('without a visual viewport nothing is watched', () => {
 
 test('the theme colour takes only a hex token', () => {
   assert.equal(themeColorOf(' #f5f4f0 '), '#f5f4f0');
-  assert.equal(themeColorOf('rgb(1,2,3)'), '#0e1b1f');
+  assert.equal(themeColorOf('rgb(1,2,3)'), '#0a1316');
   assert.equal(themeColorOf('', '#000'), '#000');
+});
+
+test('a pinch zoom is no keyboard and leaves the app as it was', () => {
+  assert.equal(zoomed(undefined), false);
+  assert.equal(zoomed(1), false);
+  assert.equal(zoomed(1.6), true);
+  const viewport = fakeViewport(844);
+  const root = fakeRoot();
+  const heard: boolean[] = [];
+  const stop = watchViewport(viewport, root, () => 844, (open) => heard.push(open));
+  Object.assign(viewport, { height: 420, offsetTop: 200, scale: 2 });
+  viewport.fire();
+  assert.equal(root.props.get('--vv-height'), '844px');
+  assert.equal(root.attrs.has('data-keyboard'), false);
+  assert.deepEqual(heard, []);
+  stop();
 });

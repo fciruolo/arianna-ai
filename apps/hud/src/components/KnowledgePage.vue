@@ -2310,7 +2310,7 @@ onBeforeUnmount(() => {
 }
 
 /* D-293: switches and tools a finger can hit (44 px); on the phone the tools show only their icon. */
-@media (max-width: 47.98rem), (pointer: coarse) {
+@media (width < 48rem), (pointer: coarse) {
   .kp-tool,
   .kp-seg {
     height: 44px;
@@ -2326,7 +2326,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 47.98rem) {
+@media (width < 48rem) {
   .kp-tool span {
     display: none;
   }

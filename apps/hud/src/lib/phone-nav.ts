@@ -84,6 +84,16 @@ export function moreGroups(groups: readonly NavGroup[] = NAV_GROUPS): NavGroup[]
   return groups.map((group) => ({ ...group, areas: group.areas.filter((area) => !TAB_AREAS.includes(area)) })).filter((group) => group.areas.length > 0);
 }
 
+/**
+ * What waits for the user, as the panel counts it before its own reading
+ * (StatusPanel.vue): the tasks waiting for an answer plus the approvals
+ * without a task, never fewer than the approvals listed (review of D-293).
+ */
+export function pendingCountOf(waiting: number | undefined, approvals: readonly { taskId: string | null }[]): number {
+  const tasks = Number.isFinite(waiting) && (waiting ?? 0) > 0 ? Math.floor(waiting ?? 0) : 0;
+  return Math.max(tasks + approvals.filter((approval) => approval.taskId === null).length, approvals.length);
+}
+
 /** The number on «Attende te»: nothing at zero, «9+» beyond nine so it stays a small badge. */
 export function tabBadge(count: number): string | null {
   if (!Number.isFinite(count) || count <= 0) return null;
