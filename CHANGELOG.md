@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Sul telefono una barra in basso con Chat, Attende te (col numero delle decisioni in attesa), Pensieri, Dashboard e Altro; la pagina Chat è l’elenco delle conversazioni, con Cerca e Nuova conversazione in alto, e una conversazione ha «‹» per tornare all’elenco; «Altro» (`/altro`) raccoglie le altre aree nei gruppi della barra sinistra, il tema e lo stato del gateway; «Attende te» (`/attende-te`) mostra decisioni e agenti (D-293, tappa 2).
+
 ### Cambiato
 
 - La chat sul telefono segue la tastiera: sotto i 768 px la pagina resta nella parte visibile della finestra, con i margini dell’isola e della riga della casa (`viewport-fit=cover`), e i campi a 16 px con il dito, così Safari non ingrandisce (D-293, tappa 1).

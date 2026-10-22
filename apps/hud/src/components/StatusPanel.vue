@@ -32,6 +32,8 @@ const props = defineProps<{
   approvals: Approval[];
   remoteDecisions: RemoteDecision[];
   decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  /** «Attende te» on the phone (D-293): a page of its own, without the border and the button that folds the bar. */
+  asPage?: boolean;
 }>();
 const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: []; close: []; open: [conversationId: string] }>();
 
@@ -92,12 +94,12 @@ function wornBy(packId: string): string[] {
 </script>
 
 <template>
-  <aside class="flex min-w-0 flex-col gap-4 overflow-y-auto border-l border-line bg-surface px-4 py-[18px]" aria-label="Pannello di stato">
+  <aside class="flex min-w-0 flex-col gap-4 overflow-y-auto bg-surface px-4 py-[18px]" :class="asPage ? '' : 'border-l border-line'" :aria-label="asPage ? 'Attende te' : 'Pannello di stato'">
     <!-- On top, as in the left bar (D-097): the agents, how many are at work, and the button that folds the bar. -->
     <div class="flex items-center gap-2">
       <h2 class="font-hud text-[15px] leading-none font-semibold tracking-[0.12em] uppercase">Agenti</h2>
       <small class="flex-1 font-mono text-[12px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
-      <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
+      <button v-if="!asPage" type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
         <span class="hidden 3xl:inline"><Icon name="panel-collapse" /></span><span class="3xl:hidden"><Icon name="close" /></span>
       </button>
     </div>

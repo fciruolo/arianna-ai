@@ -28,6 +28,9 @@ import NewAgentPage from './components/NewAgentPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
+import MorePage from './components/MorePage.vue';
+import PhoneTabBar from './components/PhoneTabBar.vue';
+import ConversationList from './components/ConversationList.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import DashboardPage from './components/DashboardPage.vue';
 import RoutinesPage from './components/RoutinesPage.vue';
@@ -73,6 +76,10 @@ import {
   isWikiPath,
   WIKI_PATH,
   ROUTINES_PATH,
+  isPendingPath,
+  PENDING_PATH,
+  isMorePath,
+  MORE_PATH,
   isVoiceTrialPath,
   knowledgeFocus,
   knowledgePathFor,
@@ -89,6 +96,8 @@ import {
 } from './lib/route.ts';
 import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
+import type { NavArea } from './lib/nav-groups.ts';
+import { tabBadge, tabBarShown, tabOf, type AppPage, type PhoneTab } from './lib/phone-nav.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import { activeTheme, applyTheme } from './lib/themes.ts';
 import { officeFeast } from './lib/office/feasts.ts';
@@ -443,9 +452,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki'>('chat');
+const page = ref<AppPage>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki', path: string, title: string): void {
+function openPage(name: Exclude<AppPage, 'chat'>, path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -549,6 +558,16 @@ function openFollowed(): void {
 /** The Wiki (D-280): pages proposed by the local model from the notes, approved by the user. */
 function openWiki(): void {
   openPage('wiki', WIKI_PATH, 'Wiki');
+}
+
+/** «Attende te» on the phone (D-293): the decisions that wait and the agents at work. */
+function openPending(): void {
+  openPage('pending', PENDING_PATH, 'Attende te');
+}
+
+/** «Altro» on the phone (D-293): every other area, the theme, the state of the link. */
+function openMore(): void {
+  openPage('more', MORE_PATH, 'Altro');
 }
 
 /** The routines (D-110 tappa A, D-254). */
@@ -754,6 +773,14 @@ function followMain(): void {
     openRoutines();
     return;
   }
+  if (isPendingPath(window.location.pathname)) {
+    openPending();
+    return;
+  }
+  if (isMorePath(window.location.pathname)) {
+    openMore();
+    return;
+  }
   if (isFollowedPath(window.location.pathname)) {
     openFollowed();
     return;
@@ -926,6 +953,56 @@ async function createConversation(mode: 'work' | 'private', project?: string): P
   showSidebar.value = false;
   page.value = 'chat';
   await store.create(mode, project);
+}
+
+/**
+ * The phone (D-293): below `md` the bar at the bottom takes the place of the
+ * left bar, the chat page without a conversation is the list, and a
+ * conversation has «‹» to go back to it.
+ */
+const phoneLayout = computed(() => !wideSidebar.value);
+/** A conversation, a draft or the card of a closed incognito one fills the chat page. */
+const conversationOpen = computed(() => chat.value !== null || draft.value !== null || incognitoEnd.value !== null);
+const phoneTab = computed<PhoneTab>(() => tabOf(page.value));
+const showTabBar = computed(() => tabBarShown({ page: page.value, conversationOpen: conversationOpen.value, keyboard: keyboardOpen.value }));
+/** Everything that waits for the user outside an incognito conversation: the number on «Attende te». */
+const pendingBadgeText = computed(() => tabBadge(withoutIncognito(approvals.value).length));
+
+/** Back to the list of the conversations: the open one closes, the address becomes the root. */
+function phoneHome(): void {
+  if (conversationOpen.value) store.close();
+  page.value = 'chat';
+  if (window.location.pathname !== '/') window.history.pushState(null, '', '/');
+  setTitle(undefined);
+}
+
+function selectTab(tab: PhoneTab): void {
+  if (tab === 'chat') phoneHome();
+  else if (tab === 'pending') openPending();
+  else if (tab === 'thoughts') openThoughts();
+  else if (tab === 'dashboard') openDashboard();
+  else openMore();
+}
+
+/** An area chosen in «Altro»: the same pages as the left bar. */
+function goArea(area: NavArea): void {
+  switch (area) {
+    case 'dashboard': openDashboard(); break;
+    case 'secretary': void openSecretary(); break;
+    case 'projects': openProjects(); break;
+    case 'clients': openClients(); break;
+    case 'cardwall': openCardwall(); break;
+    case 'studio': openStudio(); break;
+    case 'thoughts': openThoughts(); break;
+    case 'routines': openRoutines(); break;
+    case 'knowledge': openKnowledge(); break;
+    case 'wiki': openWiki(); break;
+    case 'finance': openFinance(); break;
+    case 'god': openGod(); break;
+    case 'followed': openFollowed(); break;
+    case 'office': openOffice(); break;
+    case 'settings': openSettings(); break;
+  }
 }
 
 function openChat(): void {
@@ -1123,17 +1200,18 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
     <!-- Main -->
     <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">
       <header
-        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5 short:h-[52px]"
+        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm max-md:h-[52px] max-md:gap-1 max-md:px-1.5 md:px-5.5 short:h-[52px]"
         :class="incognitoHeader ? 'border-incognito-line bg-incognito text-incognito-ink' : 'border-line bg-bg/85'"
       >
+        <!-- The phone (D-293): the bar at the bottom holds the areas; inside a conversation, «‹» goes back to the list. -->
         <button
+          v-if="page === 'chat' && conversationOpen"
           type="button"
-          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 md:hidden"
-          :aria-label="barDotText === null ? 'Apri il menu' : `Apri il menu. ${barDotText}`"
-          @click="showSidebar = true"
+          class="grid size-11 shrink-0 place-items-center rounded-lg text-accent md:hidden"
+          aria-label="Torna alle conversazioni"
+          @click="phoneHome"
         >
-          <Icon name="menu" />
-          <span v-if="barDotText !== null" class="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent" aria-hidden="true" />
+          <Icon name="back" :size="26" />
         </button>
         <!-- Left bar folded (D-097): only its icon, here in the top bar; the page takes the whole width. -->
         <button
@@ -1153,11 +1231,11 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <b class="font-hud text-[14px] font-semibold tracking-[0.08em]">Incognito</b>
           <span v-if="incognitoMode !== undefined" class="truncate opacity-80">· {{ MODE_TEXT[incognitoMode] }}<template v-if="incognitoProject"> · {{ incognitoProject }}</template></span>
         </p>
-        <p v-else class="min-w-0 flex-1 truncate text-[13.5px] text-muted">
+        <p v-else class="min-w-0 flex-1 truncate text-[13.5px] text-muted max-md:pl-1.5 max-md:text-[16px]">
           <template v-if="page === 'studio'">Arianna / <b class="font-medium text-ink">Studio</b><template v-if="studioAddress.project"> / {{ studioAddress.project }}</template></template>
           <template v-else-if="splitOn">Arianna / <b class="font-medium text-ink">Conversazioni affiancate</b></template>
           <template v-else-if="current !== undefined">
-            <span v-for="part in crumb" :key="part">{{ part }} / </span>
+            <span v-for="part in crumb" :key="part" class="max-md:hidden">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
           <template v-else-if="page === 'voice-trial'">Impostazioni / Voce / <b class="font-medium text-ink">Provino della voce</b></template>
@@ -1169,6 +1247,8 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'routines'">Arianna / <b class="font-medium text-ink">Routine</b></template>
           <template v-else-if="page === 'followed'">Arianna / <b class="font-medium text-ink">Seguiti</b></template>
           <template v-else-if="page === 'wiki'">Arianna / <b class="font-medium text-ink">Wiki</b></template>
+          <template v-else-if="page === 'pending'">Arianna / <b class="font-medium text-ink">Attende te</b></template>
+          <template v-else-if="page === 'more'">Arianna / <b class="font-medium text-ink">Altro</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
@@ -1176,19 +1256,28 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'finance'">Arianna / <b class="font-medium text-ink">Finanze</b></template>
           <template v-else-if="page === 'cardwall'">Arianna / <b class="font-medium text-ink">Cardwall</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
-          <template v-else>Arianna</template>
+          <template v-else><span class="max-md:hidden">Arianna</span><b class="font-semibold text-ink md:hidden">Chat</b></template>
         </p>
+        <!-- The list of the phone (D-293): «Cerca» and «Nuova conversazione» in the header, at hand. -->
+        <template v-if="page === 'chat' && !conversationOpen">
+          <button type="button" class="grid size-11 shrink-0 place-items-center rounded-lg text-ink md:hidden" aria-label="Cerca" aria-haspopup="dialog" @click="openSearch">
+            <Icon name="search" :size="22" />
+          </button>
+          <button type="button" class="grid size-11 shrink-0 place-items-center rounded-full text-ink md:hidden" aria-label="Nuova conversazione" aria-haspopup="dialog" @click="openNew()">
+            <span class="grid size-9 place-items-center rounded-full bg-accent text-accent-ink"><Icon name="new" :size="20" /></span>
+          </button>
+        </template>
         <button
           v-if="current !== undefined && !splitOn"
           type="button"
-          class="lab inline-flex items-center gap-1"
+          class="lab inline-flex items-center gap-1 max-md:size-11 max-md:justify-center max-md:border-0"
           :class="labelClass[current.clearance]"
           :title="`${LABEL_TEXT[current.clearance]} · ${current.mode === 'work' ? 'può uscire' : 'resta qui'}: cosa vogliono dire le etichette`"
           :aria-label="`Etichetta ${LABEL_TEXT[current.clearance]}, ${current.mode === 'work' ? 'può uscire' : 'resta qui'}: apri la legenda delle etichette`"
           aria-haspopup="dialog"
           @click="showLegend = true"
         >
-          <i class="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[current.clearance] }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
+          <i class="size-1.5 shrink-0 rounded-full bg-current max-md:size-2.5" aria-hidden="true" /><span class="max-md:sr-only">{{ LABEL_TEXT[current.clearance] }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}</span>
         </button>
         <button
           v-if="incognitoOpen && page === 'chat'"
@@ -1208,7 +1297,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         <button
           v-if="callee !== undefined"
           type="button"
-          class="grid size-8 shrink-0 place-items-center rounded-lg text-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-60 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
+          class="grid size-8 shrink-0 place-items-center rounded-lg text-muted touch:size-11 aria-disabled:cursor-not-allowed aria-disabled:opacity-60 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
           :aria-disabled="callOff ? 'true' : undefined"
           :aria-label="`Chiama ${callee.the}`"
           :aria-describedby="callBlocked !== undefined ? 'call-why' : undefined"
@@ -1218,12 +1307,12 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <Icon name="phone" />
         </button>
         <span v-if="callee !== undefined && callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
-        <InstallationBadge v-if="installation !== undefined" :info="installation" />
+        <InstallationBadge v-if="installation !== undefined" class="max-md:hidden" :info="installation" />
         <span class="hidden font-mono text-[12.5px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <!-- The theme (D-158): one button, each click Chiaro → Scuro → Auto; the icon is the active theme. Also in Impostazioni → Aspetto. -->
         <button
           type="button"
-          class="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink"
+          class="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink max-md:hidden"
           :aria-label="themeLabel(theme)"
           :title="themeLabel(theme)"
           @click="theme = nextTheme(theme)"
@@ -1232,7 +1321,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         </button>
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 3xl:hidden"
+          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 max-md:hidden 3xl:hidden"
           :aria-label="showPanel ? 'Chiudi la barra degli agenti' : 'Apri la barra degli agenti'"
           @click="showPanel = !showPanel"
         >
@@ -1291,6 +1380,32 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       <RoutinesPage v-else-if="page === 'routines'" :version="routinesVersion" @open="openConversation" />
       <FollowedPage v-else-if="page === 'followed'" @omlx="omlxUpdate = updateHint($event)" />
       <WikiPage v-else-if="page === 'wiki'" @open-graph="openKnowledge" />
+      <MorePage
+        v-else-if="page === 'more'"
+        :live="live"
+        :status="status"
+        :installation="installation"
+        :dev-pending="devPending"
+        :omlx-update="omlxUpdate"
+        :theme="theme"
+        @go="goArea"
+        @theme="(choice) => (theme = choice)"
+      />
+      <StatusPanel
+        v-else-if="page === 'pending'"
+        as-page
+        class="min-h-0 flex-1"
+        :status="status"
+        :characters="characters"
+        :agent-ids="agentIds"
+        :pose-for="poseFor"
+        :approvals="elsewhere"
+        :remote-decisions="remoteDecisions"
+        :decide="store.decide"
+        @dismiss="store.dismissDecision"
+        @refresh-characters="store.refreshCharacters"
+        @open="openConversation"
+      />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />
@@ -1560,6 +1675,21 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
         @close="side.close"
       />
       </template>
+      <!-- The phone (D-293): the chat page without a conversation is the list. -->
+      <div v-else-if="phoneLayout" class="min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-4">
+        <ConversationList
+          touch
+          :conversations="conversations"
+          :archived="archived"
+          :system="systemChats"
+          :selected="null"
+          :rename="store.rename"
+          @open="openConversation"
+          @archive="store.archive"
+          @pin="store.pin"
+          @erase="eraseConversation"
+        />
+      </div>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">
           <PixelAgent :choice="characters?.agents.arianna" :pose="poseFor('arianna')" :scale="3" bubble label="Arianna" />
@@ -1570,6 +1700,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           </p>
         </div>
       </div>
+      <PhoneTabBar v-if="phoneLayout && showTabBar" :current="phoneTab" :pending="pendingBadgeText" :more-dot="barDotText" @select="selectTab" />
     </main>
 
     <!-- Status panel: on the right on wide screens, a drawer otherwise -->

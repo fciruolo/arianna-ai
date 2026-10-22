@@ -93,6 +93,20 @@ export function isWikiPath(pathname: string): boolean {
   return pathname === WIKI_PATH || pathname === `${WIKI_PATH}/`;
 }
 
+/** «Attende te» on the phone (D-293): the decisions that wait for the user and the agents at work. */
+export const PENDING_PATH = '/attende-te';
+
+export function isPendingPath(pathname: string): boolean {
+  return pathname === PENDING_PATH || pathname === `${PENDING_PATH}/`;
+}
+
+/** «Altro» on the phone (D-293): every other area, the theme and the state of the link. */
+export const MORE_PATH = '/altro';
+
+export function isMorePath(pathname: string): boolean {
+  return pathname === MORE_PATH || pathname === `${MORE_PATH}/`;
+}
+
 /** Inside the page: the address changes and the app follows it, as with "back" (MockupLink does the same). */
 export function goTo(path: string): void {
   window.history.pushState(null, '', path);

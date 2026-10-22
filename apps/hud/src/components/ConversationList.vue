@@ -24,6 +24,8 @@ const props = defineProps<{
   beside?: string | null | undefined;
   /** Whether «Affianca» is offered on a conversation (D-234); without it, never. */
   splittable?: ((conversation: Conversation) => boolean) | undefined;
+  /** The list of the phone (D-293): rows for a finger, the actions in a sheet. */
+  touch?: boolean;
 }>();
 const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; pin: [id: string, pinned: boolean]; erase: [id: string]; split: [id: string] }>();
 
