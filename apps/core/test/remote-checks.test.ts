@@ -111,7 +111,11 @@ test('remoteChecks in mode own: the certificate must be there, for the name and 
   const fresh = await remoteChecks(config, { run, exists: () => false });
   assert.equal(fresh[1]?.ok, true);
   chmodSync(remotePaths(data).key, 0o644);
-  assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /leggibili da altri/);
+  assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /server\.key è leggibile da altri/);
+  chmodSync(remotePaths(data).key, 0o600);
+  chmodSync(remotePaths(data).dir, 0o755);
+  assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /chmod 700 data\/remote/);
+  chmodSync(remotePaths(data).dir, 0o700);
   chmodSync(remotePaths(data).key, 0o600);
   mkdirSync(remotePaths(data).tmp);
   assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /data\/remote\/tmp/);

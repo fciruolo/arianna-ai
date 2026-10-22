@@ -35,13 +35,10 @@ import {
   voiceBody,
   voiceForm,
   voiceProblem,
+  pushBody,
+  pushForm,
   pushProblem,
-  pushChanged,
-  pushPart,
-  callsChanged,
-  withPush,
-  voiceSent,
-  voiceAfterSave,
+  pushProblemText,
   writeError,
   fileErrorText,
   projectProblemText,
@@ -57,7 +54,6 @@ const DEFAULTS: VoiceValues = {
   voice: 'if_sara',
   limits: { callMinutes: 15, warnSeconds: 60, delegations: 6, delegationSeconds: 90 },
   outgoing: { maxPerDay: 3, quietFrom: '21:00', quietTo: '08:00', quietWeekend: true, ringSeconds: 30, waitingMinutes: 30 },
-  push: null,
 };
 
 function model(id: string, roles: CatalogModel['roles'], present: boolean): CatalogModel {
@@ -150,10 +146,11 @@ test('voice: off is null; turning it on starts from the defaults of the core', (
   assert.equal(off.enabled, false);
   assert.equal(voiceBody(off), null);
   assert.deepEqual(voiceBody({ ...off, enabled: true }), DEFAULTS);
-  const push = { publicKey: 'Bkey', subject: 'mailto:a@example.org' };
-  const on = voiceForm({ ...DEFAULTS, voice: 'serena', push }, DEFAULTS);
-  assert.deepEqual(voiceBody(on), { ...DEFAULTS, voice: 'serena', push });
-  assert.deepEqual(voiceBody({ ...on, push: false })?.push, null);
+  const on = voiceForm({ ...DEFAULTS, voice: 'serena' }, DEFAULTS);
+  assert.deepEqual(voiceBody(on), { ...DEFAULTS, voice: 'serena' });
+  // An older core sends the push keys in [voice]: the voice never sends them back (D-292).
+  const older = voiceForm({ ...DEFAULTS, push: { publicKey: 'Bkey', subject: 'mailto:a@example.org' } } as VoiceValues, DEFAULTS);
+  assert.deepEqual(voiceBody(older), DEFAULTS);
   // The form is a copy: editing it leaves the defaults alone.
   on.values.limits.callMinutes = 99;
   assert.equal(DEFAULTS.limits.callMinutes, 15);
@@ -362,60 +359,43 @@ test('only the sections asked for and changed keep their edits', () => {
   assert.deepEqual(keptSections([], changed), []);
 });
 
-test('the voice card is not saved with an empty number or half a push setting', () => {
+test('the voice card is not saved with an empty number; Notifiche not with half a push setting', () => {
   const form = voiceForm(DEFAULTS, DEFAULTS);
   assert.equal(voiceProblem(form), undefined);
   assert.equal(voiceProblem({ ...form, enabled: false, values: { ...form.values, port: '' as unknown as number } }), undefined);
   assert.match(voiceProblem({ ...form, values: { ...form.values, port: '' as unknown as number } }) ?? '', /numero/);
   assert.match(voiceProblem({ ...form, values: { ...form.values, limits: { ...form.values.limits, callMinutes: 1.5 } } }) ?? '', /numero/);
-  // The push keys are checked by Notifiche (D-192), not by the voice.
-  assert.equal(voiceProblem({ ...form, push: true, publicKey: 'B', subject: ' ' }), undefined);
-  assert.match(pushProblem({ ...form, push: true, publicKey: 'B', subject: ' ' }) ?? '', /chiave pubblica/);
-  assert.equal(pushProblem({ ...form, push: true, publicKey: 'B', subject: 'mailto:a@example.org' }), undefined);
-  assert.equal(pushProblem({ ...form, push: false, publicKey: '', subject: '' }), undefined);
+  const key = `B${'a'.repeat(86)}`;
+  assert.match(pushProblem({ push: true, publicKey: 'B', subject: ' ' }) ?? '', /chiave pubblica/);
+  assert.match(pushProblem({ push: true, publicKey: 'B', subject: 'mailto:a@example.org' }) ?? '', /pnpm voice:vapid/);
+  assert.match(pushProblem({ push: true, publicKey: key, subject: 'a@example.org' }) ?? '', /mailto:/);
+  assert.equal(pushProblem({ push: true, publicKey: key, subject: 'mailto:a@example.org' }), undefined);
+  assert.equal(pushProblem({ push: true, publicKey: key, subject: 'https://example.org' }), undefined);
+  assert.equal(pushProblem({ push: false, publicKey: '', subject: '' }), undefined);
 });
 
-test('Voce and Notifiche each change their part of [voice] (D-192)', () => {
-  const base = voiceForm({ ...DEFAULTS, push: { publicKey: 'Bkey', subject: 'mailto:a@example.org' } }, DEFAULTS);
-  const keys = { ...base, publicKey: 'Bnew' };
-  assert.equal(pushChanged(keys, base), true);
-  assert.equal(callsChanged(keys, base), false);
-  const calls = { ...base, values: { ...base.values, voice: 'serena' } };
-  assert.equal(pushChanged(calls, base), false);
-  assert.equal(callsChanged(calls, base), true);
-  // Saving one part keeps the other as read: the voice of `calls` with the key of `keys`.
-  const merged = withPush(calls, keys);
-  assert.equal(merged.values.voice, 'serena');
-  assert.equal(merged.publicKey, 'Bnew');
-  assert.deepEqual(pushPart(withPush(keys, base)), pushPart(base));
-  // The copy is a new object: editing it leaves the source alone.
-  merged.values.limits.callMinutes = 99;
-  assert.notEqual(calls.values.limits.callMinutes, 99);
+test('a refusal of the core about the push keys is in Italian (D-292)', () => {
+  for (const message of [
+    'push: set Web Push in [push] or in [voice.push], not both',
+    'push.public_key: the uncompressed P-256 public key, base64url (pnpm voice:vapid)',
+    'voice.push.subject: a mailto: address or an https: URL',
+    'push.publicKey must be a string',
+  ]) {
+    const { text } = writeError(400, message);
+    assert.doesNotMatch(text, /set Web Push|uncompressed|a mailto: address|must be/, message);
+  }
+  assert.equal(pushProblemText('roles: no such model'), undefined);
 });
 
-test('a save of one part of [voice] sends the other as read, and keeps its edits only when there are some', () => {
-  const push = { publicKey: 'Bkey', subject: 'mailto:a@example.org' };
-  const read = voiceForm({ ...DEFAULTS, push }, DEFAULTS);
-  const both = { ...read, publicKey: 'Bnew', values: { ...read.values, voice: 'serena' } };
-  // Voce sends its voice with the keys as read; Notifiche its keys with the voice as read.
-  assert.deepEqual(voiceSent('calls', both, read), { ...DEFAULTS, voice: 'serena', push });
-  assert.deepEqual(voiceSent('push', both, read), { ...DEFAULTS, push: { ...push, publicKey: 'Bnew' } });
-  // After saving the voice, the keys still edited stay in the page.
-  const savedVoice = voiceForm({ ...DEFAULTS, voice: 'serena', push }, DEFAULTS);
-  assert.equal(voiceAfterSave('calls', both, read, savedVoice).publicKey, 'Bnew');
-  assert.equal(voiceAfterSave('calls', both, read, savedVoice).values.voice, 'serena');
-  // Calls turned off and saved: [voice] is gone with its keys, and untouched keys follow the file (no phantom edit).
-  const off = { ...read, enabled: false };
-  assert.equal(voiceSent('calls', off, read), null);
-  const gone = voiceForm(null, DEFAULTS);
-  assert.deepEqual(voiceAfterSave('calls', off, read, gone), gone);
-  assert.equal(pushChanged(voiceAfterSave('calls', off, read, gone), gone), false);
-  // After saving the keys, the voice still edited stays; an untouched voice follows the file.
-  const savedKeys = voiceForm({ ...DEFAULTS, push: { ...push, publicKey: 'Bnew' } }, DEFAULTS);
-  assert.equal(voiceAfterSave('push', both, read, savedKeys).values.voice, 'serena');
-  assert.equal(voiceAfterSave('push', both, read, savedKeys).publicKey, 'Bnew');
-  const keysOnly = { ...read, publicKey: 'Bnew' };
-  assert.deepEqual(voiceAfterSave('push', keysOnly, read, savedKeys), savedKeys);
+test('Web Push is its own part (D-292): on from the keys the core reads, whatever the voice', () => {
+  const keys = { publicKey: 'Bkey', subject: 'mailto:a@example.org' };
+  assert.deepEqual(pushForm(keys), { push: true, ...keys });
+  assert.deepEqual(pushForm(null), { push: false, publicKey: '', subject: '' });
+  assert.deepEqual(pushForm(undefined), { push: false, publicKey: '', subject: '' });
+  assert.deepEqual(pushBody({ push: true, publicKey: ' Bkey ', subject: ' mailto:a@example.org ' }), keys);
+  assert.equal(pushBody({ push: false, publicKey: 'Bkey', subject: 'mailto:a@example.org' }), null);
+  assert.equal(sectionChanged('push', pushForm(keys), pushForm(keys)), false);
+  assert.equal(sectionChanged('push', { ...pushForm(keys), publicKey: 'Bnew' }, pushForm(keys)), true);
 });
 
 test('a 409 for a file that cannot be read says so, and still reloads', () => {

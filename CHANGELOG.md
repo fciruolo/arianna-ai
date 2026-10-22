@@ -12,12 +12,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - `pnpm arianna:doctor` legge `tailscale serve status --json` e controlla che la tailnet riceva solo la porta remota nel modo scelto, senza Funnel, e in modo `own` il certificato (D-292).
 - La chat si installa sulla schermata Home dell'iPhone (icona e meta di app); dal telefono, finché il dispositivo non è abbinato, compare solo «Dispositivo non abbinato» (D-292).
 - `[push]` in `arianna.toml`: le notifiche Web Push della chat funzionano anche con la voce spenta; `[voice.push]` resta valida (D-292).
+- Impostazioni → Notifiche mostra e salva le chiavi di Web Push anche con la voce spenta, sempre in `[push]` (una `[voice.push]` si sposta lì nello stesso salvataggio); errori sulle chiavi in italiano (D-292).
 
 ### Sicurezza
 
 - Sulla porta remota `Host` è ammesso solo il nome configurato e `Origin` solo `https://<nome>`, con CSP `wss://` e HSTS; nessuna intestazione rende una richiesta locale (D-292).
 - Fino alla tappa B (abbinamento e passkey) la porta remota rifiuta ogni rotta dell'API e ogni WebSocket con 401 `device-not-paired`: dal telefono si vede solo la pagina (D-292).
 - In modo `own` senza un certificato valido il core non apre la porta remota e dice perché (D-292).
+- In modo `own` il core rifiuta una `data/remote/server.key` che sia un collegamento simbolico, non un file normale o con permessi più larghi di 0600, e lo dice come per il certificato mancante (D-292).
 
 ## [0.167.1] - 2026-10-22
 

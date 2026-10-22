@@ -6,12 +6,12 @@
  * Details in Italian: they tell the user what to do.
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 
 import { remotePaths, type AriannaConfig, type RemoteServerConfig } from '@arianna/config';
 
 import type { DoctorCheck } from './doctor.ts';
-import { checkCertificate, WARN_DAYS } from './remote-cert.ts';
+import { loadRemoteTls, WARN_DAYS } from './remote-cert.ts';
 
 /** The binary of the official app, then the one in PATH (installed by the app or by Homebrew). */
 export const TAILSCALE_APP = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
@@ -110,18 +110,13 @@ export function remoteCertCheck(data: string, host: string, now: Date): DoctorCh
   if (existsSync(paths.tmp)) {
     return { id: 'remote.cert', ok: false, detail: 'è rimasta data/remote/tmp di un pnpm remote:cert interrotto (può contenere la chiave della radice): rilancia pnpm remote:cert --force' };
   }
-  if (![paths.cert, paths.key, paths.root].every((path) => existsSync(path))) {
-    return { id: 'remote.cert', ok: false, detail: 'manca il certificato in data/remote: lancia pnpm remote:cert' };
+  // The same reading as the core: the key a regular file of 0600, never through a link.
+  const check = loadRemoteTls(paths, host, now);
+  if (!check.ok) return { id: 'remote.cert', ok: false, detail: check.problem };
+  const dir = lstatSync(paths.dir);
+  if (!dir.isDirectory() || (dir.mode & 0o077) !== 0) {
+    return { id: 'remote.cert', ok: false, detail: 'data/remote è leggibile da altri utenti o non è una cartella: chmod 700 data/remote' };
   }
-  if ((statSync(paths.key).mode & 0o077) !== 0 || (statSync(paths.dir).mode & 0o077) !== 0) {
-    return { id: 'remote.cert', ok: false, detail: 'la chiave del certificato o data/remote sono leggibili da altri utenti: chmod 600 data/remote/server.key e chmod 700 data/remote' };
-  }
-  const check = checkCertificate(
-    { cert: readFileSync(paths.cert, 'utf8'), root: readFileSync(paths.root, 'utf8'), key: readFileSync(paths.key, 'utf8') },
-    host,
-    now,
-  );
-  if (!check.ok) return { id: 'remote.cert', ok: false, detail: `${check.problem}: lancia pnpm remote:cert` };
   if (check.daysLeft <= WARN_DAYS) return { id: 'remote.cert', ok: false, detail: `il certificato scade fra ${String(check.daysLeft)} giorni: lancia pnpm remote:cert` };
   return { id: 'remote.cert', ok: true, detail: `per ${host}, firmato dalla radice, vale ancora ${String(check.daysLeft)} giorni` };
 }

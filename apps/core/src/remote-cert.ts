@@ -11,7 +11,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createPrivateKey, randomBytes, X509Certificate } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { RemotePaths } from '@arianna/config';
@@ -165,17 +165,44 @@ export function checkCertificate(pems: { cert: string; root: string; key?: strin
 
 export type RemoteTls = { ok: true; cert: string; key: string; daysLeft: number } | { ok: false; problem: string };
 
+/**
+ * The private key of the remote port: a regular file, never through a
+ * symbolic link (O_NOFOLLOW, and the mode of what was opened, not of a name
+ * that may change in between), readable only by its owner (0600 or
+ * narrower). Its text, or why not (Italian); missing is undefined.
+ */
+function readPrivateKey(path: string): { key: string } | { problem: string } | undefined {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return { problem: 'la chiave data/remote/server.key è un collegamento simbolico, non un file' };
+    return undefined;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return { problem: 'la chiave data/remote/server.key non è un file normale' };
+    if ((stat.mode & 0o077) !== 0) return { problem: 'la chiave data/remote/server.key è leggibile da altri utenti del Mac (deve essere 0600)' };
+    return { key: readFileSync(fd, 'utf8') };
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** The certificate and key of data/remote for the remote port, checked; without them, why (Italian). */
 export function loadRemoteTls(paths: RemotePaths, host: string, now: Date): RemoteTls {
   let cert: string;
-  let key: string;
   let root: string;
+  const missing = { ok: false, problem: 'manca il certificato in data/remote: lancia pnpm remote:cert' } as const;
+  const read = readPrivateKey(paths.key);
+  if (read === undefined) return missing;
+  if ('problem' in read) return { ok: false, problem: `${read.problem}: lancia pnpm remote:cert` };
+  const { key } = read;
   try {
     cert = readFileSync(paths.cert, 'utf8');
-    key = readFileSync(paths.key, 'utf8');
     root = readFileSync(paths.root, 'utf8');
   } catch {
-    return { ok: false, problem: 'manca il certificato in data/remote: lancia pnpm remote:cert' };
+    return missing;
   }
   const check = checkCertificate({ cert, root, key }, host, now);
   return check.ok ? { ok: true, cert, key, daysLeft: check.daysLeft } : { ok: false, problem: `${check.problem}: lancia pnpm remote:cert` };

@@ -32,7 +32,6 @@ import {
   agentsForm,
   skillsBody,
   skillsForm,
-  callsChanged,
   charactersBody,
   chatId,
   fetchSiteOf,
@@ -46,8 +45,10 @@ import {
   notificationsBody,
   notificationsForm,
   notificationsProblem,
-  pushChanged,
+  pushBody,
+  pushForm,
   pushProblem,
+  type PushForm,
   rolesBody,
   DEFAULT_APPEARANCE,
   DEFAULT_SECRETARY,
@@ -69,11 +70,9 @@ import {
   sectionChanged,
   telegramBody,
   telegramForm,
-  voiceAfterSave,
+  voiceBody,
   voiceForm,
   voiceProblem,
-  voiceSent,
-  withPush,
   writeError,
   type AgentsForm,
   type SkillsForm,
@@ -176,6 +175,7 @@ interface Forms {
   sprites: SettingsValues['sprites'];
   participants: number;
   voice: VoiceForm;
+  push: PushForm;
   notifications: NotificationsForm;
   secretary: SecretaryValues;
   appearance: AppearanceValues;
@@ -200,6 +200,8 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     sprites: values.sprites,
     participants: values.participants,
     voice: voiceForm(values.voice, defaults),
+    // An older core sends the keys in [voice].
+    push: pushForm(values.push ?? (values.voice as (VoiceValues & { push?: SettingsValues['push'] }) | null)?.push),
     notifications: notificationsForm(values.notifications),
     secretary: copy(values.secretary ?? DEFAULT_SECRETARY),
     appearance: copy(values.appearance ?? DEFAULT_APPEARANCE),
@@ -212,7 +214,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'push', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -236,14 +238,8 @@ function changed(section: Section): boolean {
   return forms.value !== null && base.value !== null && sectionChanged(section, forms.value[section], base.value[section]);
 }
 
-/**
- * A part changed, as the index counts them: `voice` is Voce e chiamate
- * without the push keys, `push` the keys shown in Notifiche (D-192).
- */
+/** A part changed, as the index counts them: `push` is the keys shown in Notifiche (D-192, D-292). */
 function isChanged(name: string): boolean {
-  if (forms.value === null || base.value === null) return false;
-  if (name === 'push') return pushChanged(forms.value.voice, base.value.voice);
-  if (name === 'voice') return callsChanged(forms.value.voice, base.value.voice);
   return changed(name as Section);
 }
 
@@ -251,13 +247,6 @@ function reset(section: Section): void {
   if (forms.value === null || base.value === null) return;
   (forms.value as unknown as Record<Section, unknown>)[section] = copy(base.value[section]);
   delete errors.value[section];
-}
-
-/** One part of [voice] back to what was read, the other part left as edited. */
-function resetVoice(part: 'calls' | 'push'): void {
-  if (forms.value === null || base.value === null) return;
-  forms.value.voice = part === 'push' ? withPush(forms.value.voice, base.value.voice) : withPush(base.value.voice, forms.value.voice);
-  delete errors.value[part === 'push' ? 'notifications' : 'voice'];
 }
 
 /** A new view: changed cards keep their edits unless `all`; the others show the new values. */
@@ -326,13 +315,8 @@ function markSaved(section: Section): void {
 /** The parts the Agenti page saves together, in one write (D-116); it is known by `agents`. */
 const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'skills', 'participants'];
 
-/**
- * Saves `parts` (by default the section alone) in one write; the section is
- * known by `section`. With `voice` among the parts, `voicePart` says which
- * part of [voice] is sent (D-192): the other one goes as read and keeps its
- * edits in the page. False: not saved.
- */
-async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section], voicePart: 'calls' | 'push' = 'calls'): Promise<boolean> {
+/** Saves `parts` (by default the section alone) in one write; the section is known by `section`. False: not saved. */
+async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<boolean> {
   const current = forms.value;
   const read = base.value;
   const fingerprint = view.value?.fingerprint;
@@ -341,7 +325,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('roles')) values.roles = rolesBody(current.roles);
   if (parts.includes('cloudModels')) values.cloudModels = cloudModelsBody(current.cloudModels);
   if (parts.includes('characters')) values.characters = charactersBody(current.characters);
-  if (parts.includes('voice')) values.voice = voiceSent(voicePart, current.voice, read.voice);
+  if (parts.includes('voice')) values.voice = voiceBody(current.voice);
+  if (parts.includes('push')) values.push = pushBody(current.push);
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   // An older core has no rewrites of the people of the series (D-223): nothing to send.
   if (parts.includes('series') && view.value?.values?.series !== undefined) values.series = copy(current.series);
@@ -364,11 +349,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   busy.value = section;
   delete errors.value[section];
   notice.value = null;
-  const before = current.voice;
   try {
     apply(await saveSettings(fingerprint, values), others(parts));
-    // The part of [voice] not sent keeps what the page holds for it.
-    if (parts.includes('voice') && forms.value !== null) forms.value.voice = voiceAfterSave(voicePart, before, read.voice, forms.value.voice);
     markSaved(section);
     emit('changed', [...parts]);
     return true;
@@ -837,11 +819,7 @@ const bar = computed<Bar | null>(() => {
   if (current === null) return null;
   switch (active.value) {
     case 'voice':
-      return {
-        ...ordinary('voice', voiceProblem(current.voice)),
-        save: () => void save('voice', ['voice'], 'calls'),
-        cancel: () => resetVoice('calls'),
-      };
+      return ordinary('voice', voiceProblem(current.voice));
     case 'notifications': {
       const keys = isChanged('push');
       const kinds = changed('notifications');
@@ -852,11 +830,11 @@ const bar = computed<Bar | null>(() => {
         busy: busy.value === 'notifications',
         saved: saved.value === 'notifications',
         error: errors.value.notifications,
-        invalid: notificationsProblem(current.notifications) ?? (keys ? pushProblem(current.voice) : undefined),
-        save: () => void save('notifications', keys ? ['notifications', 'voice'] : ['notifications'], 'push'),
+        invalid: notificationsProblem(current.notifications) ?? (keys ? pushProblem(current.push) : undefined),
+        save: () => void save('notifications', keys ? ['notifications', 'push'] : ['notifications']),
         cancel: () => {
           reset('notifications');
-          resetVoice('push');
+          reset('push');
         },
       };
     }
@@ -1219,23 +1197,17 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                         Serve una coppia di chiavi creata una volta sola: chiedi a Claude Code di prepararla. Qui va la parte pubblica; quella segreta resta nella cassaforte delle password e
                         non compare mai.
                       </p>
-                      <template v-if="base?.voice.enabled">
-                        <fieldset :disabled="locked" class="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-                          <label class="flex items-center gap-2.5 text-[14.5px]"><input v-model="forms.voice.push" type="checkbox" role="switch" class="switch" />Notifiche anche a chat chiusa</label>
-                          <div v-if="forms.voice.push" :class="grid">
-                            <FormField id="push-key" label="Chiave pubblica" :span="4">
-                              <input id="push-key" v-model.trim="forms.voice.publicKey" :class="input" class="font-mono text-[12.5px]" placeholder="BMx3…" spellcheck="false" autocomplete="off" />
-                            </FormField>
-                            <FormField id="push-subject" label="Email di contatto" :span="2" hint="Con mailto: davanti, o un indirizzo https.">
-                              <input id="push-subject" v-model.trim="forms.voice.subject" :class="input" placeholder="mailto:tu@esempio.it" autocomplete="off" />
-                            </FormField>
-                          </div>
-                        </fieldset>
-                      </template>
-                      <p v-else class="text-[14px] text-muted">
-                        La chiave sta con le chiamate: accendile prima in
-                        <a href="/impostazioni/voce" class="text-accent hover:underline" @click.prevent="openSection('voce')">Voce e chiamate</a>.
-                      </p>
+                      <fieldset :disabled="locked" class="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+                        <label class="flex items-center gap-2.5 text-[14.5px]"><input v-model="forms.push.push" type="checkbox" role="switch" class="switch" />Notifiche anche a chat chiusa</label>
+                        <div v-if="forms.push.push" :class="grid">
+                          <FormField id="push-key" label="Chiave pubblica" :span="4">
+                            <input id="push-key" v-model.trim="forms.push.publicKey" :class="input" class="font-mono text-[12.5px]" placeholder="BMx3…" spellcheck="false" autocomplete="off" />
+                          </FormField>
+                          <FormField id="push-subject" label="Email di contatto" :span="2" hint="Con mailto: davanti, o un indirizzo https.">
+                            <input id="push-subject" v-model.trim="forms.push.subject" :class="input" placeholder="mailto:tu@esempio.it" autocomplete="off" />
+                          </FormField>
+                        </div>
+                      </fieldset>
                     </div>
                   </details>
                 </NotificationDevice>

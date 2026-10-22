@@ -99,14 +99,15 @@ describe('read', () => {
     assert.equal(view.error, null);
     assert.deepEqual(view.values?.executors, ['claude']);
     assert.deepEqual(view.values.telegram, { chats: [123] });
-    assert.deepEqual(view.values.voice?.push, { publicKey: PUB, subject: 'mailto:a@example.org' });
+    assert.deepEqual(view.values.push, { publicKey: PUB, subject: 'mailto:a@example.org' });
+    assert.equal(Object.hasOwn(view.values.voice ?? {}, 'push'), false);
     assert.deepEqual(view.values.cloudModels, { models: { sonnet: true, opus: true, fable: true, luna: true, sol: true, astra: true } });
     assert.deepEqual(view.values.agents, {});
     assert.deepEqual(view.agentModels, { arianna: [], coder: ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] });
     const shown = JSON.stringify(view.values);
     for (const hidden of ['vault://', 'database', '54329', '7420']) assert.ok(!shown.includes(hidden), hidden);
     assert.deepEqual(view.restartOnly, ['paths', 'database', 'server']);
-    assert.deepEqual(view.voiceDefaults, { ...DEFAULT_VOICE, push: null });
+    assert.deepEqual(view.voiceDefaults, DEFAULT_VOICE);
     assert.deepEqual(view.restartPending, []);
     assert.match(view.labels ?? '', /kb\/private/);
     const orchestrator = view.catalog.find((model) => model.id === 'qwen3.8-27b-4bit');
@@ -161,8 +162,8 @@ describe('update (ordinary)', () => {
     assert.equal(text(), renderSettings({ ...START, roles: { orchestrator: 'qwen3.5-9b-mlx-4bit', voice: 'qwen3-4b-instruct-2507-4bit' } }));
   });
 
-  it('cloud models, characters and [voice]; the vault reference of the push key is kept', () => {
-    const voice = { ...structuredClone(DEFAULT_VOICE), port: 7431, push: { publicKey: NEW_PUB, subject: 'mailto:b@example.org' } };
+  it('cloud models, characters and [voice]; the keys of [voice.push] are kept as they are', () => {
+    const voice = { ...structuredClone(DEFAULT_VOICE), port: 7431 };
     page.update({
       fingerprint: fingerprint(),
       values: { cloudModels: { models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, luna: true, sol: true, astra: true } }, characters: { arianna: 'originali/arianna' }, voice },
@@ -172,8 +173,44 @@ describe('update (ordinary)', () => {
     assert.deepEqual(config.cloud.models.opus, { enabled: true, name: 'claude-opus-5-5' });
     assert.equal(config.cloud.models.fable.enabled, false);
     assert.equal(config.voice?.port, 7431);
-    assert.deepEqual(config.voice.push, { publicKey: NEW_PUB, privateKey: 'vault://my-vapid', subject: 'mailto:b@example.org' });
+    assert.deepEqual(config.voice.push, { publicKey: PUB, privateKey: 'vault://my-vapid', subject: 'mailto:a@example.org' });
     assert.deepEqual(config.cloud.executors, ['claude']);
+  });
+
+  it('Web Push (D-292): written in [push], moving [voice.push] in the same write with its vault reference', () => {
+    const view = page.update({ fingerprint: fingerprint(), values: { push: { publicKey: NEW_PUB, subject: 'mailto:b@example.org' } } });
+    assert.deepEqual(changes, [{ sections: ['voice', 'push'], privacy: false }]);
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.deepEqual(config.push, { publicKey: NEW_PUB, privateKey: 'vault://my-vapid', subject: 'mailto:b@example.org' });
+    assert.equal(config.voice?.push, undefined);
+    assert.doesNotMatch(text(), /^\[voice\.push\]/m);
+    assert.match(text(), /^\[push\]/m);
+    assert.deepEqual(view.values?.push, { publicKey: NEW_PUB, subject: 'mailto:b@example.org' });
+  });
+
+  it('Web Push (D-292): the same keys still move from [voice.push] to [push]; null turns it off from both', () => {
+    page.update({ fingerprint: fingerprint(), values: { push: { publicKey: PUB, subject: 'mailto:a@example.org' } } });
+    assert.deepEqual(changes, [{ sections: ['voice', 'push'], privacy: false }]);
+    assert.match(text(), /^\[push\]/m);
+    assert.doesNotMatch(text(), /^\[voice\.push\]/m);
+    const view = page.update({ fingerprint: fingerprint(), values: { push: null } });
+    assert.equal(view.values?.push, null);
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.equal(config.push, undefined);
+    assert.ok(config.voice !== undefined);
+  });
+
+  it('Web Push (D-292): read from a [push] written by hand, with the voice off; a voice turned off keeps the keys in [push]', () => {
+    const rest = structuredClone(START);
+    delete rest.voice;
+    writeFileSync(file, renderSettings({ ...rest, push: { publicKey: PUB, privateKey: 'vault://my-vapid', subject: 'mailto:a@example.org' } }));
+    assert.deepEqual(page.read().values?.push, { publicKey: PUB, subject: 'mailto:a@example.org' });
+    assert.equal(page.read().values?.voice, null);
+    writeFileSync(file, renderSettings(START));
+    page.update({ fingerprint: fingerprint(), values: { voice: null } });
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.equal(config.voice, undefined);
+    assert.deepEqual(config.push, { publicKey: PUB, privateKey: 'vault://my-vapid', subject: 'mailto:a@example.org' });
   });
 
   it('the theme (D-103): [appearance] written alone, Base when absent, an invalid id or key refused', () => {
@@ -428,7 +465,10 @@ describe('update (ordinary)', () => {
       { voice: { ...DEFAULT_VOICE, port: '7421\n[telegram]' } },
       { voice: { ...DEFAULT_VOICE, port: 7421.5 } },
       JSON.parse('{ "roles": { "__proto__": "qwen3.8-27b-4bit" } }') as Record<string, unknown>,
-      { voice: { ...DEFAULT_VOICE, push: { publicKey: PUB, subject: 'mailto:x@example.org', privateKey: 'vault://other' } } },
+      { voice: { ...DEFAULT_VOICE, push: { publicKey: PUB, subject: 'mailto:x@example.org' } } },
+      { push: { publicKey: PUB, subject: 'mailto:x@example.org', privateKey: 'vault://other' } },
+      { push: { publicKey: 'not-a-key', subject: 'mailto:x@example.org' } },
+      { push: 'on' },
     ];
     for (const values of cases) assert.throws(() => page.update({ fingerprint: fingerprint(), values }), refused('invalid'), JSON.stringify(values));
     assert.equal(text(), renderSettings(START));

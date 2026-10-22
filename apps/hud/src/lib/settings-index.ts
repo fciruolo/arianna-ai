@@ -307,7 +307,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   models: ['roles', 'sprites', 'cloudModels'],
   agents: ['characters', 'personas', 'agents', 'skills', 'participants'],
   voice: ['voice'],
-  // The keys of the notifications with the chat closed live in [voice.push] (D-066), shown here (D-192): `push` is that part of `voice`.
+  // The keys of the notifications with the chat closed (D-192), in [push] since D-292.
   notifications: ['notifications', 'push'],
   secretary: ['secretary'],
   executors: ['executors'],

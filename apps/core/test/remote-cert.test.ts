@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID, X509Certificate } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -112,6 +112,24 @@ test(`with ${openssl}: the certificate is made, checked by node:crypto, and the 
   // Another name in arianna.toml, or the key gone: replaced without --force, never a dead end.
   assert.equal(renewRefusal(loadRemoteTls(paths, 'altro.tail0000.ts.net', now), false), undefined);
   assert.equal(renewRefusal(loadRemoteTls({ ...paths, key: join(root, 'no-key') }, HOST, now), false), undefined);
+
+  // The key: a regular file of mode 0600 or narrower, never through a symbolic link; the same line as a missing certificate.
+  chmodSync(paths.key, 0o640);
+  const open = loadRemoteTls(paths, HOST, now);
+  assert.equal(open.ok, false);
+  assert.match(open.problem, /server\.key è leggibile da altri.*: lancia pnpm remote:cert$/);
+  chmodSync(paths.key, 0o400);
+  assert.equal(loadRemoteTls(paths, HOST, now).ok, true);
+  chmodSync(paths.key, 0o600);
+  const linked = { ...paths, key: join(root, 'linked.key') };
+  symlinkSync(paths.key, linked.key);
+  const viaLink = loadRemoteTls(linked, HOST, now);
+  assert.equal(viaLink.ok, false);
+  assert.match(viaLink.problem, /collegamento simbolico.*: lancia pnpm remote:cert$/);
+  const folder = { ...paths, key: join(root, 'folder.key') };
+  mkdirSync(folder.key, { mode: 0o700 });
+  const notFile = loadRemoteTls(folder, HOST, now);
+  assert.match(notFile.ok ? '' : notFile.problem, /non è un file normale/);
 
   // A second root does not sign for the first: the leaf is refused against it.
   const other = remotePaths(join(root, 'other'));
