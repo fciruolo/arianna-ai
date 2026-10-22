@@ -140,6 +140,7 @@ export {
 } from './pii.ts';
 export { contentHash, payloadText, scanParts, sha256Hex } from './payload.ts';
 export { MIN_SECRET_LENGTH, secretMatcher, type KnownSecret, type KnownSecrets } from './secrets.ts';
+export { addressReadings, MIN_SAVED_DIGITS, MIN_SAVED_LENGTH, savedForm, savedMatcher, type KnownPrivate, type SavedCheck, type SavedValue } from './saved.ts';
 export { normalizeForScan, scanText, type Finding, type FindingKind } from './scanner.ts';
 export { checkCoderNote, CODER_NOTE_CEILING, isCoderNotePath, type CoderNoteCheck, type CoderNoteDecision, type CoderNoteSkip } from './knowledge.ts';
 export {

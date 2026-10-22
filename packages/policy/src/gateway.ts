@@ -6,6 +6,7 @@ import { payloadText, scanParts } from './payload.ts';
 import { piiExemptions, piiScanTexts } from './catalog-texts.ts';
 import { piiVerdict, type PiiCheck, type PiiFinding } from './pii.ts';
 import { scanText, type Finding } from './scanner.ts';
+import { addressReadings, type SavedCheck } from './saved.ts';
 import type { KnownSecrets } from './secrets.ts';
 import { isSiteName } from './site.ts';
 
@@ -155,6 +156,7 @@ export type GatewayRule =
   | 'scanner'
   | 'pii'
   | 'pii-unavailable'
+  | 'saved-private'
   | 'link-invalid'
   | 'page-consent'
   | 'resource-invalid'
@@ -174,8 +176,10 @@ export type GatewayRule =
  * notice that points to the web chat instead of the content. `wait-user`: the
  * task stops in "Attende te". `stay-local`: the work stays on a local model,
  * or the user approves the exact text (declassify) and it is checked again.
+ * `ask-user`: a saved private value of the user would leave (D-283): the
+ * action does not run, the chat asks «Apri / No» for those values (`saved`).
  */
-export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
+export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local' | 'ask-user';
 
 export type Decision =
   | {
@@ -196,6 +200,8 @@ export type Decision =
       findings?: Finding[];
       /** Kinds the second scanner found (D-113), without text or position. */
       pii?: readonly PiiFinding[];
+      /** References of the saved private values found and not approved (D-283), never the values. */
+      saved?: readonly string[];
     };
 
 const CHANNELS: readonly string[] = ['web', 'telegram', 'phone', 'voice', 'push'];
@@ -579,6 +585,35 @@ function block(
   return decision;
 }
 
+/** Whether `saved` is a check the caller really gave: a matcher and a set of approved references. */
+function isSavedCheck(saved: unknown): saved is SavedCheck {
+  if (typeof saved !== 'object' || saved === null) return false;
+  const check = saved as Partial<SavedCheck>;
+  return typeof check.known?.find === 'function' && typeof check.approved?.has === 'function';
+}
+
+/**
+ * The comparison with the saved private values (D-283) on these readings:
+ * undefined when none is found, or every one found was approved by the user;
+ * a block `saved-private` otherwise, with the references not approved. The
+ * reason names the kinds of the values (the last part of a reference), never
+ * a value nor whose it is.
+ */
+function savedRefusal(saved: SavedCheck, readings: readonly string[], label: Label, next: NextStep): Decision | undefined {
+  let refs: string[];
+  try {
+    refs = [...new Set(readings.flatMap((reading) => saved.known.find(reading)))];
+  } catch {
+    return block('invalid-input', label, 'the saved private values could not be checked', 'stay-local');
+  }
+  const open = refs.filter((ref) => !saved.approved.has(ref)).sort();
+  if (open.length === 0) return undefined;
+  const kinds = [...new Set(open.map((ref) => ref.split(':').at(-1) ?? 'value'))].join(', ');
+  const decision = block('saved-private', label, `saved private value of the user: ${kinds}`, next);
+  if (decision.decision === 'block') decision.saved = open;
+  return decision;
+}
+
 /**
  * Decides whether a payload may go to a target. Checks, in order:
  * 1. inputs are well formed (a context made by the policy, a known target whose
@@ -617,6 +652,14 @@ function block(
  *    (`typed: 'session'`) towards that site only, never anything to any
  *    other target; the typed text is checked as a session request (shape,
  *    scanner, no second scan).
+ * 9. With `saved` (D-283: the agent's browser and web.fetch of a chat), the
+ *    address of a page and a typed text are compared with the private values
+ *    the user saved (clients and contacts) instead of the second scan, after
+ *    every rule above (vault and scanner block first, as always): a value
+ *    found and not in `saved.approved` blocks with `saved-private` and
+ *    `ask-user`, the chat asks «Apri / No». A resource and a request of the
+ *    site of an access with such a value are blocked with `stay-local`,
+ *    without asking; the Private chat of an access (D-281) is not compared.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
@@ -630,6 +673,8 @@ function block(
  * the core passes the vault's registry, evals and tests `secretMatcher([])` or
  * their fake values. `pii` is required for the same reason: the core passes
  * the answer of apps/guard, evals and tests `piiReport` of a fake recognizer.
+ * `saved` is optional: without it every exit is checked as before (the second
+ * scan included), so forgetting it is never weaker.
  */
 export function gatewayCheck(
   payload: readonly Labeled<unknown>[],
@@ -637,6 +682,7 @@ export function gatewayCheck(
   target: Target,
   secrets: KnownSecrets,
   pii: PiiCheck,
+  saved?: SavedCheck,
 ): Decision {
   // Types do not hold at runtime: payloads also come from model output and JSON.
   const fragments: readonly unknown[] = payload;
@@ -650,6 +696,7 @@ export function gatewayCheck(
   if (typeof (secrets as Partial<KnownSecrets> | undefined)?.find !== 'function') {
     return block('invalid-input', label, 'the known secrets were not given', 'stay-local');
   }
+  if (saved !== undefined && !isSavedCheck(saved)) return block('invalid-input', label, 'the saved private values were not given whole', 'stay-local');
   if (target.kind === 'executor' && CLOUD_EXECUTORS.includes(target.id) && target.locality !== 'cloud') {
     return block('invalid-input', label, `executor ${target.id} is a cloud executor, not ${target.locality}`, 'stay-local');
   }
@@ -783,8 +830,15 @@ export function gatewayCheck(
     if (form !== undefined) {
       return allow({ decision: 'allow', rule: 'form', label, reason: `${label} form of the user to ${form.site}, ${String(form.bytes)} bytes, content not read`, texts }, target);
     }
+    // A request in the background (D-283): a saved private value not approved stops it, without asking.
+    // Not in the Private chat of the access (D-281), which reads the user's own data of that site.
+    if (saved !== undefined && !fromItsSite) {
+      const refused = savedRefusal(saved, [...addressReadings(texts[0] ?? ''), ...bodyParts], label, 'stay-local');
+      if (refused !== undefined) return refused;
+    }
     const body = texts.length === 2 ? ', with a body' : '';
-    return allow({ decision: 'allow', rule: 'session', label, reason: `${label} ${session?.type ?? ''} ${session?.method ?? ''} of the site of an access${body}, scan clean, no second check`, texts }, target);
+    const compared = saved !== undefined && !fromItsSite ? ', saved values compared' : '';
+    return allow({ decision: 'allow', rule: 'session', label, reason: `${label} ${session?.type ?? ''} ${session?.method ?? ''} of the site of an access${body}, scan clean${compared}, no second check`, texts }, target);
   }
 
   if (!canSendTo('cloud', label)) {
@@ -801,8 +855,14 @@ export function gatewayCheck(
       const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
       return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
     }
+    // A request in the background (D-283): a saved private value not approved stops it, without asking.
+    if (saved !== undefined) {
+      const refused = savedRefusal(saved, [...addressReadings(texts[0] ?? ''), ...bodyParts], label, 'stay-local');
+      if (refused !== undefined) return refused;
+    }
     const body = texts.length === 2 ? ', with a body' : '';
-    return allow({ decision: 'allow', rule: 'resource', label, reason: `${label} ${resource.type} ${resource.method} of a page, ${resource.of} consent${body}, scan clean, no second check`, texts }, target);
+    const compared = saved === undefined ? '' : ', saved values compared';
+    return allow({ decision: 'allow', rule: 'resource', label, reason: `${label} ${resource.type} ${resource.method} of a page, ${resource.of} consent${body}, scan clean${compared}, no second check`, texts }, target);
   }
 
   // A page (D-262): one address the consent covers, scanned as written and decoded.
@@ -821,6 +881,19 @@ export function gatewayCheck(
     const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
     const next: NextStep = typed !== undefined ? 'stay-local' : onBlock === 'notify-reference' ? onBlock : 'wait-user';
     return block('scanner', label, `scanner matched: ${kinds}`, next, findings);
+  }
+
+  // The address of a page and a typed text of the agent's browser or of web.fetch (D-283): the saved
+  // private values of the user instead of the second scanner. One found and not approved asks the user.
+  const page = target.kind === 'web' ? target.page : undefined;
+  if (saved !== undefined && (typed !== undefined || page !== undefined)) {
+    const readings = page !== undefined ? addressReadings(texts[0] ?? '') : texts;
+    const refused = savedRefusal(saved, readings, label, 'ask-user');
+    if (refused !== undefined) return refused;
+    if (typed !== undefined) {
+      return allow({ decision: 'allow', rule: 'typed', label, reason: `${label} text typed in a page, ${typed} consent, scan clean, saved values compared, no second check`, texts }, target);
+    }
+    return allow({ decision: 'allow', rule: 'page', label, reason: `${label} page address, ${page?.from ?? ''} consent, scan clean, saved values compared, no second check`, texts }, target);
   }
 
   // The second scanner (D-113): only upwards, after every deterministic rule.

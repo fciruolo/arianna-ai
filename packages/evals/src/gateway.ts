@@ -17,6 +17,7 @@ import {
   payloadText,
   recordRead,
   piiUnavailable,
+  savedMatcher,
   secretMatcher,
   type PiiCheck,
   type PiiEntity,
@@ -92,6 +93,13 @@ interface GatewayInput {
    * fragment with exactly that source and text. Forgotten after the case.
    */
   catalog?: { source: string; value: string }[];
+  /**
+   * The saved private values of the user (D-283), fake ones only, and the
+   * references the user approved: given, the gateway compares them instead
+   * of the second scanner on a page or a typed text, and on a resource or a
+   * request of the site of an access. Absent: no comparison, as before.
+   */
+  saved?: { values: { ref: string; value: string; phone?: boolean }[]; approved?: string[] };
 }
 
 /** The fake recognizer of a case: each value is found where it first appears in its fragment. */
@@ -295,13 +303,14 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
   for (const marked of input.catalog ?? []) markCatalogText(marked.source, marked.value);
   let decision;
   try {
-    decision = gatewayCheckWithPii(payload, context, input.target, secrets, piiOf(payload, input.pii));
+    const saved = input.saved === undefined ? undefined : { known: savedMatcher(input.saved.values), approved: new Set(input.saved.approved ?? []) };
+    decision = gatewayCheckWithPii(payload, context, input.target, secrets, piiOf(payload, input.pii), saved);
   } finally {
     forgetCatalogTexts();
   }
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule, ...denied };
   if (decision.pii !== undefined) return { decision: 'block', rule: decision.rule, next: decision.next, findings: [...new Set(decision.pii.map((finding) => finding.kind))], ...denied };
-  const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };
+  const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next, ...(decision.saved === undefined ? {} : { saved: [...decision.saved] }) };
   return decision.findings === undefined
     ? { ...outcome, ...denied }
     : { ...outcome, findings: [...new Set(decision.findings.map((finding) => finding.kind))], ...denied };
