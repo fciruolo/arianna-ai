@@ -277,7 +277,7 @@ export interface ApiServerOptions {
   voice?: VoiceApi;
   /** Calls from the chat (D-066); refused while the voice is off. */
   calls?: Calls;
-  /** Web Push for the calls of Arianna (D-066), read at each request: undefined without [voice.push]. */
+  /** Web Push of the calls and of the chat notifications (D-066, D-292), read at each request: undefined without [push] or [voice.push]. */
   pusher?: () => Pusher | undefined;
   /** The last notice pushed (I-1), which the service worker asks for: kind and conversation only. */
   notices?: NoticeBoard;
@@ -680,7 +680,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
   };
   const needPush = (): Pusher => {
     const pusher = pushers();
-    if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+    if (pusher === undefined) throw new HttpError(503, 'push off: add [push] to arianna.toml');
     return pusher;
   };
   return [

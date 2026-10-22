@@ -117,7 +117,7 @@ export interface NotifierOptions {
   toHelpers?: (notice: Notice & { kind: NoticeKind }) => void;
   /**
    * The push of the moment, read at each event: undefined without
-   * `[voice.push]`. `helper`: the helper of the Mac shows this notice, so the
+   * `[push]` (D-292). `helper`: the helper of the Mac shows this notice, so the
    * browsers of the Mac are left out (D-128).
    */
   push: () => ((kind: PushKind, helper: boolean) => Promise<unknown>) | undefined;

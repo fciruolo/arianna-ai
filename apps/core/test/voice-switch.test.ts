@@ -1,17 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEFAULT_VOICE, type PushConfig, type VoiceConfig } from '@arianna/config';
+import { DEFAULT_VOICE, type VoiceConfig } from '@arianna/config';
 
-import type { Pusher } from '../src/voice/push.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../src/voice/service.ts';
 import { createVoiceSwitch } from '../src/voice/switch.ts';
 
-const PUSH: PushConfig = { publicKey: `B${'a'.repeat(86)}`, privateKey: 'vault://vapid-private-key', subject: 'mailto:test@example.com' };
 const ON: VoiceConfig = structuredClone(DEFAULT_VOICE);
 
-/** A switch on fake services and pushers: `log` lists what happened, in order. */
-function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boolean; failStop?: boolean; onApplied?: (config: VoiceConfig | undefined) => void } = {}) {
+/** A switch on fake services: `log` lists what happened, in order. */
+function fake(options: { busy?: () => boolean | Promise<boolean>; failStop?: boolean; onApplied?: (config: VoiceConfig | undefined) => void } = {}) {
   const log: string[] = [];
   const errors: unknown[] = [];
   const voice = createVoiceSwitch({
@@ -35,11 +33,6 @@ function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boo
         request: (_method, path) => Promise.resolve({ status: 200, headers: {}, body: Buffer.from(`${String(port)}${path}`) }),
       };
     },
-    createPusher: (push): Promise<Pusher> => {
-      log.push(`pusher ${push.subject}`);
-      if (options.failPush === true) return Promise.reject(new Error('no key'));
-      return Promise.resolve({ publicKey: push.publicKey, subscribe: () => Promise.resolve(), unsubscribe: () => Promise.resolve(), notify: () => Promise.resolve(0) });
-    },
     busy: async () => (await options.busy?.()) ?? false,
     onChange: (config) => log.push(`event ${config === undefined ? 'off' : String(config.port)}`),
     ...(options.onApplied === undefined ? {} : { onApplied: options.onApplied }),
@@ -52,12 +45,11 @@ function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boo
 /** Lets the queue of the switch run. */
 const settle = (ms = 10) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test('off without [voice]: state off, requests refused, no pusher', async () => {
+test('off without [voice]: state off, requests refused', async () => {
   const { voice, log } = fake();
   await voice.begin(undefined);
   assert.equal(voice.service.state, 'off');
   await assert.rejects(voice.service.request('GET', '/health'), (error: unknown) => error instanceof VoiceError && error.code === 'off');
-  assert.equal(voice.pusher(), undefined);
   assert.deepEqual(log, []);
   await voice.close();
 });
@@ -159,25 +151,6 @@ test('negative: the same [voice] synced again logs nothing and restarts nothing'
   assert.deepEqual(applied, ['7421']);
   assert.deepEqual(log, ['create 7421', 'start 7421']);
   await voice.close();
-});
-
-test('[voice.push] replaces the pusher without restarting the service; a key that cannot be read leaves push off', async () => {
-  const { voice, log } = fake();
-  await voice.begin(ON);
-  voice.sync({ ...ON, push: PUSH });
-  await settle();
-  assert.equal(voice.pusher()?.publicKey, PUSH.publicKey);
-  voice.sync(ON);
-  await settle();
-  assert.equal(voice.pusher(), undefined);
-  assert.deepEqual(log, ['create 7421', 'start 7421', 'event 7421', 'pusher mailto:test@example.com', 'event 7421']);
-  await voice.close();
-
-  const failing = fake({ failPush: true });
-  await failing.voice.begin({ ...ON, push: PUSH });
-  assert.equal(failing.voice.pusher(), undefined);
-  assert.equal(failing.errors.length, 1);
-  await failing.voice.close();
 });
 
 test('new calls are refused before the check for one in progress, and again allowed when it waits', async () => {
@@ -296,22 +269,5 @@ test('a check that fails (database down) is reported and tried again', async () 
   assert.equal(errors.length, 1);
   assert.equal(voice.service.state, 'up');
   assert.deepEqual(log.slice(3), ['stop 7421', 'create 7500', 'start 7500']);
-  await voice.close();
-});
-
-test('[voice.push] waits for the call in progress too, then applies', async () => {
-  let busy = false;
-  const { voice, log } = fake({ busy: () => busy });
-  await voice.begin(ON);
-  busy = true;
-  voice.sync({ ...ON, push: PUSH });
-  await settle(60);
-  assert.equal(voice.pusher(), undefined);
-  // The service is not being replaced: calls are not refused meanwhile.
-  assert.equal(voice.service.state, 'up');
-  busy = false;
-  await settle(60);
-  assert.equal(voice.pusher()?.publicKey, PUSH.publicKey);
-  assert.deepEqual(log, ['create 7421', 'start 7421', 'event 7421', 'pusher mailto:test@example.com']);
   await voice.close();
 });
