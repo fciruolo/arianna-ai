@@ -55,9 +55,10 @@ test('the plan: a root that signs only for the name, the leaf with SAN and serve
 });
 
 test('renewal: refused while the leaf is valid for more than 60 days, unless --force', () => {
-  const now = new Date('2026-10-22T10:00:00Z');
-  assert.equal(renewRefusal(undefined, now, false), undefined);
-  assert.equal(renewRefusal('not a certificate', now, false), undefined);
+  assert.equal(renewRefusal({ ok: false, problem: 'manca' }, false), undefined);
+  assert.equal(renewRefusal({ ok: true, cert: 'c', key: 'k', daysLeft: 61 }, false)?.includes('--force'), true);
+  assert.equal(renewRefusal({ ok: true, cert: 'c', key: 'k', daysLeft: 60 }, false), undefined);
+  assert.equal(renewRefusal({ ok: true, cert: 'c', key: 'k', daysLeft: 400 }, true), undefined);
 });
 
 test('checkCertificate refuses what is not a certificate', () => {
@@ -105,9 +106,12 @@ test(`with ${openssl}: the certificate is made, checked by node:crypto, and the 
   // Expired at the end of the leaf.
   assert.deepEqual(checkCertificate({ cert: leaf.toString(), root: rootCert.toString() }, HOST, new Date(new Date(leaf.validTo).getTime() + 1000)), { ok: false, problem: 'il certificato è scaduto' });
   // A fresh certificate is not renewed without --force.
-  assert.match(renewRefusal(leaf.toString(), now, false) ?? '', /--force/);
-  assert.equal(renewRefusal(leaf.toString(), now, true), undefined);
-  assert.equal(renewRefusal(leaf.toString(), new Date(new Date(leaf.validTo).getTime() - 30 * 86_400_000), false), undefined);
+  assert.match(renewRefusal(loadRemoteTls(paths, HOST, now), false) ?? '', /--force/);
+  assert.equal(renewRefusal(loadRemoteTls(paths, HOST, now), true), undefined);
+  assert.equal(renewRefusal(loadRemoteTls(paths, HOST, new Date(new Date(leaf.validTo).getTime() - 30 * 86_400_000)), false), undefined);
+  // Another name in arianna.toml, or the key gone: replaced without --force, never a dead end.
+  assert.equal(renewRefusal(loadRemoteTls(paths, 'altro.tail0000.ts.net', now), false), undefined);
+  assert.equal(renewRefusal(loadRemoteTls({ ...paths, key: join(root, 'no-key') }, HOST, now), false), undefined);
 
   // A second root does not sign for the first: the leaf is refused against it.
   const other = remotePaths(join(root, 'other'));

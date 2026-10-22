@@ -74,3 +74,26 @@ test('changes before begin are ignored; a key that cannot be read leaves push of
   await settle();
   assert.equal(log.length, 2, 'closed: nothing more');
 });
+
+test('close while the key is being read: no pusher is put in place, nothing applied', async () => {
+  let release: (() => void) | undefined;
+  const log: string[] = [];
+  const push = createPushSwitch({
+    createPusher: (config) =>
+      new Promise<Pusher>((resolve) => {
+        release = () => {
+          resolve({ publicKey: config.publicKey, subscribe: () => Promise.resolve(), unsubscribe: () => Promise.resolve(), notify: () => Promise.resolve(0) });
+        };
+      }),
+    onApplied: () => log.push('applied'),
+    onError: () => log.push('error'),
+  });
+  const begun = push.begin(PUSH);
+  await settle();
+  const closed = push.close();
+  release?.();
+  await begun;
+  await closed;
+  assert.equal(push.pusher(), undefined);
+  assert.deepEqual(log, []);
+});

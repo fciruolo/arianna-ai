@@ -194,6 +194,31 @@ test('the remote port listens on 127.0.0.1 only, even when the port of this Mac 
   }
 });
 
+test('a remote port already taken closes only the remote port: the port of this Mac stays up', async () => {
+  const errors: unknown[] = [];
+  const taken = await startApiServer({
+    sql: undefined as unknown as Sql,
+    live: undefined as unknown as LiveFeed,
+    host: '127.0.0.1',
+    port: 0,
+    staticDir: dist,
+    remote: { host: NAME, port: server.remotePort ?? -1 },
+    onRemoteError: (error) => errors.push(error),
+  });
+  try {
+    assert.equal(taken.remotePort, undefined);
+    assert.equal(errors.length, 1);
+    assert.equal((await send({ port: taken.port, path: '/' })).status, 200);
+  } finally {
+    await taken.close();
+  }
+});
+
+test('a WebSocket to the screen of the browser is refused on the remote port too', async () => {
+  const answer = await remote('/api/browser/screen?t=x', { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', origin: ORIGIN });
+  assert.equal(answer.status, 401);
+});
+
 test('without [server.remote] there is no remote port', async () => {
   const plain = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
   try {

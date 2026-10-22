@@ -120,19 +120,14 @@ export function certPlan(host: string, tmp: string, now: Date, serial: () => str
 
 /**
  * Why `pnpm remote:cert` does not renew now (Italian, for the terminal), or
- * undefined: a certificate valid for more than RENEW_AFTER_DAYS stays, unless
- * --force (a new root must be installed on the phone again).
+ * undefined. Only a certificate the core would use as it is (`loadRemoteTls`:
+ * this name, its key, its root) and valid for more than RENEW_AFTER_DAYS
+ * stays, unless --force (a new root must be installed on the phone again):
+ * one for another name, or with a missing file, is always replaced.
  */
-export function renewRefusal(existing: string | undefined, now: Date, force: boolean): string | undefined {
-  if (force || existing === undefined) return undefined;
-  let left: number;
-  try {
-    left = daysUntil(new Date(new X509Certificate(existing).validTo), now);
-  } catch {
-    return undefined;
-  }
-  if (left <= RENEW_AFTER_DAYS) return undefined;
-  return `Il certificato attuale vale ancora ${String(left)} giorni: si rinnova sotto i ${String(RENEW_AFTER_DAYS)}. Un rinnovo crea una radice nuova da reinstallare sul telefono; per farlo lo stesso: pnpm remote:cert --force`;
+export function renewRefusal(current: RemoteTls, force: boolean): string | undefined {
+  if (force || !current.ok || current.daysLeft <= RENEW_AFTER_DAYS) return undefined;
+  return `Il certificato attuale vale ancora ${String(current.daysLeft)} giorni: si rinnova sotto i ${String(RENEW_AFTER_DAYS)}. Un rinnovo crea una radice nuova da reinstallare sul telefono; per farlo lo stesso: pnpm remote:cert --force`;
 }
 
 export type CertCheck = { ok: true; daysLeft: number } | { ok: false; problem: string };

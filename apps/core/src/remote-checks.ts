@@ -106,6 +106,10 @@ const runTailscale: TailscaleRunner = (binary, args) =>
 /** The certificate of mode `own` as the core will read it: SAN, root, key, days left. */
 export function remoteCertCheck(data: string, host: string, now: Date): DoctorCheck {
   const paths = remotePaths(data);
+  // Left by a pnpm remote:cert stopped halfway: it may hold the root's private key.
+  if (existsSync(paths.tmp)) {
+    return { id: 'remote.cert', ok: false, detail: 'è rimasta data/remote/tmp di un pnpm remote:cert interrotto (può contenere la chiave della radice): rilancia pnpm remote:cert --force' };
+  }
   if (![paths.cert, paths.key, paths.root].every((path) => existsSync(path))) {
     return { id: 'remote.cert', ok: false, detail: 'manca il certificato in data/remote: lancia pnpm remote:cert' };
   }

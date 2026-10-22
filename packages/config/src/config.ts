@@ -54,9 +54,9 @@ export function remotePaths(data: string): RemotePaths {
   return { dir, tmp: join(dir, 'tmp'), root: join(dir, 'arianna-root.crt'), cert: join(dir, 'server.crt'), key: join(dir, 'server.key') };
 }
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
-// The API serves L2 history in clear and without authentication: this machine
-// only, until the VPN proxy and authentication (task 1.13). Addresses, not
-// "localhost", which depends on /etc/hosts.
+// The API serves L2 history in clear: this machine only. The phone comes in
+// through the remote port of [server.remote], 127.0.0.1 too (D-292).
+// Addresses, not "localhost", which depends on /etc/hosts.
 const SERVER_HOSTS = ['127.0.0.1', '::1'];
 export const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
 /**

@@ -1101,7 +1101,7 @@ export async function cancelScheduledCall(callId: string): Promise<void> {
   await call('POST', `/api/calls/${encodeURIComponent(callId)}/cancel`, {});
 }
 
-/** The VAPID public key of [voice.push], or null when push is off. */
+/** The VAPID public key of [push] (or [voice.push], D-292), or null when push is off. */
 export async function loadPushKey(): Promise<string | null> {
   return (await call<{ publicKey: string | null }>('GET', '/api/push/key')).publicKey;
 }

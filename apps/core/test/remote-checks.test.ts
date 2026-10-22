@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -62,6 +62,8 @@ test('tls = "tailscale": only https://<name> to http://127.0.0.1:<port>', () => 
     ['a TCP forward too', { ...https, TCP: { '443': { HTTPS: true }, '22': { TCPForward: '127.0.0.1:22' } } }, /anche altro/],
     ['the setup of the other mode', tcpForward, /tls = "own".*tls = "tailscale"/],
     ['funnel', { ...https, AllowFunnel: { [`${HOST}:443`]: true } }, /Funnel/],
+    ['a foreground session publishing more', { ...https, Foreground: { abc: { Web: { [`${HOST}:8443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:7420' } } } } } } }, /anche altro/],
+    ['a foreground session with funnel', { ...https, Foreground: { abc: { AllowFunnel: { [`${HOST}:443`]: true } } } }, /Funnel/],
   ];
   for (const [name, json, detail] of refused) {
     const check = analyzeServeStatus(json, TAILSCALE);
@@ -111,6 +113,9 @@ test('remoteChecks in mode own: the certificate must be there, for the name and 
   chmodSync(remotePaths(data).key, 0o644);
   assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /leggibili da altri/);
   chmodSync(remotePaths(data).key, 0o600);
+  mkdirSync(remotePaths(data).tmp);
+  assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /data\/remote\/tmp/);
+  rmSync(remotePaths(data).tmp, { recursive: true });
   const late = await remoteChecks(config, { run, exists: () => false, now: new Date(Date.now() + 780 * 86_400_000) });
   assert.equal(late[1]?.ok, false);
   assert.match(late[1].detail, /scade fra \d+ giorni: lancia pnpm remote:cert/);

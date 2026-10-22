@@ -461,6 +461,8 @@ export interface ApiServerOptions {
    * TLS itself and Tailscale forwards TCP; without it Tailscale ends HTTPS.
    */
   remote?: { host: string; port: number; tls?: { cert: string; key: string } };
+  /** The remote port could not listen (a port taken): the core goes on without it. */
+  onRemoteError?: (error: unknown) => void;
   /** Errors are reported here, never sent to the client: they may hold data. */
   onError?: (error: unknown) => void;
 }
@@ -488,7 +490,7 @@ export interface LocalApi {
 export interface ApiServer {
   /** The bound port, useful with port 0 in tests. */
   readonly port: number;
-  /** The bound remote port (D-292), without `[server.remote]` undefined. */
+  /** The bound remote port (D-292); undefined without `[server.remote]` or when it could not listen. */
   readonly remotePort: number | undefined;
   /** Pages holding the live feed now: with none, a call of Arianna rings by Web Push (D-066). */
   clients(): number;
@@ -5197,12 +5199,11 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         });
       });
     } catch (error) {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => { resolve(); }));
-      throw error;
+      // A port taken (EADDRINUSE) closes only the remote port: the chat of this Mac stays up.
+      options.onRemoteError?.(error);
     }
   }
-  const remotePort = remoteServer === undefined ? undefined : (remoteServer.address() as AddressInfo).port;
+  const remotePort = remoteServer?.listening === true ? (remoteServer.address() as AddressInfo).port : undefined;
 
   return {
     port,

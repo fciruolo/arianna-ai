@@ -315,7 +315,8 @@ const voice = createVoiceSwitch({
 // content when no chat is open, for the chat notifications and the calls,
 // with the voice off too. Keys of [push] or of [voice.push]; a change applies
 // without a restart.
-let pushShown = config.push !== undefined;
+// Undefined until the first application: the start of the core is not a change.
+let pushShown: boolean | undefined;
 const push = createPushSwitch({
   createPusher: async (keys) => {
     const privateKey = await createVault({ data: config.paths.data }).resolve(keys.privateKey);
@@ -334,7 +335,7 @@ const push = createPushSwitch({
     console.log(`Web Push ${on ? 'on' : 'off'}`);
     if (next !== undefined && !on) console.error('Web Push off: see the error above; tried again at the next change of [push]');
     // On or off only: L0.
-    if (pushShown !== on) appendEvent(sql, { kind: 'settings.push', label: 'L0', payload: { on } }).catch(report);
+    if (pushShown !== undefined && pushShown !== on) appendEvent(sql, { kind: 'settings.push', label: 'L0', payload: { on } }).catch(report);
     pushShown = on;
   },
   onError: report,
@@ -1331,6 +1332,10 @@ const server = await startApiServer({
   port: config.server.port,
   // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; until stage B only the page and «not paired».
   ...(remoteListener === undefined ? {} : { remote: remoteListener }),
+  onRemoteError: (error) => {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'errore';
+    console.error(`Porta remota chiusa: non si apre su 127.0.0.1:${String(config.server.remote?.port)} (${code}); il core continua senza.`);
+  },
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,

@@ -5,8 +5,6 @@
 // name, erases the root's private key and leaves in data/remote/ the leaf,
 // its key (0600) and the public root for the iPhone. Refuses while the
 // current certificate is valid for more than 60 days, unless --force.
-import { readFileSync } from 'node:fs';
-
 import { loadConfigOrExit, remotePaths } from '@arianna/config';
 
 import { findOpenssl, generateCertificate, loadRemoteTls, renewRefusal } from '../apps/core/src/remote-cert.ts';
@@ -26,14 +24,8 @@ if (remote === undefined) fail('Manca [server.remote] in config/arianna.toml: sc
 if (remote.tls !== 'own') fail('Con tls = "tailscale" il certificato lo fa Tailscale: questo comando serve solo con tls = "own".');
 
 const paths = remotePaths(config.paths.data);
-let existing: string | undefined;
-try {
-  existing = readFileSync(paths.cert, 'utf8');
-} catch {
-  existing = undefined;
-}
 const now = new Date();
-const refusal = renewRefusal(existing, now, force);
+const refusal = renewRefusal(loadRemoteTls(paths, remote.host, now), force);
 if (refusal !== undefined) fail(refusal);
 
 try {
