@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.168.0] - 2026-10-22
+
 ### Aggiunto
 
 - `[server.remote]` in `arianna.toml`: una seconda porta del core, solo su 127.0.0.1, che Tailscale pubblica sulla tailnet come `https://<nome>.ts.net` per aprire la chat dal telefono (D-292, tappa A).
