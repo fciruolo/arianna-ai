@@ -39,7 +39,7 @@ const text = computed(() => {
 <template>
   <div
     v-if="shown"
-    class="sticky bottom-4 z-10 flex flex-wrap items-center gap-2.5 rounded-xl border bg-surface-2 py-2.5 pr-3 pl-4 text-[14px] shadow-[0_10px_30px_#0003]"
+    class="sticky bottom-4 z-10 flex flex-wrap items-center gap-2.5 rounded-xl border bg-surface-2 py-2.5 pr-3 pl-4 text-[14px] shadow-[0_10px_30px_#0003] max-md:bottom-2 max-md:py-2 max-md:pr-2 max-md:text-[15px]"
     :class="error ? 'border-danger' : privacy ? 'border-warn' : 'border-accent'"
     role="status"
   >

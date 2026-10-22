@@ -10,6 +10,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- Impostazioni sul telefono: l’indice a righe da 48 px con la freccia, «‹ Impostazioni» grande, la barra di salvataggio più bassa; dal telefono «Dispositivi» dice «Solo sul Mac» e non si apre, le sezioni che fanno uscire dati si leggono ma si cambiano dal Mac, come vuole la porta remota del core (D-293, tappa 6).
 - Sul telefono Cerca, Nuova conversazione, la legenda e le altre finestre grandi occupano lo schermo intero, le conferme brevi diventano un foglio in basso, i pannelli laterali, le chiamate e gli avvisi rispettano isola e riga della casa (D-293, tappa 5).
 - «Attende te» sul telefono mette prima le decisioni in attesa e quelle decise altrove, poi gli agenti; dal telefono il pulsante di approvazione porta l’icona di Face ID e la carta dice che ogni decisione la chiede (D-293, tappa 4).
 - Sul telefono l’elenco delle conversazioni ha righe più alte e un «⋯» (o la pressione lunga) che apre un foglio in basso con Fissa, Rinomina, Archivia ed Elimina; nella conversazione il campo resta sopra la tastiera, «+», invia e ferma sono da 44 px, il tasto «a capo» va a capo (si invia col pulsante), le righe d’aiuto sui tasti lasciano il posto a una riga sull’etichetta, e le azioni dei messaggi diventano icone (D-293, tappa 3).

@@ -26,6 +26,8 @@ import { agentName } from '../lib/italian.ts';
 import { SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
 import { THEME_ICON, THEME_TEXT, THEMES, type Theme } from '../lib/theme.ts';
 import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, sectionDirty, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
+import { REMOTE_LIMIT_NOTE, REMOTE_LIMIT_TEXT, remoteLimit } from '../lib/phone-nav.ts';
+import { onRemoteOrigin } from '../lib/remote.ts';
 import { EXECUTOR_CARD, executorReceives, KEEP_ON_MAC, labelWord, restartBlocker, serverDown, serverName, serverStatus, type ServerTone } from '../lib/settings-copy.ts';
 import {
   agentsBody,
@@ -711,6 +713,12 @@ const GRADE_CLASS: Record<string, string> = { L0: 'text-ok border-ok/50', L1: 't
  * page (the forms are one object) and are listed until saved or cancelled.
  */
 const chosen = computed(() => resolveSection(props.section));
+/** From the phone (D-292) some sections are only on the Mac or only to read (D-293): read from the remote door of the core. */
+const remoteOrigin = onRemoteOrigin(window.location);
+function limitOf(item: IndexItem) {
+  return remoteOrigin ? remoteLimit(item) : undefined;
+}
+const chosenLimit = computed(() => limitOf(chosen.value.item));
 const active = computed(() => chosen.value.item.id);
 const pending = computed(() => pendingTitles(active.value, isChanged));
 function dirty(item: IndexItem): boolean {
@@ -872,14 +880,14 @@ const grid = 'grid gap-3 sm:grid-cols-6';
       :class="chosen.explicit ? 'hidden' : 'flex w-full'"
       aria-label="Indice delle impostazioni"
     >
-      <h1 class="mx-2.5 mb-2 text-xl font-semibold lg:hidden">Impostazioni</h1>
+      <h1 class="mx-2.5 mb-2 text-xl font-semibold max-md:text-[28px] lg:hidden">Impostazioni</h1>
       <template v-for="group in SETTINGS_INDEX" :key="group.group">
-        <h2 class="mx-2.5 mt-4 mb-1 text-[12.5px] font-semibold text-muted first:mt-0">{{ group.group }}</h2>
+        <h2 class="mx-2.5 mt-4 mb-1 text-[12.5px] font-semibold text-muted first:mt-0 max-md:mt-5 max-md:text-[13px] max-md:tracking-[0.08em] max-md:uppercase">{{ group.group }}</h2>
         <a
           v-for="item in group.items"
           :key="item.id"
           :href="hrefOf(item)"
-          class="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[14.5px] hover:bg-surface-2 hover:text-ink lg:py-1.5"
+          class="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[14.5px] hover:bg-surface-2 hover:text-ink max-md:min-h-12 max-md:border-b max-md:border-line max-md:text-[16px] max-md:text-ink lg:py-1.5"
           :class="active === item.id ? 'text-muted lg:bg-surface-2 lg:font-semibold lg:text-ink lg:shadow-[inset_3px_0_0_var(--accent)]' : 'text-muted'"
           :aria-current="active === item.id ? 'page' : undefined"
           @click.prevent="open(item)"
@@ -894,6 +902,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
           >{{ devDot }}</span>
           <span v-if="dirty(item)" role="img" class="size-[7px] rounded-full bg-warn" title="Modifiche non salvate" aria-label="modifiche non salvate" />
           <span v-if="item.privacy" role="img" class="inline-flex text-warn" :title="PRIVACY_HINT" :aria-label="PRIVACY_HINT"><Icon name="private" :size="14" /></span>
+          <span v-if="limitOf(item) !== undefined" class="shrink-0 text-[12.5px] text-muted">{{ REMOTE_LIMIT_TEXT[limitOf(item)!] }}</span>
+          <span class="text-muted md:hidden" aria-hidden="true"><Icon name="expand" :size="16" /></span>
         </a>
       </template>
       <p v-if="currentVersion !== null || installation !== undefined" class="mx-2.5 mt-auto pt-6 text-[13px] text-muted">
@@ -905,7 +915,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
       <div class="@container mx-auto flex max-w-[1120px] flex-col gap-3.5 px-4 pt-5 pb-24 md:px-6">
         <header class="flex flex-col gap-1.5">
-          <button type="button" class="mb-1 self-start text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex"><span aria-hidden="true">‹ </span>Impostazioni</button>
+          <button type="button" class="mb-1 self-start text-sm text-muted hover:text-ink max-md:-ml-1 max-md:flex max-md:min-h-11 max-md:items-center max-md:text-[16px] max-md:text-accent lg:hidden" @click="backToIndex"><span aria-hidden="true">‹ </span>Impostazioni</button>
           <div class="flex flex-wrap items-center gap-2.5">
             <h1 class="text-[22px] font-semibold">{{ chosen.item.title }}</h1>
             <span v-if="pill !== null" class="pill" :class="PILL_TONE[chosen.item.behaviour] ?? ''">
@@ -927,6 +937,11 @@ const grid = 'grid gap-3 sm:grid-cols-6';
           </p>
         </header>
 
+        <p v-if="chosenLimit !== undefined" role="note" class="flex items-start gap-2 rounded-[10px] border border-line-strong bg-surface-2 px-3 py-2.5 text-[14.5px]">
+          <Icon name="private" :size="16" class="mt-0.5 text-muted" />
+          <span>{{ REMOTE_LIMIT_NOTE[chosenLimit] }}</span>
+        </p>
+
         <p v-if="pending.length > 0" role="status" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[14px]">
           <Icon name="warning" :size="16" class="text-warn" />
           <span class="min-w-[220px] flex-1">Modifiche non salvate in: {{ pending.join(', ') }}. Restano lì finché non le salvi o le annulli; uscendo dalle Impostazioni si perdono.</span>
@@ -946,7 +961,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         <!-- «Su di te» (D-114): the facts of the profile, in the database, not in arianna.toml -->
         <ProfileFacts v-else-if="active === 'about-you'" />
         <!-- The phones of the remote port (D-292, stage B): in the database, not in arianna.toml -->
-        <DevicesPage v-else-if="active === 'devices'" />
+        <template v-else-if="active === 'devices'"><DevicesPage v-if="chosenLimit !== 'mac-only'" /></template>
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
         <ChangesPage v-else-if="active === 'changes'" @section="openSection" />
         <UsagePage v-else-if="active === 'usage'" />
