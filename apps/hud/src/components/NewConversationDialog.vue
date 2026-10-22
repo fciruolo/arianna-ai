@@ -22,14 +22,14 @@ function create(choice: DraftChoice): void {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] sm:pt-[14vh]" @click.self="emit('close')">
+  <div class="phone-overlay fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] sm:pt-[14vh]" @click.self="emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-title"
       tabindex="-1"
-      class="hud-card flex max-h-[84vh] w-full max-w-[34rem] flex-col overflow-y-auto bg-surface outline-none"
+      class="phone-sheet hud-card flex max-h-[84vh] w-full max-w-[34rem] flex-col overflow-y-auto bg-surface outline-none"
     >
       <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
         <span class="text-accent"><Icon name="new" :size="18" /></span>

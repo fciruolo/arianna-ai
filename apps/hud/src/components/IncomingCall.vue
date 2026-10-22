@@ -53,7 +53,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-14 text-white" role="alertdialog" :aria-label="`${props.callee.subject} ti chiama`">
+  <div class="fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-14 text-white max-md:pt-[calc(var(--safe-top)+3rem)] max-md:pb-[calc(var(--safe-bottom)+3rem)]" role="alertdialog" :aria-label="`${props.callee.subject} ti chiama`">
     <div class="flex flex-col items-center gap-3 text-center">
       <p class="text-sm tracking-wide text-teal-200 uppercase">Chiamata in arrivo</p>
       <p class="font-hud text-3xl font-semibold tracking-[0.08em]">{{ props.callee.subject }} ti chiama</p>

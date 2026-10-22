@@ -111,7 +111,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <aside ref="root" class="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-line bg-surface shadow-[0_14px_40px_#0006] md:max-w-[440px]" aria-labelledby="side-title">
+  <aside ref="root" class="phone-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-line bg-surface shadow-[0_14px_40px_#0006] md:max-w-[440px]" aria-labelledby="side-title">
     <header class="flex items-start gap-2 border-b border-line px-5 py-4">
       <div class="min-w-0 flex-1">
         <h2 id="side-title" class="flex items-center gap-2 text-[16px] font-semibold"><Icon name="panel" :size="16" />{{ SIDE_TITLE }}</h2>

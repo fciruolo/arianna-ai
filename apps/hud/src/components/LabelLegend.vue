@@ -12,14 +12,14 @@ useModal(dialog, () => emit('close'));
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh]" @click.self="emit('close')">
+  <div class="phone-overlay fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh]" @click.self="emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="legend-title"
       tabindex="-1"
-      class="hud-card flex max-h-[80vh] w-full max-w-[520px] flex-col bg-surface outline-none"
+      class="phone-sheet hud-card flex max-h-[80vh] w-full max-w-[520px] flex-col bg-surface outline-none"
     >
       <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="text-accent"><Icon name="gateway" :size="18" /></span>

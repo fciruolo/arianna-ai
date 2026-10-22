@@ -256,6 +256,60 @@ body,
   }
 }
 /*
+ * Windows and panels on the phone (D-293, tappa 5), unlayered so they win
+ * over the utilities of the component: they follow the visible part of the
+ * window (the keyboard), keep out of the island and the line of home.
+ * `phone-overlay` + `phone-sheet`: a window becomes the whole screen;
+ * `phone-overlay-bottom` + `phone-sheet-bottom`: a short question becomes a
+ * sheet at the bottom; `phone-panel`: a panel from the side covers the screen.
+ */
+@media (max-width: 47.98rem) {
+  .phone-overlay,
+  .phone-overlay-bottom,
+  .phone-panel {
+    top: var(--vv-top, 0px);
+    bottom: auto;
+    height: var(--vv-height, 100dvh);
+  }
+  .phone-overlay {
+    padding: var(--safe-top) 0 0;
+    align-items: stretch;
+    justify-items: stretch;
+  }
+  .phone-sheet {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+    padding-bottom: var(--safe-bottom);
+  }
+  .phone-sheet.hud-card::before,
+  .phone-sheet.hud-card::after {
+    display: none;
+  }
+  .phone-overlay-bottom {
+    padding: var(--safe-top) 0.5rem calc(var(--safe-bottom) + 0.5rem);
+    align-items: end;
+    align-content: end;
+  }
+  .phone-sheet-bottom {
+    max-width: none;
+    max-height: calc(var(--vv-height, 100dvh) - var(--safe-top) - var(--safe-bottom) - 1rem);
+    overflow-y: auto;
+  }
+  .phone-panel {
+    max-width: none;
+    border-left: 0;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+}
+
+/*
  * A finger (D-293): Safari zooms the page into a field written under 16 px
  * and never zooms back; a field that wants a bigger size says so with
  * data-own-size. Buttons reach the 44 px of a tap.

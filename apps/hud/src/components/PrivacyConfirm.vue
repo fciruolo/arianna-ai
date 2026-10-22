@@ -43,14 +43,14 @@ const MARK_CLASS = { add: 'text-ok', remove: 'text-danger', change: 'text-warn' 
 </script>
 
 <template>
-  <div class="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4" @click.self="!busy && emit('close')">
+  <div class="phone-overlay fixed inset-0 z-40 grid place-items-center bg-black/50 p-4" @click.self="!busy && emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="privacy-title"
       tabindex="-1"
-      class="flex max-h-[90vh] w-full max-w-[580px] flex-col rounded-[14px] border border-warn bg-surface-2 outline-none"
+      class="phone-sheet flex max-h-[90vh] w-full max-w-[580px] flex-col rounded-[14px] border border-warn bg-surface-2 outline-none"
     >
       <header class="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3.5">
         <Icon name="private" :size="16" class="text-warn" />

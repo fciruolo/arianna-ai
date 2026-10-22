@@ -72,8 +72,8 @@ onBeforeUnmount(() => {
   <div
     :class="
       small
-        ? 'fixed right-4 bottom-4 z-50 flex w-[280px] items-center gap-3 rounded-2xl bg-gradient-to-br from-teal-700 to-teal-950 p-3 text-white shadow-2xl'
-        : 'fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-10 text-white'
+        ? 'fixed right-4 bottom-4 z-50 flex w-[280px] max-md:right-2 max-md:bottom-[calc(var(--safe-bottom)+4.5rem)] items-center gap-3 rounded-2xl bg-gradient-to-br from-teal-700 to-teal-950 p-3 text-white shadow-2xl'
+        : 'fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-10 text-white max-md:pt-[calc(var(--safe-top)+2rem)] max-md:pb-[calc(var(--safe-bottom)+2rem)]'
     "
     role="dialog"
     :aria-label="`Chiamata con ${callee.the}`"
