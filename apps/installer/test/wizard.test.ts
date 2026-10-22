@@ -16,7 +16,7 @@ import {
 
 import { currentSettings, installedExecutors, writeSettings } from '../src/init.ts';
 import { selectedModels } from '@arianna/core/model-files';
-import { runWizard, type Prompter, type WizardContext } from '../src/wizard.ts';
+import { defaultSettings, runWizard, suggestedTts, type Prompter, type WizardContext } from '../src/wizard.ts';
 
 const GIB = 2 ** 30;
 const SHA = 'e'.repeat(64);
@@ -257,6 +257,43 @@ test('an invalid result is refused before anything is written', () => {
     writeSettings(home, EMPTY_CATALOG, { ...DEFAULT_SETTINGS, roles: { orchestrator: 'large-mlx' } });
   });
   assert.equal(currentSettings(home, EMPTY_CATALOG), undefined);
+});
+
+// D-290: a voice of macOS for the calls, when installed; else Kokoro.
+const VOICES = parseCatalog(`${CATALOG_TEXT}  - id: kokoro-fake
+    family: kokoro
+    runtime: mlx
+    ram_min_gib: 1
+    roles: [tts]
+    status: experimental
+    files: [{ path: k.bin, url: "https://example.org/kokoro", size_bytes: 1024, sha256: ${SHA} }]
+  - id: macos-fake
+    family: macos-say
+    runtime: system
+    voice: "Finta (Premium)"
+    ram_min_gib: 1
+    roles: [tts]
+    status: experimental
+    files: []
+`);
+
+test('the voice of the calls (D-290): the voice of macOS when installed, else Kokoro; defaults only with the first', async () => {
+  assert.equal(suggestedTts(VOICES, ['Alice', 'Finta (Premium)'])?.id, 'macos-fake');
+  assert.equal(suggestedTts(VOICES, ['Alice'])?.id, 'kokoro-fake');
+  assert.equal(suggestedTts(CATALOG, ['Finta (Premium)']), undefined);
+  assert.deepEqual(defaultSettings(DEFAULT_SETTINGS, VOICES, ['Finta (Premium)']).roles, { tts: 'macos-fake' });
+  // Without the voice of macOS the defaults stay without tts: Kokoro would only be a download.
+  assert.deepEqual(defaultSettings(DEFAULT_SETTINGS, VOICES, []).roles, {});
+  // Orchestrator, extractor, tts, add oMLX, Claude, Codex, add a project, Telegram, write.
+  const installed = scripted(['', '', '', '', '', '', '', '', '']);
+  const withVoice = await runWizard(installed, context({ catalog: VOICES, systemVoices: ['Finta (Premium)'] }));
+  assert.equal(withVoice?.roles.tts, 'macos-fake');
+  assert.ok(installed.said.some((line) => line.includes('macos-fake (macos-say, system')));
+  const missing = scripted(['', '', '', '', '', '', '', '', '']);
+  const withoutVoice = await runWizard(missing, context({ catalog: VOICES, systemVoices: [] }));
+  assert.equal(withoutVoice?.roles.tts, 'kokoro-fake');
+  // A voice of macOS that is not installed is not offered.
+  assert.ok(!missing.said.some((line) => line.includes('macos-fake')));
 });
 
 test('installed executors are looked up on PATH, never run', () => {

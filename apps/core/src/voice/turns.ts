@@ -1,7 +1,7 @@
 import { maxLabel, type Label } from '@arianna/policy';
 
 import type { Message } from '../conversations.ts';
-import type { TrialModel } from './trial.ts';
+import { refOf, type TrialModel, type VoiceModelRef } from './trial.ts';
 
 /**
  * The pure parts of a call (D-066): which models answer, what the voice model
@@ -167,8 +167,9 @@ export function cleanTranscript(text: string): string {
 }
 
 export type CallReadiness =
-  | { ready: true; stt: { id: string; family: string }; tts: { id: string; family: string }; voice: string }
-  | { ready: false; missing: ('voice' | 'stt' | 'tts')[] };
+  | { ready: true; stt: { id: string; family: string }; tts: VoiceModelRef; voice: string }
+  // `system-voice`: the tts role is a voice of macOS that is not installed (D-290).
+  | { ready: false; missing: ('voice' | 'stt' | 'tts' | 'system-voice')[] };
 
 /**
  * A call needs the three roles assigned, with the stt and tts models on disk,
@@ -182,14 +183,16 @@ export function callReadiness(roles: { voice?: string }, models: readonly TrialM
   // A copied voice is a person's (D-069): never someone else's in its place.
   const fallback = tts?.family === 'qwen3-tts-base' ? undefined : tts?.voices[0];
   const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : fallback;
+  // The system voice assigned but not installed: said apart, the fix is in the system settings, not a download.
+  const absentSystem = tts === undefined && models.some((model) => model.kind === 'tts' && model.assigned && model.systemVoice !== undefined);
   const missing = [
     // An agent of a direct chat answers on its own model (D-158): the voice role is not needed then.
     ...(voiceModel && (roles.voice === undefined || !voiceServed) ? ['voice' as const] : []),
     ...(stt === undefined ? ['stt' as const] : []),
-    ...(tts === undefined || voice === undefined ? ['tts' as const] : []),
+    ...(absentSystem ? ['system-voice' as const] : tts === undefined || voice === undefined ? ['tts' as const] : []),
   ];
   if (stt === undefined || tts === undefined || voice === undefined || missing.length > 0) return { ready: false, missing };
-  return { ready: true, stt: { id: stt.id, family: stt.family }, tts: { id: tts.id, family: tts.family }, voice };
+  return { ready: true, stt: { id: stt.id, family: stt.family }, tts: refOf(tts), voice };
 }
 
 /**

@@ -130,6 +130,7 @@ import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
 import { fileSize, filesPresent, trialModels } from './voice/trial.ts';
+import { systemVoices } from './voice/system-voices.ts';
 import { createVideoWorker, findTool, voiceRunner } from './video-job.ts';
 import { enqueueWikiIndex, enqueueWikiNote, runWikiJob } from './wiki.ts';
 import { trialRefusal } from './orchestrator/trial-chat.ts';
@@ -711,6 +712,9 @@ const live = await startLiveFeed(sql, { onError: report });
 // The calls (D-066), on the voice in place: off, they are refused. Limits,
 // voice and outgoing rules are read at each call (D-071).
 const voiceSettings = () => settings.current().voice ?? DEFAULT_VOICE;
+// The voices of macOS (D-290), read once now and again at most once a minute in the background.
+const macVoices = systemVoices();
+await macVoices.refresh();
 // Read at each request, like the roles: a new catalog entry needs no restart.
 const candidates = () =>
   trialModels(
@@ -719,6 +723,7 @@ const candidates = () =>
     config.paths.data,
     fileSize,
     listClones(voiceDirs.clones).map(({ id }) => id),
+    macVoices.names(),
   );
 const host = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
 const calls = createCalls({

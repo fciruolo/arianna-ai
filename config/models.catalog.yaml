@@ -330,6 +330,19 @@ models:
         url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/voices/im_nicola.safetensors
         size_bytes: 522320
         sha256: "96b62f7d25c3e7efce4f2506beeaa9f63bcc73524c7b2862738c65433fe9ba16"
+  # A voice of macOS (D-290): `say` speaks with it, nothing is downloaded and no
+  # model is loaded by apps/voice. It must be installed by the user (Impostazioni
+  # di Sistema -> Accessibilità -> Contenuti letti ad alta voce -> Voce di sistema).
+  - id: macos-federica
+    family: macos-say
+    runtime: system
+    voice: "Federica (Premium)"
+    ram_min_gib: 1
+    roles: [tts]
+    status: experimental
+    provider: "Apple, voce di sistema di macOS"
+    notes: "Italiano naturale, sul Mac e senza rete; niente da scaricare."
+    files: []
   # Qwen3-TTS CustomVoice (Apache-2.0): Italian is one of its languages; its
   # speakers are in the weights (listed in apps/core/src/voice/trial.ts).
   - id: qwen3-tts-1.7b-customvoice-bf16-mlx

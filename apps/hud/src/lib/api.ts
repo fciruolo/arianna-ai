@@ -993,6 +993,8 @@ export interface TrialModel {
   assigned: boolean;
   sizeBytes: number;
   voices: string[];
+  /** A voice of macOS (D-290): its name; `present` says it is installed. */
+  systemVoice?: string;
 }
 
 export interface VoiceTrial {

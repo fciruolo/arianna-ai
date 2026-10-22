@@ -25,6 +25,8 @@ export {
   modelSize,
   modelsRoot,
   parseCatalog,
+  SYSTEM_VOICE,
+  systemVoiceId,
   type CatalogEntry,
   type ModelCatalog,
   type ModelDir,

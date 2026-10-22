@@ -33,9 +33,9 @@ import { modelStatus, pullModels, selectedModels, type FileStatus } from '@arian
 import { createFetcher } from '@arianna/core/model-http';
 import { writeDoctorRecord } from '@arianna/core/readiness';
 
-import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
+import { configPath, currentSettings, installedExecutors, installedSystemVoices, writeSettings } from './init.ts';
 import { syncProjectLinks } from './projects.ts';
-import { runWizard, type Prompter } from './wizard.ts';
+import { defaultSettings, runWizard, type Prompter } from './wizard.ts';
 
 // Room left on the disk after the downloads, for the database and the archive.
 const SPARE_BYTES = 10 * 2 ** 30;
@@ -166,8 +166,10 @@ async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean
     return false;
   }
   if (mode === 'defaults') {
-    writeSettings(home, catalog, DEFAULT_SETTINGS);
+    const defaults = defaultSettings(DEFAULT_SETTINGS, catalog, installedSystemVoices());
+    writeSettings(home, catalog, defaults);
     console.log('Written config/arianna.toml with the development defaults (fake data only).');
+    if (defaults.roles.tts !== undefined) console.log(`Calls speak with the voice of macOS ${defaults.roles.tts} (D-290).`);
     return true;
   }
   if (!stdin.isTTY) throw new Error('the wizard asks questions: run it in a terminal (or pnpm arianna:init --defaults)');
@@ -182,6 +184,7 @@ async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean
       installed: installedExecutors(),
       userHome: userHomeOf(),
       checkFolder: (absolute, name) => folderProblem(absolute, home, name),
+      systemVoices: installedSystemVoices(),
     });
     if (settings === undefined) {
       console.log('Nulla è stato scritto.');

@@ -50,6 +50,10 @@ test('callBlocker and callErrorText: the reasons in Italian', () => {
   assert.match(callBlocker('off', false, false) ?? '', /\[voice\]/);
   assert.match(callBlocker('not-installed', false, false) ?? '', /provino/);
   assert.match(callErrorText('not-ready: assign and download: stt'), /Mancano dei modelli/);
+  // D-290: the voice of macOS of the tts role is not installed: where to install it, and the way back to Kokoro.
+  assert.match(callErrorText('not-ready: assign and download: system-voice'), /non è installata.*Contenuti letti ad alta voce.*kokoro-82m-bf16-mlx/);
+  assert.doesNotMatch(callErrorText('not-ready: assign and download: system-voice'), /Mancano dei modelli/);
+  assert.match(callErrorText('not-ready: assign and download: stt, system-voice'), /Mancano dei modelli.*non è installata/);
   assert.equal(callErrorText('boom'), 'La chiamata non è partita.');
 });
 

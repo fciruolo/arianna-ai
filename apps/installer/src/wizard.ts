@@ -48,13 +48,40 @@ export interface WizardContext {
    * wizard keeps the section as it is. The code stays, ready to turn back on.
    */
   telegram?: boolean;
+  /** The voices of macOS installed now (`say -v '?'`, D-290); empty elsewhere. */
+  systemVoices?: readonly string[];
 }
 
-/** Roles a model can be chosen for today; embedder and voice come with later phases. */
+/** Roles a model can be chosen for today; the voice of the calls (tts) since D-290; embedder and the voice replies come later. */
 const WIZARD_ROLES: readonly { role: ModelRole; name: string; label: string }[] = [
   { role: 'orchestrator', name: 'orchestratore', label: 'orchestratore (local-large: pianifica e decide)' },
   { role: 'extractor', name: 'estrattore', label: 'estrattore (local-small: estrae, classifica, riassume)' },
+  { role: 'tts', name: 'voce', label: 'voce delle chiamate (tts: legge ad alta voce le risposte)' },
 ];
+
+/** A voice of macOS of the catalog is offered only when it is installed (D-290). */
+function offered(model: CatalogEntry, systemVoices: readonly string[]): boolean {
+  return model.runtime !== 'system' || (model.voice !== undefined && systemVoices.includes(model.voice));
+}
+
+/**
+ * The speech model to suggest (D-290): a voice of macOS when one of the catalog
+ * is installed (nothing to download, little memory), else Kokoro.
+ */
+export function suggestedTts(catalog: ModelCatalog, systemVoices: readonly string[]): CatalogEntry | undefined {
+  const candidates = catalog.models.filter((model) => model.roles.includes('tts') && offered(model, systemVoices));
+  return candidates.find((model) => model.runtime === 'system') ?? candidates.find((model) => model.family === 'kokoro');
+}
+
+/**
+ * The development defaults (pnpm arianna:init --defaults): with a voice of
+ * macOS installed, the tts role is it (D-290). Not Kokoro otherwise: the
+ * defaults turn no call on, and Kokoro would only be a download.
+ */
+export function defaultSettings(base: Settings, catalog: ModelCatalog, systemVoices: readonly string[]): Settings {
+  const voice = suggestedTts(catalog, systemVoices);
+  return voice === undefined || voice.runtime !== 'system' ? base : { ...base, roles: { ...base.roles, tts: voice.id } };
+}
 
 const EXECUTOR_LABELS: Record<CloudExecutor, { name: string; login: string }> = {
   claude: { name: 'Claude Code', login: 'apri `claude` in un terminale e usa /login' },
@@ -124,13 +151,15 @@ async function stepModels(io: Prompter, context: WizardContext, settings: Settin
     return;
   }
   const roles = new Map(Object.entries(settings.roles) as [ModelRole, string][]);
+  const systemVoices = context.systemVoices ?? [];
   for (const { role, label } of WIZARD_ROLES) {
-    const candidates = context.catalog.models.filter((model) => model.roles.includes(role));
+    const candidates = context.catalog.models.filter((model) => model.roles.includes(role) && offered(model, systemVoices));
     if (candidates.length === 0) continue;
     io.say(`Modello per ${label}:`);
     const current = candidates.findIndex((model) => model.id === roles.get(role));
-    const verified = candidates.findIndex((model) => model.status === 'verified');
-    const fallback = current >= 0 ? current : verified >= 0 ? verified : undefined;
+    const suggested = role === 'tts' ? suggestedTts(context.catalog, systemVoices) : undefined;
+    const preferred = suggested === undefined ? candidates.findIndex((model) => model.status === 'verified') : candidates.indexOf(suggested);
+    const fallback = current >= 0 ? current : preferred >= 0 ? preferred : undefined;
     const picked = await choose(io, 'Scelta', candidates.map(describe), fallback);
     const entry = picked === undefined ? undefined : candidates[picked];
     if (entry === undefined) roles.delete(role);

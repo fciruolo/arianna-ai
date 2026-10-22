@@ -126,6 +126,22 @@ test('callReadiness: the three roles, with stt and tts on disk, and a voice of t
   assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...kokoro, voices: [] }]), { ready: false, missing: ['tts'] });
 });
 
+test('callReadiness: a voice of macOS (D-290) goes to the voice with its name; not installed, it is said apart', () => {
+  const parakeet = model('p', 'parakeet', 'stt', true, true);
+  const federica = { ...model('macos-federica', 'macos-say', 'tts', true, true, ['federica_premium']), systemVoice: 'Federica (Premium)' };
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, federica], true, 'if_sara'), {
+    ready: true,
+    stt: { id: 'p', family: 'parakeet' },
+    tts: { id: 'macos-federica', family: 'macos-say', systemVoice: 'Federica (Premium)' },
+    voice: 'federica_premium',
+  });
+  // Not installed: `system-voice`, not `tts`, and no fallback to another model (Kokoro would load GBs unasked).
+  const kokoro = model('k', 'kokoro', 'tts', true, false, ['if_sara']);
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...federica, present: false }, kokoro]), { ready: false, missing: ['system-voice'] });
+  // Not assigned: as any other tts model.
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...federica, assigned: false }]), { ready: false, missing: ['tts'] });
+});
+
 /** The pieces a splitter gives for text arriving in these chunks. */
 function split(...chunks: string[]): string[] {
   const splitter = sentenceSplitter();

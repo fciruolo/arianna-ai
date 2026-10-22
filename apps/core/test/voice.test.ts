@@ -37,6 +37,8 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
     [
       ['parakeet-tdt-0.6b-v3-mlx', 'stt', true, true],
       ['kokoro-82m-bf16-mlx', 'tts', true, false],
+      // No voice of macOS installed (D-290): listed, not present.
+      ['macos-federica', 'tts', false, false],
       ['qwen3-tts-1.7b-customvoice-bf16-mlx', 'tts', true, false],
       ['qwen3-tts-1.7b-base-bf16-mlx', 'tts', true, false],
       ['voxtral-4b-tts-bf16-mlx', 'tts', true, false],
@@ -65,6 +67,33 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
   assert.equal(absent.find((model) => model.family === 'parakeet')?.present, false);
   assert.equal(absent.find((model) => model.family === 'kokoro')?.present, true);
   assert.ok(!absent.some((model) => model.id.startsWith('qwen3-4b') || model.id.startsWith('qwen3.')));
+});
+
+test('trialModels and speakCall: a voice of macOS (D-290), present only when installed, with its name for say', () => {
+  const absent = trialModels(CATALOG, { tts: 'macos-federica' }, DATA, allPresent, [], ['Alice']).find((model) => model.id === 'macos-federica');
+  assert.deepEqual(absent, {
+    id: 'macos-federica',
+    family: 'macos-say',
+    kind: 'tts',
+    present: false,
+    assigned: true,
+    sizeBytes: 0,
+    voices: ['federica_premium'],
+    systemVoice: 'Federica (Premium)',
+  });
+  const models = trialModels(CATALOG, {}, DATA, () => undefined, [], ['Alice', 'Federica (Premium)']);
+  assert.equal(models.find((model) => model.id === 'macos-federica')?.present, true);
+  // Nothing on disk for the others: only the voice of macOS can speak.
+  assert.deepEqual(speakCall({ text: 'Ciao', model: 'macos-federica', voice: 'federica_premium' }, models), {
+    text: 'Ciao',
+    model: { id: 'macos-federica', family: 'macos-say', systemVoice: 'Federica (Premium)' },
+    voice: 'federica_premium',
+  });
+  assert.throws(() => speakCall({ text: 'Ciao', model: 'macos-federica', voice: 'if_sara' }, models), /voice: one of the voices/);
+  const notInstalled = trialModels(CATALOG, {}, DATA, allPresent, [], []);
+  assert.throws(() => speakCall({ text: 'Ciao', model: 'macos-federica', voice: 'federica_premium' }, notInstalled), /system voice is not installed/);
+  // A model of another family never carries a system voice.
+  assert.ok(models.filter((model) => model.family !== 'macos-say').every((model) => model.systemVoice === undefined));
 });
 
 test('transcribeCall: audio between 0.3 and 30 s goes to every present stt model; anything else is refused', () => {
@@ -236,7 +265,7 @@ test('trial API: candidates, transcription by every present model, speech as WAV
   const trial = JSON.parse(listed.body.toString('utf8')) as { state: string; voice: string; models: TrialModel[] };
   assert.equal(trial.state, 'up');
   assert.equal(trial.voice, 'if_sara');
-  assert.equal(trial.models.length, 5);
+  assert.equal(trial.models.length, 6);
 
   const written = await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(2) });
   assert.equal(written.status, 200);

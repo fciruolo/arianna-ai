@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Le chiamate possono parlare con la voce di sistema di macOS «Federica (Premium)» al posto di Kokoro (D-290): italiano naturale, niente da scaricare, nessun modello in memoria e nessuna rete; si sceglie con `tts = "macos-federica"` in `[roles]` e una frase alla volta parte subito.
+- `pnpm arianna:init` chiede anche la voce delle chiamate e propone Federica quando è installata sul Mac, altrimenti Kokoro; `--defaults` la mette da sola solo se c'è (D-290).
+
+### Aggiunto
+
+- Voce `macos-federica` nel catalogo dei modelli, con il nuovo tipo `system` (voce del sistema operativo, nessun file); nel provino della voce compare come «Voce di macOS», e se non è installata la chiamata dice come aggiungerla o come tornare a Kokoro (D-290).
+
 ## [0.166.2] - 2026-10-22
 
 ### Corretto

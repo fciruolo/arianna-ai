@@ -19,6 +19,7 @@ from aiohttp import web
 
 from .models import Models
 from .server import create_app
+from .system_voice import SystemVoice
 
 HOST = "127.0.0.1"
 
@@ -43,7 +44,9 @@ def watch_stdin(loop: asyncio.AbstractEventLoop, stop: asyncio.Event) -> None:
 async def serve() -> None:
     port = int(env("ARIANNA_VOICE_PORT"))
     token = env("ARIANNA_VOICE_TOKEN")
-    models = Models(Path(env("ARIANNA_MODELS_DIR")), Path(env("ARIANNA_VOICE_CLONES")))
+    tmp = Path(env("ARIANNA_VOICE_TMP"))
+    # The voices of macOS (D-290) write their audio in a folder of the private tmp, deleted sentence by sentence.
+    models = Models(Path(env("ARIANNA_MODELS_DIR")), Path(env("ARIANNA_VOICE_CLONES")), SystemVoice(tmp / "say"))
     runner = web.AppRunner(create_app(models, token), access_log=None)
     await runner.setup()
     await web.TCPSite(runner, HOST, port).start()

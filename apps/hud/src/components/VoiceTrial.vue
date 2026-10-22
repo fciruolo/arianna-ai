@@ -270,7 +270,8 @@ onBeforeUnmount(() => {
                 {{ FAMILY_TEXT[model.family] ?? model.family }}
               </label>
               <span v-if="model.assigned" class="font-mono text-[12px] text-accent">IN USO</span>
-              <span v-if="!model.present" class="font-mono text-[12px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
+              <span v-if="!model.present && model.systemVoice !== undefined" class="font-mono text-[12px] text-muted">VOCE NON INSTALLATA</span>
+              <span v-else-if="!model.present" class="font-mono text-[12px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
               <span class="flex-1" />
               <select
                 v-if="model.voices.length > 0"

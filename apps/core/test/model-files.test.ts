@@ -233,9 +233,17 @@ test('selectedModels: the models of the roles, and with trial every stt and tts 
     'qwen3-4b-instruct-2507-4bit',
     'parakeet-tdt-0.6b-v3-mlx',
     'kokoro-82m-bf16-mlx',
+    'macos-federica',
     'qwen3-tts-1.7b-customvoice-bf16-mlx',
     'qwen3-tts-1.7b-base-bf16-mlx',
     'voxtral-4b-tts-bf16-mlx',
   ]);
   assert.deepEqual(ids({}, false), []);
+});
+
+test('a voice of macOS (D-290) has no file: nothing to check, nothing to download', async () => {
+  const catalog = loadCatalog(resolveHome({}));
+  const models = selectedModels({ roles: { tts: 'macos-federica' } }, catalog);
+  assert.deepEqual(models.map(({ id }) => id), ['macos-federica']);
+  assert.deepEqual(await modelStatus(models, join(resolveHome({}), 'data')), []);
 });

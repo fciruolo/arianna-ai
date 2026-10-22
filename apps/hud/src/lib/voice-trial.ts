@@ -18,6 +18,7 @@ export const FAMILY_TEXT: Record<string, string> = {
   'qwen3-tts': 'Qwen3-TTS 1.7B',
   'qwen3-tts-base': 'Qwen3-TTS Base (voci copiate)',
   'voxtral-tts': 'Voxtral 4B',
+  'macos-say': 'Voce di macOS',
 };
 
 /** What the user should know before choosing (D-067). */
@@ -26,6 +27,7 @@ export const FAMILY_NOTE: Record<string, string> = {
   'qwen3-tts': 'Licenza libera; voci nate cinesi e inglesi a cui si chiede l’italiano.',
   'qwen3-tts-base': 'Parla con le voci copiate da un campione: le aggiungi nella sezione «Voci copiate».',
   'voxtral-tts': 'Voci italiane native; licenza CC BY-NC 4.0 (solo uso non commerciale, con attribuzione); più lento e più memoria.',
+  'macos-say': 'Voce di sistema del Mac: italiano naturale, niente da scaricare né da caricare in memoria, nessuna rete. Se manca, si installa da Impostazioni di Sistema → Accessibilità → Contenuti letti ad alta voce → Voce di sistema → Gestisci voci.',
 };
 
 export const VOICE_TEXT: Record<string, string> = {
@@ -37,6 +39,7 @@ export const VOICE_TEXT: Record<string, string> = {
   vivian: 'Vivian (femminile)',
   ryan: 'Ryan (maschile)',
   aiden: 'Aiden (maschile)',
+  federica_premium: 'Federica Premium (femminile)',
 };
 
 /** The voice to show for a model: the one picked, else the one of [voice] when the model has it, else its first. */

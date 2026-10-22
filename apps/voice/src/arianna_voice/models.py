@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .numbers import numbers_in_words
+from .system_voice import RATE as SYSTEM_RATE, SYSTEM_VOICE, SystemVoice, SystemVoiceError
 from .wav import STT_RATE, encode_wav
 
 # Same rule as the catalog ids (packages/config/src/catalog.ts).
@@ -29,11 +30,15 @@ MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 # A voice of any family: Kokoro "if_sara", Voxtral "it_female", Qwen3-TTS "serena" (D-067).
 VOICE_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 STT_FAMILIES = ("parakeet", "whisper")
-TTS_FAMILIES = ("kokoro", "qwen3-tts", "qwen3-tts-base", "voxtral-tts")
+# macos-say: a voice of macOS spoken by `say` (D-290), no model loaded.
+SYSTEM_FAMILY = "macos-say"
+TTS_FAMILIES = ("kokoro", "qwen3-tts", "qwen3-tts-base", "voxtral-tts", SYSTEM_FAMILY)
 # Both Qwen3-TTS families: numbers in words, a sentence each, in pieces, with a ceiling.
 QWEN3_FAMILIES = ("qwen3-tts", "qwen3-tts-base")
 LANGUAGE = "it"
 SENTENCE_END = re.compile(r"([.!?;:])\s+")
+# The embedded commands of the speech of macOS open with [[ and close with ]] (D-290).
+SPEECH_COMMAND = re.compile(r"\[\[|\]\]")
 # Kokoro's language code for Italian.
 KOKORO_ITALIAN = "i"
 # Qwen3-TTS names the language in full.
@@ -52,15 +57,25 @@ class ModelError(Exception):
 class ModelRef:
     id: str
     family: str
+    # The name of the voice of macOS (D-290), only for SYSTEM_FAMILY.
+    system_voice: str | None = None
 
     @staticmethod
     def parse(value: Any, families: tuple[str, ...]) -> "ModelRef":
-        if not isinstance(value, dict) or set(value) != {"id", "family"}:
+        if not isinstance(value, dict):
+            raise ModelError("family")
+        system = value.get("family") == SYSTEM_FAMILY
+        if set(value) != ({"id", "family", "systemVoice"} if system else {"id", "family"}):
             raise ModelError("family")
         model_id, family = value["id"], value["family"]
         if not isinstance(model_id, str) or not MODEL_ID.match(model_id) or family not in families:
             raise ModelError("family")
-        return ModelRef(model_id, family)
+        if not system:
+            return ModelRef(model_id, family)
+        name = value["systemVoice"]
+        if not isinstance(name, str) or not SYSTEM_VOICE.fullmatch(name):
+            raise ModelError("family")
+        return ModelRef(model_id, family, name)
 
 
 @dataclass(frozen=True)
@@ -71,10 +86,12 @@ class Speech:
 
 
 class Models:
-    def __init__(self, models_dir: Path, clones_dir: Path | None = None) -> None:
+    def __init__(self, models_dir: Path, clones_dir: Path | None = None, system: SystemVoice | None = None) -> None:
         self._dir = models_dir
         # Voices copied from a sample (D-069): <id>/reference.wav and reference.txt, L2.
         self._clones = clones_dir
+        # The voices of macOS (D-290): `say`, nothing loaded in this process.
+        self._system = system
         self._loaded: dict[str, Any] = {}
         self._last_used = time.monotonic()
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
@@ -107,6 +124,10 @@ class Models:
     # Everything below runs on the worker thread.
 
     def _load(self, ref: ModelRef) -> Any:
+        if ref.family == SYSTEM_FAMILY:
+            # Nothing to load (D-290): only whether `say` and the voice are there.
+            self._system_check(ref)
+            return None
         if ref.id in self._loaded:
             return self._loaded[ref.id]
         path = str(self.path_of(ref))
@@ -187,6 +208,9 @@ class Models:
     def speak_stream(self, ref: ModelRef, text: str, voice: str, emit: Callable[[bytes, int], None], stop: threading.Event) -> None:
         """Says `text`, handing 16-bit mono samples and their rate to `emit` as the
         model makes them (D-068); stops between two pieces once `stop` is set."""
+        if ref.family == SYSTEM_FAMILY:
+            self._speak_system(ref, text, voice, emit, stop)
+            return
         model = self._load(ref)
         # verbose=False everywhere: the libraries would print what they say to the log.
         voice_file = self._voice_file(ref, voice)
@@ -206,6 +230,33 @@ class Models:
                         emit((np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes(), int(getattr(result, "sample_rate", 24_000)))
         except Exception as error:  # noqa: BLE001
             raise ModelError("inference") from error
+
+    def _system_check(self, ref: ModelRef) -> SystemVoice:
+        if self._system is None or ref.system_voice is None:
+            raise ModelError("missing")
+        try:
+            self._system.check(ref.system_voice)
+        except SystemVoiceError as error:
+            # Not installed, or not on macOS: the core says which in Italian.
+            raise ModelError("missing" if error.code in ("missing", "unavailable") else "inference") from error
+        return self._system
+
+    def _speak_system(self, ref: ModelRef, text: str, voice: str, emit: Callable[[bytes, int], None], stop: threading.Event) -> None:
+        """A sentence at a time (D-290), so the first one plays while `say` writes the next."""
+        if not VOICE_ID.match(voice):
+            raise ModelError("family")
+        system = self._system_check(ref)
+        for part in speak_parts(ref.family, text):
+            if stop.is_set():
+                return
+            try:
+                pcm16 = system.speak(ref.system_voice or "", part)
+            except SystemVoiceError as error:
+                raise ModelError("missing" if error.code in ("missing", "unavailable") else "inference") from error
+            if stop.is_set():
+                return
+            if pcm16:
+                emit(pcm16, SYSTEM_RATE)
 
     def _voice_file(self, ref: ModelRef, voice: str) -> str | None:
         """The file of the voice: in the model folder, or the sample of a copied
@@ -249,6 +300,12 @@ def speak_parts(family: str, text: str) -> list[str]:
     if family == "kokoro":
         # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
         return [SENTENCE_END.sub("\\1\n", text)]
+    if family == SYSTEM_FAMILY:
+        # `say` reads numbers in Italian by itself; one sentence each, so the first one plays at once (D-290).
+        # The speech of macOS obeys commands written as [[...]] (silence, volume, rate): a reply that
+        # quotes a mail or a page must not drive the voice, so the brackets are taken out.
+        text = SPEECH_COMMAND.sub(" ", text)
+        return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", text).split("\n")) if part]
     if family in QWEN3_FAMILIES:
         # CustomVoice generates the whole text at once and drifts on long ones: a sentence
         # each. Digits it reads in English or Chinese, then goes on in that language: words.
@@ -301,4 +358,4 @@ def speak_arguments(family: str, voice: str, voice_file: str | None, reference_t
     raise ModelError("family")
 
 
-__all__ = ["Models", "ModelError", "ModelRef", "Speech", "STT_FAMILIES", "TTS_FAMILIES", "STT_RATE"]
+__all__ = ["Models", "ModelError", "ModelRef", "Speech", "STT_FAMILIES", "SYSTEM_FAMILY", "TTS_FAMILIES", "STT_RATE"]

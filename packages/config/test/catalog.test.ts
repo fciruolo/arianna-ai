@@ -18,6 +18,7 @@ import {
   parseCatalog,
   renderUserCatalog,
   resolveHome,
+  systemVoiceId,
   USER_CATALOG_FILE,
   writeUserCatalog,
 } from '../src/index.ts';
@@ -107,6 +108,50 @@ test('dir: guard puts a model in data/guard/models, out of the folder oMLX reads
   assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: mlx\n    dir: elsewhere')), ConfigError);
 });
 
+const SYSTEM = `
+version: 1
+models:
+  - id: macos-fake
+    family: macos-say
+    runtime: system
+    voice: "Finta (Premium)"
+    ram_min_gib: 1
+    roles: [tts]
+    status: experimental
+    files: []
+`;
+
+test('a system voice (D-290): tts alone, a voice name, nothing to download', () => {
+  const [voice] = parseCatalog(SYSTEM).models;
+  assert.ok(voice !== undefined);
+  assert.equal(voice.runtime, 'system');
+  assert.equal(voice.voice, 'Finta (Premium)');
+  assert.deepEqual(voice.files, []);
+  assert.equal(modelSize(voice), 0);
+  // The voice name only with runtime system, and required there.
+  assert.throws(() => parseCatalog(SYSTEM.replace('    voice: "Finta (Premium)"\n', '')), /voice: required/);
+  assert.throws(() => parseCatalog(VALID.replace('runtime: mlx', 'runtime: mlx\n    voice: Finta')), /voice: required/);
+  // Not a name that could carry an option or a path.
+  assert.throws(() => parseCatalog(SYSTEM.replace('"Finta (Premium)"', '"-o /tmp/x"')), /name of a system voice/);
+  assert.throws(() => parseCatalog(SYSTEM.replace('"Finta (Premium)"', '"../x/y"')), /name of a system voice/);
+  // Files, another role, a dir: refused; a model without files is still refused for any other runtime.
+  assert.throws(() => parseCatalog(SYSTEM.replace('files: []', `files:\n      - path: a\n        url: https://example.org/a\n        size_bytes: 1\n        sha256: ${SHA}`)), /no file to download/);
+  assert.throws(() => parseCatalog(SYSTEM.replace('[tts]', '[tts, stt]')), /system is only/);
+  assert.throws(() => parseCatalog(SYSTEM.replace('[tts]', '[orchestrator]')), /system is only/);
+  assert.throws(() => parseCatalog(SYSTEM.replace('runtime: system', 'runtime: system\n    dir: models')), /system is only/);
+  assert.throws(() => parseCatalog(SYSTEM.replace('runtime: system', 'runtime: mlx').replace('    voice: "Finta (Premium)"\n', '')), /at least one file/);
+  // Never from Hugging Face.
+  assert.throws(() => parseCatalog(SYSTEM, { user: true }), /system is only/);
+});
+
+test('systemVoiceId: the voice id a system voice goes by (D-290)', () => {
+  assert.equal(systemVoiceId('Federica (Premium)'), 'federica_premium');
+  assert.equal(systemVoiceId('Eddy (Italiano (Italia))'), 'eddy_italiano_italia');
+  assert.equal(systemVoiceId('7 voci'), 'v_7_voci');
+  assert.equal(systemVoiceId('A'), 'a_v');
+  for (const name of ['Federica (Premium)', '7 voci', 'A', 'x'.repeat(64)]) assert.match(systemVoiceId(name), /^[a-z][a-z0-9_]{1,40}$/);
+});
+
 test('roles must be listed, once each; RAM must be a positive integer', () => {
   assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[]')), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('[orchestrator, extractor]', '[extractor, extractor]')), ConfigError);
@@ -170,6 +215,8 @@ test('the card fields of I-3 are checked', () => {
 test('every entry of the committed catalog has a provider and a source', () => {
   for (const model of loadCuratedCatalog(resolveHome({})).models) {
     assert.ok(model.provider !== undefined, model.id);
+    // A system voice (D-290) comes with the operating system: no page to download it from.
+    if (model.runtime === 'system') continue;
     assert.ok(model.source?.startsWith('https://huggingface.co/'), model.id);
   }
 });

@@ -131,9 +131,18 @@ export function callBlocker(voiceState: string | null, archived: boolean, busy: 
   return undefined;
 }
 
+/** What to do when the voice of macOS of the tts role is missing (D-290), with the way back to Kokoro. */
+export const SYSTEM_VOICE_MISSING =
+  'La voce di macOS scelta per parlare non è installata: aggiungila in Impostazioni di Sistema → Accessibilità → Contenuti letti ad alta voce → Voce di sistema → Gestisci voci (Italiano, Federica Premium), oppure torna a Kokoro con tts = "kokoro-82m-bf16-mlx" in [roles].';
+
 /** The errors of POST /api/calls, in Italian (codes of apps/core/src/voice/calls.ts). */
 export function callErrorText(message: string): string {
   const code = message.split(':', 1)[0] ?? '';
+  // The tts role is a voice of macOS that is not installed (D-290): the fix is in the system settings.
+  if (code === 'not-ready' && message.includes('system-voice')) {
+    // Something else missing too: both, the models first.
+    return /\b(voice|stt|tts)(,|$)/.test(message.replace('system-voice', '')) ? `Mancano dei modelli: assegna stt, tts e voice in [roles] e scaricali (vedi il provino della voce). ${SYSTEM_VOICE_MISSING}` : SYSTEM_VOICE_MISSING;
+  }
   return (
     {
       busy: 'C’è già una chiamata in corso.',

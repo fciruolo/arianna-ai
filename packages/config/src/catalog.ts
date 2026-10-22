@@ -57,7 +57,8 @@ export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 's
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
 // `transformers`: loaded by a Python environment of Arianna (apps/guard), not served by oMLX.
-export const MODEL_RUNTIMES = ['mlx', 'llama.cpp', 'vllm', 'transformers'] as const;
+// `system`: a voice of the operating system (D-290, `say` of macOS): nothing to download.
+export const MODEL_RUNTIMES = ['mlx', 'llama.cpp', 'vllm', 'transformers', 'system'] as const;
 export type ModelRuntime = (typeof MODEL_RUNTIMES)[number];
 
 /** `verified` once the model has passed the router and extraction evals; `experimental` before. */
@@ -116,6 +117,8 @@ export interface CatalogEntry {
   files: ModelFile[];
   /** `guard`: the weights go in data/guard/models (D-203); absent means data/models. */
   dir?: ModelDir;
+  /** The name of the system voice (D-290), e.g. "Federica (Premium)": only with runtime `system`. */
+  voice?: string;
   /**
    * What the "Modelli" page shows of the model (I-3), all optional and written
    * by hand: who makes it, the context as the local server serves it, 1-4 short lines on
@@ -143,6 +146,18 @@ export interface ModelCatalog {
 export const EMPTY_CATALOG: ModelCatalog = { version: 1, models: [] };
 
 const NAME = /^[a-z0-9][a-z0-9._-]*$/;
+/** A system voice as `say -v '?'` lists it (D-290): letters, digits, spaces, parentheses, dot, dash, apostrophe. */
+export const SYSTEM_VOICE = /^[A-Za-z0-9][A-Za-z0-9 ()._'-]{0,63}$/;
+
+/**
+ * The voice id a system voice goes by in [voice] and in the pages (D-290):
+ * "Federica (Premium)" is "federica_premium", as the other voice ids look.
+ */
+export function systemVoiceId(name: string): string {
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const safe = /^[a-z]/.test(id) ? id : `v_${id}`;
+  return (safe.length < 2 ? `${safe}_v` : safe).slice(0, 41);
+}
 const SHA256 = /^[0-9a-f]{64}$/;
 
 function parseFile(raw: unknown, where: string): ModelFile {
@@ -170,7 +185,7 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   const entry = asTable(raw, where);
   onlyKeys(
     entry,
-    ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files', 'dir', 'provider', 'context_tokens', 'strengths', 'license', 'notes', 'source'],
+    ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files', 'dir', 'voice', 'provider', 'context_tokens', 'strengths', 'license', 'notes', 'source'],
     where,
   );
 
@@ -204,10 +219,19 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
   if ((runtime === 'transformers' || roles.includes('pii')) && dir !== 'guard') {
     throw new ConfigError(`${where}.dir: a model with runtime transformers or the pii role needs dir: guard, out of the folder oMLX reads`);
   }
+  // D-290: a voice of the operating system speaks only, comes with the system and is named, not downloaded.
+  const system = runtime === 'system';
+  if (system && (user || roles.length !== 1 || roles[0] !== 'tts' || dir !== undefined)) {
+    throw new ConfigError(`${where}.runtime: system is only for a model of the curated catalog with the tts role alone and no dir`);
+  }
+  if (system !== (entry.voice !== undefined)) throw new ConfigError(`${where}.voice: required with runtime system, and only with it`);
+  const voice = system ? asString(entry.voice, `${where}.voice`) : undefined;
+  if (voice !== undefined && !SYSTEM_VOICE.test(voice)) throw new ConfigError(`${where}.voice: the name of a system voice, e.g. "Federica (Premium)"`);
   const files = asArray(entry.files, `${where}.files`).map((file, index) =>
     parseFile(file, `${where}.files[${String(index)}]`),
   );
-  if (files.length === 0) throw new ConfigError(`${where}.files: at least one file is required`);
+  if (system && files.length > 0) throw new ConfigError(`${where}.files: a system voice has no file to download`);
+  if (!system && files.length === 0) throw new ConfigError(`${where}.files: at least one file is required`);
   const paths = files.map((file) => file.path);
   if (new Set(paths).size !== paths.length) throw new ConfigError(`${where}.files: a path is listed twice`);
 
@@ -220,6 +244,7 @@ function parseEntry(raw: unknown, where: string, user: boolean): CatalogEntry {
     status: asOneOf(entry.status, MODEL_STATUSES, `${where}.status`),
     files,
     ...(dir === undefined ? {} : { dir }),
+    ...(voice === undefined ? {} : { voice }),
     ...describedBy(entry, where),
   };
   if (user) {
