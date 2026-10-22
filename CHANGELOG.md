@@ -4,6 +4,33 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- `[server.remote]` in `arianna.toml`: una seconda porta del core, solo su 127.0.0.1, che Tailscale pubblica sulla tailnet come `https://<nome>.ts.net` per aprire la chat dal telefono (D-292, tappa A).
+- Due modi TLS della porta remota: `tls = "own"` (predefinito, il core termina TLS col suo certificato e Tailscale inoltra in TCP, niente nei registri pubblici dei certificati) e `tls = "tailscale"` (HTTPS col certificato di Tailscale) (D-292).
+- `pnpm remote:cert`: certificato del Mac e radice per l'iPhone con l'openssl di sistema; la chiave della radice viene cancellata subito (D-292).
+- `pnpm arianna:doctor` legge `tailscale serve status --json` e controlla che la tailnet riceva solo la porta remota nel modo scelto, senza Funnel, e in modo `own` il certificato (D-292).
+- La chat si installa sulla schermata Home dell'iPhone (icona e meta di app); dal telefono, finché il dispositivo non è abbinato, compaiono solo le schermate di abbinamento e accesso (D-292).
+- `[push]` in `arianna.toml`: le notifiche Web Push della chat funzionano anche con la voce spenta; `[voice.push]` resta valida (D-292).
+- Abbinamento del telefono: Impostazioni → Dispositivi sul Mac (elenco con ultimo accesso, «Nuovo codice», «Scollega» che chiude subito sessioni, passkey e notifiche del telefono); sul telefono «Scrivi il codice», «Crea la passkey», «Entra con Face ID» (D-292, tappa B).
+- Dal telefono abbinato la chat completa, le notifiche push e, con Face ID per ognuna, approvazioni, condivisione di skill e fatti, piani e unioni di GOD, routine, archivio, Wiki, uscita eccezionale di una nota Privata e promozione di un agente (D-292, tappa B).
+- Impostazioni → Notifiche mostra e salva le chiavi di Web Push anche con la voce spenta, sempre in `[push]` (una `[voice.push]` si sposta lì nello stesso salvataggio); errori sulle chiavi in italiano (D-292).
+
+### Sicurezza
+
+- Sulla porta remota `Host` è ammesso solo il nome configurato e `Origin` solo `https://<nome>`, con CSP `wss://` e HSTS; nessuna intestazione rende una richiesta locale (D-292).
+- Senza la sessione di un dispositivo abbinato la porta remota rifiuta ogni rotta dell'API e ogni WebSocket con 401 `device-not-paired`, tranne i passi di abbinamento e accesso; ciò che è solo del Mac (dispositivi, codici, impostazioni di privacy) resta 403 anche con la sessione (D-292).
+- In modo `own` senza un certificato valido il core non apre la porta remota e dice perché (D-292).
+- Dal telefono l'API si apre solo con la sessione di un dispositivo abbinato: cookie `__Host-` `HttpOnly`, `Secure`, `SameSite=Strict`, 12 ore al più e 30 minuti di inattività, nel database solo lo sha256; scritture remote sempre con `Origin` e JSON (D-292, tappa B).
+- Passkey verificate dal core con `node:crypto` (attestazione `none`, ES256 e RS256, origine, `rpId`, sfida monouso, Face ID, contatore); codici di abbinamento solo dal Mac, 5 minuti, un uso, tentativi limitati (D-292, tappa B).
+- Ogni decisione presa dal telefono chiede Face ID per esattamente quell'azione (metodo, percorso e corpo), con una verifica di 5 minuti usata una volta che il server controlla prima di eseguire; dispositivi, impostazioni di privacy, browser dell'agente e azioni sul Mac restano solo dal Mac (D-292, tappa B).
+- In modo `own` il core rifiuta una `data/remote/server.key` che sia un collegamento simbolico, non un file normale o con permessi più larghi di 0600, e lo dice come per il certificato mancante (D-292).
+
+### Corretto
+
+- `pnpm voice:vapid` e i commenti di `arianna.toml` indicano `[push]` come sezione delle chiavi di Web Push; `[voice.push]` si legge ancora per compatibilità (D-292).
+- `pnpm arianna:doctor` lancia il binario dell'app di Tailscale come comando (`TERM=dumb`): senza, l'app provava ad aprire la finestra e `remote.tailscale` falliva; se succede ancora lo dice chiaro (D-292).
+
 ## [0.167.1] - 2026-10-22
 
 ### Corretto

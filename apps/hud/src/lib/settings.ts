@@ -21,8 +21,10 @@ export interface VoiceValues {
   voice: string;
   limits: { callMinutes: number; warnSeconds: number; delegations: number; delegationSeconds: number };
   outgoing: { maxPerDay: number; quietFrom: string; quietTo: string; quietWeekend: boolean; ringSeconds: number; waitingMinutes: number };
-  push: { publicKey: string; subject: string } | null;
 }
+
+/** Web Push (D-292): the keys of `[push]` (or of `[voice.push]` of an older file), null when off. */
+export type PushValues = { publicKey: string; subject: string } | null;
 
 export interface NotificationsValues {
   replies: boolean;
@@ -155,6 +157,8 @@ export interface SettingsValues {
   /** Messages of the user before an idle agent leaves the conversation (I-8, D-130): `[participants] leave_after`; 0 never. */
   participants: number;
   voice: VoiceValues | null;
+  /** Web Push (D-292), shown and saved from Notifiche; independent of the voice. Optional: an older core sends it in `voice`. */
+  push?: PushValues;
   /** `[notifications]` (I-1); `quiet` "HH:MM-HH:MM" or null. */
   notifications: NotificationsValues;
   /** `[secretary]` (I-12, D-144). Optional: a core without it sends none. */
@@ -237,7 +241,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'series' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'push' | 'personas' | 'series' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -410,20 +414,32 @@ export function charactersBody(form: Record<string, string | undefined>): Record
 export interface VoiceForm {
   enabled: boolean;
   values: VoiceValues;
-  /** Push on: key and contact filled in. */
+}
+
+export function voiceForm(voice: VoiceValues | null, defaults: VoiceValues): VoiceForm {
+  // An older core still sends the push keys inside [voice]: they are not the voice's.
+  const values = copy(voice ?? defaults) as VoiceValues & { push?: unknown };
+  delete values.push;
+  return { enabled: voice !== null, values };
+}
+
+export function voiceBody(form: VoiceForm): VoiceValues | null {
+  return form.enabled ? copy(form.values) : null;
+}
+
+/** The keys of the notifications with the chat closed (D-292), in Notifiche: on with key and contact. */
+export interface PushForm {
   push: boolean;
   publicKey: string;
   subject: string;
 }
 
-export function voiceForm(voice: VoiceValues | null, defaults: VoiceValues): VoiceForm {
-  const values = copy(voice ?? defaults);
-  return { enabled: voice !== null, values: { ...values, push: null }, push: values.push !== null, publicKey: values.push?.publicKey ?? '', subject: values.push?.subject ?? '' };
+export function pushForm(push: PushValues | undefined): PushForm {
+  return { push: push !== null && push !== undefined, publicKey: push?.publicKey ?? '', subject: push?.subject ?? '' };
 }
 
-export function voiceBody(form: VoiceForm): VoiceValues | null {
-  if (!form.enabled) return null;
-  return { ...copy(form.values), push: form.push ? { publicKey: form.publicKey.trim(), subject: form.subject.trim() } : null };
+export function pushBody(form: PushForm): PushValues {
+  return form.push ? { publicKey: form.publicKey.trim(), subject: form.subject.trim() } : null;
 }
 
 /** The Notifiche card (I-1): the three kinds and the quiet hours as two times. */
@@ -742,6 +758,8 @@ export function fileErrorText(error: string): string {
 export function writeError(status: number, message: string): { text: string; reload: boolean } {
   const personal = status === 400 ? personalDataText(message) : undefined;
   if (personal !== undefined) return { text: personal, reload: false };
+  const push = pushProblemText(message);
+  if (push !== undefined) return { text: push, reload: status === 409 };
   const project = projectProblemText(message);
   if (status === 409) {
     if (/changed since the page read it/.test(message)) return { text: 'Il file arianna.toml è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.', reload: true };
@@ -789,55 +807,27 @@ export function voiceProblem(form: VoiceForm): string | undefined {
   return undefined;
 }
 
-/**
- * The keys of the notifications with the chat closed (D-066): stored in
- * `[voice.push]`, shown and saved from Notifiche since D-192. The rest of
- * `[voice]` is the part of Voce e chiamate: each section changes and saves
- * only its part, the other one as read.
- */
-export interface PushPart {
-  push: boolean;
-  publicKey: string;
-  subject: string;
+const PUSH_KEY_TEXT = 'La chiave pubblica non è valida: è quella stampata da pnpm voice:vapid, 87 caratteri che cominciano con B.';
+const PUSH_SUBJECT_TEXT = 'L’email di contatto comincia con mailto: (per esempio mailto:tu@esempio.it), o è un indirizzo https.';
+
+/** Why the push part cannot be saved: on, with the key or the contact empty or not in the shape the core reads. */
+export function pushProblem(form: PushForm): string | undefined {
+  if (!form.push) return undefined;
+  const key = form.publicKey.trim();
+  const subject = form.subject.trim();
+  if (key === '' || subject === '') return 'Per le notifiche a chat chiusa servono la chiave pubblica e l’email di contatto.';
+  if (!/^B[A-Za-z0-9_-]{86}$/.test(key)) return PUSH_KEY_TEXT;
+  if (!/^mailto:[^\s@]+@[^\s@]+$/.test(subject) && !/^https:\/\/\S+$/.test(subject)) return PUSH_SUBJECT_TEXT;
+  return undefined;
 }
 
-export function pushPart(form: VoiceForm): PushPart {
-  return { push: form.push, publicKey: form.publicKey, subject: form.subject };
-}
-
-/** `target` with the push part of `source`. */
-export function withPush(target: VoiceForm, source: VoiceForm): VoiceForm {
-  return { ...copy(target), ...pushPart(source) };
-}
-
-/** The push part differs (Notifiche). */
-export function pushChanged(form: VoiceForm, base: VoiceForm): boolean {
-  return !sameValue(pushPart(form), pushPart(base));
-}
-
-/** Calls, limits and the voice differ (Voce e chiamate), whatever the push part. */
-export function callsChanged(form: VoiceForm, base: VoiceForm): boolean {
-  return !sameValue(withPush(form, base), base);
-}
-
-/** The [voice] a section sends: its own part as edited, the other part as read. */
-export function voiceSent(part: 'calls' | 'push', current: VoiceForm, read: VoiceForm): VoiceValues | null {
-  return voiceBody(part === 'push' ? withPush(read, current) : withPush(current, read));
-}
-
-/**
- * The [voice] of the page after a save of `part`: what the core answered,
- * with the edits of the other part kept only when there were edits (a voice
- * turned off drops its keys, and keys not touched follow the file).
- */
-export function voiceAfterSave(part: 'calls' | 'push', before: VoiceForm, read: VoiceForm, fresh: VoiceForm): VoiceForm {
-  if (part === 'calls') return pushChanged(before, read) ? withPush(fresh, before) : fresh;
-  return callsChanged(before, read) ? withPush(before, fresh) : fresh;
-}
-
-/** Why the push part cannot be saved: on, with the key or the contact empty. */
-export function pushProblem(form: VoiceForm): string | undefined {
-  if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche a chat chiusa servono la chiave pubblica e l’email di contatto.';
+/** A refusal of the core about the Web Push keys (D-292), in Italian; undefined for any other. */
+export function pushProblemText(message: string): string | undefined {
+  if (/\bpush: set Web Push in \[push\] or in \[voice\.push\]/.test(message)) return 'In arianna.toml le chiavi delle notifiche sono sia in [push] sia in [voice.push]: lasciane una sola, poi ricarica.';
+  if (/\bpush\.(public_key|publicKey)\b/.test(message)) return PUSH_KEY_TEXT;
+  if (/\bpush\.subject\b/.test(message)) return PUSH_SUBJECT_TEXT;
+  if (/\bpush\.private_key\b/.test(message)) return 'La chiave segreta delle notifiche in arianna.toml non è un riferimento alla cassaforte delle password.';
+  if (/^push\b/.test(message)) return 'Arianna non ha accettato le chiavi delle notifiche a chat chiusa.';
   return undefined;
 }
 

@@ -8,7 +8,7 @@ import { parse as parseToml } from 'smol-toml';
 import type { AgentsSettings } from './agents.ts';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
-import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
+import { DATA_DIR, DEFAULT_REMOTE_PORT, DEFAULT_REMOTE_TLS, DEFAULT_SERVER, parseConfig, type InstallationMode, type ServerConfig } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
 import type { SeriesOverrides } from './series.ts';
@@ -20,7 +20,7 @@ import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
 import type { AppearanceConfig } from './appearance.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
-import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
+import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type PushConfig, type VoiceConfig } from './voice.ts';
 
 export interface EndpointSettings {
   id: string;
@@ -51,7 +51,7 @@ export interface Settings {
     password?: string;
     appPassword?: string;
   };
-  server: { host: string; port: number };
+  server: ServerConfig;
   roles: Roles;
   endpoints: EndpointSettings[];
   cloud: {
@@ -88,6 +88,8 @@ export interface Settings {
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
+  /** `[push]` (D-292): written only when the file has it; the keys of `[voice.push]` stay in `voice`. */
+  push?: PushConfig;
   /** `[installation]` (D-089): kept as written; the wizard does not ask for it. */
   installation?: { mode: InstallationMode };
 }
@@ -124,7 +126,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       ...(password === undefined ? {} : { password }),
       ...(appPassword === undefined ? {} : { appPassword }),
     },
-    server: { ...config.server },
+    server: structuredClone(config.server),
     roles: { ...config.roles },
     endpoints: config.local.endpoints.map((endpoint, index) => {
       const explicit = asTable(rawEndpoints[index], 'local.endpoints').models !== undefined;
@@ -165,6 +167,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(raw.web === undefined ? {} : { coderSites: [...config.web.coderSites] }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
+    // Only the section [push]: keys read from [voice.push] stay there.
+    ...(raw.push === undefined || config.push === undefined ? {} : { push: { ...config.push } }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
   };
 }
@@ -339,11 +343,6 @@ function voiceSection(voice: VoiceConfig | undefined): string[] {
       `# quiet_weekend = ${String(outgoing.quietWeekend)}`,
       `# ring_seconds = ${String(outgoing.ringSeconds)}`,
       `# waiting_minutes = ${String(outgoing.waitingMinutes)}`,
-      '#',
-      '# [voice.push]',
-      '# public_key = "<pnpm voice:vapid>"',
-      `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`,
-      '# subject = "mailto:you@example.org"',
     ];
   }
   const { limits, outgoing, push } = voice;
@@ -365,6 +364,7 @@ function voiceSection(voice: VoiceConfig | undefined): string[] {
     `quiet_weekend = ${String(outgoing.quietWeekend)}`,
     `ring_seconds = ${String(outgoing.ringSeconds)}`,
     `waiting_minutes = ${String(outgoing.waitingMinutes)}`,
+    // A [voice.push] of a file of before D-292 is written back as it was; new keys go to [push].
     ...(push === undefined
       ? []
       : ['', '[voice.push]', `public_key = ${str(push.publicKey)}`, `private_key = ${str(push.privateKey)}`, `subject = ${str(push.subject)}`]),
@@ -551,12 +551,26 @@ export function renderSettings(settings: Settings): string {
       : ['[participants]', `leave_after = ${String(settings.leaveAfter)}`]),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
-    '# history holds L2 in clear and there is no authentication yet. Access from',
-    '# the phone over the VPN comes with a proxy and authentication (task 1.13).',
-    '# Like [paths] and [database], it applies at the next restart.',
+    '# history holds L2 in clear. Like [paths] and [database], it applies at the',
+    '# next restart.',
     '[server]',
     `host = ${str(server.host)}`,
     `port = ${String(server.port)}`,
+    '',
+    '# The chat on the phone (D-292): a second port, on 127.0.0.1 only, that',
+    '# Tailscale publishes on your tailnet as https://<host> (never funnel).',
+    '# `host` is the name of this Mac on the tailnet, ending in .ts.net: choose',
+    '# it neutral and for good, the passkeys are bound to it. `tls = "own"`: the',
+    '# core ends TLS with the certificate of pnpm remote:cert (no public',
+    '# certificate of the name) and Tailscale forwards TCP:',
+    '#   tailscale serve --bg --tcp=443 tcp://127.0.0.1:7443',
+    '# `tls = "tailscale"`: Tailscale ends HTTPS with its certificate:',
+    '#   tailscale serve --bg --https=443 http://127.0.0.1:7443',
+    '# Absent: no remote port. Then pnpm arianna:doctor checks Tailscale.',
+    '# Steps in docs/SECURITY.md. Applies at the next restart.',
+    ...(server.remote === undefined
+      ? ['#', '# [server.remote]', '# host = "mac-studio.tail1234.ts.net"', `# port = ${String(DEFAULT_REMOTE_PORT)}`, `# tls = ${str(DEFAULT_REMOTE_TLS)}`]
+      : ['[server.remote]', `host = ${str(server.remote.host)}`, `port = ${String(server.remote.port)}`, `tls = ${str(server.remote.tls)}`]),
     '',
     '# Telegram (task 1.15, D-044): an external channel behind the gateway, at most',
     '# L1; anything above arrives as a notice pointing to the web chat. Off while',
@@ -574,16 +588,25 @@ export function renderSettings(settings: Settings): string {
     '# Python environment: pnpm voice:sync (needs uv); the weights: pnpm',
     '# arianna:models pull (--trial also the candidates of the voice trial page).',
     '# Quiet hours are local time; scheduled calls skip them and the weekend but',
-    '# count in max_per_day. [voice.push] turns on Web Push: a notification',
-    '# without content through Apple, Google or Mozilla when the chat is closed;',
-    '# the private key stays in the vault (key vapid-private-key). Applies without',
-    '# a restart, once no call is in progress.',
+    '# count in max_per_day. The notification of a call with the chat closed is',
+    '# Web Push of [push] below. Applies without a restart, once no call is in',
+    '# progress.',
     ...voiceSection(settings.voice),
+    '',
+    '# Web Push of the chat notifications and of the calls (D-292), also with',
+    '# the voice off: a notification without content through Apple, Google or',
+    '# Mozilla when the chat is closed. Keys from pnpm voice:vapid; the private',
+    '# key stays in the vault (key vapid-private-key). [voice.push] of an older',
+    '# file is still read, never both. Only fixed sentences leave, never the',
+    '# text. Applies without a restart.',
+    ...(settings.push === undefined
+      ? ['#', '# [push]', '# public_key = "<pnpm voice:vapid>"', `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`, '# subject = "mailto:you@example.org"']
+      : ['[push]', `public_key = ${str(settings.push.publicKey)}`, `private_key = ${str(settings.push.privateKey)}`, `subject = ${str(settings.push.subject)}`]),
     '',
     '# Notifications of the web chat (I-1): a reply, an approval waiting, a',
     '# failed task. Never the text or the title of a conversation: only a fixed',
     '# sentence and the link. In a browser tab that is open but not in view, the',
-    '# page shows them; with the chat closed, Web Push of [voice.push], only',
+    '# page shows them; with the chat closed, Web Push of [push], only',
     '# while no page of the chat is in view. Each browser asks for permission',
     '# from Impostazioni -> Notifiche. `quiet` is "HH:MM-HH:MM" local time',
     '# (across midnight too); without it, no quiet hours. Absent: every kind on.',

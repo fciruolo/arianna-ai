@@ -40,6 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
+import { actionPath, checkFailure, needsVerification, onRemoteOrigin, sessionEnded, stepUpHeader } from './remote.ts';
 import type { VersionComparison, WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -62,13 +63,31 @@ export class ApiError extends Error {
 }
 
 async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  const send = (extra: Record<string, string> = {}): Promise<Response> =>
+    fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...extra },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  let response = await send();
+  let data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  // From the phone (D-292, step-up): a decision the core refuses without Face ID; asked for exactly it, then sent again once.
+  if (method === 'POST' && needsVerification(onRemoteOrigin(window.location), response.status, data)) {
+    let header: Record<string, string>;
+    try {
+      header = await stepUpHeader(actionPath(path, window.location.origin), body);
+    } catch (error) {
+      // Face ID cancelled, the check refused, the session ended meanwhile: an ApiError with an Italian text, as every other refusal.
+      const failed = checkFailure(error);
+      if (sessionEnded(true, failed.status, failed.body)) window.location.reload();
+      throw new ApiError(failed.status, failed.text, failed.body);
+    }
+    response = await send(header);
+    data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  }
+  // From the phone (D-292): the session ended (12 hours, idle, unlinked): back to «Entra con Face ID».
+  if (sessionEnded(onRemoteOrigin(window.location), response.status, data)) window.location.reload();
   if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
   return data as T;
 }
@@ -594,6 +613,7 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
  * `plan`: the cards of a plan to start at once, «Avvia subito», by their number, and the revision shown (D-235).
  */
 export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<Approval> {
+  // From the phone (D-292) the core asks Face ID for exactly this decision: call() asks it and sends again.
   return (
     await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
       state,
@@ -1101,7 +1121,7 @@ export async function cancelScheduledCall(callId: string): Promise<void> {
   await call('POST', `/api/calls/${encodeURIComponent(callId)}/cancel`, {});
 }
 
-/** The VAPID public key of [voice.push], or null when push is off. */
+/** The VAPID public key of [push] (or [voice.push], D-292), or null when push is off. */
 export async function loadPushKey(): Promise<string | null> {
   return (await call<{ publicKey: string | null }>('GET', '/api/push/key')).publicKey;
 }
@@ -2122,4 +2142,41 @@ export async function addSeriesLine(character: string, text: string): Promise<Se
 
 export async function removeSeriesLine(character: string, n: number): Promise<SeriesLinesStatus> {
   return call<SeriesLinesStatus>('DELETE', `/api/series-lines/${encodeURIComponent(character)}/${String(n)}`);
+}
+
+/** A paired device of the remote port (D-292), for Impostazioni → Dispositivi on the Mac. */
+export interface RemoteDevice {
+  id: string;
+  /** The name the user gave when making the code. */
+  name: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface DevicesView {
+  /** The `*.ts.net` name of [server.remote]. */
+  host: string;
+  devices: RemoteDevice[];
+  /** A code waiting to be typed on the phone, until when; never the code itself. */
+  code: { expiresAt: string } | null;
+}
+
+/** The paired devices; null when [server.remote] is not configured (404). */
+export async function loadDevices(): Promise<DevicesView | null> {
+  try {
+    return await call<DevicesView>('GET', '/api/devices');
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** A new pairing code (5 minutes, one use), replacing the one before. */
+export async function newPairingCode(name: string): Promise<{ code: string; expiresAt: string }> {
+  return call('POST', '/api/devices/code', name.trim() === '' ? {} : { name: name.trim() });
+}
+
+/** «Scollega»: sessions and passkeys of the device end at once. */
+export async function unlinkDevice(id: string): Promise<void> {
+  await call('POST', `/api/devices/${encodeURIComponent(id)}/unlink`, {});
 }

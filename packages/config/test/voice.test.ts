@@ -93,6 +93,18 @@ test('voice: the wizard writes the section back unchanged, and leaves it comment
   assert.match(renderSettings(DEFAULT_SETTINGS), /^# \[voice\]$/m);
 });
 
+test('[server.remote] and [push] (D-292): written back unchanged, commented when absent', () => {
+  const text = `${VALID}\n[server]\nport = 7420\n[server.remote]\nhost = "mac.tail1234.ts.net"\nport = 7500\n[push]\npublic_key = "${PUBLIC_KEY}"\nprivate_key = "vault://vapid-private-key"\nsubject = "https://example.org"\n`;
+  const rendered = renderSettings(readSettings(text, HOME, EMPTY_CATALOG));
+  assert.deepEqual(parseConfig(rendered, HOME).server, parseConfig(text, HOME).server);
+  assert.deepEqual(parseConfig(rendered, HOME).push, parseConfig(text, HOME).push);
+  // Keys read from [voice.push] are not copied into [push].
+  const legacy = `${VALID}\n[voice]\n[voice.push]\npublic_key = "${PUBLIC_KEY}"\nprivate_key = "vault://vapid-private-key"\nsubject = "https://example.org"\n`;
+  assert.doesNotMatch(renderSettings(readSettings(legacy, HOME, EMPTY_CATALOG)), /^\[push\]$/m);
+  assert.match(renderSettings(DEFAULT_SETTINGS), /^# \[server\.remote\]$/m);
+  assert.match(renderSettings(DEFAULT_SETTINGS), /^# \[push\]$/m);
+});
+
 test('the voice role gets its own alias on the local servers, outside the router (D-066)', () => {
   assert.deepEqual(aliasesOf({ orchestrator: 'big', voice: 'small' }), { 'local-large': 'big', [VOICE_ALIAS]: 'small' });
   assert.deepEqual(aliasesOf({ orchestrator: 'big' }), { 'local-large': 'big' });

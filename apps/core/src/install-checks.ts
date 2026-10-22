@@ -14,6 +14,7 @@ import { loadCatalog, modelFolderText, modelsRoot, projectParts, PROJECTS_DIR, v
 import { BROWSER_IMAGE_MAX_AGE_DAYS, browserImageAgeDays, readBrowserImageLock } from './browser/image.ts';
 import type { DoctorCheck } from './doctor.ts';
 import { modelStatus, selectedModels } from './model-files.ts';
+import { remoteChecks } from './remote-checks.ts';
 
 /** Subfolders of data/ created by install (docs/INSTALLER-PORTABILITY.md); Docker creates its own volumes. */
 export const DATA_LAYOUT = ['models', 'archive', 'kb', 'vault', 'worktrees', 'backups'] as const;
@@ -413,6 +414,8 @@ export async function installationChecks(config: AriannaConfig, run?: Runner): P
     ...guardDirChecks(loadCatalog(config.home), config.paths.data),
     ...projectChecks(config.home, config.projects),
     ...browserImageChecks(config.home, new Date()),
+    // D-292: Tailscale and the certificate of the remote port; one passing line without [server.remote].
+    ...(await remoteChecks(config)),
   ];
 }
 

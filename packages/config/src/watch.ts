@@ -84,6 +84,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('projectRules') ? ['projectRules'] : []),
       ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('voice') ? ['voice'] : []),
+      ...(changed('push') ? ['push'] : []),
       ...(changed('characters') ? ['characters'] : []),
       ...(changed('agents') ? ['agents'] : []),
       ...(changed('personas') ? ['personas'] : []),

@@ -81,7 +81,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'push', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -136,7 +136,13 @@ export interface SettingsValues {
   sprites: SpriteModel;
   /** Messages of the user before an idle agent leaves (I-8, D-130): `[participants] leave_after`; 0 never, ten when absent. */
   participants: number;
-  voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
+  /** `[voice]` without the push keys, which are `push`. */
+  voice: Omit<VoiceConfig, 'push'> | null;
+  /**
+   * Web Push (D-292): the keys of `[push]`, or of `[voice.push]` in a file of
+   * before D-292; null when off. The private key is a vault reference the page never sees.
+   */
+  push: { publicKey: string; subject: string } | null;
   /** `[notifications]` (I-1); `quiet` as "HH:MM-HH:MM", null for none. The defaults when the file has no section. */
   notifications: NotificationsValues;
   /** `[secretary]` (I-12, D-144); the defaults when the file has no section. */
@@ -419,7 +425,7 @@ function skillsFromBody(
 function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceConfig | undefined {
   if (value === null) return undefined;
   const voice = record(value, 'voice');
-  only(voice, ['port', 'voice', 'limits', 'outgoing', 'push'], 'voice');
+  only(voice, ['port', 'voice', 'limits', 'outgoing'], 'voice');
   const limits = record(voice.limits, 'voice.limits');
   only(limits, ['callMinutes', 'warnSeconds', 'delegations', 'delegationSeconds'], 'voice.limits');
   const outgoing = record(voice.outgoing, 'voice.outgoing');
@@ -443,17 +449,34 @@ function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceC
       waitingMinutes: integer(outgoing.waitingMinutes, 'voice.outgoing.waitingMinutes'),
     },
   };
-  if (voice.push !== undefined && voice.push !== null) {
-    const push = record(voice.push, 'voice.push');
-    only(push, ['publicKey', 'subject'], 'voice.push');
-    // The private key is a vault reference the page never sees: kept, or the usual one.
-    next.push = {
-      publicKey: text(push.publicKey, 'voice.push.publicKey'),
-      privateKey: current?.push?.privateKey ?? VAPID_PRIVATE_KEY_REF,
-      subject: text(push.subject, 'voice.push.subject'),
-    };
-  }
+  // The keys of [voice.push] are the section push (D-292): kept as they are.
+  if (current?.push !== undefined) next.push = current.push;
   return next;
+}
+
+/**
+ * Web Push from the page (D-292): written in `[push]`, also when the keys
+ * were in `[voice.push]`, which the same write removes; null turns it off,
+ * from both. The private key is a vault reference the page never sees:
+ * kept, or the usual one.
+ */
+function pushFromBody(value: unknown, before: Settings, next: Settings): void {
+  if (next.voice?.push !== undefined) {
+    const voice = { ...next.voice };
+    delete voice.push;
+    next.voice = voice;
+  }
+  if (value === null) {
+    delete next.push;
+    return;
+  }
+  const push = record(value, 'push');
+  only(push, ['publicKey', 'subject'], 'push');
+  next.push = {
+    publicKey: text(push.publicKey, 'push.publicKey'),
+    privateKey: before.push?.privateKey ?? before.voice?.push?.privateKey ?? VAPID_PRIVATE_KEY_REF,
+    subject: text(push.subject, 'push.subject'),
+  };
 }
 
 /** `[notifications]` from the page: three switches and the quiet hours, "HH:MM-HH:MM" or null. */
@@ -750,8 +773,15 @@ function agentsOf(settings: Settings): SettingsValues['agents'] {
 
 function voiceOf(voice: VoiceConfig | undefined): SettingsValues['voice'] {
   if (voice === undefined) return null;
-  const { push, ...rest } = structuredClone(voice);
-  return { ...rest, push: push === undefined ? null : { publicKey: push.publicKey, subject: push.subject } };
+  const rest = structuredClone(voice);
+  delete rest.push;
+  return rest;
+}
+
+/** The Web Push in use (D-292): `[push]`, or `[voice.push]` of a file of before. */
+function pushOf(settings: Settings): SettingsValues['push'] {
+  const push = settings.push ?? settings.voice?.push;
+  return push === undefined ? null : { publicKey: push.publicKey, subject: push.subject };
 }
 
 export function valuesOf(settings: Settings): SettingsValues {
@@ -767,6 +797,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
     voice: voiceOf(settings.voice),
+    push: pushOf(settings),
     notifications: notificationsOf(settings.notifications),
     secretary: structuredClone(settings.secretary ?? DEFAULT_SECRETARY),
     appearance: { ...(settings.appearance ?? DEFAULT_APPEARANCE) },
@@ -796,6 +827,9 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.leaveAfter ?? DEFAULT_LEAVE_AFTER;
     case 'notifications':
       return settings.notifications;
+    // Both places, vault references included: moving the keys from [voice.push] to [push] is a change.
+    case 'push':
+      return { push: settings.push, voice: settings.voice?.push };
     case 'secretary':
       return settings.secretary;
     case 'appearance':
@@ -980,7 +1014,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       ordinary: ORDINARY_SECTIONS,
       privacy: PRIVACY_SECTIONS,
       restartOnly: RESTART_SECTIONS,
-      voiceDefaults: { ...structuredClone(DEFAULT_VOICE), push: null },
+      voiceDefaults: structuredClone(DEFAULT_VOICE),
       agentModels: Object.fromEntries(Object.entries(options.agentModels()).map(([agent, models]) => [agent, [...models]])),
       agentSkills: { ...(options.agentSkills?.() ?? {}) },
     };
@@ -1073,9 +1107,14 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);
-        if (voice === undefined) delete next.voice;
-        else next.voice = voice;
+        if (voice === undefined) {
+          // Web Push does not need the voice (D-292): keys of [voice.push] go to [push] instead of away.
+          const keys = next.voice?.push;
+          if (keys !== undefined && next.push === undefined) next.push = keys;
+          delete next.voice;
+        } else next.voice = voice;
       }
+      if (given.push !== undefined) pushFromBody(given.push, settings, next);
       if (given.notifications !== undefined) next.notifications = notificationsFromBody(given.notifications);
       if (given.secretary !== undefined) next.secretary = secretaryFromBody(given.secretary);
       if (given.appearance !== undefined) next.appearance = appearanceFromBody(given.appearance);

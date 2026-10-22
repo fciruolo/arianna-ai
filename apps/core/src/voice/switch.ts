@@ -1,21 +1,18 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import type { PushConfig, VoiceConfig } from '@arianna/config';
+import type { VoiceConfig } from '@arianna/config';
 
-import type { Pusher } from './push.ts';
 import { VoiceError, type VoiceService, type VoiceState } from './service.ts';
 
 export interface VoiceSwitchOptions {
   /** The service of this port, not started yet (the core: apps/voice in its venv). */
   createService: (port: number) => VoiceService;
-  /** The pusher of `[voice.push]`; a rejection leaves Web Push off until the section changes. */
-  createPusher: (push: PushConfig) => Promise<Pusher>;
   /** A call is ringing, connecting or active: the service is not touched until it ends. */
   busy: () => Promise<boolean>;
   /** `[voice]` changed while the core runs (not at `begin`): the event log. */
   onChange?: (config: VoiceConfig | undefined) => void;
-  /** What changed was applied: the service and the pusher of `config` are in place. */
-  onApplied?: (config: VoiceConfig | undefined, pusher: boolean) => void;
+  /** What changed was applied: the service of `config` is in place. */
+  onApplied?: (config: VoiceConfig | undefined) => void;
   onError: (error: unknown) => void;
   /** How often a change waiting for a call to end is tried again; 5 s by default. */
   retryMs?: number;
@@ -28,14 +25,12 @@ export interface VoiceSwitch {
    * ones holding it see the replacement.
    */
   readonly service: VoiceFacade;
-  /** The pusher in place; undefined without `[voice.push]` or when its key could not be read. */
-  pusher(): Pusher | undefined;
   /**
    * Applies `[voice]` (D-071): a new port, or the section turned on or off,
-   * restarts apps/voice; a new `[voice.push]` replaces the pusher. Both wait
-   * until no call is in progress: the call ends with the old values. The rest
-   * of the section (voice, limits, outgoing rules) is read at each use and
-   * needs nothing here. Ignored before `begin`.
+   * restarts apps/voice once no call is in progress: the call ends with the
+   * old values. The rest of the section (voice, limits, outgoing rules) is
+   * read at each use and needs nothing here; `[voice.push]` belongs to the
+   * push switch since D-292. Ignored before `begin`.
    */
   sync(config: VoiceConfig | undefined): void;
   /** Starts applying changes, from this configuration; resolves once it is applied. */
@@ -58,15 +53,14 @@ function servicePart(config: VoiceConfig | undefined): number | undefined {
   return config?.port;
 }
 
-/** apps/voice and Web Push turned on, off or changed while the core runs (D-066, D-071). */
+/** apps/voice turned on, off or moved while the core runs (D-066, D-071). */
 export function createVoiceSwitch(options: VoiceSwitchOptions): VoiceSwitch {
   const retryMs = options.retryMs ?? 5000;
   let ready = false;
   let closing = false;
   let service: VoiceService | undefined;
-  let pusher: Pusher | undefined;
   // What is in place, and what the file asks for.
-  let applied: { service: number | undefined; push: PushConfig | undefined } = { service: undefined, push: undefined };
+  let applied: number | undefined;
   let wanted: VoiceConfig | undefined;
   let reported: VoiceConfig | undefined;
   // While the service is replaced, no new call starts on it.
@@ -92,20 +86,17 @@ export function createVoiceSwitch(options: VoiceSwitchOptions): VoiceSwitch {
   async function step(initial: boolean): Promise<void> {
     if (closing) return;
     const next = wanted;
-    const sameService = isDeepStrictEqual(servicePart(next), applied.service);
-    const samePush = isDeepStrictEqual(next?.push, applied.push);
+    const sameService = isDeepStrictEqual(servicePart(next), applied);
     if (!initial && !isDeepStrictEqual(next, reported)) options.onChange?.(next);
     reported = next;
-    if (sameService && samePush) return;
+    if (sameService) return;
     // New calls are refused first; the ones already past the check write their
     // row (`hold`); only then a call in progress is looked for.
-    if (!sameService) {
-      switching = true;
-      while (opening > 0) {
-        await new Promise<void>((resolve) => {
-          opened = resolve;
-        });
-      }
+    switching = true;
+    while (opening > 0) {
+      await new Promise<void>((resolve) => {
+        opened = resolve;
+      });
     }
     let busy: boolean;
     try {
@@ -120,33 +111,20 @@ export function createVoiceSwitch(options: VoiceSwitchOptions): VoiceSwitch {
       if (busy) later();
       return;
     }
-    if (!sameService) {
-      const was = service;
-      service = undefined;
-      try {
-        await was?.stop();
-      } catch (error) {
-        options.onError(error);
-      }
-      if (next !== undefined && !closed()) service = options.createService(next.port);
-      applied = { ...applied, service: servicePart(next) };
-      switching = false;
+    const was = service;
+    service = undefined;
+    try {
+      await was?.stop();
+    } catch (error) {
+      options.onError(error);
     }
-    if (!samePush && !closed()) {
-      pusher = undefined;
-      applied = { ...applied, push: next?.push };
-      if (next?.push !== undefined) {
-        try {
-          pusher = await options.createPusher(next.push);
-        } catch (error) {
-          options.onError(error);
-        }
-      }
-    }
+    if (next !== undefined && !closed()) service = options.createService(next.port);
+    applied = servicePart(next);
+    switching = false;
     if (closed()) return;
-    options.onApplied?.(next, pusher !== undefined);
+    options.onApplied?.(next);
     // Started last and not awaited by the queue: loading may take a while, and a later change stops it.
-    if (!sameService && service !== undefined) service.start().catch(options.onError);
+    if (service !== undefined) service.start().catch(options.onError);
   }
 
   function apply(initial: boolean): Promise<void> {
@@ -183,7 +161,6 @@ export function createVoiceSwitch(options: VoiceSwitchOptions): VoiceSwitch {
 
   return {
     service: facade,
-    pusher: () => pusher,
     sync(config) {
       if (!ready) return;
       wanted = config;
@@ -202,7 +179,6 @@ export function createVoiceSwitch(options: VoiceSwitchOptions): VoiceSwitch {
       await queue;
       const was = service;
       service = undefined;
-      pusher = undefined;
       await was?.stop();
     },
   };

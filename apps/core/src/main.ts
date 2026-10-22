@@ -19,6 +19,7 @@ import {
   loadConfigOrExit,
   loadLabelRules,
   modelPath,
+  remotePaths,
   userHomeOf,
   VOICE_ALIAS,
   voicePaths,
@@ -125,6 +126,10 @@ import { startTelegram } from './telegram/channel.ts';
 import { createTelegramSwitch } from './telegram/switch.ts';
 import { createCalls, liveCall } from './voice/calls.ts';
 import { createPusher, vapidKey } from './voice/push.ts';
+import { createPushSwitch } from './push-switch.ts';
+import { loadRemoteTls, WARN_DAYS } from './remote-cert.ts';
+import { createRemoteDevices } from './remote/devices.ts';
+import { createDeviceStore } from './remote/store.ts';
 import { createRinger } from './voice/ringer.ts';
 import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
@@ -276,11 +281,11 @@ const telegram = createTelegramSwitch({
 
 // apps/voice (D-066): on only with [voice] in arianna.toml, started in the
 // background so that the chat never waits for it. Turned on, off or moved to
-// another port without a restart, once no call is in progress (D-071); the
-// same for [voice.push]. Without the environment (pnpm voice:sync) the trial
-// page says what is missing.
+// another port without a restart, once no call is in progress (D-071). Web
+// Push has its own switch below (D-292). Without the environment (pnpm
+// voice:sync) the trial page says what is missing.
 const voiceDirs = voicePaths(config.home, config.paths.data);
-let voiceShown = { on: config.voice !== undefined, port: config.voice?.port ?? null, push: config.voice?.push !== undefined };
+let voiceShown = { on: config.voice !== undefined, port: config.voice?.port ?? null };
 const voice = createVoiceSwitch({
   createService: (port) => {
     const service = createVoiceService({
@@ -294,31 +299,46 @@ const voice = createVoiceSwitch({
     if (service.state === 'not-installed') console.error('voice off: data/voice/venv is missing (brew install uv, then pnpm voice:sync)');
     return service;
   },
-  // Web Push (D-066, choice 7): a notification without content when no chat is open.
-  createPusher: async (push) => {
-    const privateKey = await createVault({ data: config.paths.data }).resolve(push.privateKey);
+  busy: async () => (await liveCall(sql)) !== undefined,
+  // On or off and port: L0, never the voice (it may name a copied voice).
+  onChange: (next) => {
+    const shown = { on: next !== undefined, port: next?.port ?? null };
+    if (isDeepStrictEqual(shown, voiceShown)) return;
+    voiceShown = shown;
+    appendEvent(sql, { kind: 'settings.voice', label: 'L0', payload: shown }).catch(report);
+  },
+  onApplied: (next) => {
+    console.log(next === undefined ? 'voice off: no [voice] in arianna.toml' : `voice on port ${String(next.port)}`);
+  },
+  onError: report,
+});
+
+// Web Push (D-066, choice 7; on its own since D-292): a notification without
+// content when no chat is open, for the chat notifications and the calls,
+// with the voice off too. Keys of [push] or of [voice.push]; a change applies
+// without a restart.
+// Undefined until the first application: the start of the core is not a change.
+let pushShown: boolean | undefined;
+const push = createPushSwitch({
+  createPusher: async (keys) => {
+    const privateKey = await createVault({ data: config.paths.data }).resolve(keys.privateKey);
     return createPusher({
       sql,
-      publicKey: push.publicKey,
-      key: vapidKey(push.publicKey, privateKey.reveal()),
-      subject: push.subject,
+      publicKey: keys.publicKey,
+      key: vapidKey(keys.publicKey, privateKey.reveal()),
+      subject: keys.subject,
       // The fixed sentence of the kind, all that leaves, goes through the gateway on channel push.
       gate: async (text, kind) =>
         (await passGateway(sql, [{ value: text, label: 'L0', source: `${kind}:push` }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
       onError: report,
     });
   },
-  busy: async () => (await liveCall(sql)) !== undefined,
-  // On or off, port and push on or off: L0, never the voice (it may name a copied voice).
-  onChange: (next) => {
-    const shown = { on: next !== undefined, port: next?.port ?? null, push: next?.push !== undefined };
-    if (isDeepStrictEqual(shown, voiceShown)) return;
-    voiceShown = shown;
-    appendEvent(sql, { kind: 'settings.voice', label: 'L0', payload: shown }).catch(report);
-  },
-  onApplied: (next, push) => {
-    console.log(next === undefined ? 'voice off: no [voice] in arianna.toml' : `voice on port ${String(next.port)}, Web Push ${push ? 'on' : 'off'}`);
-    if (next?.push !== undefined && !push) console.error('Web Push off: see the error above; tried again at the next change of [voice.push]');
+  onApplied: (next, on) => {
+    console.log(`Web Push ${on ? 'on' : 'off'}`);
+    if (next !== undefined && !on) console.error('Web Push off: see the error above; tried again at the next change of [push]');
+    // On or off only: L0.
+    if (pushShown !== undefined && pushShown !== on) appendEvent(sql, { kind: 'settings.push', label: 'L0', payload: { on } }).catch(report);
+    pushShown = on;
   },
   onError: report,
 });
@@ -341,6 +361,7 @@ const settings = watchConfig({
     }
     if (applied.includes('telegram')) telegram.sync(telegramSection());
     if (applied.includes('voice')) voice.sync(settings.current().voice);
+    if (applied.includes('push')) push.sync(settings.current().push);
     // Turning a cloud executor on or off is a privacy setting: it goes in the event log, like the projects.
     if (applied.includes('cloud.executors')) {
       const { executors } = settings.current().cloud;
@@ -763,6 +784,7 @@ const closed = await calls.closeLeftovers();
 if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
 // Before the API: with [voice] the routes never answer "voice off" at start.
 await voice.begin(settings.current().voice);
+await push.begin(settings.current().push);
 // The settings page (D-071): it writes arianna.toml, which the watcher above
 // applies as any other change. Each write goes in the event log with the
 // names of the sections only, never their values.
@@ -1290,12 +1312,34 @@ const changesTicker = setInterval(() => {
   if (!stopping) void installChanges.check();
 }, 10 * 60_000);
 changesTicker.unref();
+// The remote port (D-292): with tls = "own" only with a valid certificate of
+// pnpm remote:cert; without it the port stays closed and the core goes on.
+const remoteListener = ((): { host: string; port: number; tls?: { cert: string; key: string } } | undefined => {
+  const remote = config.server.remote;
+  if (remote === undefined) return undefined;
+  if (remote.tls === 'tailscale') return { host: remote.host, port: remote.port };
+  const tls = loadRemoteTls(remotePaths(config.paths.data), remote.host, new Date());
+  if (!tls.ok) {
+    console.error(`Porta remota chiusa: ${tls.problem}.`);
+    return undefined;
+  }
+  if (tls.daysLeft <= WARN_DAYS) console.error(`Il certificato della porta remota scade fra ${String(tls.daysLeft)} giorni: lancia pnpm remote:cert.`);
+  return { host: remote.host, port: remote.port, tls: { cert: tls.cert, key: tls.key } };
+})();
 const server = await startApiServer({
   sql,
   live,
   changes: installChanges,
   host: config.server.host,
   port: config.server.port,
+  // The phone (D-292): a second port on 127.0.0.1 behind tailscale serve; the API only with the session of a paired device (stage B).
+  ...(remoteListener === undefined ? {} : { remote: remoteListener }),
+  // Pairing, passkeys and sessions of the phone (D-292, stage B); Impostazioni → Dispositivi works with the remote port closed too.
+  ...(config.server.remote === undefined ? {} : { remoteDevices: createRemoteDevices({ store: createDeviceStore(sql), host: config.server.remote.host }) }),
+  onRemoteError: (error) => {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'errore';
+    console.error(`Porta remota chiusa: non si apre su 127.0.0.1:${String(config.server.remote?.port)} (${code}); il core continua senza.`);
+  },
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
@@ -1424,7 +1468,7 @@ const server = await startApiServer({
   },
   voice: { service: voice.service, voice: () => voiceSettings().voice, models: candidates, clones: voiceDirs.clones },
   calls,
-  pusher: () => voice.pusher(),
+  pusher: () => push.pusher(),
   notices,
   settings: settingsPage,
   userAgents,
@@ -1548,9 +1592,9 @@ const ringer = createRinger({
   hold: (work) => voice.service.hold(work),
   // D-158: a call of a direct chat whose agent cannot answer now is skipped, not rung.
   check: (conversationId) => calls.check(conversationId, { answer: true }),
-  // Read at each ring: [voice.push] changes without a restart.
+  // Read at each ring: [push] changes without a restart.
   notify: () => {
-    const pusher = voice.pusher();
+    const pusher = push.pusher();
     return pusher === undefined
       ? undefined
       : async () => {
@@ -1580,7 +1624,7 @@ const notifier = createNotifier({
     server.notifyHelpers(notice);
   },
   push: () => {
-    const pusher = voice.pusher();
+    const pusher = push.pusher();
     return pusher === undefined ? undefined : (kind, helper) => pusher.notify(kind, helper ? { skip: server.macEndpoints() } : {});
   },
   board: notices,
@@ -1620,6 +1664,10 @@ imWatcher.start();
 await telegram.begin(telegramSection());
 
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
+if (server.remotePort !== undefined && config.server.remote !== undefined) {
+  const ends = config.server.remote.tls === 'own' ? 'TLS ended by the core' : 'TLS ended by Tailscale';
+  console.log(`Remote port on 127.0.0.1:${String(server.remotePort)} for https://${config.server.remote.host}, ${ends} (D-292: API with the session of a paired device)`);
+}
 // D-246: a day forced for the feasts is said at the start, so a value left in the environment is not missed.
 if (process.env.ARIANNA_TODAY !== undefined) {
   const forced = themeDay(process.env, new Date());
@@ -1651,6 +1699,7 @@ async function shutdown(): Promise<void> {
   ringer.stop();
   await calls.close();
   await voice.close();
+  await push.close();
   await stopPiiGuard();
   await modelEvals.stop();
   await modelActions.stop();

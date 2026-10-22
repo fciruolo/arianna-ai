@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
+import type { Duplex } from 'node:stream';
 import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
@@ -220,7 +222,9 @@ import { isYoutubeVideo } from '../video-url.ts';
 import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video-job.ts';
 import type { UserCommand } from '../browser/agent-browser.ts';
 import type { BrowserScreens } from '../browser/screen.ts';
-import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
+import { RemoteError, type RemoteDevices, type RemoteSession } from '../remote/devices.ts';
+import { markRemote, remoteAccess, remoteSessionOf, REMOTE_LISTEN_HOST, stepUpAction, VERIFICATION_HEADER, verificationOf } from './remote.ts';
+import { allowedHosts, checkRequest, remoteDoor, securityHeaders, type RemoteDoor } from './security.ts';
 
 /**
  * API, WebSocket and web chat of the core (task 1.11, D-039). `node:http`
@@ -275,7 +279,7 @@ export interface ApiServerOptions {
   voice?: VoiceApi;
   /** Calls from the chat (D-066); refused while the voice is off. */
   calls?: Calls;
-  /** Web Push for the calls of Arianna (D-066), read at each request: undefined without [voice.push]. */
+  /** Web Push of the calls and of the chat notifications (D-066, D-292), read at each request: undefined without [push] or [voice.push]. */
   pusher?: () => Pusher | undefined;
   /** The last notice pushed (I-1), which the service worker asks for: kind and conversation only. */
   notices?: NoticeBoard;
@@ -452,6 +456,20 @@ export interface ApiServerOptions {
   browserScreens?: BrowserScreens;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
+  /**
+   * `[server.remote]` (D-292): a second listener, on 127.0.0.1 only, behind
+   * `tailscale serve`. Absent: none. With `tls` (mode `own`) the core ends
+   * TLS itself and Tailscale forwards TCP; without it Tailscale ends HTTPS.
+   */
+  remote?: { host: string; port: number; tls?: { cert: string; key: string } };
+  /**
+   * The devices of the remote port (D-292, stage B): pairing, passkeys,
+   * sessions. Without it the remote port answers only the state of the
+   * session, always none, and refuses the rest.
+   */
+  remoteDevices?: RemoteDevices;
+  /** The remote port could not listen (a port taken): the core goes on without it. */
+  onRemoteError?: (error: unknown) => void;
   /** Errors are reported here, never sent to the client: they may hold data. */
   onError?: (error: unknown) => void;
 }
@@ -479,6 +497,8 @@ export interface LocalApi {
 export interface ApiServer {
   /** The bound port, useful with port 0 in tests. */
   readonly port: number;
+  /** The bound remote port (D-292); undefined without `[server.remote]` or when it could not listen. */
+  readonly remotePort: number | undefined;
   /** Pages holding the live feed now: with none, a call of Arianna rings by Web Push (D-066). */
   clients(): number;
   /** Pages that said they are in view (I-1): with none, a notice goes by Web Push. */
@@ -555,7 +575,25 @@ function route(method: string, path: string, handler: Handler): Route {
   return { method, pattern: new RegExp(`^${source}$`), keys, handler };
 }
 
+/**
+ * A body read once: the check of Face ID from the phone (D-292) reads it
+ * before the route, which gets the same. A later read with a smaller limit
+ * still refuses a body over it.
+ */
+const readBodies = new WeakMap<IncomingMessage, Promise<{ value: Record<string, unknown>; size: number }>>();
+
 async function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+  let read = readBodies.get(request);
+  if (read === undefined) {
+    read = parseJson(request, limit);
+    readBodies.set(request, read);
+  }
+  const { value, size } = await read;
+  if (size > limit) throw new HttpError(413, 'body too large');
+  return value;
+}
+
+async function parseJson(request: IncomingMessage, limit: number): Promise<{ value: Record<string, unknown>; size: number }> {
   const declared = Number(request.headers['content-length'] ?? '0');
   if (declared > limit) throw new HttpError(413, 'body too large');
   const chunks: Buffer[] = [];
@@ -572,7 +610,7 @@ async function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promi
     throw new HttpError(400, 'body is not valid JSON');
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new HttpError(400, 'body must be a JSON object');
-  return value as Record<string, unknown>;
+  return { value: value as Record<string, unknown>, size };
 }
 
 function onlyFields(body: Record<string, unknown>, allowed: readonly string[]): void {
@@ -601,10 +639,17 @@ function idParam(params: Params, key: string): string {
   return id;
 }
 
+/** The steps of pairing and sign-in carry a passkey: a few kilobytes, never the 1 MB of the other routes. */
+// Up to the body of an action (`/api/remote/verify` carries it) and a little more.
+const REMOTE_BODY_BYTES = MAX_BODY_BYTES + 16 * 1024;
+/** How often a live feed of the phone checks that its session is still alive. */
+const SESSION_CHECK_MS = 60_000;
+
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
 interface RouteOptions {
   cards: ApiServerOptions['cards'];
+  remoteDevices?: RemoteDevices | undefined;
   clients?: ApiServerOptions['clients'];
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
@@ -671,7 +716,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
   };
   const needPush = (): Pusher => {
     const pusher = pushers();
-    if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+    if (pusher === undefined) throw new HttpError(503, 'push off: add [push] to arianna.toml');
     return pusher;
   };
   return [
@@ -731,7 +776,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       const pusher = needPush();
       const body = await readJson(request);
       onlyFields(body, ['subscription']);
-      await pusher.subscribe(parseSubscription(body.subscription));
+      await pusher.subscribe(parseSubscription(body.subscription), remoteSessionOf(request)?.deviceId);
       return { status: 201, body: { ok: true } };
     }),
     route('POST', '/api/push/unsubscribe', async (request) => {
@@ -739,7 +784,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       const body = await readJson(request);
       onlyFields(body, ['endpoint']);
       if (typeof body.endpoint !== 'string') throw new HttpError(400, 'endpoint is required');
-      await pusher.unsubscribe(body.endpoint);
+      await pusher.unsubscribe(body.endpoint, remoteSessionOf(request)?.deviceId);
       return { body: { ok: true } };
     }),
     // From apps/voice, with the token of the call.
@@ -2657,7 +2702,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog, routines }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog, routines, remoteDevices }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -2676,6 +2721,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
     ...routineRoutes(routines, sql),
+    ...deviceRoutes(remoteDevices),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards, stopCard),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
@@ -3202,6 +3248,45 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * Impostazioni → Dispositivi (D-292, stage B), on the port of the Mac only
+ * (the remote door refuses these paths with or without a session): the
+ * paired devices with their last access, a new pairing code, «Scollega».
+ */
+function deviceRoutes(devices: RemoteDevices | undefined): Route[] {
+  const need = (): RemoteDevices => {
+    if (devices === undefined) throw new HttpError(404, 'not found');
+    return devices;
+  };
+  const answer = async <T>(work: () => Promise<T> | T): Promise<Result> => {
+    try {
+      return { body: await work() };
+    } catch (error) {
+      if (error instanceof RemoteError) return { status: error.status, body: { error: error.message, code: error.code } };
+      throw error;
+    }
+  };
+  return [
+    route('GET', '/api/devices', async () => {
+      const service = need();
+      return { body: { host: service.host, devices: await service.list(), code: service.codeState() } };
+    }),
+    route('POST', '/api/devices/code', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['name']);
+      return answer(() => need().newCode(body.name));
+    }),
+    route('POST', '/api/devices/:id/unlink', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      const service = need();
+      return answer(async () => {
+        await service.unlink(params.id ?? '');
+        return { unlinked: params.id };
+      });
     }),
   ];
 }
@@ -4832,6 +4917,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     designCatalog: options.designCatalog,
     skillsCatalog: options.skillsCatalog,
     routines: options.routines,
+    remoteDevices: options.remoteDevices,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...profileRoutes(sql));
@@ -4963,19 +5049,59 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     return reached;
   }
   let hosts = allowedHosts(options.host, options.port);
+  // The remote port (D-292): fixed by the configuration, whatever a request says.
+  const remote: RemoteDoor | undefined = options.remote === undefined ? undefined : remoteDoor(options.remote.host);
 
-  async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  /** `door`: the remote port, or undefined for the port of this Mac. Set by the listener, never by a header. */
+  async function handle(request: IncomingMessage, response: ServerResponse, door: RemoteDoor | undefined): Promise<void> {
     const host = request.headers.host?.toLowerCase() ?? '';
-    const headers = securityHeaders(host);
-    const check = checkRequest(
-      { method: request.method ?? 'GET', host: request.headers.host, origin: request.headers.origin, contentType: request.headers['content-type'] },
-      hosts,
-    );
+    const headers = door === undefined ? securityHeaders(host) : securityHeaders(door.name, true);
+    const facts = { method: request.method ?? 'GET', host: request.headers.host, origin: request.headers.origin, contentType: request.headers['content-type'] };
+    const check = door === undefined ? checkRequest(facts, hosts) : checkRequest(facts, door.hosts, door.origin);
     if (!check.ok) {
       sendJson(response, check.status, { error: check.reason }, headers);
       return;
     }
     const url = new URL(request.url ?? '/', `http://${host}`);
+    if (door !== undefined && url.pathname.startsWith('/api/')) {
+      let access;
+      try {
+        access = await remoteAccess(request, url.pathname, options.remoteDevices, () => readJson(request, REMOTE_BODY_BYTES));
+      } catch (error) {
+        const known = errorStatus(error);
+        if (known === undefined) options.onError?.(error);
+        sendJson(response, known?.status ?? 500, { error: known?.message ?? 'internal error' }, headers);
+        return;
+      }
+      if (access.kind === 'answer') {
+        sendJson(response, access.status, access.body, access.cookie === undefined ? headers : { ...headers, 'set-cookie': access.cookie });
+        return;
+      }
+      if (access.kind === 'refused') {
+        sendJson(response, access.status, access.body, headers);
+        return;
+      }
+      markRemote(request, access.session);
+      // A decision from the phone needs Face ID for exactly it (D-292, step-up): checked here, before the route reads or does anything.
+      const action = stepUpAction(request.method ?? 'GET', url.pathname);
+      if (action !== undefined) {
+        const devices = options.remoteDevices;
+        try {
+          if (devices === undefined) throw new RemoteError(403, 'verification-required', 'no passkey service');
+          const body = await readJson(request);
+          await devices.verifyIntent(access.session, { method: 'POST', path: url.pathname, body }, action, verificationOf(request.headers[VERIFICATION_HEADER]));
+        } catch (error) {
+          if (error instanceof RemoteError) {
+            sendJson(response, error.status, { error: error.message, code: error.code }, headers);
+            return;
+          }
+          const known = errorStatus(error);
+          if (known === undefined) options.onError?.(error);
+          sendJson(response, known?.status ?? 500, { error: known?.message ?? 'internal error' }, headers);
+          return;
+        }
+      }
+    }
     if (request.method === 'GET' && url.pathname === '/api/notifications/stream') {
       openHelperStream(request, response, headers);
       return;
@@ -5027,21 +5153,60 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   }
 
   const server: Server = createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, (request, response) => {
-    void handle(request, response);
+    void handle(request, response, undefined);
   });
+  const remoteTls = options.remote?.tls;
+  const onRemote = (request: IncomingMessage, response: ServerResponse): void => {
+    if (remote !== undefined) void handle(request, response, remote);
+  };
+  const remoteServer: Server | HttpsServer | undefined =
+    remote === undefined
+      ? undefined
+      : remoteTls === undefined
+        ? createServer({ requestTimeout: 30_000, headersTimeout: 10_000 }, onRemote)
+        : createHttpsServer({ requestTimeout: 30_000, headersTimeout: 10_000, cert: remoteTls.cert, key: remoteTls.key, minVersion: 'TLSv1.2' }, onRemote);
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // The screen of the browser (D-264, passo 4): RFB from the page, small messages only.
   const screenWss = new WebSocketServer({ noServer: true, maxPayload: SCREEN_MAX_PAYLOAD });
-  server.on('upgrade', (request: IncomingMessage, socket, head) => {
+  server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    upgrade(request, socket, head, undefined);
+  });
+  remoteServer?.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    upgrade(request, socket, head, remote);
+  });
+
+  function upgrade(request: IncomingMessage, socket: Duplex, head: Buffer, door: RemoteDoor | undefined): void {
     socket.on('error', () => {
       socket.destroy();
     });
     const url = new URL(request.url ?? '/', 'http://upgrade');
-    const check = checkRequest(
-      { method: 'GET', host: request.headers.host, origin: request.headers.origin, contentType: undefined, upgrade: true },
-      hosts,
-    );
+    const facts = { method: 'GET', host: request.headers.host, origin: request.headers.origin, contentType: undefined, upgrade: true };
+    const check = door === undefined ? checkRequest(facts, hosts) : checkRequest(facts, door.hosts, door.origin);
+    if (door !== undefined) {
+      // The same single entrance as the HTTP routes: only the live feed, with the session of a paired device.
+      if (!check.ok) {
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+        return;
+      }
+      remoteAccess(request, url.pathname, options.remoteDevices, () => Promise.resolve({}), true).then(
+        (access) => {
+          if (access.kind !== 'allowed') {
+            socket.end(`HTTP/1.1 ${access.kind === 'refused' && access.status === 403 ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`);
+            return;
+          }
+          if (socket.destroyed) return;
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            void connect(ws, url.searchParams.get('after') ?? undefined, access.session);
+          });
+        },
+        (error: unknown) => {
+          options.onError?.(error);
+          socket.end('HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n');
+        },
+      );
+      return;
+    }
     if (url.pathname === SCREEN_PATH) {
       const screens = options.browserScreens;
       const token = url.searchParams.get('t') ?? '';
@@ -5061,10 +5226,34 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     wss.handleUpgrade(request, socket, head, (ws) => {
       void connect(ws, url.searchParams.get('after') ?? undefined);
     });
+  }
+
+  /** The live feeds open from the phone (D-292), by device: «Scollega» closes them at once. */
+  const phoneSockets = new Map<string, Set<WebSocket>>();
+  options.remoteDevices?.onUnlink((deviceId) => {
+    for (const ws of phoneSockets.get(deviceId) ?? []) ws.close(4401, 'device unlinked');
   });
 
-  async function connect(ws: WebSocket, after: string | undefined): Promise<void> {
+  /** `session`: a feed of the phone, closed when its session ends (12 hours, 30 minutes idle, logout, unlinked). */
+  async function connect(ws: WebSocket, after: string | undefined, session?: RemoteSession): Promise<void> {
     sockets.add(ws);
+    let sessionCheck: ReturnType<typeof setInterval> | undefined;
+    const devices = options.remoteDevices;
+    if (session !== undefined && devices !== undefined) {
+      const own = phoneSockets.get(session.deviceId) ?? new Set<WebSocket>();
+      own.add(ws);
+      phoneSockets.set(session.deviceId, own);
+      sessionCheck = setInterval(() => {
+        devices.alive(session).then(
+          (alive) => {
+            if (!alive) ws.close(4401, 'session ended');
+          },
+          () => {
+            ws.close(4401, 'session ended');
+          },
+        );
+      }, SESSION_CHECK_MS);
+    }
     // An oversized or malformed frame is reported here; without a listener it would stop the process.
     ws.on('error', () => {
       ws.terminate();
@@ -5099,6 +5288,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     let stop: (() => void) | undefined;
     ws.on('close', () => {
       clearInterval(ping);
+      clearInterval(sessionCheck);
+      if (session !== undefined) phoneSockets.get(session.deviceId)?.delete(ws);
       sockets.delete(ws);
       visible.delete(ws);
       focused.delete(ws);
@@ -5136,9 +5327,27 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
   const port = (server.address() as AddressInfo).port;
   hosts = allowedHosts(options.host, port);
+  if (remoteServer !== undefined && options.remote !== undefined) {
+    const remotePort = options.remote.port;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        remoteServer.once('error', reject);
+        // 127.0.0.1 only, never the host of a configuration: tailscale serve reaches it from this Mac.
+        remoteServer.listen(remotePort, REMOTE_LISTEN_HOST, () => {
+          remoteServer.off('error', reject);
+          resolve();
+        });
+      });
+    } catch (error) {
+      // A port taken (EADDRINUSE) closes only the remote port: the chat of this Mac stays up.
+      options.onRemoteError?.(error);
+    }
+  }
+  const remotePort = remoteServer?.listening === true ? (remoteServer.address() as AddressInfo).port : undefined;
 
   return {
     port,
+    remotePort,
     clients: () => sockets.size,
     visiblePages: () => visible.size,
     readingPages: (conversationId) => [...focused.values()].filter((open) => open === conversationId).length,
@@ -5162,7 +5371,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       wss.close();
       screenWss.close();
       server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => { resolve(); }));
+      remoteServer?.closeAllConnections();
+      await Promise.all(
+        [server, ...(remoteServer === undefined ? [] : [remoteServer])].map(
+          (listener) =>
+            new Promise<void>((resolve) => listener.close(() => { resolve(); })),
+        ),
+      );
     },
   };
 }

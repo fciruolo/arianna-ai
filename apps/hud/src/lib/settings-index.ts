@@ -121,6 +121,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Quando Arianna ti avvisa se non stai guardando la chat. La notifica dice solo che c’è qualcosa, mai il testo.',
         example: 'spegni «Risposte nelle chat» e lascia «Approvazioni in attesa»: ti avvisa solo quando deve chiederti un sì.',
       },
+      // The phones paired through Tailscale (D-292, stage B): only from the Mac.
+      {
+        id: 'devices',
+        slug: 'dispositivi',
+        title: 'Dispositivi',
+        behaviour: 'now',
+        lead: 'I telefoni che aprono Arianna da fuori casa, attraverso la VPN di Tailscale. Si abbinano con un codice mostrato qui e una passkey con Face ID; si gestiscono solo dal Mac.',
+        example: 'premi «Nuovo codice», apri Arianna sull’iPhone e scrivi le 6 cifre: dopo Face ID il telefono compare qui. «Scollega» lo chiude subito.',
+      },
       // The secretary (I-12, D-144).
       {
         id: 'secretary',
@@ -307,7 +316,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   models: ['roles', 'sprites', 'cloudModels'],
   agents: ['characters', 'personas', 'agents', 'skills', 'participants'],
   voice: ['voice'],
-  // The keys of the notifications with the chat closed live in [voice.push] (D-066), shown here (D-192): `push` is that part of `voice`.
+  // The keys of the notifications with the chat closed (D-192), in [push] since D-292.
   notifications: ['notifications', 'push'],
   secretary: ['secretary'],
   executors: ['executors'],

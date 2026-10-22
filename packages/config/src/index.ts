@@ -75,6 +75,8 @@ export {
 export {
   CONFIG_FILE,
   DATA_DIR,
+  DEFAULT_REMOTE_PORT,
+  DEFAULT_REMOTE_TLS,
   DEFAULT_SERVER,
   EXAMPLE_CONFIG_FILE,
   INSTALLATION_MODES,
@@ -84,6 +86,12 @@ export {
   type AriannaConfig,
   type DatabaseConfig,
   type InstallationMode,
+  REMOTE_TLS_MODES,
+  remotePaths,
+  type RemotePaths,
+  type RemoteServerConfig,
+  type RemoteTlsMode,
+  type ServerConfig,
   userHomeOf,
 } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
@@ -141,6 +149,6 @@ export {
   type Settings,
 } from './settings.ts';
 export { guardPaths, type GuardPaths } from './guard.ts';
-export { DEFAULT_VOICE, parseVoice, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths, type VoicePaths, type OutgoingRules, type PushConfig, type VoiceConfig, type VoiceLimits } from './voice.ts';
+export { DEFAULT_VOICE, parsePush, parseVoice, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths, type VoicePaths, type OutgoingRules, type PushConfig, type VoiceConfig, type VoiceLimits } from './voice.ts';
 export { diffConfig, watchConfig, type ConfigChange, type ConfigWatcher } from './watch.ts';
 export { settingsFingerprint, StaleSettingsError, writeSettings, type WriteOptions } from './write.ts';

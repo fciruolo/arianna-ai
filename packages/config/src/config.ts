@@ -25,7 +25,7 @@ import { parseAppearance, type AppearanceConfig } from './appearance.ts';
 import { parseSprites, type SpritesConfig } from './sprites.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
-import { parseVoice, type VoiceConfig } from './voice.ts';
+import { parsePush, parseVoice, type PushConfig, type VoiceConfig } from './voice.ts';
 
 /**
  * The configuration of this installation, written by `pnpm arianna:init` and
@@ -35,12 +35,62 @@ export const CONFIG_FILE = join('config', 'arianna.toml');
 export const EXAMPLE_CONFIG_FILE = join('config', 'arianna.example.toml');
 
 export const DATA_DIR = 'data';
+
+/**
+ * The certificate of the remote port in mode `own` (D-292), under data/:
+ * the leaf and its key (0600, folder 0700), the public root for the phone,
+ * and the temporary files of `pnpm remote:cert`. The root's key never stays.
+ */
+export interface RemotePaths {
+  dir: string;
+  tmp: string;
+  root: string;
+  cert: string;
+  key: string;
+}
+
+export function remotePaths(data: string): RemotePaths {
+  const dir = join(data, 'remote');
+  return { dir, tmp: join(dir, 'tmp'), root: join(dir, 'arianna-root.crt'), cert: join(dir, 'server.crt'), key: join(dir, 'server.key') };
+}
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
-// The API serves L2 history in clear and without authentication: this machine
-// only, until the VPN proxy and authentication (task 1.13). Addresses, not
-// "localhost", which depends on /etc/hosts.
+// The API serves L2 history in clear: this machine only. The phone comes in
+// through the remote port of [server.remote], 127.0.0.1 too (D-292).
+// Addresses, not "localhost", which depends on /etc/hosts.
 const SERVER_HOSTS = ['127.0.0.1', '::1'];
 export const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
+/**
+ * `[server.remote]` (D-292): the port that `tailscale serve` publishes on the
+ * tailnet as https://<host>. It listens on 127.0.0.1 only, like `[server]`.
+ */
+export const DEFAULT_REMOTE_PORT = 7443;
+/**
+ * Who ends TLS on the remote port (D-292). `own`: the core, with the
+ * certificate of `pnpm remote:cert` in data/remote/, and Tailscale forwards
+ * TCP without opening it; no certificate of this name in the public
+ * Certificate Transparency logs. `tailscale`: Tailscale ends HTTPS with its
+ * own certificate and talks HTTP to the core.
+ */
+export const REMOTE_TLS_MODES = ['own', 'tailscale'] as const;
+export type RemoteTlsMode = (typeof REMOTE_TLS_MODES)[number];
+export const DEFAULT_REMOTE_TLS: RemoteTlsMode = 'own';
+// The MagicDNS name of this Mac on the tailnet: lowercase DNS labels, ending in .ts.net.
+const TAILNET_NAME = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/;
+
+export interface RemoteServerConfig {
+  /** The `*.ts.net` name the phone opens: the only Host and Origin the remote port accepts. */
+  host: string;
+  /** Loopback port behind `tailscale serve`; never the port of `[server]`. */
+  port: number;
+  tls: RemoteTlsMode;
+}
+
+export interface ServerConfig {
+  host: string;
+  port: number;
+  /** Absent: no remote port, the chat is reachable from this Mac only. */
+  remote?: RemoteServerConfig;
+}
 // The role the core works as (task 1.13, D-046), created by migration 0007:
 // fixed, because migrations are in git and cannot read this file.
 const APP_ROLE = 'arianna_app';
@@ -66,8 +116,8 @@ export interface AriannaConfig {
   /** Absolute paths, always inside `home`. */
   paths: { data: string };
   database: DatabaseConfig;
-  /** API, WebSocket and web chat of the core (task 1.11). */
-  server: { host: string; port: number };
+  /** API, WebSocket and web chat of the core (task 1.11); `remote` the port behind Tailscale (D-292). */
+  server: ServerConfig;
   /** Role → id in config/models.catalog.yaml (task 1.18). */
   roles: Roles;
   local: LocalConfig;
@@ -103,6 +153,12 @@ export interface AriannaConfig {
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
   voice?: VoiceConfig;
   /**
+   * Web Push (D-066, D-292): `[push]`, or `[voice.push]` of the files written
+   * before it; absent, no notification reaches a closed chat. Independent of
+   * the voice service: the chat notifications need only the keys.
+   */
+  push?: PushConfig;
+  /**
    * `[installation]` (D-089): `mode = "development"` marks this installation as
    * development even with real passwords; absent, the passwords decide.
    */
@@ -126,7 +182,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'series', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'appearance', 'capture', 'web', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'series', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'appearance', 'capture', 'web', 'telegram', 'voice', 'push', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -149,7 +205,11 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
 
   const telegram = parseTelegram(root.telegram);
   const voice = parseVoice(root.voice);
-  if (voice !== undefined && voice.port === parseServer(root.server).port) throw new ConfigError('voice.port: must differ from server.port');
+  const server = parseServer(root.server);
+  if (voice !== undefined && voice.port === server.port) throw new ConfigError('voice.port: must differ from server.port');
+  if (voice !== undefined && voice.port === server.remote?.port) throw new ConfigError('voice.port: must differ from server.remote.port');
+  if (root.push !== undefined && voice?.push !== undefined) throw new ConfigError('push: set Web Push in [push] or in [voice.push], not both');
+  const push = root.push === undefined ? voice?.push : parsePush(root.push, 'push');
   const roles = parseRoles(root.roles, catalog);
   const installation = parseInstallation(root.installation);
   const cloud = parseCloud(root.cloud);
@@ -157,7 +217,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     home,
     paths: { data },
     database: parseDatabase(database, host),
-    server: parseServer(root.server),
+    server,
     roles,
     local: parseLocal(root.local, roles),
     cloud,
@@ -176,6 +236,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     web: parseWeb(root.web),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
+    ...(push === undefined ? {} : { push }),
     ...(installation === undefined ? {} : { installation }),
   };
 }
@@ -216,11 +277,29 @@ function parseDatabase(database: Record<string, unknown>, host: string): Databas
 function parseServer(value: unknown): AriannaConfig['server'] {
   if (value === undefined) return { ...DEFAULT_SERVER };
   const server = asTable(value, 'server');
-  onlyKeys(server, ['host', 'port'], 'server');
+  onlyKeys(server, ['host', 'port', 'remote'], 'server');
   const host = server.host === undefined ? DEFAULT_SERVER.host : asString(server.host, 'server.host');
   if (!SERVER_HOSTS.includes(host)) throw new ConfigError(`server.host: must be one of ${SERVER_HOSTS.join(', ')}`);
   const port = server.port === undefined ? DEFAULT_SERVER.port : asInteger(server.port, 'server.port', 1, 65535);
-  return { host, port };
+  const remote = parseRemote(server.remote, port);
+  return { host, port, ...(remote === undefined ? {} : { remote }) };
+}
+
+/** `[server.remote]` (D-292): a name, a port and who ends TLS; the address is always 127.0.0.1. */
+function parseRemote(value: unknown, serverPort: number): RemoteServerConfig | undefined {
+  if (value === undefined) return undefined;
+  const remote = asTable(value, 'server.remote');
+  onlyKeys(remote, ['host', 'port', 'tls'], 'server.remote');
+  const host = asString(remote.host, 'server.remote.host');
+  if (host.length > 253 || !TAILNET_NAME.test(host)) {
+    throw new ConfigError('server.remote.host: the Tailscale name of this Mac, lowercase, ending in .ts.net (e.g. "mac-studio.tail1234.ts.net")');
+  }
+  const port = remote.port === undefined ? DEFAULT_REMOTE_PORT : asInteger(remote.port, 'server.remote.port', 1024, 65535);
+  if (port === serverPort) throw new ConfigError('server.remote.port: must differ from server.port');
+  const tlsText = remote.tls === undefined ? DEFAULT_REMOTE_TLS : asString(remote.tls, 'server.remote.tls');
+  const tls = REMOTE_TLS_MODES.find((mode) => mode === tlsText);
+  if (tls === undefined) throw new ConfigError(`server.remote.tls: must be one of ${REMOTE_TLS_MODES.join(', ')}`);
+  return { host, port, tls };
 }
 
 /** The user's home, where `~/` of a project points: HOME, or the account's when it is unset. */

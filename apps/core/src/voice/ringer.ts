@@ -30,7 +30,7 @@ export interface RingerOptions {
   voiceUp: () => boolean;
   /** Keeps the voice in place from the check of `voiceUp` to the row of the call (the switch of the core, D-071). */
   hold?: <T>(work: () => Promise<T>) => Promise<T>;
-  /** Web Push "Arianna ti chiama", read at each ring; undefined without [voice.push]. */
+  /** Web Push "Arianna ti chiama", read at each ring; undefined without [push] (or [voice.push] of an older file). */
   notify?: () => (() => Promise<void>) | undefined;
   /**
    * Whether the conversation's call can be answered now (D-158: in a direct
