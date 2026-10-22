@@ -9,7 +9,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowR
 import { loadWikiTargets, type WikiCitationTarget } from '../lib/api.ts';
 import { BLOCK_KINDS, blockAt, canTransform, deleteBlock, duplicateBlock, kindOf, makeKind, slashItems, startBlockDrag, topBlocks, transformBlock, type BlockKind, type SlashItem } from '../lib/wiki-blocks.ts';
 import { cursorInCell, docToMarkdown, markdownToDoc, wikiExtensions } from '../lib/wiki-editor.ts';
-import type { WikiMenuItem } from '../lib/wiki.ts';
+import { citationKey, citationListNote, citationTitle, nextCitationList, type WikiCitationInfo, type WikiMenuItem } from '../lib/wiki.ts';
 import WikiMenu from './WikiMenu.vue';
 
 /**
@@ -25,7 +25,8 @@ import WikiMenu from './WikiMenu.vue';
  */
 
 /** `autofocus`: the cursor goes in the text as soon as the editor is ready (a new page, D-284). */
-const props = defineProps<{ modelValue: string; autofocus?: boolean }>();
+/** `citations`: what the citations of the page show (D-288), as the core gave them with the page. */
+const props = defineProps<{ modelValue: string; autofocus?: boolean; citations?: Record<string, WikiCitationInfo> }>();
 const emit = defineEmits<{
   'update:modelValue': [value: string];
   /** A click on a citation: the page of the Wiki or the note it names. */
@@ -48,16 +49,25 @@ interface ListState<T> {
   left: number;
   command: ((item: T) => void) | null;
   loading: boolean;
+  /** The last search failed: the list says so instead of «Nessuna» (D-288). */
+  failed: boolean;
 }
 
 function listState<T>(): ListState<T> {
-  return { open: false, items: [], index: 0, top: 0, left: 0, command: null, loading: false };
+  return { open: false, items: [], index: 0, top: 0, left: 0, command: null, loading: false, failed: false };
 }
 
 const suggest = reactive<ListState<WikiCitationTarget>>(listState());
 const slash = reactive<ListState<SlashItem>>(listState());
 
-let requests = 0;
+/** The titles of the citations chosen from the list in this session, by target: the page's `citations` do not have them yet (D-288). */
+const chosenTitles = new Map<string, string>();
+
+/** What a citation shows besides its target: the title of its note or page (D-288). */
+function titleOf(target: string): string | undefined {
+  return chosenTitles.get(citationKey(target)) ?? citationTitle(props.citations, target);
+}
+
 let frame: number | undefined;
 
 function placeList(state: { top: number; left: number }, rect: DOMRect | null | undefined): void {
@@ -81,10 +91,11 @@ function listKeys<T>(state: ListState<T>, event: KeyboardEvent): boolean {
     return true;
   }
   if (event.key === 'Enter' || event.key === 'Tab') {
+    // While the answer for what was just typed is coming, Enter waits (neither an old item nor a new line).
+    if (state.loading) return true;
     const item = state.items[state.index];
     if (item !== undefined) state.command?.(item);
-    // While the list is coming, Enter waits instead of breaking the line.
-    return item !== undefined || state.loading;
+    return item !== undefined;
   }
   if (event.key === 'Escape') {
     state.open = false;
@@ -170,19 +181,17 @@ const CitationSuggest = Extension.create({
         // After any character, not only a space: «(vedi [[» too.
         allowedPrefixes: null,
         debounce: 150,
-        items: async ({ query }) => {
-          // Only the latest request says when the list is ready.
-          const asked = ++requests;
-          suggest.loading = true;
+        // When the list is ready says the editor (`loading` of its state, D-288): it drops an answer when a newer search started.
+        items: async ({ query, signal }) => {
           try {
             return await loadWikiTargets(query);
-          } catch {
-            return [];
-          } finally {
-            if (asked === requests) suggest.loading = false;
+          } catch (failure) {
+            if (!signal.aborted) suggest.failed = true;
+            throw failure;
           }
         },
         command: ({ editor: current, range, props: item }) => {
+          chosenTitles.set(citationKey(item.target), item.title);
           current
             .chain()
             .focus()
@@ -195,20 +204,24 @@ const CitationSuggest = Extension.create({
         render: () => ({
           onStart: (state) => {
             suggest.open = true;
-            suggest.items = state.items;
+            Object.assign(suggest, nextCitationList({ items: [], loading: false, failed: false }, state));
             suggest.index = 0;
             suggest.command = state.command;
             placeList(suggest, state.clientRect?.());
           },
           onUpdate: (state: SuggestionProps<WikiCitationTarget, WikiCitationTarget>) => {
-            suggest.items = state.items;
-            suggest.index = Math.min(suggest.index, Math.max(0, state.items.length - 1));
+            const answered = suggest.loading && !state.loading;
+            Object.assign(suggest, nextCitationList(suggest, state));
+            // New items from an answer: the first is chosen, not the place the arrows had on the old ones.
+            suggest.index = answered ? 0 : Math.min(suggest.index, Math.max(0, suggest.items.length - 1));
             suggest.command = state.command;
             placeList(suggest, state.clientRect?.());
           },
           onExit: () => {
             suggest.open = false;
             suggest.items = [];
+            suggest.loading = false;
+            suggest.failed = false;
             suggest.command = null;
           },
           onKeyDown: ({ event }: SuggestionKeyDownProps) => listKeys(suggest, event),
@@ -380,7 +393,7 @@ function create(text: string): void {
   editor.value = new Editor({
     element: host.value,
     extensions: [
-      ...wikiExtensions(),
+      ...wikiExtensions(titleOf),
       UndoRedo,
       Dropcursor.configure({ color: 'var(--accent)', width: 2 }),
       Gapcursor,
@@ -562,7 +575,7 @@ onBeforeUnmount(() => {
       role="listbox"
       aria-label="Note e pagine da citare"
     >
-      <li v-if="suggest.items.length === 0" class="px-2 py-1 text-muted">{{ suggest.loading ? 'Cerco…' : 'Nessuna nota o pagina con queste parole: prova con una parte del percorso.' }}</li>
+      <li v-if="citationListNote(suggest) !== null" class="px-2 py-1 text-muted">{{ citationListNote(suggest) }}</li>
       <li
         v-for="(item, at) in suggest.items"
         :key="item.target"

@@ -34,9 +34,14 @@ export interface CitationAttrs {
   label: string | null;
 }
 
-/** What a citation shows: its label, or the last part of its target. */
-export function citationText(attrs: CitationAttrs): string {
+/** The title the core gave for a citation's target (D-288), or undefined: the note or page is not known. */
+export type CitationTitle = (target: string) => string | undefined;
+
+/** What a citation shows: its label, else the title of its note or page (D-288), else the last part of its target. */
+export function citationText(attrs: CitationAttrs, titleOf?: CitationTitle): string {
   if (attrs.label !== null && attrs.label !== '') return attrs.label;
+  const title = titleOf?.(attrs.target);
+  if (title !== undefined && title !== '') return title;
   return attrs.target.split('/').at(-1) ?? attrs.target;
 }
 
@@ -52,13 +57,17 @@ function attrsOf(value: Record<string, unknown> | undefined): CitationAttrs {
 }
 
 /** The citation `[[nota]]` as a label in the editor: one piece, never a link. */
-export const WikiCitation = Node.create({
+export const WikiCitation = Node.create<{ titleOf: CitationTitle | undefined }>({
   name: 'wikiCitation',
   group: 'inline',
   inline: true,
   atom: true,
   selectable: true,
   draggable: false,
+
+  addOptions() {
+    return { titleOf: undefined };
+  },
 
   addAttributes() {
     return {
@@ -81,7 +90,7 @@ export const WikiCitation = Node.create({
     return [
       'span',
       { 'data-wiki-citation': '', 'data-target': attrs.target, ...(attrs.label === null ? {} : { 'data-label': attrs.label }), class: 'wiki-citation', title: `${citationMarkdown(attrs)} · ⌘ o Ctrl + clic per aprire` },
-      citationText(attrs),
+      citationText(attrs, this.options.titleOf),
     ];
   },
 
@@ -179,7 +188,8 @@ export function flattenCells(doc: JSONContent): JSONContent {
 }
 
 /** The schema of a page: nothing that could load or follow something. */
-export function wikiExtensions(): AnyExtension[] {
+/** `titleOf`: what the citations show besides their target (D-288); the Markdown is the same with or without it. */
+export function wikiExtensions(titleOf?: CitationTitle): AnyExtension[] {
   return [
     Document,
     Paragraph,
@@ -203,7 +213,7 @@ export function wikiExtensions(): AnyExtension[] {
     TableRow,
     TableHeader,
     TableCell,
-    WikiCitation,
+    titleOf === undefined ? WikiCitation : WikiCitation.configure({ titleOf }),
     WikiCellLines,
   ];
 }

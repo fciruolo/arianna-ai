@@ -1372,7 +1372,7 @@ function userLinkOk(home: string, rules: LabelRules, target: string): boolean {
   if (target.toLowerCase().startsWith(`${WIKI_ID}/`)) {
     const path = target.slice(WIKI_ID.length + 1).replace(/\.md$/, '');
     try {
-      readWikiView(home, rules, path);
+      wikiView(home, rules, path);
       return true;
     } catch {
       return false;
@@ -1440,7 +1440,7 @@ export function wikiCitationTargets(home: string, rules: LabelRules, query: stri
     if (!matches(`${page.path} ${page.title}`)) continue;
     // As the save checks it: a page whose header says more than L2 is not offered.
     try {
-      readWikiView(home, rules, page.path);
+      wikiView(home, rules, page.path);
     } catch {
       continue;
     }
@@ -1451,7 +1451,8 @@ export function wikiCitationTargets(home: string, rules: LabelRules, query: stri
   const ids = listPageIds(kb).filter(isWikiSource);
   const note = (id: string): CitationTarget | undefined => {
     try {
-      return { target: vaultId(id), title: readKnowledgePage(home, rules, id).title, kind: 'note' };
+      const page = readKnowledgePage(home, rules, id);
+      return { target: vaultId(id), title: noteShownTitle(id, page.title, page.body), kind: 'note' };
     } catch {
       return undefined;
     }
@@ -1678,6 +1679,81 @@ export interface WikiPageView {
   version: string;
   updatedAt: string;
   versions: WikiVersion[];
+  /**
+   * What the citations `[[…]]` of the body show in the chat (D-288), by the
+   * target as written (`inbox/x`, `wiki/cucina/pane`): the title of the note
+   * or of the page, and for a note where it is now. Only notes up to L2 that
+   * exist and pages up to L2; the others are not here and show as written.
+   */
+  citations: Record<string, CitationInfo>;
+}
+
+export interface CitationInfo {
+  title: string;
+  /** For a note: where it is now, relative to kb/ (`inbox/x.md`; `archivio/…` after the Archivist moved it). */
+  note?: string;
+}
+
+/** Distinct citations of a page resolved for the chat at most. */
+const MAX_CITATIONS_SHOWN = 200;
+
+/**
+ * The title a note shows when cited (D-288): the title of its header, else
+ * its first heading, else its file name. A note captured without a title
+ * (`kb/inbox/2026-10-22-103000-idea.md`) shows its heading, not its path.
+ */
+export function noteShownTitle(id: string, title: string, body: string): string {
+  const name = id.split('/').at(-1)?.replace(/\.md$/, '') ?? id;
+  if (title !== name) return title;
+  // Not a `#` line inside a fenced block of code (a comment of a shell, say).
+  const prose = body.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '');
+  const heading = /^#{1,6}[ \t]+(.+?)[ \t#]*$/m.exec(prose)?.[1]?.replace(/\s+/g, ' ').trim() ?? '';
+  return heading === '' ? name : heading.slice(0, MAX_WIKI_TITLE);
+}
+
+/** The target of a citation as written (`[[a\\|b]]` in a table, `#part`, `.md`): what `citations` is keyed by. */
+export function citationKey(inner: string): string {
+  return ((inner.replace(/\\\|/g, '|').split('|')[0] ?? '').split('#')[0] ?? '').trim().replace(/\\$/, '').replace(/\.md$/, '');
+}
+
+/** See `WikiPageView.citations`: read only here, for the chat on the Mac; never logged nor sent anywhere else. */
+function citationInfo(home: string, rules: LabelRules, body: string): Record<string, CitationInfo> {
+  const keys = [...new Set([...body.matchAll(/\[\[([^[\]\n]{1,400})\]\]/g)].map((match) => citationKey(match[1] ?? '')))].filter((key) => key !== '').slice(0, MAX_CITATIONS_SHOWN);
+  // A Map, then own properties: a target like `__proto__` is a key as any other.
+  const found = new Map<string, CitationInfo>();
+  let ids: string[] | undefined;
+  const note = (id: string): CitationInfo | undefined => {
+    try {
+      const page = readKnowledgePage(home, rules, id);
+      return { title: noteShownTitle(id, page.title, page.body), note: id };
+    } catch {
+      // One note that cannot be read shows as written: the page opens all the same.
+      return undefined;
+    }
+  };
+  for (const key of keys) {
+    if (key.toLowerCase().startsWith(`${WIKI_ID}/`)) {
+      try {
+        found.set(key, { title: wikiView(home, rules, key.slice(WIKI_ID.length + 1)).title });
+      } catch {
+        // Not a page up to L2 that exists: shown as written.
+      }
+      continue;
+    }
+    const id = `${key}.md`;
+    if (!isWikiSource(id)) continue;
+    let info = note(id);
+    if (info === undefined) {
+      // Moved by the Archivist since (kb/inbox → kb/archivio): found again by its file name when only one note has it.
+      const kb = kbReal(home);
+      if (kb === undefined) continue;
+      ids ??= listPageIds(kb).filter(isWikiSource);
+      const moved = resolveWikilink(key.split('/').at(-1) ?? key, ids);
+      info = moved === undefined ? undefined : note(moved);
+    }
+    if (info !== undefined) found.set(key, info);
+  }
+  return Object.fromEntries(found);
 }
 
 export interface VersionComparison {
@@ -1726,6 +1802,12 @@ export function compareWikiVersion(home: string, rules: LabelRules, path: string
 
 /** A page or an index of the wiki to read: `laravel/octane/swoole`, `laravel/_indice`, `_indice`. */
 export function readWikiView(home: string, rules: LabelRules, path: string): WikiPageView {
+  const view = wikiView(home, rules, path);
+  return { ...view, citations: citationInfo(home, rules, view.body) };
+}
+
+/** A page or an index as `readWikiView` reads it, without what its citations show. */
+function wikiView(home: string, rules: LabelRules, path: string): Omit<WikiPageView, 'citations'> {
   if (typeof path !== 'string' || path.length > 200) throw new WikiError('not-found', 'page not found');
   const index = path === '_indice' || path.endsWith('/_indice');
   const folder = index ? path.slice(0, Math.max(0, path.length - '_indice'.length - 1)) : '';

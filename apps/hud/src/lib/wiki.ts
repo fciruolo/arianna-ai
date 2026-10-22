@@ -31,6 +31,25 @@ export interface WikiPageView {
   version: string;
   updatedAt: string;
   versions: WikiVersion[];
+  /** What the citations of the body show (D-288), by `citationKey` of their target: only notes and pages the core found up to L2. */
+  citations: Record<string, WikiCitationInfo>;
+}
+
+export interface WikiCitationInfo {
+  title: string;
+  /** For a note: where it is now, relative to kb/ (`inbox/x.md`, or `archivio/…` once the Archivist moved it). */
+  note?: string;
+}
+
+/** The target of a citation as the core keys `citations`: no label after `|` (`\\|` in a table), no `#part`, no `.md`. */
+export function citationKey(target: string): string {
+  return ((target.replace(/\\\|/g, '|').split('|')[0] ?? '').split('#')[0] ?? '').trim().replace(/\\$/, '').replace(/\.md$/, '');
+}
+
+/** The title the core gave for a citation, or undefined. */
+export function citationTitle(citations: Readonly<Record<string, WikiCitationInfo>> | undefined, target: string): string | undefined {
+  const key = citationKey(target);
+  return citations !== undefined && Object.hasOwn(citations, key) ? citations[key]?.title : undefined;
 }
 
 export type WikiDiffKind = 'context' | 'added' | 'removed';
@@ -152,10 +171,13 @@ export function indexPath(folder: string): string {
  * Where a wikilink of a page leads: a page or an index of the Wiki
  * (`[[wiki/laravel/octane/_indice|…]]`), or a note of kb/ to open in Conoscenza.
  */
-export function wikilinkTarget(target: string): { wiki: string } | { note: string } {
-  const clean = (target.replace(/\\\|/g, '|').split('|')[0] ?? '').split('#')[0]?.trim().replace(/\\$/, '').replace(/\.md$/, '') ?? '';
-  if (clean.startsWith('wiki/')) return { wiki: clean.slice('wiki/'.length) };
-  return { note: `${clean}.md` };
+export function wikilinkTarget(target: string, citations?: Readonly<Record<string, WikiCitationInfo>>): { wiki: string } | { note: string } {
+  const clean = citationKey(target);
+  // `Wiki/…` too, as the core reads it.
+  if (clean.toLowerCase().startsWith('wiki/')) return { wiki: clean.slice('wiki/'.length) };
+  // A note the Archivist moved since (kb/inbox → kb/archivio) opens where it is now (D-288).
+  const now = citations !== undefined && Object.hasOwn(citations, clean) ? citations[clean]?.note : undefined;
+  return { note: now ?? `${clean}.md` };
 }
 
 /** The folders a page sits in, from the top: for opening them in the tree. */
@@ -458,4 +480,31 @@ export function versionErrorText(status: number, message: string): string {
   if (status === 404) return 'Questa versione non c’è più: l’elenco delle versioni è aggiornato.';
   if (message.startsWith('edited')) return 'Questa versione non è una pagina scritta da Arianna o da te: non si ripristina.';
   return wikiErrorText(status, message);
+}
+
+/** What the list of «[[» shows (D-288): the items, whether an answer is still coming, whether the last search failed. */
+export interface CitationListView<T> {
+  items: T[];
+  loading: boolean;
+  failed: boolean;
+}
+
+/**
+ * The list after a new state from the editor (D-288). While a search is
+ * coming (also before the first answer, during the pause after a key) the
+ * items shown stay, so the list neither blinks nor says «Nessuna» too
+ * early; only an answer replaces them. Answers out of order never get
+ * here: the editor drops a search when a newer one starts.
+ */
+export function nextCitationList<T>(shown: CitationListView<T>, state: { items: T[]; loading: boolean }): CitationListView<T> {
+  if (state.loading) return { items: shown.items, loading: true, failed: false };
+  return { items: state.items, loading: false, failed: shown.failed };
+}
+
+/** The line in place of the items: null when there are items; «Nessuna nota o pagina» only after an answer arrived empty. */
+export function citationListNote(view: CitationListView<unknown>): string | null {
+  if (view.items.length > 0) return null;
+  if (view.loading) return 'Cerco…';
+  if (view.failed) return 'Non riesco a cercare adesso: riprova fra poco.';
+  return 'Nessuna nota o pagina con queste parole: prova con una parte del percorso.';
 }

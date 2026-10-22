@@ -6,6 +6,10 @@ import { isWikiNode, matchesView } from '../src/lib/graph.ts';
 import { isWikiPath, WIKI_PATH } from '../src/lib/route.ts';
 import {
   ancestorsOf,
+  citationKey,
+  citationListNote,
+  citationTitle,
+  nextCitationList,
   buildWikiTree,
   folderName,
   indexPath,
@@ -101,6 +105,10 @@ test('a wikilink leads to a page of the Wiki or to a note in Conoscenza', () => 
   assert.deepEqual(wikilinkTarget('wiki/laravel/swoole'), { wiki: 'laravel/swoole' });
   assert.deepEqual(wikilinkTarget('inbox/2026-10-21-nota'), { note: 'inbox/2026-10-21-nota.md' });
   assert.deepEqual(wikilinkTarget('archivio/private/casa/x.md'), { note: 'archivio/private/casa/x.md' });
+  // A note the Archivist moved opens where the core found it (D-288); an unknown one as written.
+  const citations = { 'inbox/2026-10-21-nota': { title: 'Nota finta', note: 'archivio/lavoro/2026-10-21-nota.md' } };
+  assert.deepEqual(wikilinkTarget('inbox/2026-10-21-nota', citations), { note: 'archivio/lavoro/2026-10-21-nota.md' });
+  assert.deepEqual(wikilinkTarget('inbox/altra', citations), { note: 'inbox/altra.md' });
 });
 
 test('errors of the core in Italian', () => {
@@ -291,4 +299,34 @@ test('a version gone or not restorable says so, the rest as the other errors of 
   assert.match(versionErrorText(409, 'edited: that version is not a page the code wrote'), /non si ripristina/);
   assert.equal(versionErrorText(409, 'changed: the page changed'), wikiErrorText(409, 'changed: the page changed'));
   assert.doesNotMatch(versionErrorText(500, 'x'), /non c’è più/);
+});
+
+test('the title of a citation, by its target as the core keys it (D-288)', () => {
+  assert.equal(citationKey('inbox/x\\|La X'), 'inbox/x');
+  assert.equal(citationKey('inbox/x.md#parte'), 'inbox/x');
+  const citations = { 'inbox/x': { title: 'Nota finta', note: 'inbox/x.md' } };
+  assert.equal(citationTitle(citations, 'inbox/x.md'), 'Nota finta');
+  assert.equal(citationTitle(citations, 'inbox/y'), undefined);
+  assert.equal(citationTitle(citations, 'constructor'), undefined);
+  assert.equal(citationTitle(undefined, 'inbox/x'), undefined);
+});
+
+test('«[[» says «Nessuna nota o pagina» only after an answer arrived empty (D-288)', () => {
+  const empty = { items: [] as string[], loading: false, failed: false };
+  // Just typed: the editor waits for the pause, then asks; meanwhile «Cerco…», never «Nessuna».
+  const started = nextCitationList(empty, { items: [], loading: true });
+  assert.equal(citationListNote(started), 'Cerco…');
+  const answered = nextCitationList(started, { items: ['inbox/x'], loading: false });
+  assert.deepEqual(answered.items, ['inbox/x']);
+  assert.equal(citationListNote(answered), null);
+  // A new key: the items shown stay while the next answer comes, the list does not blink.
+  const typing = nextCitationList(answered, { items: [], loading: true });
+  assert.deepEqual(typing.items, ['inbox/x']);
+  assert.equal(typing.loading, true);
+  const none = nextCitationList(typing, { items: [], loading: false });
+  assert.match(citationListNote(none) ?? '', /^Nessuna nota o pagina/);
+  // A failed search says so, and the next one starts clean.
+  const failed = nextCitationList({ ...typing, failed: true }, { items: [], loading: false });
+  assert.match(citationListNote(failed) ?? '', /^Non riesco a cercare/);
+  assert.equal(nextCitationList(failed, { items: [], loading: true }).failed, false);
 });

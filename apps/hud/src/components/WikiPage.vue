@@ -329,7 +329,7 @@ function choose(node: WikiNode): void {
 
 /** A citation of the page: another page of the Wiki here, a note in Conoscenza. */
 function follow(target: string): void {
-  const where = wikilinkTarget(target);
+  const where = wikilinkTarget(target, page.value?.citations);
   if ('wiki' in where) {
     void showPath(where.wiki);
     return;
@@ -1399,7 +1399,7 @@ onBeforeUnmount(() => {
               @keydown="onTitleKey"
             />
             <div class="mt-4">
-              <WikiEditor :key="session" ref="editorRef" v-model="draftBody" :autofocus="autofocus" @follow="follow" />
+              <WikiEditor :key="session" ref="editorRef" v-model="draftBody" :autofocus="autofocus" :citations="page.citations" @follow="follow" />
             </div>
 
             <details v-if="page.versions.length > 0" class="mt-8 border-t border-line pt-3 text-[13.5px]">

@@ -51,6 +51,29 @@ test('a citation is one piece with its target and label', () => {
   assert.equal(citationMarkdown({ target: 'inbox/nota', label: null }), '[[inbox/nota]]');
 });
 
+test('a citation without a label shows the title the core gave, never changing the Markdown (D-288)', () => {
+  const titles: Record<string, string> = { 'inbox/2026-10-22-103000-idea': 'Idea finta sul pane' };
+  const titleOf = (target: string): string | undefined => titles[target];
+  assert.equal(citationText({ target: 'inbox/2026-10-22-103000-idea', label: null }, titleOf), 'Idea finta sul pane');
+  // The label written wins; an unknown target shows the last part of its path, as before.
+  assert.equal(citationText({ target: 'inbox/2026-10-22-103000-idea', label: 'la mia' }, titleOf), 'la mia');
+  assert.equal(citationText({ target: 'inbox/sconosciuta', label: null }, titleOf), 'sconosciuta');
+  const text = 'Vedi [[inbox/2026-10-22-103000-idea]].';
+  const editor = new Editor({ element: null, extensions: wikiExtensions(titleOf), content: markdownToDoc(text) });
+  try {
+    // What the editor draws for the citation, as ProseMirror's spec (no DOM in the tests): its text is the title.
+    let shown: unknown;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'wikiCitation') shown = node.type.spec.toDOM?.(node);
+    });
+    assert.ok(Array.isArray(shown));
+    assert.equal(shown.at(-1), 'Idea finta sul pane');
+    assert.equal(docToMarkdown(editor.getJSON()).trim(), text);
+  } finally {
+    editor.destroy();
+  }
+});
+
 test('the editor has no link, image or HTML: they stay text, and an address stays for the core to refuse', () => {
   const doc = markdownToDoc('Un [link](https://esempio.invalid/?q=1) e ![img](x.png) e <img src=x> e https://nudo.invalid.');
   assert.deepEqual(unknownTypes(doc), []);

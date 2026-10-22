@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Scrivendo «[[» nella Wiki il menù dice «Cerco…» finché non arrivano i risultati e «Nessuna nota o pagina» solo quando la ricerca non ha trovato niente; le voci restano ferme mentre scrivi e Invio aspetta la risposta (D-288).
+- Una nota citata in una pagina della Wiki si vede col suo titolo (dall'intestazione o dal primo titolo del testo) invece che col nome del file, e ⌘ o Ctrl + clic la apre anche dopo che l'Archivista l'ha spostata dall'inbox (D-288).
+
 ## [0.165.0] - 2026-10-22
 
 ### Aggiunto

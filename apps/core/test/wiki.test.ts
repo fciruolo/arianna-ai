@@ -591,6 +591,55 @@ describe('what «[[» suggests', () => {
     writeFileSync(join(root, 'kb/wiki/laravel/octane/segreta.md'), '---\nlabel: L3\nkind: wiki\ntitle: "Octane segreta"\n---\n\nsegreta finta\n');
     assert.ok(!wikiCitationTargets(root, strict, 'octane').some((item) => item.target === 'wiki/laravel/octane/segreta'));
   });
+
+  it('a note without a title in its header is offered by its first heading (D-288)', () => {
+    const root = home({ 'kb/inbox/2026-10-22-103000-idea.md': '---\nlabel: L2\nstatus: new\n---\n\n# Idea finta sul pane\n\ntesto finto\n' });
+    const item = wikiCitationTargets(root, RULES, 'idea').find((target) => target.target === 'inbox/2026-10-22-103000-idea');
+    assert.equal(item?.title, 'Idea finta sul pane');
+    // A `#` line in a block of code is not the title.
+    const code = home({ 'kb/inbox/2026-10-22-104000-script.md': '---\nlabel: L2\n---\n\n```sh\n# commento finto\n```\n\n## Script finto\n' });
+    assert.equal(wikiCitationTargets(code, RULES, 'script').find((target) => target.target === 'inbox/2026-10-22-104000-script')?.title, 'Script finto');
+  });
+});
+
+describe('what the citations of a page show (D-288)', () => {
+  it('a note of the inbox by its title, a page of the wiki by its title, with where the note is now', () => {
+    const root = home({
+      'kb/inbox/2026-10-22-103000-idea.md': '---\nlabel: L2\nstatus: new\n---\n\n## Idea finta sul pane\n\ntesto finto\n',
+      'kb/inbox/2026-10-22-110000-senza.md': '---\nlabel: L2\n---\n\nsolo testo finto\n',
+    });
+    approveWikiProposal(root, RULES, proposal(root, {}).id, {}, NOW);
+    const body = 'Vedi [[inbox/2026-10-22-103000-idea]], [[inbox/2026-10-21-100000-octane|la mia]], [[inbox/2026-10-22-110000-senza]] e [[wiki/laravel/octane/swoole]].\n\n| a |\n| --- |\n| [[inbox/2026-10-22-103000-idea\\|X]] |\n';
+    createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', body, NOW);
+    const { citations } = readWikiView(root, RULES, 'cucina/pane');
+    assert.deepEqual(citations['inbox/2026-10-22-103000-idea'], { title: 'Idea finta sul pane', note: 'inbox/2026-10-22-103000-idea.md' });
+    assert.deepEqual(citations['inbox/2026-10-21-100000-octane'], { title: 'Octane finto', note: 'inbox/2026-10-21-100000-octane.md' });
+    // Neither a title nor a heading: its file name, as Conoscenza shows it.
+    assert.equal(citations['inbox/2026-10-22-110000-senza']?.title, '2026-10-22-110000-senza');
+    assert.deepEqual(citations['wiki/laravel/octane/swoole'], { title: PAGE.title });
+  });
+
+  it('a note the Archivist moved is found where it is now', () => {
+    const root = home();
+    createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', 'Vedi [[inbox/2026-10-21-100000-octane]].\n', NOW);
+    mkdirSync(join(root, 'kb/archivio/lavoro'), { recursive: true });
+    writeFileSync(join(root, 'kb/archivio/lavoro/2026-10-21-100000-octane.md'), NOTE);
+    rmSync(join(root, 'kb/inbox/2026-10-21-100000-octane.md'));
+    assert.deepEqual(readWikiView(root, RULES, 'cucina/pane').citations['inbox/2026-10-21-100000-octane'], { title: 'Octane finto', note: 'archivio/lavoro/2026-10-21-100000-octane.md' });
+  });
+
+  it('never the title of a note above L2, nor of one that is gone, nor of a page above L2', () => {
+    const root = home({ 'kb/inbox/2026-10-22-120000-segreta.md': '---\nlabel: L2\ntitle: "Segreta finta"\n---\n\ntesto finto\n' });
+    createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', 'Vedi [[inbox/2026-10-22-120000-segreta]].\n', NOW);
+    // Written by hand on the Mac (as Obsidian would): citations the save would refuse.
+    writeFileSync(join(root, 'kb/wiki/cucina/pane.md'), '---\nlabel: L2\nkind: wiki\ntitle: "Pane"\n---\n\nVedi [[inbox/2026-10-22-120000-segreta]] e [[wiki/laravel/x]] e [[inbox/2026-10-22-120000-sparita]] e [[private/nota]] e [[__proto__]] e [[constructor]].\n');
+    // The note rises above L2 after the citation was written, and a page of the wiki is L3: neither shows its title.
+    writeFileSync(join(root, 'kb/inbox/2026-10-22-120000-segreta.md'), '---\nlabel: L3\ntitle: "Segreta finta"\n---\n\ntesto finto\n');
+    mkdirSync(join(root, 'kb/wiki/laravel'), { recursive: true });
+    writeFileSync(join(root, 'kb/wiki/laravel/x.md'), '---\nlabel: L3\nkind: wiki\ntitle: "X segreta"\n---\n\nsegreta finta\n');
+    // Only the note up to L2 (Privata) that exists keeps its title.
+    assert.deepEqual(readWikiView(root, RULES, 'cucina/pane').citations, { 'private/nota': { title: 'nota', note: 'private/nota.md' } });
+  });
 });
 
 describe('moving a folder', () => {
