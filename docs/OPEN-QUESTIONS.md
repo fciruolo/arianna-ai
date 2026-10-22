@@ -27,6 +27,8 @@
 | ~~Incognito: verifica dal vivo del profilo di Claude Code~~ | **Deciso (utente, 2026-10-17):** si fa insieme in una sessione apposta (l'utente autorizza la lettura del solo elenco dei file del profilo); promemoria in «Prima dei dati veri» di `HANDOFF.md` | |
 | ~~Modelli: schede cloud da rileggere~~ | **Deciso (utente, 2026-10-14):** togliere i prezzi API dalle schede (l'utente usa gli abbonamenti); restano frasi e contesto. Lavoro piccolo in coda in `HANDOFF.md` | |
 | ~~Modelli da Hugging Face: scelte di D-139~~ | **Deciso (utente, 2026-10-14):** le regole di D-139 vanno bene così; D-139 accettata | |
+| Fase 1A: registro del gateway riga per riga | Pagina «Registro del gateway» con una riga per decisione, solo metadati, anche dal telefono (3-5 h); il punto P6 di `docs/FASE-1A-VERIFICA.md` | Chiusura della Fase 1A (task 1.13) |
+| Fase 1A: quota per l'eval dal vivo del criterio | `pnpm eval:live --tag claude` completo (37 casi) in una sessione con la quota bassa; il punto P2 di `docs/FASE-1A-VERIFICA.md` | Chiusura della Fase 1A (task 1.13) |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -64,3 +66,19 @@ Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzion
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
+
+### oq-fase-1a-registro-del-gateway-riga-per-riga
+
+- Contesto: Il criterio della Fase 1A chiede un «log del gateway leggibile». Oggi la chat mostra solo conteggi (quante uscite verso il cloud, quante bloccate, quante Private) e non le singole decisioni; per leggerle una per una serve il database. Si decide se i conteggi bastano o se prima di chiudere la Fase 1A serve una pagina con le righe (punto P6 di `docs/FASE-1A-VERIFICA.md`).
+- Opzione consigliata: Pagina «Registro del gateway» — 3-5 ore: una riga per decisione con ora, destinazione, label, regola e motivo, senza testi, anche dal telefono; la frase «controlla il registro» porta lì.
+- Opzione: Bastano i conteggi — P6 è pronto da provare con Consumi e il pannello del gateway; per una riga sola si guarda il database.
+- Opzione: Dopo la Fase 1A — si chiude la 1A coi conteggi e la pagina va in coda per la Fase 3.
+- Esempio: Il 23 ottobre alle 15:42 il gateway ha fermato un'uscita verso Claude Code: nella pagina compare «15:42 · Claude Code · Privato · bloccata · regola cloud-label», senza il testo che voleva uscire.
+
+### oq-fase-1a-quota-per-l-eval-dal-vivo-del-criterio
+
+- Contesto: Il canarino va provato dal vivo prima di chiudere la Fase 1A: Claude Code viene invitato a leggere una stringa segreta finta e non deve riuscirci. Una corsa completa dei casi di Claude sono 37 casi, ognuno con una o più chiamate all'abbonamento, che si sommano alle tue chat (punto P2 di `docs/FASE-1A-VERIFICA.md`).
+- Opzione consigliata: Tutti i casi di Claude — `pnpm eval:live --tag claude` in una sessione di 5 ore con la proiezione sotto il 50%; copre anche i casi mai corsi insieme.
+- Opzione: Solo il canarino base — i 16 casi di `evals/canary/claude.jsonl` più il contratto, 22 casi; restano fuori MCP e web, già corsi a parte.
+- Opzione: Rimandare — il criterio resta aperto finché la corsa non si fa.
+- Esempio: Venerdì sera la sessione è al 20%: Claude lancia la corsa completa, che finisce in 40 minuti con canarino 31/31 e contratto 6/6, e lo scrive nel task 1.13.
