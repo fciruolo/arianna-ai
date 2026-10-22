@@ -18,6 +18,7 @@ import {
   allProposals,
   applyDecision,
   approveWikiProposal,
+  compareWikiVersion,
   composeIndex,
   composeWikiPage,
   countWikiProposals,
@@ -381,6 +382,42 @@ describe('the user writes the wiki', () => {
     const saved = editWikiPage(root, RULES, created.path, view.version, 'Vuota', 'Ora c’è testo.\n', NOW, { sessions, token: 'sessione-di-prova-0002' });
     assert.equal(saved.kept, true);
     assert.equal(editWikiPage(root, RULES, created.path, saved.version, 'Vuota', 'Ancora.\n', NOW, { sessions, token: 'sessione-di-prova-0002' }).kept, false);
+  });
+
+  it('«Confronta» shows what changes from an old version to the page now, title included, and «Ripristina» stays bound to the page compared (D-285)', () => {
+    const root = home();
+    const created = createUserWikiPage(root, RULES, 'cucina/pane', 'Pane', '## In breve\n\nUno.\nDue.\nTre.\nQuattro.\nCinque.\nSei.\nSette.\n', NOW);
+    editWikiPage(root, RULES, 'cucina/pane', created.version, 'Pane di casa', '## In breve\n\nUno.\nDue.\nTre.\nQuattro.\nCinque.\nSei.\nSette, cambiata.\n', NOW);
+    const shown = readWikiView(root, RULES, 'cucina/pane');
+    const id = shown.versions[0]?.id ?? '';
+    const compared = compareWikiVersion(root, RULES, 'cucina/pane', id);
+    assert.equal(compared.version, id);
+    assert.equal(compared.base, shown.version);
+    assert.deepEqual(compared.title, { then: 'Pane', now: 'Pane di casa' });
+    assert.equal(compared.diff.added, 2);
+    assert.equal(compared.diff.removed, 2);
+    const lines = compared.diff.hunks.flatMap((hunk) => hunk.lines);
+    assert.ok(lines.some((line) => line.kind === 'removed' && line.text === '# Pane'));
+    assert.ok(lines.some((line) => line.kind === 'added' && line.text === '# Pane di casa'));
+    assert.ok(lines.some((line) => line.kind === 'removed' && line.text === 'Sette.'));
+    assert.ok(lines.some((line) => line.kind === 'added' && line.text === 'Sette, cambiata.'));
+    // No header line in the comparison: only title and text.
+    assert.equal(lines.some((line) => /^(label|kind|updated_at|edited_by):/.test(line.text) || line.text === '---'), false);
+    assert.equal(compared.lines.then, 11);
+    assert.equal(compared.lines.now, 11);
+    // The page changed after the comparison: «Ripristina» over the base compared is refused.
+    editWikiPage(root, RULES, 'cucina/pane', shown.version, 'Pane di casa', '## In breve\n\nAltro.\n', NOW);
+    assert.throws(() => { restoreWikiVersion(root, RULES, 'cucina/pane', id, compared.base, NOW); }, (error) => error instanceof WikiError && error.code === 'changed');
+    // Negative: what «Ripristina» would refuse is not read either.
+    const up = '.'.repeat(2);
+    for (const [path, version] of [['cucina/pane', 'non-una-versione'], ['cucina/pane', '20990101-000000-000'], ['cucina/mancante', id], [`${up}/cucina/pane`, id], ['cucina', id]] as const) {
+      assert.throws(() => compareWikiVersion(root, RULES, path, version), (error) => error instanceof WikiError && error.code === 'not-found', `${path} ${version}`);
+    }
+    const strict = parseLabelRules(['[[folder]]\npath = "kb"\nlabel = "L0"', '[[folder]]\npath = "kb/wiki/cucina"\nlabel = "L3"'].join('\n\n'));
+    assert.throws(() => compareWikiVersion(root, strict, 'cucina/pane', id), (error) => error instanceof WikiError && error.code === 'not-found');
+    // An old file in .storia that says more than L2 is not shown.
+    write(root, { 'kb/wiki/.storia/cucina__pane/20260101-000000-000.md': '---\nlabel: L3\ntitle: "Segreta"\n---\n\nsegreto finto\n' });
+    assert.throws(() => compareWikiVersion(root, RULES, 'cucina/pane', '20260101-000000-000'), (error) => error instanceof WikiError && error.code === 'not-found');
   });
 
   it('«Duplica» is a new page with the text of the page, checked as any page the user writes (D-284)', () => {

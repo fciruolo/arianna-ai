@@ -406,3 +406,49 @@ function randomText(): string {
 export function sessionToken(random: () => string = randomText): string {
   return random().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64).padEnd(16, '0');
 }
+
+// ---------------------------------------------------------------------------
+// «Confronta» an old version with the page now (D-285)
+
+/** What the core gives for «Confronta»: from the old version to the page now, title on top. */
+export interface VersionComparison {
+  version: string;
+  at: string;
+  title: { then: string; now: string };
+  /** The page as compared: «Ripristina questa versione» goes only over this. */
+  base: string;
+  diff: WikiDiff;
+  lines: { then: number; now: number };
+}
+
+/** A row of a diff of the Wiki: a line, or the lines that do not change, closed. */
+export interface WikiDiffRow {
+  kind: WikiDiffKind | 'gap';
+  text: string;
+}
+
+/** «1 riga uguale», «5 righe uguali». */
+export function sameLinesText(count: number): string {
+  return count === 1 ? '1 riga uguale' : `${String(count)} righe uguali`;
+}
+
+/**
+ * The rows of a diff as the Wiki shows them (Proposte, Confronta): the lines
+ * changed with their context, and between them the lines that do not change
+ * closed in one row that says how many. With `oldTotal` (the lines of the old
+ * side) the lines after the last change are counted too.
+ */
+export function wikiDiffRows(hunks: WikiDiff['hunks'], oldTotal?: number): WikiDiffRow[] {
+  const rows: WikiDiffRow[] = [];
+  // The next line of the old side not shown yet (1-based).
+  let next = 1;
+  for (const hunk of hunks) {
+    // A hunk with no old lines starts after its oldStart (as in a unified diff).
+    const start = hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart;
+    if (start > next) rows.push({ kind: 'gap', text: sameLinesText(start - next) });
+    for (const line of hunk.lines) rows.push({ kind: line.kind, text: line.text });
+    next = start + hunk.oldLines;
+  }
+  if (oldTotal !== undefined && hunks.length > 0 && oldTotal + 1 > next) rows.push({ kind: 'gap', text: sameLinesText(oldTotal + 1 - next) });
+  return rows;
+}

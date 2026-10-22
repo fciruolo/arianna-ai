@@ -339,6 +339,16 @@ test('the routes: tree, proposals with diff, approve with a path, discard, again
   assert.equal(((await send('GET', '/api/wiki/page?path=cucina/torta')).body.page as { versions: unknown[] }).versions.length, 1);
   assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 'corto' })).status, 400);
   assert.equal((await send('POST', '/api/wiki/edit', { path: 'cucina/torta', base: tortaSecond.body.version, title: 'Torta', body: 'tre\n', session: 12 })).status, 400);
+  // D-285: «Confronta» an old version with the page now, read only.
+  const tortaVersions = ((await send('GET', '/api/wiki/page?path=cucina/torta')).body.page as { versions: { id: string }[] }).versions;
+  const compared = await send('GET', `/api/wiki/version?path=cucina/torta&version=${tortaVersions[0]?.id ?? ''}`);
+  assert.equal(compared.status, 200);
+  const comparison = compared.body.comparison as { base: string; title: { then: string; now: string }; diff: { added: number } };
+  assert.equal(comparison.base, tortaSecond.body.version);
+  assert.deepEqual(comparison.title, { then: 'Torta (copia)', now: 'Torta' });
+  assert.ok(comparison.diff.added > 0);
+  assert.equal((await send('GET', '/api/wiki/version?path=cucina/torta&version=20990101-000000-000')).status, 404);
+  assert.equal((await send('GET', '/api/wiki/version?path=cucina/torta')).status, 404);
   assert.equal((await send('POST', '/api/wiki/delete', { path: 'cucina/torta', base: tortaSecond.body.version })).status, 200);
   const movedPage = await send('POST', '/api/wiki/move-now', { kind: 'page', from: 'cucina/pane', to: 'forno/pane', base: edit.body.version });
   assert.equal(movedPage.status, 200);

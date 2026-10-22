@@ -40,7 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
-import type { WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
+import type { VersionComparison, WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -1374,6 +1374,11 @@ export async function proposeWikiAgain(id: string): Promise<void> {
 }
 
 /** «Ripristina» an old version, only if the page is still the version shown (`base`). */
+/** «Confronta» an old version with the page now (D-285): what changes, title included, and the page compared (`base`). */
+export async function compareWikiVersion(path: string, version: string): Promise<VersionComparison> {
+  return (await call<{ comparison: VersionComparison }>('GET', `/api/wiki/version?path=${encodeURIComponent(path)}&version=${encodeURIComponent(version)}`)).comparison;
+}
+
 export async function restoreWikiPage(path: string, version: string, base: string): Promise<void> {
   await call('POST', '/api/wiki/restore', { path, version, base });
 }

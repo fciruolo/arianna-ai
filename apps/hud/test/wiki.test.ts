@@ -33,6 +33,8 @@ import {
   sessionToken,
   TREE_WIDTH,
   treeMenu,
+  sameLinesText,
+  wikiDiffRows,
 } from '../src/lib/wiki.ts';
 
 test('page and folder paths as the core takes them (D-280)', () => {
@@ -256,4 +258,29 @@ test('a writing session token the core takes (D-284)', () => {
   assert.match(sessionToken(() => 'a b'), /^[A-Za-z0-9_-]{16,64}$/);
   assert.notEqual(sessionToken(), sessionToken());
   assert.match(wikiErrorText(400, 'invalid: session'), /ricarica la pagina/);
+});
+
+test('«Confronta» and «Proposte»: the lines that do not change are closed in one row that says how many (D-285)', () => {
+  const context = (text: string) => ({ kind: 'context' as const, text });
+  // Old side of 20 lines: a change at line 6 (context 2), another at line 15.
+  const hunks = [
+    { oldStart: 4, oldLines: 5, newStart: 4, newLines: 5, lines: [context('4'), context('5'), { kind: 'removed' as const, text: 'sei' }, { kind: 'added' as const, text: 'SEI' }, context('7'), context('8')] },
+    { oldStart: 13, oldLines: 4, newStart: 13, newLines: 5, lines: [context('13'), context('14'), { kind: 'added' as const, text: 'nuova' }, context('15'), context('16')] },
+  ];
+  const rows = wikiDiffRows(hunks, 20);
+  assert.deepEqual(rows.filter((row) => row.kind === 'gap').map((row) => row.text), ['3 righe uguali', '4 righe uguali', '4 righe uguali']);
+  assert.equal(rows[0]?.kind, 'gap');
+  assert.equal(rows.at(-1)?.text, '4 righe uguali');
+  assert.deepEqual(rows.filter((row) => row.kind === 'added').map((row) => row.text), ['SEI', 'nuova']);
+  // Without the total, nothing after the last change (as in «Proposte»); a change at line 1 has no row before it.
+  assert.equal(wikiDiffRows(hunks).at(-1)?.text, '16');
+  const first = [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [{ kind: 'removed' as const, text: '# Pane' }, { kind: 'added' as const, text: '# Pane di casa' }, context('')] }];
+  assert.equal(wikiDiffRows(first, 2)[0]?.kind, 'removed');
+  assert.equal(wikiDiffRows(first, 2).some((row) => row.kind === 'gap'), false);
+  // A hunk with only lines added starts after its oldStart (unified diff): line 10 of 10 kept before it.
+  const tail = [{ oldStart: 10, oldLines: 0, newStart: 11, newLines: 1, lines: [{ kind: 'added' as const, text: 'in fondo' }] }];
+  assert.deepEqual(wikiDiffRows(tail, 10).map((row) => row.text), ['10 righe uguali', 'in fondo']);
+  // No change: no rows.
+  assert.deepEqual(wikiDiffRows([], 12), []);
+  assert.equal(sameLinesText(1), '1 riga uguale');
 });

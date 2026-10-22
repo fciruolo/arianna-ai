@@ -30,7 +30,7 @@ import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { enqueueJob } from './jobs.ts';
 import { listPageIds, readKnowledgePage, resolveWikilink } from './knowledge.ts';
-import { diffLines, type LineDiff } from './line-diff.ts';
+import { diffLines, splitLines, type LineDiff } from './line-diff.ts';
 import { headerFields, NoteError, sha256 } from './notes.ts';
 import { KB_DIR, KB_PROJECT_NOTES, parsePage, type Kb } from './orchestrator/kb.ts';
 import { bodyText, filterLinks, ORGANIZE_MAX_ATTEMPTS, ORGANIZE_QUEUE } from './organize.ts';
@@ -1663,6 +1663,53 @@ export interface WikiPageView {
   version: string;
   updatedAt: string;
   versions: WikiVersion[];
+}
+
+export interface VersionComparison {
+  /** The id of the old version, as in «Versioni precedenti». */
+  version: string;
+  at: string;
+  /** The title of the old version and of the page now. */
+  title: { then: string; now: string };
+  /** The sha256 of the page as compared: «Ripristina questa versione» goes only over this. */
+  base: string;
+  /** From the old version to the page now: title on top (`# …`), then the text. */
+  diff: LineDiff;
+  /** How many lines each side has, for the «n righe uguali» after the last change. */
+  lines: { then: number; now: number };
+}
+
+/** The title and the text of a page file as the comparison reads them: `# title`, a blank line, the text. */
+function comparedText(raw: string, fallback: string): { title: string; text: string } {
+  const title = jsonTitle(headerFields(raw).get('title')) ?? fallback;
+  return { title, text: `# ${title}\n\n${parsePage(raw).body.replace(/^\n+/, '')}` };
+}
+
+/**
+ * «Confronta» of an old version (D-285): the lines that change from that
+ * version to the page as it is now, title included, with the diff of the
+ * proposals (D-117). The same checks as «Ripristina»: a page up to L2, no
+ * rule above L2, a version id of .storia, an old file that is L2 only.
+ */
+export function compareWikiVersion(home: string, rules: LabelRules, path: string, version: string): VersionComparison {
+  if (typeof path !== 'string' || !isWikiPagePath(path) || !wikiPathUpToL2(rules, `${path}.md`) || typeof version !== 'string' || !VERSION_ID.test(version)) throw new WikiError('not-found', 'version not found');
+  const current = readWikiPageFile(home, path);
+  if (current === undefined || !parsePage(current.raw).header.labels.every((label) => label === 'L2')) throw new WikiError('not-found', 'page not found');
+  const old = readWikiFile(home, [...historySegments(path), `${version}.md`]);
+  if (old === undefined) throw new WikiError('not-found', 'version not found');
+  const labels = parsePage(old.raw).header.labels;
+  if (labels.length === 0 || !labels.every((label) => label === 'L2')) throw new WikiError('not-found', 'version not found');
+  const then = comparedText(old.raw, path);
+  const now = comparedText(current.raw, path);
+  const at = pageVersions(home, path).find((item) => item.id === version)?.at ?? '';
+  return {
+    version,
+    at,
+    title: { then: then.title, now: now.title },
+    base: current.version,
+    diff: diffLines(then.text, now.text, { context: 2 }),
+    lines: { then: splitLines(then.text).length, now: splitLines(now.text).length },
+  };
 }
 
 /** A page or an index of the wiki to read: `laravel/octane/swoole`, `laravel/_indice`, `_indice`. */

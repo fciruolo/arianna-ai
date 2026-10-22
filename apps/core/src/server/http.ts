@@ -163,6 +163,7 @@ import type { ModelsOverview } from '../models-overview.ts';
 import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, readPageFile, type GraphCache } from '../knowledge.ts';
 import {
   approveWikiProposal,
+  compareWikiVersion,
   countWikiProposals,
   createUserWikiPage,
   createWikiFolder,
@@ -1200,6 +1201,11 @@ function wikiRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (er
       const deleted = deleteWikiPage(home, rules, body.path, body.base);
       await recordWikiEvent(sql, 'wiki.deleted', { versions: deleted.versions, proposals: deleted.proposals }).catch(onError);
       return { body: { deleted: true } };
+    }),
+    // «Confronta» an old version with the page now (D-285): only read, the same checks as «Ripristina».
+    route('GET', '/api/wiki/version', (_request, url) => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: { comparison: compareWikiVersion(home, rules, url.searchParams.get('path') ?? '', url.searchParams.get('version') ?? '') } });
     }),
     route('POST', '/api/wiki/restore', async (request) => {
       const { home, rules } = need();

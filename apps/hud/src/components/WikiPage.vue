@@ -4,6 +4,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import {
   ApiError,
   approveWikiProposal,
+  compareWikiVersion,
   createWikiFolder,
   createWikiPage,
   deleteWikiFolder,
@@ -17,7 +18,6 @@ import {
   proposeWikiAgain,
   restoreWikiPage,
 } from '../lib/api.ts';
-import { diffRows } from '../lib/delegations.ts';
 import {
   ancestorsOf,
   breadcrumb,
@@ -45,9 +45,11 @@ import {
   TREE_WIDTH,
   treeMenu,
   versionText,
+  wikiDiffRows,
   wikiErrorText,
   wikilinkTarget,
   type SaveState,
+  type VersionComparison,
   type WikiDragged,
   type WikiListing,
   type WikiMenuItem,
@@ -278,6 +280,7 @@ async function show(next: View, force = false): Promise<void> {
     savedTitle = loaded.title;
     savedBody = loaded.body;
     session.value = sessionToken();
+    comparing.value = null;
     saveState.value = 'idle';
     // Only the page just made takes the cursor; the next opening reads first.
     const fresh = focusNew.value;
@@ -939,7 +942,56 @@ async function again(proposal: WikiProposal): Promise<void> {
   }
 }
 
-const rowClass = { added: 'bg-ok/10', removed: 'bg-danger/10', context: '', gap: 'text-muted' } as const;
+const rowClass = { added: 'bg-ok/10', removed: 'bg-danger/10', context: '', gap: 'bg-surface-2 text-muted italic' } as const;
+
+// «Confronta» an old version with the page now (D-285)
+
+const comparing = ref<{ id: string; at: string; data: VersionComparison | null; problem: string | null; busy: boolean } | null>(null);
+const comparePanel = ref<HTMLElement | null>(null);
+
+/** The diff of the version with the page as it is now: what waits is saved first, so «adesso» is what the user sees. */
+async function compare(id: string, at: string): Promise<void> {
+  const current = page.value;
+  if (current === null || current.kind !== 'page') return;
+  comparing.value = { id, at, data: null, problem: null, busy: false };
+  try {
+    await flush();
+    const data = await compareWikiVersion(current.path, id);
+    // «Chiudi», another «Confronta» or another page meanwhile: this answer is not shown.
+    // TypeScript keeps the value from before the await: read again, it may be null now.
+    const shown = comparing.value as { id: string; data: VersionComparison | null } | null;
+    if (shown?.id !== id || page.value !== current) return;
+    shown.data = data;
+    await nextTick();
+    comparePanel.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  } catch (failure) {
+    const shown = comparing.value as { id: string; problem: string | null } | null;
+    if (shown?.id === id) shown.problem = problemOf(failure);
+  }
+}
+
+/** «Ripristina questa versione»: only over the page as compared (its sha256); the version of now stays among the old ones. */
+async function restoreCompared(): Promise<void> {
+  const now = comparing.value;
+  const current = page.value;
+  if (now === null || now.data === null || current === null || now.busy) return;
+  now.busy = true;
+  now.problem = null;
+  try {
+    await flush();
+    await restoreWikiPage(current.path, now.id, now.data.base);
+    comparing.value = null;
+    await show({ kind: 'page', path: current.path }, true);
+    await loadListing();
+    say(`Pagina tornata com’era il ${versionText(now.at)}. La versione di prima è fra le precedenti.`);
+  } catch (failure) {
+    now.problem =
+      failure instanceof ApiError && failure.message.startsWith('changed')
+        ? 'La pagina è cambiata dopo il confronto: confronta di nuovo prima di ripristinare.'
+        : problemOf(failure);
+    now.busy = false;
+  }
+}
 const signOf = { added: '+', removed: '−', context: ' ', gap: '⋯' } as const;
 
 onMounted(() => {
@@ -1232,7 +1284,7 @@ onBeforeUnmount(() => {
             <div class="max-h-[420px] overflow-auto rounded-lg border border-line font-mono text-[12.5px]">
               <table class="w-full border-collapse">
                 <tbody>
-                  <tr v-for="(row, at) in diffRows(proposal.diff.hunks)" :key="at" :class="rowClass[row.kind]">
+                  <tr v-for="(row, at) in wikiDiffRows(proposal.diff.hunks)" :key="at" :class="rowClass[row.kind]">
                     <td class="w-px px-1 select-none" :class="row.kind === 'added' ? 'text-ok' : row.kind === 'removed' ? 'text-danger' : 'text-muted'" aria-hidden="true">{{ signOf[row.kind] }}</td>
                     <td class="pr-3 break-words whitespace-pre-wrap">
                       <span v-if="row.kind === 'added'" class="sr-only">aggiunta: </span><span v-else-if="row.kind === 'removed'" class="sr-only">tolta: </span>{{ row.text }}
@@ -1311,10 +1363,51 @@ onBeforeUnmount(() => {
               <ul class="mt-1.5 flex flex-col gap-1">
                 <li v-for="version in page.versions" :key="version.id" class="flex items-center gap-2">
                   <span class="font-mono text-[12.5px] text-muted">{{ versionText(version.at) }}</span>
+                  <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :aria-pressed="comparing?.id === version.id" @click="compare(version.id, version.at)"><Icon name="compare" :size="12" />Confronta</button>
                   <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="restoring = version.id; restoreProblem = null"><Icon name="retry" :size="12" />Ripristina</button>
                 </li>
               </ul>
             </details>
+
+            <!-- «Confronta» (D-285): from the old version to the page now, as the diff of the proposals -->
+            <section v-if="comparing !== null" ref="comparePanel" class="mt-4 flex flex-col gap-2 rounded-xl border border-line bg-surface p-3.5" aria-labelledby="wiki-compare-title">
+              <h2 id="wiki-compare-title" class="text-[15px] font-semibold">Versione del {{ versionText(comparing.at) }} e pagina di adesso</h2>
+              <p class="text-[13px] text-muted">
+                <span class="text-danger">−</span> c’era nella versione e adesso non c’è più · <span class="text-ok">+</span> c’è adesso e nella versione non c’era. La prima riga è il titolo.
+              </p>
+              <p v-if="comparing.data === null && comparing.problem === null" class="text-sm text-muted">Confronto le due versioni…</p>
+              <template v-if="comparing.data !== null">
+                <p v-if="comparing.data.diff.hunks.length === 0" class="text-[14px] text-muted">Nessuna differenza: la versione è uguale alla pagina di adesso.</p>
+                <template v-else>
+                  <p class="text-[12.5px] text-muted">+{{ comparing.data.diff.added }} −{{ comparing.data.diff.removed }}</p>
+                  <div class="max-h-[480px] overflow-auto rounded-lg border border-line font-mono text-[12.5px]">
+                    <table class="w-full border-collapse">
+                      <tbody>
+                        <tr v-for="(row, at) in wikiDiffRows(comparing.data.diff.hunks, comparing.data.lines.then)" :key="at" :class="rowClass[row.kind]">
+                          <td class="w-px px-1 select-none" :class="row.kind === 'added' ? 'text-ok' : row.kind === 'removed' ? 'text-danger' : 'text-muted'" aria-hidden="true">{{ signOf[row.kind] }}</td>
+                          <td class="pr-3 break-words whitespace-pre-wrap">
+                            <span v-if="row.kind === 'added'" class="sr-only">aggiunta: </span><span v-else-if="row.kind === 'removed'" class="sr-only">tolta: </span>{{ row.text }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+              </template>
+              <p v-if="comparing.problem !== null" class="text-[13px] text-danger" role="alert">{{ comparing.problem }}</p>
+              <footer class="flex flex-wrap gap-2">
+                <button
+                  v-if="comparing.data !== null && comparing.data.diff.hunks.length > 0"
+                  type="button"
+                  class="btn btn-primary px-3 py-1 text-[13.5px]"
+                  :disabled="comparing.busy"
+                  @click="restoreCompared"
+                >
+                  <Icon name="retry" :size="14" />Ripristina questa versione
+                </button>
+                <button type="button" class="btn px-3 py-1 text-[13.5px]" :disabled="comparing.busy" @click="comparing = null">Chiudi</button>
+              </footer>
+            </section>
           </article>
         </template>
       </div>
