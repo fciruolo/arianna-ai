@@ -79,7 +79,7 @@ async function makePrimary(contact: ClientContact): Promise<void> {
   }
 }
 
-const input = 'field w-full px-2.5 py-1.5 text-[14px] text-ink';
+const input = 'field touch:min-h-11 w-full px-2.5 py-1.5 text-[14px] text-ink';
 </script>
 
 <template>
@@ -130,9 +130,9 @@ const input = 'field w-full px-2.5 py-1.5 text-[14px] text-ink';
           </span>
           <span v-if="contact.primary" class="chip text-accent">principale</span>
         </p>
-        <a v-if="contact.email" :href="`mailto:${contact.email}`" class="inline-flex items-center gap-1.5 truncate text-[14px] hover:text-accent"><Icon name="mail" :size="13" />{{ contact.email }}</a>
-        <a v-if="contact.phone" :href="`tel:${contact.phone.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.phone }}</a>
-        <a v-if="contact.mobile" :href="`tel:${contact.mobile.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.mobile }} <span class="text-muted">cell.</span></a>
+        <a v-if="contact.email" :href="`mailto:${contact.email}`" class="inline-flex items-center gap-1.5 truncate text-[14px] hover:text-accent touch:min-h-11"><Icon name="mail" :size="13" />{{ contact.email }}</a>
+        <a v-if="contact.phone" :href="`tel:${contact.phone.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent touch:min-h-11"><Icon name="phone" :size="13" />{{ contact.phone }}</a>
+        <a v-if="contact.mobile" :href="`tel:${contact.mobile.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent touch:min-h-11"><Icon name="phone" :size="13" />{{ contact.mobile }} <span class="text-muted">cell.</span></a>
         <p v-if="contact.notes" class="text-[13.5px] whitespace-pre-line text-muted">{{ contact.notes }}</p>
         <div v-if="!locked" class="mt-1 flex flex-wrap gap-1.5">
           <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy || editing !== null" @click="edit(contact)"><Icon name="rename" :size="12" />Modifica</button>

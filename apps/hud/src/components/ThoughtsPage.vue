@@ -523,7 +523,7 @@ onBeforeUnmount(() => {
                 type="button"
                 role="radio"
                 :aria-checked="status === item.value"
-                class="rounded-md px-2.5 py-1 text-[13.5px]"
+                class="rounded-md px-2.5 py-1 text-[13.5px] touch:min-h-11"
                 :class="status === item.value ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:text-ink'"
                 @click="status = item.value"
               >
@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
                 <button
                   v-else
                   type="button"
-                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 pr-10 text-left transition-colors"
+                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 pr-10 text-left transition-colors touch:min-h-11"
                   :class="selectedName === item.name ? 'border-accent bg-surface-2' : 'border-line bg-surface hover:border-line-strong'"
                   :aria-current="selectedName === item.name ? 'true' : undefined"
                   @click="open(item.name)"
@@ -593,7 +593,7 @@ onBeforeUnmount(() => {
                 <button
                   v-if="deleting !== item.name"
                   type="button"
-                  class="absolute right-2 bottom-2 rounded-md p-1 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                  class="absolute right-2 bottom-2 rounded-md p-1 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100 touch:min-h-11"
                   :aria-label="`Elimina per sempre ${displayTitle(item)}`"
                   title="Elimina per sempre"
                   @click="
@@ -633,7 +633,7 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <LabelBadge v-if="selected !== undefined" class="mt-0.5" :label="selected.label" />
-        <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi il pensiero" @click="closePanel">
+        <button type="button" class="rounded-md p-1 text-muted hover:text-ink touch:min-h-11" aria-label="Chiudi il pensiero" @click="closePanel">
           <Icon name="close" :size="16" />
         </button>
       </header>
@@ -730,7 +730,7 @@ onBeforeUnmount(() => {
             v-for="tag in selected.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent touch:min-h-11"
             :title="`Filtra #${tag}`"
             @click="query = `#${tag}`"
           >

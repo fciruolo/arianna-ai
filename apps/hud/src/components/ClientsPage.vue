@@ -26,6 +26,7 @@ import {
   type ClientSummary,
   type StatusFilter,
 } from '../lib/clients.ts';
+import { revealChosenTab } from '../lib/tab-strip.ts';
 import ClientContacts from './ClientContacts.vue';
 import ClientDashboard from './ClientDashboard.vue';
 import ClientDocuments from './ClientDocuments.vue';
@@ -128,6 +129,9 @@ const detailProblem = ref<string | null>(null);
 const tab = ref<'registry' | 'contacts' | 'projects' | 'documents' | 'dashboard'>('dashboard');
 const actionProblem = ref<string | null>(null);
 const busy = ref(false);
+/** On a phone the row of tabs scrolls sideways: the chosen one is brought into view. */
+const tabRow = ref<HTMLElement | null>(null);
+watch([tab, detail], () => void nextTick(() => revealChosenTab(tabRow.value)));
 
 async function loadDetail(id: string): Promise<void> {
   try {
@@ -302,14 +306,14 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
     <template v-else-if="client === null">
       <div class="flex flex-wrap items-center gap-2">
         <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" @click="creating = true"><Icon name="new" :size="14" />Cliente</button>
-        <label class="flex h-[34px] min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-sm">
+        <label class="flex h-[34px] min-w-[200px] flex-1 touch:h-11 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-sm">
           <Icon name="search" :size="14" />
           <input v-model="query" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca per nome, partita IVA, contatto, progetto" aria-label="Cerca un cliente" />
         </label>
-        <select v-model="status" class="field px-2 py-1.5 text-[14px]" aria-label="Quali clienti">
+        <select v-model="status" class="field touch:min-h-11 px-2 py-1.5 text-[14px]" aria-label="Quali clienti">
           <option v-for="[value, text] in filters" :key="value" :value="value">{{ text }}</option>
         </select>
-        <select v-model="order" class="field px-2 py-1.5 text-[14px]" aria-label="Ordine dei clienti">
+        <select v-model="order" class="field touch:min-h-11 px-2 py-1.5 text-[14px]" aria-label="Ordine dei clienti">
           <option v-for="[value, text] in orders" :key="value" :value="value">Ordina: {{ text.toLowerCase() }}</option>
         </select>
         <span v-if="clients" class="ml-auto text-xs text-muted">{{ shown.length === 1 ? '1 cliente' : `${String(shown.length)} clienti` }} · numeri del {{ thisYear }}</span>
@@ -387,12 +391,13 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
       <p v-else-if="detail === null" class="text-sm text-muted">Carico il cliente…</p>
       <template v-else>
         <header class="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <button type="button" class="btn px-2.5 py-1 text-xs" title="Torna alla lista dei clienti" @click="emit('open', null)"><span class="rotate-180"><Icon name="expand" :size="13" /></span>Clienti</button>
-          <div class="group relative">
+          <!-- On a phone (D-293): the way back and the actions on the first row, logo and name under them. -->
+          <button type="button" class="btn px-2.5 py-1 text-xs max-md:order-1" title="Torna alla lista dei clienti" @click="emit('open', null)"><span class="rotate-180"><Icon name="expand" :size="13" /></span>Clienti</button>
+          <div class="group relative max-md:order-3">
             <img v-if="detail.logo" :src="logoUrl(detail.id, detail.logo) ?? ''" alt="Logo del cliente" class="size-14 rounded-xl border border-line bg-white object-contain p-1" />
             <span v-else class="grid size-14 place-items-center rounded-xl border border-accent/40 bg-accent/15 font-hud text-[19px] font-semibold text-accent" aria-hidden="true">{{ initialsOf(detail.displayName) }}</span>
           </div>
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0 flex-1 max-md:order-4 max-md:basis-[calc(100%-4.5rem)]">
             <h2 class="truncate font-hud text-[21px] leading-tight font-semibold tracking-[0.02em]">{{ detail.displayName }}</h2>
             <p class="mt-1 flex flex-wrap items-center gap-1.5 text-[13.5px] text-muted">
               <span>{{ KIND_TEXT[detail.kind] }}</span>
@@ -408,7 +413,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
               <b class="font-medium">{{ primary.name }}</b><span class="text-muted">{{ [primary.role, primary.email, primary.phone ?? primary.mobile].filter((part) => part).map((part) => ` · ${part}`).join('') }}</span>
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
+          <div class="flex flex-wrap items-center gap-1.5 max-md:order-2 max-md:basis-[calc(100%-7.5rem)] max-md:justify-end">
             <template v-if="detail.status !== 'archived'">
               <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" @change="chooseLogo" />
               <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="logoInput?.click()"><Icon name="image-up" :size="13" />{{ detail.logo ? 'Cambia logo' : 'Logo' }}</button>
@@ -425,13 +430,13 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           <button type="button" class="btn px-2.5 py-1 text-xs" title="Apre l’Anagrafica sul primo campo da riempire; i campi mancanti hanno il bordo ambra" @click="complete">Completa</button>
         </p>
 
-        <nav class="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
+        <nav ref="tabRow" class="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
           <button
             v-for="item in tabs"
             :key="item.id"
             type="button"
             :aria-current="tab === item.id ? 'true' : undefined"
-            class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pt-2 pb-2.5 text-[14.5px] font-medium whitespace-nowrap"
+            class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pt-2 pb-2.5 text-[14.5px] font-medium whitespace-nowrap touch:min-h-11"
             :class="tab === item.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
             @click="tab = item.id"
           >
@@ -458,7 +463,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </ul>
           <p v-else class="rounded-xl border border-line bg-surface p-4 text-sm text-muted">Nessun progetto collegato.</p>
           <form v-if="detail.status !== 'archived'" class="flex flex-wrap items-center gap-2" @submit.prevent="link">
-            <select v-model="toLink" class="field min-w-[220px] px-2 py-1.5 text-[14px]" aria-label="Progetto da collegare" :disabled="linkable.length === 0">
+            <select v-model="toLink" class="field touch:min-h-11 min-w-[220px] px-2 py-1.5 text-[14px]" aria-label="Progetto da collegare" :disabled="linkable.length === 0">
               <option value="">{{ linkable.length === 0 ? 'Nessun progetto libero' : 'Scegli un progetto…' }}</option>
               <option v-for="name in linkable" :key="name" :value="name">{{ name }}</option>
             </select>

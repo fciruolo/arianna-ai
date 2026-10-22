@@ -91,7 +91,7 @@ onBeforeUnmount(() => {
         <label
           v-for="item in animations"
           :key="item.id"
-          class="cursor-pointer rounded-[9px] border px-2 py-0.5 text-xs has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
+          class="cursor-pointer rounded-[9px] border px-2 py-0.5 text-xs touch:inline-flex touch:min-h-11 touch:items-center touch:px-3 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
           :class="chosen === item.id ? 'border-accent bg-accent/15 text-ink' : 'border-line-strong text-muted hover:text-ink'"
         >
           <input v-model="chosen" type="radio" :value="item.id" class="sr-only" />{{ item.label }}

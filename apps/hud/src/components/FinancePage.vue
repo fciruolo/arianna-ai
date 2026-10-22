@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { listFinanceAccounts, listFinanceCategories } from '../lib/api.ts';
 import { EMPTY_FILTER, FINANCE_TABS, financeErrorText, type Account, type Category, type FinanceTab, type TxFilter } from '../lib/finance.ts';
+import { revealChosenTab } from '../lib/tab-strip.ts';
 import FinanceAccounts from './FinanceAccounts.vue';
 import FinanceAlerts from './FinanceAlerts.vue';
 import FinanceCategories from './FinanceCategories.vue';
@@ -54,6 +55,11 @@ function reload(): void {
 
 onMounted(reload);
 
+/** On a phone the row of tabs scrolls sideways: the chosen one is brought into view. */
+const tabRow = ref<HTMLElement | null>(null);
+watch(shown, () => void nextTick(() => revealChosenTab(tabRow.value)));
+onMounted(() => revealChosenTab(tabRow.value));
+
 function openMovements(next: TxFilter): void {
   filter.value = next;
   filterVersion.value += 1;
@@ -69,12 +75,12 @@ function openMovements(next: TxFilter): void {
           <Icon name="private" :size="13" />
           Questi dati restano su questo computer: nessun modello cloud li legge.
         </p>
-        <nav class="-mb-px flex gap-1 overflow-x-auto" aria-label="Sezioni delle Finanze">
+        <nav ref="tabRow" class="-mb-px flex gap-1 overflow-x-auto" aria-label="Sezioni delle Finanze">
           <button
             v-for="[slug, text] in FINANCE_TABS"
             :key="slug"
             type="button"
-            class="shrink-0 border-b-2 px-3 py-2 text-[14px]"
+            class="shrink-0 border-b-2 px-3 py-2 text-[14px] touch:min-h-11"
             :class="shown === slug ? 'border-accent font-medium text-ink' : 'border-transparent text-muted hover:text-ink'"
             :aria-current="shown === slug ? 'page' : undefined"
             @click="emit('tab', slug === 'riepilogo' ? undefined : slug)"

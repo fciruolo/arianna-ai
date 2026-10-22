@@ -498,7 +498,7 @@ onBeforeUnmount(() => {
       >
         <span aria-hidden="true" class="text-[13px] leading-none tracking-[-2px]">⋮⋮</span>
       </button>
-      <div v-show="mode === 'rich'" ref="host" class="wiki-editor-host" />
+      <div v-show="mode === 'rich'" ref="host" class="wiki-editor-host phone:[&_.tableWrapper]:overflow-x-auto phone:[&_table]:w-auto phone:[&_table]:min-w-full! phone:[&_table]:table-auto phone:[&_:is(td,th)]:min-w-28" />
       <textarea
         v-if="mode === 'markdown'"
         :value="plain"
@@ -512,19 +512,19 @@ onBeforeUnmount(() => {
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2 text-[12.5px] text-muted">
       <span class="min-w-0 flex-1">«/» per i blocchi · «[[» per citare (⌘ o Ctrl + clic la apre) · ⋮⋮ a sinistra per spostare un blocco. Niente link, immagini o indirizzi: la pagina resta sul Mac.</span>
-      <label class="flex items-center gap-1.5">
+      <label class="flex items-center gap-1.5 touch:min-h-11">
         <input type="checkbox" :checked="mode === 'markdown'" @change="toggle" />
         Markdown
       </label>
     </div>
 
     <!-- The bar on the selection -->
-    <div v-if="mode === 'rich' && bubbleShown" ref="bubble" class="fixed z-40 flex items-center gap-0.5 rounded-lg border border-line-strong bg-surface p-0.5 shadow-lg" role="toolbar" aria-label="Formato del testo selezionato">
+    <div v-if="mode === 'rich' && bubbleShown" ref="bubble" class="fixed z-40 flex items-center gap-0.5 rounded-lg border border-line-strong bg-surface p-0.5 shadow-lg phone:max-w-[calc(100vw-16px)] phone:overflow-x-auto phone:overscroll-x-contain" role="toolbar" aria-label="Formato del testo selezionato">
       <button
         v-for="mark in marks"
         :key="mark.title"
         type="button"
-        class="wiki-tool"
+        class="wiki-tool phone:shrink-0 touch:min-h-11 touch:min-w-11"
         :class="mark.on() ? 'is-on' : ''"
         :style="mark.style"
         :title="mark.title"
@@ -538,8 +538,8 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- The bar of a table, while the cursor is in a cell -->
-    <div v-if="mode === 'rich' && tableShown && !bubbleShown" ref="tableBar" class="fixed z-30 flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5 shadow" role="toolbar" aria-label="Righe e colonne della tabella">
-      <button v-for="button in tableButtons" :key="button.title" type="button" class="wiki-tool" :title="button.title" :aria-label="button.title" @mousedown.prevent @click="run(button.run)">
+    <div v-if="mode === 'rich' && tableShown && !bubbleShown" ref="tableBar" class="fixed z-30 flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5 shadow phone:max-w-[calc(100vw-16px)] phone:flex-nowrap phone:overflow-x-auto phone:overscroll-x-contain" role="toolbar" aria-label="Righe e colonne della tabella">
+      <button v-for="button in tableButtons" :key="button.title" type="button" class="wiki-tool phone:shrink-0 touch:min-h-11 touch:min-w-11" :title="button.title" :aria-label="button.title" @mousedown.prevent @click="run(button.run)">
         {{ button.label }}
       </button>
     </div>
@@ -559,7 +559,7 @@ onBeforeUnmount(() => {
         :key="item.id"
         role="option"
         :aria-selected="at === slash.index"
-        class="cursor-pointer rounded-md px-2 py-1"
+        class="cursor-pointer rounded-md px-2 py-1 touch:py-2"
         :class="at === slash.index ? 'bg-surface-2 text-ink' : ''"
         @mousedown.prevent="slash.command?.(item)"
       >
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
         :key="item.target"
         role="option"
         :aria-selected="at === suggest.index"
-        class="cursor-pointer rounded-md px-2 py-1"
+        class="cursor-pointer rounded-md px-2 py-1 touch:py-2"
         :class="at === suggest.index ? 'bg-surface-2 text-ink' : ''"
         @mousedown.prevent="suggest.command?.(item)"
       >

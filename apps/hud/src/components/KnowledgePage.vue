@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
 import { ApiError, deleteKnowledgePage, loadKnowledgeGraph, loadKnowledgePage, proposeForWiki } from '../lib/api.ts';
 import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
@@ -77,6 +77,7 @@ import {
   type Segment,
   type Simulation3,
 } from '../lib/graph3d.ts';
+import { centerInBand, hitRadius, listRows, neighbourRows, pinchView, readPhoneView, type PhoneView } from '../lib/knowledge-phone.ts';
 import type { KnowledgeSource } from '../lib/route.ts';
 import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -266,6 +267,53 @@ const legend = computed(() => {
 const selectedNode = computed(() => nodes.value[selected.value]);
 const selectedNeighbours = computed(() => [...(adjacency[selected.value] ?? [])].map((index) => ({ index, node: nodes.value[index] })).filter((item) => item.node !== undefined));
 
+/** At least 768 px wide (D-293): below, the phone's layout and its list view. */
+const wide = ref(true);
+/** The phone shows the graph or a list of its nodes (D-293), a convenience of this browser. */
+const PHONE_VIEW_KEY = 'arianna.knowledge.phone';
+const phoneView = ref<PhoneView>('graph');
+const listMode = computed(() => !wide.value && phoneView.value === 'list');
+/** On the phone, with a note open on the graph, the header keeps only its first row. */
+const compact = computed(() => !wide.value && !listMode.value && selected.value >= 0);
+/** The legend on the phone opens on request: it would cover the graph. */
+const legendOpen = ref(false);
+/** The header card, to know how much of the canvas it covers on the phone. */
+const header = ref<HTMLDivElement | null>(null);
+const LIST_LIMIT = 300;
+/** Where the note's sheet starts on the phone, as a share of the page's height. */
+const PHONE_SHEET = 0.45;
+/** The room the row of tools takes at the bottom of the phone, in pixels. */
+const PHONE_TOOLS = 64;
+const list = computed(() => (listMode.value ? listRows(nodes.value, matches.value, LIST_LIMIT) : { rows: [], more: 0 }));
+/** The neighbours in the note's panel: in the list's order on the phone, as they come on wide screens. */
+const panelNeighbours = computed(() => (wide.value ? selectedNeighbours.value : neighbourRows(nodes.value, adjacency[selected.value] ?? [])));
+
+function setPhoneView(next: PhoneView): void {
+  if (phoneView.value === next) return;
+  phoneView.value = next;
+  try {
+    window.localStorage.setItem(PHONE_VIEW_KEY, next);
+  } catch {
+    // Private window or blocked storage: the choice lasts this visit.
+  }
+  // Back to the graph: the canvas may have been resized behind the list.
+  if (next === 'graph') requestFrame();
+}
+
+function loadPhoneView(): PhoneView {
+  try {
+    return readPhoneView(window.localStorage.getItem(PHONE_VIEW_KEY));
+  } catch {
+    return 'graph';
+  }
+}
+
+/** «Vedi nel grafo» from the list: the graph, centred on the node. */
+function showInGraph(index: number): void {
+  setPhoneView('graph');
+  focusOn(index);
+}
+
 
 function folderVar(folder: string): string {
   if (wikiFolder(folder)) return 'var(--graph-wiki)';
@@ -397,7 +445,7 @@ function warm2d(): void {
   const warm = Math.min(120, Math.floor(60_000 / Math.max(1, sim.nodes.length)));
   for (let i = 0; i < warm; i += 1) step(sim);
   autoFit = true;
-  if (width > 0) view = fitView(turnedNodes(), width, height);
+  if (width > 0) view = fitFlat(width);
 }
 
 /** The 3D simulation of the loaded graph, made the first time it is needed; positions kept from `previous`. */
@@ -437,7 +485,7 @@ function resize(): void {
   // A few hundred stars, fewer on a small screen; the same ones at every size.
   const count = Math.min(360, Math.round((width * height) / 5200));
   if (count !== stars.length) stars = makeStars(count);
-  if (first && sim !== null) view = fitView(turnedNodes(), width, height);
+  if (first && sim !== null) view = fitFlat(width);
   if (first && sim3 !== null) camera = fitCamera(camera, sim3.nodes, width + panelShift(), height);
   requestFrame();
 }
@@ -486,7 +534,7 @@ function tick(now: number): void {
     if (!settled) {
       step(sim);
       settledAt = 0;
-      if (autoFit && glide === null) view = blendView(view, fitView(turnedNodes(), width, height), 0.08);
+      if (autoFit && glide === null) view = blendView(view, fitFlat(width), 0.08);
     } else if (settledAt === 0) {
       settledAt = now;
     }
@@ -1194,7 +1242,7 @@ function draw3d(now: number): void {
 // In 3D: drag to turn the camera, pinch to zoom, click a node to fly there.
 const pointers = new Map<number, { x: number; y: number }>();
 type Drag =
-  | { kind: 'node'; index: number; startX: number; startY: number; moved: boolean }
+  | { kind: 'node'; index: number; startX: number; startY: number; moved: boolean; touch: boolean }
   | { kind: 'pan'; startX: number; startY: number; view: View; moved: boolean }
   | { kind: 'pinch'; distance: number; mid: { x: number; y: number }; view: View }
   | { kind: 'turn'; index: number; startX: number; startY: number; camera: Camera; moved: boolean }
@@ -1213,10 +1261,10 @@ function worldAt(x: number, y: number): { x: number; y: number } {
 }
 
 function hit(x: number, y: number, touch: boolean): number {
-  if (is3d() && sim3 !== null) return hitTest3(proj3, Math.min(proj3.x.length, sim3.nodes.length), x, y, touch ? 14 : 4);
+  if (is3d() && sim3 !== null) return hitTest3(proj3, Math.min(proj3.x.length, sim3.nodes.length), x, y, hitRadius(touch));
   if (sim === null) return -1;
   const world = worldAt(x, y);
-  return nodeAt(sim.nodes, world.x, world.y, (touch ? 14 : 4) / view.k);
+  return nodeAt(sim.nodes, world.x, world.y, hitRadius(touch) / view.k);
 }
 
 function pinchOf(): { distance: number; mid: { x: number; y: number } } | undefined {
@@ -1261,7 +1309,7 @@ function onPointerDown(event: PointerEvent): void {
   if (pointers.size > 2) return;
   const index = hit(at.x, at.y, event.pointerType === 'touch');
   if (index >= 0) {
-    drag = { kind: 'node', index, startX: at.x, startY: at.y, moved: false };
+    drag = { kind: 'node', index, startX: at.x, startY: at.y, moved: false, touch: event.pointerType === 'touch' };
   } else {
     drag = { kind: 'pan', startX: at.x, startY: at.y, view, moved: false };
   }
@@ -1292,12 +1340,15 @@ function onPointerMove(event: PointerEvent): void {
   } else if (drag.kind === 'pinch') {
     const pinch = pinchOf();
     if (pinch === undefined) return;
-    const zoomed = zoomAt(drag.view, drag.mid.x, drag.mid.y, pinch.distance / drag.distance);
-    view = { ...zoomed, x: zoomed.x + pinch.mid.x - drag.mid.x, y: zoomed.y + pinch.mid.y - drag.mid.y };
+    view = pinchView(drag.view, drag.mid, drag.distance, pinch.mid, pinch.distance);
   } else if (drag.kind === 'pan') {
     if (Math.hypot(at.x - drag.startX, at.y - drag.startY) > 3) drag.moved = true;
     view = { ...drag.view, x: drag.view.x + at.x - drag.startX, y: drag.view.y + at.y - drag.startY };
     if (canvas.value !== null) canvas.value.style.cursor = 'grabbing';
+  } else if (drag.touch && Math.hypot(at.x - drag.startX, at.y - drag.startY) > 3) {
+    // D-293: a finger that slides from a node moves the view, as from the background; a tap still selects.
+    drag = { kind: 'pan', startX: drag.startX, startY: drag.startY, view, moved: true };
+    view = { ...drag.view, x: drag.view.x + at.x - drag.startX, y: drag.view.y + at.y - drag.startY };
   } else if (sim !== null) {
     if (!drag.moved && Math.hypot(at.x - drag.startX, at.y - drag.startY) > 3) {
       drag.moved = true;
@@ -1404,12 +1455,30 @@ function glideTo(to: View): void {
   requestFrame();
 }
 
+/**
+ * D-293: the part of the canvas the phone leaves free, from the header down to
+ * the note's sheet (a note open) or to the row of tools at the bottom.
+ */
+function phoneBand(): { top: number; bottom: number } {
+  const top = (header.value?.offsetTop ?? 0) + (header.value?.offsetHeight ?? 0);
+  const bottom = selected.value >= 0 ? height * PHONE_SHEET : height - PHONE_TOOLS;
+  return bottom - top > 120 ? { top, bottom } : { top: 0, bottom: height };
+}
+
+/** The flat view that shows the whole graph: the whole canvas on wide screens, the free band on the phone. */
+function fitFlat(w: number): View {
+  if (wide.value) return fitView(turnedNodes(), w, height);
+  const band = phoneBand();
+  const fitted = fitView(turnedNodes(), w, band.bottom - band.top, 24);
+  return { ...fitted, y: fitted.y + band.top };
+}
+
 function fit(): void {
   if (is3d() && sim3 !== null) {
     flyTo(fitCamera(camera, sim3.nodes, width + panelShift(), height));
     return;
   }
-  if (sim !== null) glideTo(fitView(turnedNodes(), width - (selected.value >= 0 && width > 900 ? 400 : 0), height));
+  if (sim !== null) glideTo(fitFlat(width - (selected.value >= 0 && width > 900 ? 400 : 0)));
 }
 
 function focusOn(index: number): void {
@@ -1422,9 +1491,17 @@ function focusOn(index: number): void {
   const node = sim?.nodes[index];
   if (node === undefined) return;
   void select(index);
+  const at = rotatePoint(node.x, node.y, orbitAngle);
+  if (!wide.value) {
+    // D-293: on the phone, between the header (compact once the note opens) and the note's sheet at the bottom.
+    void nextTick(() => {
+      const band = phoneBand();
+      glideTo(centerInBand(width, band.top, band.bottom, at.x, at.y, Math.max(view.k, 1.4)));
+    });
+    return;
+  }
   // Leave room for the panel on wide screens.
   const panel = width > 900 ? 400 : 0;
-  const at = rotatePoint(node.x, node.y, orbitAngle);
   glideTo(centerOn(width - panel, height, at.x, at.y, Math.max(view.k, 1.4)));
 }
 
@@ -1666,6 +1743,11 @@ const WAKE_EVENTS = ['pointermove', 'pointerdown', 'wheel', 'keydown', 'focus'] 
 let observer: ResizeObserver | undefined;
 const motion = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-reduced-motion: reduce)');
 const scheme = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-color-scheme: light)');
+const wideQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(min-width: 48rem)');
+const onWide = () => {
+  wide.value = wideQuery?.matches ?? true;
+  requestFrame();
+};
 let themeObserver: MutationObserver | undefined;
 const onTheme = () => {
   readTheme();
@@ -1688,6 +1770,9 @@ onMounted(() => {
   canFullscreen.value = document.fullscreenEnabled && typeof root.value?.requestFullscreen === 'function';
   darkChoice.value = loadDarkChoice();
   view3d.value = loadViewChoice();
+  phoneView.value = loadPhoneView();
+  onWide();
+  wideQuery?.addEventListener('change', onWide);
   readTheme();
   buildPalette();
   scheme?.addEventListener('change', onTheme);
@@ -1714,6 +1799,7 @@ onBeforeUnmount(() => {
   themeObserver?.disconnect();
   scheme?.removeEventListener('change', onTheme);
   motion?.removeEventListener('change', onMotion);
+  wideQuery?.removeEventListener('change', onWide);
   canvas.value?.removeEventListener('wheel', onWheel);
   document.removeEventListener('visibilitychange', onVisibility);
   document.removeEventListener('fullscreenchange', onFullscreenChange);
@@ -1752,85 +1838,141 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Title, counter, filter -->
-    <div class="pointer-events-none absolute top-3 left-3 flex w-[min(340px,calc(100%-24px))] flex-col gap-2">
-      <div class="hud-card pointer-events-auto bg-surface/85 p-3 backdrop-blur-sm">
+    <div
+      ref="header"
+      class="pointer-events-none absolute top-3 left-3 flex w-[min(340px,calc(100%-24px))] flex-col gap-2 phone:right-3 phone:w-auto"
+      :class="{ 'bottom-3': listMode }"
+    >
+      <div class="hud-card pointer-events-auto bg-surface/85 p-3 backdrop-blur-sm phone:shrink-0">
         <div class="flex items-center gap-2">
-          <Icon name="knowledge" :size="16" />
-          <h1 class="text-[17px] font-semibold">Conoscenza</h1>
-          <button type="button" class="ml-auto rounded-md p-1 text-muted hover:text-ink" title="Ricentra" aria-label="Ricentra il grafo" @click="fit">
+          <Icon class="phone:hidden" name="knowledge" :size="16" />
+          <h1 class="text-[17px] font-semibold phone:sr-only">Conoscenza</h1>
+          <!-- D-293: on the phone the graph or a list of its nodes; the title is already in the top bar. -->
+          <div v-if="!wide" class="kp-seg flex min-w-0 flex-1" role="group" aria-label="Come vedere la conoscenza">
+            <button type="button" class="flex-1" :class="{ on: phoneView === 'graph' }" :aria-pressed="phoneView === 'graph'" @click="setPhoneView('graph')">GRAFO</button>
+            <button type="button" class="flex-1" :class="{ on: phoneView === 'list' }" :aria-pressed="phoneView === 'list'" @click="setPhoneView('list')">ELENCO</button>
+          </div>
+          <button
+            v-if="!listMode"
+            type="button"
+            class="ml-auto rounded-md p-1 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center"
+            title="Ricentra"
+            aria-label="Ricentra il grafo"
+            @click="fit"
+          >
             <Icon name="focus" :size="15" />
           </button>
-          <button type="button" class="rounded-md p-1 text-muted hover:text-ink" title="Aggiorna" aria-label="Aggiorna il grafo" :disabled="loading" @click="load">
+          <button
+            type="button"
+            class="rounded-md p-1 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center"
+            :class="{ 'ml-auto': listMode }"
+            title="Aggiorna"
+            aria-label="Aggiorna il grafo"
+            :disabled="loading"
+            @click="load"
+          >
             <Icon name="retry" :size="15" />
           </button>
         </div>
-        <div class="kp-seg plain mt-2" role="group" aria-label="Fonte della conoscenza">
-          <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">Le tue note</button>
-          <button
-            type="button"
-            :class="{ on: source === 'arianna' }"
-            :aria-pressed="source === 'arianna'"
-            title="I documenti di sviluppo di Arianna: decisioni, proposte, specifiche, novità (sola lettura)"
-            @click="emit('source', 'arianna')"
-          >
-            Arianna
-          </button>
-        </div>
-        <p v-if="texts.note !== ''" class="mt-1.5 text-[13px] leading-snug text-muted">{{ texts.note }}</p>
-        <p class="mt-1.5 text-[13px] text-muted" aria-live="polite">
-          <b class="font-semibold text-ink">{{ counts.notes }}</b> {{ texts.pages }} · <b class="font-semibold text-ink">{{ counts.links }}</b> collegamenti ·
-          <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
-          <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
-        </p>
-        <div v-if="view3d" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
-          <button
-            type="button"
-            class="grid size-6 shrink-0 place-items-center rounded-full border border-line-strong text-[13px] hover:text-ink"
-            aria-label="Come si muove il grafo"
-            aria-controls="kp-help"
-            :aria-expanded="helpOpen"
-            @click="helpOpen = !helpOpen"
-          >
-            ?
-          </button>
-          Come si muove il grafo
-        </div>
-        <p v-if="view3d" v-show="helpOpen" id="kp-help" class="mt-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px]">
-          Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo.
-        </p>
-        <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5">
-          <Icon name="search" :size="14" />
-          <input
-            v-model="filter"
-            type="search"
-            class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
-            :placeholder="texts.filterPlaceholder"
-            aria-label="Filtra le note per titolo o tag"
-            @keydown.enter.prevent="chooseResult"
-          />
-        </label>
-        <label v-if="source === 'kb'" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
-          <input v-model="onlyWiki" type="checkbox" class="accent-[var(--graph-wiki)]" />
-          <span class="inline-block size-2 rotate-45" :style="{ background: 'var(--graph-wiki)' }" />
-          Solo Wiki
-        </label>
-        <ul v-if="filtering" class="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
-          <li v-for="{ node, index } in results" :key="node.id">
-            <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(index)">
-              <span class="size-2 shrink-0 rounded-full" :style="{ background: folderVar(node.folder) }" />
-              <span class="min-w-0 flex-1 truncate">{{ node.title }}</span>
-              <span class="font-mono text-[12px] text-muted">{{ folderName(node.folder) }}</span>
+        <!-- D-293: on the phone, with a note open on the graph, only the row above: the graph needs the room. -->
+        <template v-if="!compact">
+          <div class="mt-2" :class="{ 'flex items-center gap-3': !wide }">
+            <div class="kp-seg plain" role="group" aria-label="Fonte della conoscenza">
+              <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">Le tue note</button>
+              <button
+                type="button"
+                :class="{ on: source === 'arianna' }"
+                :aria-pressed="source === 'arianna'"
+                title="I documenti di sviluppo di Arianna: decisioni, proposte, specifiche, novità (sola lettura)"
+                @click="emit('source', 'arianna')"
+              >
+                Arianna
+              </button>
+            </div>
+            <label v-if="source === 'kb' && !wide" class="ml-auto flex min-h-11 items-center gap-2 text-[13px] text-muted">
+              <input v-model="onlyWiki" type="checkbox" class="accent-[var(--graph-wiki)]" />
+              <span class="inline-block size-2 rotate-45" :style="{ background: 'var(--graph-wiki)' }" />
+              Solo Wiki
+            </label>
+          </div>
+          <p v-if="texts.note !== ''" class="mt-1.5 text-[13px] leading-snug text-muted">{{ texts.note }}</p>
+          <p class="mt-1.5 text-[13px] text-muted" aria-live="polite">
+            <b class="font-semibold text-ink">{{ counts.notes }}</b> {{ texts.pages }} · <b class="font-semibold text-ink">{{ counts.links }}</b> collegamenti ·
+            <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
+            <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
+          </p>
+          <div v-if="view3d && !listMode" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
+            <button
+              type="button"
+              class="grid size-6 shrink-0 place-items-center rounded-full border border-line-strong text-[13px] hover:text-ink touch:size-11"
+              aria-label="Come si muove il grafo"
+              aria-controls="kp-help"
+              :aria-expanded="helpOpen"
+              @click="helpOpen = !helpOpen"
+            >
+              ?
             </button>
-          </li>
-          <li v-if="results.length === 0" class="px-2 py-1 text-[14px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
-        </ul>
+            Come si muove il grafo
+          </div>
+          <p v-if="view3d && !listMode" v-show="helpOpen" id="kp-help" class="mt-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px]">
+            <template v-if="wide">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo.</template>
+            <template v-else>Trascina con un dito per ruotare · due dita per lo zoom · tocca un nodo per volarci.</template>
+          </p>
+          <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 touch:min-h-11">
+            <Icon name="search" :size="14" />
+            <input
+              v-model="filter"
+              type="search"
+              class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted phone:text-base"
+              :placeholder="texts.filterPlaceholder"
+              aria-label="Filtra le note per titolo o tag"
+              @keydown.enter.prevent="chooseResult"
+            />
+          </label>
+          <label v-if="source === 'kb' && wide" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted touch:min-h-11">
+            <input v-model="onlyWiki" type="checkbox" class="accent-[var(--graph-wiki)]" />
+            <span class="inline-block size-2 rotate-45" :style="{ background: 'var(--graph-wiki)' }" />
+            Solo Wiki
+          </label>
+          <ul v-if="filtering && !listMode" class="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
+            <li v-for="{ node, index } in results" :key="node.id">
+              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2 touch:min-h-11" @click="focusOn(index)">
+                <span class="size-2 shrink-0 rounded-full" :style="{ background: folderVar(node.folder) }" />
+                <span class="min-w-0 flex-1 truncate">{{ node.title }}</span>
+                <span class="font-mono text-[12px] text-muted">{{ folderName(node.folder) }}</span>
+              </button>
+            </li>
+            <li v-if="results.length === 0" class="px-2 py-1 text-[14px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
+          </ul>
+        </template>
       </div>
       <p v-if="focusNotice !== null" role="status" class="pointer-events-auto rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ focusNotice }}</p>
       <p v-if="error !== null" role="alert" class="pointer-events-auto rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ error }}</p>
+      <!-- D-293: the list view of the phone, the nodes as rows; a row opens the note as the graph does. -->
+      <section v-if="listMode" class="hud-card pointer-events-auto flex min-h-0 flex-1 flex-col bg-surface/95 backdrop-blur-sm" :aria-label="`Elenco: ${texts.pages}`">
+        <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <li v-for="row in list.rows" :key="row.node.id">
+            <button type="button" class="flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[15px] hover:bg-surface-2" @click="select(row.index)">
+              <span v-if="wikiFolder(row.node.folder)" class="inline-block size-2.5 shrink-0 rotate-45" :style="{ background: folderVar(row.node.folder) }" />
+              <span v-else-if="row.node.kind === 'tag'" class="inline-block size-2.5 shrink-0 rotate-45 border border-muted" />
+              <span v-else class="size-2.5 shrink-0 rounded-full" :style="{ background: folderVar(row.node.folder) }" />
+              <span class="min-w-0 flex-1 truncate">{{ row.node.title }}</span>
+              <span class="shrink-0 font-mono text-[12px] text-muted">{{ row.node.kind === 'tag' ? '' : folderName(row.node.folder) }}</span>
+              <span class="w-6 shrink-0 text-right font-mono text-[12px] text-muted" :title="`${String(row.node.degree)} collegamenti`">{{ row.node.degree }}</span>
+            </button>
+          </li>
+          <li v-if="list.rows.length === 0 && nodes.length > 0" class="px-2.5 py-3 text-[15px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
+          <li v-if="list.more > 0" class="px-2.5 py-3 text-[13px] text-muted">Altre {{ list.more }}: cerca per trovarle.</li>
+        </ul>
+      </section>
     </div>
 
     <!-- Legend -->
-    <div v-if="legend.length > 0" class="hud-card pointer-events-auto absolute bottom-3 left-3 max-w-[calc(100%-24px)] bg-surface/85 px-3 py-2.5 backdrop-blur-sm">
+    <div
+      v-if="legend.length > 0 && (wide || (legendOpen && !listMode && selected < 0))"
+      id="kp-legend"
+      class="hud-card pointer-events-auto absolute bottom-3 left-3 max-w-[calc(100%-24px)] bg-surface/85 px-3 py-2.5 backdrop-blur-sm phone:right-3 phone:bottom-17"
+    >
       <h2 class="mb-1 text-[13px] font-semibold">Legenda</h2>
       <ul class="flex flex-wrap gap-x-3.5 gap-y-1 text-[13px]">
         <li v-for="item in legend" :key="item.folder" class="flex items-center gap-1.5">
@@ -1840,7 +1982,7 @@ onBeforeUnmount(() => {
           />
           <span v-else-if="wikiFolder(item.folder)" class="inline-block size-2.5 rotate-45" :style="{ background: folderVar(item.folder), boxShadow: `0 0 8px ${folderVar(item.folder)}` }" />
           <span v-else class="inline-block size-2.5 rounded-full" :style="{ background: folderVar(item.folder), boxShadow: `0 0 8px ${folderVar(item.folder)}` }" />
-          <button type="button" class="hover:text-accent" :title="`Filtra: ${folderName(item.folder)}`" @click="filter = item.folder === '#' ? 'tag:' : item.folder === '' ? '' : `${item.folder}/`">
+          <button type="button" class="hover:text-accent touch:min-h-11" :title="`Filtra: ${folderName(item.folder)}`" @click="filter = item.folder === '#' ? 'tag:' : item.folder === '' ? '' : `${item.folder}/`">
             {{ folderName(item.folder) }} <span class="text-muted">{{ item.count }}</span>
           </button>
         </li>
@@ -1863,7 +2005,8 @@ onBeforeUnmount(() => {
     <!-- The page of the selected node -->
     <aside
       v-if="selectedNode !== undefined"
-      class="hud-card absolute top-14 right-3 bottom-3 flex w-[min(400px,calc(100%-24px))] flex-col bg-surface/95 backdrop-blur-sm"
+      class="hud-card absolute top-14 right-3 bottom-3 flex w-[min(400px,calc(100%-24px))] flex-col bg-surface/95 backdrop-blur-sm phone:right-2 phone:bottom-2 phone:left-2 phone:w-auto"
+      :class="listMode ? 'phone:top-2' : 'phone:top-[45%]'"
       aria-label="Nota selezionata"
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
@@ -1876,7 +2019,22 @@ onBeforeUnmount(() => {
           <h2 class="mt-1 font-hud text-[17px] leading-snug font-semibold break-words">{{ selectedNode.title }}</h2>
         </div>
         <LabelBadge class="mt-0.5" :label="selectedNode.label" />
-        <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi la nota" @click="select(-1)">
+        <button
+          v-if="listMode"
+          type="button"
+          class="rounded-md p-1 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center"
+          title="Vedi nel grafo"
+          aria-label="Vedi la nota nel grafo"
+          @click="showInGraph(selected)"
+        >
+          <Icon name="knowledge" :size="16" />
+        </button>
+        <button
+          type="button"
+          class="rounded-md p-1 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center"
+          :aria-label="listMode ? 'Chiudi la nota e torna all’elenco' : 'Chiudi la nota'"
+          @click="select(-1)"
+        >
           <Icon name="close" :size="16" />
         </button>
       </header>
@@ -1887,7 +2045,7 @@ onBeforeUnmount(() => {
             v-for="tag in selectedNode.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent touch:min-h-11 touch:px-3"
             :title="`Filtra #${tag}`"
             @click="filter = `#${tag}`"
           >
@@ -1913,14 +2071,14 @@ onBeforeUnmount(() => {
             <button
               v-if="!isWikiNode(selectedNode)"
               type="button"
-              class="btn px-2.5 py-1 text-xs"
+              class="btn px-2.5 py-1 text-xs touch:min-h-11"
               :disabled="wikiSending"
               title="Il modello locale propone cosa aggiungere alla Wiki da questa nota; la pagina cambia solo se approvi"
               @click="proposeWiki(selectedNode.id)"
             >
               <Icon name="wiki" :size="14" />Proponi per la Wiki
             </button>
-            <button v-if="!isWikiNode(selectedNode)" type="button" class="btn px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
+            <button v-if="!isWikiNode(selectedNode)" type="button" class="btn px-2.5 py-1 text-xs hover:text-danger touch:min-h-11" @click="deletingPage = selectedNode.id">
               <Icon name="delete" :size="14" />Elimina
             </button>
           </div>
@@ -1929,11 +2087,15 @@ onBeforeUnmount(() => {
         <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la pagina…</p>
         <p v-else-if="pageError !== null" class="mt-3 text-sm text-danger">{{ pageError }}</p>
         <MarkdownText v-else-if="page !== null && page.id === selectedNode.id" class="mt-3" :source="page.body" :wikilink="followWikilink" />
-        <section v-if="selectedNeighbours.length > 0" class="mt-4 border-t border-line pt-3">
-          <h3 class="hud-title mb-1.5">{{ selectedNode.kind === 'tag' ? 'Note con questo tag' : 'Collegata a' }} · {{ selectedNeighbours.length }}</h3>
+        <section v-if="panelNeighbours.length > 0" class="mt-4 border-t border-line pt-3">
+          <h3 class="hud-title mb-1.5">{{ selectedNode.kind === 'tag' ? 'Note con questo tag' : 'Collegata a' }} · {{ panelNeighbours.length }}</h3>
           <ul class="flex flex-col gap-0.5">
-            <li v-for="item in selectedNeighbours" :key="item.node?.id">
-              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(item.index)">
+            <li v-for="item in panelNeighbours" :key="item.node?.id">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2 touch:min-h-11 phone:text-[15px]"
+                @click="listMode ? select(item.index) : focusOn(item.index)"
+              >
                 <span class="size-2 shrink-0 rounded-full" :style="{ background: item.node?.kind === 'tag' ? 'var(--muted)' : folderVar(item.node?.folder ?? '') }" />
                 <span class="min-w-0 flex-1 truncate">{{ item.node?.title }}</span>
               </button>
@@ -1944,7 +2106,7 @@ onBeforeUnmount(() => {
     </aside>
 
     <!-- Orbit and full screen -->
-    <div class="absolute top-3 right-3 flex items-center gap-1.5">
+    <div v-show="wide || (!listMode && selected < 0)" class="absolute top-3 right-3 flex items-center gap-1.5 phone:top-auto phone:bottom-3">
       <div class="kp-seg" role="group" aria-label="Vista del grafo">
         <button type="button" :class="{ on: !view3d }" :aria-pressed="!view3d" title="Grafo piatto (2D)" @click="setView3d(false)">2D</button>
         <button
@@ -1987,6 +2149,23 @@ onBeforeUnmount(() => {
           <circle cx="20.2" cy="8.4" r="1.1" fill="currentColor" stroke="none" />
         </svg>
         <span>Orbita</span>
+      </button>
+      <button
+        v-if="!wide && legend.length > 0"
+        type="button"
+        class="kp-tool"
+        :class="{ on: legendOpen }"
+        :aria-pressed="legendOpen"
+        aria-controls="kp-legend"
+        title="Legenda"
+        aria-label="Legenda"
+        @click="legendOpen = !legendOpen"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+          <circle cx="6" cy="7" r="2" />
+          <circle cx="6" cy="17" r="2" />
+          <path d="M11 7h9M11 17h9" />
+        </svg>
       </button>
       <button
         v-if="canFullscreen"
@@ -2128,5 +2307,28 @@ onBeforeUnmount(() => {
   color: var(--accent);
   border-color: var(--accent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* D-293: switches and tools a finger can hit (44 px); on the phone the tools show only their icon. */
+@media (max-width: 47.98rem), (pointer: coarse) {
+  .kp-tool,
+  .kp-seg {
+    height: 44px;
+  }
+
+  .kp-tool {
+    min-width: 44px;
+    justify-content: center;
+  }
+
+  .kp-seg button {
+    min-width: 44px;
+  }
+}
+
+@media (max-width: 47.98rem) {
+  .kp-tool span {
+    display: none;
+  }
 }
 </style>

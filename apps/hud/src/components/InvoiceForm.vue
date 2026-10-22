@@ -31,7 +31,7 @@ function submit(): void {
     <p v-else class="text-[14px]">
       Registri la fattura che hai fatto col tuo programma, con {{ props.ims.map((n) => `IM-${String(n)}`).join(', ') }}<template v-if="props.taxable">, imponibile {{ moneyText(props.taxable.cents, props.taxable.currency) }}</template>.
     </p>
-    <div class="grid gap-3 sm:grid-cols-[150px_150px_170px_150px]">
+    <div class="grid gap-3 max-sm:grid-cols-2 sm:grid-cols-[150px_150px_170px_150px]">
       <label class="flex flex-col gap-1 text-xs text-muted">Numero
         <input v-model="form.number" maxlength="40" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="12/2026" />
       </label>

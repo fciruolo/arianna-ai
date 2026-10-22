@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { listFinanceTransactions, setTransactionCategory } from '../lib/api.ts';
 import { readableDescription } from '../lib/finance-dashboard.ts';
+import { foldedFilterCount } from '../lib/tab-strip.ts';
 import { amountClass, EMPTY_FILTER, filterQuery, financeErrorText, formatCents, formatDay, nameLookup, type Account, type Category, type Tx, type TxFilter } from '../lib/finance.ts';
 import Icon from './Icon.vue';
 
@@ -32,6 +33,9 @@ const names = computed(() => nameLookup(props.accounts, props.categories));
 const outCategories = computed(() => props.categories.filter((category) => category.kind === 'out'));
 const inCategories = computed(() => props.categories.filter((category) => category.kind === 'in'));
 const showAccount = computed(() => filter.account === '' && props.accounts.length > 1);
+/** On a phone the filters fold under one button (D-293); the search stays in view. */
+const filtersOpen = ref(false);
+const foldedCount = computed(() => foldedFilterCount(filter));
 const filtered = computed(() => filter.fingerprints.length > 0 || filter.account !== '' || filter.from !== '' || filter.to !== '' || filter.category !== '' || filter.uncategorized || filter.q.trim() !== '');
 
 async function load(append = false): Promise<void> {
@@ -124,37 +128,42 @@ async function choose(row: Tx, value: string): Promise<void> {
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex flex-wrap items-end gap-2">
+      <button type="button" class="btn px-3 py-1.5 text-[14px] md:hidden" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
+        <Icon name="sort" :size="14" />Filtri<template v-if="foldedCount > 0"> · {{ foldedCount }}</template>
+      </button>
+      <div class="contents" :class="filtersOpen ? '' : 'max-md:hidden'">
       <label class="flex flex-col gap-1 text-xs text-muted">
         Conto
-        <select v-model="filter.account" class="field px-2 py-1.5 text-[14px]">
+        <select v-model="filter.account" class="field touch:min-h-11 px-2 py-1.5 text-[14px]">
           <option value="">Tutti i conti</option>
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.name }}{{ account.archived ? ' (archiviato)' : '' }}</option>
         </select>
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Dal
-        <input v-model="filter.from" type="date" class="field px-2 py-1 text-[14px]" />
+        <input v-model="filter.from" type="date" class="field touch:min-h-11 px-2 py-1 text-[14px]" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Al
-        <input v-model="filter.to" type="date" class="field px-2 py-1 text-[14px]" />
+        <input v-model="filter.to" type="date" class="field touch:min-h-11 px-2 py-1 text-[14px]" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Categoria
-        <select v-model="filter.category" class="field px-2 py-1.5 text-[14px]" :disabled="filter.uncategorized">
+        <select v-model="filter.category" class="field touch:min-h-11 px-2 py-1.5 text-[14px]" :disabled="filter.uncategorized">
           <option value="">Tutte</option>
           <option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option>
         </select>
       </label>
-      <label class="flex items-center gap-1.5 pb-2 text-xs text-muted">
+      <label class="flex items-center gap-1.5 pb-2 text-xs text-muted touch:min-h-11 touch:pb-0">
         <input v-model="filter.uncategorized" type="checkbox" />
         Senza categoria
       </label>
-      <label class="flex h-[34px] min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-xs">
+      </div>
+      <label class="flex h-[34px] min-w-[180px] flex-1 touch:h-11 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-xs">
         <Icon name="search" :size="14" />
         <input v-model="filter.q" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca nella descrizione" aria-label="Cerca nella descrizione" />
       </label>
-      <button v-if="filtered" type="button" class="rounded-md px-2 py-1.5 text-xs text-muted hover:text-ink" @click="clearFilters">Togli i filtri</button>
+      <button v-if="filtered" type="button" class="rounded-md px-2 py-1.5 text-xs text-muted hover:text-ink touch:min-h-11" @click="clearFilters">Togli i filtri</button>
     </div>
 
     <p v-if="filter.fingerprints.length > 0" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm" role="status">
@@ -169,10 +178,10 @@ async function choose(row: Tx, value: string): Promise<void> {
 
     <template v-if="rows !== null && rows.length > 0">
       <p class="text-xs text-muted">{{ total === 1 ? '1 movimento' : `${total.toLocaleString('it-IT')} movimenti` }}, dal più recente</p>
-      <!-- Scrolls sideways only on a phone: on a wider screen the menu of a category must not be cut by the box. -->
-      <div class="rounded-xl border border-line bg-surface-2 max-md:overflow-x-auto">
-        <table class="w-full min-w-[640px] text-left text-[14px]">
-          <thead class="text-xs text-muted">
+      <!-- On a phone each movement is a card (D-293): date and amount, then description and category. -->
+      <div class="rounded-xl border border-line bg-surface-2">
+        <table class="w-full min-w-[640px] text-left text-[14px] max-md:block max-md:min-w-0">
+          <thead class="text-xs text-muted max-md:hidden">
             <tr class="border-b border-line-strong">
               <th class="w-[108px] px-3 py-2 font-medium">Data</th>
               <th class="px-3 py-2 font-medium">Descrizione</th>
@@ -180,23 +189,23 @@ async function choose(row: Tx, value: string): Promise<void> {
               <th class="w-[130px] px-3 py-2 text-right font-medium">Importo</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.id" class="border-t border-line align-middle first:border-t-0 hover:bg-surface">
-              <td class="px-3 py-1.5 whitespace-nowrap text-muted tabular-nums">
+          <tbody class="max-md:block">
+            <tr v-for="row in rows" :key="row.id" class="border-t border-line align-middle first:border-t-0 hover:bg-surface max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-3 max-md:gap-y-1 max-md:px-3 max-md:py-2.5">
+              <td class="px-3 py-1.5 whitespace-nowrap text-muted tabular-nums max-md:order-1 max-md:p-0 max-md:text-xs">
                 {{ formatDay(row.booked) }}
                 <span v-if="row.value && row.value !== row.booked" class="block text-xs">valuta {{ formatDay(row.value) }}</span>
               </td>
-              <td class="px-3 py-1.5" :title="row.description">
+              <td class="px-3 py-1.5 max-md:order-3 max-md:col-span-2 max-md:p-0" :title="row.description">
                 <span class="block font-medium break-words">{{ readableOf(row).title }}</span>
                 <span v-if="readableOf(row).detail !== '' || showAccount" class="block text-xs text-muted">
                   {{ [readableOf(row).detail, showAccount ? names.account(row.account) : ''].filter((part) => part !== '').join(' · ') }}
                 </span>
               </td>
-              <td class="px-3 py-1.5">
+              <td class="px-3 py-1.5 max-md:order-4 max-md:col-span-2 max-md:p-0">
                 <div class="relative" data-category-picker>
                 <button
                   type="button"
-                  class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13.5px] whitespace-nowrap hover:border-accent"
+                  class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13.5px] whitespace-nowrap hover:border-accent touch:min-h-11 touch:px-3.5"
                   :class="row.category === null ? 'border-dashed border-line-strong text-muted' : 'border-line-strong bg-surface'"
                   :disabled="saving === row.id"
                   :data-category-pill="row.id"
@@ -213,20 +222,20 @@ async function choose(row: Tx, value: string): Promise<void> {
                 </button>
                 <div
                   v-if="openFor === row.id"
-                  class="absolute top-full left-0 z-20 mt-1 flex w-64 flex-col rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-lg"
+                  class="absolute top-full left-0 z-20 mt-1 flex w-64 max-w-[calc(100vw-3rem)] flex-col rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-lg"
                   role="dialog"
                   :aria-label="`Scegli la categoria del movimento del ${formatDay(row.booked)}`"
                   @keydown.esc="closeWithEsc(row)"
                 >
                   <div class="flex max-h-64 flex-col overflow-y-auto">
-                    <button type="button" class="rounded-md px-2 py-1 text-left text-[14px] text-muted hover:bg-bg" :class="row.category === null ? 'font-semibold' : ''" :aria-current="row.category === null ? 'true' : undefined" @click="pick(row, '')">Senza categoria</button>
+                    <button type="button" class="rounded-md px-2 py-1 text-left text-[14px] text-muted hover:bg-bg touch:min-h-11" :class="row.category === null ? 'font-semibold' : ''" :aria-current="row.category === null ? 'true' : undefined" @click="pick(row, '')">Senza categoria</button>
                     <template v-for="group in ([['Uscite', outCategories], ['Entrate', inCategories]] as const)" :key="group[0]">
                       <p v-if="group[1].length > 0" class="px-2 pt-1.5 pb-0.5 text-xs text-muted">{{ group[0] }}</p>
                       <button
                         v-for="category in group[1]"
                         :key="category.id"
                         type="button"
-                        class="rounded-md px-2 py-1 text-left text-[14px] hover:bg-bg"
+                        class="rounded-md px-2 py-1 text-left text-[14px] hover:bg-bg touch:min-h-11"
                         :class="row.category === category.id ? 'font-semibold text-accent' : ''"
                         :aria-current="row.category === category.id ? 'true' : undefined"
                         @click="pick(row, category.id)"
@@ -240,7 +249,7 @@ async function choose(row: Tx, value: string): Promise<void> {
                 </div>
                 </div>
               </td>
-              <td class="px-3 py-1.5 text-right whitespace-nowrap tabular-nums" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency, sign: row.amount > 0 }) }}</td>
+              <td class="px-3 py-1.5 text-right whitespace-nowrap tabular-nums max-md:order-2 max-md:p-0 max-md:font-medium" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency, sign: row.amount > 0 }) }}</td>
             </tr>
           </tbody>
         </table>

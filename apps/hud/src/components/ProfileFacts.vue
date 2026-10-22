@@ -173,7 +173,7 @@ const input = 'field w-full min-w-0 px-2.5 py-1.5 text-[14px] text-ink';
             type="button"
             role="radio"
             :aria-checked="form.shared === shared"
-            class="inline-flex items-center gap-1.5 border-line-strong px-3 py-1.5 text-[14px] not-first:border-l"
+            class="inline-flex items-center gap-1.5 border-line-strong px-3 py-1.5 text-[14px] not-first:border-l touch:min-h-11"
             :class="form.shared === shared ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:text-ink'"
             @click="form.shared = shared"
           >

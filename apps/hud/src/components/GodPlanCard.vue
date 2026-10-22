@@ -73,13 +73,13 @@ onMounted(load);
       <button
         v-if="plan.approved === undefined"
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-accent-ink disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-accent-ink disabled:opacity-50 touch:min-h-11"
         :disabled="busy"
         @click="approve"
       >
         <Icon name="approve" :size="15" />{{ busy ? 'Avvio…' : 'Approva e avvia' }}
       </button>
-      <button v-else type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong" @click="emit('dashboard')">Apri il cruscotto di GOD</button>
+      <button v-else type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong touch:min-h-11" @click="emit('dashboard')">Apri il cruscotto di GOD</button>
       <span class="text-xs text-muted">
         {{ plan.approved === undefined ? 'Ogni sottocompito lavora in un clone suo, con il Coder; poi il Reviewer. L’unione in main la fai tu.' : 'Approvato: i sottocompiti partono secondo la quota.' }}
       </span>

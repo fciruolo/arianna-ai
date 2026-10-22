@@ -210,17 +210,17 @@ function width(cents: number): string {
     </div>
 
     <div class="flex flex-wrap items-end gap-2">
-      <label class="flex flex-col gap-1 text-xs text-muted">
+      <label class="flex flex-col gap-1 text-xs text-muted max-md:min-w-0 max-md:flex-1">
         Periodo
-        <select v-model="period" class="field px-2 py-1.5 text-[14px]">
+        <select v-model="period" class="field touch:min-h-11 px-2 py-1.5 text-[14px] max-md:w-full">
           <option value="last12">Ultimi 12 mesi</option>
           <option value="thisYear">Quest’anno</option>
           <option value="lastYear">L’anno scorso</option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs text-muted">
+      <label class="flex flex-col gap-1 text-xs text-muted max-md:min-w-0 max-md:flex-1">
         Conto
-        <select v-model="account" class="field px-2 py-1.5 text-[14px]">
+        <select v-model="account" class="field touch:min-h-11 px-2 py-1.5 text-[14px] max-md:w-full">
           <option value="">Tutti i conti</option>
           <option v-for="item in accounts" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
@@ -235,7 +235,7 @@ function width(cents: number): string {
       <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <section class="hud-card flex flex-col gap-1 p-4" aria-label="Saldo dei conti">
           <h3 class="hud-title">{{ account === '' ? 'Saldo dei conti' : 'Saldo del conto' }}</h3>
-          <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ balances === null || balances.length === 0 ? '—' : balanceText(balances) }}</p>
+          <p class="text-[26px] leading-tight max-md:text-[21px] font-semibold tabular-nums">{{ balances === null || balances.length === 0 ? '—' : balanceText(balances) }}</p>
           <p class="text-xs text-muted">
             <template v-if="balances === null">Saldo non letto.</template>
             <template v-else-if="balances.length === 0">Nessun saldo negli estratti conto importati.</template>
@@ -244,24 +244,24 @@ function width(cents: number): string {
         </section>
         <section v-for="kind in (['expenses', 'income'] as const)" :key="kind" class="hud-card flex flex-col gap-1 p-4" :aria-label="kind === 'expenses' ? 'Uscite del mese' : 'Entrate del mese'">
           <h3 class="hud-title">{{ kind === 'expenses' ? 'Uscite' : 'Entrate' }}{{ pair ? ` di ${monthName}` : '' }}</h3>
-          <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ pair ? formatCents(pair.current[kind]) : '—' }}</p>
+          <p class="text-[26px] leading-tight max-md:text-[21px] font-semibold tabular-nums">{{ pair ? formatCents(pair.current[kind]) : '—' }}</p>
           <p class="text-xs text-muted">{{ pair ? monthChangeText(pair.current[kind], pair.previous[kind], pair.previous.month) : 'Nessun movimento nel periodo.' }}</p>
         </section>
         <section class="hud-card flex flex-col gap-1 p-4" aria-label="Budget del mese">
           <h3 class="hud-title">Budget{{ pair ? ` di ${monthName}` : '' }}</h3>
           <template v-if="budgets === null">
-            <p class="text-[26px] leading-tight font-semibold">—</p>
+            <p class="text-[26px] leading-tight max-md:text-[21px] font-semibold">—</p>
             <p class="text-xs text-muted">Budget non letti.</p>
           </template>
           <template v-else-if="budgetList.length > 0">
-            <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ overBudgets.length === 0 ? 'Nei limiti' : `${String(overBudgets.length)} su ${String(budgetList.length)}` }}</p>
+            <p class="text-[26px] leading-tight max-md:text-[21px] font-semibold tabular-nums">{{ overBudgets.length === 0 ? 'Nei limiti' : `${String(overBudgets.length)} su ${String(budgetList.length)}` }}</p>
             <p class="text-xs" :class="overBudgets.length > 0 ? 'text-danger' : 'text-muted'">
               {{ overBudgets.length === 0 ? `${String(budgetList.length)} budget, nessuno superato` : `superati: ${overBudgets.map((row) => names.category(row.category)).join(', ')}` }} · tutti i conti
             </p>
           </template>
           <template v-else>
-            <p class="text-[26px] leading-tight font-semibold">—</p>
-            <button type="button" class="self-start text-xs text-accent hover:underline" @click="emit('tab', 'categorie')">Imposta un budget</button>
+            <p class="text-[26px] leading-tight max-md:text-[21px] font-semibold">—</p>
+            <button type="button" class="self-start text-xs text-accent hover:underline touch:min-h-11" @click="emit('tab', 'categorie')">Imposta un budget</button>
           </template>
         </section>
       </div>
@@ -288,7 +288,7 @@ function width(cents: number): string {
               </g>
             </svg>
             <details class="text-xs">
-              <summary class="cursor-pointer text-muted">I numeri mese per mese</summary>
+              <summary class="cursor-pointer text-muted touch:py-3">I numeri mese per mese</summary>
               <table class="mt-2 w-full text-left tabular-nums">
                 <thead class="text-muted">
                   <tr><th class="py-1 font-medium">Mese</th><th class="py-1 text-right font-medium">Entrate</th><th class="py-1 text-right font-medium">Uscite</th><th class="py-1 text-right font-medium">Differenza</th></tr>
@@ -324,7 +324,7 @@ function width(cents: number): string {
               <span v-if="budgetOf(bar.category)" class="text-xs" :class="budgetOf(bar.category)?.over ? 'text-danger' : 'text-muted'">
                 Budget di {{ monthName }}: {{ formatCents(budgetOf(bar.category)?.spent ?? 0) }} su {{ formatCents(budgetOf(bar.category)?.limit ?? 0) }}{{ budgetOf(bar.category)?.over ? ', superato' : '' }}
               </span>
-              <button v-if="bar.category === null" type="button" class="self-start text-xs text-accent hover:underline" @click="emit('open', { ...EMPTY_FILTER, uncategorized: true })">Assegnale in Movimenti</button>
+              <button v-if="bar.category === null" type="button" class="self-start text-xs text-accent hover:underline touch:min-h-11" @click="emit('open', { ...EMPTY_FILTER, uncategorized: true })">Assegnale in Movimenti</button>
             </li>
           </ul>
         </section>
@@ -335,7 +335,7 @@ function width(cents: number): string {
         <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Ultimi movimenti">
           <header class="flex items-baseline justify-between gap-2">
             <h3 class="hud-title">Ultimi movimenti</h3>
-            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'movimenti')">Tutti</button>
+            <button type="button" class="text-xs text-accent hover:underline touch:-my-3 touch:min-h-11 touch:px-2" @click="emit('tab', 'movimenti')">Tutti</button>
           </header>
           <p v-if="recent === null" class="text-sm text-muted">Movimenti non letti.</p>
           <p v-else-if="recent.length === 0" class="text-sm text-muted">Nessun movimento.</p>
@@ -377,13 +377,13 @@ function width(cents: number): string {
         <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Avvisi del mese">
           <header class="flex items-baseline justify-between gap-2">
             <h3 class="hud-title">Avvisi di questo mese</h3>
-            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'avvisi')">Tutti{{ (alerts?.length ?? 0) > 3 ? ` (${String(alerts?.length ?? 0)})` : '' }}</button>
+            <button type="button" class="text-xs text-accent hover:underline touch:-my-3 touch:min-h-11 touch:px-2" @click="emit('tab', 'avvisi')">Tutti{{ (alerts?.length ?? 0) > 3 ? ` (${String(alerts?.length ?? 0)})` : '' }}</button>
           </header>
           <p v-if="alerts === null" class="text-sm text-muted">Avvisi non letti.</p>
           <p v-else-if="alerts.length === 0" class="text-sm text-muted">Nessun avviso: niente addebiti cambiati, spese insolite, doppi addebiti o budget superati.</p>
           <ul v-else class="flex flex-col">
             <li v-for="item in shownAlerts" :key="item.text.title" class="border-t border-line py-1.5 first:border-t-0">
-              <button type="button" class="flex w-full items-start gap-2 text-left text-[14px] hover:text-accent" @click="emit('open', alertFilter(item.alert))">
+              <button type="button" class="flex w-full items-start gap-2 text-left text-[14px] hover:text-accent touch:min-h-11" @click="emit('open', alertFilter(item.alert))">
                 <span class="mt-1.5 size-2 shrink-0 rounded-full" :class="item.text.tone === 'danger' ? 'bg-danger' : 'bg-warn'" aria-hidden="true" />
                 <span>{{ item.text.title }}</span>
               </button>

@@ -410,7 +410,7 @@ const factKey = 'text-[13px] text-muted';
         :id="`models-tab-${item.id}`"
         type="button"
         role="tab"
-        class="-mb-px border-b-2 px-3 py-1.5 text-[14px] whitespace-nowrap"
+        class="-mb-px border-b-2 px-3 py-1.5 text-[14px] whitespace-nowrap touch:min-h-11"
         :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
         :aria-selected="tab === item.id"
         :aria-controls="`models-panel-${item.id}`"
@@ -518,7 +518,7 @@ const factKey = 'text-[13px] text-muted';
               v-for="item in WHERE"
               :key="item.id"
               type="button"
-              class="px-3 py-1 text-[14px]"
+              class="px-3 py-1 text-[14px] touch:min-h-11"
               :class="filter.where === item.id ? 'bg-surface font-semibold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
               :aria-pressed="filter.where === item.id"
               @click="filter.where = item.id"
@@ -550,7 +550,7 @@ const factKey = 'text-[13px] text-muted';
             class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line first-of-type:border-t-0"
             :class="entry.key === currentKey ? 'bg-surface shadow-[inset_3px_0_0_var(--accent)]' : 'hover:bg-surface'"
           >
-            <button type="button" class="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 py-2.5 pl-3 text-left" :aria-current="entry.key === currentKey ? 'true' : undefined" @click="choose(entry.key)">
+            <button type="button" class="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 py-2.5 pl-3 text-left touch:min-h-11" :aria-current="entry.key === currentKey ? 'true' : undefined" @click="choose(entry.key)">
               <span class="grid size-[34px] place-items-center rounded-[9px] border border-line-strong bg-surface text-[12px] font-semibold" :class="badgeClass(entry.view)">{{ entry.badge }}</span>
               <span class="min-w-0">
                 <!-- The whole name, wrapped: a long id is never cut. -->
@@ -662,7 +662,7 @@ const factKey = 'text-[13px] text-muted';
                   v-for="role in current.view.suitedRoles"
                   :key="role"
                   type="button"
-                  class="rounded-full border px-2.5 py-0.5 text-[13px]"
+                  class="rounded-full border px-2.5 py-0.5 text-[13px] touch:min-h-11"
                   :class="holder(role) === current.view.id ? 'border-accent bg-accent/10 text-ink' : 'border-line-strong text-muted hover:text-ink'"
                   :aria-pressed="holder(role) === current.view.id"
                   :title="holder(role) !== undefined && holder(role) !== current.view.id ? `Ora: ${holder(role)}` : undefined"

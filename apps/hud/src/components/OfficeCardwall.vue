@@ -35,13 +35,13 @@ useModal(dialog, () => emit('close'), back, { holder: true });
     aria-modal="true"
     aria-labelledby="office-cardwall-title"
     tabindex="-1"
-    class="fixed inset-x-2 top-[14vh] bottom-2 z-30 flex flex-col overflow-hidden rounded-xl border border-line-strong bg-bg shadow-[0_14px_40px_#0006] outline-none md:inset-x-6 md:top-[30vh] md:bottom-4"
+    class="fixed inset-x-2 top-[14vh] bottom-2 z-30 flex flex-col overflow-hidden rounded-xl border border-line-strong bg-bg shadow-[0_14px_40px_#0006] outline-none md:inset-x-6 md:top-[30vh] md:bottom-4 phone:bottom-[calc(var(--safe-bottom)+0.5rem)]"
   >
     <header class="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2 md:px-6">
       <Icon name="cardwall" :size="16" />
       <h2 id="office-cardwall-title" class="font-medium">Cardwall</h2>
       <span class="hidden min-w-0 truncate text-xs text-muted sm:inline">nell'ufficio, con i filtri della pagina Cardwall</span>
-      <button ref="back" type="button" class="btn ml-auto px-2.5 py-1 text-xs" @click="emit('close')">
+      <button ref="back" type="button" class="btn ml-auto px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" @click="emit('close')">
         <Icon name="close" :size="14" />Torna all'ufficio
       </button>
     </header>

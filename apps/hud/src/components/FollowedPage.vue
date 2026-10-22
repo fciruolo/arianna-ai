@@ -180,7 +180,7 @@ function countText(card: FollowedCard): string {
             <li v-for="card in search.cards" :key="card.key">
               <button
                 type="button"
-                class="flex h-full w-full flex-col gap-2 rounded-xl border border-line bg-surface px-4 py-3.5 text-left transition-colors hover:border-line-strong hover:bg-surface-2"
+                class="flex h-full w-full flex-col gap-2 rounded-xl border border-line bg-surface px-4 py-3.5 text-left transition-colors hover:border-line-strong hover:bg-surface-2 touch:min-h-11"
                 :aria-label="`Apri ${card.title}`"
                 @click="openCard(card)"
               >
@@ -211,7 +211,7 @@ function countText(card: FollowedCard): string {
             <p v-if="search.results.length === 0" role="status" class="text-[14px] text-muted">{{ noResultText(query) }}</p>
             <ul v-else class="m-0 flex list-none flex-col overflow-hidden rounded-xl border border-line bg-surface p-0">
               <li v-for="(result, index) in search.results" :key="index" class="border-b border-line last:border-b-0">
-                <button type="button" class="flex w-full flex-col gap-0.5 px-3.5 py-2 text-left hover:bg-surface-2" @click="openKey(result.cardKey)">
+                <button type="button" class="flex w-full flex-col gap-0.5 px-3.5 py-2 text-left hover:bg-surface-2 touch:min-h-11" @click="openKey(result.cardKey)">
                   <span class="text-[12.5px] text-muted">{{ result.source }} · {{ ROW_KIND_TEXT[result.kind] }}</span>
                   <span class="text-[14px] break-words">
                     <template v-for="(part, part_index) in highlight(result.text, query)" :key="part_index"><mark v-if="part.hit" class="rounded-sm bg-accent/25 text-ink">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template>
@@ -235,13 +235,13 @@ function countText(card: FollowedCard): string {
             <ul v-if="rows.length > 0" class="m-0 flex list-none flex-col p-0">
               <li v-for="row in rows" :key="`${row.kind}:${row.id}`" class="flex flex-wrap items-center gap-2.5 border-t border-line py-2.5 text-[14px] first:border-t-0 first:pt-0">
                 <span class="pill text-[12.5px]">{{ CATALOG_PLACES[row.kind].kind }}</span>
-                <div class="min-w-0 flex-1">
+                <div class="min-w-0 flex-1 phone:min-w-[12rem]">
                   <a :href="row.page" target="_blank" rel="noopener noreferrer" class="font-semibold break-words hover:text-accent hover:underline">{{ row.id }}</a>
                   <div class="text-[13px] text-muted">
                     {{ row.inUse }}<template v-if="row.pending !== null"> · <span class="text-info">{{ row.pending }}</span></template><template v-if="row.job !== null"> · {{ row.job }}</template>
                   </div>
                 </div>
-                <a :href="CATALOG_PLACES[row.kind].path" class="text-[13px] font-medium text-accent hover:underline" @click="open($event, CATALOG_PLACES[row.kind].path)">{{ CATALOG_PLACES[row.kind].label }}</a>
+                <a :href="CATALOG_PLACES[row.kind].path" class="text-[13px] font-medium text-accent hover:underline touch:inline-flex touch:min-h-11 touch:items-center" @click="open($event, CATALOG_PLACES[row.kind].path)">{{ CATALOG_PLACES[row.kind].label }}</a>
               </li>
             </ul>
           </SettingsCard>

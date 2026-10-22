@@ -133,14 +133,14 @@ watch(
       <button
         v-if="note && !editing && !releasing && !deleting"
         type="button"
-        class="grid size-8 place-items-center rounded-md text-muted transition hover:text-danger"
+        class="grid size-8 place-items-center rounded-md text-muted transition hover:text-danger touch:size-11"
         :aria-label="`Elimina per sempre ${note.title}`"
         title="Elimina per sempre"
         @click="emit('delete')"
       >
         <Icon name="delete" :size="15" />
       </button>
-      <button type="button" class="grid size-8 place-items-center rounded-md text-muted transition hover:text-ink" aria-label="Chiudi la nota" title="Chiudi" :disabled="editing?.busy === true" @click="emit('close')">
+      <button type="button" class="grid size-8 place-items-center rounded-md text-muted transition hover:text-ink touch:size-11" aria-label="Chiudi la nota" title="Chiudi" :disabled="editing?.busy === true" @click="emit('close')">
         <Icon name="close" :size="15" />
       </button>
     </header>

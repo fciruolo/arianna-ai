@@ -305,7 +305,7 @@ function retry(): void {
                       v-for="(audience, at) in AUDIENCES"
                       :key="audience"
                       type="button"
-                      class="px-2.5 py-0.5"
+                      class="px-2.5 py-0.5 touch:min-h-11 touch:px-3.5"
                       :class="[at > 0 ? 'border-l border-line-strong' : '', row.item.audience === audience ? 'bg-accent/14 font-semibold text-ink' : 'text-muted hover:text-ink']"
                       :aria-pressed="row.item.audience === audience"
                       @click="chooseAudience(row.item.line, audience)"
@@ -319,7 +319,7 @@ function retry(): void {
             </div>
             <p v-if="!own" class="text-[13px] text-muted">
               Il modello comune si scrive in
-              <button type="button" class="text-accent hover:underline" @click="emit('settings', 'regole-dei-progetti')">Impostazioni → Regole dei progetti</button>. Per sceglierle solo per questo progetto passa a «Regole proprie».
+              <button type="button" class="text-accent hover:underline touch:min-h-11" @click="emit('settings', 'regole-dei-progetti')">Impostazioni → Regole dei progetti</button>. Per sceglierle solo per questo progetto passa a «Regole proprie».
             </p>
           </template>
           <p v-if="tooLong" class="text-[13px] text-danger">Al massimo {{ MAX_PROJECT_RULES }} caratteri.</p>
@@ -336,8 +336,8 @@ function retry(): void {
         <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-mode">
           <h3 id="rules-side-mode" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Quali regole</h3>
           <span class="flex w-full overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-labelledby="rules-side-mode">
-            <button type="button" class="flex-1 px-2 py-1.5 text-[14px]" :class="!own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="!own" @click="chooseMode(false)">Modello comune</button>
-            <button type="button" class="flex-1 border-l border-line-strong px-2 py-1.5 text-[14px]" :class="own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="own" @click="chooseMode(true)">Regole proprie</button>
+            <button type="button" class="flex-1 px-2 py-1.5 text-[14px] touch:min-h-11" :class="!own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="!own" @click="chooseMode(false)">Modello comune</button>
+            <button type="button" class="flex-1 border-l border-line-strong px-2 py-1.5 text-[14px] touch:min-h-11" :class="own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="own" @click="chooseMode(true)">Regole proprie</button>
           </span>
           <p class="mt-2 text-[13px] text-muted">{{ own ? 'Partono da una copia del modello comune; vuote = nessuna regola.' : 'Le stesse di ogni progetto senza regole proprie.' }}</p>
         </section>

@@ -472,11 +472,11 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
     <p v-if="notice !== null" role="status" class="flex items-start gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[14px] text-ink">
       <Icon name="info" :size="14" class="mt-0.5 shrink-0 text-accent" />
       <span class="flex-1">{{ notice }}</span>
-      <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="notice = null"><Icon name="close" :size="14" /></button>
+      <button type="button" class="shrink-0 text-muted hover:text-ink touch:-my-2.5 touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi l’avviso" @click="notice = null"><Icon name="close" :size="14" /></button>
     </p>
     <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
       <span class="flex-1">{{ problem }}</span>
-      <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
+      <button type="button" class="shrink-0 text-muted hover:text-ink touch:-my-2.5 touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
     </p>
 
     <p v-if="projects.length === 0" class="text-sm text-muted">Non ci sono progetti: gli IM stanno nelle cartelle di gestione di un progetto.</p>
@@ -510,7 +510,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
               type="button"
               role="radio"
               :aria-checked="reportLanguage === language"
-              class="px-2.5 py-0.5 text-[13px]"
+              class="px-2.5 py-0.5 text-[13px] touch:min-h-11 touch:px-3.5"
               :class="reportLanguage === language ? 'bg-accent/15 text-ink' : 'text-muted hover:text-ink'"
               @click="chooseLanguage(language)"
             >
@@ -524,19 +524,19 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
             <span class="text-[14px] text-ink">{{ REPORT_AGENT_TEXT[agent] }}</span>
             <span class="text-[12.5px] text-muted">{{ REPORT_AGENT_HINT[agent] }}</span>
           </button>
-          <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink" @click="reportMenu = false">Annulla</button>
+          <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink touch:min-h-11" @click="reportMenu = false">Annulla</button>
         </div>
       </div>
       <div v-if="replaceAsk !== null" role="alertdialog" aria-label="Sostituire il report" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[14px]">
         <span class="flex-1">{{ REPORT_REPLACE_TEXT }}</span>
         <button type="button" class="btn px-3 py-1 text-[13.5px]" @click="writeReport(replaceAsk, true)">Sostituisci</button>
-        <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink" @click="replaceAsk = null">Annulla</button>
+        <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink touch:min-h-11" @click="replaceAsk = null">Annulla</button>
       </div>
 
       <!-- The report for the client, to review and copy (the user sends it). -->
       <section v-if="im.report !== ''" class="rounded-lg border border-line bg-surface">
         <div class="flex items-center gap-2 px-3 py-1.5">
-          <button type="button" class="flex flex-1 items-center gap-1.5 text-left text-[14px] text-ink" :aria-expanded="reportOpen" aria-controls="im-report-text" @click="reportOpen = !reportOpen">
+          <button type="button" class="flex flex-1 items-center gap-1.5 text-left text-[14px] text-ink touch:min-h-11" :aria-expanded="reportOpen" aria-controls="im-report-text" @click="reportOpen = !reportOpen">
             <Icon name="expand" :size="13" class="transition-transform" :class="reportOpen ? 'rotate-90' : ''" />Report per il cliente
           </button>
           <button type="button" class="btn px-2 py-0.5 text-[13px]" @click="copyReport">
@@ -575,7 +575,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
                 <button type="submit" class="btn px-2 py-1 text-[13px]" :disabled="busy || newItem.trim() === ''">Aggiungi</button>
               </form>
             </li>
-            <li v-if="groups[state].length === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">Nessuna voce: trascinane una qui</li>
+            <li v-if="groups[state].length === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">Nessuna voce: <span class="touch:hidden">trascinane una qui</span><span class="hidden touch:inline">spostane una qui col menu ≡ della voce</span></li>
             <li
               v-for="item in groups[state]"
               :key="`${item.line}:${item.title}`"
@@ -603,7 +603,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
                 <button
                   :id="`im-item-menu-${item.line}`"
                   type="button"
-                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink"
+                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink touch:-my-2 touch:-mr-1.5 touch:size-11"
                   :aria-expanded="menuLine === item.line"
                   :aria-controls="`im-item-states-${item.line}`"
                   :aria-label="`Cambia stato: ${item.title}`"

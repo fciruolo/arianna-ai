@@ -592,14 +592,14 @@ function absoluteTime(at: string): string {
     aria-modal="true"
     aria-labelledby="card-title"
     tabindex="-1"
-    class="fixed inset-y-0 right-0 z-50 flex w-full max-w-[640px] flex-col border-l bg-surface shadow-[0_14px_40px_#0006] outline-none"
+    class="fixed inset-y-0 right-0 z-50 flex w-full max-w-[640px] flex-col border-l bg-surface shadow-[0_14px_40px_#0006] outline-none max-md:top-[var(--vv-top,0px)] max-md:bottom-auto max-md:h-[var(--vv-height,100dvh)] max-md:border-l-0 max-md:pt-[var(--safe-top)] max-md:pb-[var(--safe-bottom)]"
     :class="dropDepth > 0 ? 'border-accent' : 'border-line'"
     @dragenter="onPanelDragEnter"
     @dragover="onPanelDragOver"
     @dragleave="onPanelDragLeave"
     @drop="onPanelDrop"
   >
-    <header class="flex items-start gap-2 border-b border-line px-5 py-4">
+    <header class="flex items-start gap-2 border-b border-line px-5 py-4 max-md:px-4 max-md:py-3">
       <div class="min-w-0 flex-1">
         <p class="hud-title mb-1.5 flex items-center gap-2">
           <span>{{ isTask ? 'Card' : 'Impegno' }} · {{ stateText(card) }}</span>
@@ -620,15 +620,15 @@ function absoluteTime(at: string): string {
         />
         <h2 v-else id="card-title" class="text-[16px] leading-snug font-semibold break-words">{{ card.title }}</h2>
       </div>
-      <button ref="closeButton" type="button" class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi il dettaglio" @click="emit('close')">
+      <button ref="closeButton" type="button" class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink touch:-my-1.5 touch:size-11" aria-label="Chiudi il dettaglio" @click="emit('close')">
         <Icon name="close" :size="16" />
       </button>
     </header>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4 text-[14.5px]">
+    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-5 py-4 text-[14.5px] max-md:px-4">
       <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
         <span class="flex-1">{{ problem }}</span>
-        <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
+        <button type="button" class="shrink-0 text-muted hover:text-ink touch:-my-2 touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
       </p>
 
       <div v-if="card.late || card.column === 'failed' || blocked !== undefined" class="flex flex-wrap items-center gap-2">
@@ -639,7 +639,7 @@ function absoluteTime(at: string): string {
 
       <!-- A task: the whole card, changed in place. -->
       <template v-if="isTask">
-        <div class="grid grid-cols-[minmax(110px,auto)_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5">
+        <div class="grid grid-cols-[minmax(110px,auto)_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 max-md:grid-cols-[minmax(96px,auto)_minmax(0,1fr)] max-md:gap-x-3">
           <label for="card-project" class="text-muted">Progetto</label>
           <select id="card-project" class="field px-2 py-1.5 text-[14px]" :value="card.project ?? ''" :disabled="busy" @change="setProject">
             <option value="">Generale</option>
@@ -673,7 +673,7 @@ function absoluteTime(at: string): string {
               <ul v-if="chosenSkills.length > 0" class="flex flex-wrap gap-1.5" aria-labelledby="card-skills-label">
                 <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-full items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[13.5px]" :title="skill.id">
                   <span class="min-w-0 truncate" :class="{ 'text-warn': skill.gone }">{{ skill.name }}<template v-if="skill.gone"> (non più nel catalogo)</template></span>
-                  <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink" :disabled="busy" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
+                  <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink touch:-my-2 touch:size-11" :disabled="busy" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
                     <Icon name="close" :size="12" />
                   </button>
                 </li>
@@ -719,8 +719,8 @@ function absoluteTime(at: string): string {
             <div class="mb-2 flex items-center gap-2">
               <h3 id="card-goal-title" class="hud-title flex-1">Descrizione</h3>
               <div class="flex overflow-hidden rounded-md border border-line text-[13px]" role="group" aria-label="Descrizione">
-                <button type="button" class="px-2 py-0.5" :class="goalMode === 'edit' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'edit'" @click="editGoal">Scrivi</button>
-                <button type="button" class="border-l border-line px-2 py-0.5" :class="goalMode === 'preview' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'preview'" @click="goalMode = 'preview'">Anteprima</button>
+                <button type="button" class="px-2 py-0.5 touch:min-h-11 touch:px-3.5" :class="goalMode === 'edit' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'edit'" @click="editGoal">Scrivi</button>
+                <button type="button" class="border-l border-line px-2 py-0.5 touch:min-h-11 touch:px-3.5" :class="goalMode === 'preview' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'preview'" @click="goalMode = 'preview'">Anteprima</button>
               </div>
             </div>
             <template v-if="goalMode === 'edit'">
@@ -771,7 +771,7 @@ function absoluteTime(at: string): string {
             </div>
             <ul v-if="checklist.length > 0" class="mb-2 flex flex-col gap-0.5">
               <li v-for="item in checklist" :key="item.id" class="group flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-surface-2">
-                <input type="checkbox" class="size-4 shrink-0 accent-[var(--accent)]" :checked="item.done" :aria-label="`Fatta: ${item.body}`" @change="toggleItem(item)" />
+                <input type="checkbox" class="size-4 shrink-0 accent-[var(--accent)] touch:size-5" :checked="item.done" :aria-label="`Fatta: ${item.body}`" @change="toggleItem(item)" />
                 <input
                   :value="item.body"
                   :maxlength="MAX_ITEM"
@@ -781,7 +781,7 @@ function absoluteTime(at: string): string {
                   @change="renameItem(item, $event)"
                   @keydown="blurOnEnter"
                 />
-                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted opacity-60 group-hover:opacity-100 hover:text-ink" :aria-label="`Togli la voce: ${item.body}`" @click="removeItem(item)">
+                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted opacity-60 group-hover:opacity-100 hover:text-ink touch:size-11 touch:opacity-100" :aria-label="`Togli la voce: ${item.body}`" @click="removeItem(item)">
                   <Icon name="close" :size="13" />
                 </button>
               </li>
@@ -800,14 +800,14 @@ function absoluteTime(at: string): string {
                 <Icon name="link" :size="14" class="shrink-0 text-muted" />
                 <a :href="link.url" target="_blank" rel="noopener noreferrer" class="min-w-0 flex-1 truncate text-accent hover:underline" :title="link.url">{{ linkText(link) }}</a>
                 <span v-if="link.title !== null" class="hidden shrink-0 font-mono text-[12.5px] text-muted sm:inline">{{ hostOf(link.url) }}</span>
-                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :aria-label="`Togli il link: ${linkText(link)}`" @click="removeLink(link.id)">
+                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink touch:size-11" :aria-label="`Togli il link: ${linkText(link)}`" @click="removeLink(link.id)">
                   <Icon name="close" :size="13" />
                 </button>
               </li>
             </ul>
             <form class="flex flex-wrap gap-2" @submit.prevent="addLink">
-              <input v-model="newUrl" type="url" class="field min-w-[200px] flex-[2] px-2.5 py-1.5 text-[14px]" placeholder="https://…" aria-label="Indirizzo del link" />
-              <input v-model="newLinkTitle" maxlength="200" class="field min-w-[140px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Titolo (facoltativo)" aria-label="Titolo del link" />
+              <input v-model="newUrl" type="url" class="field min-w-[200px] flex-[2] px-2.5 py-1.5 text-[14px] max-md:min-w-0 max-md:basis-full" placeholder="https://…" aria-label="Indirizzo del link" />
+              <input v-model="newLinkTitle" maxlength="200" class="field min-w-[140px] flex-1 px-2.5 py-1.5 text-[14px] max-md:min-w-0" placeholder="Titolo (facoltativo)" aria-label="Titolo del link" />
               <button type="submit" class="btn px-3 py-1.5 text-[14px]" :disabled="newUrl.trim() === ''">Aggiungi</button>
             </form>
           </section>
@@ -836,13 +836,13 @@ function absoluteTime(at: string): string {
                   class="btn shrink-0 px-2.5 py-1 text-[13px]"
                   >{{ opensInline(file.mediaType) ? 'Apri' : 'Scarica' }}</a
                 >
-                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :aria-label="`Togli l’allegato: ${file.name}`" @click="removeFile(file.id)">
+                <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink touch:size-11" :aria-label="`Togli l’allegato: ${file.name}`" @click="removeFile(file.id)">
                   <Icon name="close" :size="13" />
                 </button>
               </li>
             </ul>
             <p class="flex items-center gap-1.5 text-[13px] text-muted">
-              <Icon name="private" :size="12" />{{ dropDepth > 0 ? 'Lascia i file qui per allegarli.' : 'Trascina qui i file, fino a 20 MB l’uno. Restano su questo Mac, privati.' }}
+              <Icon name="private" :size="12" /><template v-if="dropDepth > 0">Lascia i file qui per allegarli.</template><template v-else><span class="touch:hidden">Trascina qui i file, fino a 20 MB l’uno. Restano su questo Mac, privati.</span><span class="hidden touch:inline">Con «Allega», fino a 20 MB l’uno. Restano sul Mac, privati.</span></template>
             </p>
           </section>
         </template>
@@ -912,7 +912,7 @@ function absoluteTime(at: string): string {
             <li v-for="dep in card.dependsOn" :key="dep.id" class="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5">
               <span class="min-w-0 flex-1 break-words" :class="{ 'text-muted line-through': dep.status === 'done' }">{{ dep.title }}</span>
               <span class="shrink-0 font-mono text-[12.5px]" :class="dep.status === 'done' ? 'text-ok' : dep.status === 'failed' ? 'text-danger' : 'text-muted'" :title="dep.status === 'failed' ? 'Fallita: finché non la togli o non riparte, questa card aspetta' : undefined">{{ STATUS_COLUMN_TEXT[dep.status] }}</span>
-              <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :disabled="busy" :aria-label="`Non aspettare più: ${dep.title}`" @click="removeDependency(dep.id)">
+              <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink touch:size-11" :disabled="busy" :aria-label="`Non aspettare più: ${dep.title}`" @click="removeDependency(dep.id)">
                 <Icon name="close" :size="13" />
               </button>
             </li>

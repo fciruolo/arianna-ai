@@ -202,7 +202,7 @@ async function choose(slug: string): Promise<void> {
         <p v-else-if="shown.length === 0" class="text-[13px] text-muted">Nessuno stile con questa ricerca.</p>
         <ul v-else class="m-0 flex max-h-[420px] list-none flex-col overflow-auto p-0">
           <li v-for="item in shown" :key="item.slug" class="border-b border-line last:border-b-0">
-            <button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-surface-2" :aria-expanded="selected === item.slug" @click="choose(item.slug)">
+            <button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-surface-2 touch:min-h-11" :aria-expanded="selected === item.slug" @click="choose(item.slug)">
               <span class="flex w-full min-w-0 items-baseline gap-2">
                 <span class="truncate font-medium">{{ item.name }}</span>
                 <span v-if="item.category" class="ml-auto shrink-0 text-[13px] text-muted">{{ item.category }}</span>

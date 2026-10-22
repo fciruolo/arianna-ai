@@ -87,7 +87,7 @@ const tiles = computed(() => {
           :key="item.value"
           type="button"
           :aria-pressed="period === item.value"
-          class="px-3 py-1 text-[14px]"
+          class="px-3 py-1 text-[14px] touch:min-h-11"
           :class="period === item.value ? 'bg-surface font-semibold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
           @click="choose(item.value)"
         >

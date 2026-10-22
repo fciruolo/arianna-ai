@@ -634,7 +634,7 @@ watch(
             v-for="key in FILTERS"
             :key="key"
             type="button"
-            class="rounded-full border px-2.5 py-0.5 text-[13px]"
+            class="rounded-full border px-2.5 py-0.5 text-[13px] touch:min-h-11 touch:px-3.5"
             :class="filter === key ? 'border-accent bg-accent/14 font-semibold text-ink' : 'border-line-strong text-muted hover:text-ink'"
             :aria-pressed="filter === key"
             @click="filter = key"
@@ -660,7 +660,7 @@ watch(
             <thead>
               <tr class="border-b border-line-strong text-left text-[13px] text-muted">
                 <th class="w-9 py-2 pr-1 pl-4 font-medium">
-                  <input type="checkbox" class="size-4 accent-accent" :checked="toInvoice.length > 0 && chosen.size === toInvoice.length" :disabled="busy || toInvoice.length === 0" aria-label="Scegli tutti i da fatturare" @change="chooseAll" />
+                  <input type="checkbox" class="size-4 accent-accent touch:size-6" :checked="toInvoice.length > 0 && chosen.size === toInvoice.length" :disabled="busy || toInvoice.length === 0" aria-label="Scegli tutti i da fatturare" @change="chooseAll" />
                 </th>
                 <th class="px-2 py-2 font-medium">IM</th>
                 <th class="px-2 py-2 font-medium">Stato</th>
@@ -673,7 +673,7 @@ watch(
             <tbody>
               <tr v-for="row in rows" :key="row.number" class="border-b border-line last:border-b-0" :class="priceChanged(row.number) ? 'bg-accent/5' : ''">
                 <td class="py-2 pr-1 pl-4">
-                  <input v-if="row.state === 'to-invoice'" type="checkbox" class="size-4 accent-accent" :checked="chosen.has(row.number)" :aria-label="`Scegli IM-${String(row.number)} per la fattura`" :disabled="busy" @change="toggle(row.number)" />
+                  <input v-if="row.state === 'to-invoice'" type="checkbox" class="size-4 accent-accent touch:size-6" :checked="chosen.has(row.number)" :aria-label="`Scegli IM-${String(row.number)} per la fattura`" :disabled="busy" @change="toggle(row.number)" />
                 </td>
                 <td class="px-2 py-2 whitespace-nowrap">
                   <b class="font-semibold">IM-{{ row.number }}</b>
@@ -704,7 +704,7 @@ watch(
                     <button
                       v-else-if="priceEditable(row)"
                       type="button"
-                      class="rounded-md border border-dashed border-transparent px-2 py-0.5 font-semibold whitespace-nowrap tabular-nums hover:border-line-strong hover:bg-surface"
+                      class="rounded-md border border-dashed border-transparent px-2 py-0.5 font-semibold whitespace-nowrap tabular-nums hover:border-line-strong hover:bg-surface touch:min-h-11"
                       :class="priceChanged(row.number) && priceList.find((change) => change.number === row.number)?.invalid ? 'text-danger' : ''"
                       title="Clic per cambiare il prezzo di questo IM"
                       :disabled="busy"
@@ -722,7 +722,7 @@ watch(
                     <span class="px-2 text-[12.5px] whitespace-nowrap text-muted">
                       <template v-if="priceChanged(row.number)">da salvare</template>
                       <template v-else>
-                        {{ priceSourceText(row) }}<template v-if="row.overrideCents !== null && priceEditable(row)"> · <button type="button" class="text-accent hover:underline" :disabled="busy" @click="setEdit(row.number, '')">{{ resetText(row) }}</button></template>
+                        {{ priceSourceText(row) }}<template v-if="row.overrideCents !== null && priceEditable(row)"> · <button type="button" class="text-accent hover:underline touch:min-h-11" :disabled="busy" @click="setEdit(row.number, '')">{{ resetText(row) }}</button></template>
                       </template>
                     </span>
                   </span>
@@ -839,7 +839,7 @@ watch(
       </section>
       <p class="flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
         <Icon name="private" :size="13" />Privato: prezzi e fatture restano su questo computer, mai nei file IM che legge il Coder. Le voci di ogni IM si spostano nel
-        <button type="button" class="text-accent hover:underline" @click="emit('cardwall')">Cardwall</button>.
+        <button type="button" class="text-accent hover:underline touch:min-h-11" @click="emit('cardwall')">Cardwall</button>.
       </p>
     </template>
   </div>

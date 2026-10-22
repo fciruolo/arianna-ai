@@ -169,7 +169,7 @@ async function save(): Promise<void> {
 
 const kinds = Object.entries(KIND_TEXT) as [ClientKind, string][];
 const payments = Object.entries(PAYMENT_TEXT) as [PaymentMethod, string][];
-const input = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-60';
+const input = 'field touch:min-h-11 w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-60';
 // Six columns (D-190): short values take two, long ones four or six.
 const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-6';
 </script>

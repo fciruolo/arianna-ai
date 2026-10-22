@@ -408,7 +408,7 @@ function another(): void {
             <li v-for="(title, index) in STEPS" :key="title">
               <button
                 type="button"
-                class="-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[14px] disabled:opacity-50"
+                class="-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[14px] disabled:opacity-50 touch:min-h-11"
                 :class="index === step ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
                 :aria-current="index === step ? 'step' : undefined"
                 :disabled="!reachable(index)"
@@ -428,7 +428,7 @@ function another(): void {
             <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2" role="group" aria-label="Da dove parti">
               <button
                 type="button"
-                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px]"
+                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px] touch:min-h-11"
                 :class="!fromCatalog ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-line-strong'"
                 :aria-pressed="!fromCatalog"
                 @click="chooseOrigin('scratch')"
@@ -438,7 +438,7 @@ function another(): void {
               </button>
               <button
                 type="button"
-                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px]"
+                class="flex flex-col gap-1.5 rounded-[10px] border p-3 text-left text-[14px] touch:min-h-11"
                 :class="fromCatalog ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-line-strong'"
                 :aria-pressed="fromCatalog"
                 @click="chooseOrigin('catalog')"

@@ -58,17 +58,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="emit('close')">
-    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="design-text-title" tabindex="-1" class="hud-card flex h-[min(820px,92vh)] w-full max-w-[1000px] flex-col bg-surface outline-none">
+  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4 phone:top-[var(--vv-top,0px)] phone:bottom-auto phone:h-[var(--vv-height,100dvh)] phone:p-0" @click.self="emit('close')">
+    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="design-text-title" tabindex="-1" class="hud-card flex h-[min(820px,92vh)] w-full max-w-[1000px] flex-col bg-surface outline-none phone:h-full phone:max-w-none phone:rounded-none phone:border-0 phone:pt-[var(--safe-top)] phone:pb-[var(--safe-bottom)]">
       <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="hud-title text-[12px]">{{ kind === 'style' ? 'Stile' : 'Skill' }}</span>
         <h2 id="design-text-title" class="min-w-0 flex-1 truncate font-medium">{{ title }}</h2>
         <span v-if="hasExample" class="flex gap-1" role="group" aria-label="Cosa vedi">
-          <button v-for="item in (['landing', 'deck', 'text'] as const)" :key="item" type="button" class="rounded-md px-2.5 py-1 text-xs" :class="view === item ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === item" @click="show(item)">
+          <button v-for="item in (['landing', 'deck', 'text'] as const)" :key="item" type="button" class="rounded-md px-2.5 py-1 text-xs touch:min-h-11" :class="view === item ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === item" @click="show(item)">
             {{ item === 'landing' ? 'Landing' : item === 'deck' ? 'Presentazione' : 'Descrizione' }}
           </button>
         </span>
-        <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
+        <button type="button" class="rounded-md p-1 text-muted hover:text-ink touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
       <p v-if="problem !== null" class="p-[15px] text-sm text-danger" role="alert">{{ problem }}</p>
       <template v-else-if="view === 'text'">
