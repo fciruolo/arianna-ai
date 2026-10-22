@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.163.0] - 2026-10-22
+
 ### Aggiunto
 
 - Wiki: «Confronta» accanto a ogni versione precedente mostra riga per riga cosa cambia fra quella versione e la pagina di adesso (titolo compreso, righe uguali chiuse in «n righe uguali»), con «Ripristina questa versione» e «Chiudi» (D-285).
