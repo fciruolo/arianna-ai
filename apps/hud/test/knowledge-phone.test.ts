@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { MAX_ZOOM, toWorld, type View } from '../src/lib/graph.ts';
-import { centerInBand, hitRadius, listRows, neighbourRows, pinchView, readPhoneView } from '../src/lib/knowledge-phone.ts';
+import { bandShift, centerInBand, hitRadius, listRows, neighbourRows, pinchView, readPhoneView } from '../src/lib/knowledge-phone.ts';
 
 function close(actual: number, expected: number): void {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${String(actual)} ≠ ${String(expected)}`);
@@ -84,4 +84,19 @@ test('neighbourRows orders the neighbours and drops indices outside the graph', 
     [3, 0, 1],
   );
   assert.deepEqual(neighbourRows(nodes, []), []);
+});
+
+test('bandShift moves the 3D centre to the middle of the free band (D-294)', () => {
+  // A page of 800: the header ends at 120, the note's sheet starts at 360.
+  const shift = bandShift(800, 120, 360);
+  assert.equal(shift, -320);
+  assert.equal((800 + shift) / 2, 240);
+  // The band as large as the canvas, or upside down, or empty: no shift where there is none.
+  assert.equal(bandShift(800, 0, 800), 0);
+  assert.equal(bandShift(800, 360, 120), -320);
+  assert.equal(bandShift(800, 300, 300), 0);
+  assert.equal(bandShift(0, 10, 20), 0);
+  assert.equal(bandShift(800, Number.NaN, 20), 0);
+  // A band past the edges counts only inside the canvas.
+  assert.equal(bandShift(800, -50, 900), 0);
 });

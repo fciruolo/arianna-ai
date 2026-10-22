@@ -69,6 +69,14 @@ test('projection: the panel shift moves the centre; a point behind the camera ha
   assert.ok(behind.depth < 0);
 });
 
+test('projection: the shift down of the phone puts the centre in the middle of the free band (D-294)', () => {
+  const p = makeProjector(camera(), 400, 800, 0, -200);
+  close(project(p, 0, 0, 0).y, 300);
+  close(project(p, 0, 0, 0).x, 200);
+  const still = makeProjector(camera(), 400, 800);
+  close(project(still, 0, 0, 0).y, 400);
+});
+
 test('rotation: yaw of a quarter turn brings the x axis onto the depth axis, lengths unchanged', () => {
   const p = makeProjector(camera({ yaw: Math.PI / 2 }), 800, 600);
   const c = toCamera(p, 100, 0, 0);

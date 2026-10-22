@@ -31,6 +31,8 @@ export interface IndexItem {
   privacy?: boolean;
   /** One sentence under the title: what the section is for, in plain words. */
   lead: string;
+  /** The same sentence for a finger (D-294), when `lead` speaks of the mouse. */
+  touchLead?: string;
   /** A concrete case, shown after «Esempio:». */
   example?: string;
 }
@@ -224,7 +226,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
   {
     group: 'Informazioni',
     items: [
-      { id: 'changelog', slug: 'novita', title: 'Novità', behaviour: 'read', lead: 'Cosa è cambiato a ogni versione. Passa sopra una riga per chiederne a GOD.' },
+      { id: 'changelog', slug: 'novita', title: 'Novità', behaviour: 'read', lead: 'Cosa è cambiato a ogni versione. Passa sopra una riga per chiederne a GOD.', touchLead: 'Cosa è cambiato a ogni versione. Tocca l’icona di GOD accanto a una riga per chiederne a GOD.' },
       // «Cosa è cambiato» (D-233, idea 11 of OpenWork): next to Novità, which tells the versions; this tells this installation.
       {
         id: 'changes',

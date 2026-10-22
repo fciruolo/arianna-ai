@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { ApiError, createImInvoice, readClientDashboard, updateImInvoice } from '../lib/api.ts';
 import { chartScale, dashboardYears, roundMoneyText, summarize, type Basis, type ClientDashboard, type DashboardInvoice, type YearChoice } from '../lib/client-dashboard.ts';
+import { CHART_FONT, labelShown, labelStep, PHONE_CHART_WIDTH } from '../lib/finance-charts.ts';
 import { billingErrorText, dayText, dueText, invoiceAmount, moneyText, todayInput, type NewInvoice } from '../lib/im-billing.ts';
+import { followMedia, phoneMedia, phoneNow } from '../lib/studio-phone.ts';
 import Icon from './Icon.vue';
 import InvoiceForm from './InvoiceForm.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -77,15 +79,27 @@ const withoutDocument = computed(() => invoices.value.filter((invoice) => invoic
 
 // --- The chart: one bar per month (per year with "Tutto"), stacked in competenza
 // Left wide enough for "10.000 €" on the axis (D-190).
-const CHART = { width: 640, height: 210, left: 68, bottom: 22, top: 8 };
+const WIDE_CHART = { width: 640, height: 210, left: 68, bottom: 22, top: 8 };
+// D-294: on the phone as wide as the screen, so its labels stay readable; fewer month names when they do not fit.
+const PHONE_CHART = { width: PHONE_CHART_WIDTH, height: 190, left: 58, bottom: 22, top: 8 };
+const phone = ref(phoneNow());
+let stopPhone: (() => void) | undefined;
+onMounted(() => {
+  stopPhone = followMedia(phoneMedia(), (matches) => (phone.value = matches));
+});
+onBeforeUnmount(() => stopPhone?.());
+const CHART = computed(() => (phone.value ? PHONE_CHART : WIDE_CHART));
+const chartFont = computed(() => (phone.value ? CHART_FONT.phone : CHART_FONT.wide));
+/** One label in `labelEvery`: on the phone «gen», «feb»… or «2025» want about 34 units each. */
+const labelEvery = computed(() => (phone.value ? labelStep(summary.value?.chart.length ?? 0, CHART.value.width - CHART.value.left, 34) : 1));
 const scale = computed(() => chartScale(summary.value?.chart ?? []));
-const plotHeight = CHART.height - CHART.bottom - CHART.top;
-const slot = computed(() => (CHART.width - CHART.left) / Math.max(1, summary.value?.chart.length ?? 1));
-const barHeight = (cents: number): number => (cents / scale.value) * plotHeight;
-const ticks = computed(() => [0, 0.5, 1].map((part) => ({ y: CHART.top + plotHeight * (1 - part), text: money(scale.value * part) })));
+const plotHeight = computed(() => CHART.value.height - CHART.value.bottom - CHART.value.top);
+const slot = computed(() => (CHART.value.width - CHART.value.left) / Math.max(1, summary.value?.chart.length ?? 1));
+const barHeight = (cents: number): number => (cents / scale.value) * plotHeight.value;
+const ticks = computed(() => [0, 0.5, 1].map((part) => ({ y: CHART.value.top + plotHeight.value * (1 - part), text: money(scale.value * part) })));
 
 function segments(bar: { paid: number; invoiced: number; toInvoice: number }): { y: number; h: number; kind: string }[] {
-  let base = CHART.top + plotHeight;
+  let base = CHART.value.top + plotHeight.value;
   const out: { y: number; h: number; kind: string }[] = [];
   for (const [kind, cents] of [
     ['paid', bar.paid],
@@ -250,12 +264,12 @@ watch(
           <svg :viewBox="`0 0 ${String(CHART.width)} ${String(CHART.height)}`" class="block h-auto w-full" role="img" :aria-label="`Grafico dei guadagni ${periodText}`">
             <g v-for="tick in ticks" :key="tick.y">
               <line :x1="CHART.left" :x2="CHART.width" :y1="tick.y" :y2="tick.y" class="stroke-line" stroke-dasharray="2 4" />
-              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted text-[11px]">{{ tick.text }}</text>
+              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted" :font-size="chartFont">{{ tick.text }}</text>
             </g>
             <g v-for="(bar, index) in summary.chart" :key="bar.key">
               <title>{{ bar.label }}: {{ money(bar.paid + bar.invoiced + bar.toInvoice) }}</title>
               <rect v-for="segment in segments(bar)" :key="segment.kind" :x="CHART.left + slot * index + slot * 0.2" :width="slot * 0.6" :y="segment.y" :height="segment.h" rx="2" :class="SEGMENT_CLASS[segment.kind]" />
-              <text :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted text-[11px]">{{ bar.label }}</text>
+              <text v-if="labelShown(index, labelEvery)" :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted" :font-size="chartFont">{{ bar.label }}</text>
             </g>
           </svg>
           <div class="mt-1.5 flex flex-wrap gap-3 text-xs text-muted">

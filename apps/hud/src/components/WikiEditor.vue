@@ -511,7 +511,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2 text-[12.5px] text-muted">
-      <span class="min-w-0 flex-1">«/» per i blocchi · «[[» per citare (⌘ o Ctrl + clic la apre) · ⋮⋮ a sinistra per spostare un blocco. Niente link, immagini o indirizzi: la pagina resta sul Mac.</span>
+      <span class="min-w-0 flex-1">«/» per i blocchi · «[[» per citare<span class="touch:hidden"> (⌘ o Ctrl + clic la apre) · ⋮⋮ a sinistra per spostare un blocco</span>. Niente link, immagini o indirizzi: la pagina resta sul Mac.</span>
       <label class="flex items-center gap-1.5 touch:min-h-11">
         <input type="checkbox" :checked="mode === 'markdown'" @change="toggle" />
         Markdown

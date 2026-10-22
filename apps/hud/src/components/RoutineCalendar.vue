@@ -630,7 +630,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p v-if="narrow" class="text-[12.5px] text-muted">Ore in {{ viewZone }}. Tocca una routine per modificarla.</p>
+    <p v-if="narrow" class="text-[12.5px] text-muted">Ore in {{ viewZone }}. Tocca una routine per modificarla o spostarla: giorni e ora sono nel modulo.</p>
     <p v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-ok" aria-hidden="true" />fatta</span>
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-warn" aria-hidden="true" />saltata</span>
@@ -640,9 +640,10 @@ onBeforeUnmount(() => {
       <span>Ore in {{ viewZone }}.</span>
       <span class="md:hidden">{{ CALENDAR_HINT }}</span>
     </p>
-    <div v-if="undo !== null" class="fixed bottom-16 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-3.5 py-2 text-[14px] text-bg" role="status">
+    <!-- D-294: above the line of home and, on the phone, above the bar at the bottom (56 px). -->
+    <div v-if="undo !== null" class="fixed bottom-[calc(var(--safe-bottom)+4rem)] left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-3.5 py-2 text-[14px] text-bg phone:bottom-[calc(var(--safe-bottom)+56px+0.75rem)] phone:max-w-[calc(100vw-2rem)]" role="status">
       {{ undo.text }}
-      <button type="button" class="font-semibold underline" @click="undoMove">{{ UNDO_TEXT }}</button>
+      <button type="button" class="font-semibold underline touch:min-h-11 touch:px-1" @click="undoMove">{{ UNDO_TEXT }}</button>
     </div>
   </section>
 </template>

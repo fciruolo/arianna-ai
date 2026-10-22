@@ -465,7 +465,7 @@ function render3d(): void {
   if (hintElement !== null) {
     const show = near !== null && document.activeElement === canvas3d.value;
     hintElement.hidden = !show;
-    const label = hintElement.querySelector('span');
+    const label = hintElement.querySelector('[data-hint-text]');
     if (show && label !== null) {
       const text = hintText(near, props.snapshot);
       if (label.textContent !== text) label.textContent = text;
@@ -529,7 +529,7 @@ function render(): void {
   if (hintElement !== null) {
     if (near !== null && document.activeElement === canvas.value) {
       const text = hintText(near, props.snapshot);
-      const label = hintElement.querySelector('span');
+      const label = hintElement.querySelector('[data-hint-text]');
       if (label !== null && label.textContent !== text) label.textContent = text;
       hintElement.hidden = false;
       place(hintElement, you.x, you.y - 34, 'above');
@@ -970,8 +970,8 @@ defineExpose({ goTo, focus });
             class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap phone:px-1 phone:text-[11px] phone:leading-[13px]"
           />
           <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap phone:px-1 phone:text-[11px] phone:leading-[13px]">Tu</span>
-          <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
-            <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
+          <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink touch:pointer-events-auto touch:py-1.5" @pointerdown.prevent @click="interact(nearby())">
+            <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px] touch:hidden">E</kbd><b class="hidden font-semibold touch:inline">Tocca · </b><span data-hint-text />
           </span>
         </div>
       </div>
@@ -1003,8 +1003,8 @@ defineExpose({ goTo, focus });
           class="tag3 absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
         />
         <span v-if="area3 !== null" class="absolute top-2 left-2 rounded border border-line-strong bg-surface/90 px-2 py-0.5 text-[13px] whitespace-nowrap text-ink">{{ area3.text }}<span v-if="area3.label !== null" class="ml-1.5 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[area3.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[area3.label] }}</span></span>
-        <span ref="hint3" hidden class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
-          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
+        <span ref="hint3" hidden class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink touch:pointer-events-auto touch:py-1.5" @pointerdown.prevent @click="interact(nearby())">
+          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px] touch:hidden">E</kbd><b class="hidden font-semibold touch:inline">Tocca · </b><span data-hint-text />
         </span>
         <span class="absolute top-1/2 left-1/2 size-1.5 -translate-1/2 rounded-full bg-ink/50" />
         <p v-if="status3d === 'loading'" class="absolute inset-0 grid place-items-center text-sm text-muted">Preparo la vista 3D…</p>

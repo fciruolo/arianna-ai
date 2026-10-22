@@ -146,3 +146,33 @@ export function sampleLabels<T>(items: readonly T[], count: number): T[] {
   const step = (items.length - 1) / (count - 1);
   return Array.from({ length: count }, (_, index) => items[Math.round(index * step)]).filter((item): item is T => item !== undefined);
 }
+
+/**
+ * The charts on the phone (D-294): a frame of 640 units squeezed into about
+ * 320 pixels halves a label of 11 to 5.5 pixels. On the phone the charts of
+ * Finanze and Clienti are drawn about as wide as the screen, so a unit is
+ * about a pixel and the labels keep CHART_FONT.phone.
+ */
+export const PHONE_CHART_WIDTH = 320;
+
+/** The size of the labels in the units of the frame. */
+export const CHART_FONT = { wide: 11, phone: 12 } as const;
+
+/** The frame of a chart for the phone: the same chart, as wide as the screen, with the room for the labels it gives. */
+export function phoneFrame(frame: Frame, room: { left: number; right?: number; height?: number }): Frame {
+  return { ...frame, width: PHONE_CHART_WIDTH, left: room.left, right: room.right ?? frame.right, height: room.height ?? frame.height };
+}
+
+/**
+ * Every how many labels one is written on an axis: `count` labels in `room`
+ * units, each wanting at least `gap` units. 1 writes them all; 2 one in two.
+ */
+export function labelStep(count: number, room: number, gap: number): number {
+  if (!Number.isFinite(count) || !Number.isFinite(room) || !Number.isFinite(gap) || count <= 0 || room <= 0 || gap <= 0) return 1;
+  return Math.max(1, Math.ceil((count * gap) / room));
+}
+
+/** Whether the label at `index` is written with this step: the first, then one every `step`. */
+export function labelShown(index: number, step: number): boolean {
+  return step <= 1 || index % step === 0;
+}

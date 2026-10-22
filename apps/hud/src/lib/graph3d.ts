@@ -399,14 +399,18 @@ export interface Projector {
   cy: number;
 }
 
-/** The projector for this camera on a width × height screen whose centre is moved by `shiftX` pixels. */
-export function makeProjector(camera: Camera, width: number, height: number, shiftX = 0): Projector {
+/**
+ * The projector for this camera on a width × height screen whose centre is
+ * moved by `shiftX` pixels, and by `shiftY` down (D-294: on the phone the
+ * centre is the middle of the band the header and the note leave free).
+ */
+export function makeProjector(camera: Camera, width: number, height: number, shiftX = 0, shiftY = 0): Projector {
   const p: Projector = { tx: 0, ty: 0, tz: 0, cosYaw: 1, sinYaw: 0, cosPitch: 1, sinPitch: 0, distance: 1, focal: 1, cx: 0, cy: 0 };
-  return updateProjector(p, camera, width, height, shiftX);
+  return updateProjector(p, camera, width, height, shiftX, shiftY);
 }
 
 /** As makeProjector, into an existing projector: once per frame without allocating. */
-export function updateProjector(p: Projector, camera: Camera, width: number, height: number, shiftX = 0): Projector {
+export function updateProjector(p: Projector, camera: Camera, width: number, height: number, shiftX = 0, shiftY = 0): Projector {
   p.tx = camera.target.x;
   p.ty = camera.target.y;
   p.tz = camera.target.z;
@@ -417,7 +421,7 @@ export function updateProjector(p: Projector, camera: Camera, width: number, hei
   p.distance = camera.distance;
   p.focal = Math.max(1, height) / 2 / Math.tan(FOV / 2);
   p.cx = (width + shiftX) / 2;
-  p.cy = height / 2;
+  p.cy = (height + shiftY) / 2;
   return p;
 }
 

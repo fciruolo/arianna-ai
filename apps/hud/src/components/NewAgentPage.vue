@@ -581,8 +581,8 @@ function another(): void {
       </template>
     </div>
     <!-- Turning on an agent whose role has something to look at, is still read or has no report (D-196): one more confirmation, never a block -->
-    <div v-if="activating" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="new-activate-title">
-      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+    <div v-if="activating" class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="new-activate-title">
+      <div class="phone-sheet-bottom flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4 phone:w-full">
         <h2 id="new-activate-title" class="text-[16px] font-semibold">{{ activating.title }}</h2>
         <p class="text-[14px]">{{ activating.text }}</p>
         <div class="flex justify-end gap-2">

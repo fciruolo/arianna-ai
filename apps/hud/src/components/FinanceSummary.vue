@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { listFinanceBudgets, listFinanceTransactions, readFinanceAlerts, readFinanceSummary } from '../lib/api.ts';
-import { balanceLine, categoryBars, monthBars, sampleLabels, ticks, type Frame } from '../lib/finance-charts.ts';
+import { balanceLine, categoryBars, CHART_FONT, labelShown, labelStep, monthBars, phoneFrame, sampleLabels, ticks, type Frame } from '../lib/finance-charts.ts';
 import { balanceText, budgetRows, latestMonths, monthChangeText, readableDescription, type BudgetRow } from '../lib/finance-dashboard.ts';
 import {
   alertFilter,
@@ -29,6 +29,7 @@ import {
   type Tx,
   type TxFilter,
 } from '../lib/finance.ts';
+import { followMedia, phoneMedia, phoneNow } from '../lib/studio-phone.ts';
 
 /**
  * "Riepilogo" of the finances (I-18, D-183) as a dashboard (D-189): on top the
@@ -173,8 +174,21 @@ function budgetOf(category: string | null): BudgetRow | undefined {
 
 const shownAlerts = computed(() => (alerts.value ?? []).slice(0, 3).map((alert) => ({ alert, text: alertText(alert, names.value) })));
 
-const MONTHS_FRAME: Frame = { width: 640, height: 220, left: 56, right: 8, top: 12, bottom: 28 };
-const months = computed(() => (summary.value === null ? null : monthBars(summary.value.months, MONTHS_FRAME)));
+// D-294: on the phone the charts are drawn as wide as the screen, with labels that stay readable and fewer of them.
+const phone = ref(phoneNow());
+let stopPhone: (() => void) | undefined;
+onMounted(() => {
+  stopPhone = followMedia(phoneMedia(), (matches) => (phone.value = matches));
+});
+onBeforeUnmount(() => stopPhone?.());
+const chartFont = computed(() => (phone.value ? CHART_FONT.phone : CHART_FONT.wide));
+
+const WIDE_MONTHS_FRAME: Frame = { width: 640, height: 220, left: 56, right: 8, top: 12, bottom: 28 };
+const PHONE_MONTHS_FRAME = phoneFrame(WIDE_MONTHS_FRAME, { left: 46, right: 4, height: 200 });
+const monthsFrame = computed(() => (phone.value ? PHONE_MONTHS_FRAME : WIDE_MONTHS_FRAME));
+const months = computed(() => (summary.value === null ? null : monthBars(summary.value.months, monthsFrame.value)));
+/** One month name in `monthStep`: on the phone «gen», «feb»… want about 30 units each. */
+const monthStep = computed(() => (phone.value ? labelStep(months.value?.bars.length ?? 0, monthsFrame.value.width - monthsFrame.value.left - monthsFrame.value.right, 30) : 1));
 const monthTicks = computed(() => (months.value === null ? [] : ticks(months.value.domain)));
 const totals = computed(() => {
   const list = summary.value?.months ?? [];
@@ -186,10 +200,12 @@ function categoryName(category: string | null): string {
   return category === '' ? 'Altre categorie' : names.value.category(category);
 }
 
-const LINE_FRAME: Frame = { width: 640, height: 200, left: 64, right: 12, top: 12, bottom: 28 };
-const line = computed(() => (summary.value === null || summary.value.balance.length === 0 ? null : balanceLine(summary.value.balance, LINE_FRAME)));
+const WIDE_LINE_FRAME: Frame = { width: 640, height: 200, left: 64, right: 12, top: 12, bottom: 28 };
+const PHONE_LINE_FRAME = phoneFrame(WIDE_LINE_FRAME, { left: 50, right: 6, height: 180 });
+const lineFrame = computed(() => (phone.value ? PHONE_LINE_FRAME : WIDE_LINE_FRAME));
+const line = computed(() => (summary.value === null || summary.value.balance.length === 0 ? null : balanceLine(summary.value.balance, lineFrame.value)));
 const lineTicks = computed(() => (line.value === null ? [] : ticks(line.value.domain)));
-const lineLabels = computed(() => sampleLabels(line.value?.points ?? [], 5));
+const lineLabels = computed(() => sampleLabels(line.value?.points ?? [], phone.value ? 4 : 5));
 const lastBalance = computed(() => summary.value?.balance[summary.value.balance.length - 1] ?? null);
 
 const yoy = computed(() => summary.value?.yearOverYear ?? null);
@@ -276,15 +292,15 @@ function width(cents: number): string {
           </header>
           <p v-if="summary.months.length === 0" class="text-sm text-muted">Nessun movimento nel periodo.</p>
           <template v-else-if="months">
-            <svg :viewBox="`0 0 ${MONTHS_FRAME.width} ${MONTHS_FRAME.height}`" class="h-auto w-full" role="img" aria-label="Grafico a barre di entrate e uscite per mese; i numeri sono nella tabella sotto">
+            <svg :viewBox="`0 0 ${monthsFrame.width} ${monthsFrame.height}`" class="h-auto w-full" role="img" aria-label="Grafico a barre di entrate e uscite per mese; i numeri sono nella tabella sotto">
               <g v-for="tick in monthTicks" :key="tick">
-                <line :x1="MONTHS_FRAME.left" :x2="MONTHS_FRAME.width - MONTHS_FRAME.right" :y1="months.y(tick)" :y2="months.y(tick)" stroke="var(--line)" stroke-width="1" />
-                <text :x="MONTHS_FRAME.left - 6" :y="months.y(tick) + 3" text-anchor="end" font-size="11" fill="var(--muted)">{{ formatCompact(tick) }}</text>
+                <line :x1="monthsFrame.left" :x2="monthsFrame.width - monthsFrame.right" :y1="months.y(tick)" :y2="months.y(tick)" stroke="var(--line)" stroke-width="1" />
+                <text :x="monthsFrame.left - 6" :y="months.y(tick) + 3" text-anchor="end" :font-size="chartFont" fill="var(--muted)">{{ formatCompact(tick) }}</text>
               </g>
-              <g v-for="bar in months.bars" :key="bar.month">
+              <g v-for="(bar, index) in months.bars" :key="bar.month">
                 <rect :x="bar.income.x" :y="bar.income.y" :width="bar.income.width" :height="bar.income.height" rx="2" fill="var(--ok)"><title>{{ formatMonth(bar.month) }} · entrate {{ formatCents(summary.months.find((m) => m.month === bar.month)?.income ?? 0) }}</title></rect>
                 <rect :x="bar.expenses.x" :y="bar.expenses.y" :width="bar.expenses.width" :height="bar.expenses.height" rx="2" fill="var(--graph-3)"><title>{{ formatMonth(bar.month) }} · uscite {{ formatCents(summary.months.find((m) => m.month === bar.month)?.expenses ?? 0) }}</title></rect>
-                <text :x="bar.center" :y="MONTHS_FRAME.height - 10" text-anchor="middle" font-size="11" fill="var(--muted)">{{ formatMonth(bar.month).split(' ')[0] }}</text>
+                <text v-if="labelShown(index, monthStep)" :x="bar.center" :y="monthsFrame.height - 10" text-anchor="middle" :font-size="chartFont" fill="var(--muted)">{{ formatMonth(bar.month).split(' ')[0] }}</text>
               </g>
             </svg>
             <details class="text-xs">
@@ -401,20 +417,20 @@ function width(cents: number): string {
         <p v-if="account === ''" class="text-sm text-muted">Il saldo è per conto: scegli un conto qui sopra.</p>
         <p v-else-if="line === null" class="text-sm text-muted">Nessun saldo nel periodo.</p>
         <template v-else>
-          <svg :viewBox="`0 0 ${LINE_FRAME.width} ${LINE_FRAME.height}`" class="h-auto w-full" role="img" :aria-label="`Linea del saldo; ultimo saldo ${lastBalance ? formatCents(lastBalance.balance) : ''}`">
+          <svg :viewBox="`0 0 ${lineFrame.width} ${lineFrame.height}`" class="h-auto w-full" role="img" :aria-label="`Linea del saldo; ultimo saldo ${lastBalance ? formatCents(lastBalance.balance) : ''}`">
             <g v-for="tick in lineTicks" :key="tick">
-              <line :x1="LINE_FRAME.left" :x2="LINE_FRAME.width - LINE_FRAME.right" :y1="line.y(tick)" :y2="line.y(tick)" :stroke="tick === 0 ? 'var(--line-strong)' : 'var(--line)'" stroke-width="1" />
-              <text :x="LINE_FRAME.left - 6" :y="line.y(tick) + 3" text-anchor="end" font-size="11" fill="var(--muted)">{{ formatCompact(tick) }}</text>
+              <line :x1="lineFrame.left" :x2="lineFrame.width - lineFrame.right" :y1="line.y(tick)" :y2="line.y(tick)" :stroke="tick === 0 ? 'var(--line-strong)' : 'var(--line)'" stroke-width="1" />
+              <text :x="lineFrame.left - 6" :y="line.y(tick) + 3" text-anchor="end" :font-size="chartFont" fill="var(--muted)">{{ formatCompact(tick) }}</text>
             </g>
             <path :d="line.path" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
             <circle v-for="point in line.points" :key="point.day" :cx="point.x" :cy="point.y" r="6" fill="transparent">
               <title>{{ formatDay(point.day) }} · {{ formatCents(point.balance) }}</title>
             </circle>
             <!-- The first and last labels anchored inside the frame, so they are never cut at the edges. -->
-            <text v-for="(point, index) in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="LINE_FRAME.height - 10" :text-anchor="index === 0 ? 'start' : index === lineLabels.length - 1 ? 'end' : 'middle'" font-size="11" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
+            <text v-for="(point, index) in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="lineFrame.height - 10" :text-anchor="index === 0 ? 'start' : index === lineLabels.length - 1 ? 'end' : 'middle'" :font-size="chartFont" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
           </svg>
           <p class="text-xs text-muted">
-            Dal {{ formatDay(line.points[0]?.day ?? null) }}: {{ formatCents(line.points[0]?.balance ?? 0) }} · al {{ formatDay(lastBalance?.day ?? null) }}: {{ formatCents(lastBalance?.balance ?? 0) }}. Passa sul grafico per i singoli giorni.
+            Dal {{ formatDay(line.points[0]?.day ?? null) }}: {{ formatCents(line.points[0]?.balance ?? 0) }} · al {{ formatDay(lastBalance?.day ?? null) }}: {{ formatCents(lastBalance?.balance ?? 0) }}. <span class="touch:hidden">Passa sul grafico per i singoli giorni.</span>
           </p>
         </template>
       </section>

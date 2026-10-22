@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Col dito niente testi da Mac: Pensieri e Sviluppo senza «⌘/Ctrl+Invio», la Wiki dice «+» e «⋯» al posto del clic destro, Novità dice di toccare l’icona di GOD, il fumetto dell’Ufficio dice «Tocca» al posto del tasto E e si tocca, Finanze non dice più di passare sul grafico; sul telefono la Routine dice che giorni e ora si spostano dal modulo (D-294).
+- Col dito i filtri della Cardwall sono alti 44 px; sul telefono il loro menu è un foglio in basso che non esce più dallo schermo (D-294).
+- Col dito le caselle di spunta hanno 44 px da toccare, e così i nomi e le suggerite delle sorgenti in Catalogo agenti e Skill (D-294).
+- Sul telefono i grafici di Finanze e Clienti hanno etichette leggibili, a 12 px, e meno nomi di mese quando non ci stanno (D-294).
+- L’avviso «Spostata · Annulla» del calendario delle routine resta sopra la riga della casa e sopra la barra in basso del telefono (D-294).
+- Conoscenza sul telefono: in 3D «vola al nodo» lo porta sopra la scheda della nota invece che sotto; in «Elenco» il grafo dietro si ferma (D-294).
+- Sul telefono le conferme di Progetti (servizi, file nascosti, etichetta di una cartella, esportazione delle regole), Agenti e Modelli sono un foglio in basso come le altre (D-294).
+
 ## [0.169.0] - 2026-10-23
 
 ### Aggiunto

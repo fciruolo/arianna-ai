@@ -77,7 +77,7 @@ import {
   type Segment,
   type Simulation3,
 } from '../lib/graph3d.ts';
-import { centerInBand, hitRadius, listRows, neighbourRows, pinchView, readPhoneView, type PhoneView } from '../lib/knowledge-phone.ts';
+import { bandShift, centerInBand, hitRadius, listRows, neighbourRows, pinchView, readPhoneView, type PhoneView } from '../lib/knowledge-phone.ts';
 import type { KnowledgeSource } from '../lib/route.ts';
 import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -200,6 +200,8 @@ let order3: Uint32Array = new Uint32Array(0);
 let labelPick = new Uint32Array(0);
 /** Pixels the centre of the 3D view moves (left, negative) to leave room for the panel. */
 let shift3 = 0;
+/** The move down of the 3D centre on the phone (D-294), eased like `shift3`. */
+let shift3y = 0;
 /** The stars follow the turns of the camera without jumping where the yaw wraps. */
 let starPanX = 0;
 let lastStarYaw = 0;
@@ -213,6 +215,13 @@ function is3d(): boolean {
 /** The room the note panel takes on wide screens, as a shift of the centre. */
 function panelShift(): number {
   return selected.value >= 0 && width > 900 ? -400 : 0;
+}
+
+/** D-294: on the phone the 3D centre moves down to the middle of the free band; nothing on wide screens. */
+function bandShiftY(): number {
+  if (wide.value) return 0;
+  const band = phoneBand();
+  return bandShift(height, band.top, band.bottom);
 }
 
 /** The palette of the black control room: luminous on black (D-087b). */
@@ -463,6 +472,15 @@ function ensureSim3(previous?: ReadonlyMap<string, Point3>): void {
 }
 
 watch(() => mode.value.dark, () => buildPalette());
+// D-294: «Elenco» stops the frames (schedule() refuses them); back on the graph, one frame starts them again.
+watch(listMode, (list) => {
+  if (list) {
+    if (frame !== 0) cancelAnimationFrame(frame);
+    frame = 0;
+  } else {
+    requestFrame();
+  }
+});
 
 function sizeCanvas(element: HTMLCanvasElement | null): void {
   if (element === null) return;
@@ -501,7 +519,8 @@ function requestFrame(): void {
 }
 
 function schedule(): void {
-  if (frame !== 0 || typeof document === 'undefined' || document.hidden) return;
+  // D-294: behind the phone's «Elenco» the canvas is covered: no frames until the graph shows again.
+  if (frame !== 0 || typeof document === 'undefined' || document.hidden || listMode.value) return;
   frame = requestAnimationFrame(tick);
 }
 
@@ -510,6 +529,8 @@ function tick(now: number): void {
   if (sim === null || document.hidden) return;
   if (window.devicePixelRatio !== dpr) resize();
   const three = is3d();
+  // Read once a frame: it measures the header (D-294).
+  const bandGoal = three ? bandShiftY() : 0;
   const settled = three && sim3 !== null ? isSettled3(sim3) : isSettled(sim);
   // The 3D drift keeps drawing, but at the resting budget of D-087b (at most 30 fps).
   const driftOn = three && drifting.value && !reduced && driftWeight(now - lastInteraction) > 0;
@@ -517,7 +538,7 @@ function tick(now: number): void {
     hidden: document.hidden,
     focused: windowFocused,
     reduced,
-    busy: !settled || glide !== null || flight !== null || drag !== null || (three && shift3 !== panelShift()),
+    busy: !settled || glide !== null || flight !== null || drag !== null || (three && (shift3 !== panelShift() || shift3y !== bandGoal)),
     interacting: now - lastInteraction < INTERACT_MS,
     drifting: driftOn,
   });
@@ -529,7 +550,7 @@ function tick(now: number): void {
   }
   dirty = false;
   if (three && sim3 !== null) {
-    advance3(sim3, now, settled);
+    advance3(sim3, now, settled, bandGoal);
   } else {
     if (!settled) {
       step(sim);
@@ -554,7 +575,7 @@ function tick(now: number): void {
 }
 
 /** One frame of the 3D view: the simulation, the camera's flight, the panel's room and the drift. */
-function advance3(s: Simulation3, now: number, settled: boolean): void {
+function advance3(s: Simulation3, now: number, settled: boolean, goalY: number): void {
   if (!settled) {
     step3(s);
     // Only while the graph settles: the fit allocates a little, the blend writes into the camera.
@@ -567,10 +588,11 @@ function advance3(s: Simulation3, now: number, settled: boolean): void {
   }
   const goal = panelShift();
   shift3 = reduced || Math.abs(goal - shift3) < 0.5 ? goal : shift3 + (goal - shift3) * 0.16;
+  shift3y = reduced || Math.abs(goalY - shift3y) < 0.5 ? goalY : shift3y + (goalY - shift3y) * 0.16;
   if (drifting.value && !reduced && drag === null && flight === null) {
     camera.yaw = driftYaw(camera.yaw, now - lastDraw, driftWeight(now - lastInteraction));
   }
-  projector = projector === null ? makeProjector(camera, width, height, shift3) : updateProjector(projector, camera, width, height, shift3);
+  projector = projector === null ? makeProjector(camera, width, height, shift3, shift3y) : updateProjector(projector, camera, width, height, shift3, shift3y);
 }
 
 /** Black, a halo at the centre of the world, a grid of dots and the drifting stars. */

@@ -59,7 +59,7 @@ const busy = computed(() => props.acting !== null);
     <li v-for="source in sources" :key="source.id" class="flex flex-col gap-2 border-t border-line py-2.5 text-[14px] first:border-t-0 first:pt-0">
       <div class="flex flex-wrap items-center gap-2.5">
         <div class="min-w-0 flex-1">
-          <a :href="source.page" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-accent hover:underline">{{ source.id }}</a>
+          <a :href="source.page" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-accent hover:underline touch:inline-flex touch:min-h-11 touch:items-center">{{ source.id }}</a>
           <div class="text-[13px] text-muted">
             {{ source.summary }}<template v-if="source.note"> · <span :class="{ 'text-warn': source.note.warn }">{{ source.note.text }}</span></template>
           </div>
@@ -97,7 +97,7 @@ const busy = computed(() => props.acting !== null);
         <p v-if="source.pending.warn" class="text-[13px] text-warn">{{ source.pending.warn }}</p>
         <p v-if="source.pending.rejected" class="text-[13px] text-muted">{{ source.pending.rejected }}</p>
         <details v-if="source.pending.details.some((group) => group.items.length > 0)" class="text-[13px]">
-          <summary class="cursor-pointer text-muted select-none">{{ detailsLabel }}</summary>
+          <summary class="cursor-pointer text-muted select-none touch:py-3">{{ detailsLabel }}</summary>
           <template v-for="group in source.pending.details" :key="group.label">
             <p v-if="group.items.length > 0" class="mt-1"><b class="font-semibold">{{ group.label }}:</b> {{ group.items.join(', ') }}</p>
           </template>
@@ -123,6 +123,6 @@ const busy = computed(() => props.acting !== null);
   </form>
   <div v-if="suggestions.length > 0" class="flex flex-wrap items-center gap-1.5 text-[13px]">
     <span class="text-muted">Suggerite:</span>
-    <button v-for="item in suggestions" :key="item.id" type="button" class="pill hover:border-accent hover:text-ink" :disabled="busy" :title="`Segui ${item.page}`" @click="add(item.page)">+ {{ item.id }}</button>
+    <button v-for="item in suggestions" :key="item.id" type="button" class="pill hover:border-accent hover:text-ink touch:min-h-11 touch:px-3.5" :disabled="busy" :title="`Segui ${item.page}`" @click="add(item.page)">+ {{ item.id }}</button>
   </div>
 </template>

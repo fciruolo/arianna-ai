@@ -361,7 +361,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       <div v-if="state.view !== 'im'" class="ml-auto flex items-center gap-2">
         <FilterMenu v-model="sortChoice" label="Ordina per" icon="sort" :options="sortOptions" plain align-right />
         <FilterMenu v-if="state.view === 'board'" label="Colonne" icon="cardwall" icon-only align-right>
-          <div class="flex w-[220px] flex-col gap-1.5 text-[14px]">
+          <div class="flex w-[220px] flex-col gap-1.5 text-[14px] phone:w-auto">
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
             <p class="mt-2 mb-0.5 text-[13px] font-semibold text-muted">Mostra</p>

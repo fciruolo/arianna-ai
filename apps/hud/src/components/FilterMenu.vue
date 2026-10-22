@@ -112,7 +112,7 @@ function onPanelFocusOut(event: FocusEvent): void {
 <template>
   <div ref="root" class="relative">
     <div
-      class="flex h-[30px] items-center rounded-full border text-[13.5px] transition-colors"
+      class="flex h-[30px] items-center rounded-full border text-[13.5px] transition-colors touch:h-11"
       :class="filtering ? 'border-accent/60 bg-accent/10 text-ink' : 'border-line-strong text-muted hover:border-accent/60 hover:text-ink'"
     >
       <button
@@ -134,7 +134,7 @@ function onPanelFocusOut(event: FocusEvent): void {
       <button
         v-if="filtering"
         type="button"
-        class="mr-1 grid size-5 place-items-center rounded-full text-muted hover:bg-accent/20 hover:text-ink"
+        class="mr-1 grid size-5 place-items-center rounded-full text-muted hover:bg-accent/20 hover:text-ink touch:mr-0 touch:size-11"
         :aria-label="`Togli il filtro ${label}`"
         @click="choose(allValue)"
       >
@@ -142,12 +142,14 @@ function onPanelFocusOut(event: FocusEvent): void {
       </button>
     </div>
 
+    <!-- D-294: on the phone the menu is a sheet at the bottom, over a veil that closes it. -->
+    <div v-if="open" class="fixed inset-0 z-40 hidden bg-black/40 phone:block" aria-hidden="true" @click="open = false" />
     <div
       v-if="open"
       ref="list"
       :role="options === undefined ? 'dialog' : 'menu'"
       :aria-label="label"
-      class="absolute top-full z-30 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-line-strong bg-surface p-1 text-[14px] shadow-[0_14px_40px_#0005]"
+      class="absolute top-full z-30 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-line-strong bg-surface p-1 text-[14px] shadow-[0_14px_40px_#0005] phone:fixed phone:inset-x-2 phone:top-auto phone:bottom-[calc(var(--safe-bottom)+0.5rem)] phone:z-50 phone:mt-0 phone:max-h-[min(70dvh,calc(var(--vv-height,100dvh)-var(--safe-top)-var(--safe-bottom)-1rem))] phone:overflow-y-auto phone:p-1.5 phone:text-[15px]"
       :class="alignRight ? 'right-0' : 'left-0'"
       @keydown="onMenuKey"
       @focusout="onPanelFocusOut"
@@ -160,7 +162,7 @@ function onPanelFocusOut(event: FocusEvent): void {
           role="menuitemradio"
           :aria-checked="option.value === model"
           :aria-disabled="option.value === '' ? true : undefined"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none hover:bg-surface-2 focus-visible:bg-surface-2"
+          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none hover:bg-surface-2 focus-visible:bg-surface-2 touch:min-h-11"
           :class="option.value === model ? 'text-ink' : 'text-muted'"
           :tabindex="index === active ? 0 : -1"
           @click="option.value === '' ? (open = false) : choose(option.value)"

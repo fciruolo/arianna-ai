@@ -377,8 +377,8 @@ function retry(): void {
     </div>
 
     <!-- The preview of the export, in a window -->
-    <div v-if="exportPreview !== null" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="rules-export-title" @keydown.esc="!exporting && (exportPreview = null)">
-      <div class="flex max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
+    <div v-if="exportPreview !== null" class="phone-overlay-bottom fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="rules-export-title" @keydown.esc="!exporting && (exportPreview = null)">
+      <div class="phone-sheet-bottom flex max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
         <div class="flex flex-col gap-2 overflow-auto px-5 pt-5 pb-3 text-[14px]">
           <h2 id="rules-export-title" class="text-[16px] font-semibold">Esportare le regole?</h2>
           <p>

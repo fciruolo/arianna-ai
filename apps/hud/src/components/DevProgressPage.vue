@@ -409,7 +409,7 @@ onMounted(refresh);
             />
             <div class="flex flex-wrap items-center gap-2">
               <p v-if="sendErrors[question.key] !== undefined" role="alert" class="min-w-0 flex-1 text-[13px] text-danger">{{ sendErrors[question.key] }}</p>
-              <span v-else class="min-w-0 flex-1 text-[13px] text-muted">⌘ + Invio per inviare · non scrivere dati personali: la risposta va al cloud</span>
+              <span v-else class="min-w-0 flex-1 text-[13px] text-muted"><span class="touch:hidden">⌘ + Invio per inviare · </span>non scrivere dati personali: la risposta va al cloud</span>
               <button type="submit" class="btn btn-primary px-3 py-1 text-[13.5px]" :disabled="sending !== null || (drafts[question.key] ?? '').trim() === ''">
                 <Icon name="send" :size="14" />{{ sending === question.key ? 'Invio…' : 'Invia' }}
               </button>
