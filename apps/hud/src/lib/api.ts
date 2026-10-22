@@ -40,7 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
-import { actionPath, needsVerification, onRemoteOrigin, sessionEnded, stepUpHeader } from './remote.ts';
+import { actionPath, checkFailure, needsVerification, onRemoteOrigin, sessionEnded, stepUpHeader } from './remote.ts';
 import type { VersionComparison, WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -74,7 +74,16 @@ async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path
   let data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   // From the phone (D-292, step-up): a decision the core refuses without Face ID; asked for exactly it, then sent again once.
   if (method === 'POST' && needsVerification(onRemoteOrigin(window.location), response.status, data)) {
-    response = await send(await stepUpHeader(actionPath(path, window.location.origin), body));
+    let header: Record<string, string>;
+    try {
+      header = await stepUpHeader(actionPath(path, window.location.origin), body);
+    } catch (error) {
+      // Face ID cancelled, the check refused, the session ended meanwhile: an ApiError with an Italian text, as every other refusal.
+      const failed = checkFailure(error);
+      if (sessionEnded(true, failed.status, failed.body)) window.location.reload();
+      throw new ApiError(failed.status, failed.text, failed.body);
+    }
+    response = await send(header);
     data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   }
   // From the phone (D-292): the session ended (12 hours, idle, unlinked): back to «Entra con Face ID».

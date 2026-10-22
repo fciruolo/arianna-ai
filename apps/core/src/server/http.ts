@@ -575,19 +575,25 @@ function route(method: string, path: string, handler: Handler): Route {
   return { method, pattern: new RegExp(`^${source}$`), keys, handler };
 }
 
-/** A body read once: the check of Face ID from the phone (D-292) reads it before the route, which gets the same. */
-const readBodies = new WeakMap<IncomingMessage, Promise<Record<string, unknown>>>();
+/**
+ * A body read once: the check of Face ID from the phone (D-292) reads it
+ * before the route, which gets the same. A later read with a smaller limit
+ * still refuses a body over it.
+ */
+const readBodies = new WeakMap<IncomingMessage, Promise<{ value: Record<string, unknown>; size: number }>>();
 
-function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
-  let body = readBodies.get(request);
-  if (body === undefined) {
-    body = parseJson(request, limit);
-    readBodies.set(request, body);
+async function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+  let read = readBodies.get(request);
+  if (read === undefined) {
+    read = parseJson(request, limit);
+    readBodies.set(request, read);
   }
-  return body;
+  const { value, size } = await read;
+  if (size > limit) throw new HttpError(413, 'body too large');
+  return value;
 }
 
-async function parseJson(request: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
+async function parseJson(request: IncomingMessage, limit: number): Promise<{ value: Record<string, unknown>; size: number }> {
   const declared = Number(request.headers['content-length'] ?? '0');
   if (declared > limit) throw new HttpError(413, 'body too large');
   const chunks: Buffer[] = [];
@@ -604,7 +610,7 @@ async function parseJson(request: IncomingMessage, limit: number): Promise<Recor
     throw new HttpError(400, 'body is not valid JSON');
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new HttpError(400, 'body must be a JSON object');
-  return value as Record<string, unknown>;
+  return { value: value as Record<string, unknown>, size };
 }
 
 function onlyFields(body: Record<string, unknown>, allowed: readonly string[]): void {
@@ -634,7 +640,8 @@ function idParam(params: Params, key: string): string {
 }
 
 /** The steps of pairing and sign-in carry a passkey: a few kilobytes, never the 1 MB of the other routes. */
-const REMOTE_BODY_BYTES = 64 * 1024;
+// Up to the body of an action (`/api/remote/verify` carries it) and a little more.
+const REMOTE_BODY_BYTES = MAX_BODY_BYTES + 16 * 1024;
 /** How often a live feed of the phone checks that its session is still alive. */
 const SESSION_CHECK_MS = 60_000;
 

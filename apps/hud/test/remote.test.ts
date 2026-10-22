@@ -9,6 +9,7 @@ import {
   credentialJson,
   creationOptionsOf,
   actionPath,
+  checkFailure,
   needsVerification,
   VERIFICATION_HEADER,
   fromBase64url,
@@ -117,6 +118,12 @@ test('from the phone a refusal asking Face ID is answered once with the check; t
   assert.equal(actionPath('/api/wiki/delete?x=1', 'https://mac-prova.tail0000.ts.net'), '/api/wiki/delete');
   assert.equal(actionPath('/api/approvals/a%2Fb/decision', 'https://mac-prova.tail0000.ts.net'), '/api/approvals/a%2Fb/decision');
   assert.equal(VERIFICATION_HEADER, 'x-arianna-verification');
+  // A failed check: Italian text, the code kept; a session ended is a 401 device-not-paired.
+  const cancelled = checkFailure(Object.assign(new Error('no credential'), { name: 'NotAllowedError' }));
+  assert.deepEqual([cancelled.status, cancelled.body.code], [0, 'cancelled']);
+  assert.doesNotMatch(cancelled.text, /credential/);
+  const ended = checkFailure(new RemoteError(401, 'device-not-paired', 'device not paired'));
+  assert.equal(sessionEnded(true, ended.status, ended.body), true);
   assert.equal(sessionEnded(true, 401, { code: 'device-not-paired' }), true);
   assert.equal(sessionEnded(false, 401, { code: 'device-not-paired' }), false);
   assert.equal(sessionEnded(true, 403, { code: 'verification-required' }), false);

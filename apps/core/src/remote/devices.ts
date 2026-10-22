@@ -117,13 +117,15 @@ export interface Intent {
 }
 
 /** JSON with the keys of every object in order: the same intent always gives the same text, on the phone and here. */
-export function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown, depth = 0): string {
+  // Bodies of the API are a few levels deep: a deeper one is refused, never a blown stack.
+  if (depth > 32) throw new RemoteError(400, 'body', 'body nested too deeply');
   if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item, depth + 1)).join(',')}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item, depth + 1)}`).join(',')}}`;
 }
 
 /** The bytes a check's challenge carries after its nonce: the sha256 of the intent, so the assertion is of this action only. */

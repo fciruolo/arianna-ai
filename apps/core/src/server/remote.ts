@@ -47,6 +47,7 @@ const STEP_UP: readonly { action: string; pattern: RegExp }[] = [
   { action: 'approval.decide', pattern: /^\/api\/approvals\/[^/]+\/decision$/ },
   { action: 'skill.share', pattern: /^\/api\/skills-catalog\/claude\/share$/ },
   { action: 'fact.share', pattern: /^\/api\/profile\/facts\/share\/confirm$/ },
+  { action: 'god.approve', pattern: /^\/api\/god\/plans$/ },
   { action: 'god.land', pattern: /^\/api\/god\/(plans|subtasks)\/[^/]+\/land\/[^/]+$/ },
   { action: 'god.subtask', pattern: /^\/api\/god\/subtasks\/[^/]+\/(stop|resume|discard|branch)$/ },
   { action: 'routine.decide', pattern: /^\/api\/routines\/[^/]+\/(approve|discard)$/ },
@@ -55,6 +56,7 @@ const STEP_UP: readonly { action: string; pattern: RegExp }[] = [
   { action: 'wiki.move', pattern: /^\/api\/wiki\/(move|move-now)$/ },
   { action: 'wiki.restore', pattern: /^\/api\/wiki\/restore$/ },
   { action: 'wiki.delete', pattern: /^\/api\/wiki\/(delete|folder\/delete)$/ },
+  { action: 'note.release', pattern: /^\/api\/browse\/[^/]+\/knowledge\/release$/ },
   { action: 'agent.promote', pattern: /^\/api\/agents\/[^/]+\/promote$/ },
 ];
 

@@ -255,7 +255,10 @@ test('an action from the phone needs a passkey check bound to its intent, of thi
   assert.ok(outcomes.some(([, , outcome]) => outcome === 'ok'));
 });
 
-test('the canonical intent: keys in order at every level, undefined left out', () => {
+test('the canonical intent: keys in order at every level, undefined left out, never too deep', () => {
+  let deep: unknown = 1;
+  for (let level = 0; level < 40; level += 1) deep = [deep];
+  assert.throws(() => canonicalJson(deep), RemoteError);
   assert.equal(canonicalJson({ b: 1, a: [{ d: 2, c: null }], e: undefined }), '{"a":[{"c":null,"d":2}],"b":1}');
   assert.deepEqual(intentDigest({ method: 'post', path: '/x', body: { a: 1, b: 2 } }), intentDigest({ method: 'POST', path: '/x', body: { b: 2, a: 1 } }));
   assert.notDeepEqual(intentDigest({ method: 'POST', path: '/x', body: { a: 1 } }), intentDigest({ method: 'POST', path: '/x', body: { a: '1' } }));
@@ -421,7 +424,12 @@ const STEP_UP_ACTIONS: { path: string; body: Record<string, unknown> }[] = [
   { path: '/api/profile/facts/share/confirm', body: { id: '0a5f3e1c-1111-4222-8333-444455556666' } },
   { path: '/api/god/plans/0a5f3e1c-1111-4222-8333-444455556666/land/approve', body: {} },
   { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/land/approve', body: { text: 'ok' } },
+  { path: '/api/god/plans', body: { messageId: '0a5f3e1c-1111-4222-8333-444455556666' } },
   { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/discard', body: {} },
+  { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/stop', body: {} },
+  { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/resume', body: {} },
+  { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/branch', body: {} },
+  { path: '/api/browse/demo/knowledge/release', body: { path: 'nota.md', version: 'v1', text: 'testo', conversationId: 'c', password: 'x' } },
   { path: '/api/routines/0a5f3e1c-1111-4222-8333-444455556666/approve', body: {} },
   { path: '/api/routines/0a5f3e1c-1111-4222-8333-444455556666/discard', body: {} },
   { path: '/api/archive/approve', body: { items: [{ name: 'nota.md', version: 'v1', folder: 'kb/work/clienti' }] } },
@@ -523,7 +531,7 @@ test('what only the Mac does stays there with a session: devices, privacy, the b
   }
   // The decisions are no longer Mac only: they ask Face ID (step-up).
   for (const { path } of STEP_UP_ACTIONS) assert.equal(localOnly(path), false, path);
-  for (const path of ['/api/conversations', '/api/push/subscribe', '/api/devicesx', '/api/browse/demo/tree', '/api/routines/x', '/api/settings']) {
+  for (const path of ['/api/conversations', '/api/push/subscribe', '/api/devicesx', '/api/browse/demo/tree', '/api/routines/x', '/api/settings', '/api/wiki/proposals/x/again', '/api/wiki/edit', '/api/god/plans/x', '/api/approvals/x/plan']) {
     assert.equal(localOnly(path), false, path);
     assert.equal(stepUpAction('POST', path), undefined, path);
   }

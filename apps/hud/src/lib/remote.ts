@@ -236,6 +236,13 @@ export function needsVerification(remote: boolean, status: number, body: Record<
   return remote && status === 403 && body.code === 'verification-required';
 }
 
+/** A failed Face ID check as the page shows it: status, Italian text, and the code in the body. */
+export function checkFailure(error: unknown): { status: number; text: string; body: Record<string, unknown> } {
+  const code = browserErrorCode(error);
+  const status = error instanceof RemoteError ? error.status : 0;
+  return { status, text: remoteErrorText(code === 'unknown' ? undefined : code), body: { code } };
+}
+
 /** The path of an action as the core sees it: no query, no host. */
 export function actionPath(path: string, origin: string): string {
   return new URL(path, origin).pathname;
