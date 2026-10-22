@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.166.2] - 2026-10-22
+
 ### Corretto
 
 - «La pagina … chiede un accesso» solo davanti a un vero modulo d'accesso (D-287): un campo password visibile, o un campo per l'utente col suo pulsante «Accedi» nello stesso modulo; non più per un link «Accedi», una casella di ricerca o il banner dei cookie, né per un mini accesso chiuso in un menu o messo fuori dalla pagina.
