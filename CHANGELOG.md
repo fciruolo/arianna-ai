@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.166.0] - 2026-10-22
+
 ### Corretto
 
 - Scrivendo «[[» nella Wiki il menù dice «Cerco…» finché non arrivano i risultati e «Nessuna nota o pagina» solo quando la ricerca non ha trovato niente; le voci restano ferme mentre scrivi e Invio aspetta la risposta (D-288).
