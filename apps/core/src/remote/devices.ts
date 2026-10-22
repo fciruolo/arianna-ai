@@ -1,7 +1,7 @@
 /**
  * The devices of the remote port (D-292, stage B): pairing with a code shown
  * on the Mac, the passkey the phone creates, sign-in with Face ID, the
- * session cookie, the passkey asked again for each decision on an approval,
+ * session cookie, the passkey asked again for each decision (step-up),
  * and «Scollega».
  *
  * What lives in memory, in this process only: the one pairing code, the
@@ -28,17 +28,17 @@ export const PAIR_PER_MINUTE = 10;
 export const LOGIN_PER_MINUTE = 30;
 export const REGISTER_TTL_MS = 5 * 60_000;
 export const LOGIN_TTL_MS = 2 * 60_000;
-/** How old the passkey check of a decision on an approval may be (D-292). */
-export const DECISION_TTL_MS = 5 * 60_000;
+/** How old the passkey check of an action from the phone may be (D-292): 5 minutes, used once. */
+export const STEP_UP_TTL_MS = 5 * 60_000;
 const MAX_CHALLENGES = 100;
 const DEVICE_NAME_MAX = 60;
 
-export type RemoteEventKind = 'remote.paired' | 'remote.login' | 'remote.unlinked' | 'remote.decision';
+export type RemoteEventKind = 'remote.paired' | 'remote.login' | 'remote.unlinked' | 'remote.verification';
 
-/** An event of the log: the device id (when known) and the outcome, nothing else. */
+/** An event of the log: the device id (when known), the closed name of the action checked, the outcome and a closed code of the reason. */
 export interface RemoteEvent {
   kind: RemoteEventKind;
-  payload: { device?: string; outcome: 'ok' | 'refused'; reason?: string };
+  payload: { device?: string; action?: string; outcome: 'ok' | 'refused'; reason?: string };
 }
 
 export interface StoredDeviceCredential {
@@ -104,19 +104,31 @@ export interface RemoteSession {
   deviceId: string;
 }
 
-/** What a decision on an approval is: the passkey check is bound to exactly this. */
-export interface DecisionBinding {
-  approvalId: string;
-  state: 'approved' | 'rejected';
-  choice?: string;
-  starts?: unknown;
-  revision?: unknown;
+/**
+ * What an action from the phone is (D-292, step-up): the method, the path
+ * (which names the kind of action and its object: the approval, the page of
+ * the Wiki, the plan of GOD) and the JSON body (every parameter that changes
+ * the outcome). The passkey check is bound to exactly this.
+ */
+export interface Intent {
+  method: string;
+  path: string;
+  body: unknown;
 }
 
-/** The bytes a decision's challenge carries after its nonce: the sha256 of the decision, so the assertion is of this decision only. */
-export function decisionDigest(binding: DecisionBinding): Buffer {
-  const canonical = JSON.stringify([binding.approvalId, binding.state, binding.choice ?? null, binding.starts ?? null, binding.revision ?? null]);
-  return createHash('sha256').update('arianna-decision\0').update(canonical).digest();
+/** JSON with the keys of every object in order: the same intent always gives the same text, on the phone and here. */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
+}
+
+/** The bytes a check's challenge carries after its nonce: the sha256 of the intent, so the assertion is of this action only. */
+export function intentDigest(intent: Intent): Buffer {
+  return createHash('sha256').update('arianna-intent\0').update(canonicalJson([intent.method.toUpperCase(), intent.path, intent.body])).digest();
 }
 
 export function sessionHash(token: string): Buffer {
@@ -167,7 +179,7 @@ export function createLimiter(max: number, now: () => number): () => boolean {
 type Pending =
   | { purpose: 'register'; expires: number; deviceId: string; name: string }
   | { purpose: 'login'; expires: number }
-  | { purpose: 'decision'; expires: number; session: RemoteSession; digest: Buffer };
+  | { purpose: 'intent'; expires: number; session: RemoteSession; digest: Buffer };
 
 export interface RemoteDevicesOptions {
   store: DeviceStore;
@@ -216,10 +228,14 @@ export interface RemoteDevices {
   alive(session: RemoteSession): Promise<boolean>;
   /** Called with the id of each device unlinked: its open sockets close at once. */
   onUnlink(listener: (deviceId: string) => void): void;
-  /** The options of the passkey check bound to a decision. */
-  decisionOptions(session: RemoteSession, binding: DecisionBinding): Promise<RequestOptions>;
-  /** Throws a RemoteError unless `assertion` is a check of this device, for exactly this decision, not older than 5 minutes. */
-  verifyDecision(session: RemoteSession, binding: DecisionBinding, assertion: unknown): Promise<void>;
+  /** The options of the passkey check bound to an action (step-up). */
+  intentOptions(session: RemoteSession, intent: Intent): Promise<RequestOptions>;
+  /**
+   * Throws a RemoteError 403 `verification-required` unless `assertion` is a
+   * check of this session's device, for exactly this intent, not older than
+   * 5 minutes, used once. `action`: its closed name, for the event.
+   */
+  verifyIntent(session: RemoteSession, intent: Intent, action: string, assertion: unknown): Promise<void>;
   list(): Promise<DeviceSummary[]>;
   unlink(deviceId: string): Promise<void>;
 }
@@ -429,51 +445,47 @@ export function createRemoteDevices(options: RemoteDevicesOptions): RemoteDevice
       unlinkListeners.push(listener);
     },
 
-    async decisionOptions(session, binding) {
+    async intentOptions(session, intent) {
       const nonce = randomBytes(16);
-      const digest = decisionDigest(binding);
-      const challenge = issue({ purpose: 'decision', expires: now() + DECISION_TTL_MS, session, digest }, Buffer.concat([nonce, digest]));
+      const digest = intentDigest(intent);
+      const challenge = issue({ purpose: 'intent', expires: now() + STEP_UP_TTL_MS, session, digest }, Buffer.concat([nonce, digest]));
       const ids = await store.credentials(session.deviceId);
       return { challenge, rpId: host, timeout: LOGIN_TTL_MS, userVerification: 'required', allowCredentials: ids.map((id) => ({ type: 'public-key', id: base64url(id) })) };
     },
 
-    async verifyDecision(session, binding, assertion) {
-      if (assertion === undefined || assertion === null) {
-        await record({ kind: 'remote.decision', payload: { device: session.deviceId, outcome: 'refused', reason: 'missing' } });
-        throw new RemoteError(403, 'verification-required', 'a decision from the phone needs the passkey');
-      }
+    async verifyIntent(session, intent, action, assertion) {
+      const refuse = async (reason: string, message: string): Promise<never> => {
+        await record({ kind: 'remote.verification', payload: { device: session.deviceId, action, outcome: 'refused', reason } });
+        throw new RemoteError(403, 'verification-required', message);
+      };
+      if (assertion === undefined || assertion === null) return refuse('missing', 'this action from the phone needs the passkey');
       let challenge: string;
       try {
         challenge = challengeOf(assertion);
       } catch {
-        await record({ kind: 'remote.decision', payload: { device: session.deviceId, outcome: 'refused', reason: 'client-data' } });
-        throw new RemoteError(403, 'verification-required', 'the passkey check is not readable');
+        return refuse('client-data', 'the passkey check is not readable');
       }
       const entry = take(challenge);
       const bytes = Buffer.from(challenge, 'base64url');
-      const digest = decisionDigest(binding);
-      // The check must be of this session and of exactly this decision: the digest is in the challenge itself.
+      const digest = intentDigest(intent);
+      // The check must be of this session and of exactly this action: the digest is in the challenge itself.
       if (
-        entry?.purpose !== 'decision' ||
+        entry?.purpose !== 'intent' ||
         entry.session.id !== session.id ||
         entry.session.deviceId !== session.deviceId ||
         !timingSafeEqual(entry.digest, digest) ||
         bytes.length !== 48 ||
         !timingSafeEqual(bytes.subarray(16), digest)
       ) {
-        await record({ kind: 'remote.decision', payload: { device: session.deviceId, outcome: 'refused', reason: 'challenge' } });
-        throw new RemoteError(403, 'verification-required', 'the passkey check is missing, expired or for another decision');
+        return refuse('challenge', 'the passkey check is missing, expired or for another action');
       }
       try {
         await assert(assertion, bytes, session.deviceId);
       } catch (error) {
-        if (error instanceof RemoteError) {
-          await record({ kind: 'remote.decision', payload: { device: session.deviceId, outcome: 'refused', reason: error.code } });
-          throw new RemoteError(403, 'verification-required', 'the passkey check failed');
-        }
+        if (error instanceof RemoteError) return refuse(error.code, 'the passkey check failed');
         throw error;
       }
-      await record({ kind: 'remote.decision', payload: { device: session.deviceId, outcome: 'ok' } });
+      await record({ kind: 'remote.verification', payload: { device: session.deviceId, action, outcome: 'ok' } });
     },
 
     list: () => store.list(),
@@ -481,8 +493,8 @@ export function createRemoteDevices(options: RemoteDevicesOptions): RemoteDevice
     async unlink(deviceId) {
       if (!UUID.test(deviceId)) throw new RemoteError(404, 'not-found', 'no such device');
       if (!(await store.unlink(deviceId, new Date(now())))) throw new RemoteError(404, 'not-found', 'no such device');
-      // A decision check waiting for this device goes too.
-      for (const [key, entry] of pending) if (entry.purpose === 'decision' && entry.session.deviceId === deviceId) pending.delete(key);
+      // A check waiting for this device goes too.
+      for (const [key, entry] of pending) if (entry.purpose === 'intent' && entry.session.deviceId === deviceId) pending.delete(key);
       for (const listener of unlinkListeners) {
         try {
           listener(deviceId);

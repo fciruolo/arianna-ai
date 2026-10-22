@@ -8,7 +8,9 @@ import {
   browserErrorCode,
   credentialJson,
   creationOptionsOf,
-  decisionBody,
+  actionPath,
+  needsVerification,
+  VERIFICATION_HEADER,
   fromBase64url,
   onRemoteOrigin,
   RemoteError,
@@ -108,10 +110,13 @@ test('every refusal of the core and of the browser has its Italian text', () => 
   assert.equal(browserErrorCode('x'), 'unknown');
 });
 
-test('a decision from the phone carries its check; from the Mac the body is as before', () => {
-  const check = { id: 'x' };
-  assert.deepEqual(decisionBody({ state: 'approved' }), { state: 'approved' });
-  assert.deepEqual(decisionBody({ state: 'rejected', choice: 'local', starts: [1], revision: 2 }, check), { state: 'rejected', choice: 'local', starts: [1], revision: 2, verification: check });
+test('from the phone a refusal asking Face ID is answered once with the check; the path as the core sees it', () => {
+  assert.equal(needsVerification(true, 403, { code: 'verification-required' }), true);
+  assert.equal(needsVerification(false, 403, { code: 'verification-required' }), false);
+  assert.equal(needsVerification(true, 403, { code: 'local-only' }), false);
+  assert.equal(actionPath('/api/wiki/delete?x=1', 'https://mac-prova.tail0000.ts.net'), '/api/wiki/delete');
+  assert.equal(actionPath('/api/approvals/a%2Fb/decision', 'https://mac-prova.tail0000.ts.net'), '/api/approvals/a%2Fb/decision');
+  assert.equal(VERIFICATION_HEADER, 'x-arianna-verification');
   assert.equal(sessionEnded(true, 401, { code: 'device-not-paired' }), true);
   assert.equal(sessionEnded(false, 401, { code: 'device-not-paired' }), false);
   assert.equal(sessionEnded(true, 403, { code: 'verification-required' }), false);

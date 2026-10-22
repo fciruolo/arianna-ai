@@ -40,7 +40,7 @@ import type { CalendarWeek } from './routine-calendar.ts';
 import type { Routine, RoutineBody } from './routines.ts';
 import type { ApproveItem, ApproveResult, ArchiveListing } from './archive.ts';
 import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState } from './browser-screen.ts';
-import { decisionBody, onRemoteOrigin, sessionEnded, verifyDecision } from './remote.ts';
+import { actionPath, needsVerification, onRemoteOrigin, sessionEnded, stepUpHeader } from './remote.ts';
 import type { VersionComparison, WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
 import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -63,13 +63,20 @@ export class ApiError extends Error {
 }
 
 async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  const send = (extra: Record<string, string> = {}): Promise<Response> =>
+    fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...extra },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  let response = await send();
+  let data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  // From the phone (D-292, step-up): a decision the core refuses without Face ID; asked for exactly it, then sent again once.
+  if (method === 'POST' && needsVerification(onRemoteOrigin(window.location), response.status, data)) {
+    response = await send(await stepUpHeader(actionPath(path, window.location.origin), body));
+    data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  }
   // From the phone (D-292): the session ended (12 hours, idle, unlinked): back to «Entra con Face ID».
   if (sessionEnded(onRemoteOrigin(window.location), response.status, data)) window.location.reload();
   if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
@@ -597,10 +604,14 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
  * `plan`: the cards of a plan to start at once, «Avvia subito», by their number, and the revision shown (D-235).
  */
 export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<Approval> {
-  const fields = { state, ...(choice === undefined ? {} : { choice }), ...(plan === undefined ? {} : { starts: plan.starts, revision: plan.revision }) };
-  // From the phone (D-292) a decision carries a Face ID check bound to exactly these fields; the core refuses it without.
-  const verification = onRemoteOrigin(window.location) ? await verifyDecision({ approvalId, ...fields }) : undefined;
-  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, decisionBody(fields, verification))).approval;
+  // From the phone (D-292) the core asks Face ID for exactly this decision: call() asks it and sends again.
+  return (
+    await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
+      state,
+      ...(choice === undefined ? {} : { choice }),
+      ...(plan === undefined ? {} : { starts: plan.starts, revision: plan.revision }),
+    })
+  ).approval;
 }
 
 /** The user's edit of a pending plan (D-235): the cards replaced, checked again by the core. */

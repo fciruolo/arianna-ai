@@ -13,7 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - La chat si installa sulla schermata Home dell'iPhone (icona e meta di app); dal telefono, finché il dispositivo non è abbinato, compaiono solo le schermate di abbinamento e accesso (D-292).
 - `[push]` in `arianna.toml`: le notifiche Web Push della chat funzionano anche con la voce spenta; `[voice.push]` resta valida (D-292).
 - Abbinamento del telefono: Impostazioni → Dispositivi sul Mac (elenco con ultimo accesso, «Nuovo codice», «Scollega» che chiude subito sessioni, passkey e notifiche del telefono); sul telefono «Scrivi il codice», «Crea la passkey», «Entra con Face ID» (D-292, tappa B).
-- Dal telefono abbinato la chat completa, le notifiche push e le approvazioni con Face ID (D-292, tappa B).
+- Dal telefono abbinato la chat completa, le notifiche push e, con Face ID per ognuna, approvazioni, condivisione di skill e fatti, unioni di GOD, routine, archivio, Wiki e promozione di un agente (D-292, tappa B).
 - Impostazioni → Notifiche mostra e salva le chiavi di Web Push anche con la voce spenta, sempre in `[push]` (una `[voice.push]` si sposta lì nello stesso salvataggio); errori sulle chiavi in italiano (D-292).
 
 ### Sicurezza
@@ -23,7 +23,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - In modo `own` senza un certificato valido il core non apre la porta remota e dice perché (D-292).
 - Dal telefono l'API si apre solo con la sessione di un dispositivo abbinato: cookie `__Host-` `HttpOnly`, `Secure`, `SameSite=Strict`, 12 ore al più e 30 minuti di inattività, nel database solo lo sha256; scritture remote sempre con `Origin` e JSON (D-292, tappa B).
 - Passkey verificate dal core con `node:crypto` (attestazione `none`, ES256 e RS256, origine, `rpId`, sfida monouso, Face ID, contatore); codici di abbinamento solo dal Mac, 5 minuti, un uso, tentativi limitati (D-292, tappa B).
-- Ogni decisione su un'approvazione presa dal telefono chiede Face ID per quella decisione, e il server lo controlla (D-292, tappa B).
+- Ogni decisione presa dal telefono chiede Face ID per esattamente quell'azione (metodo, percorso e corpo), con una verifica di 5 minuti usata una volta che il server controlla prima di eseguire; dispositivi, impostazioni di privacy, browser dell'agente e azioni sul Mac restano solo dal Mac (D-292, tappa B).
 - In modo `own` il core rifiuta una `data/remote/server.key` che sia un collegamento simbolico, non un file normale o con permessi più larghi di 0600, e lo dice come per il certificato mancante (D-292).
 
 ## [0.167.1] - 2026-10-22

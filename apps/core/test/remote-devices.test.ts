@@ -11,19 +11,21 @@ import { after, before, beforeEach, test } from 'node:test';
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import {
+  canonicalJson,
   CODE_MAX_WRONG,
   createRemoteDevices,
-  decisionDigest,
+  intentDigest,
   deviceName,
   PAIR_PER_MINUTE,
   RemoteError,
   SESSION_COOKIE,
   sessionToken,
   uuidBytes,
+  type Intent,
   type RemoteDevices,
 } from '../src/remote/devices.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
-import { localOnly } from '../src/server/remote.ts';
+import { localOnly, stepUpAction, VERIFICATION_HEADER } from '../src/server/remote.ts';
 import { memoryDeviceStore, type MemoryDevices } from './support/memory-devices.ts';
 import { TestPasskey } from './support/passkey.ts';
 
@@ -207,44 +209,56 @@ test('«Scollega»: sessions and passkeys of the device end at once; the others 
   await assert.rejects(devices.unlink('not-a-uuid'), refusedWith(404, 'not-found'));
 });
 
-test('a decision from the phone needs a passkey check bound to it, of this session, not older than 5 minutes', async () => {
+test('an action from the phone needs a passkey check bound to its intent, of this session, not older than 5 minutes, once', async () => {
   const { passkey, token, deviceId } = await pairDevice();
   const session = await devices.session(cookie(token));
   assert.ok(session !== undefined);
-  const approve = { approvalId: '0a5f3e1c-1111-4222-8333-444455556666', state: 'approved' as const };
-  const check = async (binding = approve, signCount?: number) => {
-    const options = await devices.decisionOptions(session, binding);
+  const approve: Intent = { method: 'POST', path: '/api/approvals/0a5f3e1c-1111-4222-8333-444455556666/decision', body: { state: 'approved' } };
+  const check = async (intent = approve) => {
+    const options = await devices.intentOptions(session, intent);
     assert.deepEqual(options.allowCredentials.map((item) => item.id), [passkey.id.toString('base64url')]);
-    // The challenge carries the digest of the decision.
-    assert.deepEqual(Buffer.from(options.challenge, 'base64url').subarray(16), decisionDigest(binding));
-    return { challenge: options.challenge, assertion: passkey.get({ challenge: options.challenge, ...(signCount === undefined ? {} : { signCount }) }, HOST) };
+    // The challenge carries the digest of the intent.
+    assert.deepEqual(Buffer.from(options.challenge, 'base64url').subarray(16), intentDigest(intent));
+    return passkey.get({ challenge: options.challenge }, HOST);
   };
+  const verify = (assertion: unknown, intent = approve, on = session) => devices.verifyIntent(on, intent, 'approval.decide', assertion);
   // No check at all, or one that is not a passkey answer.
-  await assert.rejects(devices.verifyDecision(session, approve, undefined), refusedWith(403, 'verification-required'));
-  await assert.rejects(devices.verifyDecision(session, approve, { response: { clientDataJSON: '!' } }), refusedWith(403, 'verification-required'));
+  await assert.rejects(verify(undefined), refusedWith(403, 'verification-required'));
+  await assert.rejects(verify({ response: { clientDataJSON: '!' } }), refusedWith(403, 'verification-required'));
   // The right check passes, once.
   const good = await check();
-  await devices.verifyDecision(session, approve, good.assertion);
-  await assert.rejects(devices.verifyDecision(session, approve, good.assertion), refusedWith(403, 'verification-required'));
-  // A check for another choice or another approval.
-  const other = await check();
-  await assert.rejects(devices.verifyDecision(session, { ...approve, state: 'rejected' }, other.assertion), refusedWith(403, 'verification-required'));
-  const another = await check();
-  await assert.rejects(devices.verifyDecision(session, { ...approve, approvalId: '0a5f3e1c-1111-4222-8333-000000000000' }, another.assertion), refusedWith(403, 'verification-required'));
+  await verify(good);
+  await assert.rejects(verify(good), refusedWith(403, 'verification-required'));
+  // A check for another choice, another object or another action.
+  await assert.rejects(verify(await check(), { ...approve, body: { state: 'rejected' } }), refusedWith(403, 'verification-required'));
+  await assert.rejects(verify(await check(), { ...approve, path: '/api/approvals/0a5f3e1c-1111-4222-8333-000000000000/decision' }), refusedWith(403, 'verification-required'));
+  // The order of the keys does not change the intent; a value does.
+  const twoKeys = { ...approve, body: { state: 'approved', choice: 'local' } };
+  await verify(await check(twoKeys), { ...approve, body: { choice: 'local', state: 'approved' } });
   // Older than 5 minutes.
   const late = await check();
   clock += 5 * MINUTE;
-  await assert.rejects(devices.verifyDecision(session, approve, late.assertion), refusedWith(403, 'verification-required'));
-  // A check asked by another session of the same device.
-  const otherSession = { ...session, id: 'another' };
+  await assert.rejects(verify(late), refusedWith(403, 'verification-required'));
+  // A check asked by another session of the same device, or by another device.
   const stolen = await check();
-  await assert.rejects(devices.verifyDecision(otherSession, approve, stolen.assertion), refusedWith(403, 'verification-required'));
+  await assert.rejects(verify(stolen, approve, { ...session, id: 'another' }), refusedWith(403, 'verification-required'));
+  const other = await pairDevice(new TestPasskey(), 'iPad');
+  const otherSession = await devices.session(cookie(other.token));
+  assert.ok(otherSession !== undefined);
+  const theirs = await devices.intentOptions(otherSession, approve);
+  await assert.rejects(verify(other.passkey.get({ challenge: theirs.challenge }, HOST)), refusedWith(403, 'verification-required'));
   // A bad signature on the right challenge.
-  const options = await devices.decisionOptions(session, approve);
-  await assert.rejects(devices.verifyDecision(session, approve, passkey.get({ challenge: options.challenge }, HOST, { badSignature: true })), refusedWith(403, 'verification-required'));
-  const outcomes = store.events.filter((event) => event.kind === 'remote.decision').map((event) => [event.payload.device, event.payload.outcome]);
-  assert.deepEqual(outcomes[0], [deviceId, 'refused']);
-  assert.ok(outcomes.some(([, outcome]) => outcome === 'ok'));
+  const options = await devices.intentOptions(session, approve);
+  await assert.rejects(verify(passkey.get({ challenge: options.challenge }, HOST, { badSignature: true })), refusedWith(403, 'verification-required'));
+  const outcomes = store.events.filter((event) => event.kind === 'remote.verification').map((event) => [event.payload.device, event.payload.action, event.payload.outcome]);
+  assert.deepEqual(outcomes[0], [deviceId, 'approval.decide', 'refused']);
+  assert.ok(outcomes.some(([, , outcome]) => outcome === 'ok'));
+});
+
+test('the canonical intent: keys in order at every level, undefined left out', () => {
+  assert.equal(canonicalJson({ b: 1, a: [{ d: 2, c: null }], e: undefined }), '{"a":[{"c":null,"d":2}],"b":1}');
+  assert.deepEqual(intentDigest({ method: 'post', path: '/x', body: { a: 1, b: 2 } }), intentDigest({ method: 'POST', path: '/x', body: { b: 2, a: 1 } }));
+  assert.notDeepEqual(intentDigest({ method: 'POST', path: '/x', body: { a: 1 } }), intentDigest({ method: 'POST', path: '/x', body: { a: '1' } }));
 });
 
 test('events: device id and outcome only, never a code, a cookie, a key or a name', async () => {
@@ -356,7 +370,8 @@ test('HTTP: the code is made on the Mac only, never from the phone', async () =>
   assert.equal((await remote('/api/devices', { headers: { cookie: cookie(token) } })).status, 403);
   assert.equal((await remote('/api/settings/privacy/confirm', { method: 'POST', body: {}, headers: { cookie: cookie(token) } })).status, 403);
   assert.equal((await remote('/api/notifications/stream', { headers: { cookie: cookie(token) } })).status, 403);
-  assert.equal((await remote('/api/god/subtasks/x/land/merge', { method: 'POST', body: {}, headers: { cookie: cookie(token) } })).status, 403);
+  assert.equal((await remote('/api/browser/control', { method: 'POST', body: {}, headers: { cookie: cookie(token) } })).status, 403);
+  assert.equal((await remote('/api/browse/demo/open', { method: 'POST', body: {}, headers: { cookie: cookie(token) } })).status, 403);
   // The steps of the phone do not exist on the port of the Mac.
   assert.equal((await local('/api/remote/pair', { method: 'POST', body: { code: '123456' } })).status, 404);
 });
@@ -399,23 +414,64 @@ test('HTTP: refusals of pairing in the codes of the page; a wrong code is 401, t
   assert.equal((await remote('/api/remote/pair', { method: 'POST', body: { code: '1', other: 1 } })).status, 400);
 });
 
-test('HTTP: a decision from the phone without its passkey check is refused by the server', async () => {
-  const { token, passkey } = await pairDevice();
-  const path = '/api/approvals/0a5f3e1c-1111-4222-8333-444455556666/decision';
-  const decision = await remote(path, { method: 'POST', body: { state: 'approved' }, headers: { cookie: cookie(token) } });
-  assert.deepEqual([decision.status, decision.body.code], [403, 'verification-required']);
-  // A check for another approval, or for the other choice, does not open this one.
-  for (const asked of [{ approvalId: '0a5f3e1c-1111-4222-8333-000000000000', state: 'approved' }, { approvalId: '0a5f3e1c-1111-4222-8333-444455556666', state: 'rejected' }]) {
-    const options = await remote('/api/remote/verify', { method: 'POST', body: asked, headers: { cookie: cookie(token) } });
-    assert.equal(options.status, 200);
-    const verification = passkey.get({ challenge: (options.body.options as { challenge: string }).challenge }, HOST);
-    const refused = await remote(path, { method: 'POST', body: { state: 'approved', verification }, headers: { cookie: cookie(token) } });
-    assert.deepEqual([refused.status, refused.body.code], [403, 'verification-required']);
+/** Every action that from the phone asks Face ID (D-292, step-up), with a body as the chat sends it. */
+const STEP_UP_ACTIONS: { path: string; body: Record<string, unknown> }[] = [
+  { path: '/api/approvals/0a5f3e1c-1111-4222-8333-444455556666/decision', body: { state: 'approved' } },
+  { path: '/api/skills-catalog/claude/share', body: { skill: 'revisione', shared: true, sha256: 'a'.repeat(64) } },
+  { path: '/api/profile/facts/share/confirm', body: { id: '0a5f3e1c-1111-4222-8333-444455556666' } },
+  { path: '/api/god/plans/0a5f3e1c-1111-4222-8333-444455556666/land/approve', body: {} },
+  { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/land/approve', body: { text: 'ok' } },
+  { path: '/api/god/subtasks/0a5f3e1c-1111-4222-8333-444455556666/discard', body: {} },
+  { path: '/api/routines/0a5f3e1c-1111-4222-8333-444455556666/approve', body: {} },
+  { path: '/api/routines/0a5f3e1c-1111-4222-8333-444455556666/discard', body: {} },
+  { path: '/api/archive/approve', body: { items: [{ name: 'nota.md', version: 'v1', folder: 'kb/work/clienti' }] } },
+  { path: '/api/archive/discard', body: { name: 'nota.md', version: 'v1' } },
+  { path: '/api/wiki/proposals/p1/approve', body: { path: 'kb/wiki/ricette/pane.md' } },
+  { path: '/api/wiki/proposals/p1/discard', body: {} },
+  { path: '/api/wiki/move', body: { from: 'kb/wiki/a', to: 'kb/wiki/b' } },
+  { path: '/api/wiki/move-now', body: { kind: 'page', from: 'kb/wiki/a.md', to: 'kb/wiki/b.md', base: 'v1' } },
+  { path: '/api/wiki/restore', body: { path: 'kb/wiki/a.md', version: 'v1', base: 'v2' } },
+  { path: '/api/wiki/delete', body: { path: 'kb/wiki/a.md', base: 'v1' } },
+  { path: '/api/wiki/folder/delete', body: { path: 'kb/wiki/vuota' } },
+  { path: '/api/agents/traduttore/promote', body: { confirm: 'traduttore' } },
+];
+
+const header = (assertion: unknown): Record<string, string> => ({ [VERIFICATION_HEADER]: Buffer.from(JSON.stringify(assertion)).toString('base64url') });
+
+test('HTTP: every decision from the phone asks Face ID for exactly it; the server refuses a missing, other, reused, late or foreign check', async () => {
+  const mine = await pairDevice();
+  const theirs = await pairDevice(new TestPasskey(), 'iPad');
+  const ask = async (who: { token: string; passkey: TestPasskey }, path: string, body: unknown) => {
+    const options = await remote('/api/remote/verify', { method: 'POST', body: { method: 'POST', path, body }, headers: { cookie: cookie(who.token) } });
+    assert.equal(options.status, 200, path);
+    return who.passkey.get({ challenge: (options.body.options as { challenge: string }).challenge }, HOST);
+  };
+  const send = (path: string, body: unknown, extra: Record<string, string> = {}) => remote(path, { method: 'POST', body, headers: { cookie: cookie(mine.token), ...extra } });
+  const refused = (answer: Answer, what: string) => {
+    assert.deepEqual([answer.status, answer.body.code], [403, 'verification-required'], what);
+  };
+  for (const { path, body } of STEP_UP_ACTIONS) {
+    assert.equal(stepUpAction('POST', path) !== undefined, true, path);
+    refused(await send(path, body), `${path}: no check`);
+    // A check for another intent: another body (another path of the Wiki, another choice).
+    refused(await send(path, body, header(await ask(mine, path, { ...body, other: 1 }))), `${path}: other intent`);
+    // From another device.
+    refused(await send(path, body, header(await ask(theirs, path, body))), `${path}: other device`);
+    // The right one passes the check (the route then answers for itself: here without its service), once.
+    const good = header(await ask(mine, path, body));
+    const passed = await send(path, body, good);
+    assert.notEqual(passed.body.code, 'verification-required', `${path}: right check`);
+    refused(await send(path, body, good), `${path}: reused`);
+    // Older than 5 minutes.
+    const late = header(await ask(mine, path, body));
+    clock += 5 * MINUTE + 1;
+    refused(await send(path, body, late), `${path}: late`);
+    // The sessions live on: they are used at every request.
   }
-  // On the port of the Mac the field does not exist.
-  assert.equal((await local(path, { method: 'POST', body: { state: 'approved', verification: {} } })).status, 400);
-  // Without a session the check cannot even be asked.
-  assert.equal((await remote('/api/remote/verify', { method: 'POST', body: { approvalId: '0a5f3e1c-1111-4222-8333-000000000000', state: 'approved' } })).status, 401);
+  // On the port of the Mac nothing is asked.
+  assert.notEqual((await local('/api/routines/0a5f3e1c-1111-4222-8333-444455556666/approve', { method: 'POST', body: {} })).status, 403);
+  // A check cannot be asked for a path that needs none.
+  assert.equal((await remote('/api/remote/verify', { method: 'POST', body: { path: '/api/conversations', body: {} }, headers: { cookie: cookie(mine.token) } })).status, 400);
 });
 
 test('HTTP: the live feed opens from the phone with a session only, never the screen of the browser', async () => {
@@ -461,30 +517,17 @@ test('HTTP: Impostazioni → Dispositivi on the Mac: the list with the last acce
   assert.equal((await local(`/api/devices/${deviceId}/unlink`, { method: 'POST', body: {} })).status, 404);
 });
 
-test('what only the Mac does stays there with a session: other decisions, the browser of the agent, actions on the Mac', () => {
-  for (const path of [
-    '/api/devices',
-    '/api/devices/code',
-    '/api/settings/privacy/confirm',
-    '/api/notifications/stream',
-    '/api/notifications/this-mac',
-    '/api/skills-catalog/claude/share',
-    '/api/profile/facts/share/confirm',
-    '/api/god/plans/x/land/merge',
-    '/api/god/subtasks/x/approve',
-    '/api/routines/x/approve',
-    '/api/archive/approve',
-    '/api/wiki/proposals/x/approve',
-    '/api/agents/x/promote',
-    '/api/browser/control',
-    '/api/browse/demo/open',
-    '/api/browse/demo/reveal',
-  ]) {
+test('what only the Mac does stays there with a session: devices, privacy, the browser of the agent, actions on the Mac', () => {
+  for (const path of ['/api/devices', '/api/devices/code', '/api/settings/privacy/confirm', '/api/notifications/stream', '/api/notifications/this-mac', '/api/browser/control', '/api/browse/demo/open', '/api/browse/demo/reveal']) {
     assert.equal(localOnly(path), true, path);
   }
-  for (const path of ['/api/conversations', '/api/approvals/x/decision', '/api/push/subscribe', '/api/devicesx', '/api/browse/demo/tree', '/api/routines/x', '/api/settings']) {
+  // The decisions are no longer Mac only: they ask Face ID (step-up).
+  for (const { path } of STEP_UP_ACTIONS) assert.equal(localOnly(path), false, path);
+  for (const path of ['/api/conversations', '/api/push/subscribe', '/api/devicesx', '/api/browse/demo/tree', '/api/routines/x', '/api/settings']) {
     assert.equal(localOnly(path), false, path);
+    assert.equal(stepUpAction('POST', path), undefined, path);
   }
+  assert.equal(stepUpAction('GET', '/api/routines/x/approve'), undefined);
 });
 
 test('HTTP: «Scollega» closes at once a live feed already open from the phone', async () => {

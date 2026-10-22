@@ -12,6 +12,7 @@ import { createRemoteDevices, SESSION_COOKIE, sessionHash, type RemoteDevices } 
 import { createDeviceStore } from '../src/remote/store.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
+import { VERIFICATION_HEADER } from '../src/server/remote.ts';
 import { TestPasskey } from '../test/support/passkey.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -52,11 +53,11 @@ async function pairDevice(name = 'iPhone di prova'): Promise<{ passkey: TestPass
 
 const cookie = (token: string): string => `${SESSION_COOKIE}=${token}`;
 
-function post(path: string, body: unknown, token: string): Promise<{ status: number; body: Record<string, unknown> }> {
+function post(path: string, body: unknown, token: string, check?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
     const text = JSON.stringify(body);
     const request = httpRequest(
-      { host: '127.0.0.1', port: server.remotePort ?? -1, path, method: 'POST', headers: { host: HOST, origin: ORIGIN, cookie: cookie(token), 'content-type': 'application/json' } },
+      { host: '127.0.0.1', port: server.remotePort ?? -1, path, method: 'POST', headers: { host: HOST, origin: ORIGIN, cookie: cookie(token), 'content-type': 'application/json', ...(check === undefined ? {} : { [VERIFICATION_HEADER]: Buffer.from(JSON.stringify(check)).toString('base64url') }) } },
       (response) => {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -149,7 +150,7 @@ test('«Scollega» on the database: sessions, passkeys and the push of the phone
   assert.ok(!all.includes(token));
 });
 
-test('a decision from the phone: refused without the passkey check, recorded with it', async () => {
+test('a decision from the phone: refused without the passkey check, recorded with it (step-up)', async () => {
   const { passkey, token } = await pairDevice();
   const [row] = await db().sql<{ id: string }[]>`INSERT INTO approvals (kind, action, detail, label) VALUES ('action', 'send_external', '{}', 'L1') RETURNING id::text`;
   assert.ok(row !== undefined);
@@ -157,15 +158,17 @@ test('a decision from the phone: refused without the passkey check, recorded wit
   const refused = await post(path, { state: 'approved' }, token);
   assert.deepEqual([refused.status, refused.body.code], [403, 'verification-required']);
   // A check asked for «rifiuta» does not approve.
-  const wrong = await post('/api/remote/verify', { approvalId: row.id, state: 'rejected' }, token);
+  const wrong = await post('/api/remote/verify', { method: 'POST', path, body: { state: 'rejected' } }, token);
   const wrongCheck = passkey.get({ challenge: (wrong.body.options as { challenge: string }).challenge }, HOST);
-  assert.equal((await post(path, { state: 'approved', verification: wrongCheck }, token)).status, 403);
+  assert.equal((await post(path, { state: 'approved' }, token, wrongCheck)).status, 403);
   const [still] = await db().sql<{ state: string }[]>`SELECT state FROM approvals WHERE id = ${row.id}`;
   assert.equal(still?.state, 'pending');
 
-  const asked = await post('/api/remote/verify', { approvalId: row.id, state: 'approved' }, token);
+  const asked = await post('/api/remote/verify', { method: 'POST', path, body: { state: 'approved' } }, token);
   const check = passkey.get({ challenge: (asked.body.options as { challenge: string }).challenge }, HOST);
-  const decided = await post(path, { state: 'approved', verification: check }, token);
+  const decided = await post(path, { state: 'approved' }, token, check);
+  // The same check again: used once.
+  assert.equal((await post(path, { state: 'approved' }, token, check)).status, 403);
   assert.equal(decided.status, 200);
   const [after] = await db().sql<{ state: string }[]>`SELECT state FROM approvals WHERE id = ${row.id}`;
   assert.equal(after?.state, 'approved');

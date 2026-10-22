@@ -228,33 +228,32 @@ export async function signIn(): Promise<void> {
   await post('/api/remote/login', { credential: await assertion(options) });
 }
 
-/** What a decision on an approval is: the passkey check is asked for exactly this. */
-export interface DecisionBinding {
-  approvalId: string;
-  state: 'approved' | 'rejected';
-  choice?: string;
-  starts?: unknown;
-  revision?: unknown;
+/** The header that carries the Face ID check of an action from the phone (D-292, step-up), as the core reads it. */
+export const VERIFICATION_HEADER = 'x-arianna-verification';
+
+/** The refusal of the core that asks Face ID for this action: the page asks it and sends the action again, once. */
+export function needsVerification(remote: boolean, status: number, body: Record<string, unknown>): boolean {
+  return remote && status === 403 && body.code === 'verification-required';
 }
 
-/** The passkey check of a decision (Face ID), to send with it as `verification`. */
-export async function verifyDecision(binding: DecisionBinding): Promise<Record<string, unknown>> {
-  const { options } = await post<{ options: RequestOptionsJson }>('/api/remote/verify', binding);
-  return assertion(options);
+/** The path of an action as the core sees it: no query, no host. */
+export function actionPath(path: string, origin: string): string {
+  return new URL(path, origin).pathname;
 }
 
-/** The body of a decision: from the phone with its check, from the Mac as before. */
-export function decisionBody(
-  fields: { state: 'approved' | 'rejected'; choice?: string; starts?: unknown; revision?: unknown },
-  verification?: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    state: fields.state,
-    ...(fields.choice === undefined ? {} : { choice: fields.choice }),
-    ...(fields.starts === undefined ? {} : { starts: fields.starts }),
-    ...(fields.revision === undefined ? {} : { revision: fields.revision }),
-    ...(verification === undefined ? {} : { verification }),
-  };
+/**
+ * The Face ID check of one action (D-292, step-up): the core binds it to the
+ * method, the path and the body, which the page sends again unchanged.
+ * The header to add to that request.
+ */
+export async function stepUpHeader(path: string, body: unknown): Promise<Record<string, string>> {
+  const { options } = await post<{ options: RequestOptionsJson }>('/api/remote/verify', { method: 'POST', path, body: body ?? {} });
+  const check = await assertion(options);
+  return { [VERIFICATION_HEADER]: base64urlOfText(JSON.stringify(check)) };
+}
+
+function base64urlOfText(text: string): string {
+  return toBase64url(new TextEncoder().encode(text));
 }
 
 /** A 401 of the remote port without a session: the page goes back to «Entra con Face ID». */

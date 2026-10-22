@@ -223,7 +223,7 @@ import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video
 import type { UserCommand } from '../browser/agent-browser.ts';
 import type { BrowserScreens } from '../browser/screen.ts';
 import { RemoteError, type RemoteDevices, type RemoteSession } from '../remote/devices.ts';
-import { markRemote, remoteAccess, remoteSessionOf, REMOTE_LISTEN_HOST } from './remote.ts';
+import { markRemote, remoteAccess, remoteSessionOf, REMOTE_LISTEN_HOST, stepUpAction, VERIFICATION_HEADER, verificationOf } from './remote.ts';
 import { allowedHosts, checkRequest, remoteDoor, securityHeaders, type RemoteDoor } from './security.ts';
 
 /**
@@ -575,7 +575,19 @@ function route(method: string, path: string, handler: Handler): Route {
   return { method, pattern: new RegExp(`^${source}$`), keys, handler };
 }
 
-async function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+/** A body read once: the check of Face ID from the phone (D-292) reads it before the route, which gets the same. */
+const readBodies = new WeakMap<IncomingMessage, Promise<Record<string, unknown>>>();
+
+function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+  let body = readBodies.get(request);
+  if (body === undefined) {
+    body = parseJson(request, limit);
+    readBodies.set(request, body);
+  }
+  return body;
+}
+
+async function parseJson(request: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
   const declared = Number(request.headers['content-length'] ?? '0');
   if (declared > limit) throw new HttpError(413, 'body too large');
   const chunks: Buffer[] = [];
@@ -3213,26 +3225,10 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     route('POST', '/api/approvals/:id/decision', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      // From the phone (D-292) a decision carries its passkey check, bound to it.
-      const phone = remoteSessionOf(request);
-      onlyFields(body, phone === undefined ? ['state', 'choice', 'starts', 'revision'] : ['state', 'choice', 'starts', 'revision', 'verification']);
+      onlyFields(body, ['state', 'choice', 'starts', 'revision']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
       if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
       const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
-      if (phone !== undefined) {
-        // The server decides, not the page: no check of this decision, no decision.
-        if (remoteDevices === undefined) throw new HttpError(403, 'only from the Mac');
-        try {
-          await remoteDevices.verifyDecision(
-            phone,
-            { approvalId: id, state: body.state, ...(body.choice === undefined ? {} : { choice: body.choice }), ...(body.starts === undefined ? {} : { starts: body.starts }), ...(body.revision === undefined ? {} : { revision: body.revision }) },
-            body.verification,
-          );
-        } catch (error) {
-          if (error instanceof RemoteError) return { status: error.status, body: { error: error.message, code: error.code } };
-          throw error;
-        }
-      }
       const current = await loadApproval(sql, id);
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
@@ -5079,6 +5075,25 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         return;
       }
       markRemote(request, access.session);
+      // A decision from the phone needs Face ID for exactly it (D-292, step-up): checked here, before the route reads or does anything.
+      const action = stepUpAction(request.method ?? 'GET', url.pathname);
+      if (action !== undefined) {
+        const devices = options.remoteDevices;
+        try {
+          if (devices === undefined) throw new RemoteError(403, 'verification-required', 'no passkey service');
+          const body = await readJson(request);
+          await devices.verifyIntent(access.session, { method: 'POST', path: url.pathname, body }, action, verificationOf(request.headers[VERIFICATION_HEADER]));
+        } catch (error) {
+          if (error instanceof RemoteError) {
+            sendJson(response, error.status, { error: error.message, code: error.code }, headers);
+            return;
+          }
+          const known = errorStatus(error);
+          if (known === undefined) options.onError?.(error);
+          sendJson(response, known?.status ?? 500, { error: known?.message ?? 'internal error' }, headers);
+          return;
+        }
+      }
     }
     if (request.method === 'GET' && url.pathname === '/api/notifications/stream') {
       openHelperStream(request, response, headers);

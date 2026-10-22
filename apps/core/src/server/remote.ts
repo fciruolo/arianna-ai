@@ -12,7 +12,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 
-import { CLEAR_COOKIE, RemoteError, sessionCookie, type DecisionBinding, type RemoteDevices, type RemoteSession } from '../remote/devices.ts';
+import { CLEAR_COOKIE, RemoteError, sessionCookie, type Intent, type RemoteDevices, type RemoteSession } from '../remote/devices.ts';
 
 /** The address of the remote port: always this one, whatever the configuration says. */
 export const REMOTE_LISTEN_HOST = '127.0.0.1';
@@ -24,30 +24,58 @@ export const DEVICE_NOT_PAIRED = 'device-not-paired';
 export const LOCAL_ONLY = 'local-only';
 
 /**
- * What only the Mac does, session or not (D-292, after the review of stage
- * B): devices and pairing codes; the privacy settings (the exits to the
- * cloud); every other decision that is not an approval of the chat, which
- * from the phone would pass without Face ID: a skill or a fact made
- * shareable (a declassification), a merge of GOD on main, the approve of a
- * routine, of the archive, of a page of the Wiki, the promotion of an
- * agent; the agent's browser; what acts on the Mac itself (the
- * notifications helper, «Apri» and «Mostra» of a project).
+ * What only the Mac does, session or not (D-292, choice of the user after
+ * stage B): devices and pairing codes; the privacy settings (the exits to
+ * the cloud); the agent's browser with its screen; what acts on the Mac
+ * itself (the notifications helper, «Apri» and «Mostra» of a project).
  */
 const LOCAL_ONLY_PATHS: readonly RegExp[] = [
   /^\/api\/devices(\/|$)/,
   /^\/api\/settings\/privacy\//,
   /^\/api\/notifications\/(stream|this-mac)$/,
-  /^\/api\/skills-catalog\/claude\/share$/,
-  /^\/api\/profile\/facts\/share\//,
-  /^\/api\/god\/[^/]+\/[^/]+\/land\//,
-  /^\/api\/god\/subtasks\//,
-  /^\/api\/routines\/[^/]+\/approve$/,
-  /^\/api\/archive\/approve$/,
-  /^\/api\/wiki\/proposals\/[^/]+\/approve$/,
-  /^\/api\/agents\/[^/]+\/promote$/,
   /^\/api\/browser(\/|$)/,
   /^\/api\/browse\/[^/]+\/(open|reveal)$/,
 ];
+
+/**
+ * The decisions that from the phone need Face ID for each of them (D-292,
+ * step-up): the closed name of the action, by method and path. The intent
+ * checked is the method, the path (the object) and the JSON body (what
+ * changes the outcome), one generic check before the route runs.
+ */
+const STEP_UP: readonly { action: string; pattern: RegExp }[] = [
+  { action: 'approval.decide', pattern: /^\/api\/approvals\/[^/]+\/decision$/ },
+  { action: 'skill.share', pattern: /^\/api\/skills-catalog\/claude\/share$/ },
+  { action: 'fact.share', pattern: /^\/api\/profile\/facts\/share\/confirm$/ },
+  { action: 'god.land', pattern: /^\/api\/god\/(plans|subtasks)\/[^/]+\/land\/[^/]+$/ },
+  { action: 'god.subtask', pattern: /^\/api\/god\/subtasks\/[^/]+\/(stop|resume|discard|branch)$/ },
+  { action: 'routine.decide', pattern: /^\/api\/routines\/[^/]+\/(approve|discard)$/ },
+  { action: 'archive.decide', pattern: /^\/api\/archive\/(approve|discard)$/ },
+  { action: 'wiki.decide', pattern: /^\/api\/wiki\/proposals\/[^/]+\/(approve|discard)$/ },
+  { action: 'wiki.move', pattern: /^\/api\/wiki\/(move|move-now)$/ },
+  { action: 'wiki.restore', pattern: /^\/api\/wiki\/restore$/ },
+  { action: 'wiki.delete', pattern: /^\/api\/wiki\/(delete|folder\/delete)$/ },
+  { action: 'agent.promote', pattern: /^\/api\/agents\/[^/]+\/promote$/ },
+];
+
+/** The header that carries the passkey check of an action from the phone: base64url of the JSON of the assertion. */
+export const VERIFICATION_HEADER = 'x-arianna-verification';
+
+/** The closed name of an action that needs Face ID from the phone, or undefined. */
+export function stepUpAction(method: string, pathname: string): string | undefined {
+  if (method !== 'POST') return undefined;
+  return STEP_UP.find((rule) => rule.pattern.test(pathname))?.action;
+}
+
+/** The assertion of the header, or undefined when missing or not JSON. */
+export function verificationOf(header: string | string[] | undefined): unknown {
+  if (typeof header !== 'string' || header.length === 0 || header.length > 12_000 || !/^[A-Za-z0-9_-]+$/.test(header)) return undefined;
+  try {
+    return JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as unknown;
+  } catch {
+    return undefined;
+  }
+}
 
 export type RemoteAccess =
   /** Answered by the remote door itself: the state of the session, the steps of pairing and sign-in. */
@@ -79,13 +107,13 @@ function only(body: Record<string, unknown>, allowed: readonly string[]): void {
   for (const key of Object.keys(body)) if (!allowed.includes(key)) throw new RemoteError(400, 'body', `unknown field ${key}`);
 }
 
-/** The decision a passkey check is asked for: the same fields the decision itself will carry. */
-export function bindingOf(body: Record<string, unknown>): DecisionBinding {
-  const { approvalId, state, choice, starts, revision } = body;
-  if (typeof approvalId !== 'string' || !/^[0-9a-f-]{1,64}$/i.test(approvalId)) throw new RemoteError(400, 'body', 'approvalId is required');
-  if (state !== 'approved' && state !== 'rejected') throw new RemoteError(400, 'body', 'state must be approved or rejected');
-  if (choice !== undefined && typeof choice !== 'string') throw new RemoteError(400, 'body', 'choice must be a text');
-  return { approvalId, state, ...(choice === undefined ? {} : { choice }), ...(starts === undefined ? {} : { starts }), ...(revision === undefined ? {} : { revision }) };
+/** The action a passkey check is asked for: the same method, path and body the request itself will carry. */
+export function intentOf(body: Record<string, unknown>): Intent {
+  const { method, path, body: inner } = body;
+  if (method !== undefined && method !== 'POST') throw new RemoteError(400, 'body', 'method must be POST');
+  if (typeof path !== 'string' || !path.startsWith('/api/') || path.length > 512) throw new RemoteError(400, 'body', 'path is required');
+  if (stepUpAction('POST', path) === undefined) throw new RemoteError(400, 'body', 'this path does not need a passkey check');
+  return { method: 'POST', path, body: inner ?? {} };
 }
 
 /**
@@ -155,8 +183,8 @@ async function step(
       return { kind: 'answer', status: 200, body: { session: false }, cookie: CLEAR_COOKIE };
     case '/api/remote/verify':
       if (session === undefined) return NOT_PAIRED;
-      only(body, ['approvalId', 'state', 'choice', 'starts', 'revision']);
-      return { kind: 'answer', status: 200, body: { options: await devices.decisionOptions(session, bindingOf(body)) } };
+      only(body, ['method', 'path', 'body']);
+      return { kind: 'answer', status: 200, body: { options: await devices.intentOptions(session, intentOf(body)) } };
     default:
       return { kind: 'refused', status: 404, body: { error: 'not found', code: 'not-found' } };
   }
