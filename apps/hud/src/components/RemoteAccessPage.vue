@@ -95,7 +95,7 @@ function onCodeInput(event: Event): void {
 </script>
 
 <template>
-  <main class="grid min-h-dvh place-items-center bg-bg px-4 py-10 text-ink">
+  <main class="grid h-full min-h-dvh place-items-center overflow-y-auto phone:min-h-0 bg-bg px-4 py-10 text-ink">
     <section class="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-line bg-surface p-6 text-center">
       <img src="/logo.svg" alt="" class="size-14 rounded-2xl" />
 
@@ -112,6 +112,7 @@ function onCodeInput(event: Event): void {
             class="field w-48 px-3 py-2 text-center font-mono text-[26px] tracking-[0.3em] text-ink"
             inputmode="numeric"
             autocomplete="one-time-code"
+            data-own-size
             pattern="[0-9]{6}"
             maxlength="6"
             placeholder="000000"

@@ -27,6 +27,14 @@
 }
 @custom-variant short (@media (min-width: 48rem) and (max-height: 56rem));
 /*
+ * The phone (D-293): below `md` (48rem, where the left bar already became a
+ * drawer) the chat has its own layout, with the bar at the bottom. `touch` is
+ * a finger rather than a mouse, at any width (the iPad too): the sizes for a
+ * tap. Neither ever matches on the Mac at its usual widths.
+ */
+@custom-variant phone (@media (max-width: 47.98rem));
+@custom-variant touch (@media (pointer: coarse));
+/*
  * `dark:` follows the theme the chat shows, as the tokens below do (D-158):
  * the user's choice (data-theme on <html>) first, the system's otherwise.
  * Tailwind's default reads the system only, so a light choice on a dark Mac
@@ -209,6 +217,56 @@ html,
 body,
 #app {
   height: 100%;
+}
+
+/*
+ * The safe areas of the iPhone (D-293, viewport-fit=cover in index.html):
+ * the rounded corners, the island and the line of home. With the keyboard
+ * open the bottom one is under the keyboard, so it counts as nothing.
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+:root[data-keyboard] {
+  --safe-bottom: 0px;
+}
+/*
+ * On the phone the app is pinned to the visible part of the window
+ * (lib/viewport.ts writes --vv-height and --vv-top): iOS does not shrink the
+ * page for the keyboard, it pans it, and the field of the chat would end up
+ * under the keys. The page itself never scrolls; its areas do.
+ */
+@media (max-width: 47.98rem) {
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #app {
+    position: fixed;
+    top: var(--vv-top, 0px);
+    right: 0;
+    left: 0;
+    height: var(--vv-height, 100dvh);
+    padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+    overflow: hidden;
+  }
+}
+/*
+ * A finger (D-293): Safari zooms the page into a field written under 16 px
+ * and never zooms back; a field that wants a bigger size says so with
+ * data-own-size. Buttons reach the 44 px of a tap.
+ */
+@media (pointer: coarse) {
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), textarea, select, [contenteditable="true"]):not([data-own-size]) {
+    font-size: 16px !important;
+  }
+  .btn {
+    min-height: 44px;
+  }
 }
 
 /*

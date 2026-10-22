@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- La chat sul telefono segue la tastiera: sotto i 768 px la pagina resta nella parte visibile della finestra, con i margini dell’isola e della riga della casa (`viewport-fit=cover`), e i campi a 16 px con il dito, così Safari non ingrandisce (D-293, tappa 1).
+
 ## [0.168.0] - 2026-10-22
 
 ### Aggiunto

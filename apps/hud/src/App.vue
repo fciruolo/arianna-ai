@@ -95,6 +95,7 @@ import { officeFeast } from './lib/office/feasts.ts';
 import type { Activity, Approval, CharacterChoice, Conversation, Message } from './lib/types.ts';
 import { canSplit, paneId, splitFits, splitFromSearch, splittable, withSplit, type Pane } from './lib/split.ts';
 import { createChatStore } from './store.ts';
+import { themeColorOf, watchViewport } from './lib/viewport.ts';
 
 const store = createChatStore();
 const { cardsVersion, routinesVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, mentionable, refusedDraft, queue, models, projects, directAgents, offInterlocutors, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
@@ -417,9 +418,18 @@ watch(
   [() => activeTheme(store.themes.value), theme, systemLight],
   ([active, mode, light]) => {
     applyTheme(document.documentElement, active, mode === 'system' ? (light ? 'light' : 'dark') : mode);
+    // The bar of the browser and of the app on the phone takes the background of the page (D-293).
+    void nextTick(() => {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      meta?.setAttribute('content', themeColorOf(getComputedStyle(document.documentElement).getPropertyValue('--bg')));
+    });
   },
   { immediate: true },
 );
+
+/** The keyboard of the phone is open (D-293, lib/viewport.ts): the bar at the bottom steps aside. */
+const keyboardOpen = ref(false);
+let stopViewport: (() => void) | undefined;
 
 // The clock of the top bar, as on the mockup.
 const now = ref(new Date());
@@ -877,6 +887,9 @@ onMounted(() => {
   window.addEventListener('popstate', followAddress);
   window.addEventListener('keydown', onShortcut);
   window.addEventListener('resize', measureWidth);
+  stopViewport = watchViewport(window.visualViewport, document.documentElement, () => window.innerHeight, (open) => {
+    keyboardOpen.value = open;
+  });
   store.start();
   readInstallation();
   readDevPending();
@@ -888,6 +901,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('popstate', followAddress);
   window.removeEventListener('keydown', onShortcut);
   window.removeEventListener('resize', measureWidth);
+  stopViewport?.();
   store.stop();
   window.clearInterval(clock);
 });
