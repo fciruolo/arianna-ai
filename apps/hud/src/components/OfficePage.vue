@@ -15,6 +15,7 @@ import { boardPoint } from '../lib/office/map.ts';
 import { officeMapOf, officeView, skinOfTheme } from '../lib/office/skins.ts';
 import type { OfficeFeast } from '../lib/office/feasts.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
+import { rosterOrder } from '../lib/office/phone.ts';
 import { roomClaims } from '../lib/office/rooms.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
@@ -29,6 +30,7 @@ import OfficeCardwall from './OfficeCardwall.vue';
 import PendingDecisions from './PendingDecisions.vue';
 import PixelAgent from './PixelAgent.vue';
 import AgentName from './AgentName.vue';
+import Icon from './Icon.vue';
 
 /**
  * "Ufficio" (D-106, stage 1): the agents in a pixel office, from the same
@@ -149,6 +151,9 @@ const snapshot = computed<OfficeSnapshot>(() =>
 /** Everything behind the archive: the named projects and those only counted. */
 const archiveCount = computed(() => snapshot.value.archived.length + snapshot.value.unnamed);
 
+/** The list under the scene on the phone (D-293): who waits for the user first. */
+const phoneRoster = computed(() => rosterOrder(snapshot.value.agents));
+
 const sheets = computed(() => Object.fromEntries(snapshot.value.agents.map((agent) => [agent.id, props.characters?.agents[agent.id]])));
 
 function placeText(agent: OfficeAgent): string {
@@ -266,9 +271,16 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           />
         </template>
         <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-muted">
-          <p id="office-help" class="min-w-0 flex-1">
-            <template v-if="shownView === '3d'">Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, cammina con le frecce e trascina per guardarti intorno. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
-            <template v-else>Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
+          <p id="office-help" class="min-w-0 flex-1 phone:basis-full">
+            <!-- On the phone (D-293) the touch gestures; from 48rem the keys, as always. -->
+            <span class="hidden phone:inline">
+              <template v-if="shownView === '3d'">Trascina per guardarti intorno, tocca il pavimento o un agente per andarci. Per parlare con un agente tocca il suo nome nell'elenco qui sotto.</template>
+              <template v-else>Scorri l'ufficio di lato con un dito, tocca il pavimento o un agente per andarci. Per parlare con un agente tocca il suo nome nell'elenco qui sotto.</template>
+            </span>
+            <span class="phone:hidden">
+              <template v-if="shownView === '3d'">Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, cammina con le frecce e trascina per guardarti intorno. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
+              <template v-else>Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.</template>
+            </span>
           </p>
           <div class="ml-auto flex items-center gap-2">
             <div role="group" aria-label="Vista dell'ufficio" class="inline-flex overflow-hidden rounded-md border border-line-strong">
@@ -276,18 +288,18 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
                 v-for="option in (['2d', '3d'] as const)"
                 :key="option"
                 type="button"
-                class="px-2.5 py-1 text-[13px] font-semibold"
+                class="px-2.5 py-1 text-[13px] font-semibold phone:min-h-11 phone:px-5"
                 :class="viewMode === option ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink'"
                 :aria-pressed="viewMode === option"
                 :disabled="map === null"
                 @click="chooseView(option)"
               >{{ option === '2d' ? '2D' : '3D' }}</button>
             </div>
-            <button type="button" class="btn px-2.5 py-1 text-[13px]" aria-controls="office-keys" :aria-expanded="showKeys" @click="showKeys = !showKeys">? Comandi</button>
+            <button type="button" class="btn px-2.5 py-1 text-[13px] phone:hidden" aria-controls="office-keys" :aria-expanded="showKeys" @click="showKeys = !showKeys">? Comandi</button>
           </div>
         </div>
         <!-- Shown on request (D-194); still read as the description of the office when hidden. -->
-        <div v-show="showKeys" id="office-keys" class="mt-2 rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
+        <div v-show="showKeys" id="office-keys" class="mt-2 phone:hidden rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
           <dl v-if="shownView === '3d'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
             <dt><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">S</kbd></dt>
             <dd>cammina avanti e indietro</dd>
@@ -315,7 +327,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
       <aside class="flex flex-col gap-4" aria-label="Nell'ufficio">
         <section class="hud-card p-3.5" aria-labelledby="office-roster">
           <h2 id="office-roster" tabindex="-1" class="hud-title mb-2.5 outline-none">Nell'ufficio</h2>
-          <ul class="flex flex-col gap-3">
+          <ul class="flex flex-col gap-3 phone:hidden">
             <li v-for="agent in snapshot.agents" :key="agent.id" class="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3">
               <PixelAgent :choice="characters?.agents[agent.id]" :pose="agent.pose" :scale="2" />
               <div class="min-w-0">
@@ -324,10 +336,26 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
                   <span class="mr-1 inline-block size-[7px] rounded-full" :class="DOT[agent.pose]" aria-hidden="true" />{{ POSE_TEXT[agent.pose] }} · {{ placeText(agent) }}<template v-if="agent.locality !== null"> · {{ agent.locality === 'local' ? 'in locale' : 'nel cloud' }}</template>
                 </div>
                 <div class="mt-1.5 flex flex-wrap gap-1.5">
-                  <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="map === null" @click="reach(agent.id)">Raggiungi</button>
-                  <button type="button" class="btn px-2.5 py-1 text-xs" @click="talk(agent.id)">Parla subito</button>
+                  <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" :disabled="map === null" @click="reach(agent.id)">Raggiungi</button>
+                  <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" @click="talk(agent.id)">Parla subito</button>
                 </div>
               </div>
+            </li>
+          </ul>
+          <!-- On the phone (D-293): a row to touch for each agent opens its chat, as a click on it in the scene does; «Raggiungi» walks there. -->
+          <ul class="-mx-1.5 hidden flex-col divide-y divide-line phone:flex">
+            <li v-for="agent in phoneRoster" :key="agent.id" class="flex items-center gap-2 py-1">
+              <button type="button" class="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg px-1.5 py-1 text-left active:bg-surface-2" @click="talk(agent.id)">
+                <PixelAgent :choice="characters?.agents[agent.id]" :pose="agent.pose" :scale="2" />
+                <span class="min-w-0 flex-1">
+                  <b class="block truncate font-semibold"><span class="sr-only">Parla con </span><AgentName :agent="agent.id" :name="agent.name" /></b>
+                  <span class="block truncate text-[13px] text-muted">
+                    <span class="mr-1 inline-block size-[7px] rounded-full" :class="DOT[agent.pose]" aria-hidden="true" />{{ POSE_TEXT[agent.pose] }} · {{ placeText(agent) }}<template v-if="agent.locality !== null"> · {{ agent.locality === 'local' ? 'in locale' : 'nel cloud' }}</template>
+                  </span>
+                </span>
+                <Icon name="expand" :size="16" />
+              </button>
+              <button type="button" class="btn min-h-11 shrink-0 px-3 text-[13px]" :disabled="map === null" @click="reach(agent.id)">Raggiungi</button>
             </li>
           </ul>
         </section>
@@ -340,8 +368,8 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
               <b class="font-mono text-warn">{{ snapshot.decisions.total }}</b> in attesa<template v-if="snapshot.decisions.hidden > 0">, {{ snapshot.decisions.hidden }} sopra Privato solo contate</template>.
             </p>
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="map === null" @click="reach('decisions')">Vai alla scrivania</button>
-              <button type="button" class="btn px-2.5 py-1 text-xs" aria-haspopup="dialog" @click="showPending = true">Apri subito</button>
+              <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" :disabled="map === null" @click="reach('decisions')">Vai alla scrivania</button>
+              <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" aria-haspopup="dialog" @click="showPending = true">Apri subito</button>
             </div>
           </template>
         </section>
@@ -350,8 +378,8 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           <h2 id="office-cardwall" class="hud-title mb-2">Cardwall</h2>
           <p class="text-xs text-muted">Sul muro del corridoio, accanto alla libreria: le card e gli impegni, con i filtri della pagina Cardwall.</p>
           <div class="mt-2 flex flex-wrap gap-1.5">
-            <button type="button" class="btn px-2.5 py-1 text-xs" @click="reach('cardwall')">Vai al cardwall</button>
-            <button type="button" class="btn px-2.5 py-1 text-xs" aria-haspopup="dialog" @click="showCardwall = true">Apri subito</button>
+            <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" @click="reach('cardwall')">Vai al cardwall</button>
+            <button type="button" class="btn px-2.5 py-1 text-xs phone:min-h-11 phone:px-3.5 phone:text-[13px]" aria-haspopup="dialog" @click="showCardwall = true">Apri subito</button>
           </div>
         </section>
 
@@ -362,7 +390,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           <ul v-if="snapshot.archived.length > 0" class="flex flex-col gap-1.5 text-xs">
             <li v-for="(name, index) in snapshot.archived" :key="`${name}-${String(index)}`" class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate font-mono">{{ name }}</span>
-              <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="emit('draft', 'work', name)">Nuova conversazione</button>
+              <button type="button" class="btn px-2 py-0.5 text-[12.5px] phone:min-h-11 phone:px-3" @click="emit('draft', 'work', name)">Nuova conversazione</button>
             </li>
           </ul>
           <p v-if="snapshot.unnamed > 0" class="mt-1.5 text-xs text-muted">

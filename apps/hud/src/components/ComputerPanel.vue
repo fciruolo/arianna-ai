@@ -194,7 +194,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <aside class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[560px] flex-col border-l border-line bg-surface shadow-[0_14px_40px_#0006]" aria-labelledby="computer-title">
+  <aside class="phone-panel fixed inset-y-0 right-0 z-40 flex w-full max-w-[560px] flex-col border-l border-line bg-surface shadow-[0_14px_40px_#0006]" aria-labelledby="computer-title">
     <header class="flex items-start gap-2 border-b border-line px-5 py-4">
       <div class="min-w-0 flex-1">
         <h2 id="computer-title" class="flex items-center gap-2 text-[16px] font-semibold"><Icon name="computer" :size="16" />{{ taskId === undefined ? 'Computer' : 'Computer del Coder' }}</h2>

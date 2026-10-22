@@ -102,8 +102,8 @@ function saveEdit(id: number): void {
           <b class="font-mono text-ink">{{ at + 1 }}</b>
           <span class="truncate font-mono" :title="`${comment.file} · ${comment.selector}`">{{ comment.file.split('/').at(-1) }} · &lt;{{ comment.tag }}&gt;</span>
           <span class="ml-auto flex shrink-0 gap-1">
-            <button type="button" class="rounded p-0.5 hover:bg-surface-2 hover:text-ink" :aria-label="`Modifica il commento ${at + 1}`" @click="startEdit(comment)"><Icon name="rename" :size="12" /></button>
-            <button type="button" class="rounded p-0.5 hover:bg-surface-2 hover:text-danger" :aria-label="`Togli il commento ${at + 1}`" @click="emit('remove', comment.id)"><Icon name="delete" :size="12" /></button>
+            <button type="button" class="rounded p-0.5 hover:bg-surface-2 hover:text-ink touch:grid touch:size-11 touch:place-items-center" :aria-label="`Modifica il commento ${at + 1}`" @click="startEdit(comment)"><Icon name="rename" :size="12" /></button>
+            <button type="button" class="rounded p-0.5 hover:bg-surface-2 hover:text-danger touch:grid touch:size-11 touch:place-items-center" :aria-label="`Togli il commento ${at + 1}`" @click="emit('remove', comment.id)"><Icon name="delete" :size="12" /></button>
           </span>
         </p>
         <p v-if="comment.excerpt !== ''" class="truncate text-[12.5px] text-muted">«{{ comment.excerpt }}»</p>

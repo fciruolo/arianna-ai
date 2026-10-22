@@ -274,7 +274,7 @@ watch(
             <ul class="grid gap-3">
               <li v-for="item in summary.projects" :key="item.name" class="grid gap-1">
                 <div class="flex justify-between gap-2 text-[14px]">
-                  <button type="button" class="truncate text-left hover:text-accent" @click="emit('project', item.name)">
+                  <button type="button" class="truncate text-left hover:text-accent touch:min-h-11" @click="emit('project', item.name)">
                     {{ item.name }}<span class="text-muted"> · {{ priceText(item.name) }}</span>
                   </button>
                   <b class="font-mono font-medium">{{ money(item.cents) }}</b>
@@ -322,12 +322,12 @@ watch(
         <template v-if="invoicing">
           <div class="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 pt-3.5">
             <label class="flex items-center gap-2 text-xs text-muted">Progetto
-              <select class="field px-2 py-1 text-[14px] text-ink" :value="invoicing.project" @change="pickProject(($event.target as HTMLSelectElement).value)">
+              <select class="field touch:min-h-11 px-2 py-1 text-[14px] text-ink" :value="invoicing.project" @change="pickProject(($event.target as HTMLSelectElement).value)">
                 <option v-for="item in invoiceProjects" :key="item.name" :value="item.name">{{ item.name }}</option>
               </select>
             </label>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="IM da mettere in fattura">
-              <label v-for="im in invoicingIms" :key="im.number" class="chip cursor-pointer" :class="{ on: invoicing.chosen.has(im.number) }">
+              <label v-for="im in invoicingIms" :key="im.number" class="chip cursor-pointer touch:min-h-11 touch:items-center" :class="{ on: invoicing.chosen.has(im.number) }">
                 <input type="checkbox" class="sr-only" :checked="invoicing.chosen.has(im.number)" @change="toggleIm(im.number)" />
                 IM-{{ im.number }}<span v-if="im.cents !== null" class="text-muted"> · {{ moneyText(im.cents, im.currency) }}</span>
               </label>
@@ -344,9 +344,10 @@ watch(
         </template>
 
         <p v-if="invoices.length === 0" class="p-4 text-sm text-muted">Nessuna fattura registrata per {{ project === 'all' ? 'questo cliente' : project }}.</p>
+        <!-- On a phone each invoice is a card (D-293): number and total, then date, project and IM, the state, the actions. -->
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-[14px]">
-            <thead>
+          <table class="w-full text-[14px] max-md:block">
+            <thead class="max-md:hidden">
               <tr class="border-b border-line text-left text-xs text-muted">
                 <th class="px-4 py-2 font-normal">Numero</th>
                 <th class="px-2 py-2 font-normal">Data</th>
@@ -357,21 +358,21 @@ watch(
                 <th class="px-4 py-2"><span class="sr-only">Azioni</span></th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-line">
-              <tr v-for="invoice in invoices" :key="invoice.id">
-                <td class="px-4 py-2 font-mono">{{ invoice.number }}</td>
-                <td class="px-2 py-2 whitespace-nowrap">{{ dayText(invoice.issuedOn) }}</td>
-                <td class="px-2 py-2"><button type="button" class="hover:text-accent" @click="emit('project', invoice.project)">{{ invoice.project }}</button></td>
-                <td class="px-2 py-2 text-muted">{{ imsText(invoice.ims) }}</td>
-                <td class="px-2 py-2 text-right font-mono whitespace-nowrap" :title="invoice.documentCents === null ? 'Imponibile: manca il totale documento' : `Imponibile ${moneyText(invoice.totalCents, invoice.currency)}`">
+            <tbody class="divide-y divide-line max-md:block">
+              <tr v-for="invoice in invoices" :key="invoice.id" class="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:gap-y-1 max-md:px-4 max-md:py-3">
+                <td class="px-4 py-2 font-mono max-md:order-1 max-md:w-[calc(100%-8.5rem)] max-md:p-0 max-md:font-semibold">{{ invoice.number }}</td>
+                <td class="px-2 py-2 whitespace-nowrap max-md:order-3 max-md:p-0 max-md:text-[13px] max-md:text-muted">{{ dayText(invoice.issuedOn) }}</td>
+                <td class="px-2 py-2 max-md:order-4 max-md:p-0 max-md:text-[13px]"><button type="button" class="hover:text-accent touch:min-h-11" @click="emit('project', invoice.project)">{{ invoice.project }}</button></td>
+                <td class="px-2 py-2 text-muted max-md:order-5 max-md:p-0 max-md:text-[13px]">{{ imsText(invoice.ims) }}</td>
+                <td class="px-2 py-2 text-right font-mono whitespace-nowrap max-md:order-2 max-md:w-32 max-md:p-0" :title="invoice.documentCents === null ? 'Imponibile: manca il totale documento' : `Imponibile ${moneyText(invoice.totalCents, invoice.currency)}`">
                   {{ moneyText(invoiceAmount(invoice), invoice.currency) }}<span v-if="invoice.documentCents === null" class="text-warn">*</span>
                 </td>
-                <td class="px-2 py-2 whitespace-nowrap" :class="invoice.paidOn ? 'text-ok' : invoice.overdue ? 'text-danger' : 'text-warn'">
+                <td class="px-2 py-2 whitespace-nowrap max-md:order-6 max-md:w-full max-md:p-0 max-md:text-[13px] max-md:whitespace-normal" :class="invoice.paidOn ? 'text-ok' : invoice.overdue ? 'text-danger' : 'text-warn'">
                   <template v-if="invoice.paidOn">Pagata il {{ dayText(invoice.paidOn) }}</template><template v-else>{{ invoice.overdue ? 'Scaduta' : 'In attesa' }}<span v-if="dueText(invoice, dashboard.today)" class="text-muted"> · {{ dueText(invoice, dashboard.today) }}</span></template>
                 </td>
-                <td class="px-4 py-2 text-right whitespace-nowrap">
+                <td class="px-4 py-2 text-right whitespace-nowrap max-md:order-7 max-md:w-full max-md:p-0 max-md:text-left max-md:whitespace-normal">
                   <template v-if="paying?.id === invoice.id">
-                    <input v-model="paying.day" type="date" class="field px-2 py-1 text-xs text-ink" aria-label="Data del pagamento" />
+                    <input v-model="paying.day" type="date" class="field touch:min-h-11 px-2 py-1 text-xs text-ink" aria-label="Data del pagamento" />
                     <button type="button" class="btn ml-1 px-2 py-0.5 text-xs" :disabled="busy" @click="paying = null">Annulla</button>
                     <button type="button" class="btn btn-primary ml-1 px-2 py-0.5 text-xs font-semibold" :disabled="busy || paying.day === ''" @click="markPaid(invoice)">Segna pagata</button>
                   </template>
@@ -439,6 +440,13 @@ watch(
   border-color: var(--accent);
   background: var(--glow);
   color: var(--ink);
+}
+/* A finger (D-293): the segments and the chips of the filters reach the 44 px of a tap. */
+@media (pointer: coarse) {
+  .seg button,
+  button.chip {
+    min-height: 44px;
+  }
 }
 .sw {
   display: inline-block;

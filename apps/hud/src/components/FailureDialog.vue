@@ -29,14 +29,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4" @click.self="emit('close')">
+  <div class="phone-overlay fixed inset-0 z-40 grid place-items-center bg-black/50 p-4" @click.self="emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="failure-title"
       tabindex="-1"
-      class="hud-card flex max-h-[90vh] w-full max-w-[520px] flex-col bg-surface outline-none"
+      class="phone-sheet hud-card flex max-h-[90vh] w-full max-w-[520px] flex-col bg-surface outline-none"
     >
       <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="grid size-6 shrink-0 place-items-center rounded-full bg-danger/15 font-mono font-bold text-danger" aria-hidden="true">!</span>

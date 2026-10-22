@@ -17,7 +17,7 @@ useModal(dialog, () => emit('close'), cancel);
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[14vh]" @click.self="emit('close')">
+  <div class="phone-overlay-bottom fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[14vh]" @click.self="emit('close')">
     <section
       ref="dialog"
       role="alertdialog"
@@ -25,7 +25,7 @@ useModal(dialog, () => emit('close'), cancel);
       aria-labelledby="incognito-end-title"
       aria-describedby="incognito-end-text"
       tabindex="-1"
-      class="hud-card flex w-full max-w-[480px] flex-col bg-surface outline-none"
+      class="phone-sheet-bottom hud-card flex w-full max-w-[480px] flex-col bg-surface outline-none"
     >
       <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <Icon name="incognito" :size="18" />

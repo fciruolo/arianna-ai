@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { addClientDocument, archiveClientDocument, listClientDocuments, openClientDocument, updateClientDocument } from '../lib/api.ts';
 import {
@@ -83,6 +83,14 @@ const emptyForm = (): DocumentForm => ({ name: '', kind: 'contract', otherType: 
 const pending = ref<{ file: File; form: DocumentForm } | null>(null);
 const dragging = ref(false);
 const picker = ref<HTMLInputElement | null>(null);
+
+/** The document chosen from the list; on a phone the preview is under the list, so it comes into view (D-293). */
+const previewBox = ref<HTMLElement | null>(null);
+function choose(id: string): void {
+  selected.value = id;
+  if (!window.matchMedia('(width < 48rem)').matches) return;
+  void nextTick(() => previewBox.value?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+}
 const accept = DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`).join(',');
 
 function take(file: File | undefined): void {
@@ -214,25 +222,25 @@ watch(selected, () => {
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_150px_150px]">
         <label class="flex flex-col gap-1 text-xs text-muted">Nome
-          <input v-model="pending.form.name" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" />
+          <input v-model="pending.form.name" maxlength="200" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label v-if="pending.form.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo
-          <input v-model="pending.form.otherType" maxlength="60" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="brochure, materiali…" />
+          <input v-model="pending.form.otherType" maxlength="60" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" placeholder="brochure, materiali…" />
         </label>
         <label v-else class="flex flex-col gap-1 text-xs text-muted">Progetto (facoltativo)
-          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[14px] text-ink">
+          <select v-model="pending.form.project" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink">
             <option :value="null">—</option>
             <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Data del documento
-          <input v-model="pending.form.documentOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
+          <input v-model="pending.form.documentOn" type="date" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Scadenza (facoltativa)
-          <input v-model="pending.form.expiresOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
+          <input v-model="pending.form.expiresOn" type="date" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label v-if="pending.form.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Progetto (facoltativo)
-          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[14px] text-ink">
+          <select v-model="pending.form.project" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink">
             <option :value="null">—</option>
             <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
           </select>
@@ -255,7 +263,7 @@ watch(selected, () => {
             <button v-for="chip in chips" :key="chip.id" type="button" class="chip" :class="{ on: kind === chip.id }" :aria-pressed="kind === chip.id" @click="kind = chip.id">{{ chip.text }} · {{ chip.count }}</button>
           </div>
           <span class="flex-1" />
-          <label class="flex min-w-[180px] items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 py-1">
+          <label class="flex min-w-[180px] items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 py-1 max-md:flex-1 touch:min-h-11">
             <Icon name="search" :size="13" class="text-muted" />
             <input v-model="query" class="w-full bg-transparent text-[14px]" placeholder="Cerca" aria-label="Cerca fra i documenti" />
           </label>
@@ -263,9 +271,10 @@ watch(selected, () => {
         </div>
         <p v-if="documents === null && problem === null" class="text-sm text-muted">Carico i documenti…</p>
         <p v-else-if="shown.length === 0" class="py-3 text-sm text-muted">{{ (documents ?? []).length === 0 ? 'Nessun documento ancora: trascina qui sopra un contratto o un preventivo firmato.' : 'Nessun documento con questi filtri.' }}</p>
+        <!-- On a phone each document is a card (D-293): name and size, then type, project and date. -->
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-[14px]">
-            <thead>
+          <table class="w-full text-[14px] max-md:block">
+            <thead class="max-md:hidden">
               <tr class="border-b border-line text-left text-xs text-muted">
                 <th class="px-2 py-1.5 font-normal">Nome</th>
                 <th class="px-2 py-1.5 font-normal">Tipo</th>
@@ -274,10 +283,10 @@ watch(selected, () => {
                 <th class="px-2 py-1.5 text-right font-normal">Dim.</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-line">
-              <tr v-for="document in shown" :key="document.id" class="cursor-pointer" :class="selected === document.id ? 'bg-accent/10' : 'hover:bg-surface-2'" @click="selected = document.id">
-                <td class="px-2 py-2">
-                  <button type="button" class="flex items-center gap-2 text-left" :aria-pressed="selected === document.id">
+            <tbody class="divide-y divide-line max-md:block">
+              <tr v-for="document in shown" :key="document.id" class="cursor-pointer max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-x-3 max-md:gap-y-0.5 max-md:py-2" :class="selected === document.id ? 'bg-accent/10' : 'hover:bg-surface-2'" @click="choose(document.id)">
+                <td class="px-2 py-2 max-md:min-w-0 max-md:py-0">
+                  <button type="button" class="flex items-center gap-2 text-left max-md:w-full touch:min-h-11" :aria-pressed="selected === document.id">
                     <span class="inline-grid h-[22px] w-[34px] shrink-0 place-items-center rounded border border-line-strong font-mono text-[12px] font-semibold text-muted uppercase">{{ document.extension }}</span>
                     <span class="min-w-0">
                       <span class="block truncate">{{ document.name }}</span>
@@ -285,10 +294,10 @@ watch(selected, () => {
                     </span>
                   </button>
                 </td>
-                <td class="px-2 py-2 whitespace-nowrap">{{ typeText(document) }}</td>
-                <td class="px-2 py-2 text-muted">{{ document.project ?? '—' }}</td>
-                <td class="px-2 py-2 whitespace-nowrap text-muted">{{ document.documentOn ? dayText(document.documentOn) : dayText(document.createdAt.slice(0, 10)) }}</td>
-                <td class="px-2 py-2 text-right font-mono text-xs whitespace-nowrap text-muted">{{ sizeText(document.sizeBytes) }}</td>
+                <td class="px-2 py-2 whitespace-nowrap max-md:order-3 max-md:col-span-2 max-md:py-0 max-md:pl-[3.25rem] max-md:text-[13px] max-md:whitespace-normal max-md:text-muted">{{ typeText(document) }}<span class="md:hidden"> · {{ document.project ?? 'nessun progetto' }} · {{ document.documentOn ? dayText(document.documentOn) : dayText(document.createdAt.slice(0, 10)) }}</span></td>
+                <td class="px-2 py-2 text-muted max-md:hidden">{{ document.project ?? '—' }}</td>
+                <td class="px-2 py-2 whitespace-nowrap text-muted max-md:hidden">{{ document.documentOn ? dayText(document.documentOn) : dayText(document.createdAt.slice(0, 10)) }}</td>
+                <td class="px-2 py-2 text-right font-mono text-xs whitespace-nowrap text-muted max-md:order-2 max-md:self-center max-md:py-0">{{ sizeText(document.sizeBytes) }}</td>
               </tr>
             </tbody>
           </table>
@@ -296,7 +305,7 @@ watch(selected, () => {
       </section>
 
       <!-- The document chosen -->
-      <section v-if="current" class="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-3.5" aria-labelledby="doc-preview-title">
+      <section v-if="current" ref="previewBox" class="flex min-w-0 scroll-mt-3 flex-col gap-3 rounded-2xl border border-line bg-surface p-3.5" aria-labelledby="doc-preview-title">
         <header class="flex items-center gap-2">
           <h2 id="doc-preview-title" class="hud-title flex-1">Anteprima</h2>
           <LabelBadge label="L2" class="text-xs" />
@@ -311,17 +320,17 @@ watch(selected, () => {
           <div class="flex flex-wrap gap-1.5" role="group" aria-label="Tipo di documento">
             <button v-for="item in DOCUMENT_KINDS" :key="item" type="button" class="chip" :class="{ on: editing.kind === item }" :aria-pressed="editing.kind === item" @click="editing.kind = item">{{ KIND_TEXT[item] }}</button>
           </div>
-          <label class="flex flex-col gap-1 text-xs text-muted">Nome<input v-model="editing.name" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
-          <label v-if="editing.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo<input v-model="editing.otherType" maxlength="60" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+          <label class="flex flex-col gap-1 text-xs text-muted">Nome<input v-model="editing.name" maxlength="200" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" /></label>
+          <label v-if="editing.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo<input v-model="editing.otherType" maxlength="60" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" /></label>
           <label class="flex flex-col gap-1 text-xs text-muted">Progetto
-            <select v-model="editing.project" class="field px-2 py-1.5 text-[14px] text-ink">
+            <select v-model="editing.project" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink">
               <option :value="null">—</option>
               <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
             </select>
           </label>
           <div class="grid grid-cols-2 gap-2.5">
-            <label class="flex flex-col gap-1 text-xs text-muted">Data<input v-model="editing.documentOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
-            <label class="flex flex-col gap-1 text-xs text-muted">Scadenza<input v-model="editing.expiresOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+            <label class="flex flex-col gap-1 text-xs text-muted">Data<input v-model="editing.documentOn" type="date" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" /></label>
+            <label class="flex flex-col gap-1 text-xs text-muted">Scadenza<input v-model="editing.expiresOn" type="date" class="field touch:min-h-11 px-2 py-1.5 text-[14px] text-ink" /></label>
           </div>
           <div class="flex justify-end gap-2">
             <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="editing = null">Annulla</button>
@@ -368,5 +377,12 @@ watch(selected, () => {
   border-color: var(--accent);
   background: var(--glow);
   color: var(--ink);
+}
+/* A finger (D-293): the chips of the filters and of the type reach the 44 px of a tap. */
+@media (pointer: coarse) {
+  button.chip {
+    min-height: 44px;
+    padding: 3px 12px;
+  }
 }
 </style>

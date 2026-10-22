@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { goesToArianna } from '../lib/commands.ts';
+import { enterSends, phoneComposer } from '../lib/composer.ts';
 import { cloudWarning, firstMessageProblem, localNote, longMessageStep, toAgent, type Draft } from '../lib/draft.ts';
 import { agentName } from '../lib/italian.ts';
 import { agentLabelLine } from '../lib/character-names.ts';
@@ -95,7 +96,8 @@ const mention = useMentionMenu(
 
 function onKey(event: KeyboardEvent): void {
   if (!event.isComposing && mention.onKey(event)) return;
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+  // On the phone (D-293) the Enter of the keyboard goes to a new line; the button sends.
+  if (enterSends(event, phoneComposer((query) => window.matchMedia(query).matches))) {
     event.preventDefault();
     // A held key never sends again.
     if (!event.repeat) void submit();
@@ -163,7 +165,7 @@ onMounted(() => field.value?.focus());
         <p v-if="projectProblem !== undefined" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">{{ projectProblem }}</p>
       </div>
     </div>
-    <div class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
+    <div class="shrink-0 border-t border-line px-4 pt-3 pb-4 max-md:px-2 max-md:pt-2 max-md:pb-[calc(0.5rem+var(--safe-bottom))] md:px-5.5">
       <p class="mb-1.5 min-h-4 px-1 font-mono text-[12px] text-muted" role="status" aria-live="polite">{{ sending ? 'Creo la conversazione…' : '' }}</p>
       <div v-if="confirmLong" role="alert" class="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">Va davvero a Claude? Il messaggio è lungo ({{ text.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.</span>
@@ -194,7 +196,7 @@ onMounted(() => field.value?.focus());
         <button
           type="submit"
           :disabled="sending || text.trim() === '' || unknownAgent"
-          class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
+          class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40 touch:size-11"
           aria-label="Invia"
         >
           <Icon name="send" />

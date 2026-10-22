@@ -261,7 +261,7 @@ watch(
         <div class="min-h-0 flex-1 overflow-auto py-1 max-[700px]:flex max-[700px]:overflow-x-auto max-[700px]:py-0 min-[700px]:max-[1100px]:max-h-[520px]">
           <button
             type="button"
-            class="flex w-full items-center gap-2 border-l-3 px-3.5 py-2 text-left text-[14.5px] hover:bg-accent/5 max-[700px]:w-auto max-[700px]:shrink-0 max-[700px]:border-b-3 max-[700px]:border-l-0 max-[700px]:whitespace-nowrap"
+            class="flex w-full items-center gap-2 border-l-3 px-3.5 py-2 text-left text-[14.5px] hover:bg-accent/5 touch:min-h-11 max-[700px]:w-auto max-[700px]:shrink-0 max-[700px]:border-b-3 max-[700px]:border-l-0 max-[700px]:whitespace-nowrap"
             :class="chosenFolder === ALL ? 'border-accent bg-accent/10 font-semibold' : 'border-transparent'"
             :aria-pressed="chosenFolder === ALL"
             @click="chosenFolder = ALL"
@@ -272,7 +272,7 @@ watch(
             v-for="folder in knowledge.folders"
             :key="folder.path"
             type="button"
-            class="flex w-full items-center gap-2 border-l-3 px-3.5 py-2 text-left text-[14.5px] hover:bg-accent/5 max-[700px]:w-auto max-[700px]:shrink-0 max-[700px]:border-b-3 max-[700px]:border-l-0 max-[700px]:whitespace-nowrap"
+            class="flex w-full items-center gap-2 border-l-3 px-3.5 py-2 text-left text-[14.5px] hover:bg-accent/5 touch:min-h-11 max-[700px]:w-auto max-[700px]:shrink-0 max-[700px]:border-b-3 max-[700px]:border-l-0 max-[700px]:whitespace-nowrap"
             :class="chosenFolder === folder.path ? 'border-accent bg-accent/10 font-semibold' : 'border-transparent'"
             :aria-pressed="chosenFolder === folder.path"
             :title="folder.path"
@@ -298,7 +298,7 @@ watch(
       <!-- Notes -->
       <section class="flex min-h-0 min-w-0 flex-col overflow-hidden border-line max-[700px]:border-t min-[700px]:border-l" aria-label="Note">
         <div class="flex min-h-14 items-center gap-2 border-b border-line px-3.5 py-2.5">
-          <label class="flex h-[34px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted">
+          <label class="flex h-[34px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted touch:h-11">
             <Icon name="search" :size="14" />
             <input v-model="query" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca fra le note" aria-label="Cerca fra le note, per titolo, cartella o prima riga" />
           </label>
@@ -306,7 +306,7 @@ watch(
         <div class="min-h-0 flex-1 overflow-auto min-[700px]:max-[1100px]:max-h-[520px]">
           <div v-if="saved" class="m-2.5 flex items-center gap-2 rounded-xl border border-ok/45 bg-ok/9 px-3 py-2 text-[13.5px]" role="status">
             <span class="text-ok"><Icon name="saved" :size="15" /></span><span class="min-w-0 flex-1 break-words">{{ saved }}</span>
-            <button type="button" class="grid size-6 place-items-center rounded-md text-muted hover:text-ink" aria-label="Chiudi" @click="saved = null"><Icon name="close" :size="13" /></button>
+            <button type="button" class="grid size-6 place-items-center rounded-md text-muted hover:text-ink touch:size-11" aria-label="Chiudi" @click="saved = null"><Icon name="close" :size="13" /></button>
           </div>
           <div v-if="knowledge.notes.length === 0" class="flex flex-col items-start gap-2 p-4 text-[14px]">
             <p>Nessuna nota ancora. Le note dicono ad Arianna cose del progetto che non stanno nel codice, per esempio «il cliente vuole le call il giovedì».</p>
@@ -318,7 +318,7 @@ watch(
               <b class="min-w-0 truncate text-[14px] text-ink">{{ group.folder }}</b>{{ notesCountText(group.notes.length) }}
               <select
                 v-if="existingFolder(group.folder)"
-                class="field ml-auto w-auto px-1.5 py-0.5 text-[13px] text-ink"
+                class="field ml-auto w-auto px-1.5 py-0.5 text-[13px] text-ink touch:min-h-11"
                 :value="group.label"
                 :aria-label="`Etichetta della cartella ${group.folder}`"
                 title="Etichetta della cartella: cambiarla chiede conferma"

@@ -33,6 +33,7 @@ import {
   type WallState,
   ALL_FILTERS,
 } from '../lib/cardwall.ts';
+import { neighbourColumn, phoneColumn } from '../lib/cardwall-phone.ts';
 import { agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
@@ -275,6 +276,30 @@ async function onDrop(event: DragEvent, column: WallColumn): Promise<void> {
   await refresh();
 }
 
+// The phone (D-293): one column at a time, chosen from a row of tabs or with a swipe sideways.
+const chosenColumn = ref<WallColumnId | null>(null);
+const shownColumn = computed(() => phoneColumn(columns.value, chosenColumn.value, (id) => groups.value.get(id)?.length ?? 0));
+const columnTabs = ref<HTMLElement | null>(null);
+function showColumn(id: WallColumnId | null): void {
+  if (id === null) return;
+  chosenColumn.value = id;
+  void nextTick(() => columnTabs.value?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+}
+let swipeFrom: { x: number; y: number } | null = null;
+function onSwipeStart(event: TouchEvent): void {
+  const touch = event.touches[0];
+  swipeFrom = event.touches.length === 1 && touch !== undefined ? { x: touch.clientX, y: touch.clientY } : null;
+}
+function onSwipeEnd(event: TouchEvent): void {
+  const touch = event.changedTouches[0];
+  const from = swipeFrom;
+  swipeFrom = null;
+  if (from === null || touch === undefined || window.matchMedia('(min-width: 48rem)').matches) return;
+  const dx = touch.clientX - from.x;
+  if (Math.abs(dx) < 60 || Math.abs(touch.clientY - from.y) > 40) return;
+  showColumn(neighbourColumn(columns.value, shownColumn.value, dx < 0 ? 1 : -1));
+}
+
 function cardClass(card: Card): string {
   return card.column === 'failed' ? 'border-l-[3px] border-l-danger' : '';
 }
@@ -305,17 +330,17 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
     <div class="flex flex-wrap items-center gap-2">
       <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :aria-expanded="adding" @click="adding ? (adding = false) : openNew()"><Icon name="new" :size="14" />Card</button>
       <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Vista">
-        <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" :class="state.view === 'board' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'board'" @click="state.view = 'board'">
+        <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px] touch:min-h-11" :class="state.view === 'board' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'board'" @click="state.view = 'board'">
           <Icon name="cardwall" :size="14" />Bacheca
         </button>
-        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="state.view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'list'" @click="state.view = 'list'">
+        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px] touch:min-h-11" :class="state.view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'list'" @click="state.view = 'list'">
           <Icon name="view-list" :size="14" />Lista
         </button>
-        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="state.view === 'im' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'im'" @click="state.view = 'im'">
+        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px] touch:min-h-11" :class="state.view === 'im' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'im'" @click="state.view = 'im'">
           <Icon name="calendar" :size="14" />IM
         </button>
       </div>
-      <div v-if="state.view !== 'im'" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
+      <div v-if="state.view !== 'im'" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 max-md:order-last max-md:basis-full" role="group" aria-label="Filtri">
         <FilterMenu v-model="state.filters.project" label="Progetto" icon="project" :options="projectOptions" />
         <FilterMenu v-model="state.filters.kind" label="Tipo" icon="card-body" :options="KIND_OPTIONS" />
         <FilterMenu v-model="state.filters.assignee" label="Chi la fa" icon="coder" :options="assigneeOptions" />
@@ -325,7 +350,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
         <button
           v-if="filtersActive(state.filters)"
           type="button"
-          class="grid size-[30px] place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
+          class="grid size-[30px] place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink touch:size-11"
           title="Togli i filtri"
           aria-label="Togli i filtri"
           @click="resetFilters"
@@ -350,7 +375,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
 
     <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
       <span class="flex-1">{{ problem }}</span>
-      <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
+      <button type="button" class="shrink-0 text-muted hover:text-ink touch:-my-2 touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
     </p>
 
     <!-- New card: the short form; the detail opens right after for the rest. -->
@@ -386,25 +411,47 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
     <p v-else-if="wall === null" class="text-sm text-muted">Carico le card…</p>
     <p v-else-if="state.view === 'board' && columns.length === 0" class="text-sm text-muted">Tutte le colonne sono nascoste: rimettile da «Colonne».</p>
 
-    <!-- Board: side by side from md, scrolling sideways inside the page; one under the other on a phone. -->
-    <div v-if="wall !== null && state.view === 'board' && columns.length > 0" class="flex flex-col gap-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-x-auto md:pb-1">
+    <!-- The phone (D-293): which column is shown, one at a time; a swipe on the column moves to the next. -->
+    <div
+      v-if="wall !== null && state.view === 'board' && columns.length > 0"
+      ref="columnTabs"
+      class="-mx-4 flex shrink-0 snap-x gap-1.5 overflow-x-auto px-4 pb-0.5 md:hidden"
+      role="group"
+      aria-label="Colonna mostrata"
+    >
+      <button
+        v-for="column in columns"
+        :key="column.id"
+        type="button"
+        class="flex min-h-11 shrink-0 snap-start items-center gap-1.5 rounded-full border px-3.5 text-[14.5px]"
+        :class="column.id === shownColumn ? 'border-accent bg-accent text-accent-ink' : column.id === 'failed' ? 'border-line-strong text-danger' : 'border-line-strong text-muted'"
+        :aria-pressed="column.id === shownColumn"
+        @click="showColumn(column.id)"
+      >
+        {{ column.title }}<span class="text-[13px] tabular-nums opacity-80">{{ groups.get(column.id)?.length ?? 0 }}</span>
+      </button>
+    </div>
+
+    <!-- Board: side by side from md, scrolling sideways inside the page; one column at a time on a phone. -->
+    <div v-if="wall !== null && state.view === 'board' && columns.length > 0" class="flex flex-col gap-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-x-auto md:pb-1" @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
       <section
         v-for="column in columns"
         :key="column.id"
         class="flex flex-col rounded-xl border bg-surface transition-colors md:min-h-0 md:w-[272px] md:shrink-0"
-        :class="over === column.id ? 'border-accent bg-accent/5' : 'border-line'"
+        :class="[over === column.id ? 'border-accent bg-accent/5' : 'border-line', { 'max-md:hidden': column.id !== shownColumn }]"
         :aria-label="column.title"
         @dragover="onDragOver($event, column)"
         @dragleave="onDragLeave($event, column)"
         @drop="onDrop($event, column)"
       >
-        <header class="flex items-center gap-2 border-b border-line px-3 py-2">
+        <header class="flex items-center gap-2 border-b border-line px-3 py-2 max-md:hidden">
           <h2 class="flex-1 text-[14.5px] font-semibold" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</h2>
           <span class="text-[13px] text-muted tabular-nums">{{ groups.get(column.id)?.length ?? 0 }}</span>
         </header>
         <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <li v-if="(groups.get(column.id)?.length ?? 0) === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">
-            {{ column.drop === null ? 'Nessuna card' : 'Nessuna card: trascinane una qui' }}
+            <template v-if="column.drop === null">Nessuna card</template>
+            <template v-else><span class="touch:hidden">Nessuna card: trascinane una qui</span><span class="hidden touch:inline">Nessuna card: apri una card e usa «Sposta in»</span></template>
           </li>
           <li
             v-for="card in groups.get(column.id) ?? []"

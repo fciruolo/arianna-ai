@@ -114,30 +114,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4 phone:top-[var(--vv-top,0px)] phone:bottom-auto phone:h-[var(--vv-height,100dvh)] phone:p-0" @click.self="emit('close')">
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="design-title"
       tabindex="-1"
-      class="hud-card flex h-[min(860px,92vh)] w-full max-w-[1040px] flex-col bg-surface outline-none"
+      class="hud-card flex h-[min(860px,92vh)] w-full max-w-[1040px] flex-col bg-surface outline-none phone:h-full phone:max-w-none phone:rounded-none phone:border-0 phone:pt-[var(--safe-top)] phone:pb-[var(--safe-bottom)]"
     >
       <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-        <h2 id="design-title" class="font-medium">Stile e skill per il Designer</h2>
-        <nav class="flex gap-1" role="tablist" aria-label="Cosa scegli">
-          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px]" :class="tab === 'styles' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'styles'" @click="tab = 'styles'">
+        <h2 id="design-title" class="font-medium phone:min-w-0 phone:flex-1 phone:truncate">Stile e skill per il Designer</h2>
+        <!-- On the phone the tabs and the search go on a row of their own, under the title. -->
+        <span class="hidden phone:order-2 phone:block phone:basis-full" aria-hidden="true" />
+        <nav class="flex gap-1 phone:order-3" role="tablist" aria-label="Cosa scegli">
+          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px] touch:min-h-11" :class="tab === 'styles' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'styles'" @click="tab = 'styles'">
             Stili <span class="text-muted">{{ styles.length }}</span>
           </button>
-          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px]" :class="tab === 'skills' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'skills'" @click="tab = 'skills'">
+          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px] touch:min-h-11" :class="tab === 'skills' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'skills'" @click="tab = 'skills'">
             Skill <span class="text-muted">{{ chosenSkills.length }}/{{ STUDIO_SKILLS_MAX }}</span>
           </button>
         </nav>
-        <label class="ml-auto flex h-8 w-[240px] max-w-full items-center gap-2 rounded-md border border-line px-2 text-muted">
+        <label class="ml-auto flex h-8 w-[240px] max-w-full items-center gap-2 rounded-md border border-line px-2 text-muted phone:order-4 phone:ml-0 phone:w-auto phone:min-w-0 phone:flex-1 touch:h-11">
           <Icon name="search" :size="14" />
           <input v-model="query" type="search" :placeholder="tab === 'styles' ? 'Cerca uno stile' : 'Cerca una skill'" aria-label="Cerca" class="w-full bg-transparent text-[14px] text-ink" />
         </label>
-        <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
+        <button type="button" class="rounded-md p-1 text-muted hover:text-ink phone:order-1 touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
       <div class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain p-[15px]">
@@ -195,18 +197,18 @@ onBeforeUnmount(() => {
               </button>
               <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
                 <template v-if="exampleState(examples, entry.slug) === 'ready' || exampleState(examples, entry.slug) === 'old'">
-                  <button type="button" class="text-ink underline hover:text-accent" @click="showExample(entry.slug, entry.name, 'landing')">Vedi esempio</button>
+                  <button type="button" class="text-ink underline hover:text-accent touch:py-2.5" @click="showExample(entry.slug, entry.name, 'landing')">Vedi esempio</button>
                 </template>
                 <span v-if="exampleState(examples, entry.slug) === 'running'" class="text-muted">Genero…</span>
                 <span v-else-if="exampleState(examples, entry.slug) === 'queued'" class="text-muted">In coda</span>
                 <button
                   v-else-if="exampleState(examples, entry.slug) !== 'ready'"
                   type="button"
-                  class="text-muted underline hover:text-ink"
+                  class="text-muted underline hover:text-ink touch:py-2.5"
                   :title="exampleState(examples, entry.slug) === 'old' ? 'Lo stile è cambiato o l\'esempio è di Sonnet: Opus lo riscrive' : 'Claude Opus scrive una landing e una presentazione in questo stile'"
                   @click="generate(entry.slug)"
                 >{{ exampleState(examples, entry.slug) === 'old' ? 'Rigenera' : 'Genera esempio' }}</button>
-                <button type="button" class="text-muted underline hover:text-ink" @click="readAll('style', entry.slug, entry.name)">Leggi tutto</button>
+                <button type="button" class="text-muted underline hover:text-ink touch:py-2.5" @click="readAll('style', entry.slug, entry.name)">Leggi tutto</button>
               </span>
               <span v-if="examples?.failed[entry.slug]" class="text-[12.5px] text-warn">{{ examples.failed[entry.slug] }}</span>
             </div>
@@ -233,7 +235,7 @@ onBeforeUnmount(() => {
                 <span class="flex items-baseline gap-1.5"><span class="text-[14px] font-medium">{{ entry.name }}</span><span class="truncate text-[12.5px] text-muted">{{ entry.source }}</span></span>
                 <span class="text-[13px] leading-snug text-muted">{{ skillText(entry) || 'Senza descrizione.' }}</span>
               </label>
-              <button type="button" class="shrink-0 text-[12.5px] text-muted underline hover:text-ink" @click="readAll('skill', entry.id, entry.name)">Leggi tutto</button>
+              <button type="button" class="shrink-0 text-[12.5px] text-muted underline hover:text-ink touch:py-2.5" @click="readAll('skill', entry.id, entry.name)">Leggi tutto</button>
             </li>
           </ul>
           <p v-if="skills.length === 0" class="text-sm text-muted">Nessuna skill nel catalogo: si aggiungono in Impostazioni → Agenti.</p>
@@ -246,8 +248,8 @@ onBeforeUnmount(() => {
             <button type="button" class="btn px-2.5 py-1 text-xs" @click="preview = null"><Icon name="restore" :size="13" />Torna</button>
             <span class="truncate text-[14px] font-medium">{{ preview.name }}</span>
             <span class="ml-auto flex gap-1" role="group" aria-label="Esempio">
-              <button type="button" class="rounded-md px-2.5 py-1 text-xs" :class="preview.kind === 'landing' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'landing'" @click="showExample(preview.slug, preview.name, 'landing')">Landing</button>
-              <button type="button" class="rounded-md px-2.5 py-1 text-xs" :class="preview.kind === 'deck' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'deck'" @click="showExample(preview.slug, preview.name, 'deck')">Presentazione</button>
+              <button type="button" class="rounded-md px-2.5 py-1 text-xs touch:min-h-11" :class="preview.kind === 'landing' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'landing'" @click="showExample(preview.slug, preview.name, 'landing')">Landing</button>
+              <button type="button" class="rounded-md px-2.5 py-1 text-xs touch:min-h-11" :class="preview.kind === 'deck' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'deck'" @click="showExample(preview.slug, preview.name, 'deck')">Presentazione</button>
             </span>
           </div>
           <p v-if="preview.problem !== null" class="p-[15px] text-sm text-danger" role="alert">{{ preview.problem }}</p>
@@ -271,7 +273,7 @@ onBeforeUnmount(() => {
 
       <footer class="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-[15px] py-2.5">
         <span class="min-w-0 flex-1 truncate text-xs text-muted">Stile: <b class="text-ink">{{ styleName }}</b> · {{ chosenSkills.length === 0 ? 'nessuna skill' : `${String(chosenSkills.length)} skill` }}</span>
-        <button type="button" class="rounded-md px-3 py-1 text-[14px] text-muted hover:text-ink" @click="emit('close')">Annulla</button>
+        <button type="button" class="rounded-md px-3 py-1 text-[14px] text-muted hover:text-ink touch:min-h-11" @click="emit('close')">Annulla</button>
         <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" @click="emit('apply', { style, skills: chosenSkills })">Usa questa scelta</button>
       </footer>
     </section>

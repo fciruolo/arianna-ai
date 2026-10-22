@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import type { IconName } from '../icons.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
-import { NAV_GROUPS, NAV_STORAGE_KEY, groupOf, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
+import { AREAS, NAV_GROUPS, NAV_STORAGE_KEY, groupOf, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
 import type { LiveState } from '../lib/live.ts';
 import type { Conversation, StatusSnapshot } from '../lib/types.ts';
 import ConversationList from './ConversationList.vue';
@@ -18,7 +17,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki' | 'pending' | 'more';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -73,36 +72,12 @@ const devLabel = computed(() => pendingText(props.devPending));
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const shortcut = isMac ? '⌘K' : 'Ctrl K';
 
-const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> = {
-  // The Dashboard (D-248): the answers pinned from the chat, refreshed on the local model.
-  dashboard: { label: 'Dashboard', icon: 'dashboard', title: 'Le risposte fissate dalla chat, da aggiornare col modello locale' },
-  secretary: { label: 'Segretaria', icon: 'secretary', title: 'Di’ ad Arianna le cose da fare: le segna con il giorno' },
-  projects: { label: 'Progetti', icon: 'project' },
-  clients: { label: 'Clienti', icon: 'clients' },
-  cardwall: { label: 'Cardwall', icon: 'cardwall' },
-  // The Studio (I-19, D-184): the Designer's mockups, isolated, with comments and exports.
-  studio: { label: 'Studio', icon: 'studio' },
-  thoughts: { label: 'Pensieri', icon: 'thoughts' },
-  // The routines (D-110 tappa A, D-254): recurring reports, each in its own chat marked «R».
-  routines: { label: 'Routine', icon: 'routine', title: 'Appuntamenti ricorrenti: il resoconto arriva nella chat della routine' },
-  knowledge: { label: 'Conoscenza', icon: 'knowledge' },
-  // The Wiki (D-280): pages the local model proposes from the notes; the user approves them.
-  wiki: { label: 'Wiki', icon: 'wiki', title: 'Pagine compilate dal modello locale dalle tue note, da approvare' },
-  // The finances (I-18, D-183): private, they never leave this Mac.
-  finance: { label: 'Finanze', icon: 'finance' },
-  // GOD (D-127): Arianna developed from inside Arianna, in a clone of its code.
-  god: { label: 'GOD', icon: 'god', title: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
-  // «Seguiti» (D-272): projects, accounts, oMLX and the catalogs followed on GitHub.
-  followed: { label: 'Seguiti', icon: 'followed', title: 'Progetti, account e cataloghi seguiti su GitHub per prendere idee' },
-  office: { label: 'Ufficio', icon: 'office' },
-  settings: { label: 'Impostazioni', icon: 'settings' },
-};
-
 /** The area in view: the secretary is a conversation, the voice trial a part of the settings. */
 const current = computed<NavArea | null>(() => {
   if (props.secretaryOpen) return 'secretary';
   if (props.page === 'voice-trial') return 'settings';
-  return props.page === 'chat' ? null : props.page;
+  // The two pages of the phone (D-293) are no area of the bar.
+  return props.page === 'chat' || props.page === 'pending' || props.page === 'more' ? null : props.page;
 });
 
 function readOpen(): NavGroupId[] {

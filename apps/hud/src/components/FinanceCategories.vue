@@ -229,7 +229,7 @@ function select(category: Category): void {
               v-model="budgetText[category.id]"
               type="text"
               inputmode="decimal"
-              class="field w-full px-2 py-1 text-right text-[14px]"
+              class="field touch:min-h-11 w-full px-2 py-1 text-right text-[14px]"
               :class="draft.invalid.includes(category.id) ? 'border-danger' : draft.changes.some((change) => change.category === category.id) ? 'border-accent' : ''"
               placeholder="—"
               :aria-label="`Budget mensile di ${category.name}, in euro`"
@@ -264,8 +264,8 @@ function select(category: Category): void {
             <span class="text-xs text-muted">{{ outCategories.length }} di uscita · {{ categories.length - outCategories.length }} di entrata</span>
           </header>
           <form class="flex flex-wrap items-end gap-2" @submit.prevent="create">
-            <input v-model="newName" type="text" maxlength="80" class="field min-w-[160px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Nuova categoria" aria-label="Nome della nuova categoria" />
-            <select v-model="newKind" class="field px-2 py-1.5 text-[14px]" aria-label="Tipo della categoria">
+            <input v-model="newName" type="text" maxlength="80" class="field touch:min-h-11 min-w-[160px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Nuova categoria" aria-label="Nome della nuova categoria" />
+            <select v-model="newKind" class="field touch:min-h-11 px-2 py-1.5 text-[14px]" aria-label="Tipo della categoria">
               <option value="out">Uscite</option>
               <option value="in">Entrate</option>
             </select>
@@ -277,7 +277,7 @@ function select(category: Category): void {
               <li v-for="category in categories" :key="category.id">
                 <button
                   type="button"
-                  class="rounded-full border px-3 py-0.5 text-[13.5px] hover:border-accent"
+                  class="rounded-full border px-3 py-0.5 text-[13.5px] hover:border-accent touch:min-h-11 touch:px-4"
                   :class="[selected === category.id ? 'border-accent bg-surface-2 text-accent' : category.kind === 'in' ? 'border-ok/60 bg-surface' : 'border-line-strong bg-surface']"
                   :aria-pressed="selected === category.id"
                   :title="category.kind === 'in' ? 'Categoria di entrata' : 'Categoria di uscita'"
@@ -289,15 +289,15 @@ function select(category: Category): void {
             <template v-for="category in categories" :key="`edit-${category.id}`">
               <div v-if="selected === category.id" class="flex flex-col gap-2 rounded-lg border border-line bg-surface px-3 py-2">
                 <form v-if="editing === category.id" class="flex min-w-0 items-center gap-1.5" @submit.prevent="rename(category)">
-                  <input v-model="editName" type="text" maxlength="80" class="field min-w-0 flex-1 px-2 py-1 text-[14px]" aria-label="Nuovo nome della categoria" />
+                  <input v-model="editName" type="text" maxlength="80" class="field touch:min-h-11 min-w-0 flex-1 px-2 py-1 text-[14px]" aria-label="Nuovo nome della categoria" />
                   <button type="submit" class="btn btn-primary px-2 py-1 text-xs" :disabled="busy">Salva</button>
-                  <button type="button" class="rounded-md px-1.5 py-1 text-xs text-muted hover:text-ink" @click="editing = null">Annulla</button>
+                  <button type="button" class="rounded-md px-1.5 py-1 text-xs text-muted hover:text-ink touch:min-h-11" @click="editing = null">Annulla</button>
                 </form>
                 <div v-else-if="removing === category.id" class="flex flex-col gap-1.5 text-xs" role="group" aria-label="Conferma">
                   <p>Tolgo «{{ category.name }}»? I suoi movimenti restano senza categoria; le sue regole e il suo budget spariscono.</p>
                   <div class="flex gap-2">
                     <button type="button" class="btn btn-danger px-2 py-0.5 text-xs" :disabled="busy" @click="remove(category)">Togli</button>
-                    <button type="button" class="rounded-md px-2 py-0.5 text-xs text-muted hover:text-ink" @click="removing = null">Annulla</button>
+                    <button type="button" class="rounded-md px-2 py-0.5 text-xs text-muted hover:text-ink touch:min-h-11" @click="removing = null">Annulla</button>
                   </div>
                 </div>
                 <div v-else class="flex flex-wrap items-center gap-2 text-[14px]">
@@ -319,8 +319,8 @@ function select(category: Category): void {
           </header>
           <p class="text-xs text-muted">Una descrizione che contiene queste parole, senza badare a maiuscole e accenti, va nella categoria. Vince la regola più lunga; le scelte fatte a mano non cambiano. Le regole nascono anche da Movimenti, dal menu della categoria.</p>
           <form class="flex flex-wrap items-end gap-2" @submit.prevent="addRule">
-            <input v-model="ruleMatch" type="text" maxlength="200" class="field min-w-[160px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Per esempio: supermercato" aria-label="Parole da cercare nella descrizione" />
-            <select v-model="ruleCategory" class="field px-2 py-1.5 text-[14px]" aria-label="Categoria della regola">
+            <input v-model="ruleMatch" type="text" maxlength="200" class="field touch:min-h-11 min-w-[160px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Per esempio: supermercato" aria-label="Parole da cercare nella descrizione" />
+            <select v-model="ruleCategory" class="field touch:min-h-11 px-2 py-1.5 text-[14px]" aria-label="Categoria della regola">
               <option value="" disabled>Categoria…</option>
               <option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option>
             </select>
@@ -329,9 +329,9 @@ function select(category: Category): void {
           <p v-if="rules === null && listsProblem === null" class="text-sm text-muted">Carico le regole…</p>
           <p v-else-if="rules !== null && rules.length === 0" class="text-sm text-muted">Nessuna regola.</p>
           <ul v-else-if="rules !== null" class="flex flex-col">
-            <li v-for="rule in rules" :key="rule.id" class="flex items-center gap-2 border-t border-line py-1 text-[14px] first:border-t-0">
+            <li v-for="rule in rules" :key="rule.id" class="flex items-center gap-2 border-t border-line py-1 text-[14px] first:border-t-0 touch:py-0">
               <span class="min-w-0 flex-1 truncate">«{{ rule.match }}» → <b class="font-medium">{{ names.category(rule.category) }}</b></span>
-              <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-danger" :aria-label="`Togli la regola ${rule.match}`" title="Togli la regola" :disabled="busy" @click="removeRule(rule)"><Icon name="delete" :size="14" /></button>
+              <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-danger touch:size-11" :aria-label="`Togli la regola ${rule.match}`" title="Togli la regola" :disabled="busy" @click="removeRule(rule)"><Icon name="delete" :size="14" /></button>
             </li>
           </ul>
         </section>

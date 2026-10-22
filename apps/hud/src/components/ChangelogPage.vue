@@ -132,13 +132,13 @@ function reload(): void {
             <MarkdownText class="min-w-0 flex-1" :source="item" />
             <button
               type="button"
-              class="god inline-flex shrink-0 items-center gap-1 self-start rounded-lg border border-line-strong bg-surface px-2 py-0.5 text-[13px] text-muted hover:text-ink disabled:opacity-50"
+              class="god inline-flex shrink-0 items-center gap-1 self-start rounded-lg border border-line-strong bg-surface px-2 py-0.5 text-[13px] text-muted hover:text-ink disabled:opacity-50 touch:min-h-11 touch:min-w-11 touch:justify-center"
               :disabled="godOff !== null || opening !== null"
               :title="discussTitle(godOff, entry.unreleased)"
               :aria-label="`Parlane con GOD: ${plainItem(item)}`"
               @click="discuss(entry, section.title, item, index)"
             >
-              <Icon name="god" :size="12" />{{ opening === itemKey(entry, section.title, index) ? 'Apro…' : 'Parlane con GOD' }}
+              <Icon name="god" :size="12" class="phone:size-4" /><span class="phone:sr-only">{{ opening === itemKey(entry, section.title, index) ? 'Apro…' : 'Parlane con GOD' }}</span>
             </button>
           </li>
         </ul>

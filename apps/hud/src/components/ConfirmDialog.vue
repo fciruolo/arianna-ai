@@ -32,8 +32,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="cancel">
-    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" class="hud-card flex max-h-[90vh] w-full max-w-[480px] flex-col bg-surface outline-none">
+  <div class="phone-overlay-bottom fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="cancel">
+    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" class="phone-sheet-bottom hud-card flex max-h-[90vh] w-full max-w-[480px] flex-col bg-surface outline-none">
       <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span v-if="danger" class="text-danger"><Icon name="warning" :size="16" /></span>
         <h2 id="confirm-title" class="min-w-0 flex-1 truncate font-medium">{{ title }}</h2>

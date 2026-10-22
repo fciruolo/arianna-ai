@@ -35,6 +35,7 @@ import {
   type StudioView,
   type StyleSample,
 } from '../lib/studio.ts';
+import { fitFrame, fitStyle, followMedia, initialView, phoneMedia, phoneNow, type FrameFit } from '../lib/studio-phone.ts';
 import type { ProjectInfo } from '../lib/types.ts';
 import type { IconName } from '../icons.ts';
 import ConfirmDialog from './ConfirmDialog.vue';
@@ -187,8 +188,20 @@ onBeforeUnmount(() => {
   clearPrint();
 });
 
+// The phone (D-293): one side at a time, the frames drawn at their view's width and scaled to the screen.
+const phone = ref(phoneNow());
+let stopPhone: () => void = () => undefined;
+onMounted(() => {
+  stopPhone = followMedia(phoneMedia(), (matches) => {
+    phone.value = matches;
+  });
+});
+onBeforeUnmount(() => {
+  stopPhone();
+});
+
 // Views and comparison (O4)
-const view = ref<StudioView>('desktop');
+const view = ref<StudioView>(initialView(phone.value));
 /** "Schermo intero" (request of the user): the frames over the whole window, one or the two compared; Esc leaves. */
 const fullscreen = ref(false);
 function onKey(event: KeyboardEvent): void {
@@ -515,6 +528,33 @@ async function exportPptx(): Promise<void> {
 
 /** On narrow screens one side at a time. */
 const side = ref<'chat' | 'canvas'>('canvas');
+
+/** On the phone the box of each frame is measured: the frame is drawn at the view's width and scaled into it. */
+const shownBox = ref<HTMLElement | null>(null);
+const otherBox = ref<HTMLElement | null>(null);
+const boxSizes = ref<{ shown: { width: number; height: number }; other: { width: number; height: number } }>({ shown: { width: 0, height: 0 }, other: { width: 0, height: 0 } });
+let boxObserver: ResizeObserver | undefined;
+function measureBoxes(): void {
+  const size = (box: HTMLElement | null): { width: number; height: number } => ({ width: box?.clientWidth ?? 0, height: box?.clientHeight ?? 0 });
+  boxSizes.value = { shown: size(shownBox.value), other: size(otherBox.value) };
+}
+watch(
+  [shownBox, otherBox, phone],
+  ([shownEl, otherEl, onPhone]) => {
+    boxObserver?.disconnect();
+    if (!onPhone || typeof ResizeObserver === 'undefined') return;
+    boxObserver ??= new ResizeObserver(measureBoxes);
+    if (shownEl !== null) boxObserver.observe(shownEl);
+    if (otherEl !== null) boxObserver.observe(otherEl);
+    measureBoxes();
+  },
+  { flush: 'post' },
+);
+onBeforeUnmount(() => {
+  boxObserver?.disconnect();
+});
+const shownFit = computed<FrameFit | undefined>(() => fitFrame(view.value, boxSizes.value.shown));
+const otherFit = computed<FrameFit | undefined>(() => fitFrame(view.value, boxSizes.value.other));
 </script>
 
 <template>
@@ -522,11 +562,11 @@ const side = ref<'chat' | 'canvas'>('canvas');
     <!-- Without a project: the cards of the projects (D-194). -->
     <StudioOverview v-if="project === undefined" :projects="projects" @choose="chooseProject" />
 
-    <div v-else class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2 md:px-6">
-      <label class="flex items-center gap-2 text-[13.5px] text-muted">
+    <div v-else class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2 md:px-6 phone:px-3">
+      <label class="flex items-center gap-2 text-[13.5px] text-muted phone:min-w-0 phone:flex-1">
         <Icon name="project" :size="14" />
         <span class="sr-only">Progetto</span>
-        <select class="field px-2 py-1 text-[14px] text-ink" :value="project ?? ''" @change="chooseProject(($event.target as HTMLSelectElement).value)">
+        <select class="field px-2 py-1 text-[14px] text-ink phone:min-w-0 phone:flex-1 touch:min-h-11" :value="project ?? ''" @change="chooseProject(($event.target as HTMLSelectElement).value)">
           <option value="">Scegli un progetto…</option>
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }}</option>
         </select>
@@ -535,7 +575,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
         <!-- Style and skills for the Designer (O2): every message of the Studio carries them; chosen in a window (I-20, D-185). -->
         <button
           type="button"
-          class="btn inline-flex max-w-[320px] items-center gap-2 px-2.5 py-1 text-[13.5px]"
+          class="btn inline-flex max-w-[320px] items-center gap-2 px-2.5 py-1 text-[13.5px] phone:max-w-[46%]"
           title="Scegli lo stile di Open Design e le skill che il Designer legge con ogni messaggio dello Studio"
           :disabled="!catalogsLoaded"
           @click="designOpen = true"
@@ -546,16 +586,27 @@ const side = ref<'chat' | 'canvas'>('canvas');
           <Icon v-else name="studio" :size="13" />
           <span class="min-w-0 truncate">{{ designSummary }}</span>
         </button>
-        <button type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" title="Il progetto in Progetti, con la cartella dei mockup aperta in File" @click="emit('projects', project, list?.folder ?? 'mockups')">
-          <Icon name="project" :size="13" />Apri in Progetti
+        <button
+          type="button"
+          class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13.5px] phone:min-w-11 phone:justify-center"
+          title="Il progetto in Progetti, con la cartella dei mockup aperta in File"
+          aria-label="Apri in Progetti"
+          @click="emit('projects', project, list?.folder ?? 'mockups')"
+        >
+          <Icon name="project" :size="13" /><span class="phone:hidden">Apri in Progetti</span>
         </button>
       </template>
-      <p class="flex items-center gap-1.5 text-[12.5px] text-muted" role="note">
+      <p class="flex items-center gap-1.5 text-[12.5px] text-muted phone:hidden" role="note">
         <Icon name="private" :size="12" />I mockup si vedono in una cornice isolata: niente rete, niente accesso alla chat.
       </p>
-      <div class="ml-auto flex gap-1 lg:hidden" role="group" aria-label="Lato mostrato">
-        <button type="button" class="btn px-2.5 py-1 text-xs" :aria-pressed="side === 'chat'" :class="{ 'btn-primary': side === 'chat' }" @click="side = 'chat'">Conversazione</button>
-        <button type="button" class="btn px-2.5 py-1 text-xs" :aria-pressed="side === 'canvas'" :class="{ 'btn-primary': side === 'canvas' }" @click="side = 'canvas'">Canvas</button>
+      <!-- On the phone (D-293) the choice takes the whole row: «Chat» or «Anteprima», each on the whole screen. -->
+      <div class="ml-auto flex gap-1 lg:hidden phone:ml-0 phone:grid phone:w-full phone:grid-cols-2" role="group" aria-label="Lato mostrato">
+        <button type="button" class="btn px-2.5 py-1 text-xs phone:justify-center phone:text-[14px]" :aria-pressed="side === 'chat'" :class="{ 'btn-primary': side === 'chat' }" @click="side = 'chat'">
+          <span class="phone:hidden">Conversazione</span><span class="md:hidden">Chat</span>
+        </button>
+        <button type="button" class="btn px-2.5 py-1 text-xs phone:justify-center phone:text-[14px]" :aria-pressed="side === 'canvas'" :class="{ 'btn-primary': side === 'canvas' }" @click="side = 'canvas'">
+          <span class="phone:hidden">Canvas</span><span class="md:hidden">Anteprima</span>
+        </button>
       </div>
     </div>
 
@@ -566,7 +617,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
       </div>
 
       <!-- Right: the canvas. -->
-      <div class="min-h-0 flex-col gap-2 overflow-auto p-3 lg:flex" :class="side === 'canvas' ? 'flex' : 'hidden'">
+      <div class="min-h-0 flex-col gap-2 overflow-auto p-3 lg:flex phone:overflow-x-hidden phone:px-2" :class="side === 'canvas' ? 'flex' : 'hidden'">
         <div v-if="listProblem !== null" class="flex flex-wrap items-center gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm" role="alert">
           <span class="flex-1">{{ listProblem }}</span>
           <button type="button" class="btn px-2.5 py-1 text-xs" @click="loadList"><Icon name="retry" :size="13" />Riprova</button>
@@ -588,12 +639,12 @@ const side = ref<'chat' | 'canvas'>('canvas');
               <option v-for="group in groups" :key="group.group" :value="group.group">{{ group.group }}</option>
             </select>
             <span v-else class="font-mono text-[13px]">{{ groups[0]?.group }}</span>
-            <div class="flex gap-1" role="group" aria-label="Varianti">
+            <div class="flex gap-1 phone:max-w-full phone:overflow-x-auto" role="group" aria-label="Varianti">
               <button
                 v-for="file in currentGroup?.variants ?? []"
                 :key="file.path"
                 type="button"
-                class="rounded-md border px-2 py-0.5 font-mono text-[12.5px]"
+                class="rounded-md border px-2 py-0.5 font-mono text-[12.5px] touch:min-h-11 touch:min-w-11 touch:shrink-0"
                 :class="file.path === address.file ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong text-muted hover:text-ink'"
                 :aria-pressed="file.path === address.file"
                 :title="`${file.name} · ${new Date(file.modified).toLocaleString('it-IT')} · ${variantDesignText(file.design, styleNameOf, skillNameOf)}`"
@@ -605,7 +656,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
                 v-for="name in VIEWS"
                 :key="name"
                 type="button"
-                class="grid size-7 place-items-center rounded-md"
+                class="grid size-7 place-items-center rounded-md touch:size-11"
                 :class="view === name ? 'bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
                 :aria-pressed="view === name"
                 :aria-label="VIEW_TEXT[name]"
@@ -614,7 +665,8 @@ const side = ref<'chat' | 'canvas'>('canvas');
               ><Icon :name="VIEW_ICON[name]" :size="15" /></button>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
+          <!-- On the phone one row that scrolls sideways, inside its box: the frame keeps the height. -->
+          <div class="flex flex-wrap items-center gap-1.5 phone:shrink-0 phone:flex-nowrap phone:overflow-x-auto phone:pb-1 phone:*:shrink-0">
             <button type="button" class="btn px-2.5 py-1 text-xs" :class="{ 'btn-primary': pickMode === 'comment' }" :aria-pressed="pickMode === 'comment'" @click="setMode('comment')">
               <Icon name="comment" :size="13" />Commenta
             </button>
@@ -664,7 +716,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
                 <template v-else>
                   Fatta con
                   <template v-if="entry.design.style === null">nessuno stile</template>
-                  <button v-else type="button" class="text-ink underline hover:text-accent" title="Leggi lo stile" @click="detail = { kind: 'style', id: entry.design.style, title: styleNameOf(entry.design.style) ?? entry.design.style }">
+                  <button v-else type="button" class="text-ink underline hover:text-accent touch:py-2.5" title="Leggi lo stile" @click="detail = { kind: 'style', id: entry.design.style, title: styleNameOf(entry.design.style) ?? entry.design.style }">
                     stile {{ styleNameOf(entry.design.style) ?? entry.design.style }}
                   </button>
                   ·
@@ -672,7 +724,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
                   <template v-else>
                     skill:
                     <template v-for="(skill, at) in entry.design.skills" :key="skill">
-                      <button type="button" class="text-ink underline hover:text-accent" title="Leggi la skill" @click="detail = { kind: 'skill', id: skill, title: skillNameOf(skill) ?? skill }">{{ skillNameOf(skill) ?? skill }}</button><template v-if="at < entry.design.skills.length - 1">, </template>
+                      <button type="button" class="text-ink underline hover:text-accent touch:py-2.5" title="Leggi la skill" @click="detail = { kind: 'skill', id: skill, title: skillNameOf(skill) ?? skill }">{{ skillNameOf(skill) ?? skill }}</button><template v-if="at < entry.design.skills.length - 1">, </template>
                     </template>
                   </template>
                 </template>
@@ -684,12 +736,15 @@ const side = ref<'chat' | 'canvas'>('canvas');
           <p v-if="exportProblem !== null" class="text-xs text-warn" role="alert">{{ exportProblem }}</p>
           <p v-if="notice !== null" class="flex items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs" role="status">
             <Icon name="saved" :size="13" /><span class="flex-1">{{ notice }}</span>
-            <button type="button" class="rounded p-0.5 hover:bg-surface-2" aria-label="Chiudi" @click="notice = null"><Icon name="close" :size="12" /></button>
+            <button type="button" class="rounded p-0.5 hover:bg-surface-2 touch:grid touch:size-11 touch:shrink-0 touch:place-items-center" aria-label="Chiudi" @click="notice = null"><Icon name="close" :size="12" /></button>
           </p>
 
           <!-- The frames; on the whole window with "Schermo intero". -->
-          <div class="flex min-h-[480px] flex-1 gap-2" :class="{ 'fixed inset-0 z-50 bg-[var(--bg)] p-3 pt-11': fullscreen }">
-            <div v-if="fullscreen" class="fixed inset-x-3 top-2 z-50 flex items-center gap-2 text-xs text-muted">
+          <div
+            class="flex min-h-[480px] flex-1 gap-2 phone:flex-col"
+            :class="{ 'fixed inset-0 z-50 bg-[var(--bg)] p-3 pt-11 phone:top-[var(--vv-top,0px)] phone:bottom-auto phone:h-[var(--vv-height,100dvh)] phone:min-h-0 phone:pt-[calc(var(--safe-top)+3.75rem)] phone:pb-[calc(var(--safe-bottom)+0.75rem)]': fullscreen }"
+          >
+            <div v-if="fullscreen" class="fixed inset-x-3 top-2 z-50 flex items-center gap-2 text-xs text-muted phone:top-[calc(var(--vv-top,0px)+var(--safe-top)+0.5rem)]">
               <span class="font-mono">{{ shown?.path.split('/').at(-1) }}<template v-if="comparing && other !== null"> · {{ other.path.split('/').at(-1) }}</template></span>
               <label v-if="comparing" class="flex items-center gap-1.5">
                 <input v-model="scrollTogether" type="checkbox" class="accent-[var(--accent)]" />Scorri insieme
@@ -698,10 +753,17 @@ const side = ref<'chat' | 'canvas'>('canvas');
                 <Icon name="fullscreen-exit" :size="13" />Esci
               </button>
             </div>
-            <div class="flex min-w-0 flex-1 flex-col items-center overflow-auto rounded-lg border border-line bg-surface-2 p-2">
+            <div class="flex min-w-0 flex-1 flex-col items-center overflow-auto rounded-lg border border-line bg-surface-2 p-2 phone:overflow-hidden phone:p-1">
               <p v-if="shownProblem !== null" class="text-sm text-warn" role="alert">{{ shownProblem }}</p>
               <p v-else-if="shown === null" class="text-sm text-muted">Leggo il mockup…</p>
-              <div v-else class="h-full min-h-[460px] overflow-hidden rounded border border-line" :style="frameStyle">
+              <div
+                v-else
+                ref="shownBox"
+                class="h-full min-h-[460px] overflow-hidden rounded border border-line phone:relative phone:w-full"
+                :class="fullscreen ? 'phone:min-h-0' : 'phone:min-h-[min(460px,60dvh)]'"
+                :style="phone ? undefined : frameStyle"
+              >
+                <div :class="phone ? 'absolute top-0 left-0 origin-top-left' : 'size-full'" :style="phone ? fitStyle(shownFit) : undefined">
                 <StudioFrame
                   ref="shownFrame"
                   :key="shown.sha256"
@@ -713,11 +775,19 @@ const side = ref<'chat' | 'canvas'>('canvas');
                   @pick="onPick"
                   @scroll="(x: number, y: number) => followScroll('shown', x, y)"
                 />
+                </div>
               </div>
             </div>
-            <div v-if="comparing" class="flex min-w-0 flex-1 flex-col items-center gap-2 overflow-auto rounded-lg border border-line bg-surface-2 p-2">
+            <div v-if="comparing" class="flex min-w-0 flex-1 flex-col items-center gap-2 overflow-auto rounded-lg border border-line bg-surface-2 p-2 phone:overflow-hidden phone:p-1">
               <p v-if="otherProblem !== null" class="text-sm text-warn" role="alert">{{ otherProblem }}</p>
-              <div v-else-if="other !== null" class="h-full min-h-[420px] overflow-hidden rounded border border-line" :style="frameStyle">
+              <div
+                v-else-if="other !== null"
+                ref="otherBox"
+                class="h-full min-h-[420px] overflow-hidden rounded border border-line phone:relative phone:w-full"
+                :class="fullscreen ? 'phone:min-h-0' : 'phone:min-h-[min(420px,60dvh)]'"
+                :style="phone ? undefined : frameStyle"
+              >
+                <div :class="phone ? 'absolute top-0 left-0 origin-top-left' : 'size-full'" :style="phone ? fitStyle(otherFit) : undefined">
                 <StudioFrame
                   ref="otherFrame"
                   :key="other.sha256"
@@ -726,6 +796,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
                   mode="studio"
                   @scroll="(x: number, y: number) => followScroll('other', x, y)"
                 />
+                </div>
               </div>
             </div>
             <!-- Comments and edit in a window the user moves (choice after the first trial). -->

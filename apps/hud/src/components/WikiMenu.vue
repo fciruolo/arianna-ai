@@ -110,7 +110,7 @@ function choose(item: WikiMenuItem): void {
         :aria-checked="item.on === undefined ? undefined : item.on"
         :aria-disabled="item.off === undefined ? undefined : 'true'"
         :aria-describedby="item.off !== undefined ? `wiki-menu-off-${item.id}` : undefined"
-        class="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-2 focus-visible:bg-surface-2"
+        class="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-2 touch:py-3 focus-visible:bg-surface-2"
         :class="[item.off !== undefined ? 'cursor-default text-muted' : item.danger === true ? 'text-danger' : 'text-ink', item.on === true ? 'font-semibold' : '']"
         @click="choose(item)"
       >

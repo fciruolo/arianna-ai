@@ -319,3 +319,19 @@ export function nextEnabled(entries: readonly PlusEntry[], index: number, delta:
   }
   return -1;
 }
+
+/**
+ * Whether Enter sends the message (D-293). On a keyboard it does, Shift+Enter
+ * goes to a new line; on the phone (a finger on a narrow screen) the key of
+ * the on-screen keyboard goes to a new line and the button sends, as in the
+ * apps of messages: a stray tap on «a capo» never sends half a thought.
+ */
+export function enterSends(event: { key: string; shiftKey: boolean; isComposing?: boolean }, phone: boolean): boolean {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing === true) return false;
+  return !phone;
+}
+
+/** The phone for the composer: a finger and a narrow screen, read from the media queries of the page. */
+export function phoneComposer(matches: (query: string) => boolean): boolean {
+  return matches('(pointer: coarse)') && matches('(width < 48rem)');
+}

@@ -44,8 +44,8 @@ const isNew = computed(() => props.proposal.before === null);
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="permission-confirm-title">
-    <div class="hud-card flex max-h-[90vh] w-full max-w-xl flex-col gap-3 p-4">
+  <div class="phone-overlay-bottom fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="permission-confirm-title">
+    <div class="phone-sheet-bottom hud-card flex max-h-[90vh] w-full max-w-xl flex-col gap-3 p-4">
       <h2 id="permission-confirm-title" class="font-hud text-[13px] font-semibold tracking-[0.14em] uppercase">
         {{ isNew ? `Creare ${proposal.name} con questi permessi?` : `Cambiare i permessi di ${proposal.name}?` }}
       </h2>

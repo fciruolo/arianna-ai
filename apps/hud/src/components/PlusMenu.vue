@@ -114,7 +114,7 @@ defineExpose({ open: () => (open.value = true) });
     <button
       ref="button"
       type="button"
-      class="grid size-[30px] place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
+      class="grid size-[30px] place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink touch:size-11"
       :class="open ? 'bg-surface-2 text-ink' : ''"
       aria-label="Altre azioni"
       title="Comandi, allegati e modello"

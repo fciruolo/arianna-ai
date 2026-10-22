@@ -228,7 +228,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
         <h2 id="god-clone" class="mb-2 text-[16px] font-semibold">Clone</h2>
         <div class="flex flex-wrap items-center gap-2 text-[14px]">
           <Icon name="branch" :size="14" />
-          <span class="min-w-0 flex-1 font-mono text-[13px] break-words">{{ cloneText(status.main) }}</span>
+          <span class="min-w-0 flex-1 font-mono text-[13px] break-words phone:basis-[calc(100%-22px)]">{{ cloneText(status.main) }}</span>
           <button type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="syncing || status.project === 'wrong-path'" @click="sync">
             {{ syncing ? 'Aggiorno…' : status.main.exists ? 'Aggiorna il clone' : 'Crea il clone' }}
           </button>
@@ -255,7 +255,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
         <h2 id="god-chats" class="mb-2 text-[16px] font-semibold">Conversazioni con GOD</h2>
         <ul class="flex flex-col">
           <li v-for="conversation in status.conversations" :key="conversation.id" class="border-b border-line last:border-b-0">
-            <button type="button" class="flex w-full items-baseline gap-3 rounded-lg px-2 py-2 text-left hover:bg-surface" @click="emit('open', conversation.id)">
+            <button type="button" class="flex w-full items-baseline gap-3 rounded-lg px-2 py-2 text-left hover:bg-surface touch:min-h-11" @click="emit('open', conversation.id)">
               <span class="min-w-0 flex-1 truncate text-[14.5px]">{{ conversation.title ?? 'Conversazione senza titolo' }}</span>
               <span class="shrink-0 text-[13px] text-muted tabular-nums">{{ when(conversation.lastAt) }}</span>
             </button>
@@ -270,13 +270,13 @@ onBeforeUnmount(() => window.clearInterval(timer));
         <header class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 class="text-[16px] font-semibold">{{ plan.title }}</h2>
           <span class="font-mono text-[12.5px] text-muted">{{ when(plan.createdAt) }}</span>
-          <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[13.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
+          <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[13.5px] text-muted underline-offset-2 hover:text-ink hover:underline touch:min-h-11" @click="emit('open', plan.conversationId)">chat con GOD</button>
           <div v-if="planLandActionsOf(plan.subtasks).length > 0" class="flex w-full flex-wrap gap-2">
             <button
               v-for="action in planLandActionsOf(plan.subtasks)"
               :key="action"
               type="button"
-              class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50"
+              class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50 touch:min-h-11"
               :class="LAND_CLASS[action]"
               :disabled="acting !== null || busyLanding || blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) !== null"
               :title="blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) ?? undefined"
@@ -289,8 +289,8 @@ onBeforeUnmount(() => window.clearInterval(timer));
           <div v-if="rejecting !== null && rejecting.kind === 'plans' && rejecting.id === plan.id" class="w-full">
             <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[14px]" placeholder="Cosa non va? Lo leggono i Coder del piano, nel cloud: niente dati personali." />
             <div class="mt-1 flex gap-2">
-              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
-              <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px]" @click="rejecting = null">Annulla</button>
+              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50 touch:min-h-11" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
+              <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] touch:min-h-11" @click="rejecting = null">Annulla</button>
             </div>
           </div>
         </header>
@@ -301,7 +301,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
               <span class="min-w-0 flex-1 text-[14.5px] font-medium">{{ subtask.title }}</span>
               <span class="rounded-[5px] border px-1.5 py-0.5 font-mono text-[12px] tracking-[0.06em] uppercase" :class="TONE_CLASS[badgeOf(subtask).tone]">{{ badgeOf(subtask).text }}</span>
             </div>
-            <p class="mt-1 font-mono text-[12.5px] text-muted">
+            <p class="mt-1 font-mono text-[12.5px] text-muted phone:break-all">
               {{ subtask.branch }} · {{ subtask.path }}<template v-if="waitsText(subtask.blockedBy) !== null"> · {{ waitsText(subtask.blockedBy) }}</template>
             </p>
             <p v-if="subtask.reason !== null" class="mt-1 text-[13.5px]">{{ subtask.reason }}</p>
@@ -318,18 +318,18 @@ onBeforeUnmount(() => window.clearInterval(timer));
             <div v-if="rejecting !== null && rejecting.kind === 'subtasks' && rejecting.id === subtask.id" class="mt-2">
               <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[14px]" placeholder="Cosa non va? Lo legge il Coder, nel cloud: niente dati personali." />
               <div class="mt-1 flex gap-2">
-                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
-                <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px]" @click="rejecting = null">Annulla</button>
+                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50 touch:min-h-11" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
+                <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] touch:min-h-11" @click="rejecting = null">Annulla</button>
               </div>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
-              <button v-if="subtask.conversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong" @click="emit('open', subtask.conversationId)">Chat del Coder</button>
-              <button v-if="subtask.reviewConversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong" @click="emit('open', subtask.reviewConversationId)">Chat del Reviewer</button>
+              <button v-if="subtask.conversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong touch:min-h-11" @click="emit('open', subtask.conversationId)">Chat del Coder</button>
+              <button v-if="subtask.reviewConversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong touch:min-h-11" @click="emit('open', subtask.reviewConversationId)">Chat del Reviewer</button>
               <button
                 v-for="action in landActionsOf(subtask)"
                 :key="`land-${action}`"
                 type="button"
-                class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50"
+                class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50 touch:min-h-11"
                 :class="LAND_CLASS[action]"
                 :disabled="acting !== null || busyLanding || blockOf(subtask.trial === true) !== null"
                 :title="blockOf(subtask.trial === true) ?? undefined"
@@ -342,7 +342,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
                 v-for="action in actionsOf(subtask)"
                 :key="action"
                 type="button"
-                class="rounded-lg border px-2.5 py-1 text-[13.5px] disabled:opacity-50"
+                class="rounded-lg border px-2.5 py-1 text-[13.5px] disabled:opacity-50 touch:min-h-11"
                 :class="action === 'discard' ? 'border-danger/50 text-danger hover:bg-danger/10' : 'border-line hover:border-line-strong'"
                 :disabled="acting !== null"
                 @click="act(subtask, action)"

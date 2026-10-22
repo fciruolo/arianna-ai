@@ -54,8 +54,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="opened === null && emit('close')">
-    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="attach-title" tabindex="-1" class="hud-card flex max-h-[90vh] w-full max-w-[1100px] flex-col bg-surface outline-none">
+  <div class="phone-overlay fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="opened === null && emit('close')">
+    <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="attach-title" tabindex="-1" class="phone-sheet hud-card flex max-h-[90vh] w-full max-w-[1100px] flex-col bg-surface outline-none">
       <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <Icon name="gateway" :size="16" class="text-muted" />
         <h2 id="attach-title" class="min-w-0 flex-1 truncate font-medium">{{ opened === null ? `Allega una nota privata di ${project}` : opened.title }}</h2>

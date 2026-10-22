@@ -137,7 +137,7 @@ onMounted(async () => {
       <div v-for="group in shown" :key="group.show" class="flex flex-col gap-0.5">
         <button
           type="button"
-          class="mx-0.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-left text-[12.5px] font-semibold text-muted hover:bg-surface-2 hover:text-ink disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted"
+          class="mx-0.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-left text-[12.5px] font-semibold text-muted hover:bg-surface-2 hover:text-ink disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted touch:min-h-11"
           :aria-expanded="isSeriesOpen(group.show, opened, searching)"
           :disabled="searching"
           @click="opened = toggleSeries(opened, group.show)"
@@ -151,7 +151,7 @@ onMounted(async () => {
             v-for="person in group.members"
             :key="person.id"
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-left text-[14px] hover:bg-surface-2 hover:text-ink"
+            class="rounded-lg px-2.5 py-1.5 text-left text-[14px] hover:bg-surface-2 hover:text-ink touch:min-h-11"
             :class="chosen === person.id ? 'bg-surface-2 font-semibold text-ink' : 'text-muted'"
             :aria-pressed="chosen === person.id"
             @click="chosen = person.id"

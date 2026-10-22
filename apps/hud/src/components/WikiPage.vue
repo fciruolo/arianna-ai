@@ -1065,7 +1065,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center gap-1 px-2 pt-3 pb-1">
         <button
           type="button"
-          class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left font-semibold hover:bg-surface"
+          class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left font-semibold hover:bg-surface touch:min-h-11"
           :class="[shownPath === '_indice' ? 'text-accent' : '', dropOver === '' ? 'bg-accent/15' : '']"
           @click="show({ kind: 'index', path: '_indice' })"
           @dragover="dragOver($event, '')"
@@ -1075,13 +1075,13 @@ onBeforeUnmount(() => {
         >
           <Icon name="wiki" :size="15" /><span class="truncate">Wiki</span>
         </button>
-        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink" title="Nuova pagina o cartella alla radice" aria-label="Nuova pagina o cartella alla radice" aria-haspopup="menu" :aria-expanded="menuOn(null)" @click="onDotsMenu($event, null)">
+        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink touch:size-11" title="Nuova pagina o cartella alla radice" aria-label="Nuova pagina o cartella alla radice" aria-haspopup="menu" :aria-expanded="menuOn(null)" @click="onDotsMenu($event, null)">
           <Icon name="new" :size="15" />
         </button>
         <button type="button" class="hidden size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink md:grid" title="Chiudi l’albero" aria-label="Chiudi l’albero" @click="setClosed(true)">
           <Icon name="sidebar-collapse" :size="15" />
         </button>
-        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink md:hidden" aria-label="Chiudi l’albero" @click="phoneTree = false">
+        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface hover:text-ink md:hidden touch:size-11" aria-label="Chiudi l’albero" @click="phoneTree = false">
           <Icon name="close" :size="15" />
         </button>
       </div>
@@ -1125,14 +1125,14 @@ onBeforeUnmount(() => {
               v-if="row.node.kind === 'folder'"
               type="button"
               tabindex="-1"
-              class="rounded p-0.5 text-muted hover:text-ink"
+              class="rounded p-0.5 text-muted hover:text-ink touch:grid touch:size-9 touch:place-items-center"
               :aria-label="open.has(row.node.path) ? `Chiudi ${row.node.name}` : `Apri ${row.node.name}`"
               :aria-expanded="open.has(row.node.path)"
               @click="toggle(row.node.path)"
             >
               <Icon :name="open.has(row.node.path) ? 'sort-down' : 'expand'" :size="13" />
             </button>
-            <span v-else class="inline-block w-[18px]" />
+            <span v-else class="inline-block w-[18px] touch:w-9" />
 
             <form v-if="inline !== null && inline.mode === 'rename' && inline.at === keyOf(row.node)" class="min-w-0 flex-1 py-0.5 pr-1" @submit.prevent="submitInline">
               <input
@@ -1152,7 +1152,7 @@ onBeforeUnmount(() => {
             <button
               v-else
               type="button"
-              class="wiki-row-name min-w-0 flex-1 truncate rounded-md px-1.5 py-1 text-left"
+              class="wiki-row-name min-w-0 flex-1 truncate rounded-md px-1.5 py-1 text-left touch:min-h-11"
               :class="[row.node.kind === 'folder' ? 'font-medium' : '', rowShown(row.node) ? 'text-accent' : '']"
               :title="`wiki/${row.node.path} · clic destro per le azioni`"
               :aria-current="rowShown(row.node) ? 'page' : undefined"
@@ -1166,7 +1166,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="row.node.kind === 'folder'"
                 type="button"
-                class="grid size-6 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink"
+                class="grid size-6 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink touch:size-11"
                 :title="`Nuova pagina in ${row.node.name}`"
                 :aria-label="`Nuova pagina in ${row.node.name}`"
                 @click="startNew({ kind: 'folder', path: row.node.path }, 'page')"
@@ -1175,7 +1175,7 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="grid size-6 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink"
+                class="grid size-6 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink touch:size-11"
                 :title="`Azioni su ${row.node.name}`"
                 :aria-label="`Azioni su ${row.node.name}`"
                 aria-haspopup="menu"
@@ -1210,7 +1210,7 @@ onBeforeUnmount(() => {
       <div class="border-t border-line px-2 py-2">
         <button
           type="button"
-          class="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left hover:bg-surface"
+          class="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left hover:bg-surface touch:min-h-11"
           :class="view.kind === 'proposals' ? 'bg-surface text-accent' : ''"
           :aria-current="view.kind === 'proposals' ? 'page' : undefined"
           @click="show({ kind: 'proposals' })"
@@ -1241,7 +1241,7 @@ onBeforeUnmount(() => {
     <!-- The page -->
     <main class="min-w-0 flex-1 overflow-y-auto" aria-labelledby="wiki-title">
       <div class="sticky top-0 z-10 flex items-center gap-2 bg-bg/90 px-3 py-2 backdrop-blur md:px-4">
-        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink md:hidden" aria-label="Apri l’albero della Wiki" @click="phoneTree = true">
+        <button type="button" class="grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink md:hidden touch:size-11" aria-label="Apri l’albero della Wiki" @click="phoneTree = true">
           <Icon name="sidebar-expand" :size="16" />
         </button>
         <button v-if="treeClosed" type="button" class="hidden size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink md:grid" title="Apri l’albero" aria-label="Apri l’albero" @click="setClosed(false)">
@@ -1249,7 +1249,7 @@ onBeforeUnmount(() => {
         </button>
         <nav class="flex min-w-0 flex-1 items-center gap-1 text-[13.5px] text-muted" aria-label="Percorso">
           <template v-if="view.kind === 'proposals'">
-            <button type="button" class="truncate rounded px-1 hover:bg-surface-2 hover:text-ink" @click="show({ kind: 'index', path: '_indice' })">Wiki</button>
+            <button type="button" class="truncate rounded px-1 hover:bg-surface-2 hover:text-ink touch:min-h-11" @click="show({ kind: 'index', path: '_indice' })">Wiki</button>
             <span aria-hidden="true">›</span><span class="truncate text-ink">Proposte</span>
           </template>
           <template v-else>
@@ -1257,7 +1257,7 @@ onBeforeUnmount(() => {
               <span v-if="at > 0" aria-hidden="true">›</span>
               <button
                 type="button"
-                class="truncate rounded px-1 hover:bg-surface-2 hover:text-ink"
+                class="truncate rounded px-1 hover:bg-surface-2 hover:text-ink touch:min-h-11"
                 :class="view.kind === 'index' && at === crumbs.length - 1 ? 'text-ink' : ''"
                 @click="show({ kind: 'index', path: indexPath(crumb.folder) })"
               >
@@ -1275,7 +1275,7 @@ onBeforeUnmount(() => {
         <button
           v-if="view.kind === 'page' && page !== null"
           type="button"
-          class="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+          class="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink touch:size-11"
           title="Azioni sulla pagina"
           aria-label="Azioni sulla pagina"
           aria-haspopup="menu"
@@ -1321,7 +1321,7 @@ onBeforeUnmount(() => {
             <p v-if="proposalProblem(proposal) !== undefined" class="text-xs text-danger">{{ proposalProblem(proposal) }}</p>
             <p v-if="proposal.source !== null" class="text-[13.5px]">
               <span class="text-muted">Da</span>
-              <button type="button" class="ml-1 hover:text-accent hover:underline" @click="emit('open-graph', proposal.source.id)">{{ proposal.source.title }}</button>
+              <button type="button" class="ml-1 hover:text-accent hover:underline touch:min-h-11" @click="emit('open-graph', proposal.source.id)">{{ proposal.source.title }}</button>
             </p>
             <p v-if="proposal.reason !== ''" class="text-[13.5px] text-muted">{{ proposal.reason }}</p>
             <p class="text-[12.5px] text-muted">+{{ proposal.diff.added }} −{{ proposal.diff.removed }}</p>
@@ -1372,7 +1372,7 @@ onBeforeUnmount(() => {
 
           <!-- An index: composed by the code, only read -->
           <article v-else-if="page !== null && page.kind === 'index'">
-            <h1 id="wiki-title" class="text-[32px] leading-tight font-bold">{{ page.title }}</h1>
+            <h1 id="wiki-title" class="text-[32px] leading-tight font-bold phone:text-[26px]">{{ page.title }}</h1>
             <p class="mt-1 text-[12.5px] text-muted">Indice composto da Arianna: si aggiorna da solo con le pagine della cartella.</p>
             <MarkdownText class="mt-5" :source="page.body" :wikilink="follow" />
           </article>
@@ -1393,7 +1393,8 @@ onBeforeUnmount(() => {
               type="text"
               maxlength="80"
               autocomplete="off"
-              class="w-full bg-transparent text-[32px] leading-tight font-bold outline-none placeholder:text-muted/60"
+              class="w-full bg-transparent text-[32px] leading-tight font-bold outline-none placeholder:text-muted/60 phone:text-[26px]"
+              data-own-size
               placeholder="Senza titolo"
               aria-label="Titolo della pagina"
               @keydown="onTitleKey"
@@ -1405,7 +1406,7 @@ onBeforeUnmount(() => {
             <details v-if="page.versions.length > 0" class="mt-8 border-t border-line pt-3 text-[13.5px]">
               <summary class="flex cursor-pointer items-center gap-1.5 font-semibold text-muted"><Icon name="history" :size="14" />Versioni precedenti ({{ page.versions.length }})</summary>
               <ul class="mt-1.5 flex flex-col gap-1">
-                <li v-for="version in page.versions" :key="version.id" class="flex items-center gap-2">
+                <li v-for="version in page.versions" :key="version.id" class="flex items-center gap-2 phone:flex-wrap">
                   <span class="font-mono text-[12.5px] text-muted">{{ versionText(version.at) }}</span>
                   <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :aria-pressed="comparing?.id === version.id" :disabled="comparing?.busy === true || restoreBusy" @click="compare(version.id, version.at)"><Icon name="compare" :size="12" />Confronta</button>
                   <button type="button" class="btn px-2 py-0.5 text-[12.5px]" :disabled="comparing?.busy === true || restoreBusy" @click="restoring = version.id; restoreProblem = null; comparing = null"><Icon name="retry" :size="12" />Ripristina</button>

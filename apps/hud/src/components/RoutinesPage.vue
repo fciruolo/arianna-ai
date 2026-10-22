@@ -49,6 +49,7 @@ import {
   type TileChoice,
 } from '../lib/routines.ts';
 import { readView, VIEW_CALENDAR_TEXT, VIEW_LIST_TEXT, writeView, type RoutinesView } from '../lib/routine-calendar.ts';
+import { DAY_VIEW_TEXT } from '../lib/routine-day.ts';
 import Icon from './Icon.vue';
 import PageHeader from './PageHeader.vue';
 import RoutineCalendar from './RoutineCalendar.vue';
@@ -265,11 +266,11 @@ onBeforeUnmount(() => {
           {{ ROUTINES_INTRO }}
           <template #actions>
             <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Vista">
-              <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" :class="view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'list'" @click="view = 'list'">
+              <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px] touch:min-h-11 touch:px-3.5" :class="view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'list'" @click="view = 'list'">
                 <Icon name="view-list" :size="14" />{{ VIEW_LIST_TEXT }}
               </button>
-              <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="view === 'calendar' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'calendar'" @click="view = 'calendar'">
-                <Icon name="calendar" :size="14" />{{ VIEW_CALENDAR_TEXT }}
+              <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px] touch:min-h-11 touch:px-3.5" :class="view === 'calendar' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === 'calendar'" @click="view = 'calendar'">
+                <Icon name="calendar" :size="14" /><span class="phone:hidden">{{ VIEW_CALENDAR_TEXT }}</span><span class="md:hidden">{{ DAY_VIEW_TEXT }}</span>
               </button>
             </div>
             <button v-if="editing !== 'new'" type="button" class="btn btn-primary px-2.5 py-1 text-[13.5px]" @click="startNew">
@@ -302,15 +303,15 @@ onBeforeUnmount(() => {
                 v-for="item in DAY_LETTERS"
                 :key="item.day"
                 type="button"
-                class="grid size-9 place-items-center rounded-lg border font-mono text-[14px] font-semibold"
+                class="grid size-9 place-items-center rounded-lg border font-mono touch:size-11 text-[14px] font-semibold"
                 :class="form.days.includes(item.day) ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong text-muted hover:text-ink'"
                 :aria-pressed="form.days.includes(item.day)"
                 :aria-label="item.name"
                 :title="item.name"
                 @click="form.days = toggled(form.days, item.day, ALL_DAYS)"
               >{{ item.letter }}</button>
-              <button type="button" class="rounded-md px-2 text-[13px] text-muted hover:text-ink" @click="form.days = [...ALL_DAYS]">Tutti</button>
-              <button type="button" class="rounded-md px-2 text-[13px] text-muted hover:text-ink" @click="form.days = [1, 2, 3, 4, 5]">Lun-ven</button>
+              <button type="button" class="rounded-md px-2 text-[13px] text-muted hover:text-ink touch:min-h-11" @click="form.days = [...ALL_DAYS]">Tutti</button>
+              <button type="button" class="rounded-md px-2 text-[13px] text-muted hover:text-ink touch:min-h-11" @click="form.days = [1, 2, 3, 4, 5]">Lun-ven</button>
             </div>
           </fieldset>
           <label class="flex w-fit flex-col gap-1 text-[13.5px]">
@@ -359,7 +360,7 @@ onBeforeUnmount(() => {
                 v-for="(choice, index) in CHANNEL_CHOICES"
                 :key="choice.id"
                 type="button"
-                class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]"
+                class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px] touch:min-h-11"
                 :class="[form.channel === choice.id ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink', index > 0 ? 'border-l border-line-strong' : '']"
                 :aria-pressed="form.channel === choice.id"
                 :title="choice.hint"
@@ -389,12 +390,12 @@ onBeforeUnmount(() => {
           <p v-if="formError !== null" class="text-[13.5px] text-danger" role="alert">{{ formError }}</p>
           <div class="flex flex-wrap items-center justify-end gap-2">
             <span v-if="problemOfForm !== null" class="mr-auto text-[13px] text-muted">{{ problemOfForm }}</span>
-            <button type="button" class="rounded-md px-2.5 py-1 text-[13.5px] text-muted hover:text-ink" @click="closeForm">Annulla</button>
+            <button type="button" class="rounded-md px-2.5 py-1 text-[13.5px] text-muted hover:text-ink touch:min-h-11" @click="closeForm">Annulla</button>
             <button type="submit" class="btn btn-primary px-3 py-1 text-[13.5px]" :disabled="problemOfForm !== null || saving">{{ editing === 'new' ? 'Crea la routine' : 'Salva' }}</button>
           </div>
         </form>
 
-        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :focus="focus" @edit="editFromCalendar" @create="startNewAt" @focused="focus = null" @changed="moved" />
+        <RoutineCalendar v-if="view === 'calendar'" :routines="routines" :focus="focus" @edit="editFromCalendar" @create="startNewAt" @focused="focus = null" @changed="moved" @decide="decide" />
 
         <div v-else-if="loaded && routines.length === 0 && editing === null && problem === null" class="rounded-xl border border-dashed border-line-strong px-5 py-9 text-center text-muted">
           <b class="mb-1.5 block text-[16px] text-ink">{{ ROUTINES_EMPTY_TITLE }}</b>
@@ -420,7 +421,7 @@ onBeforeUnmount(() => {
               <button
                 v-else
                 type="button"
-                class="shrink-0 rounded-full border px-2.5 py-0.5 text-[12.5px] font-medium"
+                class="shrink-0 rounded-full border px-2.5 py-0.5 text-[12.5px] font-medium touch:min-h-9"
                 :class="routine.status === 'active' ? 'border-ok/60 text-ok' : 'border-line-strong text-muted'"
                 :aria-pressed="routine.status === 'active'"
                 :disabled="busy.has(routine.id)"
@@ -431,7 +432,7 @@ onBeforeUnmount(() => {
 
             <div v-if="confirming === routine.id" class="mx-3.5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface px-2.5 py-2 text-[13px]" role="alertdialog" :aria-label="RETIRE_CONFIRM_TEXT">
               <span class="flex-1">{{ RETIRE_CONFIRM_TEXT }}</span>
-              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" @click="confirming = null">Annulla</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink touch:min-h-11" @click="confirming = null">Annulla</button>
               <button type="button" class="btn btn-danger px-2.5 py-0.5 text-[13px]" @click="retire(routine)">Togli</button>
             </div>
 
@@ -453,14 +454,14 @@ onBeforeUnmount(() => {
               </button>
               <button type="button" class="btn px-2.5 py-0.5 text-[13px]" :disabled="busy.has(routine.id)" @click="decide(routine, false)">{{ DISCARD_TEXT }}</button>
             </footer>
-            <footer v-else class="flex flex-wrap items-center gap-2 border-t border-dashed border-line px-3.5 py-2 text-[13px]">
+            <footer v-else class="flex flex-wrap items-center gap-2 border-t border-dashed border-line px-3.5 py-2 text-[13px] phone:gap-x-0.5">
               <button type="button" class="btn px-2.5 py-0.5 text-[13px]" :title="TRY_HINT" :disabled="busy.has(routine.id) || routine.conversationArchived" @click="tryNow(routine)">
                 <Icon name="play" :size="13" />{{ TRY_TEXT }}
               </button>
-              <button type="button" class="rounded-md px-2 py-0.5 text-accent hover:underline" @click="emit('open', routine.conversationId)">Apri la chat</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-accent hover:underline touch:min-h-11" @click="emit('open', routine.conversationId)">Apri la chat</button>
               <span class="flex-1" />
-              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" @click="startEdit(routine)">Modifica</button>
-              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-danger" @click="confirming = routine.id">Togli</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink touch:min-h-11" @click="startEdit(routine)">Modifica</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-danger touch:min-h-11" @click="confirming = routine.id">Togli</button>
             </footer>
           </article>
         </div>

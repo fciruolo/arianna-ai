@@ -44,6 +44,7 @@ import {
   snapshotKey,
   type Target,
 } from '../lib/office/view.ts';
+import { agentAt, compactScale, compactView, TOUCH_PAD, WIDE_QUERY } from '../lib/office/phone.ts';
 import type { OfficeScene, SpriteState } from '../lib/office/scene3d.ts';
 import {
   areaAt,
@@ -109,6 +110,18 @@ const hint = ref<HTMLElement | null>(null);
 
 const motionQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-reduced-motion: reduce)');
 let reduceMotion = motionQuery?.matches ?? false;
+
+/**
+ * The phone (D-293, lib/office/phone.ts): below 48rem the plan keeps whole
+ * pixels, its whole height, and scrolls sideways under a finger (the page
+ * still scrolls vertically); a finger gets a wider box around an agent. From
+ * 48rem the window follows the user as it always has.
+ */
+const wideQuery = typeof window === 'undefined' ? undefined : window.matchMedia(WIDE_QUERY);
+const compact = ref(wideQuery !== undefined && !wideQuery.matches);
+const coarseQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(pointer: coarse)');
+/** The window on the map: on the phone it is the scroll box. */
+const viewport = ref<HTMLElement | null>(null);
 
 // Engine state: plain objects, outside Vue's reactivity (60 frames a second).
 interface AgentActor {
@@ -541,6 +554,16 @@ function follow(): void {
   const element = stage.value;
   if (element === null) return;
   const s = scale.value;
+  if (compact.value) {
+    // On the phone the finger scrolls the window; it follows the user only while a walk is under way.
+    if (element.style.transform !== '') element.style.transform = '';
+    const box = viewport.value;
+    if (box !== null && you.path.length > 0) {
+      const left = cameraOffset(box.clientWidth, W * s, you.x * s);
+      if (Math.abs(box.scrollLeft - left) > 1) box.scrollLeft = left;
+    }
+    return;
+  }
   const x = cameraOffset(viewW.value, W * s, you.x * s);
   const y = cameraOffset(viewH.value, H * s, (you.y - BODY_MIDDLE) * s);
   const transform = `translate(${String(-x)}px, ${String(-y)}px)`;
@@ -641,16 +664,18 @@ function onFocusChange(): void {
 function onClick(event: MouseEvent): void {
   const element = canvas.value;
   if (element === null) return;
-  element.focus();
+  // On the phone a tap must not move the scroll the finger chose.
+  if (compact.value) element.focus({ preventScroll: true });
+  else element.focus();
   wake();
   const box = element.getBoundingClientRect();
   const x = ((event.clientX - box.left) / box.width) * W;
   const y = ((event.clientY - box.top) / box.height) * H;
-  for (const [id, { actor }] of actors) {
-    if (x >= actor.x - 8 && x <= actor.x + 8 && y >= actor.y - 30 && y <= actor.y) {
-      clickAgent(id);
-      return;
-    }
+  const feet = [...actors].map(([id, { actor }]) => ({ id, x: actor.x, y: actor.y }));
+  const hit = agentAt(feet, x, y, coarseQuery?.matches === true ? TOUCH_PAD : 0);
+  if (hit !== null) {
+    clickAgent(hit);
+    return;
   }
   clickMap(x, y);
 }
@@ -820,6 +845,15 @@ function onMotion(event: MediaQueryListEvent): void {
 let resize: ResizeObserver | undefined;
 function fit(): void {
   const width = wrap.value?.clientWidth ?? W * 2;
+  if (compact.value) {
+    scale.value = compactScale(width, W);
+    const sized = compactView(width, W, H, scale.value);
+    viewW.value = sized.viewW;
+    viewH.value = sized.viewH;
+    void nextTick(sizeScene);
+    wake();
+    return;
+  }
   scale.value = officeScale(width, props.map.width);
   viewW.value = Math.min(W * scale.value, width);
   viewH.value = Math.min(H * scale.value, Math.max(MIN_VIEW_HEIGHT, window.innerHeight - PAGE_CHROME));
@@ -834,6 +868,18 @@ const tags = computed(() => {
 });
 const labelClass: Record<Label, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
+/** Crossing 48rem: the window changes kind; on the phone it starts with the user in the middle. */
+function onWide(): void {
+  compact.value = wideQuery !== undefined && !wideQuery.matches;
+  fit();
+  void nextTick(() => {
+    const box = viewport.value;
+    if (box === null) return;
+    box.scrollLeft = compact.value ? cameraOffset(box.clientWidth, W * scale.value, you.x * scale.value) : 0;
+    wake();
+  });
+}
+
 function setNameTag(id: string, element: unknown): void {
   if (element instanceof HTMLElement) nameTags.set(id, element);
   else nameTags.delete(id);
@@ -845,7 +891,8 @@ onMounted(() => {
   buildUserSheet();
   loadSheets();
   syncActors();
-  fit();
+  onWide();
+  wideQuery?.addEventListener('change', onWide);
   if (typeof ResizeObserver !== 'undefined' && wrap.value !== null) {
     resize = new ResizeObserver(fit);
     resize.observe(wrap.value);
@@ -871,6 +918,7 @@ onBeforeUnmount(() => {
   themeObserver?.disconnect();
   schemeQuery?.removeEventListener('change', readTheme);
   motionQuery?.removeEventListener('change', onMotion);
+  wideQuery?.removeEventListener('change', onWide);
 });
 
 function focus(): void {
@@ -882,7 +930,14 @@ defineExpose({ goTo, focus });
 <template>
   <div ref="wrap" class="min-w-0">
     <!-- overflow-clip, not hidden: focusing the canvas must never scroll the window on the map (D-229). -->
-    <div v-show="!is3d" class="relative mx-auto overflow-clip rounded-md border border-line-strong" :style="{ width: `${String(viewW)}px`, height: `${String(viewH)}px` }">
+    <!-- On the phone (D-293) the window scrolls sideways under a finger instead: the page keeps its vertical scroll. -->
+    <div
+      v-show="!is3d"
+      ref="viewport"
+      class="relative mx-auto rounded-md border border-line-strong"
+      :class="compact ? 'overflow-x-auto overflow-y-hidden overscroll-x-contain' : 'overflow-clip'"
+      :style="{ width: `${String(viewW)}px`, height: `${String(viewH)}px` }"
+    >
       <div ref="stage" class="absolute top-0 left-0" :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }">
         <canvas
           ref="canvas"
@@ -904,7 +959,7 @@ defineExpose({ goTo, focus });
           <span
             v-for="(tag, index) in tags"
             :key="index"
-            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap phone:px-1 phone:text-[11px] phone:leading-[13px]"
             :class="tag.muted ? 'text-muted' : 'text-ink'"
             :style="{ transform: `translate(${String(tag.x * scale)}px, ${String(tag.y * scale)}px) translateY(-100%)` }"
           >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
@@ -912,9 +967,9 @@ defineExpose({ goTo, focus });
             v-for="agent in snapshot.agents"
             :key="agent.id"
             :ref="(element) => { setNameTag(agent.id, element); }"
-            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
+            class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap phone:px-1 phone:text-[11px] phone:leading-[13px]"
           />
-          <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap">Tu</span>
+          <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap phone:px-1 phone:text-[11px] phone:leading-[13px]">Tu</span>
           <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
             <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
           </span>

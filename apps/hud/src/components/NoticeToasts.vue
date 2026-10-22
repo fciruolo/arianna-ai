@@ -66,7 +66,7 @@ const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(
 </script>
 
 <template>
-  <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(360px,calc(100vw-32px))] flex-col gap-2.5">
+  <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(360px,calc(100vw-32px))] flex-col gap-2.5 max-md:top-[calc(var(--vv-top,0px)+var(--safe-top)+0.5rem)] max-md:right-2 max-md:bottom-auto max-md:left-2 max-md:w-auto">
     <TransitionGroup name="toast">
       <article
         v-for="toast in toasts"

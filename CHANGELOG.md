@@ -4,6 +4,20 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Sul telefono una barra in basso con Chat, Attende te (col numero delle decisioni in attesa), Pensieri, Dashboard e Altro; la pagina Chat è l’elenco delle conversazioni, con Cerca e Nuova conversazione in alto, e una conversazione ha «‹» per tornare all’elenco; «Altro» (`/altro`) raccoglie le altre aree nei gruppi della barra sinistra, il tema e lo stato del gateway; «Attende te» (`/attende-te`) mostra decisioni e agenti (D-293, tappa 2).
+
+### Cambiato
+
+- Le tre schermate di accesso dal telefono (codice, passkey, Face ID) hanno il testo in alto, il pulsante a tutta larghezza in basso, i tre trattini del passo e il nome della macchina su Tailscale, e seguono la tastiera (D-293, tappa 8).
+- Tutte le pagine si usano sul telefono, a una colonna e con bersagli da 44 px: l’Ufficio con la scena da scorrere col dito e l’elenco degli agenti da toccare; la Conoscenza con trascinamento e pizzico sul grafo e un «Elenco» dei nodi con i vicini; lo Studio con «Chat | Anteprima» e il mockup scalato alla larghezza; Progetti, Clienti e Finanze con tabelle in schede o che scorrono nel loro riquadro; la Cardwall una colonna alla volta; le Routine in vista giorno con la striscia della settimana; Wiki, GOD, Pensieri, Dashboard, Seguiti e le sezioni delle Impostazioni ritoccate (D-293, tappa 7).
+- Impostazioni sul telefono: l’indice a righe da 48 px con la freccia, «‹ Impostazioni» grande, la barra di salvataggio più bassa; dal telefono «Dispositivi» dice «Solo sul Mac» e non si apre, le sezioni che fanno uscire dati si leggono ma si cambiano dal Mac, come vuole la porta remota del core (D-293, tappa 6).
+- Sul telefono Cerca, Nuova conversazione, la legenda e le altre finestre grandi occupano lo schermo intero, le conferme brevi diventano un foglio in basso, i pannelli laterali, le chiamate e gli avvisi rispettano isola e riga della casa (D-293, tappa 5).
+- «Attende te» sul telefono mette prima le decisioni in attesa e quelle decise altrove, poi gli agenti; dal telefono il pulsante di approvazione porta l’icona di Face ID e la carta dice che ogni decisione la chiede (D-293, tappa 4).
+- Sul telefono l’elenco delle conversazioni ha righe più alte e un «⋯» (o la pressione lunga) che apre un foglio in basso con Fissa, Rinomina, Archivia ed Elimina; nella conversazione il campo resta sopra la tastiera, «+», invia e ferma sono da 44 px, il tasto «a capo» va a capo (si invia col pulsante), le righe d’aiuto sui tasti lasciano il posto a una riga sull’etichetta, e le azioni dei messaggi diventano icone (D-293, tappa 3).
+- La chat sul telefono segue la tastiera: sotto i 768 px la pagina resta nella parte visibile della finestra, con i margini dell’isola e della riga della casa (`viewport-fit=cover`), e i campi a 16 px con il dito, così Safari non ingrandisce (D-293, tappa 1).
+
 ## [0.168.0] - 2026-10-22
 
 ### Aggiunto

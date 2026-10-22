@@ -6,6 +6,7 @@ import { diffRows } from '../lib/delegations.ts';
 import { calendarText, todayInput, type ImOverview } from '../lib/im-billing.ts';
 import { imDayText } from '../lib/im.ts';
 import { cardMoneyText, isAriannaProject, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards, type ProjectCardIm } from '../lib/project-cards.ts';
+import { panesStacked } from '../lib/project-panes.ts';
 import { isPartTab, nextIm, overdueInvoices, overdueText, partPressed, PROJECT_TABS, type ProjectTab } from '../lib/projects-page.ts';
 import {
   agoText,
@@ -363,6 +364,28 @@ async function showFile(path: string): Promise<void> {
   } finally {
     fileLoading.value = false;
   }
+}
+
+/**
+ * A file or a commit chosen in the list (D-293): on the phone the pane that
+ * shows it sits under the list, so the page scrolls to it; side by side
+ * nothing moves.
+ */
+const fileViewer = ref<HTMLElement | null>(null);
+const diffViewer = ref<HTMLElement | null>(null);
+function revealPane(pane: HTMLElement | null): void {
+  if (pane !== null && panesStacked(window.innerWidth)) pane.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+// After the answer: a smooth scroll started before is cut short when the pane grows with the text.
+async function pickFile(path: string): Promise<void> {
+  await showFile(path);
+  await nextTick();
+  if (selected.value === path) revealPane(fileViewer.value);
+}
+async function pickCommit(id: string): Promise<void> {
+  await showCommit(id);
+  await nextTick();
+  if (commit.value === id) revealPane(diffViewer.value);
 }
 
 /** "Apri" (D-117, tappa 3): the tab opened at the click, then pointed at the link of the core. */
@@ -792,7 +815,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           <div class="relative">
             <button
               type="button"
-              class="flex max-w-full items-center gap-2 text-[22px] leading-tight font-semibold"
+              class="flex max-w-full items-center gap-2 text-[22px] leading-tight font-semibold touch:min-h-11"
               :aria-expanded="switcherOpen"
               aria-haspopup="listbox"
               title="Cambia progetto"
@@ -807,7 +830,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                 type="button"
                 role="option"
                 :aria-selected="item.name === container.name"
-                class="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-accent/15"
+                class="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-accent/15 touch:min-h-11"
                 :class="item.name === container.name ? 'bg-accent/15' : ''"
                 @click="go(item.name)"
               >
@@ -818,7 +841,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             </div>
           </div>
           <p class="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13.5px] text-muted">
-            <button v-if="client" type="button" class="inline-flex items-center gap-1.5 font-medium text-ink hover:text-accent" title="Apri la scheda del cliente" @click="emit('client', client.id)">
+            <button v-if="client" type="button" class="inline-flex items-center gap-1.5 font-medium text-ink hover:text-accent touch:min-h-11" title="Apri la scheda del cliente" @click="emit('client', client.id)">
               <img v-if="client.logo" :src="logoUrl(client.id, client.logo) ?? ''" alt="" class="size-6 rounded-md border border-line bg-white object-contain" />
               <span v-else class="grid size-6 place-items-center rounded-md bg-accent/15 text-[12px] font-semibold text-accent">{{ initialsOf(client.displayName) }}</span>
               {{ client.displayName }} ›
@@ -829,7 +852,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           <p class="mt-0.5 truncate font-mono text-[13px] text-muted" :title="isPartTab(tab) && project ? project.absolute : container.absolute">{{ isPartTab(tab) && project ? project.absolute : container.absolute }}</p>
         </div>
         <div class="flex shrink-0 gap-1.5 max-md:w-full max-md:flex-wrap">
-          <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] whitespace-nowrap" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
+          <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] whitespace-nowrap touch:hidden" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
             <Icon name="code" :size="14" />Apri in VS Code
           </a>
           <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] whitespace-nowrap" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
@@ -870,13 +893,13 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       </div>
 
       <!-- The tabs in one row (D-191, after the trial): File, Git and Servizi read the part chosen, the others the whole project -->
-      <nav class="flex flex-wrap items-end gap-0.5 border-b border-line" aria-label="Schede del progetto">
+      <nav class="flex flex-wrap items-end gap-0.5 border-b border-line phone:flex-nowrap phone:overflow-x-auto" aria-label="Schede del progetto">
         <button
           v-for="item in PROJECT_TABS.filter((entry) => project !== null || !isPartTab(entry.id))"
           :key="item.id"
           type="button"
           :aria-current="tab === item.id ? 'true' : undefined"
-          class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px]"
+          class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px] phone:shrink-0 touch:min-h-11"
           :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
           @click="tab = item.id"
         >
@@ -900,7 +923,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           v-for="item in parts"
           :key="item.name"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[14px]"
+          class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[14px] touch:min-h-11"
           :class="partPressed(tab, item.name, chosen) ? 'border-accent bg-accent/14 font-semibold text-ink' : 'border-line-strong bg-surface-2 text-ink hover:border-accent'"
           :aria-pressed="partPressed(tab, item.name, chosen)"
           @click="choosePart(item.name)"
@@ -926,10 +949,10 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- FILE: the tree and the file, one split pane -->
       <div v-if="tab === 'file'" class="grid min-h-[520px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface-2 md:grid-cols-[290px_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col border-b border-line md:border-r md:border-b-0">
-          <label class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-muted">
+          <label class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-muted touch:h-12">
             <Icon name="search" :size="14" />
             <input v-model="query" type="search" placeholder="Cerca fra le cartelle aperte" aria-label="Cerca un file" class="w-full bg-transparent text-[14px] text-ink" />
-            <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-muted transition hover:text-ink" title="Rilegge l’elenco dei file" @click.prevent="refreshTree"><Icon name="retry" :size="12" />Aggiorna</button>
+            <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-muted transition hover:text-ink touch:min-h-11" title="Rilegge l’elenco dei file" @click.prevent="refreshTree"><Icon name="retry" :size="12" />Aggiorna</button>
           </label>
           <!-- The tree in the normal font (D-191); the path of the open file and the code stay fixed-width. -->
           <div class="min-h-0 flex-1 overflow-auto p-1.5 text-[14px] max-md:max-h-80">
@@ -941,20 +964,20 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <template v-for="row in rows" :key="row.path">
               <div
                 v-if="row.entry.shut"
-                class="flex h-[30px] items-center gap-[7px] rounded-[7px] px-2 text-muted"
+                class="flex h-[30px] items-center gap-[7px] rounded-[7px] px-2 text-muted touch:h-11"
                 :style="{ paddingLeft: `${String(8 + row.depth * 14)}px` }"
                 :title="SHUT_TEXT[row.entry.shut]"
               >
                 <span class="w-3"></span>{{ row.entry.name }}<span class="ml-auto"><Icon name="private" :size="12" /></span>
               </div>
-              <div v-else class="group relative">
+              <div v-else class="group relative touch:flex touch:items-center">
               <button
                 type="button"
-                class="flex h-[30px] w-full items-center gap-[7px] rounded-[7px] px-2 text-left whitespace-nowrap hover:bg-bg"
+                class="flex h-[30px] w-full items-center gap-[7px] rounded-[7px] px-2 text-left whitespace-nowrap hover:bg-bg touch:h-11 touch:min-w-0 touch:flex-1"
                 :class="row.path === selected ? 'bg-accent/14 shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
                 :style="{ paddingLeft: `${String(8 + row.depth * 14)}px` }"
                 :aria-expanded="row.entry.kind === 'dir' ? openFolders.has(row.path) : undefined"
-                @click="row.entry.kind === 'dir' ? toggleFolder(row.path) : showFile(row.path)"
+                @click="row.entry.kind === 'dir' ? toggleFolder(row.path) : pickFile(row.path)"
               >
                 <span class="w-3 text-[12px] text-muted">{{ row.entry.kind === 'dir' ? (openFolders.has(row.path) ? '▾' : '▸') : '' }}</span>
                 <!-- A small coloured square for the kind of file (D-191), instead of a tag written at 7.5 px; the kind in the title. -->
@@ -976,10 +999,11 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                 }}</span>
               </button>
               <!-- Move, restore and delete (D-185): on hover or keyboard focus, each one asks in a window. -->
-              <span v-if="changeable(row.path)" class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-surface-2 pl-1 group-focus-within:flex group-hover:flex">
-                <button v-if="restoredPath(row.path)" type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink" :aria-label="`Ripristina ${row.path}`" title="Ripristina: lo rimette nella cartella sopra eliminati/" @click="askAction('restore', row.path, row.entry.kind)"><Icon name="restore" :size="12" /></button>
-                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink" :aria-label="`Sposta o rinomina ${row.path}`" title="Sposta o rinomina" @click="askAction('move', row.path, row.entry.kind)"><Icon name="rename" :size="12" /></button>
-                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-danger" :aria-label="`Elimina ${row.path}`" title="Elimina per sempre" @click="askAction('delete', row.path, row.entry.kind)"><Icon name="delete" :size="12" /></button>
+              <!-- With a finger there is no hover: the three buttons stay beside the name, 44 px each. -->
+              <span v-if="changeable(row.path)" class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-surface-2 pl-1 group-focus-within:flex group-hover:flex touch:static touch:flex touch:shrink-0">
+                <button v-if="restoredPath(row.path)" type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink touch:size-11" :aria-label="`Ripristina ${row.path}`" title="Ripristina: lo rimette nella cartella sopra eliminati/" @click="askAction('restore', row.path, row.entry.kind)"><Icon name="restore" :size="12" /></button>
+                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink touch:size-11" :aria-label="`Sposta o rinomina ${row.path}`" title="Sposta o rinomina" @click="askAction('move', row.path, row.entry.kind)"><Icon name="rename" :size="12" /></button>
+                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-danger touch:size-11" :aria-label="`Elimina ${row.path}`" title="Elimina per sempre" @click="askAction('delete', row.path, row.entry.kind)"><Icon name="delete" :size="12" /></button>
               </span>
               </div>
               <p v-if="row.entry.kind === 'dir' && openFolders.has(row.path) && folders[row.path] === 'loading'" class="px-2 text-muted" :style="{ paddingLeft: `${String(30 + row.depth * 14)}px` }">…</p>
@@ -990,7 +1014,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               type="button"
               role="switch"
               :aria-checked="hiddenOn"
-              class="mb-2 flex w-full items-center gap-2 rounded-md text-left text-[13.5px] text-ink"
+              class="mb-2 flex w-full items-center gap-2 rounded-md text-left text-[13.5px] text-ink touch:min-h-11"
               :disabled="hiddenBusy"
               title="File e cartelle col punto, node_modules e .git, col tuo consenso"
               @click="toggleHidden"
@@ -1007,14 +1031,14 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             </p>
           </div>
         </div>
-        <div class="flex min-h-0 min-w-0 flex-col">
+        <div ref="fileViewer" class="flex min-h-0 min-w-0 flex-col max-md:min-h-[70dvh]">
           <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3">
             <span class="min-w-0 flex-1 truncate font-mono text-[13.5px]">
               <template v-if="selected"><span class="text-muted">{{ project.name }} / </span>{{ selected }}</template>
               <span v-else class="text-muted">Scegli un file a sinistra</span>
             </span>
             <span v-if="file" class="font-mono text-[12.5px] whitespace-nowrap text-muted">{{ sizeText(file.size) }}<template v-if="!file.covered"> · {{ fileLines.length }} righe</template></span>
-            <a v-if="selected && !fileProblem && file?.covered !== true" :href="vscodeUrl(project.absolute, selected)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre questo file in Visual Studio Code"><Icon name="code" :size="13" />VS Code</a>
+            <a v-if="selected && !fileProblem && file?.covered !== true" :href="vscodeUrl(project.absolute, selected)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs touch:hidden" title="Apre questo file in Visual Studio Code"><Icon name="code" :size="13" />VS Code</a>
             <button v-if="file?.openable" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre in una scheda nuova, servita dal computer" @click="openInBrowser"><Icon name="external" :size="13" />Apri</button>
           </div>
           <p v-if="openProblem" class="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-[13px]" role="alert">{{ openProblem }}</p>
@@ -1125,7 +1149,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           <p v-else-if="git === null" class="p-3 text-sm text-muted">Leggo git…</p>
           <div v-else-if="!git.repository" class="flex flex-col items-start gap-2 p-4 text-[14px]">
             <p>Questa cartella non è un repository git: non ci sono branch né commit da mostrare. Se vuoi che il Coder ci lavori, apri un terminale nella cartella e scrivi <span class="font-mono text-[13px]">git init</span>.</p>
-            <a :href="vscodeUrl(project.absolute)" class="btn px-2.5 py-1 text-xs"><Icon name="code" :size="13" />Apri in VS Code</a>
+            <a :href="vscodeUrl(project.absolute)" class="btn px-2.5 py-1 text-xs touch:hidden"><Icon name="code" :size="13" />Apri in VS Code</a>
           </div>
           <template v-else>
             <div class="flex items-center gap-2 px-3.5 pt-3.5 pb-1.5"><span class="hud-title flex-1 text-[12px]">Branch</span></div>
@@ -1150,7 +1174,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <ol class="px-2 pb-3">
               <li v-for="(item, at) in git.log" :key="item.id" class="relative">
                 <span class="absolute left-[18px] w-0.5 bg-line" :class="[at === 0 ? 'top-[18px]' : 'top-0', at === git.log.length - 1 ? 'h-[18px]' : 'bottom-0']" aria-hidden="true"></span>
-                <button type="button" class="relative grid w-full grid-cols-[22px_minmax(0,1fr)] gap-x-2 rounded-lg px-2 py-2 text-left hover:bg-surface-2" :class="item.id === commit ? 'bg-accent/15' : ''" @click="showCommit(item.id)">
+                <button type="button" class="relative grid w-full grid-cols-[22px_minmax(0,1fr)] gap-x-2 rounded-lg px-2 py-2 text-left hover:bg-surface-2 touch:min-h-11" :class="item.id === commit ? 'bg-accent/15' : ''" @click="pickCommit(item.id)">
                   <span class="mt-[5px] ml-[5px] size-2.5 rounded-full border-2" :class="[item.parents.length > 1 ? 'border-info' : 'border-accent', item.id === commit ? 'bg-accent' : 'bg-surface']" aria-hidden="true"></span>
                   <span class="truncate text-[14px]">{{ item.subject }}</span>
                   <span class="col-start-2 font-mono text-[12.5px] text-muted">{{ item.id.slice(0, 7) }} · {{ item.author }} · {{ agoText(item.at) }}</span>
@@ -1159,7 +1183,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             </ol>
           </template>
         </div>
-        <div class="flex min-h-0 min-w-0 flex-col">
+        <div ref="diffViewer" class="flex min-h-0 min-w-0 flex-col max-md:min-h-[70dvh]">
           <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3">
             <span class="min-w-0 flex-1 truncate text-[14px] font-semibold">{{ commitShown?.subject ?? 'Scegli un commit' }}</span>
             <span v-if="commitShown" class="font-mono text-[12.5px] text-muted">{{ commitShown.id.slice(0, 7) }}</span>
@@ -1176,7 +1200,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                   <a
                     v-if="'hunks' in item && item.change !== 'deleted'"
                     :href="vscodeUrl(project.absolute, item.path, firstChangedLine(item.hunks))"
-                    class="rounded px-1 font-sans font-normal text-muted hover:text-ink"
+                    class="rounded px-1 font-sans font-normal text-muted hover:text-ink touch:hidden"
                     title="Apre il file in Visual Studio Code, com'è adesso"
                     ><Icon name="code" :size="13"
                   /></a>

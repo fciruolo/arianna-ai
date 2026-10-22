@@ -56,7 +56,7 @@ function save(): void {
     <header class="flex items-center gap-2">
       <Icon name="rename" :size="14" />
       <h3 class="flex-1 font-medium">Modifica <code class="font-mono text-[13px]">&lt;{{ tag }}&gt;</code></h3>
-      <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la modifica" @click="emit('close')"><Icon name="close" :size="14" /></button>
+      <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink touch:grid touch:size-11 touch:place-items-center" aria-label="Chiudi la modifica" @click="emit('close')"><Icon name="close" :size="14" /></button>
     </header>
     <p class="truncate font-mono text-[12px] text-muted" :title="selector">{{ selector }}</p>
     <p v-if="editable === undefined" class="text-xs text-warn">

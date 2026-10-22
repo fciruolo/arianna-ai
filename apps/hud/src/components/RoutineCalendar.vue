@@ -45,7 +45,8 @@ import {
   type CalendarEntry,
   type CalendarWeek,
 } from '../lib/routine-calendar.ts';
-import type { IsoDay, Routine, RoutineForm } from '../lib/routines.ts';
+import { DAY_EMPTY_TEXT, dayItemText, dayLine, monthTitle, weekStrip, type DayTone } from '../lib/routine-day.ts';
+import { APPROVE_TEXT, DISCARD_TEXT, type IsoDay, type Routine, type RoutineForm } from '../lib/routines.ts';
 
 /**
  * The view «Calendario» of the page «Routine» (D-257): the week Monday to
@@ -61,7 +62,7 @@ import type { IsoDay, Routine, RoutineForm } from '../lib/routines.ts';
  */
 /** `focus`: a routine just saved, to bring in sight once its times are read. */
 const props = defineProps<{ routines: Routine[]; focus: string | null }>();
-const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm]; focused: []; changed: [routineId: string] }>();
+const emit = defineEmits<{ edit: [routine: Routine]; create: [form: RoutineForm]; focused: []; changed: [routineId: string]; decide: [routine: Routine, approve: boolean] }>();
 
 /** Pixels of one hour of the grid. */
 const ROW = 44;
@@ -136,6 +137,27 @@ const entries = computed<CalendarEntry[]>(() => (week.value !== null && week.val
 const line = computed(() => nowLine(days.value, today.value));
 const title = computed(() => (narrow.value ? dayTitle(anchor.value) : weekTitle(range.value.from, range.value.to)));
 const onToday = computed(() => (narrow.value ? anchor.value === today.value.date : range.value.from === weekRange(today.value.date).from));
+
+/** On a phone (D-293): the strip of the week and the chosen day as a line of time. */
+const strip = computed(() => weekStrip(allDays.value, entries.value, anchor.value, today.value.date));
+const month = computed(() => monthTitle(range.value.from, addDays(range.value.to, -1)));
+const dayItems = computed(() => dayLine(entries.value, anchor.value, byId.value, now.value, today.value.date));
+const DOT: Record<DayTone, string> = {
+  done: 'border-ok bg-ok',
+  failed: 'border-danger bg-danger',
+  skipped: 'border-warn bg-warn',
+  next: 'border-accent bg-accent shadow-[0_0_10px_var(--accent)]',
+  proposed: 'border-warn bg-warn',
+  paused: 'border-line-strong bg-bg',
+  missed: 'border-line-strong bg-bg',
+  planned: 'border-line-strong bg-bg',
+};
+const STATE_TONE: Partial<Record<DayTone, string>> = { done: 'text-ok', failed: 'text-danger', skipped: 'text-warn', proposed: 'text-warn', next: 'text-accent' };
+
+/** The arrows of the phone move a week; the day keeps its place in it. */
+function stepWeek(direction: -1 | 1): void {
+  anchor.value = stepAnchor(anchor.value, direction, false);
+}
 
 async function load(): Promise<void> {
   const ask = ++asked;
@@ -435,7 +457,33 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="flex min-w-0 flex-col gap-2.5" aria-label="Calendario delle routine">
-    <div class="flex flex-wrap items-center gap-2">
+    <!-- A phone (D-293): the month, «Oggi», the arrows of the week, the seven days to tap and the day as a line of time. -->
+    <template v-if="narrow">
+      <div class="flex items-center gap-1">
+        <h2 class="flex-1 text-[16px] font-semibold" aria-live="polite">{{ month }}</h2>
+        <button type="button" class="min-h-11 rounded-lg px-3 text-[15px]" :class="onToday ? 'text-muted' : 'text-accent'" @click="goToday">{{ TODAY_TEXT }}</button>
+        <button type="button" class="grid size-11 place-items-center rounded-lg text-[22px] text-muted" aria-label="Settimana precedente" @click="stepWeek(-1)">‹</button>
+        <button type="button" class="grid size-11 place-items-center rounded-lg text-[22px] text-muted" aria-label="Settimana successiva" @click="stepWeek(1)">›</button>
+      </div>
+      <div class="grid grid-cols-7 gap-1" role="group" aria-label="Giorni della settimana">
+        <button
+          v-for="day in strip"
+          :key="day.date"
+          type="button"
+          class="grid h-[58px] min-w-0 place-items-center content-center gap-[3px] rounded-xl text-[12px]"
+          :class="day.chosen ? 'bg-accent text-accent-ink' : day.today ? 'text-accent' : 'text-muted'"
+          :aria-pressed="day.chosen"
+          :aria-label="dayTitle(day.date)"
+          @click="anchor = day.date"
+        >
+          {{ day.name }}
+          <b class="text-[17px] leading-none font-semibold" :class="day.chosen ? 'text-accent-ink' : 'text-ink'">{{ day.number }}</b>
+          <span class="size-[5px] rounded-full" :class="day.busy ? (day.chosen ? 'bg-accent-ink' : 'bg-accent') : ''" aria-hidden="true" />
+        </button>
+      </div>
+      <h3 class="sr-only">{{ title }}</h3>
+    </template>
+    <div v-else class="flex flex-wrap items-center gap-2">
       <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Settimana">
         <button type="button" class="px-2.5 py-1 text-[14px] text-muted hover:text-ink" :aria-label="narrow ? 'Giorno precedente' : 'Settimana precedente'" @click="step(-1)">‹</button>
         <button type="button" class="border-x border-line-strong px-2.5 py-1 text-[13.5px]" :class="onToday ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" @click="goToday">{{ TODAY_TEXT }}</button>
@@ -449,7 +497,31 @@ onBeforeUnmount(() => {
       {{ problem }} <button type="button" class="underline" @click="load()">Riprova</button>
     </p>
 
-    <div class="overflow-hidden rounded-xl border border-line bg-surface-2">
+    <ol v-if="narrow" class="relative ml-[62px] flex flex-col gap-3 before:absolute before:top-2 before:bottom-2 before:-left-2.5 before:w-0.5 before:bg-line" :aria-label="title">
+      <li v-if="dayItems.length === 0" class="rounded-xl border border-dashed border-line-strong px-3.5 py-3 text-[14.5px] text-muted">
+        {{ DAY_EMPTY_TEXT }}
+        <button type="button" class="mt-1 block min-h-11 text-accent" @click="emit('create', formAt(anchor, 9))">Nuova routine in questo giorno</button>
+      </li>
+      <li v-for="item in dayItems" :key="`${item.entry.routineId}@${item.entry.at}`" class="relative">
+        <span class="absolute top-[13px] -left-[62px] w-10 text-right font-mono text-[13px] text-muted">{{ item.entry.time }}</span>
+        <span class="absolute top-[17px] -left-4 size-2.5 rounded-full border-2" :class="DOT[item.tone]" aria-hidden="true" />
+        <div class="rounded-[14px] border border-line bg-surface" :class="item.tone === 'paused' ? 'opacity-70' : ''">
+          <button type="button" class="block w-full px-3.5 py-3 text-left" :aria-label="dayItemText(item)" @click="item.routine && emit('edit', item.routine)">
+            <b class="block text-[16px] font-semibold">{{ item.title }}</b>
+            <small v-if="item.state !== '' || item.entry.run?.trigger === 'manual'" class="mt-1 flex flex-wrap items-center gap-1.5 text-[13.5px] text-muted">
+              <span v-if="item.state !== ''" :class="STATE_TONE[item.tone]">{{ item.state }}</span>
+              <span v-if="item.entry.run?.trigger === 'manual'">· prova</span>
+            </small>
+          </button>
+          <div v-if="item.tone === 'proposed' && item.routine" class="flex gap-2 px-3.5 pb-3">
+            <button type="button" class="btn btn-primary flex-1 justify-center" @click="item.routine && emit('decide', item.routine, true)">{{ APPROVE_TEXT }}</button>
+            <button type="button" class="btn flex-1 justify-center" @click="item.routine && emit('decide', item.routine, false)">{{ DISCARD_TEXT }}</button>
+          </div>
+        </div>
+      </li>
+    </ol>
+
+    <div v-else class="overflow-hidden rounded-xl border border-line bg-surface-2">
       <!-- The heads of the days. -->
       <div class="flex border-b border-line">
         <div class="w-12 shrink-0" aria-hidden="true" />
@@ -558,7 +630,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
+    <p v-if="narrow" class="text-[12.5px] text-muted">Ore in {{ viewZone }}. Tocca una routine per modificarla.</p>
+    <p v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-ok" aria-hidden="true" />fatta</span>
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-warn" aria-hidden="true" />saltata</span>
       <span class="inline-flex items-center gap-1"><span class="size-2 rounded-full bg-danger" aria-hidden="true" />fallita</span>

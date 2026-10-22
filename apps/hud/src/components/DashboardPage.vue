@@ -363,9 +363,9 @@ onBeforeUnmount(() => {
             @dragleave="dropTarget = dropTarget === tile.id ? null : dropTarget"
             @drop="onDrop($event, tile)"
           >
-            <header class="flex items-center gap-2 border-b border-line py-2 pr-3 pl-2">
+            <header class="flex items-center gap-2 border-b border-line py-2 pr-3 pl-2 phone:pl-3">
               <span
-                class="cursor-grab rounded p-1 text-muted hover:text-ink"
+                class="cursor-grab rounded p-1 text-muted hover:text-ink phone:hidden"
                 draggable="true"
                 title="Trascina per spostare (o ⋯ → Sposta prima / dopo)"
                 aria-hidden="true"
@@ -386,7 +386,7 @@ onBeforeUnmount(() => {
               <button
                 v-else
                 type="button"
-                class="min-w-0 flex-1 truncate rounded-md border border-transparent px-1.5 py-0.5 text-left text-[15px] font-semibold hover:border-line"
+                class="min-w-0 flex-1 truncate rounded-md border border-transparent px-1.5 py-0.5 text-left text-[15px] font-semibold hover:border-line touch:min-h-11"
                 title="Clic per rinominare"
                 @click="startRename(tile)"
               >{{ tile.title }}</button>
@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
 
             <div v-if="confirming === tile.id" class="mx-3.5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface px-2.5 py-2 text-[13px]" role="alertdialog" :aria-label="REMOVE_CONFIRM_TEXT">
               <span class="flex-1">{{ REMOVE_CONFIRM_TEXT }}</span>
-              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" @click="confirming = null">Annulla</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink touch:min-h-11" @click="confirming = null">Annulla</button>
               <button type="button" class="btn btn-danger px-2.5 py-0.5 text-[13px]" @click="remove(tile)">Togli</button>
             </div>
 
@@ -404,7 +404,7 @@ onBeforeUnmount(() => {
               <span class="spinner" aria-hidden="true" />
               <span>{{ REFRESHING_TEXT }} <span class="text-muted">{{ elapsedText(tile.refreshStartedAt, now) }}</span></span>
               <span class="flex-1" />
-              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" :disabled="busy.has(tile.id)" @click="cancel(tile)">{{ CANCEL_TEXT }}</button>
+              <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink touch:min-h-11" :disabled="busy.has(tile.id)" @click="cancel(tile)">{{ CANCEL_TEXT }}</button>
             </div>
 
             <div v-else-if="tile.refreshState === 'failed' && tile.refreshError !== null" class="mx-3.5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/45 bg-danger/8 px-2.5 py-2 text-[13px]" role="status">
@@ -417,7 +417,7 @@ onBeforeUnmount(() => {
               <textarea :id="`tile-question-${tile.id}`" v-model="draftQuestion" rows="3" maxlength="2000" class="field w-full px-2.5 py-1.5 text-[14px] text-ink" @keydown.esc.prevent="editingQuestion = null" />
               <span class="text-[12px] text-muted">L’etichetta del riquadro resta quella che è: può solo salire.</span>
               <div class="flex flex-wrap justify-end gap-2">
-                <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink" @click="editingQuestion = null">{{ CANCEL_TEXT }}</button>
+                <button type="button" class="rounded-md px-2 py-0.5 text-muted hover:text-ink touch:min-h-11" @click="editingQuestion = null">{{ CANCEL_TEXT }}</button>
                 <button type="submit" class="btn px-2.5 py-0.5 text-[13px]" :disabled="draftQuestion.trim() === '' || busy.has(tile.id)">{{ SAVE_TEXT }}</button>
                 <button type="button" class="btn btn-primary px-2.5 py-0.5 text-[13px]" :disabled="draftQuestion.trim() === '' || busy.has(tile.id) || !canRefresh(tile)" @click="saveQuestion(tile, true)">{{ SAVE_REFRESH_TEXT }}</button>
               </div>
