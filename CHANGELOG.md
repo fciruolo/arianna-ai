@@ -28,6 +28,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Corretto
 
+- `pnpm voice:vapid` e i commenti di `arianna.toml` indicano `[push]` come sezione delle chiavi di Web Push; `[voice.push]` si legge ancora per compatibilità (D-292).
 - `pnpm arianna:doctor` lancia il binario dell'app di Tailscale come comando (`TERM=dumb`): senza, l'app provava ad aprire la finestra e `remote.tailscale` falliva; se succede ancora lo dice chiaro (D-292).
 
 ## [0.167.1] - 2026-10-22

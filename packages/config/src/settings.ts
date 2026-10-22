@@ -343,11 +343,6 @@ function voiceSection(voice: VoiceConfig | undefined): string[] {
       `# quiet_weekend = ${String(outgoing.quietWeekend)}`,
       `# ring_seconds = ${String(outgoing.ringSeconds)}`,
       `# waiting_minutes = ${String(outgoing.waitingMinutes)}`,
-      '#',
-      '# [voice.push]',
-      '# public_key = "<pnpm voice:vapid>"',
-      `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`,
-      '# subject = "mailto:you@example.org"',
     ];
   }
   const { limits, outgoing, push } = voice;
@@ -369,6 +364,7 @@ function voiceSection(voice: VoiceConfig | undefined): string[] {
     `quiet_weekend = ${String(outgoing.quietWeekend)}`,
     `ring_seconds = ${String(outgoing.ringSeconds)}`,
     `waiting_minutes = ${String(outgoing.waitingMinutes)}`,
+    // A [voice.push] of a file of before D-292 is written back as it was; new keys go to [push].
     ...(push === undefined
       ? []
       : ['', '[voice.push]', `public_key = ${str(push.publicKey)}`, `private_key = ${str(push.privateKey)}`, `subject = ${str(push.subject)}`]),
@@ -592,16 +588,17 @@ export function renderSettings(settings: Settings): string {
     '# Python environment: pnpm voice:sync (needs uv); the weights: pnpm',
     '# arianna:models pull (--trial also the candidates of the voice trial page).',
     '# Quiet hours are local time; scheduled calls skip them and the weekend but',
-    '# count in max_per_day. [voice.push] turns on Web Push: a notification',
-    '# without content through Apple, Google or Mozilla when the chat is closed;',
-    '# the private key stays in the vault (key vapid-private-key). Applies without',
-    '# a restart, once no call is in progress.',
+    '# count in max_per_day. The notification of a call with the chat closed is',
+    '# Web Push of [push] below. Applies without a restart, once no call is in',
+    '# progress.',
     ...voiceSection(settings.voice),
     '',
     '# Web Push of the chat notifications and of the calls (D-292), also with',
-    '# the voice off: the same keys as [voice.push], which stays valid; set them',
-    '# in one of the two. Only fixed sentences leave, never the text. Applies',
-    '# without a restart.',
+    '# the voice off: a notification without content through Apple, Google or',
+    '# Mozilla when the chat is closed. Keys from pnpm voice:vapid; the private',
+    '# key stays in the vault (key vapid-private-key). [voice.push] of an older',
+    '# file is still read, never both. Only fixed sentences leave, never the',
+    '# text. Applies without a restart.',
     ...(settings.push === undefined
       ? ['#', '# [push]', '# public_key = "<pnpm voice:vapid>"', `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`, '# subject = "mailto:you@example.org"']
       : ['[push]', `public_key = ${str(settings.push.publicKey)}`, `private_key = ${str(settings.push.privateKey)}`, `subject = ${str(settings.push.subject)}`]),

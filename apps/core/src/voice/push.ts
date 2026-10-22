@@ -61,7 +61,7 @@ export function generateVapidKeys(): { publicKey: string; privateKey: string } {
 /** The private key from the two halves in arianna.toml and the vault. */
 export function vapidKey(publicKey: string, privateKey: string): KeyObject {
   const point = Buffer.from(publicKey, 'base64url');
-  if (point.length !== 65 || point[0] !== 4) throw new PushError('voice.push.public_key: not an uncompressed P-256 point');
+  if (point.length !== 65 || point[0] !== 4) throw new PushError('push.public_key: not an uncompressed P-256 point');
   const d = Buffer.from(privateKey, 'base64url');
   if (d.length !== 32) throw new PushError('the VAPID private key must be 32 bytes, base64url');
   const key = createPrivateKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256', d: b64url(d), x: b64url(point.subarray(1, 33)), y: b64url(point.subarray(33)) } });

@@ -41,9 +41,9 @@ function run(file: string, args: string[], env: Record<string, string> = {}): nu
 if (command === 'vapid') {
   // The private half goes to the vault, never into a file of the repository.
   const keys = generateVapidKeys();
-  console.log('Web Push (D-066): add to config/arianna.toml');
+  console.log('Web Push (D-066, D-292): add to config/arianna.toml, or fill Impostazioni → Notifiche');
   console.log('');
-  console.log('[voice.push]');
+  console.log('[push]');
   console.log(`public_key = "${keys.publicKey}"`);
   console.log(`private_key = "${VAPID_PRIVATE_KEY_REF}"`);
   console.log('subject = "mailto:<your address>"');
@@ -51,7 +51,7 @@ if (command === 'vapid') {
   console.log('then put this value in the vault with pnpm vault:edit, key vapid-private-key:');
   console.log(keys.privateKey);
   console.log('');
-  console.log('Restart the core, open the voice page of the chat and turn the notifications on.');
+  console.log('The core applies it without a restart; turn the notifications on from Impostazioni → Notifiche of each browser.');
   process.exit(0);
 }
 
