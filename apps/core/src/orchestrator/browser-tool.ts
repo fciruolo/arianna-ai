@@ -9,7 +9,7 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import type { Task } from '../tasks.ts';
 import type { Turn } from './turns.ts';
 import { approvedSaved, SAVED_ACTION, savedResultText, WAITING_PRIVATE } from './saved-ask.ts';
-import { MAX_PAGE_TEXT, userAddresses, webFetchOffered } from './web-tool.ts';
+import { approvedAddresses, MAX_PAGE_TEXT, userAddresses, webFetchOffered } from './web-tool.ts';
 
 /**
  * The browser tools of Arianna in a chat (D-264, passo 3): offered where
@@ -107,7 +107,7 @@ export const TASK_LIMIT = `Ho già fatto ${String(MAX_ACTIONS_PER_TASK)} azioni 
 
 /** Fixed texts of the failures, Italian: the chat shows them, the model reads them. */
 export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'], string> = {
-  busy: 'Il browser lo sta usando un’altra chat: riprova fra poco.',
+  busy: 'Il browser lo sta usando un’altra chat: da sola non posso riprovare. Dì all’utente che può chiudere il browser dell’altra chat (o aspettare che finisca) e poi chiedermelo di nuovo.',
   paused: 'Il browser lo sta usando l’utente: nessuna azione nel browser finché non te lo restituisce. Rispondi con quello che hai.',
   reread: 'L’utente ha usato il browser e te l’ha restituito: rileggi la pagina con browser.read prima di ogni altra azione.',
   authenticated:
@@ -151,19 +151,7 @@ export async function approvedSend(sql: Queryable, taskId: string): Promise<{ id
   return row?.state === 'approved' && row.element !== null ? { id: row.id, element: row.element } : undefined;
 }
 
-/**
- * Addresses the user opened from a card «Apri / No» in this conversation,
- * up to this task: they count as written by the user for the consent.
- */
-export async function approvedAddresses(sql: Queryable, task: Task): Promise<string[]> {
-  if (task.conversationId === null) return [];
-  const rows = await sql<{ url: string }[]>`
-    SELECT a.detail->>'url' AS url FROM approvals a JOIN tasks t ON t.id = a.task_id
-    WHERE a.kind = 'browser' AND a.action = 'browser.click' AND a.state = 'approved' AND t.conversation_id = ${task.conversationId}
-      AND (t.id = ${task.id} OR t.created_at < (SELECT created_at FROM tasks WHERE id = ${task.id}))
-    ORDER BY a.requested_at DESC LIMIT 50`;
-  return rows.map((row) => row.url).filter((url) => typeof url === 'string');
-}
+export { approvedAddresses };
 
 /** The consent of a step: public in a Public context, else the addresses of the user and those opened from a card. */
 export async function browserConsent(sql: Queryable, task: Task, context: Context): Promise<PageConsent> {
@@ -405,10 +393,18 @@ export function browserSendText(state: string, site: string): string {
 }
 
 /** What the model reads once the user decided; the same bytes at every later step (the prefix cache). */
-export function browserResultText(state: string, site: string): string {
+export function browserResultText(state: string, site: string, tool?: string): string {
+  // What to do next, by the action asked: the page of an open is not open yet, so never a read first (D-286).
+  if (state === 'approved' && tool === 'browser.open') return `the user agreed to open the address on ${site}: call browser.open with that same address now, before anything else (the page is not open yet: do not call browser.read first).`;
+  if (state === 'approved' && tool === 'browser.click') return `the user agreed to open the link to ${site}: call browser.read, then the same browser.click again.`;
   if (state === 'approved') return `the user agreed to open the address on ${site}: call the same browser.open or browser.click again (browser.read first if the page changed).`;
   if (state === 'pending') return WAITING_BROWSER;
   return `error: browser: the user did not want to open the address on ${site}. Do not open it nor another address of that site; go on without it, or tell the user.`;
+}
+
+/** The tool a turn called, when it called one. */
+function toolOf(turn: Turn): string | undefined {
+  return turn.answer.action === 'call' ? turn.answer.tool : undefined;
 }
 
 interface BrowserAsk {
@@ -437,7 +433,7 @@ export async function browserResults(sql: Queryable, taskId: string, turns: read
   for (const turn of turns) {
     if (turn.result === WAITING_PRIVATE) {
       const ask = asks.get(turn.step);
-      results.set(turn.step, savedResultText(ask?.action === SAVED_ACTION ? ask.state : 'rejected'));
+      results.set(turn.step, savedResultText(ask?.action === SAVED_ACTION ? ask.state : 'rejected', toolOf(turn)));
       continue;
     }
     if (turn.result === WAITING_SEND) {
@@ -447,7 +443,7 @@ export async function browserResults(sql: Queryable, taskId: string, turns: read
     }
     if (turn.result !== WAITING_BROWSER) continue;
     const ask = asks.get(turn.step);
-    results.set(turn.step, ask?.action === 'browser.click' ? browserResultText(ask.state, ask.site) : browserResultText('rejected', '?'));
+    results.set(turn.step, ask?.action === 'browser.click' ? browserResultText(ask.state, ask.site, toolOf(turn)) : browserResultText('rejected', '?'));
   }
   return results;
 }

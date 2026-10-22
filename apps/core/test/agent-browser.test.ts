@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createContext, type Context, type PageConsent } from '@arianna/policy';
 import type { Page } from 'playwright-core';
 
-import { AgentBrowser, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
+import { AgentBrowser, openOutsideConsent, outsideConsent, parseReading, READ_SCRIPT, TAKE_OVER_MS, type BrowserScope, type OpenSession, type TypedVerdict } from '../src/browser/agent-browser.ts';
 import type { Sql } from '../src/db/client.ts';
 import type { BrowserManager } from '../src/browser/manager.ts';
 import type { NetworkScope } from '../src/browser/network.ts';
@@ -260,6 +260,17 @@ test('a text the gateway refuses is never typed, nor is one in a field whose typ
   assert.deepEqual(changed.page.filled, []);
 });
 
+test('openOutsideConsent: a site of the conversation holds for every address of it; a new site asks; public goes anywhere (D-286, «Il sito approvato vale tutto»)', () => {
+  const user: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
+  assert.equal(openOutsideConsent(user, 'https://comune-finto.it/servizi'), undefined);
+  assert.equal(openOutsideConsent(user, 'https://comune-finto.it/'), undefined);
+  assert.equal(openOutsideConsent(user, 'https://www.comune-finto.it/it/anagrafe?q=orari'), undefined);
+  assert.deepEqual(openOutsideConsent(user, 'https://altro-finto.it/'), { ok: false, reason: 'confirm', url: 'https://altro-finto.it/', site: 'altro-finto.it' });
+  // A site that only looks like it: never.
+  assert.equal(openOutsideConsent(user, 'https://comune-finto.it.altro-finto.it/')?.ok, false);
+  assert.equal(openOutsideConsent({ from: 'public' }, 'https://altro-finto.it/'), undefined);
+});
+
 test('outsideConsent: public goes anywhere; user only its addresses and their sites', () => {
   assert.equal(outsideConsent({ from: 'public' }, 'https://altro-finto.it/'), undefined);
   const user: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
@@ -366,13 +377,14 @@ test('onReleased: the screens hear of every browser a conversation no longer hol
   assert.deepEqual(h.released, ['a', 'a', 'b', 'c']);
 });
 
-test('in an Internal conversation browser.open takes only an address the user wrote; any other waits for the user', async () => {
+test('in an Internal conversation browser.open takes any address of a site of the conversation; another site waits for the user (D-286)', async () => {
   const h = harness();
   const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
-  assert.deepEqual(await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://comune-finto.it/cerca?q=dati' }), { ok: false, reason: 'confirm', url: 'https://comune-finto.it/cerca?q=dati', site: 'comune-finto.it' });
+  assert.deepEqual(await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://altro-finto.it/cerca?q=dati' }), { ok: false, reason: 'confirm', url: 'https://altro-finto.it/cerca?q=dati', site: 'altro-finto.it' });
   assert.deepEqual(h.opened, []);
   assert.equal((await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://comune-finto.it/servizi#orari' })).ok, true);
-  assert.equal((await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://comune-finto.it/altro' })).ok, false);
+  assert.equal((await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://comune-finto.it/cerca?q=dati' })).ok, true);
+  assert.equal((await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://altro-finto.it/' })).ok, false);
 });
 
 test('the reading takes address and title from the browser, not from what the page script returns', async () => {

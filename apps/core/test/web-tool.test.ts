@@ -130,6 +130,20 @@ describe('webFetch (D-262)', () => {
     assert.deepEqual(db.gateway.map((values) => [values[3], values[7]]), [['web-page-user', 'page']]);
   });
 
+  it('Internal context: any address on a site of the conversation goes, also one Arianna composed (D-286, «Il sito approvato vale tutto»)', async () => {
+    const db = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
+    const result = await run(db, createContext('L1', 'L1'), 'https://example.com/contatti?lingua=it');
+    assert.ok(result.page !== undefined, result.text);
+    // A site the user chose in the browser counts too.
+    const chosen = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
+    const other = await webFetch({ url: 'https://scelto.example.org/pagina' }, { task: TASK, context: createContext('L1', 'L1'), web: { sql: chosen.sql, fetchLink: page(chosen), userSites: ['https://scelto.example.org/'] } });
+    assert.ok(other.page !== undefined, other.text);
+    // A saved value on that site still asks the user (D-283).
+    const saved = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
+    const asked = await run(saved, createContext('L1', 'L1'), 'https://example.com/?q=Ferramenta+Lunardi+Srl');
+    assert.deepEqual(asked.private?.saved, ['client:c1:name']);
+  });
+
   it('Internal context: an address the user did not write is refused in Italian, before the network', async () => {
     const db = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
     const result = await run(db, createContext('L1', 'L1'), 'https://ostile.example/?d=progetto');

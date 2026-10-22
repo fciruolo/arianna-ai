@@ -145,6 +145,14 @@ describe('BrowserScreen.vue', () => {
     assert.match(template, /<input\s+v-if="control === 'you' && touch"/);
   });
 
+  it('gives the keyboard to the screen only when the control passes to it, never on the reads of the status nor while the bar is written in (D-286)', () => {
+    assert.match(source, /function applyControl\(focus = false\)/);
+    assert.match(source, /if \(you && focus && !editing\.value && keyboardIsFree\(\)\) current\.focus/);
+    assert.match(source, /applyControl\(before !== 'you' && status\.control === 'you'\)/);
+    // The label follows the page of the core, not only the lines of the chat.
+    assert.match(source, /liveSite \?\? site/);
+  });
+
   it('disconnects when it goes away', () => {
     assert.match(source, /onBeforeUnmount\([^)]*\)/);
     assert.match(source, /\.disconnect\(\)/);

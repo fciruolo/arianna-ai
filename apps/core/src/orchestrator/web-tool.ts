@@ -6,6 +6,7 @@ import { localMidnight } from '../commitment-dates.ts';
 import { appendEvent } from '../events.ts';
 import { FETCH_FAILURE_TEXT, siteOf } from '../link-fetch.ts';
 import type { Task } from '../tasks.ts';
+import { coveredBy, withWritten } from '../browser/network.ts';
 import { addressesInText, readPage, type ReadPageInput } from '../web-page.ts';
 import { approvedSaved } from './saved-ask.ts';
 
@@ -15,10 +16,10 @@ import { approvedSaved } from './saved-ask.ts';
  * finance data («Pubbliche libere, Interne solo tuoi»):
  *
  * - context Public (L0): any public page, the model may follow links;
- * - context Internal (L1): only an address the user wrote in the
- *   conversation, in a message the step may read (never one of the model,
- *   of an agent or of a page: a hostile page could ask for an address with
- *   work data inside);
+ * - context Internal (L1): an address on a site the user wrote in the
+ *   conversation (in a message the step may read), opened from a card or
+ *   chose in the browser (D-286, «Il sito approvato vale tutto»: any
+ *   address of that site, also one the model composed; a new site never);
  * - above L1, with finance data or in an incognito conversation the tool is
  *   not offered at all (webFetchOffered).
  *
@@ -63,6 +64,8 @@ export interface WebToolEnv {
   browserSaved?: { browsers: readonly number[]; none: boolean };
   /** The browser a card asked now belongs to: the one open, or the last one of the conversation (D-283). */
   browserLast?: number | null;
+  /** The sites the user chose in the browser of the conversation (D-286): they count as written, as for the browser. */
+  userSites?: readonly string[];
 }
 
 export interface WebPage {
@@ -93,6 +96,20 @@ function addressKey(address: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Addresses the user opened from a card «Apri / No» in this conversation,
+ * up to this task: they count as written by the user for the consent.
+ */
+export async function approvedAddresses(sql: Queryable, task: Task): Promise<string[]> {
+  if (task.conversationId === null) return [];
+  const rows = await sql<{ url: string }[]>`
+    SELECT a.detail->>'url' AS url FROM approvals a JOIN tasks t ON t.id = a.task_id
+    WHERE a.kind = 'browser' AND a.action = 'browser.click' AND a.state = 'approved' AND t.conversation_id = ${task.conversationId}
+      AND (t.id = ${task.id} OR t.created_at < (SELECT created_at FROM tasks WHERE id = ${task.id}))
+    ORDER BY a.requested_at DESC LIMIT 50`;
+  return rows.map((row) => row.url).filter((url) => typeof url === 'string');
 }
 
 /**
@@ -165,9 +182,11 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
   if (context.effective === 'L0') {
     consent = { from: 'public' };
   } else {
-    const addresses = await userAddresses(web.sql, task, context.effective);
-    if (!addresses.some((written) => addressKey(written) === key)) return failure(NOT_USER_ADDRESS);
-    consent = { from: 'user', addresses };
+    // The addresses of the user, those opened from a card and the sites the user chose in the browser: a page on one
+    // of their sites goes, whoever composed its address (choice of the user, 2026-10-22, «Il sito approvato vale tutto», D-286).
+    const written: PageConsent = { from: 'user', addresses: [...new Set([...(await userAddresses(web.sql, task, context.effective)), ...(await approvedAddresses(web.sql, task)), ...(web.userSites ?? [])])].slice(0, 200) };
+    if (!coveredBy(written, key)) return failure(NOT_USER_ADDRESS);
+    consent = withWritten(written, key);
   }
   const read = await pagesRead(web.sql, task.id);
   if (read.task >= MAX_PAGES_PER_TASK) return failure(TASK_LIMIT);

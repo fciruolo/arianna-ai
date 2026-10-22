@@ -201,7 +201,7 @@ for (const closed of [true, false]) {
     await recordDecision(sql, asks[0].id, 'approved', 'web');
     const second = await drain(task.id, model, w.browser);
     assert.equal(second.at(-1), 'answered');
-    assert.ok(sawText(model.requests[1], savedResultText('approved')));
+    assert.ok(sawText(model.requests[1], savedResultText('approved', 'browser.open')));
     // The page opened and was read; the gateway never stopped it again, and no other card was asked.
     assert.deepEqual(w.pages.map((page) => page.rule), ['saved-private', 'page']);
     assert.equal(w.opened, closed ? 2 : 1);
@@ -274,7 +274,7 @@ test('«Apri» on a card of web.fetch: the step resumes and reads the page; the 
   await recordDecision(sql, ask.id, 'approved', 'web');
   // The task waited for this card: the decision puts it back to work, and the same web.fetch runs again.
   assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
-  assert.ok(sawText(model.requests[1], savedResultText('approved')));
+  assert.ok(sawText(model.requests[1], savedResultText('approved', 'web.fetch')));
   const fetches = await sql<{ outcome: string }[]>`SELECT payload ->> 'outcome' AS outcome FROM events WHERE task_id = ${task.id} AND kind = 'web.fetch' ORDER BY id`;
   assert.deepEqual(fetches.map((row) => row.outcome), ['blocked', 'ok']);
   // The browser opens the same value with no new card: the «Apri» of web.fetch holds for it (the first browser).

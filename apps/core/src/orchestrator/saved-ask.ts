@@ -138,8 +138,22 @@ export async function approvedSaved(sql: Queryable, conversationId: string, opti
 }
 
 /** What the model reads once the user decided; the same bytes at every later step (the prefix cache). Never a value nor a name. */
-export function savedResultText(state: string): string {
-  if (state === 'approved') return 'the user agreed that the saved data may leave for this: call the same tool again (browser.read first if the page changed).';
+export function savedResultText(state: string, tool?: string): string {
+  // What to do next, by the action asked (D-286): the page of an open is not open yet, so never a read first.
+  if (state === 'approved') {
+    switch (tool) {
+      case 'browser.open':
+        return 'the user agreed that the saved data may leave for this: call browser.open with that same address now, before anything else (the page is not open yet: do not call browser.read first).';
+      case 'browser.click':
+        return 'the user agreed that the saved data may leave for this: call browser.read, then the same browser.click again.';
+      case 'browser.type':
+        return 'the user agreed that the saved data may leave for this: call the same browser.type again now.';
+      case 'web.fetch':
+        return 'the user agreed that the saved data may leave for this: call the same web.fetch again now.';
+      default:
+        return 'the user agreed that the saved data may leave for this: call the same tool again (browser.read first if the page changed).';
+    }
+  }
   if (state === 'pending') return WAITING_PRIVATE;
   return 'error: the user did not want saved data of a client or a contact to leave here. Do not try it again with that data; go on without it, or tell the user.';
 }

@@ -2,7 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue';
 
 import { browserStatus, closeBrowser, returnBrowserControl } from '../lib/api.ts';
-import { BROWSER_POLL_MS } from '../lib/browser-screen.ts';
+import { BROWSER_POLL_MS, CONTROL_POLL_MS } from '../lib/browser-screen.ts';
 import { errorText } from '../lib/italian.ts';
 import Icon from './Icon.vue';
 
@@ -73,11 +73,12 @@ watch(
     void refresh();
   },
 );
+// While the user drives, the site follows the clicks (D-286): read as often as the screen does.
 watch(
-  () => open.value || movedTo.value !== null,
-  (shown) => {
+  () => [open.value || movedTo.value !== null, driving.value] as const,
+  ([shown, user]) => {
     clearInterval(timer);
-    timer = shown ? setInterval(() => void refresh(), BROWSER_POLL_MS) : undefined;
+    timer = shown ? setInterval(() => void refresh(), user ? CONTROL_POLL_MS : BROWSER_POLL_MS) : undefined;
   },
   { immediate: true },
 );

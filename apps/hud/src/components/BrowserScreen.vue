@@ -57,6 +57,8 @@ const controlProblem = ref<string | null>(null);
 let shownBlocked = 0;
 let poll: ReturnType<typeof setInterval> | undefined;
 const driving = (): boolean => control.value === 'you';
+/** The site of the page now, from the core (D-286): the label follows the clicks of the user too. */
+const liveSite = ref<string | null>(null);
 
 // The bar above the screen (D-286): ← → ↻ and the address, through the core as the user's commands.
 /** The address of the page, from the core; the field shows it while the user is not writing in it. */
@@ -114,14 +116,26 @@ function answerSaved(open: boolean): void {
   if (asked !== null && open) void command('open', asked.url, asked.ask);
 }
 
-/** noVNC takes keys and pointer only while this screen drives. */
-function applyControl(): void {
+/**
+ * noVNC takes keys and pointer only while this screen drives. `focus`: the
+ * control just passed to this screen, and the screen takes the keyboard;
+ * never on the reads of the status every few seconds, nor while the user
+ * writes in the bar or has the keyboard elsewhere (D-286: the address field
+ * lost it and the keys went to the remote page).
+ */
+function applyControl(focus = false): void {
   const current = rfb;
   if (current === null) return;
   const you = driving();
   current.viewOnly = !you;
   current.focusOnClick = you;
-  if (you) current.focus({ preventScroll: true });
+  if (you && focus && !editing.value && keyboardIsFree()) current.focus({ preventScroll: true });
+}
+
+/** Whether nothing else of the page holds the keyboard (a field, a button the user is on). */
+function keyboardIsFree(): boolean {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  return active === null || active === document.body || (target.value !== null && target.value.contains(active));
 }
 
 async function readStatus(): Promise<void> {
@@ -133,6 +147,7 @@ async function readStatus(): Promise<void> {
     const before = control.value;
     control.value = status.control;
     access.value = status.access;
+    liveSite.value = status.site;
     acting.value = status.acting;
     pageUrl.value = status.url;
     if (!editing.value) address.value = status.url ?? '';
@@ -144,7 +159,8 @@ async function readStatus(): Promise<void> {
       shownBlocked = status.blocked.seq;
       if (status.control === 'you') notice.value = blockedText(status.blocked, status.access);
     }
-    applyControl();
+    // The keyboard to the screen only when the control just passed to it.
+    applyControl(before !== 'you' && status.control === 'you');
   } catch {
     // A core that does not answer: the next read tries again.
   }
@@ -165,6 +181,7 @@ function stop(): void {
   access.value = null;
   chat.value = false;
   pageUrl.value = null;
+  liveSite.value = null;
   savedAsk.value = null;
   acting.value = false;
   asking.value = false;
@@ -243,7 +260,7 @@ async function takeIt(): Promise<void> {
     if (answer === 'you') {
       control.value = 'you';
       asking.value = false;
-      applyControl();
+      applyControl(true);
     }
   } catch (cause) {
     asking.value = false;
@@ -336,7 +353,7 @@ onBeforeUnmount(() => {
         <span class="size-2 rounded-full" :class="state === 'live' ? 'animate-pulse bg-ok' : state === 'connecting' ? 'bg-muted' : 'bg-warn'" aria-hidden="true"></span>
         {{ SCREEN_TEXT[state] }}
       </span>
-      <span class="min-w-0 flex-1 truncate text-muted" :title="site ?? undefined">{{ site ?? '' }}</span>
+      <span class="min-w-0 flex-1 truncate text-muted" :title="(liveSite ?? site) ?? undefined">{{ liveSite ?? site ?? '' }}</span>
     </div>
     <div class="flex flex-wrap items-center gap-1.5">
       <button v-if="canFullscreen" type="button" :class="ACTION" :disabled="state !== 'live'" title="Lo schermo a tutto schermo: Esc per uscire" @click="enterFullscreen"><Icon name="fullscreen" :size="13" />Schermo intero</button>

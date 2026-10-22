@@ -8,6 +8,7 @@ import { resolveHome } from '@arianna/config';
 import { committedAgents } from './support/committed-agents.ts';
 import { actionOf, asksLogin, browserOffered, browserResultText, FAILURE_TEXT, LOGIN_HINT, loginLine, readingText, WAITING_BROWSER } from '../src/orchestrator/browser-tool.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
+import { savedResultText } from '../src/orchestrator/saved-ask.ts';
 
 const arianna = committedAgents(resolveHome({})).get('arianna');
 
@@ -107,4 +108,21 @@ test('the texts of the access (D-276): never a password from Arianna, the user s
   assert.match(FAILURE_TEXT.authenticated, /accesso fatto dall’utente/);
   assert.match(FAILURE_TEXT.paused, /l’utente/);
   assert.match(FAILURE_TEXT.reread, /browser\.read/);
+});
+
+test('after «Apri» the model is told to open the same address again before anything else, never to read the old page (D-286)', () => {
+  assert.match(browserResultText('approved', 'altro.example', 'browser.open'), /call browser\.open with that same address now, before anything else/);
+  assert.match(browserResultText('approved', 'altro.example', 'browser.open'), /do not call browser\.read first/);
+  assert.match(browserResultText('approved', 'altro.example', 'browser.click'), /browser\.read, then the same browser\.click/);
+  assert.match(savedResultText('approved', 'browser.open'), /call browser\.open with that same address now/);
+  assert.match(savedResultText('approved', 'web.fetch'), /the same web\.fetch again now/);
+  assert.match(savedResultText('approved', 'browser.type'), /the same browser\.type again now/);
+  // A refusal never says to try again.
+  assert.match(savedResultText('rejected', 'browser.open'), /^error: /);
+});
+
+test('a browser busy in another chat: the model is told it cannot try again by itself, and what the user can do (D-286)', () => {
+  assert.match(FAILURE_TEXT.busy, /non posso riprovare/);
+  assert.match(FAILURE_TEXT.busy, /chiudere il browser dell’altra chat/);
+  assert.doesNotMatch(FAILURE_TEXT.busy, /riprova fra poco/);
 });

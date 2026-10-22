@@ -201,7 +201,7 @@ test('Internal context: the user consent; a link to another site waits for «Apr
   await recordDecision(db().sql, approval.id, 'approved', 'web');
   const second = await drain(task.id, model, browser);
   assert.equal(second.at(-1), 'answered');
-  const approved = browserResultText('approved', 'altro.example');
+  const approved = browserResultText('approved', 'altro.example', 'browser.click');
   // The step after the decision reads the decision in place of the waiting result.
   assert.ok(sawText(model.requests[2], approved));
   assert.ok(!sawText(model.requests[2], WAITING_BROWSER));

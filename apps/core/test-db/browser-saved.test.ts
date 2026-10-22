@@ -273,7 +273,7 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   assert.deepEqual(await approvedSaved(sql, conversationId, { recent: true }), new Set([ref]));
   const second = await drain(task.id, model, browser);
   assert.equal(second.at(-1), 'answered');
-  assert.ok(sawText(model.requests[2], savedResultText('approved')));
+  assert.ok(sawText(model.requests[2], savedResultText('approved', 'browser.open')));
   assert.ok(!sawText(model.requests[2], WAITING_PRIVATE));
   // Never the name of the client for the model.
   assert.ok(!model.requests.some((request) => request.messages.some((part) => part.content.includes(`Officina Brenta ${tag}`) && part.role !== 'user')));

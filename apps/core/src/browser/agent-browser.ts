@@ -1137,23 +1137,15 @@ export function outsideConsent(consent: PageConsent, href: string): string | und
 }
 
 /**
- * `browser.open` with a `user` consent: only an address of the consent, as
- * web.fetch (the sites of those addresses are for clicks and redirects); any
- * other waits for the user on the card «Apri / No». Undefined when it may go.
+ * `browser.open` with a `user` consent: an address on a site of the consent
+ * (D-286, «Il sito approvato vale tutto»), as web.fetch; one of a new site
+ * waits for the user on the card «Apri / No». Undefined when it may go.
  */
 export function openOutsideConsent(consent: PageConsent, address: string): ActionResult | undefined {
   if (consent.from !== 'user') return undefined;
-  const key = (value: string): string | undefined => {
-    try {
-      const url = new URL(value);
-      url.hash = '';
-      return url.href;
-    } catch {
-      return undefined;
-    }
-  };
-  const wanted = key(address);
-  if (wanted !== undefined && consent.addresses.some((written) => key(written) === wanted)) return undefined;
+  // A site of the conversation (written by the user, chosen with a click of theirs, or opened from a card)
+  // holds for every address of it (choice of the user, 2026-10-22, «Il sito approvato vale tutto», D-286).
+  if (coveredBy(consent, address)) return undefined;
   return { ok: false, reason: 'confirm', url: address, site: siteOf(address) ?? address };
 }
 

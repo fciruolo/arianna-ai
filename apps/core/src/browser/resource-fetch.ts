@@ -38,7 +38,7 @@ interface TypeRule {
 
 /** Limits and media types per kind of resource (D-264): beyond the limit a body is refused, never cut. */
 export const RESOURCE_RULES: Readonly<Record<ResourceType, TypeRule>> = {
-  document: { maxBytes: 3 * MB, types: ['text/html', 'application/xhtml+xml', 'text/plain'], accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8' },
+  document: { maxBytes: 10 * MB, types: ['text/html', 'application/xhtml+xml', 'text/plain'], accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8' },
   stylesheet: { maxBytes: 2 * MB, types: ['text/css'], accept: 'text/css,*/*;q=0.1' },
   script: { maxBytes: 5 * MB, types: ['text/javascript', 'application/javascript', 'application/x-javascript', 'application/ecmascript', 'text/ecmascript'], accept: '*/*' },
   image: {

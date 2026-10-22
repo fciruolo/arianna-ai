@@ -1396,7 +1396,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const browserAgent = options.browser === undefined || task.conversationId === null ? undefined : options.browser.agent;
       const browserSaved = browserAgent === undefined || task.conversationId === null ? undefined : browserAgent.savedFor(task.conversationId);
       const browserLast = browserAgent === undefined || task.conversationId === null ? null : browserAgent.lastOpenedAt(task.conversationId);
-      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserLast, ...(browserSaved === undefined ? {} : { browserSaved }), ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
+      const userSites = browserAgent === undefined || task.conversationId === null ? [] : browserAgent.userAddressesOf(task.conversationId);
+      const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserLast, userSites, ...(browserSaved === undefined ? {} : { browserSaved }), ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {

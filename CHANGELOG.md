@@ -11,12 +11,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
+- In una conversazione Interna un sito che hai scritto, aperto da una scheda o scelto col tuo clic vale per ogni sua pagina, nel browser e in `web.fetch`: la scheda «Apri / No» resta solo per un sito nuovo e per i dati salvati (D-286).
+- Con il browser occupato da un'altra chat Arianna non dice più «riprovo subito»: ti dice che può riprovare solo dopo che chiudi l'altro browser (D-286).
 - Mentre guidi il browser, un tuo clic verso un altro sito apre la pagina (D-286): il sito vale come scritto da te, anche per Arianna dopo; restano i controlli del gateway (chiavi, scanner, dati salvati, accesso, conversazioni Private).
 - Nel browser di Arianna e in `web.fetch` l'indirizzo delle pagine e il testo scritto nei campi non passano più da Rizzo-PII: al suo posto un confronto esatto con i clienti e i contatti salvati, rifatto a ogni loro modifica, che non scambia vie, aziende o siti per persone e non aspetta l'avvio del modello (D-283).
 - Il browser di Arianna non avvia più il secondo controllo prima di aprire una pagina (D-283).
 
 ### Corretto
 
+- Dopo «Apri» Arianna riapre subito la pagina invece di leggere quella vecchia o dire che il browser non è aperto (D-286).
+- Le pagine con più di 3 MB di HTML si aprono (tetto a 10 MB per una pagina del browser e per `web.fetch`) (D-286).
+- Il campo dell'indirizzo sopra lo schermo non perde più il fuoco mentre scrivi, e il sito mostrato segue i tuoi clic (D-286).
 - Una pagina del browser di Arianna fermata dal gateway non fa più aspettare 45 secondi né chiudere il browser con «l’azione nel browser non è riuscita»: la scheda rimasta sulla pagina d’errore si chiude senza aspettarla, e una lettura senza pagina risponde subito (D-283).
 - Un indirizzo scritto con un punto finale («…S.r.l.») vale come scritto dall’utente anche col punto (D-283).
 - Lo schermo del browser nella chat mostra sempre la pagina di Arianna: prima, sulla prima pagina aperta, poteva restare vuoto (D-283).
