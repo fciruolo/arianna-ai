@@ -53,6 +53,8 @@ const chat = ref(false);
 const asking = ref(false);
 const notice = ref<string | null>(null);
 const controlProblem = ref<string | null>(null);
+/** The notice under the screen is of a refused page: it goes when a page opens again (D-286). */
+let noticeOfBlock = false;
 /** The last refused page shown, by its number: each is said once. */
 let shownBlocked = 0;
 let poll: ReturnType<typeof setInterval> | undefined;
@@ -83,8 +85,13 @@ async function command(kind: BarCommand, url?: string, ask?: string): Promise<vo
     if (token !== screenToken) return;
     if (done.ok) {
       pageUrl.value = done.url;
+      liveSite.value = done.site;
       editing.value = false;
       address.value = done.url;
+      if (noticeOfBlock) {
+        notice.value = null;
+        noticeOfBlock = false;
+      }
       return;
     }
     if (done.reason === 'confirm-private' && url !== undefined && done.ask !== null) {
@@ -157,7 +164,15 @@ async function readStatus(): Promise<void> {
     if (status.control === 'you' || !status.open) asking.value = false;
     if (status.blocked !== null && status.blocked.seq > shownBlocked) {
       shownBlocked = status.blocked.seq;
-      if (status.control === 'you') notice.value = blockedText(status.blocked, status.access);
+      if (status.control === 'you') {
+        notice.value = blockedText(status.blocked, status.access);
+        noticeOfBlock = true;
+      }
+    }
+    // A page opened after the refused one (D-286): its notice goes.
+    if (status.blocked === null && noticeOfBlock) {
+      notice.value = null;
+      noticeOfBlock = false;
     }
     // The keyboard to the screen only when the control just passed to it.
     applyControl(before !== 'you' && status.control === 'you');

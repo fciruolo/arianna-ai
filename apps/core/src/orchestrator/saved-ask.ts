@@ -137,22 +137,36 @@ export async function approvedSaved(sql: Queryable, conversationId: string, opti
   return approved;
 }
 
+/** What the model reads when another tool tries a value the user just said «No» to (D-286): no new card. */
+export const REFUSED_SAVED = 'error: the user said No to this saved data a moment ago: do not try it again with another tool; go on without it, or tell the user.';
+
+/**
+ * The references the user said «No» to in the conversation (D-286, second
+ * trial in Chrome: after «No» on browser.open the model tried web.fetch of
+ * the same address, and the same card came again): those decided in the
+ * last SAVED_WINDOW_MS and after the last message of the user. Another tool
+ * with only these values is stopped without a new card.
+ */
+export async function refusedSaved(sql: Queryable, conversationId: string): Promise<Set<string>> {
+  const rows = await sql<{ ref: string | null }[]>`
+    SELECT value ->> 'ref' AS ref
+    FROM approvals a JOIN tasks t ON t.id = a.task_id, jsonb_array_elements(a.detail -> 'values') AS value
+    WHERE a.kind = 'browser' AND a.action = ${SAVED_ACTION} AND a.state = 'rejected' AND t.conversation_id = ${conversationId}
+      AND a.decided_at IS NOT NULL
+      AND a.decided_at >= now() - make_interval(secs => ${SAVED_WINDOW_MS / 1000}::float8)
+      AND NOT EXISTS (SELECT FROM messages m WHERE m.conversation_id = ${conversationId} AND m.role = 'user' AND m.ts > a.decided_at)`;
+  return new Set(rows.map((row) => row.ref).filter((ref): ref is string => typeof ref === 'string' && ref !== ''));
+}
+
 /** What the model reads once the user decided; the same bytes at every later step (the prefix cache). Never a value nor a name. */
 export function savedResultText(state: string, tool?: string): string {
   // What to do next, by the action asked (D-286): the page of an open is not open yet, so never a read first.
   if (state === 'approved') {
-    switch (tool) {
-      case 'browser.open':
-        return 'the user agreed that the saved data may leave for this: call browser.open with that same address now, before anything else (the page is not open yet: do not call browser.read first).';
-      case 'browser.click':
-        return 'the user agreed that the saved data may leave for this: call browser.read, then the same browser.click again.';
-      case 'browser.type':
-        return 'the user agreed that the saved data may leave for this: call the same browser.type again now.';
-      case 'web.fetch':
-        return 'the user agreed that the saved data may leave for this: call the same web.fetch again now.';
-      default:
-        return 'the user agreed that the saved data may leave for this: call the same tool again (browser.read first if the page changed).';
+    // The core made the same call again right after «Apri» (D-286): its outcome is the next step.
+    if (tool === 'browser.open' || tool === 'browser.click' || tool === 'browser.type' || tool === 'web.fetch') {
+      return `the user agreed that the saved data may leave for this: the same ${tool} was made again right after, its result follows.`;
     }
+    return 'the user agreed that the saved data may leave for this: call the same tool again (browser.read first if the page changed).';
   }
   if (state === 'pending') return WAITING_PRIVATE;
   return 'error: the user did not want saved data of a client or a contact to leave here. Do not try it again with that data; go on without it, or tell the user.';

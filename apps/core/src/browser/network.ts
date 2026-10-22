@@ -902,8 +902,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // the consent does not cover, right after a click or a key of the user (taken once), counts as written.
     // A script, a meta refresh, a timer or a command of the bar has no gesture: refused as before.
     const userScope = scope;
-    const chosen =
-      frame.main && userScope.driver === 'user' && method === 'GET' && userScope.consent.from === 'user' && session === null && isAgentNavigation(request, job) && !coveredBy(userScope.consent, url) && userScope.takeGesture?.() === true;
+    // The gesture goes with the first navigation of the main page of the agent's tab after it, whatever its site:
+    // a click on a link of a site already covered, then a script towards a new one, finds none left.
+    const gesture = frame.main && userScope.driver === 'user' && isAgentNavigation(request, job) ? userScope.takeGesture?.() === true : false;
+    const chosen = gesture && method === 'GET' && userScope.consent.from === 'user' && session === null && !coveredBy(userScope.consent, url);
     const written = chosen ? (withoutHash(url) ?? undefined) : undefined;
     if (before > MAX_REDIRECTS) {
       if (frame.main && isAgentNavigation(request, job)) navigated('too-many-redirects');

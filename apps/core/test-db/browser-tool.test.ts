@@ -22,7 +22,6 @@ import { appendEvent } from '../src/events.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, submitTask } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import {
-  approvedAddresses,
   BROWSER_ACTION_EVENT,
   browserConsent,
   CLOSED_BY_USER_TEXT,
@@ -42,6 +41,7 @@ import {
   loginLine,
 } from '../src/orchestrator/browser-tool.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
+import { approvedAddresses } from '../src/orchestrator/web-tool.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask, type Task } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -185,7 +185,8 @@ test('Internal context: the user consent; a link to another site waits for «Apr
   const conversationId = await workConversation();
   const { task } = await postUserMessage(db().sql, conversationId, `Apri ${CATALOGO} e segui il link alla scheda.`);
   const browser = fakeBrowser([PAGE, { ok: false, reason: 'confirm', url: ALTRO, site: 'altro.example' }, { ok: true, page: { url: ALTRO, site: 'altro.example', title: 'Scheda finta' } }]);
-  const model = scripted([OPEN(CATALOGO), CLICK(3), CLICK(3), REPLY('Ecco la scheda.')]);
+  // After «Apri» the core makes the same click again itself (D-286).
+  const model = scripted([OPEN(CATALOGO), CLICK(3), REPLY('Ecco la scheda.')]);
   const first = await drain(task.id, model, browser);
   assert.equal(first.at(-1), 'waiting-approval');
   assert.deepEqual(browser.calls[0]?.scope.consent, { from: 'user', addresses: [CATALOGO] } satisfies PageConsent);
@@ -332,5 +333,5 @@ test('D-286: the sites the user chose in the browser join the user consent of Ar
   browser.userAddressesOf = (id) => (id === conversationId ? ['https://altro.example/'] : []);
   const model = scripted([OPEN(CATALOGO), REPLY('Fatto.')]);
   await drain(task.id, model, browser);
-  assert.deepEqual(browser.calls[0]?.scope.consent, { from: 'user', addresses: [CATALOGO, 'https://altro.example/'] } satisfies PageConsent);
+  assert.deepEqual(browser.calls[0]?.scope.consent, { from: 'user', addresses: ['https://altro.example/', CATALOGO] } satisfies PageConsent);
 });

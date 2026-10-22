@@ -6,7 +6,7 @@ import { localMidnight } from '../commitment-dates.ts';
 import { appendEvent } from '../events.ts';
 import { FETCH_FAILURE_TEXT, siteOf } from '../link-fetch.ts';
 import type { Task } from '../tasks.ts';
-import { coveredBy, withWritten } from '../browser/network.ts';
+import { coveredBy } from '../browser/network.ts';
 import { addressesInText, readPage, type ReadPageInput } from '../web-page.ts';
 import { approvedSaved } from './saved-ask.ts';
 
@@ -85,6 +85,16 @@ export interface WebFetchResult {
 
 function failure(text: string): WebFetchResult {
   return { text: `error: ${WEB_FETCH}: ${text}`, label: 'L0' };
+}
+
+/** The sites of the addresses of a conversation, as the gateway names them (without `www.`), at most 200. */
+function sitesOf(addresses: readonly string[]): string[] {
+  const sites = new Set<string>();
+  for (const address of addresses) {
+    const site = siteOf(address);
+    if (site !== undefined && site !== '') sites.add(site);
+  }
+  return [...sites].slice(0, 200);
 }
 
 /** An address as compared with those the user wrote: normalized, without the fragment, as the gateway does. */
@@ -184,9 +194,13 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
   } else {
     // The addresses of the user, those opened from a card and the sites the user chose in the browser: a page on one
     // of their sites goes, whoever composed its address (choice of the user, 2026-10-22, «Il sito approvato vale tutto», D-286).
-    const written: PageConsent = { from: 'user', addresses: [...new Set([...(await userAddresses(web.sql, task, context.effective)), ...(await approvedAddresses(web.sql, task)), ...(web.userSites ?? [])])].slice(0, 200) };
+    // The sites the user chose in the browser first, so that none of them is cut by the limit of the consent.
+    const written: PageConsent = { from: 'user', addresses: [...new Set([...(web.userSites ?? []), ...(await userAddresses(web.sql, task, context.effective)), ...(await approvedAddresses(web.sql, task))])].slice(0, 200) };
     if (!coveredBy(written, key)) return failure(NOT_USER_ADDRESS);
-    consent = withWritten(written, key);
+    // An address the user wrote goes with the `user` consent; any other of those sites with a consent of the sites,
+    // which the gateway checks and logs as such (web-page-sites): never as written by the user.
+    const exact = written.addresses.some((address) => addressKey(address) === key);
+    consent = exact ? written : { from: 'sites', sites: sitesOf(written.addresses) };
   }
   const read = await pagesRead(web.sql, task.id);
   if (read.task >= MAX_PAGES_PER_TASK) return failure(TASK_LIMIT);

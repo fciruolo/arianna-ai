@@ -50,7 +50,7 @@ interface Harness {
   /** Conversations whose browser «Chiudi» closed. */
   closes: string[];
   /** Who drives (the fake AgentBrowser of passo 5), and what was asked of it. */
-  driver: { value: 'agent' | 'user'; gives: number; inputs: number; wait?: Promise<void> };
+  driver: { value: 'agent' | 'user'; gives: number; inputs: number; gestures: number; wait?: Promise<void> };
   controls: { conversationId: string; state: string; reason?: string }[];
   /** Commands of the bar of the screen (D-286) the fake AgentBrowser got. */
   commands: unknown[];
@@ -58,7 +58,7 @@ interface Harness {
 
 function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: ScreensOptions['limits']; pingMs?: number; idleMs?: number; checkMs?: number } = {}): Harness {
   const state: Harness['state'] = { holder: WORK, container: 'arianna-browser-chat-aaaaaaaaaaaa' };
-  const driver: Harness['driver'] = { value: 'agent', gives: 0, inputs: 0 };
+  const driver: Harness['driver'] = { value: 'agent', gives: 0, inputs: 0, gestures: 0 };
   const controls: Harness['controls'] = [];
   const channels: FakeChannel[] = [];
   const events: NewEvent[] = [];
@@ -112,6 +112,7 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
         return true;
       },
       input: () => { driver.inputs += 1; },
+      gesture: () => { driver.gestures += 1; },
       driver: (id) => (state.holder === id ? driver.value : null),
       blocked: (id) => (state.holder === id && driver.value === 'user' ? { seq: 3, outcome: 'form' } : null),
     },
@@ -813,4 +814,29 @@ test('POST /api/browser/navigate (D-286): only from an open screen and the origi
   assert.deepEqual(await navigate({ conversationId: WORK, screen, command: 'open', url: 'https://comune-finto.it/servizi' }), { status: 200, body: { ok: true, url: 'https://comune-finto.it/servizi', site: 'comune-finto.it' } });
   assert.deepEqual(await navigate({ conversationId: WORK, screen, command: 'forward' }), { status: 200, body: { ok: false, reason: 'no-page' } });
   ws.close();
+});
+
+test('a gesture of the user is a click, Enter or Space of the screen that drives; the keys of a text and the moves of the mouse never (D-286)', async () => {
+  const h = harness();
+  const screen = await token(h);
+  const socket = attachFake(h, screen);
+  socket.emit('message', HANDSHAKE, true);
+  const taken = await h.screens.take(WORK, screen);
+  assert.ok(taken.ok && (await taken.done));
+  const keyOf = (keysym: number, down = true): Buffer => {
+    const message = Buffer.from([4, down ? 1 : 0, 0, 0, 0, 0, 0, 0]);
+    message.writeUInt32BE(keysym, 4);
+    return message;
+  };
+  // Letters, Shift, a move of the mouse: input, never a gesture (a script while the user writes in a form gets none).
+  socket.emit('message', Buffer.concat([keyOf(0x61), keyOf(0x61, false), keyOf(0xffe1), keyOf(0xffe1, false), Buffer.from([5, 0, 0, 10, 0, 20])]), true);
+  await tick();
+  assert.ok(h.driver.inputs >= 1);
+  assert.equal(h.driver.gestures, 0);
+  // Enter, then a click: two gestures.
+  socket.emit('message', keyOf(0xff0d), true);
+  await tick();
+  socket.emit('message', Buffer.from([5, 1, 0, 10, 0, 20]), true);
+  await tick();
+  assert.equal(h.driver.gestures, 2);
 });

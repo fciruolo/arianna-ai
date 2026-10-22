@@ -22,7 +22,7 @@ import { createContext, isAtMost, maxLabel, type Context, type Label, type Label
 
 import { contextOf } from '../finance-mark.ts';
 import { answersWithoutDelegation, CHAT_AGENT, characterOn, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
-import type { Sql } from '../db/client.ts';
+import type { Queryable, Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
@@ -78,8 +78,8 @@ import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
-import { approvedPrivateSteps, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
-import { browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
+import { approvedPrivateSteps, REFUSED_SAVED, refusedSaved, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
+import { approvedRedo, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
@@ -1239,11 +1239,16 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // A plan of Claude that failed in this task is not asked again by the local model: one call per task.
       const tools = plannerModel !== undefined && turns.some(failedPlan) ? offered.filter((tool) => tool !== PLAN) : offered;
       const planner: Planner = plannerModel === undefined ? 'self' : 'claude';
-      await show(task, step, 'thinking');
+      // After «Apri» of a card of the browser (D-286): the core makes the approved call again itself, as this step,
+      // and the model reads its outcome after; never the old page first.
+      const redo = await approvedRedo(sql, task.id, turns);
+      const redone = redo !== undefined && redo.action === 'call' && tools.includes(redo.tool) ? redo : undefined;
+      if (redone === undefined) await show(task, step, 'thinking');
       // The reply of this step, opened before the model writes (D-249): its thinking and text go live; it is stored only if the step answers.
-      const live = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId });
-      let asked;
-      try {
+      const live = task.conversationId === null || redone !== undefined ? undefined : await openReply(sql, task.id, { runId });
+      let asked: Awaited<ReturnType<typeof ask>>;
+      if (redone !== undefined) asked = { read: { answer: redone }, tokensIn: 0, tokensOut: 0 };
+      else try {
         // Only at the first step of the task: a reply after a tool keeps what the tool said, at temperature 0.
         // Live pieces skip the checks of `finish`: shown only when the reply could be stored and shown (D-249).
         const lively = options.livelyReplies === true && playing && turns.length === 0;
@@ -1329,6 +1334,12 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         const ran = await browserTool(answer.tool, answer.arguments, { task, context, incognito, ...(options.browser === undefined ? {} : { browser: { browser: options.browser.agent, sql, runId } }) });
         // A saved private value of the user (D-283): the card «Apri / No», written with the turn.
         const saved = ran.private;
+        // A value the user just said «No» to (D-286): stopped, without the same card again.
+        if (saved !== undefined && task.conversationId !== null && (await refusedOnlyIn(sql, task.conversationId, saved.saved))) {
+          await recordTurn(sql, { ...turn, label: maxLabel(label, ran.label), result: REFUSED_SAVED });
+          await show(task, step, 'error', 'browser · hai detto No a questo dato: non lo riprovo');
+          return { kind: 'continue', usage };
+        }
         if (saved !== undefined) {
           const approvalId = await sql.begin(async (tx) => {
             await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
@@ -1398,6 +1409,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const browserLast = browserAgent === undefined || task.conversationId === null ? null : browserAgent.lastOpenedAt(task.conversationId);
       const userSites = browserAgent === undefined || task.conversationId === null ? [] : browserAgent.userAddressesOf(task.conversationId);
       const fetched = tool === WEB_FETCH ? await runTool(tool, answer.arguments, { sql, kb: options.kb, task, context, autonomy: agent.card.autonomy, incognito, web: { sql, runId, signal: ctx.signal, browserLast, userSites, ...(browserSaved === undefined ? {} : { browserSaved }), ...(options.fetchLink === undefined ? {} : { fetchLink: options.fetchLink }) } }) : undefined;
+      // A value the user just said «No» to (D-286): web.fetch stops without the same card again.
+      const refusedFetch = fetched?.private !== undefined && task.conversationId !== null && (await refusedOnlyIn(sql, task.conversationId, fetched.private.saved));
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
@@ -1431,6 +1444,10 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           return { ...ran, approvalId: written.approvalId };
         }
         // A saved private value of the user in the address of web.fetch (D-283): the card «Apri / No» with the turn.
+        if (ran.private !== undefined && refusedFetch) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: REFUSED_SAVED });
+          return { ...ran, private: undefined, text: REFUSED_SAVED, approvalId: undefined };
+        }
         if (ran.private !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
           return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserLast, site: ran.private.site ?? null }) };
@@ -1524,6 +1541,13 @@ function repeatedResult(tool: ToolId, step: number, waits: boolean, privateLeftO
  * went through with other arguments (waiting, ready, waiting again); failed
  * updates never restart the count.
  */
+/** Whether every value of a card was refused by the user a moment ago in the conversation (D-286). */
+async function refusedOnlyIn(sql: Queryable, conversationId: string, refs: readonly string[]): Promise<boolean> {
+  if (refs.length === 0) return false;
+  const refused = await refusedSaved(sql, conversationId);
+  return refs.every((ref) => refused.has(ref));
+}
+
 export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<string, unknown>, approvedSaved: ReadonlySet<number> = new Set()): number | undefined {
   const key = canonical(args);
   const lastWrite =

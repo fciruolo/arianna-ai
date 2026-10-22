@@ -110,13 +110,12 @@ test('the texts of the access (D-276): never a password from Arianna, the user s
   assert.match(FAILURE_TEXT.reread, /browser\.read/);
 });
 
-test('after «Apri» the model is told to open the same address again before anything else, never to read the old page (D-286)', () => {
-  assert.match(browserResultText('approved', 'altro.example', 'browser.open'), /call browser\.open with that same address now, before anything else/);
-  assert.match(browserResultText('approved', 'altro.example', 'browser.open'), /do not call browser\.read first/);
-  assert.match(browserResultText('approved', 'altro.example', 'browser.click'), /browser\.read, then the same browser\.click/);
-  assert.match(savedResultText('approved', 'browser.open'), /call browser\.open with that same address now/);
-  assert.match(savedResultText('approved', 'web.fetch'), /the same web\.fetch again now/);
-  assert.match(savedResultText('approved', 'browser.type'), /the same browser\.type again now/);
+test('after «Apri» the model reads that the core made the same call again, and its outcome follows (D-286)', () => {
+  for (const tool of ['browser.open', 'browser.click', 'browser.type', 'web.fetch']) {
+    assert.match(savedResultText('approved', tool), new RegExp(`the same ${tool.replace('.', '\\.')} was made again right after`));
+  }
+  assert.match(browserResultText('approved', 'altro.example', 'browser.open'), /the same browser\.open was made again right after/);
+  assert.match(browserResultText('approved', 'altro.example', 'browser.click'), /the same browser\.click was made again right after/);
   // A refusal never says to try again.
   assert.match(savedResultText('rejected', 'browser.open'), /^error: /);
 });

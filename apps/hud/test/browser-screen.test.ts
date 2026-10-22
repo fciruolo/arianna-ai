@@ -151,6 +151,9 @@ describe('BrowserScreen.vue', () => {
     assert.match(source, /applyControl\(before !== 'you' && status\.control === 'you'\)/);
     // The label follows the page of the core, not only the lines of the chat.
     assert.match(source, /liveSite \?\? site/);
+    // The notice of a refused page goes when a page opens again (D-286); a command of the bar sets the site at once.
+    assert.match(source, /if \(status\.blocked === null && noticeOfBlock\)/);
+    assert.match(source, /liveSite\.value = done\.site;/);
   });
 
   it('disconnects when it goes away', () => {

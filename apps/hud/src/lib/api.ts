@@ -1229,15 +1229,15 @@ export async function navigateBrowser(
   command: 'back' | 'forward' | 'reload' | 'open',
   url?: string,
   ask?: string,
-): Promise<{ ok: true; url: string } | { ok: false; reason: string; values: { kind: string; client: string }[]; ask: string | null }> {
-  const body = await call<{ ok?: unknown; url?: unknown; reason?: unknown; values?: unknown; ask?: unknown }>('POST', '/api/browser/navigate', {
+): Promise<{ ok: true; url: string; site: string | null } | { ok: false; reason: string; values: { kind: string; client: string }[]; ask: string | null }> {
+  const body = await call<{ ok?: unknown; url?: unknown; site?: unknown; reason?: unknown; values?: unknown; ask?: unknown }>('POST', '/api/browser/navigate', {
     conversationId,
     screen,
     command,
     ...(command === 'open' && url !== undefined ? { url } : {}),
     ...(command === 'open' && ask !== undefined ? { ask } : {}),
   });
-  if (body.ok === true && typeof body.url === 'string') return { ok: true, url: body.url };
+  if (body.ok === true && typeof body.url === 'string') return { ok: true, url: body.url, site: typeof body.site === 'string' && body.site !== '' ? body.site : null };
   const values = Array.isArray(body.values)
     ? (body.values as unknown[]).flatMap((value) => {
         const entry = (value ?? {}) as Record<string, unknown>;

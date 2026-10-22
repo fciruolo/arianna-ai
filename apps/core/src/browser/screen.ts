@@ -516,6 +516,7 @@ export class BrowserScreens {
       }
       const chunk = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
       const before = filter.mode === 'control' ? filter.counts : undefined;
+      const activationsBefore = filter.activations;
       const step = filter.push(chunk);
       for (const part of step.forward) stream.write(part);
       // Input of the user on the screen that drives: activity for the browser and for the 5 minutes.
@@ -524,7 +525,8 @@ export class BrowserScreens {
         if (after.keys !== before.keys || after.clicks !== before.clicks || step.forward.some((part) => part[0] === 4 || part[0] === 5)) {
           screen.lastInput = this.#now();
           this.#safely(() => { this.#options.control?.input(screen.conversationId); });
-          if (after.keys !== before.keys || after.clicks !== before.clicks) this.#safely(() => { this.#options.control?.gesture?.(screen.conversationId); });
+          // A click, Enter or Space chooses a page (D-286); a key of a text never.
+          if (after.clicks !== before.clicks || filter.activations !== activationsBefore) this.#safely(() => { this.#options.control?.gesture?.(screen.conversationId); });
         }
       }
       if (step.close !== undefined) {

@@ -19,8 +19,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Corretto
 
-- Dopo «Apri» Arianna riapre subito la pagina invece di leggere quella vecchia o dire che il browser non è aperto (D-286).
-- Le pagine con più di 3 MB di HTML si aprono (tetto a 10 MB per una pagina del browser e per `web.fetch`) (D-286).
+- Dopo «Apri» di una scheda del browser è il core a rifare subito l'azione approvata (aprire la pagina, il clic, il testo, la lettura): Arianna non legge più la pagina vecchia né dice che il browser non è aperto (D-286).
+- Dopo un «No» a un dato salvato Arianna non lo riprova con un altro strumento e non ti mostra la stessa scheda di nuovo, per 15 minuti o finché non scrivi un nuovo messaggio (D-286).
+- Ricarica della barra su una pagina di un sito aperto col tuo clic non viene più fermata, l'avviso «Pagina non aperta» sparisce quando la pagina successiva si apre, e il sito mostrato segue anche Indietro e Avanti (D-286).
+- Le pagine con più di 3 MB di HTML si aprono nel browser di Arianna (tetto a 10 MB) e `web.fetch` le legge per intero fino a 10 MB: prima le tagliava a 2 MB e su una pagina così leggeva un testo vuoto (D-286).
 - Il campo dell'indirizzo sopra lo schermo non perde più il fuoco mentre scrivi, e il sito mostrato segue i tuoi clic (D-286).
 - Una pagina del browser di Arianna fermata dal gateway non fa più aspettare 45 secondi né chiudere il browser con «l’azione nel browser non è riuscita»: la scheda rimasta sulla pagina d’errore si chiude senza aspettarla, e una lettura senza pagina risponde subito (D-283).
 - Un indirizzo scritto con un punto finale («…S.r.l.») vale come scritto dall’utente anche col punto (D-283).

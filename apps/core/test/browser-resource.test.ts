@@ -10,7 +10,7 @@ import { gzipSync } from 'node:zlib';
 import { createContext } from '@arianna/policy';
 
 import type { Sql } from '../src/db/client.ts';
-import { createResourcePool, fetchResource, redirectTarget, type ResourceInput, type ResourceOptions, type ResourcePool } from '../src/browser/resource-fetch.ts';
+import { createResourcePool, fetchResource, redirectTarget, RESOURCE_RULES, type ResourceInput, type ResourceOptions, type ResourcePool } from '../src/browser/resource-fetch.ts';
 import { gateResource } from '../src/browser/resource-gate.ts';
 
 // No test reaches the internet: a fake server on 127.0.0.1 and a fake resolver
@@ -254,6 +254,21 @@ describe('fetchResource', () => {
       response.writeHead(200, { 'content-type': 'text/javascript' }).end(Buffer.alloc(limit + 1, 32));
     });
     assert.equal((await fetchResource(get(at('/big.js'), 'script'), options)).ok, true);
+  });
+
+  it('a page takes up to 10 MB of HTML, never more (D-286: a site of more than 3 MB did not open)', async () => {
+    const pageLimit = RESOURCE_RULES.document.maxBytes;
+    assert.equal(pageLimit, 10 * 1024 * 1024);
+    routes.set('/large.html', (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html' }).end(Buffer.alloc(pageLimit, 32));
+    });
+    routes.set('/too-large.html', (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html' }).end(Buffer.alloc(pageLimit + 1, 32));
+    });
+    const options = network();
+    const large = await fetchResource(get(at('/large.html'), 'document'), options);
+    assert.equal(large.ok ? large.body.length : -1, pageLimit);
+    assert.deepEqual(await fetchResource(get(at('/too-large.html'), 'document'), options), { ok: false, reason: 'too-large' });
   });
 
   it('accepts only the media types of the kind; an error answer keeps its status', async () => {

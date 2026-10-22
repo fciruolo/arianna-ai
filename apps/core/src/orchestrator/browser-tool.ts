@@ -151,8 +151,6 @@ export async function approvedSend(sql: Queryable, taskId: string): Promise<{ id
   return row?.state === 'approved' && row.element !== null ? { id: row.id, element: row.element } : undefined;
 }
 
-export { approvedAddresses };
-
 /** The consent of a step: public in a Public context, else the addresses of the user and those opened from a card. */
 export async function browserConsent(sql: Queryable, task: Task, context: Context): Promise<PageConsent> {
   if (context.effective === 'L0') return { from: 'public' };
@@ -291,7 +289,8 @@ export async function browserTool(
   const asked: PageConsent = chat === undefined ? await browserConsent(browser.sql, task, context) : { from: 'sites', sites: [chat] };
   // The pages the user opened in this browser (D-286, while driving or from the bar) are written by the user too.
   const opened = asked.from === 'user' ? browser.browser.userAddressesOf(task.conversationId) : [];
-  const consent: PageConsent = asked.from === 'user' && opened.length > 0 ? { from: 'user', addresses: [...new Set([...asked.addresses, ...opened])].slice(0, 200) } : asked;
+  // The chosen sites first (at most 100): the limit of the consent never cuts them.
+  const consent: PageConsent = asked.from === 'user' && opened.length > 0 ? { from: 'user', addresses: [...new Set([...opened, ...asked.addresses])].slice(0, 200) } : asked;
   const sendPermit = chat === undefined ? undefined : await approvedSend(browser.sql, task.id);
   // The saved values the user let go for this browser (D-283), or for the one this action opens: the same set
   // goes to its network.
@@ -394,9 +393,8 @@ export function browserSendText(state: string, site: string): string {
 
 /** What the model reads once the user decided; the same bytes at every later step (the prefix cache). */
 export function browserResultText(state: string, site: string, tool?: string): string {
-  // What to do next, by the action asked: the page of an open is not open yet, so never a read first (D-286).
-  if (state === 'approved' && tool === 'browser.open') return `the user agreed to open the address on ${site}: call browser.open with that same address now, before anything else (the page is not open yet: do not call browser.read first).`;
-  if (state === 'approved' && tool === 'browser.click') return `the user agreed to open the link to ${site}: call browser.read, then the same browser.click again.`;
+  // The core made the same call again right after «Apri» (D-286): its outcome is the next step.
+  if (state === 'approved' && tool !== undefined && REDONE_TOOLS.includes(tool)) return `the user agreed to open the address on ${site}: the same ${tool} was made again right after, its result follows.`;
   if (state === 'approved') return `the user agreed to open the address on ${site}: call the same browser.open or browser.click again (browser.read first if the page changed).`;
   if (state === 'pending') return WAITING_BROWSER;
   return `error: browser: the user did not want to open the address on ${site}. Do not open it nor another address of that site; go on without it, or tell the user.`;
@@ -424,6 +422,28 @@ async function browserAsksByStep(sql: Queryable, taskId: string): Promise<Map<nu
 }
 
 const WAITING_RESULTS: readonly string[] = [WAITING_BROWSER, WAITING_SEND, WAITING_PRIVATE];
+
+/** The calls the core makes again itself after «Apri» (D-286): the approved action, before the model reads anything. */
+const REDONE_TOOLS: readonly string[] = ['browser.open', 'browser.click', 'browser.type', 'web.fetch'];
+
+/**
+ * The call to make again right now (D-286, second trial in Chrome: the local
+ * model read the old page, or said the browser was closed, instead of
+ * opening the page after «Apri»): when the last turn of the task waited for
+ * a card «Apri / No» of the browser (a site, or a saved value) that the user
+ * approved, the same call with the same arguments. The core runs it as the
+ * step, and the model reads its outcome after. Undefined otherwise (a «No»,
+ * a card still waiting, a later turn already there).
+ */
+export async function approvedRedo(sql: Queryable, taskId: string, turns: readonly Turn[]): Promise<Turn['answer'] | undefined> {
+  const last = turns.reduce<Turn | undefined>((latest, turn) => (latest === undefined || turn.step > latest.step ? turn : latest), undefined);
+  if (last === undefined || (last.result !== WAITING_BROWSER && last.result !== WAITING_PRIVATE)) return undefined;
+  if (last.answer.action !== 'call' || !REDONE_TOOLS.includes(last.answer.tool)) return undefined;
+  const ask = (await browserAsksByStep(sql, taskId)).get(last.step);
+  if (ask?.state !== 'approved') return undefined;
+  if ((last.result === WAITING_PRIVATE) !== (ask.action === SAVED_ACTION)) return undefined;
+  return last.answer;
+}
 
 /** The turns' results as the model reads them: a waiting click, a waiting send (D-281) or a saved value (D-283, browser or web.fetch) becomes the user's decision. */
 export async function browserResults(sql: Queryable, taskId: string, turns: readonly Turn[]): Promise<Map<number, string>> {

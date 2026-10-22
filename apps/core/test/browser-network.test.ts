@@ -179,14 +179,26 @@ describe('attachNetwork', () => {
     assert.equal((await net.send({ url: 'https://altro.example.net/pagina', main: true })).aborted, 'blockedbyclient');
     const gestures = { left: 1 };
     userWith(net, consent, gestures);
-    // A page of a site already covered takes no gesture and notes nothing.
-    assert.ok((await net.send({ url: 'https://example.com/altra', main: true })).fulfilled !== undefined);
-    assert.equal(gestures.left, 1);
     // The click of the user: the new site opens, noted as a site for the conversation of the scope.
     const opened = await net.send({ url: 'https://altro.example.net/pagina#sezione', main: true });
     assert.ok(opened.fulfilled !== undefined);
     assert.deepEqual(noted, [['https://altro.example.net/', 'conv-a']]);
     assert.equal(net.handle.lastNavigation()?.outcome, 'ok');
+    await net.close();
+  });
+
+  it('the gesture goes with the first navigation of the agent\'s tab, covered or not: a click on the same site, then a script to a new one, is refused (D-286)', async () => {
+    const noted: string[] = [];
+    const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
+    const net = await harness({ consent, level: 'L1', answer: html, onUserAddress: (address) => noted.push(address) });
+    const gestures = { left: 1 };
+    userWith(net, consent, gestures);
+    // A click on a link of the same site: it goes, and takes the gesture.
+    assert.ok((await net.send({ url: 'https://example.com/altra', main: true })).fulfilled !== undefined);
+    assert.equal(gestures.left, 0);
+    // A script of that page towards a new site right after: no gesture left.
+    assert.equal((await net.send({ url: 'https://altro.example.net/pagina', main: true })).aborted, 'blockedbyclient');
+    assert.deepEqual(noted, []);
     await net.close();
   });
 

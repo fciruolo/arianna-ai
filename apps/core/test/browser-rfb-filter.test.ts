@@ -219,3 +219,16 @@ test('in control the right and middle buttons and the Menu key never reach Chrom
   assert.deepEqual(filter.push(key(0xff67)).forward, []);
   assert.equal(filter.counts.clicks, 1);
 });
+
+test('only Enter, keypad Enter and Space count as an activation: the keys of a text never (D-286)', () => {
+  const filter = createRfbFilter('control');
+  filter.push(HANDSHAKE);
+  filter.push(Buffer.concat([key(0x61), key(0x61, false), key(0xffe1), key(0x41), key(0xffe1, false), key(0xffe3), key(0xffe3, false)]));
+  assert.equal(filter.activations, 0);
+  filter.push(Buffer.concat([key(0xff0d), key(0xff0d, false), key(0x20), key(0x20, false), key(0xff8d)]));
+  assert.equal(filter.activations, 3);
+  // In view nothing.
+  filter.setMode('view');
+  filter.push(key(0xff0d));
+  assert.equal(filter.activations, 3);
+});

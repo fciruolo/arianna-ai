@@ -30,7 +30,7 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { siteOf, type FetchOptions, type FetchResult } from '../src/link-fetch.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
-import { savedResultText } from '../src/orchestrator/saved-ask.ts';
+import { REFUSED_SAVED, savedResultText } from '../src/orchestrator/saved-ask.ts';
 import { refreshSavedPrivate, resetSavedPrivate, savedInAddress } from '../src/saved-private.ts';
 import { addressesInText } from '../src/web-page.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -182,7 +182,8 @@ for (const closed of [true, false]) {
     const conversationId = (await createConversation(sql, { mode: 'work' })).id;
     const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
     const w = world();
-    const model = scripted([OPEN(address), OPEN(address), READ, REPLY('Ecco cosa ho trovato.')]);
+    // After «Apri» the core opens the address again itself (D-286): no answer of the model for it.
+    const model = scripted([OPEN(address), READ, REPLY('Ecco cosa ho trovato.')]);
 
     const first = await drain(task.id, model, w.browser);
     assert.equal(first.at(-1), 'waiting-approval');
@@ -246,7 +247,7 @@ test('the check before the page (D-283): browser.open with a saved value asks at
   const conversationId = (await createConversation(sql, { mode: 'work' })).id;
   const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
   const w = world({ precheck: true });
-  const model = scripted([OPEN(address), OPEN(address), REPLY('Fatto.')]);
+  const model = scripted([OPEN(address), REPLY('Fatto.')]);
   assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
   // No page was asked: the card came from the check before the navigation.
   assert.equal(w.pages.length, 0);
@@ -267,7 +268,7 @@ test('«Apri» on a card of web.fetch: the step resumes and reads the page; the 
   const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
   const w = world({ precheck: true });
   fetched.length = 0;
-  const model = scripted([FETCH(address), FETCH(address), OPEN(address), READ, REPLY('Ecco.')]);
+  const model = scripted([FETCH(address), OPEN(address), READ, REPLY('Ecco.')]);
   assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
   const [ask] = await sql<{ id: string; detail: Record<string, unknown> }[]>`SELECT id::text, detail FROM approvals WHERE task_id = ${task.id} AND action = 'browser.private'`;
   assert.equal(ask?.detail.tool, 'web.fetch');
@@ -319,4 +320,44 @@ test('«Apri» on a card of the browser holds for web.fetch of the same value in
   assert.deepEqual(fetches.map((row) => row.outcome), ['ok']);
   const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${task.id}`;
   assert.equal(count?.n, 1);
+});
+
+test('after «Apri» the core makes the approved call itself, before the model reads anything; after «No» another tool with the same value is stopped without a new card (D-286)', async () => {
+  const sql = db().sql;
+  const tag = randomUUID().slice(0, 8);
+  await createClient(sql, { displayName: `Mercato Ruffo${tag}` });
+  await refreshSavedPrivate(sql);
+  const address = `https://duckduckgo.com/?q=Mercato+Ruffo${tag}`;
+  // «Apri»: the open is made again by the core; the model is asked only once more, for the reply.
+  const yes = (await createConversation(sql, { mode: 'work' })).id;
+  const { task } = await postUserMessage(sql, yes, `Cerca ${address}`);
+  const w = world({ precheck: true });
+  const model = scripted([OPEN(address), REPLY('Ecco.')]);
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
+  const [ask] = await sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${task.id} AND action = 'browser.private'`;
+  await recordDecision(sql, ask?.id ?? '', 'approved', 'web');
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
+  assert.equal(model.requests.length, 2);
+  // The page was opened before the model read anything, and the model read its outcome.
+  assert.deepEqual(w.pages.map((page) => page.rule), ['page']);
+  const turns = await sql<{ step: number; result: string | null }[]>`SELECT step, result FROM task_turns WHERE task_id = ${task.id} ORDER BY step`;
+  assert.equal(turns.length, 3);
+  assert.match(turns[1]?.result ?? '', /^Browser on «Risultati finti»/);
+  assert.ok(sawText(model.requests[1], 'Browser on «Risultati finti»'));
+  // «No»: then web.fetch of the same address is stopped without a card.
+  const no = (await createConversation(sql, { mode: 'work' })).id;
+  const { task: refused } = await postUserMessage(sql, no, `Cerca ${address}`);
+  const other = world({ precheck: true });
+  const again = scripted([OPEN(address), FETCH(address), REPLY('Va bene.')]);
+  assert.equal((await drain(refused.id, again, other.browser)).at(-1), 'waiting-approval');
+  const [card] = await sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${refused.id} AND action = 'browser.private'`;
+  await recordDecision(sql, card?.id ?? '', 'rejected', 'web');
+  assert.equal((await drain(refused.id, again, other.browser)).at(-1), 'answered');
+  const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${refused.id}`;
+  assert.equal(count?.n, 1);
+  assert.ok(sawText(again.requests[2], REFUSED_SAVED));
+  // A new message of the user: the same value asks again.
+  const { task: later } = await postUserMessage(sql, no, `Riprova ${address}`);
+  const third = scripted([FETCH(address)]);
+  assert.equal((await drain(later.id, third, other.browser)).at(-1), 'waiting-approval');
 });

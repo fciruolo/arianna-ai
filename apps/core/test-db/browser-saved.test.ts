@@ -250,7 +250,8 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   const conversationId = (await createConversation(sql, { mode: 'work' })).id;
   const { task } = await postUserMessage(sql, conversationId, `Cerca ${address} e dimmi cosa trovi.`);
   const browser = fakeBrowser([{ ok: true, page: { url: CERCA, site: 'cerca.example', title: 'Cerca' } }, { ok: false, reason: 'confirm-private', saved: [ref], site: 'cerca.example' }]);
-  const model = scripted([OPEN(CERCA), OPEN(address), OPEN(address), REPLY('Ecco i risultati.')]);
+  // After «Apri» the core opens the address again itself (D-286): the model is not asked for it.
+  const model = scripted([OPEN(CERCA), OPEN(address), REPLY('Ecco i risultati.')]);
   // The address the user wrote; the first open of the search page is the user's too (written above).
   const first = await drain(task.id, model, browser);
   assert.equal(first.at(-1), 'waiting-approval');

@@ -75,6 +75,8 @@ export function droppedKeysym(keysym: number): boolean {
 }
 
 const CONTROL_KEYS = [0xffe3, 0xffe4];
+/** Enter, keypad Enter and Space: the keys that follow a link or press a button (D-286). */
+const ACTIVATION_KEYS = [0xff0d, 0xff8d, 0x20];
 const SHIFT_KEYS = [0xffe1, 0xffe2];
 /** I, J and C, either case: with Ctrl and Shift, the developer tools. */
 const DEVTOOLS_LETTERS = [0x49, 0x69, 0x4a, 0x6a, 0x43, 0x63];
@@ -112,6 +114,11 @@ export interface RfbFilter {
   setMode(mode: ScreenMode): void;
   /** Keys pressed and clicks forwarded so far in control. */
   readonly counts: Readonly<InputCounts>;
+  /**
+   * Enter, keypad Enter and Space pressed so far in control (D-286): with the
+   * clicks, the only keys that choose a page (a key of a text does not).
+   */
+  readonly activations: number;
   push(chunk: Buffer): FilterStep;
 }
 
@@ -136,6 +143,7 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
   let pending: Buffer = Buffer.alloc(0);
   let closed: FilterClose | undefined;
   const counts: InputCounts = { keys: 0, clicks: 0 };
+  let activations = 0;
   /** Chrome modifiers down now (their keysyms): every key is dropped while one is. */
   const modifiers = new Set<number>();
   /** Ctrl and Shift down now (forwarded, but read for Ctrl+Shift+I/J/C). */
@@ -160,6 +168,7 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
       return false;
     }
     if (down) counts.keys += 1;
+    if (down && ACTIVATION_KEYS.includes(keysym)) activations += 1;
     return true;
   };
 
@@ -247,6 +256,9 @@ export function createRfbFilter(initial: ScreenMode = 'view'): RfbFilter {
     },
     get counts() {
       return { ...counts };
+    },
+    get activations() {
+      return activations;
     },
     push(chunk) {
       if (phase === 'closed') return { forward: [], close: closed ?? 'refused-type' };

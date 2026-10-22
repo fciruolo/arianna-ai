@@ -55,7 +55,7 @@ export interface ReadPageInput {
   fetchLink?: (address: string, options: FetchOptions, signal?: AbortSignal) => Promise<FetchResult>;
 }
 
-/** Bytes of a page web.fetch takes at most, as a page of the browser (resource-fetch.ts, `document`). */
+/** Bytes of a page web.fetch reads at most before cutting it, as a page of the browser (resource-fetch.ts, `document`). */
 export const WEB_PAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** What readPage gives: the page, or why not; `saved` with a refusal for saved private values (D-283). */
@@ -95,7 +95,8 @@ export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
     return allowed(page, next);
   };
   const download = input.fetchLink ?? fetchLink;
-  // A page as the browser takes it (D-286 trial: a site of 3 MB and more of HTML): the text is cut for the model anyway.
+  // As a page of the browser (D-286, second trial: a site of more than 3 MB of HTML, cut at 2 MB, gave an empty text,
+  // and Arianna said the site did not exist): the text for the model is cut anyway.
   const result = await download(address, { authorize, maxBytes: WEB_PAGE_MAX_BYTES }, input.signal);
   return !result.ok && saved !== undefined ? { ...result, saved, ...(savedSite === undefined ? {} : { savedSite }) } : result;
 }

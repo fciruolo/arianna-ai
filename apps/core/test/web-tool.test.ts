@@ -134,6 +134,8 @@ describe('webFetch (D-262)', () => {
     const db = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
     const result = await run(db, createContext('L1', 'L1'), 'https://example.com/contatti?lingua=it');
     assert.ok(result.page !== undefined, result.text);
+    // Logged as a page of the sites of the conversation, never as an address written by the user.
+    assert.deepEqual(db.gateway.map((values) => [values[3], values[7]]), [['web-page-sites', 'page']]);
     // A site the user chose in the browser counts too.
     const chosen = fake([{ body: `Guarda ${LISTINO}`, label: 'L1' }]);
     const other = await webFetch({ url: 'https://scelto.example.org/pagina' }, { task: TASK, context: createContext('L1', 'L1'), web: { sql: chosen.sql, fetchLink: page(chosen), userSites: ['https://scelto.example.org/'] } });

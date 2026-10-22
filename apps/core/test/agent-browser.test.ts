@@ -535,6 +535,11 @@ test('input of the user counts as activity; the site and the refused navigations
   assert.equal(h.userTouches, before + 1);
   // Nothing refused since the control was taken.
   assert.equal(h.browser.blockedOf('a'), null);
+  // The site of the page the tab shows (D-286: also after back and forward from the cache).
+  h.page.url = 'https://www.altro-finto.it/pagina';
+  assert.equal(h.browser.siteOf('a'), 'altro-finto.it');
+  // On no page (Chromium's error page): the last page of the network.
+  h.page.url = 'chrome-error://chromewebdata/';
   h.last = { seq: 5, outcome: 'ok', site: 'servizi-finti.it' };
   assert.equal(h.browser.siteOf('a'), 'servizi-finti.it');
   h.last = { seq: 6, outcome: 'blocked' };
@@ -843,4 +848,28 @@ test('a free browser of another conversation and a saved value: the card, and th
   assert.deepEqual(h.closed, []);
   assert.deepEqual(h.taken, []);
   assert.equal(h.browser.holder, 'b');
+});
+
+test('a command of the bar takes away a pending gesture; a site the user chose widens the consent of the browser at once (D-286)', async () => {
+  const h = harness();
+  const consent: PageConsent = { from: 'user', addresses: ['https://comune-finto.it/servizi'] };
+  await h.browser.act(scope('a', consent, INTERNAL), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.takeControl('a').done;
+  h.browser.userGesture('a');
+  await h.browser.userCommand('a', { kind: 'reload' });
+  const user = h.scopes.at(-1);
+  assert.equal(user?.driver, 'user');
+  assert.equal(user.takeGesture?.(), false);
+  // A click on a new site went: the scope of the user has its site at once, its gesture as it was.
+  h.browser.userGesture('a');
+  h.job?.onUserAddress?.('https://nuovo-finto.it/pagina', 'a');
+  const widened = h.scopes.at(-1);
+  assert.deepEqual(widened?.consent, { from: 'user', addresses: ['https://nuovo-finto.it/', 'https://comune-finto.it/servizi'] });
+  assert.equal(widened.driver, 'user');
+  assert.equal(widened.takeGesture?.(), true);
+  // ↻ of the bar on a page of that site: its scope has the site (D-286, second trial: «www.iana.org is blocked»).
+  await h.browser.userCommand('a', { kind: 'reload' });
+  const reload = h.scopes.filter((next) => next.driver === 'user').at(-2);
+  assert.deepEqual(reload?.consent, { from: 'user', addresses: ['https://nuovo-finto.it/', 'https://comune-finto.it/servizi'] });
+  assert.equal(reload.takeGesture, undefined);
 });

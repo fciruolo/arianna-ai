@@ -357,6 +357,12 @@ export class AgentBrowser {
   siteOf(conversationId: string): string | null {
     const held = this.#held;
     if (this.holder !== conversationId || held === null) return null;
+    // The page the tab shows now (D-286: back and forward from the cache of Chromium have no navigation of the network).
+    const shown = held.session.currentUrl();
+    if (shown !== null && /^https?:/i.test(shown)) {
+      const site = siteOf(shown);
+      if (site !== undefined && site !== '') return site;
+    }
     // While the user drives the page changes without actions of Arianna: the network knows the last one.
     if (held.driver === 'user') {
       const last = held.session.network?.lastNavigation();
@@ -557,6 +563,8 @@ export class AgentBrowser {
       const wasAgent = held.driver === 'agent';
       this.#running = true;
       this.#userRunning = true;
+      // A command of the bar is no click on the page: a gesture before it is gone, and none is left after it.
+      held.gestureUsed = true;
       // As the user's, without a gesture: only the address written in the bar counts as written (back, forward and reload never choose a site).
       const userScope = networkScope({ ...held.scope, consent: withWritten(held.scope.consent, written) }, 'user', held.saved);
       held.session.network?.rescope(userScope);
@@ -573,6 +581,7 @@ export class AgentBrowser {
         if (!result.ok) for (const ref of lent) held.saved.delete(ref);
         this.#running = false;
         this.#userRunning = false;
+        held.gestureUsed = true;
         if (this.#held === held) {
           this.#touch(held);
           if (wasAgent && held.driver === 'agent') {
@@ -867,7 +876,12 @@ export class AgentBrowser {
     }
   }
 
-  /** Notes a page the user chose, as its site, for the conversation whose scope navigated (D-286). */
+  /**
+   * Notes a page the user chose, as its site, for the conversation whose
+   * scope navigated (D-286), and widens the consent of the browser at once:
+   * the pages of that site (a script that goes on to /login, a redirect of
+   * its own) then go without another click.
+   */
   #noteUserAddress(address: string, conversationId: string | undefined): void {
     if (conversationId === undefined) return;
     let site: string;
@@ -881,6 +895,12 @@ export class AgentBrowser {
     this.#userAddresses.delete(conversationId);
     this.#userAddresses.set(conversationId, [site, ...known.filter((other) => other !== site)].slice(0, MAX_USER_ADDRESSES));
     while (this.#userAddresses.size > MAX_USER_CONVERSATIONS) this.#userAddresses.delete(this.#userAddresses.keys().next().value ?? '');
+    const held = this.#held;
+    if (held?.conversationId !== conversationId || held.scope.consent.from !== 'user') return;
+    held.scope = { ...held.scope, consent: withWritten(held.scope.consent, site) };
+    // The scope of who drives now, the same as before but for the site: the gesture of the user goes on as it was.
+    if (held.driver === 'user' && !this.#userRunning) held.session.network?.rescope(networkScope(held.scope, 'user', held.saved, held, this.#now));
+    else if (held.driver === 'agent' && !this.#userRunning) held.session.network?.rescope(networkScope(held.scope, 'agent', held.saved));
   }
 
   #pruneAsks(): void {
