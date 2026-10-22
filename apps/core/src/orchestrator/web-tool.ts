@@ -75,7 +75,7 @@ export interface WebFetchResult {
   /** The page read, for the line of the chat. */
   page?: WebPage;
   /** A saved private value of the user in the address (D-283): its references, for the card «Apri / No». */
-  private?: { saved: readonly string[] };
+  private?: { saved: readonly string[]; site?: string };
 }
 
 function failure(text: string): WebFetchResult {
@@ -183,19 +183,20 @@ export async function webFetch(args: Record<string, unknown>, env: { task: Task;
     ...(web.fetchLink === undefined ? {} : { fetchLink: web.fetchLink }),
   });
   // Only the site and the outcome: never the address, its path nor the text. The site has the label of the step.
-  const site = result.ok ? result.link.site : (siteOf(key) ?? '');
+  // A refused address names no site (D-283): the site of an address with a saved value says something of the user.
+  const site = result.ok ? result.link.site : result.reason === 'blocked' ? undefined : (siteOf(key) ?? '');
   await appendEvent(web.sql, {
     kind: WEB_FETCH_EVENT,
     label: context.effective,
     taskId: task.id,
     ...(web.runId === undefined ? {} : { runId: web.runId }),
-    payload: { conversationId: task.conversationId, site, outcome: result.ok ? 'ok' : result.reason },
+    payload: { conversationId: task.conversationId, ...(site === undefined ? {} : { site }), outcome: result.ok ? 'ok' : result.reason },
   });
   if (!result.ok && result.saved !== undefined && result.saved.length > 0) {
     return {
       text: `error: ${WEB_FETCH}: the address carries data the user saved for a client or a contact: the user decides in the chat whether it may leave.`,
       label: 'L0',
-      private: { saved: result.saved },
+      private: { saved: result.saved, ...(result.savedSite === undefined ? {} : { site: result.savedSite }) },
     };
   }
   if (!result.ok) return failure(FETCH_FAILURE_TEXT[result.reason]);

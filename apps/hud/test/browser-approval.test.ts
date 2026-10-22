@@ -71,6 +71,10 @@ test('the card «Apri / No» of a saved value (D-283): what it is and whose, nev
     web: false,
   });
   assert.equal(card('browser.private', { values, tool: 'web.fetch', step: 3 })?.web, true);
+  // The site it would go to, the name only; none when missing or empty.
+  assert.equal(card('browser.private', { values, tool: 'browser.open', step: 3, site: 'cerca.example' })?.site, 'cerca.example');
+  assert.equal(card('browser.private', { values, tool: 'browser.open', step: 3, site: '  ' })?.site, undefined);
+  assert.equal(card('browser.private', { values: [{ ref: 'client:c1:eu-vat-number', kind: 'eu-vat-number', client: 'X' }], step: 1 })?.lines[0], 'la partita IVA europea di X');
   // A reference whose client is gone, or a kind the chat does not know.
   assert.deepEqual(card('browser.private', { values: [{ ref: 'client:c9:iban', kind: 'iban', client: '' }, { ref: 'x', kind: 'nuovo' }], step: 1 })?.lines, ['l’IBAN di un cliente', 'un dato salvato di un cliente']);
   assert.equal(card('browser.private', { values: [], step: 1 }), undefined);
@@ -80,5 +84,6 @@ test('the card «Apri / No» of a saved value (D-283): what it is and whose, nev
   assert.equal(browserClick({ kind: 'browser', detail: { values, step: 1 } }), undefined);
   assert.equal([PRIVATE_YES, PRIVATE_NO].join(' / '), 'Apri / No');
   assert.match(PRIVATE_NOTE, /finché lo chiudi/);
+  assert.match(PRIVATE_NOTE, /la richiesta può tornare/);
   assert.equal(ACTION_TEXT['browser.private'], 'Lascio uscire questo dato salvato?');
 });

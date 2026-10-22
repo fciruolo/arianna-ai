@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   addressReadings,
   createContext,
+  savedForms,
   fakePiiCheck,
   gatewayCheck,
   piiUnavailable,
@@ -89,11 +90,40 @@ test('saved matcher: a phone by its digits, with or without the prefix, as a who
   assert.deepEqual(KNOWN.find('12 34'), []);
 });
 
+test('saved forms: dots and apostrophes inside a word count as written and as taken away', () => {
+  const known = savedMatcher([
+    { ref: 'client:r1:name', value: 'Rossi S.r.l.' },
+    { ref: 'client:r2:person', value: "Mario D'Angelo" },
+    { ref: 'client:r3:name', value: 'Bianchi Srl' },
+  ]);
+  assert.deepEqual(known.find('cerca Rossi Srl'), ['client:r1:name']);
+  assert.deepEqual(known.find('cerca rossi s.r.l. a Torino'), ['client:r1:name']);
+  assert.deepEqual(known.find('mario dangelo'), ['client:r2:person']);
+  assert.deepEqual(known.find('Mario DAngelo'), ['client:r2:person']);
+  assert.deepEqual(known.find("Mario D'Angelo"), ['client:r2:person']);
+  assert.deepEqual(known.find('Bianchi S.r.l.'), ['client:r3:name']);
+  // Words apart stay apart: no value made by gluing two words of the text.
+  assert.deepEqual(known.find('mario d angelo'), ['client:r2:person']);
+  assert.deepEqual(known.find('rossi s r l'), ['client:r1:name']);
+  assert.deepEqual(known.find('Rossini Srl'), []);
+  assert.deepEqual(savedForms("D'Angelo"), ['d angelo', 'dangelo']);
+  assert.deepEqual(savedForms('Rossi'), ['rossi']);
+});
+
+test('address readings: decoded again while they change, at most three times', () => {
+  const known = savedMatcher([{ ref: 'contact:k9:contact-name', value: 'Mario Rossi' }]);
+  assert.ok(addressReadings('https://cerca.example/?q=Mario%2520Rossi').some((reading) => known.find(reading).length > 0));
+  assert.ok(addressReadings('https://cerca.example/?q=Mario%252520Rossi').some((reading) => known.find(reading).length > 0));
+  // A fourth encoding is not taken apart.
+  assert.ok(!addressReadings('https://cerca.example/?q=Mario%25252520Rossi').some((reading) => known.find(reading).length > 0));
+  assert.equal(addressReadings('https://cerca.example/?q=orari').length, 1);
+});
+
 test('address readings: as written, decoded, and + as a space', () => {
   assert.deepEqual(addressReadings('https://cerca.example/?q=via+dei%20glicini'), [
     'https://cerca.example/?q=via+dei%20glicini',
-    'https://cerca.example/?q=via+dei glicini',
     'https://cerca.example/?q=via dei glicini',
+    'https://cerca.example/?q=via+dei glicini',
   ]);
 });
 

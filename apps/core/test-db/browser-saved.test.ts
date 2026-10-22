@@ -25,7 +25,7 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { approvedSaved, savedResultText, WAITING_PRIVATE } from '../src/orchestrator/saved-ask.ts';
-import { knownPrivate, refreshSavedPrivate, resetSavedPrivate, savedEntry, startSavedPrivate } from '../src/saved-private.ts';
+import { knownPrivate, refreshSavedPrivate, resetSavedPrivate, savedEntry, savedValueHash, startSavedPrivate } from '../src/saved-private.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 
@@ -77,13 +77,20 @@ test('the matcher from the database: clients not archived and contacts not remov
   // The partita IVA as saved and as sites write it, with the country in front.
   assert.deepEqual(knownPrivate.find('?piva=05500000012'), [`client:${id}:vat-number`]);
   assert.deepEqual(knownPrivate.find('?q=IT05500000012'), [`client:${id}:vat-number`]);
-  assert.deepEqual(savedEntry(`client:${id}:email`), { kind: 'email', client: name });
+  // The EU VAT number of a client of the EU, also without its country, and the tax id of one outside.
+  const eu = await createClient(sql, { displayName: `Holzbau Finta ${tag}`, country: 'AT', euVatNumber: 'ATU12345675' });
+  const abroad = await createClient(sql, { displayName: `Lumber Finta ${tag}`, country: 'US', foreignTaxId: '98-7654321' });
+  await settled();
+  assert.deepEqual(knownPrivate.find('vies ATU12345675'), [`client:${eu.id}:eu-vat-number`]);
+  assert.deepEqual(knownPrivate.find('?q=U12345675'), [`client:${eu.id}:eu-vat-number`]);
+  assert.deepEqual(knownPrivate.find('id 98-7654321'), [`client:${abroad.id}:foreign-tax-id`]);
+  assert.deepEqual(savedEntry(`client:${id}:email`), { kind: 'email', client: name, hash: savedValueHash(`amministrazione-${tag}@ferramenta-finta.example`) });
 
   // A contact added: in the values after the change, without restarting.
   const contact = await addContact(sql, id, { name: `Ottavio Brenta ${tag}`, mobile: '347 120 9981' });
   await settled();
   assert.deepEqual(knownPrivate.find(`Ottavio Brenta ${tag}`), [`contact:${contact.id}:contact-name`]);
-  assert.deepEqual(savedEntry(`contact:${contact.id}:contact-mobile`), { kind: 'contact-mobile', client: name });
+  assert.deepEqual(savedEntry(`contact:${contact.id}:contact-mobile`), { kind: 'contact-mobile', client: name, hash: savedValueHash('3471209981', true) });
   // Renamed: the old name no longer counts.
   await updateClient(sql, id, { displayName: `Lunardi Utensili ${tag}` });
   await settled();
@@ -137,7 +144,18 @@ test('0088: an approval browser.private is L2, with values, tool and step', asyn
   await assert.rejects(insert('L2', { values: [], tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
   await assert.rejects(insert('L2', { values, step: 1 }), /approvals_browser_fields/);
   await assert.rejects(insert('L2', { values, tool: 'browser.open' }), /approvals_browser_fields/);
+  // Each value only ref, kind and client, as strings: a value itself never enters approvals.
+  await assert.rejects(insert('L2', { values: [{ ...values[0], value: 'Ferramenta finta Srl' }], tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values: [{ ref: 'client:c1:name', kind: 'name' }], tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values: [{ ref: 'client:c1:name', kind: 'name', client: 7 }], tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values: ['client:c1:name'], tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values: { ref: 'client:c1:name' }, tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values: Array.from({ length: 21 }, () => values[0]), tool: 'browser.open', step: 1 }), /approvals_browser_fields/);
+  // The browser a number, the site a string, both optional.
+  await assert.rejects(insert('L2', { values, tool: 'browser.open', step: 1, browser: '1761000000000' }), /approvals_browser_fields/);
+  await assert.rejects(insert('L2', { values, tool: 'browser.open', step: 1, site: 3 }), /approvals_browser_fields/);
   await insert('L2', { values, tool: 'browser.open', step: 1 });
+  await insert('L2', { values, tool: 'browser.open', step: 1, browser: 1761000000000, site: 'cerca.example' });
 });
 
 function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
@@ -225,7 +243,7 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   const address = `https://cerca.example/?q=Officina+Brenta+${tag}`;
   const conversationId = (await createConversation(sql, { mode: 'work' })).id;
   const { task } = await postUserMessage(sql, conversationId, `Cerca ${address} e dimmi cosa trovi.`);
-  const browser = fakeBrowser([{ ok: true, page: { url: CERCA, site: 'cerca.example', title: 'Cerca' } }, { ok: false, reason: 'confirm-private', saved: [ref] }]);
+  const browser = fakeBrowser([{ ok: true, page: { url: CERCA, site: 'cerca.example', title: 'Cerca' } }, { ok: false, reason: 'confirm-private', saved: [ref], site: 'cerca.example' }]);
   const model = scripted([OPEN(CERCA), OPEN(address), OPEN(address), REPLY('Ecco i risultati.')]);
   // The address the user wrote; the first open of the search page is the user's too (written above).
   const first = await drain(task.id, model, browser);
@@ -235,7 +253,7 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   const [approval] = await sql<{ id: string; action: string; label: string; detail: Record<string, unknown> }[]>`
     SELECT id::text, action, label::text, detail FROM approvals WHERE task_id = ${task.id} AND kind = 'browser'`;
   assert.deepEqual([approval?.action, approval?.label], ['browser.private', 'L2']);
-  assert.deepEqual(approval?.detail, { values: [{ ref, kind: 'name', client: name }], tool: 'browser.open', step: 2, browser: browser.opened });
+  assert.deepEqual(approval?.detail, { values: [{ ref, kind: 'name', client: name }], tool: 'browser.open', step: 2, browser: browser.opened, site: 'cerca.example' });
   // The event of the request names the action only.
   const [requested] = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'approval.requested' ORDER BY id DESC LIMIT 1`;
   assert.doesNotMatch(JSON.stringify(requested?.payload ?? {}), new RegExp(`${tag}|Brenta`));
@@ -255,6 +273,13 @@ test('the card «Apri / No»: a saved value waits for the user; with «Apri» it
   assert.ok(!model.requests.some((request) => request.messages.some((part) => part.content.includes(`Officina Brenta ${tag}`) && part.role !== 'user')));
   // The open after «Apri» carried the value let go, for the browser it was decided for.
   assert.deepEqual(browser.calls[2]?.scope.saved, { opened: browser.opened, approved: new Set([ref]) });
+  // The «Apri» was for that value: the field changed, the new value asks again.
+  await updateClient(sql, id, { displayName: `Officina Brenta Due ${tag}` });
+  await refreshSavedPrivate(sql);
+  assert.deepEqual(await approvedSaved(sql, conversationId, { browser: browser.opened }), new Set());
+  // Neither the value nor its hash in the approval.
+  const [stored] = await sql<{ detail: unknown }[]>`SELECT detail FROM approvals WHERE id = ${approval.id}`;
+  assert.doesNotMatch(JSON.stringify(stored?.detail), /[0-9a-f]{64}/);
 });
 
 test('the card «Apri / No»: with «No» the model reads the refusal and nothing is let go', async () => {

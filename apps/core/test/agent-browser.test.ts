@@ -541,13 +541,14 @@ test('a saved private value in an address or a typed text asks the user, with it
   await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
   h.page.reading = { title: 'Cerca', url: 'https://comune-finto.it/servizi', text: '', elements: [{ ref: 1, kind: 'field', label: 'Cerca', type: 'search' }], scrolled: 0 };
   await h.browser.act(scope('a'), { kind: 'read' });
-  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'type', ref: 1, text: 'Ferramenta Lunardi Srl', submit: false }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'] });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'type', ref: 1, text: 'Ferramenta Lunardi Srl', submit: false }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'comune-finto.it' });
   assert.deepEqual(h.page.filled, []);
   // A page refused by the network for a saved value: the open asks the user too.
   const blocked = harness();
   blocked.last = { seq: 1, outcome: 'blocked', reason: 'saved-private', saved: ['contact:k1:contact-name'] } as Harness['last'];
   const opening = await blocked.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/rifiutata?q=Ottavio+Brenta' });
-  assert.deepEqual(opening, { ok: false, reason: 'confirm-private', saved: ['contact:k1:contact-name'] });
+  // With the site the value would go to, the name only.
+  assert.deepEqual(opening, { ok: false, reason: 'confirm-private', saved: ['contact:k1:contact-name'], site: 'cerca-finto.it' });
   // Refused for another reason: no card.
   blocked.last = { seq: 2, outcome: 'blocked' };
   assert.equal((await blocked.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/rifiutata' })).ok, false);
@@ -576,4 +577,20 @@ test('the values the user let go hold for the browser they were read for, until 
   await h.browser.act(scope('a'), { kind: 'read' });
   await h.browser.act({ ...scope('a'), saved: { opened: opened ?? 0, approved: new Set(['client:c1:name']) } }, { kind: 'type', ref: 1, text: 'orari', submit: false });
   assert.deepEqual(h.typedApproved.at(-1), []);
+});
+
+test('released or shut down while an open is under way: no browser stays open behind it, and none opens after a shutdown', async () => {
+  for (const stop of ['release', 'close'] as const) {
+    const h = harness();
+    const opening = h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+    await (stop === 'release' ? h.browser.release('a') : h.browser.close());
+    await opening;
+    assert.equal(h.browser.holder, null, stop);
+    assert.equal(h.opened.length, 1, stop);
+    assert.deepEqual(h.closed, h.opened, stop);
+  }
+  const h = harness();
+  await h.browser.close();
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' }), { ok: false, reason: 'not-open' });
+  assert.deepEqual(h.opened, []);
 });

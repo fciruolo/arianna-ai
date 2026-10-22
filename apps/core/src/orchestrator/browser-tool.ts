@@ -87,7 +87,7 @@ export interface BrowserToolResult {
   /** The Private chat of an access (D-281): a send to the site waiting for the card «Invia / No». */
   send?: { site: string; element: string };
   /** A saved private value of the user would leave (D-283): its references, for the card «Apri / No». */
-  private?: { saved: readonly string[]; browser: number | null };
+  private?: { saved: readonly string[]; browser: number | null; site?: string };
 }
 
 const ACTION_OF: Record<BrowserToolId, BrowserAction['kind']> = {
@@ -332,7 +332,7 @@ export async function browserTool(
         label,
         detail: `browser · ${FAILURE_TEXT['confirm-private']}`,
         // The browser the card is for: its «Apri» holds for this one only.
-        private: { saved: result.saved, browser: browser.browser.openedAt(task.conversationId) },
+        private: { saved: result.saved, browser: browser.browser.openedAt(task.conversationId), ...(result.site === undefined ? {} : { site: result.site }) },
       };
     }
     if (result.reason === 'confirm-send') {

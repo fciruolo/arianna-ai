@@ -1,4 +1,6 @@
-import { savedMatcher, type KnownPrivate, type SavedValue } from '@arianna/policy';
+import { createHash } from 'node:crypto';
+
+import { savedForm, savedMatcher, type KnownPrivate, type SavedValue } from '@arianna/policy';
 
 import { onClientsChanged } from './clients.ts';
 import type { Queryable } from './db/client.ts';
@@ -8,7 +10,8 @@ import type { Queryable } from './db/client.ts';
  * in the agent's browser and in web.fetch instead of the second scanner: of
  * the clients not archived the name, the company name, first and last name
  * together, street with its number (each address), email, PEC, billing email,
- * phone and mobile, partita IVA, codice fiscale and IBAN; of the contacts not
+ * phone and mobile, partita IVA (also with `IT` in front), EU VAT number
+ * (also without its country), foreign tax id, codice fiscale and IBAN; of the contacts not
  * removed the name, email, phone and mobile. Built from the database at the
  * start and after every change of a client or a contact, in memory only:
  * never written, never in an event or a log. The gateway gets references
@@ -21,6 +24,17 @@ export interface SavedEntry {
   kind: SavedKind;
   /** The display name of the client, for the card of the chat (L2, local). */
   client: string;
+  /**
+   * The sha256 of the value as compared (`savedForm`, the digits of a
+   * phone): an «Apri» holds for this value only, so a field changed later
+   * asks again. In memory only, never in the database, an event or a log.
+   */
+  hash: string;
+}
+
+/** The hash of a value as compared, for `SavedEntry.hash`. */
+export function savedValueHash(value: string, phone = false): string {
+  return createHash('sha256').update(phone ? value.replace(/\D/g, '') : savedForm(value)).digest('hex');
 }
 
 export const SAVED_KINDS = [
@@ -36,6 +50,8 @@ export const SAVED_KINDS = [
   'phone',
   'mobile',
   'vat-number',
+  'eu-vat-number',
+  'foreign-tax-id',
   'tax-code',
   'iban',
   'contact-name',
@@ -64,6 +80,8 @@ interface ClientValues {
   phone: string | null;
   mobile: string | null;
   vatNumber: string | null;
+  euVatNumber: string | null;
+  foreignTaxId: string | null;
   taxCode: string | null;
   iban: string | null;
 }
@@ -85,12 +103,18 @@ function streetOf(address: unknown): string | undefined {
   return `${street} ${number}`;
 }
 
+/** A tax number without the two letters of its country in front («IT01234567890» → «01234567890»); undefined without them. */
+function withoutCountry(value: string): string | undefined {
+  const match = /^[A-Za-z]{2}\s*([A-Za-z0-9+*][A-Za-z0-9+*\s]*)$/.exec(value.trim());
+  return match?.[1] === undefined ? undefined : match[1];
+}
+
 /** The saved values from the database, with what each reference is. */
 export async function loadSavedValues(sql: Queryable): Promise<{ values: SavedValue[]; entries: Map<string, SavedEntry> }> {
   const clients = await sql<ClientValues[]>`
     SELECT id::text, display_name AS "displayName", legal_name AS "legalName", first_name AS "firstName", last_name AS "lastName",
       registered_address AS registered, billing_address AS billing, shipping_address AS shipping,
-      email, pec, billing_email AS "billingEmail", phone, mobile, vat_number AS "vatNumber", tax_code AS "taxCode", iban
+      email, pec, billing_email AS "billingEmail", phone, mobile, vat_number AS "vatNumber", eu_vat_number AS "euVatNumber", foreign_tax_id AS "foreignTaxId", tax_code AS "taxCode", iban
     FROM clients WHERE status <> 'archived'`;
   const contacts = await sql<ContactValues[]>`
     SELECT k.id::text, c.display_name AS "clientName", k.name, k.email, k.phone, k.mobile
@@ -102,7 +126,8 @@ export async function loadSavedValues(sql: Queryable): Promise<{ values: SavedVa
     if (typeof value !== 'string' || value.trim() === '') return;
     const ref = `${owner}:${kind}`;
     values.push({ ref, value, ...(phone ? { phone: true } : {}) });
-    entries.set(ref, { kind, client });
+    // The first value of a reference is the saved one; the others are ways of writing it.
+    if (!entries.has(ref)) entries.set(ref, { kind, client, hash: savedValueHash(value, phone) });
   };
   for (const row of clients) {
     const owner = `client:${row.id}`;
@@ -123,9 +148,12 @@ export async function loadSavedValues(sql: Queryable): Promise<{ values: SavedVa
     add(owner, client, 'billing-email', row.billingEmail);
     add(owner, client, 'phone', row.phone, true);
     add(owner, client, 'mobile', row.mobile, true);
+    // As saved, and as sites write it: with the country in front («IT01234567890»), or with its digits only.
     add(owner, client, 'vat-number', row.vatNumber);
-    // As sites write it, with the country in front («IT01234567890»).
-    add(owner, client, 'vat-number', row.vatNumber === null ? null : `IT${row.vatNumber}`);
+    add(owner, client, 'vat-number', row.vatNumber == null ? null : withoutCountry(row.vatNumber) ?? `IT${row.vatNumber}`);
+    add(owner, client, 'eu-vat-number', row.euVatNumber);
+    add(owner, client, 'eu-vat-number', row.euVatNumber == null ? null : withoutCountry(row.euVatNumber));
+    add(owner, client, 'foreign-tax-id', row.foreignTaxId);
     add(owner, client, 'tax-code', row.taxCode);
     add(owner, client, 'iban', row.iban);
   }

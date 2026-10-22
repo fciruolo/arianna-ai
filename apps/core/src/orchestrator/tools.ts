@@ -119,7 +119,7 @@ export interface ToolResult {
   /** `web.fetch`: the page read, for the line of the chat (D-262). */
   page?: WebPage;
   /** `web.fetch`: a saved private value of the user in the address (D-283), for the card «Apri / No». */
-  private?: { saved: readonly string[] };
+  private?: { saved: readonly string[]; site?: string };
 }
 
 /** Longest page text shown to the model in one result. */

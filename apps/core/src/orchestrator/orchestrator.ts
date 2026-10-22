@@ -78,7 +78,7 @@ import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
-import { requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
+import { approvedPrivateSteps, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
 import { browserChatSite, browserOffered, browserReplay, browserResults, browserTool, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
@@ -1332,7 +1332,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         if (saved !== undefined) {
           const approvalId = await sql.begin(async (tx) => {
             await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
-            return requestSavedPrivate(tx, { taskId: task.id, step, tool: answer.tool, refs: saved.saved, browser: saved.browser });
+            return requestSavedPrivate(tx, { taskId: task.id, step, tool: answer.tool, refs: saved.saved, browser: saved.browser, site: saved.site ?? null });
           });
           await show(task, step, 'wait', ran.detail);
           return { kind: 'confirm', approvalId, usage };
@@ -1366,7 +1366,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // The same call again is not run (D-076): the model reads where its
       // result already is; every third one the task waits for the user, and
       // after the user resumes it the count starts again.
-      const earlier = earlierCall(turns, tool, answer.arguments);
+      // A web.fetch may run again after a card of saved values the user approved (D-283), never after a «No».
+      const earlier = earlierCall(turns, tool, answer.arguments, tool === WEB_FETCH ? await approvedPrivateSteps(sql, task.id) : undefined);
       if (earlier !== undefined) {
         const stopped = stoppedRepeats(turns).length;
         // A search that said private pages were left out, asked again (D-241): what the user wants may
@@ -1429,7 +1430,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         // A saved private value of the user in the address of web.fetch (D-283): the card «Apri / No» with the turn.
         if (ran.private !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_PRIVATE });
-          return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserOpened }) };
+          return { ...ran, approvalId: await requestSavedPrivate(tx, { taskId: task.id, step, tool, refs: ran.private.saved, browser: browserOpened, site: ran.private.site ?? null }) };
         }
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
@@ -1520,14 +1521,14 @@ function repeatedResult(tool: ToolId, step: number, waits: boolean, privateLeftO
  * went through with other arguments (waiting, ready, waiting again); failed
  * updates never restart the count.
  */
-export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<string, unknown>): number | undefined {
+export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<string, unknown>, approvedSaved: ReadonlySet<number> = new Set()): number | undefined {
   const key = canonical(args);
   const lastWrite =
     tool === 'kb.read' || tool === 'kb.search'
       ? turns.findLastIndex(wrotePage)
-      // A page the user decided on with «Apri / No» (D-283): the same web.fetch may run again after it.
+      // A page the user let go with «Apri» (D-283): the same web.fetch may run again after it; after «No» it may not.
       : tool === WEB_FETCH
-        ? turns.findLastIndex((past) => past.result === WAITING_PRIVATE)
+        ? turns.findLastIndex((past) => past.result === WAITING_PRIVATE && approvedSaved.has(past.step))
       : tool === UPDATE
         ? turns.findLastIndex((past) => canonical(past.answer.action === 'call' ? past.answer.arguments : null) !== key && updatedCard(past, args))
         : -1;

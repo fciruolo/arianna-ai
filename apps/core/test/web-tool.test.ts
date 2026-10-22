@@ -21,7 +21,8 @@ import {
   type WebToolEnv,
 } from '../src/orchestrator/web-tool.ts';
 import { configurePiiGuard } from '../src/pii-guard.ts';
-import { useSavedValues } from '../src/saved-private.ts';
+import { rememberAsked } from '../src/orchestrator/saved-ask.ts';
+import { savedValueHash, useSavedValues } from '../src/saved-private.ts';
 import type { Task } from '../src/tasks.ts';
 import { committedAgents } from './support/committed-agents.ts';
 import { resolveHome } from '@arianna/config';
@@ -30,7 +31,7 @@ import { resolveHome } from '@arianna/config';
 configurePiiGuard({ state: 'ready', warm: () => Promise.resolve(true), scan: (texts) => Promise.resolve(piiReport(texts, texts.map(() => []))), stop: () => Promise.resolve() });
 
 // The saved private values of the user (D-283): one fake client.
-useSavedValues([{ ref: 'client:c1:name', value: 'Ferramenta Lunardi Srl' }]);
+useSavedValues([{ ref: 'client:c1:name', value: 'Ferramenta Lunardi Srl' }], new Map([['client:c1:name', { kind: 'name', client: 'Ferramenta Lunardi Srl', hash: savedValueHash('Ferramenta Lunardi Srl') }]]));
 /** References the fake database says the user let go with «Apri». */
 let approvedRefs: string[] = [];
 
@@ -59,7 +60,7 @@ function fake(messages: { body: string; label: Label }[] = [], counts = { task: 
   const sql = (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join('?');
     if (query.includes('FROM messages')) return Promise.resolve(messages);
-    if (query.includes('FROM approvals')) return Promise.resolve(approvedRefs.map((ref) => ({ ref })));
+    if (query.includes('FROM approvals')) return Promise.resolve(approvedRefs.map((ref) => ({ id: 'approval-1', ref })));
     if (query.includes("FROM events WHERE kind = 'web.fetch'")) return Promise.resolve([counts]);
     if (query.includes('INSERT INTO events')) {
       events.push({ label: values[4], payload: values[5] });
@@ -243,16 +244,34 @@ describe('webFetch (D-262)', () => {
   it('an address with a saved private value asks the user, before the network; the gateway row names no value (D-283)', async () => {
     const db = fake();
     const result = await run(db, createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardi+Srl');
-    assert.deepEqual(result.private, { saved: ['client:c1:name'] });
+    assert.deepEqual(result.private, { saved: ['client:c1:name'], site: 'cerca.example' });
     assert.match(result.text, /^error: web\.fetch: the address carries data the user saved/);
     assert.doesNotMatch(result.text, /Lunardi/);
     assert.deepEqual(db.fetched, ['https://cerca.example/?q=Ferramenta+Lunardi+Srl']);
     assert.deepEqual(db.gateway.map((values) => [values[3], values[6], values[7]]), [['web-page-public', 'block', 'saved-private']]);
     assert.ok(db.gateway.every((values) => !JSON.stringify(values).includes('Lunardi')));
+    // The event of a refused address names no site (D-283).
+    assert.deepEqual(db.events.map((event) => event.payload), [{ conversationId: TASK.conversationId, outcome: 'blocked' }]);
+  });
+
+  it('an approval asked for another value of the field does not hold: the card comes back (D-283)', async () => {
+    approvedRefs = ['client:c1:name'];
+    // Remembered when the name was another: the user let go that value, not this one.
+    useSavedValues([{ ref: 'client:c1:name', value: 'Ferramenta Lunardi Srl' }], new Map([['client:c1:name', { kind: 'name', client: 'Ferramenta Lunardi Srl', hash: savedValueHash('Ferramenta Lunardi Snc') }]]));
+    rememberAsked('approval-1', ['client:c1:name']);
+    useSavedValues([{ ref: 'client:c1:name', value: 'Ferramenta Lunardi Srl' }], new Map([['client:c1:name', { kind: 'name', client: 'Ferramenta Lunardi Srl', hash: savedValueHash('Ferramenta Lunardi Srl') }]]));
+    try {
+      const result = await run(fake(), createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardi+Srl');
+      assert.deepEqual(result.private?.saved, ['client:c1:name']);
+    } finally {
+      approvedRefs = [];
+    }
   });
 
   it('a saved value the user let go passes, and a similar name passes without asking (D-283)', async () => {
     approvedRefs = ['client:c1:name'];
+    // The card was asked in this core, for the value as it is now.
+    rememberAsked('approval-1', ['client:c1:name']);
     try {
       const db = fake();
       const result = await run(db, createContext('L1', 'L0'), 'https://cerca.example/?q=Ferramenta+Lunardi+Srl');

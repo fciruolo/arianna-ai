@@ -125,7 +125,7 @@ export type ActionResult =
   /** The Private chat of an access (D-281): the action tried to send data to the site; the user decides with «Invia / No». */
   | { ok: false; reason: 'confirm-send'; site: string; element: string }
   /** A saved private value of the user would leave (D-283): its references, never the values; the user decides with «Apri / No». */
-  | { ok: false; reason: 'confirm-private'; saved: readonly string[] };
+  | { ok: false; reason: 'confirm-private'; saved: readonly string[]; site?: string };
 
 export type ActionFailure =
   | 'busy'
@@ -587,7 +587,7 @@ export class AgentBrowser {
         } catch (error) {
           // Only the kind of the failure, never the address: what to look at when a page "did not open" (D-281 trial).
           console.warn(`browser: open failed (${openFailureKind(error)})`);
-          return navigationFailure(session);
+          return towards(navigationFailure(session), siteOf(action.url));
         }
         return this.#state(held);
       }
@@ -615,7 +615,8 @@ export class AgentBrowser {
         }
         const page = await session.currentPage();
         const done = await withNavigation(page, session, () => page.locator(refSelector(action.ref)).first().click({ timeout: ACTION_MS }));
-        return done ?? this.#state(held);
+        // Where the value would go: the site of the link, or of the page a button sends from.
+        return done === undefined ? this.#state(held) : towards(done, (element.kind === 'link' && element.href !== undefined ? siteOf(element.href) : undefined) ?? siteOf(page.url()));
       }
       case 'type': {
         // Counted in characters as the gateway counts them (code points), not in UTF-16 units.
@@ -625,7 +626,10 @@ export class AgentBrowser {
         if (element.kind === 'password') return { ok: false, reason: 'password-field' };
         if (element.kind !== 'field') return { ok: false, reason: 'not-a-field' };
         const verdict = await this.#options.gateTyped(action.text, scope, held.saved).catch(() => false);
-        if (typeof verdict === 'object') return { ok: false, reason: 'confirm-private', saved: verdict.saved };
+        if (typeof verdict === 'object') {
+          const site = siteOf((await session.currentPage()).url());
+          return { ok: false, reason: 'confirm-private', saved: verdict.saved, ...(site === undefined ? {} : { site }) };
+        }
         if (!verdict) return { ok: false, reason: 'typed-blocked' };
         const page = await session.currentPage();
         const field = page.locator(refSelector(action.ref)).first();
@@ -634,7 +638,7 @@ export class AgentBrowser {
         await field.fill(action.text, { timeout: ACTION_MS });
         if (action.submit) {
           const done = await withNavigation(page, session, () => field.press('Enter', { timeout: ACTION_MS }));
-          if (done) return done;
+          if (done) return towards(done, siteOf(page.url()));
         }
         const state = await this.#state(held);
         return state.ok ? { ...state, typed: Array.from(action.text).length } : state;
@@ -786,6 +790,12 @@ function pageOf(url: string, title: string): { url: string; site: string; title:
 
 function refSelector(ref: number): string {
   return `[${REF_ATTRIBUTE}="${String(Math.trunc(ref))}"]`;
+}
+
+/** A card of saved values (D-283) with the site the value would go to; any other result as it is. */
+function towards(result: ActionResult, site: string | undefined): ActionResult {
+  if (result.ok || result.reason !== 'confirm-private' || site === undefined || site === '') return result;
+  return { ...result, site };
 }
 
 /** Why the last navigation failed, from the network of the job. */

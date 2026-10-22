@@ -44,12 +44,29 @@ export interface SavedCheck {
  * spaces collapsed.
  */
 export function savedForm(text: string): string {
-  return normalizeForScan(text)
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
+  return spaced(folded(text));
+}
+
+/** The form of the scanner, without accents and case. */
+function folded(text: string): string {
+  return normalizeForScan(text).normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
+}
+
+function spaced(text: string): string {
+  return text.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/**
+ * The forms a text is compared in: `savedForm`, and the same with the dots
+ * and apostrophes inside a word taken away («Rossi S.r.l.» as «rossi srl»,
+ * «D'Angelo» as «dangelo»), so that a value written with them matches a text
+ * written without, and the other way round.
+ */
+export function savedForms(text: string): string[] {
+  const base = folded(text);
+  const joined = spaced(base.replace(/(?<=[\p{L}\p{N}])[.'’`](?=[\p{L}\p{N}])/gu, ''));
+  const first = spaced(base);
+  return joined === first ? [first] : [first, joined];
 }
 
 /** Runs of digits a phone number can be written as: digits with spaces, dots, dashes, slashes or brackets between them. */
@@ -105,14 +122,15 @@ export function savedMatcher(values: Iterable<SavedValue>): KnownPrivate {
       }
       continue;
     }
-    const form = savedForm(saved.value);
-    if (form.length >= MIN_SAVED_LENGTH) words.push({ ref: saved.ref, form: ` ${form} ` });
+    for (const form of savedForms(saved.value)) {
+      if (form.length >= MIN_SAVED_LENGTH) words.push({ ref: saved.ref, form: ` ${form} ` });
+    }
   }
   return {
     find(text: string): string[] {
       const found = new Set<string>();
-      const form = ` ${savedForm(text)} `;
-      for (const word of words) if (form.includes(word.form)) found.add(word.ref);
+      const forms = savedForms(text).map((form) => ` ${form} `);
+      for (const word of words) if (forms.some((form) => form.includes(word.form))) found.add(word.ref);
       if (phones.size > 0) {
         for (const run of digitRuns(text)) for (const ref of phones.get(run) ?? []) found.add(ref);
       }
@@ -121,19 +139,30 @@ export function savedMatcher(values: Iterable<SavedValue>): KnownPrivate {
   };
 }
 
+/** Times an address is decoded at most: `%2520` hides a space under two encodings. */
+export const MAX_DECODINGS = 3;
+
 /**
- * The readings of an address the comparison takes besides the text as
- * written: decoded, and with `+` as a space (a query of a form). A broken
- * escape is left as it is (the gateway refused it before).
+ * The readings of an address the comparison with the saved values takes
+ * besides the text as written: decoded again while it changes, at most
+ * MAX_DECODINGS times, each also with `+` as a space (a query of a form). A
+ * broken escape ends the decoding there (the gateway refused one in the text
+ * as written before). The scanner reads its own readings, as before.
  */
 export function addressReadings(address: string): string[] {
-  const readings = [address];
-  try {
-    const decoded = decodeURIComponent(address);
-    readings.push(decoded);
-    if (address.includes('+')) readings.push(decodeURIComponent(address.replace(/\+/g, ' ')));
-  } catch {
-    // Read as written only.
+  const readings = new Set([address]);
+  let current = address;
+  for (let round = 0; round < MAX_DECODINGS; round += 1) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(current);
+      if (current.includes('+')) readings.add(decodeURIComponent(current.replace(/\+/g, ' ')));
+    } catch {
+      break;
+    }
+    if (decoded === current) break;
+    readings.add(decoded);
+    current = decoded;
   }
-  return readings;
+  return [...readings];
 }

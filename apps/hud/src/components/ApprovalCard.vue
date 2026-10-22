@@ -265,6 +265,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         <p class="text-xs text-muted">{{ SEND_NOTE }}</p>
       </template>
       <template v-else-if="saved !== undefined">
+        <p v-if="saved.site !== undefined" class="text-[15px]">
+          Sito: <strong>{{ saved.site }}</strong>
+        </p>
         <p>
           {{ saved.web ? 'L’indirizzo della pagina che Arianna vuole leggere contiene' : 'Arianna vuole far uscire dal suo browser' }}
           un dato che hai salvato fra i clienti:

@@ -60,7 +60,7 @@ export function browserSend(approval: { kind: string; action: string; detail: Re
 export const PRIVATE_YES = 'Apri';
 export const PRIVATE_NO = 'No';
 export const PRIVATE_NOTE =
-  'Con Apri questo dato può uscire dal browser di questa conversazione finché lo chiudi (per una pagina letta senza browser, per 15 minuti); con No Arianna prosegue senza. Password e chiavi non escono mai.';
+  'Con Apri questo dato può uscire dal browser di questa conversazione finché lo chiudi (per una pagina letta senza browser, per 15 minuti); con No Arianna prosegue senza. Se il browser si chiude prima della tua risposta, la richiesta può tornare. Password e chiavi non escono mai.';
 
 /** What each kind of saved value is, in Italian. */
 export const SAVED_KIND_TEXT: Record<string, string> = {
@@ -76,6 +76,8 @@ export const SAVED_KIND_TEXT: Record<string, string> = {
   phone: 'il telefono',
   mobile: 'il cellulare',
   'vat-number': 'la partita IVA',
+  'eu-vat-number': 'la partita IVA europea',
+  'foreign-tax-id': 'il codice fiscale estero',
   'tax-code': 'il codice fiscale',
   iban: 'l’IBAN',
   'contact-name': 'il nome di un contatto',
@@ -89,12 +91,14 @@ export interface BrowserPrivateCard {
   lines: string[];
   /** Where it would go: the browser or a page read by web.fetch. */
   web: boolean;
+  /** The site it would go to, the name only; undefined when the core did not know it. */
+  site?: string;
 }
 
 /** The card of a `browser.private` approval (kind `browser`), or undefined when it is not a whole one. */
 export function browserPrivate(approval: { kind: string; action: string; detail: Record<string, unknown> }): BrowserPrivateCard | undefined {
   if (approval.kind !== 'browser' || approval.action !== 'browser.private') return undefined;
-  const { values, tool } = approval.detail;
+  const { values, tool, site } = approval.detail;
   if (!Array.isArray(values) || values.length === 0) return undefined;
   const lines: string[] = [];
   for (const value of values as unknown[]) {
@@ -105,5 +109,6 @@ export function browserPrivate(approval: { kind: string; action: string; detail:
     const whose = typeof client === 'string' && client.trim() !== '' ? ` di ${client.trim()}` : ' di un cliente';
     lines.push(`${what}${whose}`);
   }
-  return { lines: [...new Set(lines)], web: tool === 'web.fetch' };
+  const where = typeof site === 'string' && site.trim() !== '' ? site.trim() : undefined;
+  return { lines: [...new Set(lines)], web: tool === 'web.fetch', ...(where === undefined ? {} : { site: where }) };
 }

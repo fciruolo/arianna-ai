@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type { Answer } from '@arianna/agents';
 
 import { earlierCall, stoppedRepeats } from '../src/orchestrator/orchestrator.ts';
+import { WAITING_PRIVATE } from '../src/orchestrator/saved-ask.ts';
 import type { Turn } from '../src/orchestrator/turns.ts';
 
 function turn(step: number, answer: Answer, result = 'ok'): Turn {
@@ -80,4 +81,15 @@ test('failed updates never restart the count: A, B, A, B are two repeats', () =>
     { step: 3, waits: false },
     { step: 4, waits: false },
   ]);
+});
+
+test('web.fetch runs again after a card of saved values the user approved, never after a «No» (D-283)', () => {
+  const fetch = { action: 'call', tool: 'web.fetch', arguments: { url: 'https://cerca.example/?q=Officina+Brenta' } } as const;
+  const asked = [turn(1, fetch, WAITING_PRIVATE)];
+  assert.equal(earlierCall(asked, 'web.fetch', fetch.arguments, new Set([1])), undefined);
+  assert.equal(earlierCall(asked, 'web.fetch', fetch.arguments, new Set()), 1);
+  assert.equal(earlierCall(asked, 'web.fetch', fetch.arguments), 1);
+  // Once run again after «Apri», a third same call is a repeat of that one.
+  const again = [...asked, turn(2, fetch, 'Untrusted public page: …')];
+  assert.equal(earlierCall(again, 'web.fetch', fetch.arguments, new Set([1])), 2);
 });

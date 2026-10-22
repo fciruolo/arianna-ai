@@ -56,16 +56,20 @@ export interface ReadPageInput {
 }
 
 /** What readPage gives: the page, or why not; `saved` with a refusal for saved private values (D-283). */
-export type ReadPageResult = FetchResult & { saved?: readonly string[] };
+export type ReadPageResult = FetchResult & { saved?: readonly string[]; savedSite?: string };
 
 /** Downloads one page through the gateway. Never throws for a refusal: it is a reason (`blocked` for the gateway). */
 export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
   const { sql, address, context, consent } = input;
   let saved: readonly string[] | undefined;
+  let savedSite: string | undefined;
   const allowed = async (page: PageConsent, next: string): Promise<string | undefined> => {
     const target: Target = { kind: 'web', page };
     const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, input.meta);
-    if (decision.decision === 'block' && decision.rule === 'saved-private' && decision.saved !== undefined) saved = decision.saved;
+    if (decision.decision === 'block' && decision.rule === 'saved-private' && decision.saved !== undefined) {
+      saved = decision.saved;
+      savedSite = siteOf(next);
+    }
     if (decision.decision !== 'allow') return undefined;
     const spent = spendAllowed(decision);
     return spent?.target.kind === 'web' && spent.target.page !== undefined ? spent.texts[0] : undefined;
@@ -79,7 +83,7 @@ export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
     } catch {
       return { ok: false, reason: 'invalid-url' };
     }
-    if ((await allowed(consent, normalized)) !== normalized) return { ok: false, reason: 'blocked', ...(saved === undefined ? {} : { saved }) };
+    if ((await allowed(consent, normalized)) !== normalized) return { ok: false, reason: 'blocked', ...(saved === undefined ? {} : { saved }), ...(savedSite === undefined ? {} : { savedSite }) };
     first = false;
   }
   const authorize = async (next: string): Promise<string | undefined> => {
@@ -89,7 +93,7 @@ export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
   };
   const download = input.fetchLink ?? fetchLink;
   const result = await download(address, { authorize }, input.signal);
-  return !result.ok && saved !== undefined ? { ...result, saved } : result;
+  return !result.ok && saved !== undefined ? { ...result, saved, ...(savedSite === undefined ? {} : { savedSite }) } : result;
 }
 
 /** Every http(s) address written in a text (the user's messages, a brief), normalized, at most `limit`. */
