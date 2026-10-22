@@ -6,7 +6,8 @@
       "Bash(git diff *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(docker compose *)"
+      "Bash(docker compose *)",
+      "Bash(git push *)"
     ],
     "deny": [
       "Read(**/.env*)",
@@ -15,7 +16,11 @@
       "Bash(curl *)",
       "Bash(wget *)",
       "Bash(rm -rf *)",
-      "Bash(git push *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.config/**)",
