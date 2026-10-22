@@ -27,11 +27,11 @@ import { createConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE } from '../src/engine.ts';
 import { passGateway } from '../src/gateway.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { siteOf } from '../src/link-fetch.ts';
+import { siteOf, type FetchOptions, type FetchResult } from '../src/link-fetch.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { savedResultText } from '../src/orchestrator/saved-ask.ts';
-import { refreshSavedPrivate, resetSavedPrivate } from '../src/saved-private.ts';
+import { refreshSavedPrivate, resetSavedPrivate, savedInAddress } from '../src/saved-private.ts';
 import { addressesInText } from '../src/web-page.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
@@ -73,7 +73,7 @@ interface World {
 }
 
 /** The real AgentBrowser over a fake session whose pages pass the real gateway with the scope of the network. */
-function world(): World {
+function world(options: { precheck?: boolean } = {}): World {
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
   const w: World = { browser: undefined as unknown as AgentBrowser, pages: [], opened: 0 };
@@ -119,8 +119,16 @@ function world(): World {
     } as unknown as BrowserSession;
     return Promise.resolve(session);
   };
-  w.browser = new AgentBrowser({ sql: db().sql, manager, session: { home: HOME }, gateTyped: gatewayTyped(db().sql), openSession });
+  w.browser = new AgentBrowser({ sql: db().sql, manager, session: { home: HOME }, gateTyped: gatewayTyped(db().sql), openSession, ...(options.precheck === true ? { savedIn: savedInAddress } : {}) });
   return w;
+}
+
+/** Pages read by web.fetch: every address through the gateway, as fetchLink does. */
+const fetched: string[] = [];
+async function fakePage(address: string, options: FetchOptions): Promise<FetchResult> {
+  fetched.push(address);
+  if ((await options.authorize(address)) !== address) return { ok: false, reason: 'blocked' };
+  return { ok: true, link: { url: address, site: new URL(address).hostname, title: 'Risultati finti', text: 'Ferramenta Lunardi Srl, Bolzano.', truncated: false } };
 }
 
 async function drain(taskId: string, model: LocalModel, browser: AgentBrowser): Promise<string[]> {
@@ -133,6 +141,7 @@ async function drain(taskId: string, model: LocalModel, browser: AgentBrowser): 
     settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas: {} }),
     rules: RULES,
     browser: { agent: browser, installed: () => true },
+    fetchLink: fakePage,
   });
   const results: string[] = [];
   for (let guard = 0; guard < 40; guard += 1) {
@@ -149,6 +158,7 @@ async function drain(taskId: string, model: LocalModel, browser: AgentBrowser): 
 
 const OPEN = (url: string): Answer => ({ action: 'call', tool: 'browser.open', arguments: { url } });
 const READ: Answer = { action: 'call', tool: 'browser.read', arguments: {} };
+const FETCH = (url: string): Answer => ({ action: 'call', tool: 'web.fetch', arguments: { url } });
 const REPLY = (text: string): Answer => ({ action: 'reply', text });
 const sawText = (request: ChatRequest | undefined, text: string) => request?.messages.some((part) => part.content.includes(text)) === true;
 
@@ -225,4 +235,72 @@ test('a card of a browser before the last one does not hold for a new browser', 
   assert.equal(holds.opened, null);
   const { approvedSaved } = await import('../src/orchestrator/saved-ask.ts');
   assert.deepEqual(await approvedSaved(sql, conversationId, { for: holds }), new Set());
+});
+
+test('the check before the page (D-283): browser.open with a saved value asks at once, without asking the network', async () => {
+  const sql = db().sql;
+  const tag = randomUUID().slice(0, 8);
+  await createClient(sql, { displayName: `Cartoleria Glicini${tag}` });
+  await refreshSavedPrivate(sql);
+  const address = `https://duckduckgo.com/?q=Cartoleria+Glicini${tag}`;
+  const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+  const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
+  const w = world({ precheck: true });
+  const model = scripted([OPEN(address), OPEN(address), REPLY('Fatto.')]);
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
+  // No page was asked: the card came from the check before the navigation.
+  assert.equal(w.pages.length, 0);
+  const [ask] = await sql<{ id: string; detail: Record<string, unknown> }[]>`SELECT id::text, detail FROM approvals WHERE task_id = ${task.id} AND action = 'browser.private'`;
+  assert.equal(ask?.detail.site, 'duckduckgo.com');
+  await recordDecision(sql, ask.id, 'approved', 'web');
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
+  assert.deepEqual(w.pages.map((page) => page.rule), ['page']);
+});
+
+test('«Apri» on a card of web.fetch: the step resumes and reads the page; the same value then opens in the browser without a card (D-283)', async () => {
+  const sql = db().sql;
+  const tag = randomUUID().slice(0, 8);
+  await createClient(sql, { displayName: `Ferramenta Lunardi${tag} Srl` });
+  await refreshSavedPrivate(sql);
+  const address = `https://duckduckgo.com/?q=Ferramenta+Lunardi${tag}+S.r.l.`;
+  const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+  const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
+  const w = world({ precheck: true });
+  fetched.length = 0;
+  const model = scripted([FETCH(address), FETCH(address), OPEN(address), READ, REPLY('Ecco.')]);
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
+  const [ask] = await sql<{ id: string; detail: Record<string, unknown> }[]>`SELECT id::text, detail FROM approvals WHERE task_id = ${task.id} AND action = 'browser.private'`;
+  assert.equal(ask?.detail.tool, 'web.fetch');
+  await recordDecision(sql, ask.id, 'approved', 'web');
+  // The task waited for this card: the decision puts it back to work, and the same web.fetch runs again.
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
+  assert.ok(sawText(model.requests[1], savedResultText('approved')));
+  const fetches = await sql<{ outcome: string }[]>`SELECT payload ->> 'outcome' AS outcome FROM events WHERE task_id = ${task.id} AND kind = 'web.fetch' ORDER BY id`;
+  assert.deepEqual(fetches.map((row) => row.outcome), ['blocked', 'ok']);
+  // The browser opens the same value with no new card: the «Apri» of web.fetch holds for it (the first browser).
+  const actions = await sql<{ action: string; outcome: string }[]>`
+    SELECT payload ->> 'action' AS action, payload ->> 'outcome' AS outcome FROM events WHERE task_id = ${task.id} AND kind = 'browser.action' ORDER BY id`;
+  assert.deepEqual(actions.map((row) => `${row.action}:${row.outcome}`), ['open:ok', 'read:ok']);
+  const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${task.id}`;
+  assert.equal(count?.n, 1);
+});
+
+test('«Apri» on a card of the browser holds for web.fetch of the same value in the conversation (D-283)', async () => {
+  const sql = db().sql;
+  const tag = randomUUID().slice(0, 8);
+  await createClient(sql, { displayName: `Officina Brenta${tag}` });
+  await refreshSavedPrivate(sql);
+  const address = `https://duckduckgo.com/?q=Officina+Brenta${tag}`;
+  const conversationId = (await createConversation(sql, { mode: 'work' })).id;
+  const { task } = await postUserMessage(sql, conversationId, `Cerca ${address}`);
+  const w = world({ precheck: true });
+  const model = scripted([OPEN(address), FETCH(address), REPLY('Ecco.')]);
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'waiting-approval');
+  const [ask] = await sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${task.id} AND action = 'browser.private'`;
+  await recordDecision(sql, ask?.id ?? '', 'approved', 'web');
+  assert.equal((await drain(task.id, model, w.browser)).at(-1), 'answered');
+  const fetches = await sql<{ outcome: string }[]>`SELECT payload ->> 'outcome' AS outcome FROM events WHERE task_id = ${task.id} AND kind = 'web.fetch' ORDER BY id`;
+  assert.deepEqual(fetches.map((row) => row.outcome), ['ok']);
+  const [count] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM approvals WHERE task_id = ${task.id}`;
+  assert.equal(count?.n, 1);
 });

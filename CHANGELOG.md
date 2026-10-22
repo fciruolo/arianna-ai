@@ -13,6 +13,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Nel browser di Arianna e in `web.fetch` l'indirizzo delle pagine e il testo scritto nei campi non passano più da Rizzo-PII: al suo posto un confronto esatto con i clienti e i contatti salvati, rifatto a ogni loro modifica, che non scambia vie, aziende o siti per persone e non aspetta l'avvio del modello (D-283).
 - Il browser di Arianna non avvia più il secondo controllo prima di aprire una pagina (D-283).
 
+### Corretto
+
+- Una pagina del browser di Arianna fermata dal gateway non fa più aspettare 45 secondi né chiudere il browser con «l’azione nel browser non è riuscita»: la scheda rimasta sulla pagina d’errore si chiude senza aspettarla, e una lettura senza pagina risponde subito (D-283).
+- Un indirizzo scritto con un punto finale («…S.r.l.») vale come scritto dall’utente anche col punto (D-283).
+
 ### Sicurezza
 
 - Password, chiavi del vault e dati riconosciuti dallo scanner (IBAN, codice fiscale, carte) restano bloccati sempre, prima del confronto con i dati salvati; le richieste di sfondo di una pagina con un dato salvato non approvato sono fermate senza chiedere e contate; un blocco per un dato salvato non lascia hash né byte nel registro del gateway (D-283).

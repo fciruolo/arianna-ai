@@ -81,11 +81,12 @@ test('session: downloads refused on a CDP session that stays attached, Playwrigh
 });
 
 /** A tab that writes what is done to it, in order; `fails` makes its goto fail. */
-function fakeTab(name: string, steps: string[], options: { url?: string; fails?: boolean } = {}) {
+function fakeTab(name: string, steps: string[], options: { url?: string; fails?: boolean; closeHangs?: boolean } = {}) {
   let closed = false;
   return {
     isClosed: () => closed,
-    close: () => { closed = true; steps.push(`${name}:close`); return Promise.resolve(); },
+    // A tab on Chromium's error page may take 40 s and more to close (D-283 trial): `closeHangs` never ends.
+    close: () => { closed = true; steps.push(`${name}:close`); return options.closeHangs === true ? new Promise<void>(() => undefined) : Promise.resolve(); },
     bringToFront: () => { steps.push(`${name}:front`); return Promise.resolve(); },
     goto: (url: string) => { steps.push(`${name}:goto ${url}`); return options.fails ? Promise.reject(new Error('timeout')) : Promise.resolve(null); },
     title: () => Promise.resolve('Pagina'),
@@ -117,6 +118,19 @@ test('session: after a failed page the new tab is in front, never the empty one 
   const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
   await assert.rejects(session.openPage('https://comune-finto.it/'));
   assert.deepEqual(steps, ['failing:front', 'failing:goto https://comune-finto.it/', 'new', 'created:front', 'failing:close']);
+});
+
+test('session: a refused page fails at once, without waiting for its tab to close; so does a reset (D-283 trial)', async () => {
+  const steps: string[] = [];
+  const failing = fakeTab('failing', steps, { fails: true, closeHangs: true });
+  const tabs: unknown[] = [failing];
+  let made = 0;
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { made += 1; const created = fakeTab(`created${String(made)}`, steps, { url: 'about:blank', closeHangs: true }); tabs.push(created); return Promise.resolve(created); } });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  const within = <T>(work: Promise<T>): Promise<T | 'late'> => Promise.race([work, new Promise<'late'>((resolve) => setTimeout(() => { resolve('late'); }, 1_000))]);
+  assert.notEqual(await within(session.openPage('https://comune-finto.it/').catch(() => 'refused')), 'late');
+  assert.ok(steps.includes('failing:close'));
+  assert.notEqual(await within(session.resetPage()), 'late');
 });
 
 test('session: the artifacts go in the configured data folder when it is known', () => {

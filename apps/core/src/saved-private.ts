@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { savedForm, savedMatcher, type KnownPrivate, type SavedValue } from '@arianna/policy';
+import { addressReadings, savedForm, savedMatcher, type KnownPrivate, type SavedValue } from '@arianna/policy';
 
 import { onClientsChanged } from './clients.ts';
 import type { Queryable } from './db/client.ts';
@@ -190,6 +190,16 @@ export const knownPrivate: KnownPrivate = {
     return loaded.known.find(text);
   },
 };
+
+/**
+ * The saved values in an address not among `approved` (D-283), as the gateway
+ * reads it (as written and decoded): references only. Throws before the first
+ * load, as `knownPrivate`.
+ */
+export function savedInAddress(address: string, approved: ReadonlySet<string>): string[] {
+  const refs = new Set(addressReadings(address).flatMap((reading) => knownPrivate.find(reading)));
+  return [...refs].filter((ref) => !approved.has(ref)).sort();
+}
 
 /** What a reference is, while it is still saved; undefined for one that is gone. */
 export function savedEntry(ref: string): SavedEntry | undefined {

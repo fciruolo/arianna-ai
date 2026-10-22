@@ -230,6 +230,13 @@ export interface AgentBrowserOptions {
   openSession?: OpenSession;
   /** Tests: the deadline of an action (ACTION_LIMIT_MS). */
   actionLimitMs?: number;
+  /**
+   * The saved private values of the user in an address (D-283), not among
+   * `approved`: their references, checked before a page is asked (browser.open,
+   * the click on a link), so that the card «Apri / No» comes at once; the
+   * network refuses the page all the same. Nothing leaves for this check.
+   */
+  savedIn?: (address: string, approved: ReadonlySet<string>) => readonly string[];
   /** Tests: the network job options the core never sets (fake servers). */
   network?: Pick<NetworkJob, 'unsafeTestAddresses' | 'resolve' | 'fetchResource' | 'timeoutMs'>;
 }
@@ -612,6 +619,9 @@ export class AgentBrowser {
       case 'open': {
         const unwritten = openOutsideConsent(scope.consent, action.url);
         if (unwritten !== undefined) return unwritten;
+        // A saved value in the address (D-283): the card at once, before any navigation.
+        const savedHere = this.#savedIn(action.url, held);
+        if (savedHere !== undefined) return savedHere;
         held.elements.clear();
         held.readAt = undefined;
         try {
@@ -651,6 +661,8 @@ export class AgentBrowser {
         if (element.kind === 'link' && element.href !== undefined) {
           const outside = outsideConsent(scope.consent, element.href);
           if (outside !== undefined) return { ok: false, reason: 'confirm', url: element.href, site: outside };
+          const savedHere = this.#savedIn(element.href, held);
+          if (savedHere !== undefined) return savedHere;
         }
         const page = await session.currentPage();
         const done = await withNavigation(page, session, () => page.locator(refSelector(action.ref)).first().click({ timeout: ACTION_MS }));
@@ -683,6 +695,20 @@ export class AgentBrowser {
         return state.ok ? { ...state, typed: Array.from(action.text).length } : state;
       }
     }
+  }
+
+  /** The card of saved values for an address (D-283), when it has some not let go for this browser; undefined otherwise. */
+  #savedIn(address: string, held: Held): ActionResult | undefined {
+    let saved: readonly string[];
+    try {
+      saved = this.#options.savedIn?.(address, held.saved) ?? [];
+    } catch {
+      // Not loaded: the gateway of the network refuses the page, as for any other check it cannot make.
+      return undefined;
+    }
+    if (saved.length === 0) return undefined;
+    const site = siteOf(address);
+    return { ok: false, reason: 'confirm-private', saved, ...(site === undefined ? {} : { site }) };
   }
 
   /**

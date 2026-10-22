@@ -66,7 +66,7 @@ import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { configureWornNames, passGateway } from './gateway.ts';
-import { startSavedPrivate } from './saved-private.ts';
+import { savedInAddress, startSavedPrivate } from './saved-private.ts';
 import { nameLabelOf, type LeaveRule } from './participants.ts';
 import { stopConversation } from './chat-stop.ts';
 import { createQueueDispatcher } from './message-queue.ts';
@@ -605,6 +605,8 @@ const agentBrowser = new AgentBrowser({
   manager: browserManager,
   session: { home: config.home, dataDir: config.paths.data },
   gateTyped: gatewayTyped(sql),
+  // D-283: the card of a saved value at once, before the page is asked.
+  savedIn: savedInAddress,
   onEvent: (event) => { appendEvent(sql, event).catch(report); },
   onTaken: (conversationId) => { writeTakenLine(sql, conversationId).catch(report); },
   onReleased: () => { browserScreens.revoke(); },

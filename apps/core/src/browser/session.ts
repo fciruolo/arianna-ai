@@ -111,7 +111,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     const created = await shared.newPage();
     await created.bringToFront().catch(() => undefined);
     for (const other of shared.pages()) {
-      if (other !== created && other.url() === 'about:blank') await other.close().catch(() => undefined);
+      if (other !== created && other.url() === 'about:blank') void other.close().catch(() => undefined);
     }
     return created;
   };
@@ -135,7 +135,9 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
         // the next action gets a fresh tab (opened first, so the window never has none).
         // If even the new tab fails, the error of the navigation is the one that counts.
         page = await fresh().catch(() => undefined);
-        if (page) await target.close().catch(() => undefined);
+        // Not waited for: closing the tab left on Chromium's error page can take 40 s and more (tried on
+        // 2026-10-22, D-283 trial), which held the action until its deadline and lost the browser.
+        if (page) void target.close().catch(() => undefined);
         throw error;
       }
       // A redirect followed by the core moves the frame to its final address: wait for it.
@@ -150,7 +152,8 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     async resetPage() {
       const old = page;
       page = await fresh().catch(() => undefined);
-      if (page && old && !old.isClosed()) await old.close().catch(() => undefined);
+      // Not waited for, as in openPage: the tab on the error page may take long to close.
+      if (page && old && !old.isClosed()) void old.close().catch(() => undefined);
     },
     touch() {
       open.touch();

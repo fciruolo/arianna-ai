@@ -74,7 +74,7 @@ interface Harness {
   typedApproved: string[][];
 }
 
-function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' } } = {}): Harness {
+function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' }; savedIn?: (address: string, approved: ReadonlySet<string>) => readonly string[] } = {}): Harness {
   const page: FakePage = { url: 'https://comune-finto.it/servizi', title: 'Servizi', reading: { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: 'Orari', elements: [], scrolled: 0 }, clicked: [], filled: [], pressed: [], typable: true };
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
@@ -107,6 +107,7 @@ function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { se
     now: () => clock.now,
     actionLimitMs: 50,
     openSession,
+    ...(options.savedIn === undefined ? {} : { savedIn: options.savedIn }),
   });
   return h;
 }
@@ -608,4 +609,23 @@ test('reading a tab with no page (blank, or the error page of a refused open) ru
   h.page.hang = false;
   h.page.url = 'https://comune-finto.it/servizi';
   assert.equal((await h.browser.act(scope('a'), { kind: 'read' })).ok, true);
+});
+
+test('the check before the page (D-283): a saved value in the address of open or of a link asks at once, nothing navigates; let go, it opens', async () => {
+  const asked: string[][] = [];
+  const h = harness({ savedIn: (address, approved) => { asked.push([...approved]); return address.includes('Lunardi') && !approved.has('client:c1:name') ? ['client:c1:name'] : []; } });
+  const url = 'https://cerca-finto.it/?q=Ferramenta+Lunardi';
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'open', url }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'cerca-finto.it' });
+  assert.notEqual(h.page.url, url);
+  // A link with a saved value: the same card, no click.
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  h.page.reading = { title: 'Servizi', url: 'https://comune-finto.it/servizi', text: '', elements: [{ ref: 1, kind: 'link', label: 'Lunardi', href: 'https://comune-finto.it/cerca?q=Lunardi' }], scrolled: 0 };
+  await h.browser.act(scope('a'), { kind: 'read' });
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'click', ref: 1 }), { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'comune-finto.it' });
+  assert.deepEqual(h.page.clicked, []);
+  // Let go for this browser: it opens.
+  const opened = h.browser.openedAt('a');
+  const done = await h.browser.act({ ...scope('a'), saved: { opened, approved: new Set(['client:c1:name']) } }, { kind: 'open', url });
+  assert.equal(done.ok, true);
+  assert.deepEqual(asked.at(-1), ['client:c1:name']);
 });
