@@ -72,6 +72,10 @@ interface Harness {
   access: string | null;
   /** The saved values let go each time a text was gated (D-283). */
   typedApproved: string[][];
+  /** The network job of the last browser opened. */
+  job?: Parameters<OpenSession>[2];
+  /** Commands of the bar the session got (D-286). */
+  history: string[];
 }
 
 function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { seq: number; outcome: 'blocked' | 'ok' }; savedIn?: (address: string, approved: ReadonlySet<string>) => readonly string[] } = {}): Harness {
@@ -79,12 +83,16 @@ function harness(options: { gate?: TypedVerdict; failOpen?: boolean; last?: { se
   const clock = { now: 1_000_000 };
   let active: { id: string } | null = null;
   const manager = { get state() { return 'free'; }, get active() { return active; } } as unknown as BrowserManager;
-  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null, typedApproved: [] };
-  const openSession: OpenSession = (_manager, id) => {
+  const h: Harness = { browser: undefined as unknown as AgentBrowser, expire: () => { active = null; }, touches: 0, opened: [], closed: [], scopes: [], taken: [], released: [], typed: [], page, clock, last: options.last, userTouches: 0, access: null, typedApproved: [], history: [] };
+  const openSession: OpenSession = (_manager, id, job) => {
     if (options.failOpen) return Promise.reject(new Error('docker'));
     active = { id };
     h.opened.push(id);
+    h.job = job;
     const session = {
+      // The bar of the screen (D-286): back, forward and reload as recorded; no page ahead for `forward`.
+      history: (command: string) => { h.history.push(command); return Promise.resolve(command === 'forward' ? null : { title: page.title, url: page.url }); },
+      currentUrl: () => page.url,
       network: { rescope: (scope: NetworkScope) => { h.scopes.push(scope); }, lastNavigation: () => (h.last === undefined ? undefined : { ...h.last }), authenticated: () => h.access, settle: () => Promise.resolve() },
       // An address under /rifiutata is refused by the fake network: Chromium's error, as a blocked navigation.
       openPage: (url: string) => (url.includes('/rifiutata') ? Promise.reject(new Error('net::ERR_BLOCKED_BY_CLIENT')) : (page.url = url, Promise.resolve({ title: page.title, url }))),
@@ -679,4 +687,68 @@ test('the check before the page: a card starts no browser, and a busy browser an
   assert.deepEqual(await busy.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' }), { ok: false, reason: 'busy' });
   assert.equal(calls, before);
   assert.equal(busy.browser.holder, 'b');
+});
+
+test('the bar of the screen (D-286): back, forward, reload and an address as the user\'s, in the queue; Arianna reads the page again after', async () => {
+  const h = harness({ savedIn: (address, approved) => (address.includes('Lunardi') && !approved.has('client:c1:name') ? ['client:c1:name'] : []) });
+  assert.deepEqual(await h.browser.userCommand('a', { kind: 'back' }), { ok: false, reason: 'not-open' });
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  await h.browser.act(scope('a'), { kind: 'read' });
+  assert.equal(h.browser.urlOf('a'), 'https://comune-finto.it/servizi');
+  assert.equal(h.browser.urlOf('b'), null);
+  const back = await h.browser.userCommand('a', { kind: 'back' });
+  assert.equal(back.ok, true);
+  assert.deepEqual(await h.browser.userCommand('a', { kind: 'forward' }), { ok: false, reason: 'no-page' });
+  assert.equal((await h.browser.userCommand('a', { kind: 'reload' })).ok, true);
+  assert.deepEqual(h.history, ['back', 'forward', 'reload']);
+  // While the command ran the network decided as for the user; then Arianna again, who reads the page first.
+  assert.ok(h.scopes.some((next) => next.driver === 'user'));
+  assert.equal(h.scopes.at(-1)?.driver, 'agent');
+  assert.deepEqual(await h.browser.act(scope('a'), { kind: 'click', ref: 1 }), { ok: false, reason: 'reread' });
+  // An address written in the bar: a saved value asks first, «Apri» lets it go for this browser.
+  const asked = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' });
+  assert.deepEqual(asked, { ok: false, reason: 'confirm-private', saved: ['client:c1:name'], site: 'cerca-finto.it' });
+  const opened = await h.browser.userCommand('a', { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi', confirmed: true });
+  assert.equal(opened.ok, true);
+  assert.deepEqual([...(h.scopes.at(-1)?.meta?.saved?.approved ?? [])], ['client:c1:name']);
+  // Not an address: nothing opens.
+  assert.deepEqual(await h.browser.userCommand('a', { kind: 'open', url: 'javascript:alert(1)' }), { ok: false, reason: 'navigation-failed' });
+});
+
+test('the bar is off during an action of Arianna (D-286)', async () => {
+  let release: () => void = () => undefined;
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  h.page.wait = new Promise<void>((resolve) => { release = resolve; });
+  const reading = h.browser.act(scope('a'), { kind: 'read' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.browser.actingFor('a'), true);
+  assert.deepEqual(await h.browser.userCommand('a', { kind: 'reload' }), { ok: false, reason: 'agent-busy' });
+  release();
+  await reading;
+  assert.equal(h.browser.actingFor('a'), false);
+  assert.deepEqual(h.history, []);
+});
+
+test('the pages the user opens while driving are the conversation\'s for Arianna too (D-286)', async () => {
+  const h = harness();
+  await h.browser.act(scope('a'), { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  assert.deepEqual(h.browser.userAddressesOf('a'), []);
+  h.job?.onUserAddress?.('https://altro-finto.it/pagina');
+  h.job?.onUserAddress?.('https://terzo-finto.it/');
+  h.job?.onUserAddress?.('https://altro-finto.it/pagina');
+  assert.deepEqual(h.browser.userAddressesOf('a'), ['https://altro-finto.it/pagina', 'https://terzo-finto.it/']);
+  assert.deepEqual(h.browser.userAddressesOf('b'), []);
+});
+
+test('a free browser of another conversation and a saved value: the card, and the browser is neither closed nor taken (D-283 review)', async () => {
+  const h = harness({ savedIn: (_address, approved) => (approved.has('client:c1:name') ? [] : ['client:c1:name']) });
+  await h.browser.act({ ...scope('b'), saved: { opened: null, approved: new Set(['client:c1:name']) } }, { kind: 'open', url: 'https://comune-finto.it/servizi' });
+  // Unused for long enough to be taken.
+  h.clock.now += TAKE_OVER_MS * 2;
+  const asked = await h.browser.act(scope('a'), { kind: 'open', url: 'https://cerca-finto.it/?q=Lunardi' });
+  assert.equal(!asked.ok && asked.reason, 'confirm-private');
+  assert.deepEqual(h.closed, []);
+  assert.deepEqual(h.taken, []);
+  assert.equal(h.browser.holder, 'b');
 });

@@ -21,6 +21,10 @@ export interface BrowserSession {
   /** The network of the job (D-264, passo 2), when the session was opened with one. */
   network?: NetworkHandle;
   openPage(url: string, timeoutMs?: number): Promise<{ title: string; url: string }>;
+  /** The bar of the screen (D-286): back, forward or reload on the tab of the agent; null when there is no page that way. */
+  history(command: 'back' | 'forward' | 'reload', timeoutMs?: number): Promise<{ title: string; url: string } | null>;
+  /** The address of the tab of the agent now, for the bar of the screen; null before its first tab. */
+  currentUrl(): string | null;
   /** The tab the agent acts on: the last one opened (a popup of a click becomes it), a new one when none is left. */
   currentPage(): Promise<Page>;
   /** After a refused navigation: a fresh tab in place of the current one, left on Chromium's error page. */
@@ -89,6 +93,8 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
    * navigations are not the agent's, and a tab it opens is never the agent's.
    */
   const retired = new WeakSet<Page>();
+  /** Set below, once the tab of the agent exists: whether a tab is the agent's now (network, D-283 review). */
+  let isAgentTab: (tab: Page) => boolean = () => true;
   /** Tabs the agent opened itself (`fresh`): never retired as an orphan when Chromium tells of them. */
   const known = new WeakSet<Page>();
   /** The new tab being opened by `fresh`, if any: a tab without opener is judged once it is known. */
@@ -101,7 +107,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'deny' });
     if (options.network) {
       const { userAgent } = await cdp.send('Browser.getVersion');
-      network = await attachNetwork(context, { ...options.network, userAgent: reducedUserAgent(userAgent), isRetired: (tab) => retired.has(tab) });
+      network = await attachNetwork(context, { ...options.network, userAgent: reducedUserAgent(userAgent), isRetired: (tab) => retired.has(tab), isAgentTab: (tab) => isAgentTab(tab) });
     }
   } catch (error) {
     closing = true;
@@ -121,7 +127,18 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
    * opens a new tab, in the window, in front (`fresh`).
    */
   let page: Page | undefined;
-  /** Leaves a tab: retired at once, closed with a short bound (a tab of the kiosk window never closes). */
+  /**
+   * The tab a popup of the agent came from (a sign in with another site opens
+   * one, D-276): not the agent's while the popup is, and the agent's again
+   * when the popup closes, if it is still there.
+   */
+  const origins = new WeakMap<Page, Page>();
+  /**
+   * Leaves a tab: retired at once, closed with a short bound. The tabs Chromium
+   * had at the start (on its error page, outside the window) never finish
+   * closing: they stay retired, out of sight. `fresh` leaves the empty tabs
+   * through here and those others at once, without waiting for their close.
+   */
   const retire = async (tab: Page): Promise<void> => {
     retired.add(tab);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -132,8 +149,8 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     clearTimeout(timer);
     // Still open: out of sight at least, on an empty page (not waited for, as its close).
     if (!closed && !tab.isClosed()) void tab.goto('about:blank').catch(() => undefined);
-    // The screen shows the tab in front: the agent's again.
-    if (page !== undefined && page !== tab && !page.isClosed()) await page.bringToFront().catch(() => undefined);
+    // The screen shows the tab in front: the agent's again (never a tab already left).
+    if (page !== undefined && page !== tab && !page.isClosed() && !retired.has(page)) await page.bringToFront().catch(() => undefined);
   };
   // A link with target=_blank opens a tab: the agent goes on there, as a person would. Only a tab its own
   // tab opened: one with no opener (its opener closed meanwhile, or opened otherwise) or a left tab's is retired.
@@ -141,6 +158,7 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     void opened.opener().then(
       (opener) => {
         if (opener !== null && opener === page && !retired.has(opener)) {
+          origins.set(opened, opener);
           page = opened;
           return;
         }
@@ -162,7 +180,13 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
    * the chat stayed white while the agent read its own tab (D-281 trial). Opened first, so the
    * window never has no tab.
    */
-  const fresh = async (): Promise<Page> => {
+  /** One new tab at a time: a second caller while one is being opened gets the same. */
+  let freshing: Promise<Page> | null = null;
+  const fresh = (): Promise<Page> => {
+    freshing ??= makeFresh().finally(() => { freshing = null; });
+    return freshing;
+  };
+  const makeFresh = async (): Promise<Page> => {
     const making = shared.newPage();
     creating = making.catch(() => undefined);
     const created = await making;
@@ -178,9 +202,17 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
     return created;
   };
   const current = async (): Promise<Page> => {
+    // A popup of the agent closed (a sign in done): back to the tab it came from, when it is still there.
+    const origin = page === undefined || !page.isClosed() ? undefined : origins.get(page);
+    if (origin !== undefined && !origin.isClosed() && !retired.has(origin)) {
+      page = origin;
+      await origin.bringToFront().catch(() => undefined);
+    }
     if (!page || page.isClosed()) page = await fresh();
     return page;
   };
+  /** Whether `tab` is the agent's tab now: the navigations of another (the origin of a popup) are not the agent's. */
+  isAgentTab = (tab: Page): boolean => page === undefined || tab === page;
   return {
     browser,
     context: shared,
@@ -207,6 +239,23 @@ export async function connectSession(open: OpenBrowser, options: SessionOptions)
       // A redirect followed by the core moves the frame to its final address: wait for it.
       await network?.settle(target, timeoutMs);
       return { title: await target.title(), url: target.url() };
+    },
+    async history(command, timeoutMs = 15_000) {
+      open.touch();
+      const target = await current();
+      await target.bringToFront().catch(() => undefined);
+      // A refused page stays on Chromium's error page in this tab: the user goes back from there (D-286).
+      // Back and forward may restore the page from the cache, without a `load` (tried on 2026-10-22): the commit, then the load if any.
+      const from = target.url();
+      const moved = command === 'back' ? await target.goBack({ timeout: timeoutMs, waitUntil: 'commit' }) : command === 'forward' ? await target.goForward({ timeout: timeoutMs, waitUntil: 'commit' }) : await target.reload({ timeout: timeoutMs, waitUntil: 'commit' });
+      // No answer is also a page from the cache: only a tab that stayed where it was had nowhere to go.
+      if (moved === null && command !== 'reload' && target.url() === from) return null;
+      await target.waitForLoadState('load', { timeout: Math.min(timeoutMs, 2_000) }).catch(() => undefined);
+      await network?.settle(target, timeoutMs);
+      return { title: await target.title().catch(() => ''), url: target.url() };
+    },
+    currentUrl() {
+      return page !== undefined && !page.isClosed() ? page.url() : null;
     },
     // Every action of the agent reads the page through here: the idle time starts again.
     async currentPage() {

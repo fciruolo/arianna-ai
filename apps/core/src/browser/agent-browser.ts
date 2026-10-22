@@ -159,6 +159,12 @@ export type ActionFailure =
   | 'navigation-failed'
   | 'action-failed';
 
+/** A command of the bar above the screen (D-286). `confirmed`: «Apri» on the question of a saved value. */
+export type UserCommand = { kind: 'back' | 'forward' | 'reload' } | { kind: 'open'; url: string; confirmed?: boolean };
+
+/** Addresses the user opened in one conversation kept at most (D-286): the gateway takes 200 in a consent. */
+export const MAX_USER_ADDRESSES = 100;
+
 export type BrowserAction =
   | { kind: 'open'; url: string }
   | { kind: 'read' }
@@ -291,6 +297,8 @@ export class AgentBrowser {
   #shutDown = false;
   /** When the last browser of each conversation opened (D-283): a card asked with it holds for the next one. In memory. */
   readonly #lastOpened = new Map<string, number>();
+  /** Addresses the user opened while driving or from the bar (D-286), by conversation, newest first. In memory. */
+  readonly #userAddresses = new Map<string, string[]>();
   /** Approvals «Invia» already used (D-281): each lets one action send. */
   readonly #usedPermits = new Set<string>();
 
@@ -452,6 +460,104 @@ export class AgentBrowser {
     if (held !== null && held.conversationId === conversationId && held.driver === 'user') this.#touch(held);
   }
 
+  /**
+   * The addresses the user opened in the browser of `conversationId` while
+   * driving or from the bar of the screen (D-286): written by the user for
+   * the consent, as long as the core runs. Newest first.
+   */
+  userAddressesOf(conversationId: string): readonly string[] {
+    return this.#userAddresses.get(conversationId) ?? [];
+  }
+
+  /** Whether an action of Arianna runs now in the browser of `conversationId` (D-286: the bar of the screen is off meanwhile). */
+  actingFor(conversationId: string): boolean {
+    return this.#running && this.#held?.conversationId === conversationId && this.#held.driver === 'agent';
+  }
+
+  /** The address of the page the browser of `conversationId` shows, for the bar of the screen (D-286); null when none. */
+  urlOf(conversationId: string): string | null {
+    const held = this.#held;
+    if (this.holder !== conversationId || held === null) return null;
+    const url = held.session.currentUrl();
+    return url !== null && /^https?:/i.test(url) ? url : null;
+  }
+
+  /**
+   * A command of the bar above the screen (D-286): ← Indietro, → Avanti,
+   * ↻ Ricarica, or an address written in its field, which counts as written
+   * by the user in the chat (a saved value asks first: `confirm-private`, and
+   * `confirmed` lets it go for this browser). Never during an action of
+   * Arianna (`agent-busy`); in the queue of the actions. The navigations go as
+   * the user's (driver `user` for the network). If Arianna drove, her next
+   * action reads the page first.
+   */
+  async userCommand(conversationId: string, command: UserCommand): Promise<ActionResult | { ok: false; reason: 'agent-busy' }> {
+    if (this.holder !== conversationId) return { ok: false, reason: 'not-open' };
+    if (this.#running) return { ok: false, reason: 'agent-busy' };
+    const run = this.#queue.then(async () => {
+      this.#forgetClosed();
+      const held = this.#held;
+      if (held?.conversationId !== conversationId) return { ok: false, reason: 'not-open' } satisfies ActionResult;
+      if (command.kind === 'open') {
+        let url: URL;
+        try {
+          url = new URL(command.url);
+        } catch {
+          return { ok: false, reason: 'navigation-failed' } satisfies ActionResult;
+        }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return { ok: false, reason: 'navigation-failed' } satisfies ActionResult;
+        const asked = this.#savedRefs(url.href, held.scope, held.saved);
+        if (asked.length > 0 && command.confirmed !== true) {
+          const site = siteOf(url.href);
+          return { ok: false, reason: 'confirm-private', saved: asked, ...(site === undefined ? {} : { site }) } satisfies ActionResult;
+        }
+        // «Apri» on the bar: the values of this address go for this browser, as a card would let them.
+        for (const ref of asked) held.saved.add(ref);
+      }
+      const wasAgent = held.driver === 'agent';
+      this.#running = true;
+      held.session.network?.rescope(networkScope(held.scope, 'user', held.saved));
+      try {
+        return await this.#bounded(held, this.#command(held, command));
+      } catch {
+        return { ok: false, reason: 'action-failed' } satisfies ActionResult;
+      } finally {
+        this.#running = false;
+        if (this.#held === held) {
+          this.#touch(held);
+          if (wasAgent && held.driver === 'agent') {
+            held.session.network?.rescope(networkScope(held.scope, 'agent', held.saved));
+            held.reread = true;
+            held.elements.clear();
+            held.readAt = undefined;
+          }
+        }
+      }
+    });
+    this.#queue = run.catch(() => undefined);
+    return run;
+  }
+
+  async #command(held: Held, command: UserCommand): Promise<ActionResult> {
+    const { session } = held;
+    const before = session.network?.lastNavigation()?.seq;
+    try {
+      if (command.kind === 'open') {
+        held.elements.clear();
+        held.readAt = undefined;
+        const page = await session.openPage(new URL(command.url).href, LOAD_MS);
+        return { ok: true, page: pageOf(page.url, page.title) };
+      }
+      const page = await session.history(command.kind, LOAD_MS);
+      if (page === null) return { ok: false, reason: 'no-page' };
+      return { ok: true, page: pageOf(page.url, page.title) };
+    } catch {
+      const last = session.network?.lastNavigation();
+      if (last !== undefined && last.seq !== before) return navigationFailure(session);
+      return { ok: false, reason: 'navigation-failed' };
+    }
+  }
+
   /** One action, after the ones already running. Never throws. */
   async act(scope: BrowserScope, action: BrowserAction): Promise<ActionResult> {
     // Shut down: no browser opens any more.
@@ -577,6 +683,8 @@ export class AgentBrowser {
         consent: scope.consent,
         meta: { ...scope.meta, saved: { approved: saved } },
         ...(this.#options.onEvent === undefined ? {} : { onEvent: this.#options.onEvent }),
+        // A page the user opens while driving is the conversation's (D-286).
+        onUserAddress: (address: string) => { this.#noteUserAddress(address); },
         ...this.#options.network,
         // Diagnostics of a page that does not load (D-281 trial): counts by stage and the lag of the event loop, never an address.
         ...(process.env.ARIANNA_BROWSER_DEBUG === '1' ? { debug: (line: string) => { console.warn(line); } } : {}),
@@ -705,18 +813,30 @@ export class AgentBrowser {
     }
   }
 
+  #noteUserAddress(address: string): void {
+    const conversationId = this.#held?.conversationId;
+    if (conversationId === undefined) return;
+    const known = this.#userAddresses.get(conversationId) ?? [];
+    this.#userAddresses.set(conversationId, [address, ...known.filter((other) => other !== address)].slice(0, MAX_USER_ADDRESSES));
+  }
+
+  /** The references of saved values in an address not let go (D-283); none in the Private chat of an access, or when the check fails. */
+  #savedRefs(address: string, scope: BrowserScope, approved: ReadonlySet<string>): readonly string[] {
+    if (scope.context.browserSite !== undefined) return [];
+    try {
+      return this.#options.savedIn?.(address, approved) ?? [];
+    } catch (error) {
+      console.warn(`browser: the check of saved values before a page failed (${error instanceof Error ? error.name : typeof error})`);
+      return [];
+    }
+  }
+
   /** The card of saved values for an address (D-283), when it has some not let go for this browser; undefined otherwise. */
   #savedIn(address: string, scope: BrowserScope, approved: ReadonlySet<string>): ActionResult | undefined {
     // The Private chat of an access (D-281) is never compared by the gateway: no card there.
     if (scope.context.browserSite !== undefined) return undefined;
-    let saved: readonly string[];
-    try {
-      saved = this.#options.savedIn?.(address, approved) ?? [];
-    } catch (error) {
-      // Not loaded, or broken: the gateway of the network decides the page, as for any check it cannot make here.
-      console.warn(`browser: the check of saved values before a page failed (${error instanceof Error ? error.name : typeof error})`);
-      return undefined;
-    }
+    // Not loaded, or broken: none here, and the gateway of the network decides the page.
+    const saved = this.#savedRefs(address, scope, approved);
     if (saved.length === 0) return undefined;
     const site = siteOf(address);
     return { ok: false, reason: 'confirm-private', saved, ...(site === undefined ? {} : { site }) };

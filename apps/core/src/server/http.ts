@@ -218,6 +218,7 @@ import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveCl
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { isYoutubeVideo } from '../video-url.ts';
 import { isVideoFailure, VIDEO_FAILURE_TEXT, type VideoJobState } from '../video-job.ts';
+import type { UserCommand } from '../browser/agent-browser.ts';
 import type { BrowserScreens } from '../browser/screen.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
@@ -4726,6 +4727,30 @@ function browserScreenRoutes(screens: BrowserScreens | undefined): Route[] {
       if (closed === 'not-found') throw new HttpError(404, 'not found');
       if (closed === 'no-browser') return { status: 409, body: { error: 'no-browser' } };
       return { body: { closed: true } };
+    }),
+    // The bar of the screen (D-286): ← → ↻ and the address written in its field, from an open screen (its token).
+    route('POST', '/api/browser/navigate', async (request) => {
+      if (screens === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId', 'screen', 'command', 'url', 'confirmed']);
+      const { conversationId, screen, command, url, confirmed } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId)) throw new HttpError(400, 'conversationId must be a conversation id');
+      if (typeof screen !== 'string' || screen.length > 64) throw new HttpError(400, 'screen must be the token of an open screen');
+      if (confirmed !== undefined && typeof confirmed !== 'boolean') throw new HttpError(400, 'confirmed must be a boolean');
+      let asked: UserCommand;
+      if (command === 'back' || command === 'forward' || command === 'reload') {
+        if (url !== undefined || confirmed !== undefined) throw new HttpError(400, `${command} takes no address`);
+        asked = { kind: command };
+      } else if (command === 'open') {
+        if (typeof url !== 'string' || url.trim() === '' || url.length > 2_000) throw new HttpError(400, 'url must be an address');
+        asked = { kind: 'open', url: url.trim(), ...(confirmed === true ? { confirmed: true } : {}) };
+      } else {
+        throw new HttpError(400, 'command must be back, forward, reload or open');
+      }
+      const done = await screens.navigate(conversationId, screen, asked);
+      if (!done.ok && done.reason === 'not-found') throw new HttpError(404, 'not found');
+      if (!done.ok && (done.reason === 'no-browser' || done.reason === 'no-screen')) return { status: 409, body: { error: done.reason } };
+      return { body: done };
     }),
     // «Prendi il controllo» and «Restituisci ad Arianna» (D-264, passo 5). `take` names the screen by its
     // token; 202 while Arianna ends the action under way (the chat reads the status until it is its own).

@@ -300,7 +300,10 @@ export async function browserTool(
   const action = actionOf(tool, args);
   if (action === undefined) return failure(tool, tool === 'browser.open' ? FETCH_FAILURE_TEXT['invalid-url'] : 'argomenti non validi');
   if (action.kind !== 'close' && (await actionsDone(browser.sql, task.id)) >= MAX_ACTIONS_PER_TASK) return failure(tool, TASK_LIMIT, label);
-  const consent: PageConsent = chat === undefined ? await browserConsent(browser.sql, task, context) : { from: 'sites', sites: [chat] };
+  const asked: PageConsent = chat === undefined ? await browserConsent(browser.sql, task, context) : { from: 'sites', sites: [chat] };
+  // The pages the user opened in this browser (D-286, while driving or from the bar) are written by the user too.
+  const opened = asked.from === 'user' ? browser.browser.userAddressesOf(task.conversationId) : [];
+  const consent: PageConsent = asked.from === 'user' && opened.length > 0 ? { from: 'user', addresses: [...new Set([...asked.addresses, ...opened])].slice(0, 200) } : asked;
   const sendPermit = chat === undefined ? undefined : await approvedSend(browser.sql, task.id);
   // The saved values the user let go for this browser (D-283), or for the one this action opens: the same set
   // goes to its network.

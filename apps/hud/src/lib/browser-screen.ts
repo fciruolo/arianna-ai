@@ -160,7 +160,8 @@ export function blockedText(blocked: Pick<BlockedNavigation, 'outcome'>, access?
     case 'form':
       return 'Modulo non inviato: da questo browser un modulo parte solo verso il sito della pagina, mentre guidi tu.';
     case 'blocked':
-      return 'Sito non fra quelli che hai scritto: scrivilo in chat se vuoi aprirlo.';
+      // D-286: a page the user clicks opens on any site; what stops it is the gateway.
+      return 'Pagina non aperta: il gateway l’ha fermata (un dato privato, una chiave o un dato salvato nell’indirizzo, oppure la conversazione ha letto dati Privati).';
     case 'limit':
       return 'Pagina non aperta: il browser ha raggiunto il limite di pagine o di dati di questo lavoro.';
     case 'refused':
@@ -224,4 +225,45 @@ export function parseControl(value: unknown): { control: ControlState | null; bl
   }
   const access = typeof body.access === 'string' && body.access !== '' && body.access.length <= 253 ? body.access : null;
   return { control, blocked, access, chat: body.chat === true };
+}
+
+// The bar above the screen (D-286): ← Indietro, → Avanti, ↻ Ricarica and the address of the page.
+// Chromium runs as a kiosk, without a bar of its own: these commands go through the core, as the user's.
+
+export type BarCommand = 'back' | 'forward' | 'reload' | 'open';
+
+/** What the bar says of a command the core did not carry out, in Italian; undefined when it went. */
+export function commandText(reason: string): string {
+  switch (reason) {
+    case 'agent-busy':
+      return 'Arianna sta usando il browser: riprova fra un attimo.';
+    case 'no-page':
+      return 'Non c’è una pagina da quella parte.';
+    case 'navigation-blocked':
+      return 'Pagina non aperta: il gateway l’ha fermata.';
+    case 'navigation-failed':
+      return 'La pagina non si è aperta: controlla l’indirizzo.';
+    case 'not-open':
+      return 'Il browser non è aperto.';
+    default:
+      return 'Il comando non è riuscito.';
+  }
+}
+
+/**
+ * The address written in the field, as the core takes it: with a scheme, or
+ * https in front of something that looks like a host. Undefined for what is
+ * not an address (the field does not search).
+ */
+export function barAddress(text: string): string | undefined {
+  const value = text.trim();
+  if (value === '' || /\s/.test(value)) return undefined;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(withScheme);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname.includes('.')) return undefined;
+    return url.href;
+  } catch {
+    return undefined;
+  }
 }

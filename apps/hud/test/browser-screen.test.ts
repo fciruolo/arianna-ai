@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { applyActivity, emptyChat } from '../src/lib/chat-state.ts';
-import { browserSignal, browserSite, canRetry, isBrowserLine, latestBrowserSite, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl } from '../src/lib/browser-screen.ts';
+import { barAddress, blockedText, browserSignal, browserSite, canRetry, commandText, isBrowserLine, latestBrowserSite, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl } from '../src/lib/browser-screen.ts';
 import { COMPUTER_TABS, computerTabs, shownTab } from '../src/lib/computer.ts';
 import { browserConversationFromPath, browserPathFor, conversationFromPath } from '../src/lib/route.ts';
 import type { Activity } from '../src/lib/types.ts';
@@ -135,9 +135,13 @@ describe('BrowserScreen.vue', () => {
     // sendKey only behind driving(): the keyboard of a phone while this screen drives.
     for (const at of [...source.matchAll(/\.sendKey\(/g)].map((match) => match.index)) assert.match(source.slice(Math.max(0, at - 200), at), /driving\(\)/);
     const template = source.slice(source.indexOf('<template>'));
-    assert.doesNotMatch(template, /<(textarea|select|form)\b/i);
-    // The one field is the hidden keyboard, only while this screen drives on a phone.
-    assert.equal([...template.matchAll(/<input\b/gi)].length, 1);
+    assert.doesNotMatch(template, /<(textarea|select)\b/i);
+    // The one form is the bar of the browser (D-286), whose field is the address; the other field is the
+    // hidden keyboard, only while this screen drives on a phone.
+    assert.equal([...template.matchAll(/<form\b/gi)].length, 1);
+    assert.match(template, /<form [^>]*role="toolbar"/);
+    assert.equal([...template.matchAll(/<input\b/gi)].length, 2);
+    assert.match(template, /<input\s+v-model="address"/);
     assert.match(template, /<input\s+v-if="control === 'you' && touch"/);
   });
 
@@ -174,9 +178,9 @@ describe('«Prendi il controllo» (D-264, passo 5)', () => {
     assert.deepEqual(parseControl(null), { control: null, blocked: null, access: null, chat: false });
   });
 
-  it('every refused page has its sentence; a link to a site not written says to write it in the chat', async () => {
+  it('every refused page has its sentence; a page the gateway refused says so (D-286: a click of the user opens any site)', async () => {
     const { blockedText, CONTROL_WARNING } = await import('../src/lib/browser-screen.ts');
-    assert.match(blockedText({ outcome: 'blocked' }), /scrivilo in chat se vuoi aprirlo/);
+    assert.match(blockedText({ outcome: 'blocked' }), /il gateway l’ha fermata/);
     assert.match(blockedText({ outcome: 'form' }), /^Modulo non inviato/);
     for (const outcome of ['refused', 'limit'] as const) assert.ok(blockedText({ outcome }).length > 10);
     assert.equal(CONTROL_WARNING, 'Non scrivere dati personali: la pagina è pubblica e il sito li riceve.');
@@ -211,7 +215,7 @@ describe('the access made by the user (D-276)', () => {
     assert.equal(parseControl({ control: 'you', access: 3 }).access, null);
     assert.match(blockedText({ outcome: 'blocked' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
     assert.match(blockedText({ outcome: 'form' }, 'banca-finta.it'), /solo verso banca-finta\.it/);
-    assert.match(blockedText({ outcome: 'blocked' }, null), /scrivilo in chat/);
+    assert.match(blockedText({ outcome: 'blocked' }, null), /il gateway l’ha fermata/);
     assert.match(accessText('banca-finta.it'), /Private/);
     assert.match(FORM_NOTE, /Unica eccezione/);
     assert.match(accessWarning('banca-finta.it'), /solo a banca-finta\.it/);
@@ -253,5 +257,30 @@ describe('the Private chat of an access (D-281)', () => {
     const { HANDOFF_LINE } = await import('../src/lib/browser-screen.ts');
     const core = readFileSync(join(import.meta.dirname, '..', '..', 'core', 'src', 'browser', 'handoff.ts'), 'utf8');
     assert.ok(core.includes(`'${HANDOFF_LINE}'`));
+  });
+});
+
+describe('the bar of the screen (D-286)', () => {
+  it('takes an address with or without its scheme, never something else', () => {
+    assert.equal(barAddress('wikipedia.org'), 'https://wikipedia.org/');
+    assert.equal(barAddress('  https://example.com/a?b=1 '), 'https://example.com/a?b=1');
+    assert.equal(barAddress('http://example.com'), 'http://example.com/');
+    assert.equal(barAddress(''), undefined);
+    assert.equal(barAddress('ferramenta lunardi'), undefined);
+    assert.equal(barAddress('javascript:alert(1)'), undefined);
+    assert.equal(barAddress('file:///etc/passwd'), undefined);
+    assert.equal(barAddress('localhost'), undefined);
+  });
+
+  it('says in Italian why a command did not go', () => {
+    assert.match(commandText('agent-busy'), /Arianna sta usando il browser/);
+    assert.match(commandText('no-page'), /Non c’è una pagina/);
+    assert.match(commandText('navigation-blocked'), /gateway/);
+    assert.match(commandText('qualcos-altro'), /non è riuscito/);
+  });
+
+  it('a page refused while the user drives is the gateway\'s refusal, no longer a site not written (D-286)', () => {
+    assert.match(blockedText({ outcome: 'blocked' }), /il gateway l’ha fermata/);
+    assert.doesNotMatch(blockedText({ outcome: 'blocked' }), /scrivilo in chat/);
   });
 });

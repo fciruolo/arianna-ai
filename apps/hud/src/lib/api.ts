@@ -1188,14 +1188,17 @@ export async function openBrowserScreen(conversationId: string): Promise<string>
 export async function browserStatus(
   conversationId: string,
   screen?: string,
-): Promise<{ open: boolean; site: string | null; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; movedTo: string | null }> {
+): Promise<{ open: boolean; site: string | null; url: string | null; acting: boolean; control: ControlState | null; blocked: BlockedNavigation | null; access: string | null; chat: boolean; movedTo: string | null }> {
   const query = `conversationId=${encodeURIComponent(conversationId)}${screen === undefined ? '' : `&screen=${encodeURIComponent(screen)}`}`;
-  const body = await call<{ open: unknown; site?: unknown }>('GET', `/api/browser/screen?${query}`);
+  const body = await call<{ open: unknown; site?: unknown; url?: unknown; acting?: unknown }>('GET', `/api/browser/screen?${query}`);
   const open = body.open === true;
   const { control, blocked, access, chat } = parseControl(body);
   return {
     open,
     site: open && typeof body.site === 'string' && body.site !== '' ? body.site : null,
+    // The address of the page, to an open screen only (D-286): the field of its bar.
+    url: open && typeof body.url === 'string' && /^https?:/.test(body.url) ? body.url : null,
+    acting: open && body.acting === true,
     control: open ? control : null,
     blocked: open ? blocked : null,
     access: open ? access : null,
@@ -1212,6 +1215,36 @@ export async function browserStatus(
 export async function takeBrowserControl(conversationId: string, screen: string): Promise<'you' | 'waiting'> {
   const body = await call<{ control?: unknown; waiting?: unknown }>('POST', '/api/browser/control', { conversationId, action: 'take', screen });
   return body.waiting === true ? 'waiting' : 'you';
+}
+
+/**
+ * A command of the bar of the screen (D-286), from the open screen of
+ * `screen` (its token): the page it opened, or why not (`confirm-private`:
+ * the address carries a value the user saved, `values` what it is and whose;
+ * sent again with `confirmed` after «Apri»). 409 `no-screen` or `no-browser`.
+ */
+export async function navigateBrowser(
+  conversationId: string,
+  screen: string,
+  command: 'back' | 'forward' | 'reload' | 'open',
+  url?: string,
+  confirmed = false,
+): Promise<{ ok: true; url: string } | { ok: false; reason: string; values: { kind: string; client: string }[] }> {
+  const body = await call<{ ok?: unknown; url?: unknown; reason?: unknown; values?: unknown }>('POST', '/api/browser/navigate', {
+    conversationId,
+    screen,
+    command,
+    ...(command === 'open' && url !== undefined ? { url } : {}),
+    ...(command === 'open' && confirmed ? { confirmed: true } : {}),
+  });
+  if (body.ok === true && typeof body.url === 'string') return { ok: true, url: body.url };
+  const values = Array.isArray(body.values)
+    ? (body.values as unknown[]).flatMap((value) => {
+        const entry = (value ?? {}) as Record<string, unknown>;
+        return typeof entry.kind === 'string' && typeof entry.client === 'string' ? [{ kind: entry.kind, client: entry.client }] : [];
+      })
+    : [];
+  return { ok: false, reason: typeof body.reason === 'string' ? body.reason : 'error', values };
 }
 
 /** «Restituisci ad Arianna» (D-264, passo 5); a control already gone back (409 `not-driving`) counts as returned. */

@@ -245,3 +245,54 @@ test('the User-Agent of the core has the reduced version Chromium itself sends',
   assert.equal(reducedUserAgent('Mozilla/5.0 HeadlessChrome/155.1.2.3 Safari/537.36'), 'Mozilla/5.0 Chrome/155.0.0.0 Safari/537.36');
   assert.equal(reducedUserAgent('Chrome/155.0.0.0'), 'Chrome/155.0.0.0');
 });
+
+test('session: a popup of the agent that closes (a sign in done) gives the agent its tab back, never a new one (D-283 review)', async () => {
+  const steps: string[] = [];
+  const tabs: unknown[] = [];
+  let emit: (page: unknown) => void = () => undefined;
+  let made = 0;
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { made += 1; const created = fakeTab(`tab${String(made)}`, steps); tabs.push(created); return Promise.resolve(created); }, onPage: (listener) => { emit = listener; } });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  const own = await session.currentPage();
+  const popup = fakeTab('popup', steps, { opener: own });
+  emit(popup);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'popup');
+  await (popup as unknown as { close: () => Promise<void> }).close();
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'tab1');
+  assert.equal(made, 1);
+  assert.ok(!steps.includes('tab1:close'));
+});
+
+test('session: the new tab of the agent, told by Chromium before newPage answers and without opener, stays the agent\'s (D-283 review)', async () => {
+  const steps: string[] = [];
+  const tabs: unknown[] = [];
+  let emit: (page: unknown) => void = () => undefined;
+  const fake = fakeBrowser({
+    pages: tabs,
+    newPage: () => {
+      const created = fakeTab('created', steps);
+      tabs.push(created);
+      // Chromium tells of it first, as Playwright does.
+      emit(created);
+      return Promise.resolve(created);
+    },
+    onPage: (listener) => { emit = listener; },
+  });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  await session.openPage('https://comune-finto.it/');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(!steps.includes('created:close'));
+  assert.equal(((await session.currentPage()) as unknown as { name: string }).name, 'created');
+});
+
+test('session: two callers at once get one new tab (D-283 review)', async () => {
+  const steps: string[] = [];
+  const tabs: unknown[] = [];
+  let made = 0;
+  const fake = fakeBrowser({ pages: tabs, newPage: () => { made += 1; const created = fakeTab(`tab${String(made)}`, steps); tabs.push(created); return new Promise((resolve) => setTimeout(() => { resolve(created); }, 10)); } });
+  const session = await connectSession(openBrowser().open, { home: temporary(), connect: () => Promise.resolve(fake.browser) });
+  const [first, second] = await Promise.all([session.currentPage(), session.currentPage()]);
+  assert.equal(first, second);
+  assert.equal(made, 1);
+});

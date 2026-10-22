@@ -231,6 +231,17 @@ export interface NetworkJob {
    * frame (a service worker) is not attributed: it goes as any other.
    */
   isRetired?: (page: Page) => boolean;
+  /**
+   * Whether a tab is the agent's tab now (session.ts): a navigation of
+   * another one (the tab a popup came from, D-283 review) is never the last
+   * one of the agent. Unknown tabs count as the agent's.
+   */
+  isAgentTab?: (page: Page) => boolean;
+  /**
+   * A navigation of the main page the user made while driving went (D-286):
+   * its address, for the conversation (AgentBrowser keeps it in memory).
+   */
+  onUserAddress?: (address: string) => void;
 }
 
 /**
@@ -397,6 +408,29 @@ function originOf(address: string): string | undefined {
 function corsAllows(answer: Answer, origin: string | undefined): boolean {
   const allowed = answer.headers.find(([name]) => name === 'access-control-allow-origin')?.[1].trim();
   return allowed === '*' || (allowed !== undefined && origin !== undefined && allowed === origin.trim());
+}
+
+/**
+ * The consent of a main page with the address of a navigation of the user
+ * (D-286): a `user` consent takes it as written; `public` and `sites` stay
+ * as they are (the Private chat of an access, the Coder's list).
+ */
+export function withWritten(consent: PageConsent, written: string | undefined): PageConsent {
+  if (written === undefined || consent.from !== 'user' || consent.addresses.includes(written)) return consent;
+  // The newest addresses first are kept: the gateway takes 200 at most.
+  return { from: 'user', addresses: [written, ...consent.addresses].slice(0, 200) };
+}
+
+/** Whether a main page of `request` is the agent's navigation: not of a tab it left, nor of another tab of it (D-283 review). */
+function isAgentNavigation(request: Request, job: Pick<NetworkJob, 'isRetired' | 'isAgentTab'>): boolean {
+  if (isLeftTab(request, job.isRetired)) return false;
+  if (job.isAgentTab === undefined) return true;
+  try {
+    const frame = frameObject(request);
+    return frame === undefined || job.isAgentTab(frame.page());
+  } catch {
+    return true;
+  }
 }
 
 /** Whether a request comes from a tab the agent left (D-283 review): its frame belongs to a retired page. */
@@ -586,7 +620,12 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
   const requestLabel = (): Label => (session === null ? scope.context.effective : 'L2');
 
   /** One hop of a main page: the gateway as a page (second scanner included), then the download. */
-  const pageHop = async (address: string, hop: number, request: ResourceInput): Promise<ResourceResult> => {
+  /**
+   * One hop of a main page. `written`: the address of a navigation of the
+   * user while driving (D-286), which counts as written by the user in the
+   * conversation: its site enters the `user` consent (its redirects stay on it).
+   */
+  const pageHop = async (address: string, hop: number, request: ResourceInput, written?: string): Promise<ResourceResult> => {
     const url = resourceUrl(address, network);
     if (typeof url === 'string') return { ok: false, reason: url };
     // A page is its address only: a body (a 307/308 of a form) goes through formHop, never here.
@@ -596,7 +635,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // Only https: the cookies of the access never travel in clear (D-276).
     const onAccess = jar !== null && url.protocol === 'https:' && onSite(url.hostname, jar.site);
     const method = request.method.toUpperCase() === 'POST' ? 'POST' : 'GET';
-    const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(scope.consent, url.href, hop) };
+    const target: Target = onAccess ? { kind: 'web', session: { site: jar.site, type: 'document', method } } : { kind: 'web', page: navigationConsent(withWritten(scope.consent, written), url.href, hop) };
     let allowed: string | undefined;
     try {
       mark('gateway:page');
@@ -616,6 +655,14 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // Closed while the gateway decided: nothing is requested.
     if (isClosed()) return interrupted;
     if (allowed !== url.href) return { ok: false, reason: 'blocked' };
+    // The address the user chose is the conversation's from now on (D-286): its site counts for Arianna too.
+    if (written !== undefined && !onAccess && scope.consent.from === 'user') {
+      try {
+        job.onUserAddress?.(written);
+      } catch {
+        console.warn('browser: an address of the user could not be noted');
+      }
+    }
     const cookie = onAccess ? jar.header(url, Date.now()) : undefined;
     const result = await fetchOne(withCookie({ ...request, url: allowed, type: 'document' }, cookie), network, stopping.signal);
     keepCookies(result, allowed, true);
@@ -803,7 +850,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const reached = budget.take(frame.main);
     if (reached !== null) {
       limit(reached);
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit');
+      if (frame.main && isAgentNavigation(request, job)) navigated('limit');
       await abort('limit');
       return;
     }
@@ -811,7 +858,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     const agentInChat = scope.driver !== 'user' && scope.context.browserSite !== undefined && session !== null;
     if (agentInChat && method !== 'GET' && method !== 'HEAD' && scope.send !== true) {
       held += 1;
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('form');
+      if (frame.main && isAgentNavigation(request, job)) navigated('form');
       await abort('form');
       return;
     }
@@ -821,7 +868,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     if (frame.navigation && method !== 'GET') {
       formSite = frame.main && method === 'POST' && (scope.driver === 'user' || agentInChat) ? userFormSite(request, url, session?.site) : undefined;
       if (formSite === undefined) {
-        if (frame.main && !isLeftTab(request, job.isRetired)) navigated('form');
+        if (frame.main && isAgentNavigation(request, job)) navigated('form');
         await abort('form');
         return;
       }
@@ -832,8 +879,10 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       return;
     }
     const before = redirectsBefore(request);
+    // A page the user chose while driving (D-286): the address as asked counts as written by the user.
+    const written = frame.main && scope.driver === 'user' && method === 'GET' ? (withoutHash(url) ?? undefined) : undefined;
     if (before > MAX_REDIRECTS) {
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('too-many-redirects');
+      if (frame.main && isAgentNavigation(request, job)) navigated('too-many-redirects');
       await abort('too-many-redirects');
       return;
     }
@@ -845,14 +894,14 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     // 4. A main page through the gateway as a page; 5. anything else as a resource.
     const site = formSite;
     const hops = frame.main
-      ? follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next)))
+      ? follow(input, before, (next, index) => (site !== undefined && (index === before || next.body !== undefined) ? formHop(next, site) : pageHop(next.url, index, next, written)))
       : follow(input, before, (next) => resourceHop(next, frame.navigation));
     const decided = await withDeadline(hops, job.hopTimeoutMs ?? HOP_MS);
     if (decided === 'late') {
       expired.add(seq);
       // Forgotten only when its late work is really over, however long the gateway or the download take.
       void hops.finally(() => { expired.delete(seq); }).catch(() => undefined);
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('failed', undefined, 'timeout');
+      if (frame.main && isAgentNavigation(request, job)) navigated('failed', undefined, 'timeout');
       await abort('failed', 'timeout');
       return;
     }
@@ -863,7 +912,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
     }
     if (limited !== undefined) {
       limit(limited);
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit');
+      if (frame.main && isAgentNavigation(request, job)) navigated('limit');
       await abort('limit');
       return;
     }
@@ -871,20 +920,20 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       // `blocked`: the gateway refused this hop (its row says why); anything else: the network or the answer.
       const outcome: RequestOutcome = result.reason === 'blocked' || result.reason === 'saved-private' ? 'blocked' : result.reason === 'private-address' || result.reason === 'invalid-url' || result.reason === 'invalid-request' || result.reason === 'body-too-large' || result.reason === 'unreadable-body' || result.reason === 'insecure-redirect' || result.reason === 'other-site' ? 'refused' : 'failed';
       // The site only of an address the gateway let go (a failure of the network after it).
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason, savedRefs.get(seq));
-      else if (result.reason === 'saved-private') savedStopped += 1;
+      if (frame.main && isAgentNavigation(request, job)) navigated(outcome, outcome === 'failed' ? siteOf(final) : undefined, result.reason, savedRefs.get(seq));
+      else if (result.reason === 'saved-private' && !isLeftTab(request, job.isRetired)) savedStopped += 1;
       await abort(outcome, result.reason);
       return;
     }
     if (tooMany) {
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('too-many-redirects', siteOf(final));
+      if (frame.main && isAgentNavigation(request, job)) navigated('too-many-redirects', siteOf(final));
       await abort('too-many-redirects');
       return;
     }
     const over = budget.addBytes(result.body.length);
     if (over !== null) {
       limit(over);
-      if (frame.main && !isLeftTab(request, job.isRetired)) navigated('limit', siteOf(final));
+      if (frame.main && isAgentNavigation(request, job)) navigated('limit', siteOf(final));
       await abort('limit');
       return;
     }
@@ -901,7 +950,7 @@ export async function attachNetwork(context: BrowserContext, job: NetworkJob): P
       return;
     }
     const outcome: RequestOutcome = result.status >= 400 ? 'http-error' : 'ok';
-    if (frame.main && !isLeftTab(request, job.isRetired)) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
+    if (frame.main && isAgentNavigation(request, job)) navigated(outcome === 'ok' ? 'ok' : 'http-error', siteOf(final));
     count(counted, outcome, url, request.resourceType());
     stage(`fulfil:${counted}`);
     const movedAway = (withoutHash(final) ?? final) !== (withoutHash(url) ?? url);

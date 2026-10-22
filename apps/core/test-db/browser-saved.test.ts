@@ -180,6 +180,7 @@ interface FakeBrowser {
   act: (scope: BrowserScope, action: BrowserAction) => Promise<ActionResult>;
   release: (conversationId: string) => Promise<void>;
   openedAt: (conversationId: string) => number | null;
+  userAddressesOf: (conversationId: string) => readonly string[];
   lastOpenedAt: (conversationId: string) => number | null;
   savedFor: (conversationId: string) => { opened: number | null; browsers: number[]; none: boolean };
 }
@@ -203,6 +204,7 @@ function fakeBrowser(results: ActionResult[]): FakeBrowser {
       return Promise.resolve();
     },
     openedAt: (conversationId) => (fake.holder === conversationId ? fake.opened : null),
+    userAddressesOf: () => [],
     lastOpenedAt: (conversationId) => (fake.holder === conversationId ? fake.opened : null),
     savedFor: (conversationId) => (fake.holder === conversationId ? { opened: fake.opened, browsers: [fake.opened], none: false } : { opened: null, browsers: [], none: true }),
   };

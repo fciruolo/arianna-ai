@@ -66,6 +66,7 @@ import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { configureWornNames, passGateway } from './gateway.ts';
+import { savedAskValues } from './orchestrator/saved-ask.ts';
 import { savedInAddress, startSavedPrivate } from './saved-private.ts';
 import { nameLabelOf, type LeaveRule } from './participants.ts';
 import { stopConversation } from './chat-stop.ts';
@@ -576,6 +577,18 @@ const browserScreens = new BrowserScreens({
     return closed;
   },
   site: (conversationId) => agentBrowser.siteOf(conversationId),
+  // The bar of the screen (D-286): the address of the page, and its commands as the user's.
+  url: (conversationId) => agentBrowser.urlOf(conversationId),
+  acting: (conversationId) => agentBrowser.actingFor(conversationId),
+  command: async (conversationId, command) => {
+    const done = await agentBrowser.userCommand(conversationId, command);
+    if (done.ok) return { ok: true, url: done.page.url, site: done.page.site };
+    // A saved value: what it is and whose for the question of the bar, never the reference.
+    if (done.reason === 'confirm-private') {
+      return { ok: false, reason: done.reason, ...(done.site === undefined ? {} : { site: done.site }), values: savedAskValues(done.saved).map(({ kind, client }) => ({ kind, client })) };
+    }
+    return { ok: false, reason: done.reason };
+  },
   // «Nuova chat Privata» (D-281): the work conversation shows where its browser went after an access.
   movedTo: (conversationId) => agentBrowser.movedFrom(conversationId),
   // «Prendi il controllo» (D-264, passo 5): the state is the browser's, the lines tell the user and the model.

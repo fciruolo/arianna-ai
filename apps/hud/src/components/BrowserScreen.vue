@@ -2,9 +2,10 @@
 import type RFB from '@novnc/novnc';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, browserStatus, closeBrowser, openBrowserScreen, returnBrowserControl, takeBrowserControl } from '../lib/api.ts';
+import { ApiError, browserStatus, closeBrowser, navigateBrowser, openBrowserScreen, returnBrowserControl, takeBrowserControl } from '../lib/api.ts';
+import { SAVED_KIND_TEXT } from '../lib/browser-approval.ts';
 import { keysymsOf, SPECIAL_KEYS } from '../lib/browser-keys.ts';
-import { accessText, accessWarning, blockedText, canRetry, CONTROL_PASSED, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
+import { accessText, accessWarning, barAddress, blockedText, canRetry, commandText, CONTROL_PASSED, FORM_NOTE, CONTROL_POLL_MS, CONTROL_WARNING, SCREEN_HINT, SCREEN_TEXT, screenRefusal, screenUrl, type BarCommand, type ControlState, type ScreenState } from '../lib/browser-screen.ts';
 import { errorText } from '../lib/italian.ts';
 import { browserPathFor } from '../lib/route.ts';
 import Icon from './Icon.vue';
@@ -57,6 +58,62 @@ let shownBlocked = 0;
 let poll: ReturnType<typeof setInterval> | undefined;
 const driving = (): boolean => control.value === 'you';
 
+// The bar above the screen (D-286): ← → ↻ and the address, through the core as the user's commands.
+/** The address of the page, from the core; the field shows it while the user is not writing in it. */
+const pageUrl = ref<string | null>(null);
+const address = ref('');
+const editing = ref(false);
+/** An action of Arianna under way: the bar is off. */
+const acting = ref(false);
+const commanding = ref(false);
+const barProblem = ref<string | null>(null);
+/** The address waits for «Apri / No»: it carries a value the user saved (D-283). */
+const savedAsk = ref<{ url: string; lines: string[] } | null>(null);
+const barOff = (): boolean => state.value !== 'live' || acting.value || commanding.value || screenToken === null;
+
+async function command(kind: BarCommand, url?: string, confirmed = false): Promise<void> {
+  const token = screenToken;
+  if (token === null) return;
+  barProblem.value = null;
+  commanding.value = true;
+  try {
+    const done = await navigateBrowser(props.conversationId, token, kind, url, confirmed);
+    if (token !== screenToken) return;
+    if (done.ok) {
+      pageUrl.value = done.url;
+      editing.value = false;
+      address.value = done.url;
+      return;
+    }
+    if (done.reason === 'confirm-private' && url !== undefined) {
+      const lines = done.values.map((value) => `${SAVED_KIND_TEXT[value.kind] ?? 'un dato salvato'}${value.client.trim() === '' ? ' di un cliente' : ` di ${value.client}`}`);
+      savedAsk.value = { url, lines: [...new Set(lines)] };
+      return;
+    }
+    barProblem.value = commandText(done.reason);
+  } catch (cause) {
+    barProblem.value = cause instanceof ApiError && cause.message === 'no-screen' ? 'Lo schermo non è più collegato: premi «Riprova».' : errorText(cause);
+  } finally {
+    commanding.value = false;
+  }
+}
+
+function openWritten(): void {
+  const url = barAddress(address.value);
+  if (url === undefined) {
+    barProblem.value = 'Scrivi un indirizzo, per esempio wikipedia.org.';
+    return;
+  }
+  savedAsk.value = null;
+  void command('open', url);
+}
+
+function answerSaved(open: boolean): void {
+  const asked = savedAsk.value;
+  savedAsk.value = null;
+  if (asked !== null && open) void command('open', asked.url, true);
+}
+
 /** noVNC takes keys and pointer only while this screen drives. */
 function applyControl(): void {
   const current = rfb;
@@ -76,6 +133,9 @@ async function readStatus(): Promise<void> {
     const before = control.value;
     control.value = status.control;
     access.value = status.access;
+    acting.value = status.acting;
+    pageUrl.value = status.url;
+    if (!editing.value) address.value = status.url ?? '';
     chat.value = status.chat;
     if (before === 'you' && status.control === 'other') notice.value = CONTROL_PASSED;
     if (before === 'you' && status.control === 'agent') notice.value = 'Il browser è tornato ad Arianna.';
@@ -104,6 +164,9 @@ function stop(): void {
   control.value = null;
   access.value = null;
   chat.value = false;
+  pageUrl.value = null;
+  savedAsk.value = null;
+  acting.value = false;
   asking.value = false;
   stopPolling();
   current?.disconnect();
@@ -312,6 +375,40 @@ onBeforeUnmount(() => {
       @input="sendText"
       @keydown="sendSpecial"
     />
+    <!-- The bar of the browser (D-286): Chromium has none in the kiosk; the commands go through the core as the user's. -->
+    <form class="flex items-center gap-1.5" role="toolbar" aria-label="Comandi del browser" @submit.prevent="openWritten">
+      <button type="button" :class="ACTION" :disabled="barOff()" title="Indietro" aria-label="Indietro" @click="command('back')">←</button>
+      <button type="button" :class="ACTION" :disabled="barOff()" title="Avanti" aria-label="Avanti" @click="command('forward')">→</button>
+      <button type="button" :class="ACTION" :disabled="barOff()" title="Ricarica" aria-label="Ricarica" @click="command('reload')">↻</button>
+      <input
+        v-model="address"
+        class="field min-w-0 flex-1 px-2.5 py-1 font-mono text-[12.5px]"
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        enterkeyhint="go"
+        :disabled="barOff()"
+        aria-label="Indirizzo della pagina: Invio la apre come se l’avessi scritto in chat"
+        placeholder="Indirizzo, poi Invio"
+        @focus="editing = true"
+        @blur="editing = address !== (pageUrl ?? '')"
+      />
+    </form>
+    <p v-if="acting" class="text-[12px] text-muted" role="status">Arianna sta usando il browser: i comandi tornano quando ha finito.</p>
+    <p v-if="barProblem !== null" class="text-[12.5px] text-warn" role="alert">{{ barProblem }}</p>
+    <div v-if="savedAsk !== null" class="flex flex-col gap-1.5 rounded-lg border border-warn px-3 py-2 text-[13px]" role="alertdialog" aria-label="L’indirizzo contiene un dato salvato">
+      <p>L’indirizzo contiene un dato che hai salvato fra i clienti:</p>
+      <ul class="flex flex-col gap-0.5">
+        <li v-for="line in savedAsk.lines" :key="line"><strong>{{ line }}</strong></li>
+      </ul>
+      <p class="text-xs text-muted">Con Apri questo dato può uscire dal browser di questa conversazione finché lo chiudi; con No la pagina non si apre.</p>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary" @click="answerSaved(true)">Apri</button>
+        <button type="button" class="btn" @click="answerSaved(false)">No</button>
+      </div>
+    </div>
     <!-- The screen keeps the 1280×800 proportion; noVNC scales the page into it. Full screen: the box alone, on black. -->
     <div
       ref="screenBox"

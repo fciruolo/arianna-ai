@@ -52,6 +52,8 @@ interface Harness {
   /** Who drives (the fake AgentBrowser of passo 5), and what was asked of it. */
   driver: { value: 'agent' | 'user'; gives: number; inputs: number; wait?: Promise<void> };
   controls: { conversationId: string; state: string; reason?: string }[];
+  /** Commands of the bar of the screen (D-286) the fake AgentBrowser got. */
+  commands: unknown[];
 }
 
 function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: ScreensOptions['limits']; pingMs?: number; idleMs?: number; checkMs?: number } = {}): Harness {
@@ -61,6 +63,7 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
   const channels: FakeChannel[] = [];
   const events: NewEvent[] = [];
   const closes: string[] = [];
+  const commands: unknown[] = [];
   const openChannel: OpenChannel = (container, socket) => {
     if (options.failOpen === true) throw new Error('docker');
     const fromVnc = new PassThrough();
@@ -84,6 +87,11 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
       return Promise.resolve(true);
     },
     site: (id) => (id === state.holder ? 'comune-finto.it' : null),
+    url: (id) => (id === state.holder ? 'https://comune-finto.it/servizi?q=orari' : null),
+    command: (_id, command) => {
+      commands.push(command);
+      return Promise.resolve(command.kind === 'forward' ? { ok: false, reason: 'no-page' } : { ok: true, url: 'https://comune-finto.it/servizi', site: 'comune-finto.it' });
+    },
     movedTo: (id) => (id === WORK && state.holder === CHAT ? CHAT : null),
     openChannel,
     onEvent: (event) => { events.push(event); },
@@ -113,7 +121,7 @@ function harness(options: { failOpen?: boolean; stuck?: boolean; limits?: Screen
     ...(options.limits === undefined ? {} : { limits: options.limits }),
     ...(options.pingMs === undefined ? {} : { pingMs: options.pingMs }),
   });
-  return { screens, state, channels, events, closes, driver, controls };
+  return { screens, state, channels, events, closes, driver, controls, commands };
 }
 
 async function token(h: Harness, conversationId = WORK): Promise<string> {
@@ -646,7 +654,7 @@ test('take: only an open screen of the browser; its keys and clicks reach Xvnc, 
   assert.equal(taken.waiting, false);
   assert.equal(await taken.done, true);
   assert.equal(h.driver.value, 'user');
-  assert.deepEqual(await h.screens.status(WORK, first), { open: true, site: 'comune-finto.it', control: 'you', blocked: { seq: 3, outcome: 'form' } });
+  assert.deepEqual(await h.screens.status(WORK, first), { open: true, site: 'comune-finto.it', url: 'https://comune-finto.it/servizi?q=orari', control: 'you', blocked: { seq: 3, outcome: 'form' } });
   assert.equal((await h.screens.status(WORK, second))?.control, 'other');
   assert.equal((await h.screens.status(WORK))?.control, 'user');
   a.emit('message', Buffer.concat([SET_ENCODINGS, KEY_EVENT, POINTER_DOWN]), true);
@@ -754,11 +762,55 @@ test('POST /api/browser/control: take with the token of an open screen (200, or 
   assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen: randomBytes(32).toString('base64url') }), { status: 409, body: { error: 'no-screen' } });
   assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 409, body: { error: 'not-driving' } });
   assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 200, body: { control: 'you' } });
-  assert.deepEqual(await get(port, `?conversationId=${WORK}&screen=${screen}`), { status: 200, body: { open: true, site: 'comune-finto.it', control: 'you', blocked: { seq: 3, outcome: 'form' } } });
+  assert.deepEqual(await get(port, `?conversationId=${WORK}&screen=${screen}`), { status: 200, body: { open: true, site: 'comune-finto.it', url: 'https://comune-finto.it/servizi?q=orari', control: 'you', blocked: { seq: 3, outcome: 'form' } } });
   assert.deepEqual(await control({ conversationId: WORK, action: 'return' }), { status: 200, body: { control: 'agent' } });
   let finish: () => void = () => undefined;
   h.driver.wait = new Promise((resolve) => { finish = resolve; });
   assert.deepEqual(await control({ conversationId: WORK, action: 'take', screen }), { status: 202, body: { waiting: true } });
   finish();
   await until(() => h.driver.value === 'user', 'the control taken after the action');
+});
+
+test('the bar of the screen (D-286): commands only from an open screen of the browser the conversation holds; events without addresses', async () => {
+  const h = harness();
+  const issued = await token(h);
+  // Not open yet: no screen, nothing asked of the browser; no address in the status either.
+  assert.deepEqual(await h.screens.navigate(WORK, issued, { kind: 'back' }), { ok: false, reason: 'no-screen' });
+  assert.equal((await h.screens.status(WORK, issued))?.url, undefined);
+  attachFake(h, issued);
+  await tick();
+  assert.equal((await h.screens.status(WORK, issued))?.url, 'https://comune-finto.it/servizi?q=orari');
+  // Without the token of a screen, the status never says the address.
+  assert.equal((await h.screens.status(WORK))?.url, undefined);
+  assert.deepEqual(await h.screens.navigate(WORK, issued, { kind: 'open', url: 'https://comune-finto.it/servizi' }), { ok: true, url: 'https://comune-finto.it/servizi', site: 'comune-finto.it' });
+  assert.deepEqual(await h.screens.navigate(WORK, issued, { kind: 'forward' }), { ok: false, reason: 'no-page' });
+  assert.deepEqual(h.commands, [{ kind: 'open', url: 'https://comune-finto.it/servizi' }, { kind: 'forward' }]);
+  const controls = h.events.filter((event) => event.kind === 'browser.control').map((event) => event.payload);
+  assert.deepEqual(controls, [{ conversationId: WORK, command: 'open', outcome: 'ok' }, { conversationId: WORK, command: 'forward', outcome: 'no-page' }]);
+  assert.doesNotMatch(JSON.stringify(controls), /comune-finto/);
+  // Another conversation, or a wrong token: nothing.
+  assert.deepEqual(await h.screens.navigate(WORK, 'x'.repeat(43), { kind: 'reload' }), { ok: false, reason: 'no-screen' });
+  h.state.holder = null;
+  assert.deepEqual(await h.screens.navigate(WORK, issued, { kind: 'reload' }), { ok: false, reason: 'no-browser' });
+  assert.equal(h.commands.length, 2);
+});
+
+test('POST /api/browser/navigate (D-286): only from an open screen and the origin of the chat; the command checked; refusals as 409', async (t) => {
+  const h = harness();
+  const port = await serve(t, h.screens);
+  const navigate = (body: unknown, headers: Record<string, string> = {}) => post(port, body, headers, '/api/browser/navigate');
+  const screen = await token(h);
+  const ws = connect(port, `?t=${screen}`);
+  await once(ws, 'open');
+  await until(() => h.screens.open === 1, 'the screen');
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'back' }, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'print' })).status, 400);
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'back', url: 'https://comune-finto.it/' })).status, 400);
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'open' })).status, 400);
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'open', url: 'https://comune-finto.it/', confirmed: 'yes' })).status, 400);
+  assert.equal((await navigate({ conversationId: WORK, screen, command: 'back', more: 1 })).status, 400);
+  assert.deepEqual(await navigate({ conversationId: WORK, screen: 'x'.repeat(43), command: 'back' }), { status: 409, body: { error: 'no-screen' } });
+  assert.deepEqual(await navigate({ conversationId: WORK, screen, command: 'open', url: 'https://comune-finto.it/servizi' }), { status: 200, body: { ok: true, url: 'https://comune-finto.it/servizi', site: 'comune-finto.it' } });
+  assert.deepEqual(await navigate({ conversationId: WORK, screen, command: 'forward' }), { status: 200, body: { ok: false, reason: 'no-page' } });
+  ws.close();
 });

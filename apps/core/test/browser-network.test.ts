@@ -89,7 +89,7 @@ type Answer = (input: ResourceInput) => ResourceResult;
 
 const okImage: Answer = () => ({ ok: true, status: 200, headers: [['content-type', 'image/png']], body: Buffer.from('png') });
 
-async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number; isRetired?: (page: unknown) => boolean } = {}): Promise<Harness> {
+async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; answer?: Answer; budget?: BrowserBudget; debug?: (line: string) => void; hang?: boolean; delayMs?: number; isRetired?: (page: unknown) => boolean; isAgentTab?: (page: unknown) => boolean; onUserAddress?: (address: string) => void } = {}): Promise<Harness> {
   const rows: unknown[][] = [];
   const events: NewEvent[] = [];
   const fetched: ResourceInput[] = [];
@@ -118,6 +118,8 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.debug === undefined ? {} : { debug: options.debug }),
     ...(options.isRetired === undefined ? {} : { isRetired: options.isRetired }),
+    ...(options.isAgentTab === undefined ? {} : { isAgentTab: options.isAgentTab }),
+    ...(options.onUserAddress === undefined ? {} : { onUserAddress: options.onUserAddress }),
     headersTimeoutMs: 50,
     hopTimeoutMs: 100,
     unsafeTestAddresses: [],
@@ -153,6 +155,58 @@ async function harness(options: { consent?: PageConsent; level?: 'L0' | 'L1'; an
 const logged = (rows: unknown[][]) => rows.map((values) => [values[3], values[7]]);
 
 describe('attachNetwork', () => {
+  it('a page the user clicks while driving opens on a site of no address written, and becomes the conversation\'s (D-286)', async () => {
+    const noted: string[] = [];
+    const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
+    const page: Answer = (input) => (input.url.includes('salto')
+      ? { ok: true, status: 302, headers: [['location', 'https://terzo.example.org/altro']], body: Buffer.alloc(0), location: 'https://terzo.example.org/altro' }
+      : { ok: true, status: 200, headers: [['content-type', 'text/html']], body: Buffer.from('<p>pagina</p>') });
+    const net = await harness({ consent, level: 'L1', answer: page, onUserAddress: (address) => noted.push(address) });
+    // Arianna driving: another site stays refused ("clic solo nello stesso sito").
+    const refused = await net.send({ url: 'https://altro.example.net/pagina', main: true });
+    assert.equal(refused.aborted, 'blockedbyclient');
+    assert.deepEqual(noted, []);
+    // The user driving: the same click opens, and the address is noted for the conversation.
+    net.handle.rescope({ context: createContext('L1', 'L1'), consent, driver: 'user' });
+    const opened = await net.send({ url: 'https://altro.example.net/pagina#sezione', main: true });
+    assert.ok(opened.fulfilled !== undefined);
+    assert.deepEqual(noted, ['https://altro.example.net/pagina']);
+    assert.equal(net.handle.lastNavigation()?.outcome, 'ok');
+    // Its redirect to another site is not the user's choice: refused.
+    const redirected = await net.send({ url: 'https://altro.example.net/salto', main: true });
+    assert.equal(redirected.aborted, 'blockedbyclient');
+    // An iframe of another site and a resource follow the rules of before.
+    const frame = await net.send({ url: 'https://quarto.example.org/embed', main: false, type: 'document' });
+    assert.equal(frame.aborted, 'blockedbyclient');
+    await net.close();
+  });
+
+  it('a click of the user never lets the scanner or a public consent change: a value it refuses stays refused (D-286)', async () => {
+    const noted: string[] = [];
+    const consent: PageConsent = { from: 'user', addresses: ['https://example.com/catalogo'] };
+    const net = await harness({ consent, level: 'L1', onUserAddress: (address) => noted.push(address) });
+    net.handle.rescope({ context: createContext('L1', 'L1'), consent, driver: 'user' });
+    const refused = await net.send({ url: 'https://altro.example.net/?iban=IT60X0542811101000000123456', main: true });
+    assert.equal(refused.aborted, 'blockedbyclient');
+    assert.deepEqual(noted, []);
+    await net.close();
+  });
+
+  it('the navigations of a tab that is not the agent\'s now (the origin of a popup) are not its navigation; the agent\'s are (D-283 review)', async () => {
+    const agent = { name: 'agent' };
+    const origin = { name: 'origin' };
+    const net = await harness({ isAgentTab: (page) => page === agent, isRetired: () => false });
+    const frameOf = (page: object) => ({ url: () => 'about:blank', parentFrame: () => null, page: () => page });
+    const other = await net.send({ url: 'https://example.com/accesso', main: true, frame: frameOf(origin) });
+    assert.ok(other.fulfilled !== undefined);
+    assert.equal(net.handle.lastNavigation(), undefined);
+    // Not left: the answer is given. The agent's tab: its navigation counts.
+    const own = await net.send({ url: 'https://example.com/pagina', main: true, frame: frameOf(agent) });
+    assert.ok(own.fulfilled !== undefined);
+    assert.equal(net.handle.lastNavigation()?.outcome, 'ok');
+    await net.close();
+  });
+
   it('refuses every request of a tab the agent left, before the gateway, and never takes its navigation as the agent\'s (D-283 review)', async () => {
     const left = { name: 'left' };
     const kept = { name: 'kept' };

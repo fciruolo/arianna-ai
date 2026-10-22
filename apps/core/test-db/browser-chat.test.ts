@@ -65,6 +65,7 @@ interface FakeBrowser {
   accessOf: (conversationId: string) => string | null;
   release: (conversationId: string) => Promise<void>;
   openedAt: (conversationId: string) => number | null;
+  userAddressesOf: (conversationId: string) => readonly string[];
   lastOpenedAt: (conversationId: string) => number | null;
   savedFor: (conversationId: string) => { opened: number | null; browsers: number[]; none: boolean };
 }
@@ -93,6 +94,7 @@ function fakeBrowser(holder: string, results: ActionResult[]): FakeBrowser {
     },
     // When its browser opened (D-283): none here, so no saved value is let go.
     openedAt: () => null,
+    userAddressesOf: () => [],
     lastOpenedAt: () => null,
     savedFor: () => ({ opened: null, browsers: [], none: true }),
   };

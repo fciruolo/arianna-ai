@@ -6,7 +6,7 @@ import type { Sql } from '../db/client.ts';
 import type { NewEvent } from '../events.ts';
 import { openDockerChannel, type Channel, type OpenChannel } from './channel.ts';
 import { VNC_SOCKET } from './container.ts';
-import type { BlockedNavigation, ControlRequest, Driver } from './agent-browser.ts';
+import type { BlockedNavigation, ControlRequest, Driver, UserCommand } from './agent-browser.ts';
 import { createRfbFilter, type FilterClose, type InputCounts, type RfbFilter } from './rfb-filter.ts';
 
 /**
@@ -96,6 +96,14 @@ function screened(kind: ConversationKind): boolean {
 /** «Chiudi» of the chat: closed, no browser held by that conversation, or no such conversation. */
 export type CloseResult = 'closed' | 'no-browser' | 'not-found';
 
+/** What a command of the bar did (D-286), for the chat: never an address but the one the page is on now. */
+export type CommandOutcome =
+  | { ok: true; url: string; site: string }
+  /** `values`: for a saved value (`confirm-private`), what it is and whose, never the value nor its reference. */
+  | { ok: false; reason: string; site?: string; values?: readonly { kind: string; client: string }[] };
+/** A command of the bar as the chat asks it, checked: `NavigateResult` adds why it was refused before the browser. */
+export type NavigateResult = CommandOutcome | { ok: false; reason: 'not-found' | 'no-browser' | 'no-screen' };
+
 export type IssueResult = { ok: true; token: string } | { ok: false; reason: 'not-found' | 'private' | 'incognito' | 'no-browser' | 'too-many-screens' };
 
 /** A WebSocket of `ws`, just upgraded. */
@@ -117,6 +125,12 @@ export interface ScreensOptions {
   closeBrowser?: (conversationId: string) => Promise<boolean>;
   /** The site the browser of a conversation is on (AgentBrowser.siteOf), for the bar of the chat. */
   site?: (conversationId: string) => string | null;
+  /** The address of the page the browser shows (AgentBrowser.urlOf), for the field of the bar of the screen (D-286). */
+  url?: (conversationId: string) => string | null;
+  /** Whether Arianna is acting in the browser of a conversation now (AgentBrowser.actingFor): the bar is off meanwhile (D-286). */
+  acting?: (conversationId: string) => boolean;
+  /** A command of the bar of the screen (D-286): AgentBrowser.userCommand. */
+  command?: (conversationId: string, command: UserCommand) => Promise<CommandOutcome>;
   /** The Private chat the browser of a work conversation passed to after an access (AgentBrowser.movedFrom, D-281). */
   movedTo?: (conversationId: string) => string | null;
   /** «Prendi il controllo» (D-264, passo 5): AgentBrowser's takeControl, returnControl, userInput, driverOf, blockedOf. */
@@ -219,7 +233,7 @@ export class BrowserScreens {
   async status(
     conversationId: string,
     token?: string,
-  ): Promise<{ open: boolean; site?: string; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string; chat?: true } | null> {
+  ): Promise<{ open: boolean; site?: string; url?: string; acting?: true; control?: ControlState; blocked?: BlockedNavigation; access?: string; movedTo?: string; chat?: true } | null> {
     const kind = await this.#options.conversation(conversationId);
     if (kind === null) return null;
     const open = screened(kind) && !this.#stopped && this.#current(conversationId) !== null;
@@ -229,6 +243,8 @@ export class BrowserScreens {
       return movedTo === null ? { open } : { open, movedTo };
     }
     const site = this.#options.site?.(conversationId) ?? null;
+    // The address only to a screen open now (its token): the field of its bar (D-286).
+    const url = token !== undefined && this.#screenOf(conversationId, token) !== null ? (this.#options.url?.(conversationId) ?? null) : null;
     const driver = this.#options.control?.driver(conversationId) ?? null;
     let control: ControlState | undefined;
     if (driver === 'agent') control = 'agent';
@@ -242,6 +258,8 @@ export class BrowserScreens {
     return {
       open,
       ...(site === null ? {} : { site }),
+      ...(url === null ? {} : { url }),
+      ...(this.#options.acting?.(conversationId) === true ? { acting: true as const } : {}),
       ...(control === undefined ? {} : { control }),
       ...(blocked === null ? {} : { blocked }),
       ...(access === null ? {} : { access }),
@@ -275,6 +293,22 @@ export class BrowserScreens {
       return true;
     });
     return { ok: true, waiting: request.waiting, done };
+  }
+
+  /**
+   * A command of the bar of the screen of `token` (D-286): open now, of the
+   * browser `conversationId` holds. Event `browser.control` L0 with the
+   * command and its outcome, never an address nor a site.
+   */
+  async navigate(conversationId: string, token: string, command: UserCommand): Promise<NavigateResult> {
+    const kind = await this.#options.conversation(conversationId);
+    if (kind === null) return { ok: false, reason: 'not-found' };
+    const run = this.#options.command;
+    if (!screened(kind) || run === undefined || this.#current(conversationId) === null) return { ok: false, reason: 'no-browser' };
+    if (this.#screenOf(conversationId, token) === null) return { ok: false, reason: 'no-screen' };
+    const outcome = await run(conversationId, command);
+    this.#options.onEvent?.({ kind: 'browser.control', label: 'L0', payload: { conversationId, command: command.kind, outcome: outcome.ok ? 'ok' : outcome.reason } });
+    return outcome;
   }
 
   /** «Restituisci ad Arianna»: false when the user did not drive that browser. */
