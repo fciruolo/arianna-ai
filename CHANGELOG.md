@@ -4,6 +4,21 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- `[server.remote]` in `arianna.toml`: una seconda porta del core, solo su 127.0.0.1, che Tailscale pubblica sulla tailnet come `https://<nome>.ts.net` per aprire la chat dal telefono (D-292, tappa A).
+- Due modi TLS della porta remota: `tls = "own"` (predefinito, il core termina TLS col suo certificato e Tailscale inoltra in TCP, niente nei registri pubblici dei certificati) e `tls = "tailscale"` (HTTPS col certificato di Tailscale) (D-292).
+- `pnpm remote:cert`: certificato del Mac e radice per l'iPhone con l'openssl di sistema; la chiave della radice viene cancellata subito (D-292).
+- `pnpm arianna:doctor` legge `tailscale serve status --json` e controlla che la tailnet riceva solo la porta remota nel modo scelto, senza Funnel, e in modo `own` il certificato (D-292).
+- La chat si installa sulla schermata Home dell'iPhone (icona e meta di app); dal telefono, finché il dispositivo non è abbinato, compare solo «Dispositivo non abbinato» (D-292).
+- `[push]` in `arianna.toml`: le notifiche Web Push della chat funzionano anche con la voce spenta; `[voice.push]` resta valida (D-292).
+
+### Sicurezza
+
+- Sulla porta remota `Host` è ammesso solo il nome configurato e `Origin` solo `https://<nome>`, con CSP `wss://` e HSTS; nessuna intestazione rende una richiesta locale (D-292).
+- Fino alla tappa B (abbinamento e passkey) la porta remota rifiuta ogni rotta dell'API e ogni WebSocket con 401 `device-not-paired`: dal telefono si vede solo la pagina (D-292).
+- In modo `own` senza un certificato valido il core non apre la porta remota e dice perché (D-292).
+
 ## [0.167.1] - 2026-10-22
 
 ### Corretto

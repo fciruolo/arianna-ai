@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { chmodSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -108,6 +108,9 @@ test('remoteChecks in mode own: the certificate must be there, for the name and 
   }
   const fresh = await remoteChecks(config, { run, exists: () => false });
   assert.equal(fresh[1]?.ok, true);
+  chmodSync(remotePaths(data).key, 0o644);
+  assert.match((await remoteChecks(config, { run, exists: () => false }))[1]?.detail ?? '', /leggibili da altri/);
+  chmodSync(remotePaths(data).key, 0o600);
   const late = await remoteChecks(config, { run, exists: () => false, now: new Date(Date.now() + 780 * 86_400_000) });
   assert.equal(late[1]?.ok, false);
   assert.match(late[1].detail, /scade fra \d+ giorni: lancia pnpm remote:cert/);

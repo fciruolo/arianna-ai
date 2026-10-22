@@ -6,7 +6,7 @@
  * Details in Italian: they tell the user what to do.
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 
 import { remotePaths, type AriannaConfig, type RemoteServerConfig } from '@arianna/config';
 
@@ -108,6 +108,9 @@ export function remoteCertCheck(data: string, host: string, now: Date): DoctorCh
   const paths = remotePaths(data);
   if (![paths.cert, paths.key, paths.root].every((path) => existsSync(path))) {
     return { id: 'remote.cert', ok: false, detail: 'manca il certificato in data/remote: lancia pnpm remote:cert' };
+  }
+  if ((statSync(paths.key).mode & 0o077) !== 0 || (statSync(paths.dir).mode & 0o077) !== 0) {
+    return { id: 'remote.cert', ok: false, detail: 'la chiave del certificato o data/remote sono leggibili da altri utenti: chmod 600 data/remote/server.key e chmod 700 data/remote' };
   }
   const check = checkCertificate(
     { cert: readFileSync(paths.cert, 'utf8'), root: readFileSync(paths.root, 'utf8'), key: readFileSync(paths.key, 'utf8') },
