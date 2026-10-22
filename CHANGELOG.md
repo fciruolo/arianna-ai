@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.162.0] - 2026-10-22
+
 ### Aggiunto
 
 - Wiki come Notion (D-284): clic destro su una voce dell'albero (o «…», Maiusc+F10, tasto menù) con Nuova pagina, Nuova cartella, Rinomina in linea, Sposta in…, Duplica, Copia citazione ed Elimina; sulla parte vuota Nuova pagina e Nuova cartella alla radice.
