@@ -2,11 +2,34 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-22, notte.
+Aggiornato: 2026-10-23.
 
 **2026-10-19 — stato.** `main` è alla **0.146.0**, tutto provato dall'utente: 0.145.0 D-256 (D-110 tappa A2: `routine.propose`, routine proposte in chat spente con «Attiva»/«Scarta», migrazione `0080`; `pnpm eval:models --tag routine` 3/3 sullo strumento col 35B; il «FAIL» del riepilogo con `--tag` viene solo dalle misure senza casi), 0.146.0 D-257 (idea 5 di OpenWork: vista «Calendario» nella pagina Routine, routine nuova da un'ora libera, trascinamento dei blocchi chiesto dall'utente durante la prova, con «Tutti i giorni / Solo <giorno>» (scelta dell'utente «Chiedi ogni volta»), `/split` e `/unsplit` atomici, presa del ticker che rinuncia se la regola è cambiata sotto il lock; nessuna migrazione). Tre giri di `reviewer` su D-257. `pnpm test:db` 901/901 sul ramo di D-257 con `main` dentro. Pressione lunga col dito sul telefono non provata su un telefono vero. **Da fare dall'utente:** `! git push origin main --follow-tags`. **Pulizia a mano:** rami `task/d256-routine-propose`, `task/d257-calendario-routine`, `prova/d256-d257` col worktree `data/test-tmp/wt-prova-d256`, worktree `data/test-tmp/wt-rel` e i worktree degli agenti; nel database di sviluppo le routine di prova («Resoconto di test», «Prova un giorno», «Prova più giorni»). **Attenzione:** un `reviewer` lanciato mentre `main` è nel worktree `.claude/worktrees/agent-a89b83ade0bec7aec` può spostare quel worktree su un altro commit: per le versioni usare un worktree a parte (`data/test-tmp/wt-rel`, script `data/test-tmp/release_simple.py <versione> <data> <D-NNN> <nota>`) e poi `git merge --ff-only` nel worktree di `main`. **Prossimo dalla coda:** aggiornamento automatico della Dashboard (D-248) con le routine, D-110 tappa B (routine a voce), D-114 voce, D-096 backup per ultimo.
 
 **2026-10-21, notte — stato.** `main` è alla **0.153.0**, tutto provato dall'utente: 0.151.0 D-262 (lettore di pagine pubbliche, «Testalo tu»), 0.152.0 D-263 (oMLX 0.7.1 installato e verificato: doctor con le chiavi nuove, Splash, GGUF, proxy, `omlx-cli`; il core spegne la cache di Hugging Face nel `settings.json` di `data/omlx` prima di ogni avvio e non avvia oMLX se non ci riesce; collegamento `omlx` in Homebrew tenuto con «Don't Ask Again»), 0.153.0 D-265 (scheda «Server dei modelli (oMLX)» in Impostazioni → Modelli, controllo giornaliero delle release). Misure di oMLX (`data/test-tmp/omlx-bench.mjs`, rapporti `data/evals/omlx-bench-*.json`): prima parola −50% (corta) e −45% (6.200 token), scrittura +9% e +49%; `eval:models` orchestratore 66/72 (strumento 90%, piano 2/3, mediana 4,8 s), Finanze 18/18, **`anonymize` 6/8 col 35B** (indirizzo e prezzo non mascherati; l'8/8 era col 9B: da guardare). Cartella principale, core e chat su `main`.
+
+**Stato (2026-10-23).** `main` è alla **0.169.0**, pushato coi tag; cartella principale, core e chat su `main`, nessun lavoro in corso.
+
+0.169.0 D-293: la chat per il telefono. Mockup `docs/mockups/telefono.html`, approvato dall'utente.
+- **Scelte:**
+  - barra in basso con Chat, Attende te, Pensieri, Dashboard, Altro;
+  - punto di rottura `width < 48rem`, più `pointer: coarse` per le misure del tocco;
+  - pagine pesanti adattate anche loro;
+  - dettatura di iOS, senza pulsante del microfono.
+- **Provata dall'utente sull'iPhone:** «Funziona». Provato anche «Scollega» di D-292: «Funziona».
+- **Piccoli aperti di D-293:**
+  - testi da Mac sul telefono: «⌘/Ctrl+Invio» in Pensieri, «clic destro» nella Wiki, «passa sopra una riga» in Novità, il tasto «E» nel fumetto dell'Ufficio;
+  - sotto i 44 px: i filtri della Cardwall (`FilterMenu.vue`, il menu forse esce dallo schermo), le righe di `SourceList.vue`, le caselle di spunta;
+  - etichette minuscole nei grafici di Finanze e Clienti;
+  - col dito niente trascinamento (Cardwall, IM, routine nel giorno): si sposta dai menu;
+  - l'avviso «Spostata · Annulla» del calendario senza safe-area;
+  - Conoscenza: in 3D «vola al nodo» usa tutto lo schermo; in Elenco il canvas continua a girare dietro;
+  - conferme di Progetti e Studio ancora centrate.
+- **Ancora da provare di D-292:** Face ID su una decisione presa dal telefono. Safari potrebbe rifiutare Face ID chiesto dopo una chiamata di rete.
+- **Pulizia a mano:**
+  - rami `task/d292-telefono-a`, `task/d292-telefono-b`, `task/d293-telefono-grafica`;
+  - worktree `agent-a05547549d2e6edf6` e `agent-a0c3a41074d1d1f39`;
+  - prove in `data/test-tmp` (`shot.mjs`, `compare.mjs`, build e immagini).
 
 **Stato (2026-10-22, notte).** `main` è alla **0.168.0**, pushato coi tag; core e chat su `main`. 0.168.0 D-292 (task 1.19, app sul telefono via Tailscale, «la soluzione più sicura ed enterprise»):
 - **Come funziona.** Porta remota `127.0.0.1:7443` dietro `tailscale serve --bg --tcp=443 tcp://127.0.0.1:7443`, già attivo sul Mac. `[server.remote]` è in `config/arianna.toml` con `host = "mac-studio-di-fausto.tailabc026.ts.net"` e `tls = "own"`. La radice nostra di `pnpm remote:cert` (nameConstraints) è installata e attendibile sull'iPhone.
@@ -20,25 +43,7 @@ Aggiornato: 2026-10-22, notte.
   - **Notifiche push dal telefono.** Rimandate dall'utente («facciamolo dopo»). Il vault non c'è ancora in questa installazione: `age-keygen`, `pnpm vault:init`, `pnpm voice:vapid` nel terminale dell'utente, `vapid-private-key` con `pnpm vault:edit`. La riga `public_key` e l'email vanno in `[push]` o in Impostazioni → Notifiche. Sull'iPhone serve «Aggiungi alla schermata Home».
   - **Tre punti dello step-up, lasciati aperti dall'utente:** un fatto di «Su di te» creato già Condivisibile, agenti creati o modificati con permessi nuovi, «Modifica» di una pagina Wiki.
 - `pnpm test:db` 1012/1012 sul ramo B.
-- **In corso: D-293**, la chat rifatta per il telefono (richiesta dell'utente: «da telefono è praticamente inutilizzabile», «rifai la grafica»).
-  - **Mockup:** `docs/mockups/telefono.html`, approvato dall'utente. Piano e inventario in `docs/mockups/telefono-inventario.md` sul ramo.
-  - **Scelte:**
-    - barra in basso con Chat, Attende te, Pensieri, Dashboard, Altro;
-    - pagine pesanti (Ufficio, Studio, grafo della Conoscenza) adattate anche loro;
-    - tutte le 8 tappe sul ramo `task/d293-telefono-grafica`, una prova sola alla fine;
-    - rottura sotto 768 px più `pointer: coarse`;
-    - dettatura di iOS, senza pulsante del microfono.
-  - **A che punto:** un subagente costruisce nel worktree `.claude/worktrees/agent-a0c3a41074d1d1f39`. A sera sono fatte le tappe 1–4 (commit `0d7bcb7e`, `09904780`, `21aa8eba`, `3a861580`); le tappe 5 e 7 sono a metà, ancora senza commit.
-  - **Se la conversazione nuova trova il lavoro interrotto:**
-    1. guardare `git log main..task/d293-telefono-grafica` e `git -C .claude/worktrees/agent-a0c3a41074d1d1f39 status`;
-    2. dare a un solo subagente, in quel worktree, le tappe mancanti: 5 finestre, 6 Impostazioni, 7 pagine dense, 8 accesso;
-    3. prima di consegnare, il subagente controlla la chat in Chrome headless a 390×844 e a 1440×900 (il desktop deve restare identico), poi passa il `reviewer`.
-  - **Dopo:**
-    1. cartella principale sul ramo (`git switch --detach`);
-    2. `pnpm hud:build`: il telefono riceve la `dist` servita dal core;
-    3. riavvio di core e chat;
-    4. una domanda di prova per l'utente sull'iPhone. Insieme vanno provati «Scollega» e Face ID su una decisione, rimasti da D-292.
-- **Pulizia a mano:** rami `task/d292-telefono-a`, `task/d292-telefono-b` e il worktree `agent-a05547549d2e6edf6`.
+- D-293 (chat per il telefono) costruita la stessa notte: vedi lo stato del 2026-10-23.
 
 **Stato (2026-10-22, sera tardi).** `main` è alla **0.167.1**, pushato coi tag, core e chat su `main`, nessun lavoro in corso: 0.167.1 D-291 (i quattro piccoli aperti di D-290 chiusi: voce di macOS «installata/non installata» in Impostazioni → Modelli, wizard che senza Federica non sceglie Kokoro con Invio e tiene una voce già scelta, avvio del core senza aspettare `say`, frasi lunghe a `say` in pezzi da 160 caratteri; pagina vista da Claude con «Testalo tu», esito «Funziona» dell'utente; interruzione in una chiamata vera non vista). **In corso:** D-292 (task 1.19, app sul telefono via Tailscale, scelta dell'utente «la soluzione più sicura ed enterprise»): tappa A (porta remota 127.0.0.1:7443 dietro `tailscale serve`, host e origine, doctor, push senza voce, PWA iPhone; API remota sempre 401 fino alla tappa B) affidata a un subagente sul ramo `task/d292-telefono-a`; poi tappa B (abbinamento con codice, passkey scritta a mano, sessioni 12 h/30 min, Dispositivi, Face ID per approvazione oltre 5 min). Tailscale è installato sul Mac (app, CLI in `/Applications/Tailscale.app/Contents/MacOS/Tailscale`).
 
@@ -85,7 +90,7 @@ Aggiornato: 2026-10-22, notte.
 
 **Risposte dell'utente di stamattina** (già nei documenti): 18 idee decise una per una (D-204), Mentor alla Fase 5, operatore telefonico in Fase 4, permessi lasciati come sono (push all'utente), domanda di Rizzo chiusa.
 
-**Coda dei lavori, in ordine** (rifatta il 2026-10-22 sera: tutto quello che c'era prima, cioè D-225 tappa B, personaggi D-227, ufficio 2D D-229 e 3D D-230, campo «+» D-231, temi e feste D-103/D-246, voce di «Su di te» D-260, le idee di OpenWork, è già su `main`): verifica del criterio di uscita della Fase 1A con l'utente (task 1.13: elenco dei passi da far provare); chat per il telefono (D-293, in corso); confronto delle memorie (D-204, idea 13, studio prima del task memoria della Fase 2); D-096 backup per ultimo, prima dei dati veri.
+**Coda dei lavori, in ordine** (rifatta il 2026-10-22 sera: tutto quello che c'era prima, cioè D-225 tappa B, personaggi D-227, ufficio 2D D-229 e 3D D-230, campo «+» D-231, temi e feste D-103/D-246, voce di «Su di te» D-260, le idee di OpenWork, è già su `main`): verifica del criterio di uscita della Fase 1A con l'utente (task 1.13: elenco dei passi da far provare); notifiche push dal telefono (D-292: vault, VAPID, icona sulla schermata Home) e piccoli aperti di D-293; confronto delle memorie (D-204, idea 13, studio prima del task memoria della Fase 2); D-096 backup per ultimo, prima dei dati veri.
 
 ## Dove siamo
 
@@ -179,4 +184,4 @@ Promemoria per la fine della Fase 1A, non domande aperte (scelta dell'utente del
 
 ## Prompt per la nuova conversazione
 
-Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core; se Docker è spento chiedimi di aprirlo). Riprendi da «Stato (2026-10-22, notte)» in HANDOFF: main è alla 0.168.0, pushata coi tag (D-292 app sul telefono via Tailscale). In corso c'è D-293, la chat per il telefono, sul ramo task/d293-telefono-grafica: controlla quali tappe sono già nei commit e cosa resta nel worktree del subagente, fai finire le tappe mancanti a un solo subagente su quel ramo, poi preparami la prova sull'iPhone (insieme a «Scollega» e Face ID su una decisione, rimasti da D-292). Le notifiche push dal telefono le facciamo dopo (passi in HANDOFF). I comandi git nella cartella principale lanciali da soli, senza «cd … &&» davanti; il push di main coi tag lo fai tu. Rispondimi sempre in italiano, con esempi pratici; lavori indipendenti in parallelo con subagenti, un solo agente per ramo; quando ti chiedo «Testalo tu» prova tu con la chat in Chrome.
+Leggi CLAUDE.md, docs/HANDOFF.md e data/dev/RISPOSTE.md se esiste. Leggi la quota e controlla db, core e chat (guarda la porta 7420 prima di avviare il core; se Docker è spento chiedimi di aprirlo). Riprendi da «Stato (2026-10-23)» in HANDOFF: main è alla 0.169.0, pushata coi tag (D-292 app sul telefono via Tailscale, D-293 chat per il telefono, provate sull'iPhone), nessun lavoro in corso. Chiedimi con le domande a opzioni quale lavoro fare dopo, proponendo le notifiche push dal telefono, i piccoli aperti di D-293 elencati in HANDOFF e la coda dei lavori. I comandi git nella cartella principale lanciali da soli, senza «cd … &&» davanti; il push di main coi tag lo fai tu. Rispondimi sempre in italiano, con esempi pratici; lavori indipendenti in parallelo con subagenti, un solo agente per ramo; quando ti chiedo «Testalo tu» prova tu con la chat in Chrome.

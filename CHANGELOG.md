@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.169.0] - 2026-10-23
+
 ### Aggiunto
 
 - Sul telefono una barra in basso con Chat, Attende te (col numero delle decisioni in attesa), Pensieri, Dashboard e Altro; la pagina Chat è l’elenco delle conversazioni, con Cerca e Nuova conversazione in alto, e una conversazione ha «‹» per tornare all’elenco; «Altro» (`/altro`) raccoglie le altre aree nei gruppi della barra sinistra, il tema e lo stato del gateway; «Attende te» (`/attende-te`) mostra decisioni e agenti (D-293, tappa 2).
