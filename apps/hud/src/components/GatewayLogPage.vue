@@ -19,13 +19,14 @@ import {
   GATEWAY_LOG_TITLE,
   groupCounts,
   groupDecision,
+  groupAsker,
   groupHeadline,
   isPrivateOut,
   originText,
   periodProblem,
   queryOf,
   ruleText,
-  runQuery,
+  requestQuery,
   targetText,
   TEXT_FROM_MAC,
   textNotice,
@@ -168,23 +169,22 @@ onBeforeUnmount(() => clearTimeout(copyTimer));
 
 /** The exits of the open line, a page at a time, and from the Mac what each was about. */
 async function loadExits(group: GatewayLogGroup, more = false): Promise<void> {
-  const runId = group.entry.runId;
-  if (runId === null) return;
+  const key = group.entry.requestKey;
   const mine = ++groupGeneration;
   exitsProblem.value = null;
   exitsLoading.value = true;
   try {
     const [page, found] = await Promise.all([
-      loadGatewayLog(runQuery(runId, more ? exitsNext.value : null, filters.value)),
+      loadGatewayLog(requestQuery(key, more ? exitsNext.value : null, filters.value)),
       // The subjects never from the phone: the core refuses them there.
-      more || remote ? Promise.resolve(undefined) : loadGatewaySubjects(runId).catch(() => undefined),
+      more || remote ? Promise.resolve(undefined) : loadGatewaySubjects(key).catch(() => undefined),
     ]);
     if (mine !== groupGeneration) return;
     exits.value = more ? appendPage(exits.value ?? [], page.entries) : page.entries;
     exitsNext.value = page.next;
     if (found !== undefined) subjects.value = found;
   } catch {
-    if (mine === groupGeneration) exitsProblem.value = 'Non riesco a leggere le uscite di questo lavoro: riprova.';
+    if (mine === groupGeneration) exitsProblem.value = 'Non riesco a leggere le uscite di questa domanda: riprova.';
   } finally {
     if (mine === groupGeneration) exitsLoading.value = false;
   }
@@ -199,7 +199,7 @@ function remember(event: Event): void {
 /** A line: its exits when they are more than one, its detail when alone. */
 function openLine(group: GatewayLogGroup, event: Event): void {
   remember(event);
-  if (group.count === 1 || group.entry.runId === null) {
+  if (group.count === 1) {
     opened.value = null;
     openExit(group.entry);
     return;
@@ -342,7 +342,7 @@ function fullTime(ts: string): string {
         </div>
 
         <template v-if="lines !== null && lines.length > 0">
-          <p class="text-xs text-muted">{{ lines.length === 1 ? '1 richiesta' : `${lines.length.toLocaleString('it-IT')} richieste` }}{{ next !== null ? ' finora' : '' }}, dalla più recente · una riga per ogni lavoro di un agente, con tutte le sue uscite · tocca o clicca una riga</p>
+          <p class="text-xs text-muted">{{ lines.length === 1 ? '1 richiesta' : `${lines.length.toLocaleString('it-IT')} richieste` }}{{ next !== null ? ' finora' : '' }}, dalla più recente · una riga per ogni tua domanda, con tutte le sue uscite · tocca o clicca una riga</p>
           <!-- On a phone each line is a card (D-293): time and outcome, then what, who and the counts. -->
           <div class="rounded-xl border border-line bg-surface-2">
             <table class="w-full text-left text-[14px] max-md:block" aria-labelledby="gateway-log-title">
@@ -369,7 +369,7 @@ function fullTime(ts: string): string {
                     <button
                       type="button"
                       class="rounded text-left"
-                      :aria-label="line.count > 1 ? `${timeText(line.entry.ts)}: le ${line.count} uscite di questo lavoro verso ${groupHeadline(line).target}` : `${timeText(line.entry.ts)}: dettaglio della decisione verso ${targetText(line.entry.targetKind, line.entry.target)}`"
+                      :aria-label="line.count > 1 ? `${timeText(line.entry.ts)}: le ${line.count} uscite di questa domanda verso ${groupHeadline(line).target}` : `${timeText(line.entry.ts)}: dettaglio della decisione verso ${targetText(line.entry.targetKind, line.entry.target)}`"
                       :aria-expanded="opened?.entry.id === line.entry.id || (opened === null && selected?.id === line.entry.id)"
                     >{{ timeText(line.entry.ts) }}</button>
                   </td>
@@ -378,7 +378,7 @@ function fullTime(ts: string): string {
                     <span class="block text-xs text-muted">{{ groupHeadline(line).place }}<template v-if="line.count > 1"> · {{ groupCounts(line) }}</template><template v-else-if="line.entry.what"> · {{ whatText(line.entry) }}</template></span>
                   </td>
                   <td class="min-w-0 px-3 py-2 max-md:order-4 max-md:col-span-2 max-md:p-0">
-                    <span class="block">{{ askerText(line.entry) }}<template v-if="line.entry.model"> · <span class="text-muted">{{ line.entry.model }}</span></template></span>
+                    <span class="block">{{ line.count === 1 ? askerText(line.entry) : groupAsker(line) }}<template v-if="line.count === 1 && line.entry.model"> · <span class="text-muted">{{ line.entry.model }}</span></template></span>
                     <span v-if="originText(line.entry)" class="block max-w-[320px] truncate text-xs text-muted max-md:max-w-none">{{ originText(line.entry) }}</span>
                   </td>
                   <td class="px-3 py-2 max-md:order-5 max-md:p-0 max-md:text-xs"><LabelBadge :label="line.label" /></td>
@@ -416,14 +416,14 @@ function fullTime(ts: string): string {
       @keydown="onDetailKey"
     >
       <header class="flex items-center gap-2 border-b border-line px-4 py-3">
-        <button v-if="selected !== null && opened !== null" type="button" class="btn grid size-8 place-items-center p-0 touch:size-11" aria-label="Torna alle uscite del lavoro" @click="backToExits">‹</button>
-        <h2 id="gateway-detail-title" class="min-w-0 flex-1 truncate text-[16px] font-semibold">{{ selected !== null ? `Decisione delle ${timeText(selected.ts)}` : opened !== null ? `Lavoro delle ${timeText(opened.entry.ts)}` : '' }}</h2>
+        <button v-if="selected !== null && opened !== null" type="button" class="btn grid size-8 place-items-center p-0 touch:size-11" aria-label="Torna alle uscite della domanda" @click="backToExits">‹</button>
+        <h2 id="gateway-detail-title" class="min-w-0 flex-1 truncate text-[16px] font-semibold">{{ selected !== null ? `Decisione delle ${timeText(selected.ts)}` : opened !== null ? `Domanda delle ${timeText(opened.entry.ts)}` : '' }}</h2>
         <button type="button" class="btn grid size-8 place-items-center p-0 touch:size-11" aria-label="Chiudi il dettaglio" @click="closeDetail"><Icon name="close" :size="16" /></button>
       </header>
       <div v-if="selected === null && opened !== null" class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-[14px]">
           <dt class="text-muted">Chi</dt>
-          <dd>{{ askerText(opened.entry) }}<template v-if="opened.entry.model"> · {{ opened.entry.model }}</template></dd>
+          <dd>{{ groupAsker(opened) }}</dd>
           <template v-if="originText(opened.entry)">
             <dt class="text-muted">Da dove</dt>
             <dd class="break-words">{{ originText(opened.entry) }}</dd>
@@ -446,7 +446,7 @@ function fullTime(ts: string): string {
               <span class="w-[44px] shrink-0 pt-0.5 text-xs text-muted tabular-nums">{{ timeText(exit.ts) }}</span>
               <span class="min-w-0 flex-1">
                 <span class="block break-words text-[13px]">{{ exitText(exit, subjects[exit.id]) }}</span>
-                <span class="block text-xs text-muted">{{ targetText(exit.targetKind, exit.target) }}<template v-if="exit.bytes !== null"> · {{ bytesText(exit.bytes) }}</template></span>
+                <span class="block text-xs text-muted">{{ askerText(exit) }}<template v-if="exit.model"> · {{ exit.model }}</template> → {{ targetText(exit.targetKind, exit.target) }}<template v-if="exit.bytes !== null"> · {{ bytesText(exit.bytes) }}</template></span>
               </span>
               <span class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium" :class="exit.decision === 'block' ? 'border-warn/60 text-warn' : isPrivateOut(exit) ? 'border-danger/60 text-danger' : 'border-ok/50 text-ok'">{{ DECISION_TEXT[exit.decision] }}</span>
             </button>

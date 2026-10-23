@@ -33,7 +33,12 @@ export const GATEWAY_LOG_MAX_PAGE = 100;
 
 /** A code written by the code (a target, a rule, an agent id): anything else is shown as `other`. */
 const CODE = /^[a-z][a-z0-9-]{0,47}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const REQUEST_KEY = /^(?:[tr]-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|row-[1-9]\d{0,17})$/;
+
+/** The key of a group as an address carries it, or undefined. */
+export function requestKeyOf(raw: string): string | undefined {
+  return REQUEST_KEY.test(raw) ? raw : undefined;
+}
 
 export interface GatewayLogQuery {
   decision?: GatewayDecisionKind;
@@ -45,10 +50,10 @@ export interface GatewayLogQuery {
   to?: Date;
   /** The id of the last row already shown: the page goes on below it (of a group: its newest row). */
   before?: string;
-  /** Only the rows of this run (D-297: the exits of one group). */
-  run?: string;
-  /** `run`: one group per run of an agent (D-297, «una riga per richiesta»); a row without a run alone. */
-  group?: 'run';
+  /** Only the rows of this request (D-297: the exits of one group, by its key). */
+  request?: string;
+  /** `request`: one group per request of the user (D-297, «una riga per domanda»). */
+  group?: 'request';
   limit: number;
 }
 
@@ -72,16 +77,22 @@ export interface GatewayLogEntry {
   conversation: { id: string; title: string | null; open: boolean } | null;
   /** A card (a task outside any conversation), with its title as on the Cardwall. */
   card: { id: string; title: string } | null;
-  /** The run of the exit: its group (D-297). */
+  /** The run of the exit. */
   runId: string | null;
+  /**
+   * Its group (D-297): `t-<task>` for the request of the user it served (the
+   * task at the top of its tree in a conversation, or a card), `r-<run>` for
+   * a run without a task, `row-<id>` alone.
+   */
+  requestKey: string;
   /** What it was (D-297): a closed code (`brief`, `mcp-kb-read`…), L0; null for an exit before it or of no kind. */
   what: string | null;
 }
 
 /**
- * The exits of one run of an agent, as one line (D-297): the newest row with
- * who, where and from where, and the counts. A row without a run is a group
- * of one. Never a subject nor a text: readable from the phone.
+ * The exits of one request of the user, as one line (D-297): the newest row
+ * with where and from where, who worked in the cloud, and the counts. Never a
+ * subject nor a text: readable from the phone.
  */
 export interface GatewayLogGroup {
   /** The newest row of the group: its id is the cursor. */
@@ -100,6 +111,8 @@ export interface GatewayLogGroup {
   privateOut: number;
   /** Exits to the cloud, allowed or blocked. */
   cloud: number;
+  /** The agents whose exits went to the cloud, in order of their first one; empty: only Arianna on the Mac. */
+  agents: string[];
   /** Where the line says it went: its newest cloud target when it has one, else its newest row's. */
   headline: { targetKind: GatewayTargetKind | 'other'; target: string; locality: 'local' | 'cloud' };
 }
@@ -112,7 +125,7 @@ export interface GatewayLogTarget {
 export interface GatewayLogPage {
   /** The rows; empty in a page of groups. */
   entries: GatewayLogEntry[];
-  /** With `group=run`, the groups instead of the rows. */
+  /** With `group=request`, the groups instead of the rows. */
   groups?: GatewayLogGroup[];
   /** The cursor of the next page (`before`), null at the end. */
   next: string | null;
@@ -137,7 +150,7 @@ function instant(raw: string, name: string): Date {
 
 /** The filters of an address; an empty parameter is no filter, anything unknown a GatewayLogQueryError (a 400). */
 export function parseGatewayLogQuery(params: URLSearchParams): GatewayLogQuery {
-  const known = ['decision', 'kind', 'target', 'label', 'from', 'to', 'before', 'limit', 'run', 'group'];
+  const known = ['decision', 'kind', 'target', 'label', 'from', 'to', 'before', 'limit', 'request', 'group'];
   for (const key of params.keys()) if (!known.includes(key)) throw new GatewayLogQueryError(`unknown parameter ${key}`);
   const value = (name: string): string | undefined => {
     const raw = params.get(name);
@@ -169,16 +182,16 @@ export function parseGatewayLogQuery(params: URLSearchParams): GatewayLogQuery {
     if (!/^[1-9]\d{0,17}$/.test(before)) throw new GatewayLogQueryError('before must be a row id');
     query.before = before;
   }
-  const run = value('run');
-  if (run !== undefined) {
-    if (!UUID.test(run)) throw new GatewayLogQueryError('run must be a run id');
-    query.run = run;
+  const request = value('request');
+  if (request !== undefined) {
+    if (requestKeyOf(request) === undefined) throw new GatewayLogQueryError('request must be the key of a group');
+    query.request = request;
   }
   const group = value('group');
   if (group !== undefined) {
-    if (group !== 'run') throw new GatewayLogQueryError('group must be run');
-    if (query.run !== undefined) throw new GatewayLogQueryError('group and run do not go together');
-    query.group = 'run';
+    if (group !== 'request') throw new GatewayLogQueryError('group must be request');
+    if (query.request !== undefined) throw new GatewayLogQueryError('group and request do not go together');
+    query.group = 'request';
   }
   const limit = value('limit');
   if (limit !== undefined) {
@@ -207,6 +220,7 @@ interface Row {
   card_id: string | null;
   card_title: string | null;
   run_id: string | null;
+  request_key: string;
   what: string | null;
 }
 
@@ -219,6 +233,7 @@ interface GroupRow extends Row {
   targets: number;
   top_label: string;
   private_out: number;
+  agents: string[] | null;
   cloud: number;
   cloud_kind: string | null;
   cloud_target: string | null;
@@ -249,6 +264,7 @@ function entryOf(row: Row): GatewayLogEntry {
     conversation: row.conversation_id === null ? null : { id: row.conversation_id, title: row.conversation_title, open: row.conversation_open === true },
     card: row.card_id === null ? null : { id: row.card_id, title: row.card_title ?? '' },
     runId: row.run_id,
+    requestKey: row.request_key,
     what: code(row.what),
   };
 }
@@ -264,6 +280,7 @@ function groupOf(row: GroupRow): GatewayLogGroup {
     targets: row.targets,
     label: isLabel(row.top_label) ? row.top_label : 'L2',
     privateOut: row.private_out,
+    agents: (row.agents ?? []).map((agent) => code(agent) ?? 'other'),
     cloud: row.cloud,
     headline:
       row.cloud_kind !== null && row.cloud_target !== null
@@ -276,7 +293,7 @@ function groupOf(row: GroupRow): GatewayLogGroup {
 function rowColumns(sql: Queryable) {
   return sql`
     g.id::text AS id, g.ts, g.target_kind, g.target, g.locality, g.label::text AS label, g.decision, g.rule, g.bytes_out,
-    coalesce(r.agent, c.agent, CASE WHEN t.assignee <> 'user' THEN t.assignee END) AS agent,
+    ${agentOf(sql)} AS agent,
     r.model,
     c.id::text AS conversation_id,
     -- The title only where the list of conversations shows it.
@@ -284,7 +301,27 @@ function rowColumns(sql: Queryable) {
     c.purged_at IS NULL AS conversation_open,
     CASE WHEN t.conversation_id IS NULL THEN t.id::text END AS card_id,
     CASE WHEN t.conversation_id IS NULL THEN t.title END AS card_title,
-    g.run_id::text AS run_id, g.what`;
+    g.run_id::text AS run_id, ${requestKey(sql)} AS request_key, g.what`;
+}
+
+/** The group of a row (D-297): its request of the user, else its run, else itself. Needs `g` and `t` of fromRows. */
+function requestKey(sql: Queryable) {
+  return sql`coalesce('t-' || t.id::text, 'r-' || g.run_id::text, 'row-' || g.id::text)`;
+}
+
+/**
+ * The rows of one group, from its key, with the indexes of gateway_log (by
+ * task, by run, by id): never the key computed on every row. Needs `g`, `r`.
+ */
+function requestFilter(sql: Queryable, key: string) {
+  if (key.startsWith('t-')) return sql`AND coalesce(g.task_id, r.task_id) = ${key.slice(2)}::uuid`;
+  if (key.startsWith('r-')) return sql`AND g.run_id = ${key.slice(2)}::uuid AND coalesce(g.task_id, r.task_id) IS NULL`;
+  return sql`AND g.id = ${key.slice(4)}::bigint`;
+}
+
+/** Who asked a row: the agent of the run, of the direct chat or of the card. Needs `r`, `t` and `c`. */
+function agentOf(sql: Queryable) {
+  return sql`coalesce(r.agent, c.agent, CASE WHEN t.assignee <> 'user' THEN t.assignee END)`;
 }
 
 /** gateway_log with who asked, without the rows of an incognito conversation. */
@@ -306,23 +343,32 @@ function rowFilters(sql: Queryable, query: GatewayLogQuery, decision: boolean) {
     ${query.label === undefined ? sql`` : sql`AND g.label = ${query.label}::privacy_label`}
     ${query.from === undefined ? sql`` : sql`AND g.ts >= ${query.from}`}
     ${query.to === undefined ? sql`` : sql`AND g.ts < ${query.to}`}
-    ${query.run === undefined ? sql`` : sql`AND g.run_id = ${query.run}::uuid`}`;
+    ${query.request === undefined ? sql`` : requestFilter(sql, query.request)}`;
 }
 
 /**
- * One page of groups (D-297): one per run, a row without a run alone, newest
- * first by their newest row. «Bloccate» keeps the groups with a block in them,
+ * One page of groups (D-297): one per request of the user, its task (its
+ * steps, its requests to Claude, the notes, briefs and tools of all its
+ * agents, every run of it), a run without a task by itself, any other row
+ * alone; newest first by their newest row. «Bloccate» keeps the groups with a block in them,
  * with all their counts; the other filters choose the rows counted.
  */
 async function loadGroups(sql: Queryable, query: GatewayLogQuery): Promise<{ groups: GatewayLogGroup[]; next: string | null }> {
   const rows = await sql<GroupRow[]>`
     WITH chosen AS (
-      SELECT g.id, g.ts, g.run_id, g.decision, g.bytes_out, g.target_kind, g.target, g.label, g.locality
+      SELECT g.id, g.ts, ${requestKey(sql)} AS key, g.decision, g.bytes_out, g.target_kind, g.target, g.label, g.locality,
+        ${agentOf(sql)} AS agent
       ${fromRows(sql)}
       ${rowFilters(sql, query, false)}
     ),
+    -- Who worked in the cloud in each group, in order of their first exit there.
+    agents AS (
+      SELECT key, array_agg(agent ORDER BY first) AS agents
+      FROM (SELECT key, agent, min(id) AS first FROM chosen WHERE locality = 'cloud' AND agent IS NOT NULL GROUP BY key, agent) firsts
+      GROUP BY key
+    ),
     grouped AS (
-      SELECT max(id) AS last_id, count(*)::int AS n,
+      SELECT key, max(id) AS last_id, count(*)::int AS n,
         (count(*) FILTER (WHERE decision = 'allow'))::int AS allowed,
         (count(*) FILTER (WHERE decision = 'block'))::int AS blocked,
         sum(bytes_out)::text AS total_bytes, min(ts) AS first_ts,
@@ -335,14 +381,15 @@ async function loadGroups(sql: Queryable, query: GatewayLogQuery): Promise<{ gro
         (array_agg(target_kind ORDER BY id DESC) FILTER (WHERE locality = 'cloud'))[1] AS cloud_kind,
         (array_agg(target ORDER BY id DESC) FILTER (WHERE locality = 'cloud'))[1] AS cloud_target
       FROM chosen
-      GROUP BY coalesce(run_id::text, 'row:' || id::text)
+      GROUP BY key
       HAVING true
         ${query.decision === 'block' ? sql`AND count(*) FILTER (WHERE decision = 'block') > 0` : sql``}
         ${query.decision === 'allow' ? sql`AND count(*) FILTER (WHERE decision = 'allow') > 0` : sql``}
     )
     SELECT ${rowColumns(sql)}, grouped.n, grouped.allowed, grouped.blocked, grouped.total_bytes, grouped.first_ts, grouped.targets, grouped.top_label, grouped.private_out,
-      grouped.cloud, grouped.cloud_kind, grouped.cloud_target
+      agents.agents, grouped.cloud, grouped.cloud_kind, grouped.cloud_target
     FROM grouped
+    LEFT JOIN agents USING (key)
     JOIN gateway_log g ON g.id = grouped.last_id
     LEFT JOIN runs r ON r.id = g.run_id
     LEFT JOIN tasks t ON t.id = coalesce(g.task_id, r.task_id)
@@ -355,10 +402,10 @@ async function loadGroups(sql: Queryable, query: GatewayLogQuery): Promise<{ gro
   return { groups, next: more ? (groups.at(-1)?.entry.id ?? null) : null };
 }
 
-/** One page of the log, newest first: rows, or groups with `group=run`. */
+/** One page of the log, newest first: rows, or groups with `group=request`. */
 export async function loadGatewayLog(sql: Queryable, query: GatewayLogQuery): Promise<GatewayLogPage> {
   let page: GatewayLogPage;
-  if (query.group === 'run') {
+  if (query.group === 'request') {
     const { groups, next } = await loadGroups(sql, query);
     page = { entries: [], groups, next };
   } else {
@@ -373,7 +420,7 @@ export async function loadGatewayLog(sql: Queryable, query: GatewayLogQuery): Pr
     const entries = rows.slice(0, query.limit).map(entryOf);
     page = { entries, next: more ? (entries.at(-1)?.id ?? null) : null };
   }
-  if (query.before === undefined && query.run === undefined) {
+  if (query.before === undefined && query.request === undefined) {
     // The same rows as the list: a target seen only in an incognito conversation is not offered.
     const targets = await sql<{ target_kind: string; target: string }[]>`
       SELECT DISTINCT g.target_kind, g.target
@@ -482,23 +529,21 @@ export async function pruneGatewayTexts(sql: Queryable): Promise<number> {
 }
 
 /**
- * The subjects of the exits of one run (D-297, «Cosa era»), by row id: only
- * from the Mac (`GET /api/gateway/log/run/:id/subjects`, in LOCAL_ONLY_PATHS),
- * never of an incognito conversation, 30 days at most.
+ * The subjects of the exits of one request (D-297, «Cosa era»), by row id:
+ * only from the Mac (`GET /api/gateway/log/request/:key/subjects`, in
+ * LOCAL_ONLY_PATHS), never of an incognito conversation, 30 days at most.
  */
-export async function loadGatewaySubjects(sql: Queryable, runId: string): Promise<Record<string, string>> {
+export async function loadGatewaySubjects(sql: Queryable, key: string): Promise<Record<string, string>> {
   const rows = await sql<{ id: string; subject: string }[]>`
     SELECT g.id::text AS id, s.subject
     FROM gateway_log g
     JOIN gateway_subjects s ON s.log_id = g.id
+    LEFT JOIN runs r ON r.id = g.run_id
+    LEFT JOIN tasks t ON t.id = coalesce(g.task_id, r.task_id)
     LEFT JOIN conversations c ON c.id = gateway_log_conversation(g.task_id, g.run_id)
-    WHERE g.run_id = ${runId}::uuid AND NOT coalesce(c.incognito, false)
+    WHERE NOT coalesce(c.incognito, false)
+      ${requestFilter(sql, key)}
       AND s.created_at >= now() - make_interval(days => ${GATEWAY_TEXT_DAYS})
     ORDER BY g.id`;
   return Object.fromEntries(rows.map((row) => [row.id, row.subject]));
-}
-
-/** A run id as an address carries it, or undefined. */
-export function runIdOf(raw: string): string | undefined {
-  return UUID.test(raw) ? raw : undefined;
 }

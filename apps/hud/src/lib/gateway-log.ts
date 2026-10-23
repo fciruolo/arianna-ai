@@ -29,8 +29,10 @@ export interface GatewayLogEntry {
   /** `title` only where the list of conversations shows it; `open`: not purged. */
   conversation: { id: string; title: string | null; open: boolean } | null;
   card: { id: string; title: string } | null;
-  /** The run of the exit, its group (D-297). */
+  /** The run of the exit. */
   runId: string | null;
+  /** Its group (D-297): the request of the user it served (`t-…`), else its run (`r-…`), else itself (`row-…`). */
+  requestKey: string;
   /** What it was (D-297): a closed code; null for an exit before it or of no kind. */
   what: string | null;
 }
@@ -50,6 +52,8 @@ export interface GatewayLogGroup {
   privateOut: number;
   /** Exits to the cloud, allowed or blocked. */
   cloud: number;
+  /** The agents whose exits went to the cloud, in order; empty: only Arianna on the Mac. */
+  agents: string[];
   /** Where the line says it went: its newest cloud target when it has one (never «sul Mac» then). */
   headline: { targetKind: GatewayTargetKind; target: string; locality: 'local' | 'cloud' };
 }
@@ -80,7 +84,7 @@ export const EMPTY_FILTERS: GatewayLogFilters = { decision: '', destination: '',
 
 export const GATEWAY_LOG_TITLE = 'Registro del gateway';
 export const GATEWAY_LOG_INTRO =
-  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni richiesta (un lavoro di un agente con tutte le sue uscite), la più recente in alto. Chi, dove, quando, con quale etichetta e perché; per ogni uscita cosa era e, verso il cloud, il testo esatto che è uscito, per 30 giorni e solo dal Mac.';
+  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni tua domanda, con tutte le sue uscite (passi di Arianna, agenti, note, strumenti), la più recente in alto. Chi, dove, quando, con quale etichetta e perché; per ogni uscita cosa era e, verso il cloud, il testo esatto che è uscito, per 30 giorni e solo dal Mac.';
 
 const EXECUTOR_TEXT: Record<string, string> = { claude: 'Claude', codex: 'Codex', local: 'Modello locale' };
 const CHANNEL_TEXT: Record<string, string> = { web: 'Chat web', telegram: 'Telegram', phone: 'Telefono', voice: 'Voce', push: 'Notifiche push' };
@@ -221,10 +225,10 @@ export function periodProblem(filters: Pick<GatewayLogFilters, 'from' | 'to'>): 
   return from !== undefined && to !== undefined && to < from ? '«Al» viene prima di «Dal»: cambia una delle due date.' : null;
 }
 
-/** The address of a page: the filters, then the cursor. Days become local midnights, «Al» included. `grouped`: one line per run (D-297). */
+/** The address of a page: the filters, then the cursor. Days become local midnights, «Al» included. `grouped`: one line per question of the user (D-297). */
 export function queryOf(filters: GatewayLogFilters, before?: string | null, limit?: number, grouped = false): string {
   const params = new URLSearchParams();
-  if (grouped) params.set('group', 'run');
+  if (grouped) params.set('group', 'request');
   if (filters.decision !== '') params.set('decision', filters.decision);
   if (filters.destination !== '') {
     const [kind, target] = filters.destination.split('/');
@@ -401,10 +405,10 @@ export function appendGroups(shown: readonly GatewayLogGroup[], page: readonly G
  * The exits of one group, newest first, a page of 100, with the filters of
  * the page but the outcome: the same exits its counts count.
  */
-export function runQuery(runId: string, before?: string | null, filters: GatewayLogFilters = EMPTY_FILTERS): string {
+export function requestQuery(key: string, before?: string | null, filters: GatewayLogFilters = EMPTY_FILTERS): string {
   const rest = queryOf({ ...filters, decision: '' }, before);
   const params = new URLSearchParams(rest.slice(1));
-  params.set('run', runId);
+  params.set('request', key);
   params.set('limit', '100');
   return `?${params.toString()}`;
 }
@@ -421,4 +425,11 @@ export function groupHeadline(group: Pick<GatewayLogGroup, 'headline' | 'targets
   const target = `${targetText(group.headline.targetKind, group.headline.target)}${group.targets > 1 ? ' e altre' : ''}`;
   if (group.cloud === 0) return { target, place: 'sul Mac' };
   return { target, place: group.cloud === group.count ? 'fuori dal Mac' : `fuori dal Mac (${group.cloud.toLocaleString('it-IT')} di ${group.count.toLocaleString('it-IT')})` };
+}
+
+/** Who asked a line: the agents that worked in the cloud («Designer e Coder»), else Arianna. */
+export function groupAsker(group: Pick<GatewayLogGroup, 'agents' | 'entry'>): string {
+  if (group.agents.length === 0) return group.entry.agent === null ? 'Arianna' : askerText(group.entry);
+  const names = group.agents.map((agent) => agentName(agent));
+  return names.length === 1 ? (names[0] ?? 'Arianna') : `${names.slice(0, -1).join(', ')} e ${names.at(-1) ?? ''}`;
 }

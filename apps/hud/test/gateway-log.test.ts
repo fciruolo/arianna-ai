@@ -29,7 +29,8 @@ import {
   groupCounts,
   groupDecision,
   groupHeadline,
-  runQuery,
+  requestQuery,
+  groupAsker,
   whatText,
   type GatewayLogEntry,
   type GatewayLogGroup,
@@ -54,6 +55,7 @@ function entry(overrides: Partial<GatewayLogEntry> = {}): GatewayLogEntry {
     conversation: null,
     card: null,
     runId: null,
+    requestKey: 'row-7',
     what: null,
     ...overrides,
   };
@@ -204,7 +206,7 @@ test('«Cosa era» (D-297): the kind of each exit in Italian, with its subject f
 });
 
 function group(overrides: Partial<GatewayLogGroup> = {}): GatewayLogGroup {
-  return { entry: entry({ runId: 'r1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, cloud: 20, headline: { targetKind: 'executor', target: 'claude', locality: 'cloud' }, ...overrides };
+  return { entry: entry({ requestKey: 't-1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, cloud: 20, agents: ['coder'], headline: { targetKind: 'executor', target: 'claude', locality: 'cloud' }, ...overrides };
 }
 
 test('one line per request: the counts of the group, its outcome, its pages', () => {
@@ -213,14 +215,17 @@ test('one line per request: the counts of the group, its outcome, its pages', ()
   assert.equal(groupDecision(group()), 'con blocchi');
   assert.equal(groupDecision(group({ blocked: 0 })), 'ammesse');
   assert.equal(groupDecision(group({ allowed: 0 })), 'bloccate');
-  const first = group({ entry: entry({ id: '9', runId: 'r1' }) });
-  const second = group({ entry: entry({ id: '5', runId: 'r2' }) });
+  const first = group({ entry: entry({ id: '9', requestKey: 't-1' }) });
+  const second = group({ entry: entry({ id: '5', requestKey: 't-2' }) });
   assert.deepEqual(appendGroups([first], [first, second]).map((item) => item.entry.id), ['9', '5']);
-  assert.equal(runQuery('r1'), '?run=r1&limit=100');
-  assert.equal(runQuery('r1', '42'), '?before=42&run=r1&limit=100');
+  assert.equal(requestQuery('t-1'), '?request=t-1&limit=100');
+  assert.equal(requestQuery('t-1', '42'), '?before=42&request=t-1&limit=100');
   // The filters of the page but the outcome: the exits its counts count.
-  assert.equal(runQuery('r1', null, { ...EMPTY_FILTERS, decision: 'block', label: 'L1' }), '?label=L1&run=r1&limit=100');
-  assert.equal(queryOf({ ...EMPTY_FILTERS, decision: 'block' }, null, undefined, true), '?group=run&decision=block');
+  assert.equal(requestQuery('t-1', null, { ...EMPTY_FILTERS, decision: 'block', label: 'L1' }), '?label=L1&request=t-1&limit=100');
+  assert.equal(queryOf({ ...EMPTY_FILTERS, decision: 'block' }, null, undefined, true), '?group=request&decision=block');
+  // Who asked a question: the agents in the cloud, else Arianna.
+  assert.equal(groupAsker(group({ agents: ['designer', 'coder'] })), 'Designer e Coder');
+  assert.equal(groupAsker(group({ agents: [], entry: entry({ agent: null }) })), 'Arianna');
 });
 
 test('a line with exits to the cloud never reads «sul Mac»: its cloud target leads', () => {

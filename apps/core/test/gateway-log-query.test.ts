@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { cutUtf8, KEPT_PART_BYTES, keptParts, subjectOf, whatOf } from '../src/gateway.ts';
-import { GATEWAY_LOG_PAGE, gatewayLogId, GatewayLogQueryError, parseGatewayLogQuery } from '../src/gateway-log.ts';
+import { GATEWAY_LOG_PAGE, gatewayLogId, GatewayLogQueryError, parseGatewayLogQuery, requestKeyOf } from '../src/gateway-log.ts';
 import { MCP_EXIT_CODES, mcpSubject } from '../src/mcp/tools.ts';
 import { localOnly } from '../src/server/remote.ts';
 
@@ -80,10 +80,14 @@ test('the code and the subject of each tool of the MCP server, from its argument
   assert.equal(mcpSubject('web_fetch', { url: 'non un indirizzo' }), undefined);
 });
 
-test('groups and the rows of a run', () => {
-  const run = '0a5f3e1c-1111-4222-8333-000000000000';
-  assert.equal(parse('group=run').group, 'run');
-  assert.equal(parse(`run=${run}`).run, run);
-  for (const query of ['group=task', 'run=abc', `group=run&run=${run}`]) assert.throws(() => parse(query), GatewayLogQueryError, query);
-  assert.equal(localOnly(`/api/gateway/log/run/${run}/subjects`), true);
+test('groups by request and the rows of a group, by its key', () => {
+  const task = 't-0a5f3e1c-1111-4222-8333-000000000000';
+  assert.equal(parse('group=request').group, 'request');
+  for (const key of [task, 'r-0a5f3e1c-1111-4222-8333-000000000000', 'row-42']) assert.equal(parse(`request=${key}`).request, key);
+  for (const query of ['group=run', 'group=task', 'request=abc', 'request=row-0', 'request=x-0a5f3e1c-1111-4222-8333-000000000000', 'run=abc', `group=request&request=${task}`]) {
+    assert.throws(() => parse(query), GatewayLogQueryError, query);
+  }
+  assert.equal(requestKeyOf(task), task);
+  assert.equal(requestKeyOf('t-../x'), undefined);
+  assert.equal(localOnly(`/api/gateway/log/request/${task}/subjects`), true);
 });
