@@ -106,7 +106,7 @@ import { createRoutineService, createRoutineSummarizer, createRoutineTicker, rou
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
-import { briefCeiling, delegationRoute, localAgentModel, mentionableAgents } from './orchestrator/delegate.ts';
+import { briefCeiling, delegationRoute, localAgentModel, mentionableAgents, mentionBlocks } from './orchestrator/delegate.ts';
 import { createKb, KB_DIR } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
@@ -1421,6 +1421,8 @@ const server = await startApiServer({
   leaveRule,
   // «@name» and «/giro» (D-107, tappa B2): the agents Arianna may delegate to.
   mentionable: () => mentionableAgents(agents),
+  // D-299: the agents «@name» cannot call, with the reason the refusal says (turned off, only in their chat, no executor).
+  unmentionable: () => mentionBlocks(agents, userAgents.disabled()),
   // D-235: who may do a card of a plan the user edits, as the planner chooses them.
   planAssignees: () => orchestrator.planAssignees(),
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
@@ -1541,7 +1543,7 @@ const server = await startApiServer({
 });
 for (const one of workers) await one.start();
 // D-218: the messages written while an answer was at work leave when it ends, one at a time.
-const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents) }), onError: report });
+const queueDispatcher = createQueueDispatcher({ sql, send: () => ({ leave: leaveRule(), mentionable: mentionableAgents(agents), unmentionable: () => mentionBlocks(agents, userAgents.disabled()) }), onError: report });
 queueDispatcher.start();
 // D-248: every 3 s the refreshes of the Dashboard that ended are copied in their tiles, and their conversations purged.
 let settling = false;

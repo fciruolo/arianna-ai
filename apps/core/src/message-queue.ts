@@ -126,13 +126,15 @@ async function lockQueued(tx: Queryable, id: string): Promise<Row> {
   return row;
 }
 
-/** "Modifica": the new text, checked as when it was written. */
-export async function editQueued(sql: Sql, id: string, body: string): Promise<QueuedMessage> {
+/** "Modifica": the new text, checked as when it was written, «@name» too (D-299). */
+export async function editQueued(sql: Sql, id: string, body: string, extra: SendOptions = {}): Promise<QueuedMessage> {
   return sql.begin(async (tx) => {
     const row = await lockQueued(tx, id);
     const conversation = await lockForMessage(tx, row.conversationId);
     const design = designOf(row);
-    checkUserMessage(conversation, body, design === undefined ? {} : { design });
+    const options = { ...extra, ...(design === undefined ? {} : { design }) };
+    checkUserMessage(conversation, body, options);
+    await addressedOf(tx, row.conversationId, conversation, body, options);
     const [changed] = await tx<QueuedMessage[]>`
       UPDATE queued_messages SET body = ${body}, updated_at = now() WHERE id = ${id}::bigint RETURNING ${tx.unsafe(COLUMNS)}`;
     if (changed === undefined) throw new Error('UPDATE queued_messages returned no row');
@@ -152,7 +154,7 @@ export async function removeQueued(sql: Sql, id: string): Promise<void> {
 }
 
 /** What the core adds to a message it sends: who leaves (I-8) and who «@name» may call (D-107, tappa B2). */
-export type SendOptions = Pick<MessageOptions, 'leave' | 'mentionable'>;
+export type SendOptions = Pick<MessageOptions, 'leave' | 'mentionable' | 'unmentionable'>;
 
 /** Sends a queued message: it leaves the queue and becomes the user's message, in one transaction. */
 async function sendRow(tx: Queryable, row: Row, extra: SendOptions): Promise<{ message: Message; task: Task }> {

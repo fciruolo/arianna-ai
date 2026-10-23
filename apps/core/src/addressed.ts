@@ -8,13 +8,22 @@
 import type { Queryable } from './db/client.ts';
 
 /** «/progetta …» (D-235) is parsed here too: it starts the planner instead of Arianna's model. */
-export type Addressed = { kind: 'mention'; agent: string; brief: string } | { kind: 'round'; brief: string } | { kind: 'plan'; brief: string };
+export type Addressed = { kind: 'mention'; agent: string; written: string; brief: string } | { kind: 'round'; brief: string } | { kind: 'plan'; brief: string };
+
+/**
+ * Why an agent the core knows cannot be called with «@name» in a conversation
+ * with Arianna (D-299): turned off, answering only in a chat of its own, or
+ * without an executor that takes a delegated step.
+ */
+export type MentionBlock = 'off' | 'own-chat' | 'no-executor';
 
 /** The round of «/giro» and the agents of one message (D-107: at most 6 interventions, 2 of the same agent). */
 export const MAX_INTERVENTIONS = 6;
 export const MAX_PER_AGENT = 2;
 
 // The name in any letter case, as one writes it to a person: «@Coder» is the coder.
+// A mention (D-299) is «@», a letter, then letters, digits or «-» (up to 41), then the end, «,» or «:», or a space:
+// «@ 10 euro», «@@», «@10», «@mario.rossi@example.com» or «@lunedì» are not one, and go to Arianna as they are.
 const MENTION = /^@([a-z][a-z0-9-]{0,40})[,:]?(?:\s+([\s\S]*))?$/i;
 const ROUND = /^\/giro(?:\s+([\s\S]*))?$/i;
 const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/i;
@@ -27,7 +36,7 @@ const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/i;
 export function parseAddressed(body: string): Addressed | undefined {
   const text = body.trim();
   const mention = MENTION.exec(text);
-  if (mention?.[1] !== undefined) return { kind: 'mention', agent: mention[1].toLowerCase(), brief: (mention[2] ?? '').trim() };
+  if (mention?.[1] !== undefined) return { kind: 'mention', agent: mention[1].toLowerCase(), written: mention[1], brief: (mention[2] ?? '').trim() };
   const round = ROUND.exec(text);
   if (round !== null) return { kind: 'round', brief: (round[1] ?? '').trim() };
   const plan = PLAN.exec(text);

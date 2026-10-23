@@ -152,10 +152,14 @@ test('«@Traduttore, …» with a capital letter goes to that agent too, never t
   await db().owner`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
 });
 
-test('an «@» that names nobody Arianna may call, or without the list, is a message for Arianna', async () => {
+test('«@arianna», an «@» that is not a name, or a mention without the list, is a message for Arianna (D-299)', async () => {
   const id = await work();
   for (const [body, options] of [
-    ['@ciao come va?', { mentionable: MENTIONABLE }],
+    ['@arianna come va?', { mentionable: MENTIONABLE }],
+    ['@Arianna, come va?', { mentionable: MENTIONABLE }],
+    ['@ 10 euro a testa', { mentionable: MENTIONABLE }],
+    ['@@ ciao', { mentionable: MENTIONABLE }],
+    ['@mario.rossi@example.com risponde lui', { mentionable: MENTIONABLE }],
     ['@traduttore buongiorno', {}],
   ] as const) {
     const { task } = await postUserMessage(db().sql, id, body, options);
@@ -164,6 +168,23 @@ test('an «@» that names nobody Arianna may call, or without the list, is a mes
     await db().owner`UPDATE tasks SET status = 'done', assignee = 'user' WHERE id = ${task.id}`;
     await db().owner`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
   }
+});
+
+test('«@name» for a name nobody has, or an agent Arianna cannot call, is refused with the reason, never sent to Arianna (D-299)', async () => {
+  const id = await work();
+  const options = { mentionable: MENTIONABLE, unmentionable: () => ({ spento: 'off', god: 'own-chat' }) as const };
+  for (const [body, message] of [
+    ['@Codr, rileggi la funzione', 'no agent is called Codr'],
+    ['@ciao come va?', 'no agent is called ciao'],
+    ['@spento traduci', 'the agent spento is off'],
+    ['@God rifai il core', 'the agent God answers only in its own chat'],
+  ] as const) {
+    await assert.rejects(postUserMessage(db().sql, id, body, options), (error) => error instanceof ChatError && error.code === 'invalid' && error.message === message, body);
+    // Refused when it would enter the queue too (D-218), never later.
+    await assert.rejects(postOrQueue(db().sql, id, body, options), (error) => error instanceof ChatError && error.message === message, body);
+  }
+  const [count] = await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM messages WHERE conversation_id = ${id}`;
+  assert.equal(count?.n, 0);
 });
 
 test('«@name» without a text and «/giro» with nobody in the conversation are refused, never sent', async () => {

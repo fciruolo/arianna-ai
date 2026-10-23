@@ -55,6 +55,7 @@ import { editQueued, listQueue, postOrQueue, removeQueued, resumeQueue, sendQueu
 import { listSideThreads, openSideThread, sideThreadIds } from '../side-threads.ts';
 import { chatBrief } from '../delegation-view.ts';
 import type { Sql } from '../db/client.ts';
+import type { MentionBlock } from '../addressed.ts';
 import {
   createOpenLinks,
   DelegationFileError,
@@ -426,6 +427,8 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** The agents «@name» and «/giro» may call (D-107, tappa B2); without it every message goes to Arianna. */
   mentionable?: () => readonly string[];
+  /** The agents the core knows that «@name» cannot call, with the reason (D-299); without it, an unknown name. */
+  unmentionable?: () => Readonly<Record<string, MentionBlock>>;
   /**
    * Who may do a card of a plan the user edits (D-235): the user and the
    * agents the planner may choose now; without it, the user and `mentionable`.
@@ -687,6 +690,7 @@ interface RouteOptions {
   stopChat?: ApiServerOptions['stopChat'];
   stopCard?: ApiServerOptions['stopCard'];
   mentionable?: ApiServerOptions['mentionable'];
+  unmentionable?: ApiServerOptions['unmentionable'];
   planAssignees?: ApiServerOptions['planAssignees'];
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
@@ -2703,7 +2707,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog, routines, remoteDevices }: RouteOptions): Route[] {
+function routes(sql: Sql, { changes, cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, advisorData, approvedProjects, projectContainers, knowledge, rulesDraft, dashboardSuggest, dashboardChart, rulesExport, noteRelease, installation, readiness, onError, directAgents, offInterlocutors, chatCharacters, chatFolderGone, trialRefusal, leaveRule, stopChat, stopCard, mentionable, unmentionable, planAssignees, services, incognito, erase, attachments, designCatalog, skillsCatalog, routines, remoteDevices }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -3114,6 +3118,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const posted = await postOrQueue(sql, id, body.body, {
         ...(leave === undefined ? {} : { leave }),
         ...(named === undefined ? {} : { mentionable: named }),
+        ...(unmentionable === undefined ? {} : { unmentionable }),
         ...(design === undefined ? {} : { design }),
         ...(attached.length === 0 ? {} : { attachments: attached }),
       });
@@ -3137,7 +3142,16 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const body = await readJson(request);
       onlyFields(body, ['body']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
-      return { body: { queued: await editQueued(sql, queuedId(params), body.body) } };
+      // «@name» of the new text is checked as when it was written (D-299): the queue never pauses on it later.
+      const named = mentionable?.();
+      return {
+        body: {
+          queued: await editQueued(sql, queuedId(params), body.body, {
+            ...(named === undefined ? {} : { mentionable: named }),
+            ...(unmentionable === undefined ? {} : { unmentionable }),
+          }),
+        },
+      };
     }),
     route('DELETE', '/api/queued-messages/:id', async (_request, _url, params) => {
       await removeQueued(sql, queuedId(params));
@@ -3147,7 +3161,14 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       onlyFields(await readJson(request), []);
       const leave = leaveRule?.();
       const named = mentionable?.();
-      return { status: 201, body: await sendQueuedNow(sql, queuedId(params), { ...(leave === undefined ? {} : { leave }), ...(named === undefined ? {} : { mentionable: named }) }) };
+      return {
+        status: 201,
+        body: await sendQueuedNow(sql, queuedId(params), {
+          ...(leave === undefined ? {} : { leave }),
+          ...(named === undefined ? {} : { mentionable: named }),
+          ...(unmentionable === undefined ? {} : { unmentionable }),
+        }),
+      };
     }),
     // Who «@» may call in a conversation with Arianna (D-107, tappa B2): names of agents, L0.
     route('GET', '/api/chat/mentionable', () => Promise.resolve({ body: { agents: mentionable?.() ?? [] } })),
@@ -4938,6 +4959,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     stopChat: options.stopChat,
     stopCard: options.stopCard,
     mentionable: options.mentionable,
+    unmentionable: options.unmentionable,
     planAssignees: options.planAssignees,
     incognito: options.incognito,
     erase: options.erase,
