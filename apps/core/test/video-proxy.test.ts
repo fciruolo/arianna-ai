@@ -11,6 +11,7 @@ import { connectTarget, startVideoProxy, videoHostAllowed, type VideoProxy } fro
 let echo: Server;
 let echoPort = 0;
 const opened = new Set<Socket>();
+const proxies = new Set<VideoProxy>();
 
 function track(socket: Socket): Socket {
   opened.add(socket);
@@ -28,7 +29,9 @@ before(async () => {
   echoPort = (echo.address() as AddressInfo).port;
 });
 
-after(() => {
+after(async () => {
+  // A test ended by its timeout never reaches its own stop().
+  await Promise.all([...proxies].map((through) => through.stop()));
   for (const socket of opened) socket.destroy();
   echo.close();
 });
@@ -46,8 +49,10 @@ const resolve = (host: string) => {
   return address === undefined ? Promise.reject(new Error('dns')) : Promise.resolve([{ address, family: 4 }]);
 };
 
-function proxy(extra: { maxBytes?: number; maxMs?: number } = {}): Promise<VideoProxy> {
-  return startVideoProxy({ resolve, unsafeTest: { port: echoPort, addresses: ['127.0.0.1'] }, ...extra });
+async function proxy(extra: { maxBytes?: number; maxMs?: number } = {}): Promise<VideoProxy> {
+  const through = await startVideoProxy({ resolve, unsafeTest: { port: echoPort, addresses: ['127.0.0.1'] }, ...extra });
+  proxies.add(through);
+  return through;
 }
 
 /** Opens a CONNECT through the proxy; resolves with the status line and the socket. */
@@ -67,12 +72,14 @@ function tunnel(through: VideoProxy, target: string, auth = true): Promise<{ sta
     };
     socket.on('data', onData);
     socket.once('error', reject);
+    socket.once('close', () => { reject(new Error('closed before the status line')); });
   });
 }
 
 function roundTrip(socket: Socket, text: string): Promise<string> {
-  return new Promise((resolvePromise) => {
+  return new Promise((resolvePromise, reject) => {
     socket.once('data', (chunk: Buffer) => { resolvePromise(chunk.toString()); });
+    socket.once('close', () => { reject(new Error('closed before the answer')); });
     socket.write(text);
   });
 }
