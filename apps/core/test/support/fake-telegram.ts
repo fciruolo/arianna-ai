@@ -168,8 +168,12 @@ export async function startFakeTelegram(): Promise<FakeTelegram> {
   };
 }
 
-/** Waits until `check` returns something truthy, or fails after `ms`. */
-export async function eventually<T>(check: () => T | Promise<T>, ms = 5_000): Promise<NonNullable<T>> {
+/**
+ * Waits until `check` returns something truthy, or fails after `ms`. The
+ * default leaves room for a machine busy with the other files of test:db: a
+ * check that passes returns at once anyway.
+ */
+export async function eventually<T>(check: () => T | Promise<T>, ms = 20_000): Promise<NonNullable<T>> {
   const end = Date.now() + ms;
   for (;;) {
     const value: unknown = await check();

@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && pnpm --filter @arianna/hud typecheck",
     "test": "node --test \"{apps,packages}/*/test/**/*.test.ts\" \"test/**/*.test.ts\" \".claude/hooks/*.test.js\"",
-    "test:db": "pnpm db:up && node --test --test-timeout=60000 \"apps/*/test-db/**/*.test.ts\"",
+    "test:db": "pnpm db:up && node --test --test-timeout=60000 --test-force-exit \"apps/*/test-db/**/*.test.ts\"",
     "lint": "eslint . --max-warnings 0",
     "eval": "node packages/evals/src/cli.ts deterministic",
     "eval:models": "node packages/evals/src/cli.ts models",

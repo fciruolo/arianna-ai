@@ -9,7 +9,7 @@ import { archiveConversation, createConversation, postUserMessage } from '../src
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { moveTask } from '../src/tasks.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -25,7 +25,7 @@ before(async () => {
   live = await startLiveFeed(db().sql);
   server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0 });
   origin = `http://127.0.0.1:${String(server.port)}`;
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();

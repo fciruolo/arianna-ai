@@ -13,7 +13,7 @@ import { loadGatewayLog, parseGatewayLogQuery } from '../src/gateway-log.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { createTask } from '../src/tasks.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -73,7 +73,7 @@ before(async () => {
       (now() - interval '30 minutes', ${hidden.id}, NULL, 'executor', 'claude', 'cloud', 'L2', 'block', 'cloud-label', ${`above L1 ${MARK}`}, 10, ${HASH}, NULL),
       (now() - interval '20 minutes', NULL, ${hiddenRun?.id ?? null}, 'executor', 'local', 'local', 'L2', 'allow', 'local', ${`L2 local ${MARK}`}, 10, ${HASH}, NULL),
       (now() - interval '10 minutes', NULL, NULL, 'web', 'web-page-public', 'cloud', 'L0', 'allow', 'page', ${`page of ${MARK}.example`}, 50, ${HASH}, NULL)`;
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();

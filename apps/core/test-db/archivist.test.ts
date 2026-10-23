@@ -20,7 +20,7 @@ import type { LiveFeed } from '../src/live.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createNoteOrganizer, enqueueOrganize, ORGANIZE_QUEUE } from '../src/organize.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -91,7 +91,7 @@ before(async () => {
       },
     },
   });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 after(async () => {
   await server.close();
   await database?.close();

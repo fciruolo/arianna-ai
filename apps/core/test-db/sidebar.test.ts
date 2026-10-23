@@ -17,7 +17,7 @@ import { searchAll } from '../src/search.ts';
 import { openFailureChat } from '../src/system-chats.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -59,7 +59,7 @@ before(async () => {
     }),
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();

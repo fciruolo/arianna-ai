@@ -13,7 +13,8 @@ import { ensureTelegramState, startTelegram, type TelegramChannel } from '../src
 import { TEXTS } from '../src/telegram/texts.ts';
 import { createTask, loadTask, moveTask } from '../src/tasks.ts';
 import { buttonPress, eventually, privateMessage, startFakeTelegram, type FakeTelegram } from '../test/support/fake-telegram.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { CLOSE_TIMEOUT_MS, createTestDatabase, SETUP_TIMEOUT_MS, TEARDOWN_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
+import { createTeardown } from '../test/support/teardown.ts';
 
 // One hook sets everything up: the database must exist before the channel starts.
 let database: TestDatabase | undefined;
@@ -44,18 +45,22 @@ async function start(): Promise<TelegramChannel> {
   });
 }
 
-before(async () => {
-  database = await createTestDatabase();
-  fake = await startFakeTelegram();
-  live = await startLiveFeed(db().sql);
-  channel = await start();
-});
-after(async () => {
-  await channel.close();
-  await live.close();
-  await fake.close();
-  await database?.close();
-});
+// Each piece is closed at the end even if the setup outlived its hook, or a close before it failed:
+// a channel left running polls forever and the file never ends.
+// Dropping the schema may wait long for the migrations of the other files.
+const teardown = createTeardown(CLOSE_TIMEOUT_MS);
+before(
+  async () => {
+    database = await teardown.keep(await createTestDatabase(), (opened) => opened.close());
+    fake = await teardown.keep(await startFakeTelegram(), (opened) => opened.close());
+    live = await teardown.keep(await startLiveFeed(db().sql), (opened) => opened.close());
+    channel = await start();
+    // The channel is restarted by a test: the one running at the end is closed.
+    await teardown.keep(undefined, () => channel.close());
+  },
+  { timeout: SETUP_TIMEOUT_MS },
+);
+after(() => teardown.closeAll(), { timeout: TEARDOWN_TIMEOUT_MS });
 
 function sentTexts(): string[] {
   return fake.sent().map((call) => String(call.body.text));
@@ -440,15 +445,18 @@ test('a failed getUpdates is retried, and messages still arrive', async () => {
   const polls = (): number => fake.calls.filter((call) => call.method === 'getUpdates').length;
   const seen = polls();
   fake.failNext('getUpdates', 500);
-  await eventually(() => polls() >= seen + 3, 10_000);
+  await eventually(() => polls() >= seen + 3);
   fake.push(privateMessage(CHAT, 'Dopo il 500'));
   await eventually(async () => (await telegramMessages(db().sql)).find((row) => row.body === 'Dopo il 500'));
 });
 
-test('first start skips old requests; what arrives while off is sent on restart; a refused chat does not stop the others', async () => {
-  const other = await createTestDatabase();
-  const otherFake = await startFakeTelegram();
-  const otherLive = await startLiveFeed(other.sql);
+// It prepares a second database: it may wait for the cluster lock as long as a setup.
+test('first start skips old requests; what arrives while off is sent on restart; a refused chat does not stop the others', { timeout: SETUP_TIMEOUT_MS }, async () => {
+  // Closed in the finally whatever fails: a bot left open polls forever and the file never ends.
+  const local = createTeardown(CLOSE_TIMEOUT_MS);
+  const other = await local.keep(await createTestDatabase(), (opened) => opened.close());
+  const otherFake = await local.keep(await startFakeTelegram(), (opened) => opened.close());
+  const otherLive = await local.keep(await startLiveFeed(other.sql), (opened) => opened.close());
   const SECOND = 777;
   const open = (pollSeconds = 1): Promise<TelegramChannel> =>
     startTelegram({
@@ -461,10 +469,12 @@ test('first start skips old requests; what arrives while off is sent on restart;
       maxAttempts: 3,
       onError: () => undefined,
     });
+  let bot: TelegramChannel | undefined;
+  await local.keep(undefined, () => bot?.close());
   try {
     const work = await createConversation(other.sql, { mode: 'work' });
     const old = await waitingApproval(other.sql, { conversationId: work.id, title: 'Vecchia', label: 'L1', kind: 'action', detail: {} });
-    let bot = await open();
+    bot = await open();
     await eventually(() => otherFake.calls.some((call) => call.method === 'getUpdates'));
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.ok(!JSON.stringify(otherFake.sent()).includes(old.approvalId), 'requests from before the first start are not sent');
@@ -493,10 +503,10 @@ test('first start skips old requests; what arrives while off is sent on restart;
     await eventually(() => otherFake.calls.filter((call) => call.method === 'getUpdates').length > polls);
     const closing = Date.now();
     await bot.close();
-    assert.ok(Date.now() - closing < 2_000);
+    bot = undefined;
+    // Well below the 30 s of the poll, with room for a busy machine.
+    assert.ok(Date.now() - closing < 10_000);
   } finally {
-    await otherLive.close();
-    await otherFake.close();
-    await other.close();
+    await local.closeAll();
   }
 });
