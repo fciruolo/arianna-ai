@@ -72,7 +72,7 @@ export function createCloudText(deps: CloudTextDeps): AskCloudText {
         request.parts.map((part) => ({ value: part.text, label: part.label ?? 'L0', source: part.source })),
         createContext('L1', request.parts.some((part) => part.label === 'L1') ? 'L1' : 'L0'),
         { kind: 'executor', id: 'claude', locality: 'cloud' },
-        { summary: request.purpose, ...(request.taskId === undefined ? {} : { taskId: request.taskId }) },
+        { summary: request.purpose, what: 'cloud-text', ...(request.taskId === undefined ? {} : { taskId: request.taskId }) },
       );
       if (decision.decision === 'block') throw new CloudTextError('blocked', `il gateway ha fermato la richiesta: ${decision.reason}`);
       const run = claude.start({ ...launch, brief: decision });

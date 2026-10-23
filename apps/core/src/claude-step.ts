@@ -268,7 +268,7 @@ async function runWith(sql: Sql, executor: ClaudeExecutor, step: StepContext, in
     brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source })),
     input.context,
     { kind: 'executor', id: 'claude', locality: 'cloud' },
-    { ...ids, ...(input.summary === undefined ? {} : { summary: input.summary }), ...(input.names === undefined ? {} : { names: input.names }) },
+    { ...ids, what: 'brief', ...(input.summary === undefined ? {} : { summary: input.summary }), ...(input.names === undefined ? {} : { names: input.names }) },
   );
   if (decision.decision === 'block') return { kind: 'blocked', decision };
 

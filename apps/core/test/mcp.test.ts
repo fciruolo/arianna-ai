@@ -124,12 +124,15 @@ interface Harness {
   /** What each call offered the gateway, fragment by fragment. */
   payloads: (readonly Labeled<string>[])[];
   events: McpCallEvent[];
+  /** What each call told the gateway it was (D-297): the code and the subject. */
+  metas: { what?: string; subject?: string }[];
 }
 
 function harness(skills: McpSkills = fakeSkills()): Harness {
   const gated: Harness['gated'] = [];
   const events: McpCallEvent[] = [];
   const payloads: Harness['payloads'] = [];
+  const metas: Harness['metas'] = [];
   const deps: McpToolDeps = {
     kb: fakeKb,
     skills,
@@ -138,6 +141,7 @@ function harness(skills: McpSkills = fakeSkills()): Harness {
       if (decision.decision === 'allow') markLogged(decision);
       gated.push({ labels: payload.map((fragment) => fragment.label), decision: decision.decision, summary: meta.summary });
       payloads.push(payload);
+      metas.push({ ...(meta.what === undefined ? {} : { what: meta.what }), ...(meta.subject === undefined ? {} : { subject: meta.subject }) });
       return Promise.resolve(decision);
     },
     event: (event) => {
@@ -145,7 +149,7 @@ function harness(skills: McpSkills = fakeSkills()): Harness {
       return Promise.resolve();
     },
   };
-  return { deps, gated, payloads, events };
+  return { deps, gated, payloads, events, metas };
 }
 
 function session(extra: Partial<McpSessionInput> = {}): McpSessionInput {
@@ -183,6 +187,20 @@ describe('tools', () => {
     assert.equal(event.decision, 'allow');
     assert.ok(event.bytes > 0);
     assert.doesNotMatch(JSON.stringify(events), /router|kb\/work/);
+  });
+
+  it('«Cosa era» (D-297): each call tells the gateway its code and its subject, a refusal with -denied', async () => {
+    const { deps, metas } = harness();
+    await callTool(session(), usage(), 'kb_read', { path: 'kb/work/router.md' }, deps);
+    await callTool(session(), usage(), 'kb_read', { path: 'kb/private/casa.md' }, deps);
+    await callTool(session(), usage(), 'list_skills', {}, deps);
+    await callTool(session(), usage(), 'kb_search', { query: 'router' }, deps);
+    assert.deepEqual(metas, [
+      { what: 'mcp-kb-read', subject: 'kb/work/router.md' },
+      { what: 'mcp-kb-read-denied', subject: 'kb/private/casa.md' },
+      { what: 'mcp-skills' },
+      { what: 'mcp-kb-search', subject: 'router' },
+    ]);
   });
 
   it('kb_read of an L2 page, of a missing page and of a bad path: the same fixed text, a blocked row each', async () => {

@@ -822,6 +822,11 @@ export async function loadGatewayLog(query: string): Promise<GatewayLogPage> {
   return call<GatewayLogPage>('GET', `/api/gateway/log${query}`);
 }
 
+/** «Cosa era» (D-297): the subjects of the exits of one run, by row id; only from the Mac (the phone gets 403 local-only). */
+export async function loadGatewaySubjects(runId: string): Promise<Record<string, string>> {
+  return (await call<{ subjects: Record<string, string> }>('GET', `/api/gateway/log/run/${encodeURIComponent(runId)}/subjects`)).subjects;
+}
+
 /** «Cosa è uscito» (D-297): the exact text of one exit, only from the Mac (the phone gets 403 local-only). */
 export async function loadGatewayText(id: string): Promise<GatewayText> {
   return call<GatewayText>('GET', `/api/gateway/log/${encodeURIComponent(id)}/text`);

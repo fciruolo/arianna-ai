@@ -7,6 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - «Cosa è uscito» nel dettaglio di una riga del Registro del gateway: il testo esatto di ogni uscita ammessa verso il cloud fino a Interno (istruzioni, estratti, file, risultati degli strumenti), in un riquadro scorrevole con «Copia», dimensione e controllo dell’impronta del registro; mai per un’uscita bloccata («Fermata: conteneva un dato Privato/Segreto») né in incognito; si cancella con la conversazione e da solo dopo 30 giorni, e si legge solo dal Mac (D-297).
+- Registro del gateway a gruppi: una riga per richiesta (un lavoro di un agente con tutte le sue uscite, «N uscite · A ammesse · B bloccate»), un clic apre l’elenco delle uscite e ognuna dice cosa era («Istruzioni iniziali», «Lettura nota · percorso», «Ricerca nella KB · testo», «Accesso negato a …»); percorsi, ricerche e siti solo dal Mac, cancellati con la conversazione e dopo 30 giorni (D-297).
 
 ## [0.170.0] - 2026-10-23
 

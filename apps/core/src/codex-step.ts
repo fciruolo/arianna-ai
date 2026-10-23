@@ -121,7 +121,7 @@ export async function runCodexStep(sql: Sql, executor: CodexExecutor, step: Step
     input.brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source })),
     input.context,
     { kind: 'executor', id: 'codex', locality: 'cloud' },
-    { ...ids, ...(input.summary === undefined ? {} : { summary: input.summary }) },
+    { ...ids, what: 'brief', ...(input.summary === undefined ? {} : { summary: input.summary }) },
   );
   if (decision.decision === 'block') return { kind: 'blocked', decision };
 

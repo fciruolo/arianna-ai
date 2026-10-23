@@ -29,6 +29,25 @@ export interface GatewayLogEntry {
   /** `title` only where the list of conversations shows it; `open`: not purged. */
   conversation: { id: string; title: string | null; open: boolean } | null;
   card: { id: string; title: string } | null;
+  /** The run of the exit, its group (D-297). */
+  runId: string | null;
+  /** What it was (D-297): a closed code; null for an exit before it or of no kind. */
+  what: string | null;
+}
+
+/** The exits of one run as one line (D-297): the newest row and the counts. */
+export interface GatewayLogGroup {
+  entry: GatewayLogEntry;
+  count: number;
+  allowed: number;
+  blocked: number;
+  bytes: number | null;
+  firstTs: string;
+  targets: number;
+  /** The highest label among its exits, blocked ones too. */
+  label: Label;
+  /** Exits allowed to the cloud with Privato or Segreto (not a link): the line is red. */
+  privateOut: number;
 }
 
 export interface GatewayLogTarget {
@@ -38,6 +57,7 @@ export interface GatewayLogTarget {
 
 export interface GatewayLogPage {
   entries: GatewayLogEntry[];
+  groups?: GatewayLogGroup[];
   next: string | null;
   targets?: GatewayLogTarget[];
 }
@@ -56,7 +76,7 @@ export const EMPTY_FILTERS: GatewayLogFilters = { decision: '', destination: '',
 
 export const GATEWAY_LOG_TITLE = 'Registro del gateway';
 export const GATEWAY_LOG_INTRO =
-  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni decisione, la più recente in alto. Chi, dove, quando, con quale etichetta e perché; nel dettaglio di un’uscita verso il cloud anche il testo esatto che è uscito, per 30 giorni e solo dal Mac.';
+  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni richiesta (un lavoro di un agente con tutte le sue uscite), la più recente in alto. Chi, dove, quando, con quale etichetta e perché; per ogni uscita cosa era e, verso il cloud, il testo esatto che è uscito, per 30 giorni e solo dal Mac.';
 
 const EXECUTOR_TEXT: Record<string, string> = { claude: 'Claude', codex: 'Codex', local: 'Modello locale' };
 const CHANNEL_TEXT: Record<string, string> = { web: 'Chat web', telegram: 'Telegram', phone: 'Telefono', voice: 'Voce', push: 'Notifiche push' };
@@ -197,9 +217,10 @@ export function periodProblem(filters: Pick<GatewayLogFilters, 'from' | 'to'>): 
   return from !== undefined && to !== undefined && to < from ? '«Al» viene prima di «Dal»: cambia una delle due date.' : null;
 }
 
-/** The address of a page: the filters, then the cursor. Days become local midnights, «Al» included. */
-export function queryOf(filters: GatewayLogFilters, before?: string | null, limit?: number): string {
+/** The address of a page: the filters, then the cursor. Days become local midnights, «Al» included. `grouped`: one line per run (D-297). */
+export function queryOf(filters: GatewayLogFilters, before?: string | null, limit?: number, grouped = false): string {
   const params = new URLSearchParams();
+  if (grouped) params.set('group', 'run');
   if (filters.decision !== '') params.set('decision', filters.decision);
   if (filters.destination !== '') {
     const [kind, target] = filters.destination.split('/');
@@ -257,6 +278,8 @@ export interface GatewayText {
   parts?: GatewayTextPart[];
   bytes?: number;
   verified?: boolean | null;
+  /** What it was about (D-297): the path, the search, the skill, the site. */
+  subject?: string | null;
 }
 
 export const TEXT_FROM_MAC = 'Il testo si legge dal Mac.';
@@ -317,4 +340,72 @@ export function verifiedText(verified: boolean | null | undefined): string {
   if (verified === true) return 'Coincide con l’impronta (sha256) scritta nel registro al momento dell’uscita.';
   if (verified === false) return 'Non coincide con l’impronta scritta nel registro: segnalalo.';
   return 'Troncato: l’impronta del registro non si può confrontare.';
+}
+
+/** The name of each kind of exit (D-297, «Cosa era»): L0, shown from the phone too. */
+const WHAT_TEXT: Record<string, string> = {
+  brief: 'Istruzioni iniziali',
+  'cloud-text': 'Richiesta di Arianna a Claude',
+  'mcp-skills': 'Elenco delle skill',
+  'mcp-skill': 'Skill',
+  'mcp-kb-search': 'Ricerca nella KB',
+  'mcp-kb-read': 'Lettura nota',
+  'mcp-web-page': 'Pagina web',
+  'mcp-web-address': 'Indirizzo di una pagina web',
+};
+
+const DENIED = '-denied';
+
+/** «Lettura nota», «Accesso negato (Lettura nota)»; for an exit of no kind, its destination. */
+export function whatText(entry: Pick<GatewayLogEntry, 'what' | 'targetKind' | 'target'>): string {
+  const what = entry.what;
+  if (what === null) return targetText(entry.targetKind, entry.target);
+  if (what.endsWith(DENIED)) {
+    const tool = WHAT_TEXT[what.slice(0, -DENIED.length)];
+    return tool === undefined ? 'Accesso negato' : `Accesso negato (${tool})`;
+  }
+  return WHAT_TEXT[what] ?? 'Uscita';
+}
+
+/** The exit with its subject when the Mac has it: «Lettura nota · kb/a.md», «Accesso negato a kb/b.md». */
+export function exitText(entry: Pick<GatewayLogEntry, 'what' | 'targetKind' | 'target'>, subject: string | null | undefined): string {
+  if (subject === null || subject === undefined || subject === '') return whatText(entry);
+  if (entry.what?.endsWith(DENIED) === true) return `Accesso negato a ${subject}`;
+  return `${whatText(entry)} · ${subject}`;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n.toLocaleString('it-IT')} ${n === 1 ? one : many}`;
+}
+
+/** «20 uscite · 16 ammesse · 4 bloccate · 48 KB»; a group of one says nothing more than its row. */
+export function groupCounts(group: Pick<GatewayLogGroup, 'count' | 'allowed' | 'blocked' | 'bytes'>): string {
+  const parts = [plural(group.count, 'uscita', 'uscite'), plural(group.allowed, 'ammessa', 'ammesse'), plural(group.blocked, 'bloccata', 'bloccate')];
+  if (group.bytes !== null) parts.push(bytesText(group.bytes));
+  return parts.join(' · ');
+}
+
+/** The groups already shown and the next page, without repeating one. */
+export function appendGroups(shown: readonly GatewayLogGroup[], page: readonly GatewayLogGroup[]): GatewayLogGroup[] {
+  const ids = new Set(shown.map((group) => group.entry.id));
+  return [...shown, ...page.filter((group) => !ids.has(group.entry.id))];
+}
+
+/**
+ * The exits of one group, newest first, a page of 100, with the filters of
+ * the page but the outcome: the same exits its counts count.
+ */
+export function runQuery(runId: string, before?: string | null, filters: GatewayLogFilters = EMPTY_FILTERS): string {
+  const rest = queryOf({ ...filters, decision: '' }, before);
+  const params = new URLSearchParams(rest.slice(1));
+  params.set('run', runId);
+  params.set('limit', '100');
+  return `?${params.toString()}`;
+}
+
+/** The outcome of a group, in words: «ammesse», «bloccate» or «con blocchi». */
+export function groupDecision(group: Pick<GatewayLogGroup, 'blocked' | 'allowed'>): string {
+  if (group.blocked === 0) return 'ammesse';
+  if (group.allowed === 0) return 'bloccate';
+  return 'con blocchi';
 }

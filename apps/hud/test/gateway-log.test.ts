@@ -24,7 +24,14 @@ import {
   textStateNotice,
   timeText,
   verifiedText,
+  appendGroups,
+  exitText,
+  groupCounts,
+  groupDecision,
+  runQuery,
+  whatText,
   type GatewayLogEntry,
+  type GatewayLogGroup,
 } from '../src/lib/gateway-log.ts';
 import { GATEWAY_LOG_PATH, isGatewayLogPath } from '../src/lib/route.ts';
 
@@ -45,6 +52,8 @@ function entry(overrides: Partial<GatewayLogEntry> = {}): GatewayLogEntry {
     model: 'sonnet',
     conversation: null,
     card: null,
+    runId: null,
+    what: null,
     ...overrides,
   };
 }
@@ -179,4 +188,36 @@ test('size, parts, cut and the sha256 check of the text', () => {
   assert.match(verifiedText(true), /^Coincide/);
   assert.match(verifiedText(false), /^Non coincide/);
   assert.match(verifiedText(null), /^Troncato/);
+});
+
+test('«Cosa era» (D-297): the kind of each exit in Italian, with its subject from the Mac', () => {
+  assert.equal(whatText(entry({ what: 'brief' })), 'Istruzioni iniziali');
+  assert.equal(whatText(entry({ what: 'mcp-kb-search' })), 'Ricerca nella KB');
+  assert.equal(whatText(entry({ what: 'mcp-kb-read-denied' })), 'Accesso negato (Lettura nota)');
+  assert.equal(whatText(entry({ what: null })), 'Claude');
+  assert.equal(whatText(entry({ what: 'sconosciuto' })), 'Uscita');
+  assert.equal(exitText(entry({ what: 'mcp-kb-read' }), 'kb/note/a.md'), 'Lettura nota · kb/note/a.md');
+  assert.equal(exitText(entry({ what: 'mcp-kb-read-denied' }), 'kb/private/b.md'), 'Accesso negato a kb/private/b.md');
+  assert.equal(exitText(entry({ what: 'mcp-skill' }), undefined), 'Skill');
+  assert.equal(exitText(entry({ what: 'mcp-web-page' }), ''), 'Pagina web');
+});
+
+function group(overrides: Partial<GatewayLogGroup> = {}): GatewayLogGroup {
+  return { entry: entry({ runId: 'r1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, ...overrides };
+}
+
+test('one line per request: the counts of the group, its outcome, its pages', () => {
+  assert.equal(groupCounts(group()), '20 uscite · 16 ammesse · 4 bloccate · 48 KB');
+  assert.equal(groupCounts(group({ count: 1, allowed: 1, blocked: 0, bytes: null })), '1 uscita · 1 ammessa · 0 bloccate');
+  assert.equal(groupDecision(group()), 'con blocchi');
+  assert.equal(groupDecision(group({ blocked: 0 })), 'ammesse');
+  assert.equal(groupDecision(group({ allowed: 0 })), 'bloccate');
+  const first = group({ entry: entry({ id: '9', runId: 'r1' }) });
+  const second = group({ entry: entry({ id: '5', runId: 'r2' }) });
+  assert.deepEqual(appendGroups([first], [first, second]).map((item) => item.entry.id), ['9', '5']);
+  assert.equal(runQuery('r1'), '?run=r1&limit=100');
+  assert.equal(runQuery('r1', '42'), '?before=42&run=r1&limit=100');
+  // The filters of the page but the outcome: the exits its counts count.
+  assert.equal(runQuery('r1', null, { ...EMPTY_FILTERS, decision: 'block', label: 'L1' }), '?label=L1&run=r1&limit=100');
+  assert.equal(queryOf({ ...EMPTY_FILTERS, decision: 'block' }, null, undefined, true), '?group=run&decision=block');
 });

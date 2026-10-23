@@ -116,7 +116,7 @@ test('a blocked exit keeps no text: the detail says only its label', async () =>
   assert.equal(decision.decision, 'block');
   const row = await lastRow();
   assert.deepEqual(await textsOf(row.id), []);
-  assert.deepEqual(await loadGatewayText(db().sql, row.id), { id: row.id, label: 'L2', state: 'blocked' });
+  assert.deepEqual(await loadGatewayText(db().sql, row.id), { id: row.id, label: 'L2', state: 'blocked', subject: null });
   const answer = await get(`/api/gateway/log/${row.id}/text`);
   assert.equal(answer.status, 200);
   assert.equal(answer.text.includes(MARK), false);

@@ -205,7 +205,7 @@ import { attachmentFilesOf, attachmentIds, AttachmentError, discardAttachment, r
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
-import { gatewayLogId, GatewayLogQueryError, loadGatewayLog, loadGatewayText, parseGatewayLogQuery } from '../gateway-log.ts';
+import { gatewayLogId, GatewayLogQueryError, loadGatewayLog, loadGatewaySubjects, loadGatewayText, parseGatewayLogQuery, runIdOf } from '../gateway-log.ts';
 import { appendEvent, type NewEvent } from '../events.ts';
 import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
 import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
@@ -2759,6 +2759,13 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const text = await loadGatewayText(sql, id);
       if (text === undefined) throw new HttpError(404, 'not found');
       return { body: text };
+    }),
+    // «Cosa era» (D-297): the subjects of the exits of one run (paths, searches, skills, sites), blocked ones too.
+    // Only from the Mac, as the text: LOCAL_ONLY_PATHS of remote.ts.
+    route('GET', '/api/gateway/log/run/:id/subjects', async (_request, _url, params) => {
+      const runId = runIdOf(params.id ?? '');
+      if (runId === undefined) throw new HttpError(400, 'id must be a run id');
+      return { body: { subjects: await loadGatewaySubjects(sql, runId) } };
     }),
 
     // What this installation is (D-089): development or production, the name of its folder, the commit.

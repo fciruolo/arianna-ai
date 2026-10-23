@@ -237,7 +237,7 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   if (rewritable !== '') problems.push(`may update append-only ${rewritable}`);
   if (names((table) => table.name === 'schema_migrations' && table.writes) !== '') problems.push('may write schema_migrations');
 
-  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183), of a fact of «Su di te» (D-114), of a queued message (D-218), of a pending attachment of the chat (D-247) and of the texts of the gateway past 30 days (D-297).
+  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183), of a fact of «Su di te» (D-114), of a queued message (D-218), of a pending attachment of the chat (D-247) and of the texts and subjects of the gateway past 30 days (D-297).
   const definers = await owner<{ name: string }[]>`
     SELECT p.proname AS name FROM pg_proc p
     WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())

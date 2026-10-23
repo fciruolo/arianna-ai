@@ -33,6 +33,7 @@ export const GATEWAY_LOG_MAX_PAGE = 100;
 
 /** A code written by the code (a target, a rule, an agent id): anything else is shown as `other`. */
 const CODE = /^[a-z][a-z0-9-]{0,47}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface GatewayLogQuery {
   decision?: GatewayDecisionKind;
@@ -42,8 +43,12 @@ export interface GatewayLogQuery {
   /** Inclusive start and exclusive end of the period, as instants. */
   from?: Date;
   to?: Date;
-  /** The id of the last row already shown: the page goes on below it. */
+  /** The id of the last row already shown: the page goes on below it (of a group: its newest row). */
   before?: string;
+  /** Only the rows of this run (D-297: the exits of one group). */
+  run?: string;
+  /** `run`: one group per run of an agent (D-297, «una riga per richiesta»); a row without a run alone. */
+  group?: 'run';
   limit: number;
 }
 
@@ -67,6 +72,32 @@ export interface GatewayLogEntry {
   conversation: { id: string; title: string | null; open: boolean } | null;
   /** A card (a task outside any conversation), with its title as on the Cardwall. */
   card: { id: string; title: string } | null;
+  /** The run of the exit: its group (D-297). */
+  runId: string | null;
+  /** What it was (D-297): a closed code (`brief`, `mcp-kb-read`…), L0; null for an exit before it or of no kind. */
+  what: string | null;
+}
+
+/**
+ * The exits of one run of an agent, as one line (D-297): the newest row with
+ * who, where and from where, and the counts. A row without a run is a group
+ * of one. Never a subject nor a text: readable from the phone.
+ */
+export interface GatewayLogGroup {
+  /** The newest row of the group: its id is the cursor. */
+  entry: GatewayLogEntry;
+  count: number;
+  allowed: number;
+  blocked: number;
+  /** Bytes of the rows that measured them; null when none did. */
+  bytes: number | null;
+  firstTs: string;
+  /** Distinct targets in the group: more than one, «e altre». */
+  targets: number;
+  /** The highest label among its exits, blocked ones too. */
+  label: Label;
+  /** Exits allowed to the cloud with Privato or Segreto (not a link): the line is red. */
+  privateOut: number;
 }
 
 export interface GatewayLogTarget {
@@ -75,7 +106,10 @@ export interface GatewayLogTarget {
 }
 
 export interface GatewayLogPage {
+  /** The rows; empty in a page of groups. */
   entries: GatewayLogEntry[];
+  /** With `group=run`, the groups instead of the rows. */
+  groups?: GatewayLogGroup[];
   /** The cursor of the next page (`before`), null at the end. */
   next: string | null;
   /** The targets ever seen, for the filter: only on the first page. */
@@ -99,7 +133,7 @@ function instant(raw: string, name: string): Date {
 
 /** The filters of an address; an empty parameter is no filter, anything unknown a GatewayLogQueryError (a 400). */
 export function parseGatewayLogQuery(params: URLSearchParams): GatewayLogQuery {
-  const known = ['decision', 'kind', 'target', 'label', 'from', 'to', 'before', 'limit'];
+  const known = ['decision', 'kind', 'target', 'label', 'from', 'to', 'before', 'limit', 'run', 'group'];
   for (const key of params.keys()) if (!known.includes(key)) throw new GatewayLogQueryError(`unknown parameter ${key}`);
   const value = (name: string): string | undefined => {
     const raw = params.get(name);
@@ -131,6 +165,17 @@ export function parseGatewayLogQuery(params: URLSearchParams): GatewayLogQuery {
     if (!/^[1-9]\d{0,17}$/.test(before)) throw new GatewayLogQueryError('before must be a row id');
     query.before = before;
   }
+  const run = value('run');
+  if (run !== undefined) {
+    if (!UUID.test(run)) throw new GatewayLogQueryError('run must be a run id');
+    query.run = run;
+  }
+  const group = value('group');
+  if (group !== undefined) {
+    if (group !== 'run') throw new GatewayLogQueryError('group must be run');
+    if (query.run !== undefined) throw new GatewayLogQueryError('group and run do not go together');
+    query.group = 'run';
+  }
   const limit = value('limit');
   if (limit !== undefined) {
     const n = Number(limit);
@@ -157,6 +202,19 @@ interface Row {
   conversation_open: boolean | null;
   card_id: string | null;
   card_title: string | null;
+  run_id: string | null;
+  what: string | null;
+}
+
+interface GroupRow extends Row {
+  n: number;
+  allowed: number;
+  blocked: number;
+  total_bytes: string | null;
+  first_ts: Date;
+  targets: number;
+  top_label: string;
+  private_out: number;
 }
 
 function code(value: string | null): string | null {
@@ -183,47 +241,126 @@ function entryOf(row: Row): GatewayLogEntry {
     model: row.model === null ? null : /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/.test(row.model) ? row.model : 'other',
     conversation: row.conversation_id === null ? null : { id: row.conversation_id, title: row.conversation_title, open: row.conversation_open === true },
     card: row.card_id === null ? null : { id: row.card_id, title: row.card_title ?? '' },
+    runId: row.run_id,
+    what: code(row.what),
   };
 }
 
-/** One page of the log, newest first. */
-export async function loadGatewayLog(sql: Queryable, query: GatewayLogQuery): Promise<GatewayLogPage> {
-  const rows = await sql<Row[]>`
-    SELECT g.id::text AS id, g.ts, g.target_kind, g.target, g.locality, g.label::text AS label, g.decision, g.rule, g.bytes_out,
-      coalesce(r.agent, c.agent, CASE WHEN t.assignee <> 'user' THEN t.assignee END) AS agent,
-      r.model,
-      c.id::text AS conversation_id,
-      -- The title only where the list of conversations shows it.
-      CASE WHEN c.purged_at IS NULL AND NOT c.secretary AND c.side_of IS NULL AND c.dashboard_of IS NULL THEN c.title END AS conversation_title,
-      c.purged_at IS NULL AS conversation_open,
-      CASE WHEN t.conversation_id IS NULL THEN t.id::text END AS card_id,
-      CASE WHEN t.conversation_id IS NULL THEN t.title END AS card_title
+function groupOf(row: GroupRow): GatewayLogGroup {
+  return {
+    entry: entryOf(row),
+    count: row.n,
+    allowed: row.allowed,
+    blocked: row.blocked,
+    bytes: row.total_bytes === null ? null : Number(row.total_bytes),
+    firstTs: row.first_ts.toISOString(),
+    targets: row.targets,
+    label: isLabel(row.top_label) ? row.top_label : 'L2',
+    privateOut: row.private_out,
+  };
+}
+
+/** The columns of a row as the page shows it, from `g` and its joins (fromRows). */
+function rowColumns(sql: Queryable) {
+  return sql`
+    g.id::text AS id, g.ts, g.target_kind, g.target, g.locality, g.label::text AS label, g.decision, g.rule, g.bytes_out,
+    coalesce(r.agent, c.agent, CASE WHEN t.assignee <> 'user' THEN t.assignee END) AS agent,
+    r.model,
+    c.id::text AS conversation_id,
+    -- The title only where the list of conversations shows it.
+    CASE WHEN c.purged_at IS NULL AND NOT c.secretary AND c.side_of IS NULL AND c.dashboard_of IS NULL THEN c.title END AS conversation_title,
+    c.purged_at IS NULL AS conversation_open,
+    CASE WHEN t.conversation_id IS NULL THEN t.id::text END AS card_id,
+    CASE WHEN t.conversation_id IS NULL THEN t.title END AS card_title,
+    g.run_id::text AS run_id, g.what`;
+}
+
+/** gateway_log with who asked, without the rows of an incognito conversation. */
+function fromRows(sql: Queryable) {
+  return sql`
     FROM gateway_log g
     LEFT JOIN runs r ON r.id = g.run_id
     LEFT JOIN tasks t ON t.id = coalesce(g.task_id, r.task_id)
     LEFT JOIN conversations c ON c.id = t.conversation_id
-    WHERE NOT coalesce(c.incognito, false)
-      ${query.decision === undefined ? sql`` : sql`AND g.decision = ${query.decision}`}
-      ${query.kind === undefined ? sql`` : sql`AND g.target_kind = ${query.kind}`}
-      ${query.target === undefined ? sql`` : sql`AND g.target = ${query.target}`}
-      ${query.label === undefined ? sql`` : sql`AND g.label = ${query.label}::privacy_label`}
-      ${query.from === undefined ? sql`` : sql`AND g.ts >= ${query.from}`}
-      ${query.to === undefined ? sql`` : sql`AND g.ts < ${query.to}`}
-      ${query.before === undefined ? sql`` : sql`AND g.id < ${query.before}::bigint`}
-    ORDER BY g.id DESC
+    WHERE NOT coalesce(c.incognito, false)`;
+}
+
+/** The filters of a row; the outcome too unless the page is of groups, where it chooses groups. */
+function rowFilters(sql: Queryable, query: GatewayLogQuery, decision: boolean) {
+  return sql`
+    ${decision && query.decision !== undefined ? sql`AND g.decision = ${query.decision}` : sql``}
+    ${query.kind === undefined ? sql`` : sql`AND g.target_kind = ${query.kind}`}
+    ${query.target === undefined ? sql`` : sql`AND g.target = ${query.target}`}
+    ${query.label === undefined ? sql`` : sql`AND g.label = ${query.label}::privacy_label`}
+    ${query.from === undefined ? sql`` : sql`AND g.ts >= ${query.from}`}
+    ${query.to === undefined ? sql`` : sql`AND g.ts < ${query.to}`}
+    ${query.run === undefined ? sql`` : sql`AND g.run_id = ${query.run}::uuid`}`;
+}
+
+/**
+ * One page of groups (D-297): one per run, a row without a run alone, newest
+ * first by their newest row. «Bloccate» keeps the groups with a block in them,
+ * with all their counts; the other filters choose the rows counted.
+ */
+async function loadGroups(sql: Queryable, query: GatewayLogQuery): Promise<{ groups: GatewayLogGroup[]; next: string | null }> {
+  const rows = await sql<GroupRow[]>`
+    WITH chosen AS (
+      SELECT g.id, g.ts, g.run_id, g.decision, g.bytes_out, g.target_kind, g.target, g.label, g.locality
+      ${fromRows(sql)}
+      ${rowFilters(sql, query, false)}
+    ),
+    grouped AS (
+      SELECT max(id) AS last_id, count(*)::int AS n,
+        (count(*) FILTER (WHERE decision = 'allow'))::int AS allowed,
+        (count(*) FILTER (WHERE decision = 'block'))::int AS blocked,
+        sum(bytes_out)::text AS total_bytes, min(ts) AS first_ts,
+        count(DISTINCT (target_kind, target))::int AS targets,
+        max(label)::text AS top_label,
+        -- Allowed to the cloud with Privato or Segreto (not the address of a link): the line is red, as a row (D-296).
+        (count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud' AND label >= 'L2' AND target_kind <> 'link'))::int AS private_out
+      FROM chosen
+      GROUP BY coalesce(run_id::text, 'row:' || id::text)
+      HAVING true
+        ${query.decision === 'block' ? sql`AND count(*) FILTER (WHERE decision = 'block') > 0` : sql``}
+        ${query.decision === 'allow' ? sql`AND count(*) FILTER (WHERE decision = 'allow') > 0` : sql``}
+    )
+    SELECT ${rowColumns(sql)}, grouped.n, grouped.allowed, grouped.blocked, grouped.total_bytes, grouped.first_ts, grouped.targets, grouped.top_label, grouped.private_out
+    FROM grouped
+    JOIN gateway_log g ON g.id = grouped.last_id
+    LEFT JOIN runs r ON r.id = g.run_id
+    LEFT JOIN tasks t ON t.id = coalesce(g.task_id, r.task_id)
+    LEFT JOIN conversations c ON c.id = t.conversation_id
+    ${query.before === undefined ? sql`` : sql`WHERE grouped.last_id < ${query.before}::bigint`}
+    ORDER BY grouped.last_id DESC
     LIMIT ${query.limit + 1}`;
   const more = rows.length > query.limit;
-  const entries = rows.slice(0, query.limit).map(entryOf);
-  const page: GatewayLogPage = { entries, next: more ? (entries.at(-1)?.id ?? null) : null };
-  if (query.before === undefined) {
+  const groups = rows.slice(0, query.limit).map(groupOf);
+  return { groups, next: more ? (groups.at(-1)?.entry.id ?? null) : null };
+}
+
+/** One page of the log, newest first: rows, or groups with `group=run`. */
+export async function loadGatewayLog(sql: Queryable, query: GatewayLogQuery): Promise<GatewayLogPage> {
+  let page: GatewayLogPage;
+  if (query.group === 'run') {
+    const { groups, next } = await loadGroups(sql, query);
+    page = { entries: [], groups, next };
+  } else {
+    const rows = await sql<Row[]>`
+      SELECT ${rowColumns(sql)}
+      ${fromRows(sql)}
+      ${rowFilters(sql, query, true)}
+      ${query.before === undefined ? sql`` : sql`AND g.id < ${query.before}::bigint`}
+      ORDER BY g.id DESC
+      LIMIT ${query.limit + 1}`;
+    const more = rows.length > query.limit;
+    const entries = rows.slice(0, query.limit).map(entryOf);
+    page = { entries, next: more ? (entries.at(-1)?.id ?? null) : null };
+  }
+  if (query.before === undefined && query.run === undefined) {
     // The same rows as the list: a target seen only in an incognito conversation is not offered.
     const targets = await sql<{ target_kind: string; target: string }[]>`
       SELECT DISTINCT g.target_kind, g.target
-      FROM gateway_log g
-      LEFT JOIN runs r ON r.id = g.run_id
-      LEFT JOIN tasks t ON t.id = coalesce(g.task_id, r.task_id)
-      LEFT JOIN conversations c ON c.id = t.conversation_id
-      WHERE NOT coalesce(c.incognito, false)
+      ${fromRows(sql)}
       ORDER BY g.target_kind, g.target`;
     const seen = new Set<string>();
     page.targets = [];
@@ -276,6 +413,8 @@ export interface GatewayText {
   bytes?: number;
   /** The sha256 of the kept parts is the one in gateway_log; null when a part was cut. */
   verified?: boolean | null;
+  /** What it was about (D-297): the path, the search, the skill, the site; blocked exits too. Mac only. */
+  subject: string | null;
 }
 
 /** How long a text is kept, and read. */
@@ -288,8 +427,9 @@ export function gatewayLogId(raw: string): string | undefined {
 
 /** The text of one exit; undefined for a row that does not exist or belongs to an incognito conversation. */
 export async function loadGatewayText(sql: Queryable, id: string): Promise<GatewayText | undefined> {
-  const [row] = await sql<{ decision: string; locality: string; label: string; sha256: string | null; old: boolean; purged: boolean }[]>`
+  const [row] = await sql<{ decision: string; locality: string; label: string; sha256: string | null; old: boolean; purged: boolean; subject: string | null }[]>`
     SELECT g.decision, g.locality, g.label::text AS label, g.payload_sha256 AS sha256,
+      (SELECT s.subject FROM gateway_subjects s WHERE s.log_id = g.id AND s.created_at >= now() - make_interval(days => ${GATEWAY_TEXT_DAYS})) AS subject,
       g.ts < now() - make_interval(days => ${GATEWAY_TEXT_DAYS}) AS old,
       coalesce(c.purged_at IS NOT NULL, false) AS purged
     FROM gateway_log g
@@ -298,7 +438,7 @@ export async function loadGatewayText(sql: Queryable, id: string): Promise<Gatew
     WHERE g.id = ${id}::bigint AND NOT coalesce(c.incognito, false)`;
   if (row === undefined) return undefined;
   const label: Label = isLabel(row.label) ? row.label : 'L2';
-  const base = { id, label };
+  const base = { id, label, subject: row.subject };
   if (row.decision !== 'allow') return { ...base, state: 'blocked' };
   if (row.locality !== 'cloud') return { ...base, state: 'local' };
   if (label !== 'L0' && label !== 'L1') return { ...base, state: 'private' };
@@ -322,4 +462,26 @@ export async function loadGatewayText(sql: Queryable, id: string): Promise<Gatew
 export async function pruneGatewayTexts(sql: Queryable): Promise<number> {
   const [row] = await sql<{ count: number }[]>`SELECT gateway_texts_prune() AS count`;
   return row?.count ?? 0;
+}
+
+/**
+ * The subjects of the exits of one run (D-297, «Cosa era»), by row id: only
+ * from the Mac (`GET /api/gateway/log/run/:id/subjects`, in LOCAL_ONLY_PATHS),
+ * never of an incognito conversation, 30 days at most.
+ */
+export async function loadGatewaySubjects(sql: Queryable, runId: string): Promise<Record<string, string>> {
+  const rows = await sql<{ id: string; subject: string }[]>`
+    SELECT g.id::text AS id, s.subject
+    FROM gateway_log g
+    JOIN gateway_subjects s ON s.log_id = g.id
+    LEFT JOIN conversations c ON c.id = gateway_log_conversation(g.task_id, g.run_id)
+    WHERE g.run_id = ${runId}::uuid AND NOT coalesce(c.incognito, false)
+      AND s.created_at >= now() - make_interval(days => ${GATEWAY_TEXT_DAYS})
+    ORDER BY g.id`;
+  return Object.fromEntries(rows.map((row) => [row.id, row.subject]));
+}
+
+/** A run id as an address carries it, or undefined. */
+export function runIdOf(raw: string): string | undefined {
+  return UUID.test(raw) ? raw : undefined;
 }

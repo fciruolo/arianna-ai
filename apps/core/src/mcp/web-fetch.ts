@@ -49,7 +49,7 @@ export interface McpWeb {
   /** `[web] coder_sites`, read at each call: a change in the settings applies to runs already going. */
   sites(): readonly string[];
   /** `readPage` with the core's database: every address through the gateway. Never throws for a refusal. */
-  read(input: { address: string; consent: PageConsent; context: Context; meta: { taskId: string; runId: string; summary: string } }): Promise<FetchResult>;
+  read(input: { address: string; consent: PageConsent; context: Context; meta: { taskId: string; runId: string; summary: string; what?: string; subject?: string } }): Promise<FetchResult>;
   /** Writes the event `mcp.web_fetch`. A failure is reported, never a reason to answer differently. */
   event(event: PageEvent): Promise<void>;
 }

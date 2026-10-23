@@ -47,6 +47,40 @@ export interface GatewayMeta {
    * the references the user let go with «Apri» in this conversation.
    */
   saved?: { approved: ReadonlySet<string> };
+  /**
+   * What this exit is (D-297, «Cosa era»): a closed code of the code, L0,
+   * shown also from the phone (`brief`, `mcp-kb-read`, `mcp-kb-read-denied`…).
+   */
+  what?: string;
+  /**
+   * Its subject: the path of a note, the text of a search, the id of a skill,
+   * the site of a page. Free text that may be private: kept apart in
+   * gateway_subjects, blocked exits too, only for a row of a task or a run,
+   * never in incognito, read only from the Mac, 30 days at most.
+   */
+  subject?: string;
+}
+
+const WHAT = /^[a-z][a-z0-9-]{0,47}$/;
+
+/** The code of `meta.what`, or null when it is not one. */
+export function whatOf(what: string | undefined): string | null {
+  return what !== undefined && WHAT.test(what) ? what : null;
+}
+
+/** The subject as gateway_subjects keeps it: one line, no control character, 500 characters at most; null when empty. */
+export function subjectOf(subject: string | undefined): string | null {
+  if (subject === undefined) return null;
+  // Every control character (a new line, a NUL that PostgreSQL text refuses) becomes one space.
+  let flat = '';
+  for (const char of subject) {
+    const code = char.codePointAt(0) ?? 0;
+    const control = code < 0x20 || code === 0x7f;
+    if (!control) flat += char;
+    else if (!flat.endsWith(' ')) flat += ' ';
+  }
+  const line = Array.from(flat.trim()).slice(0, 500).join('');
+  return line === '' ? null : line;
 }
 
 /** Text forms of a payload; undefined when a fragment has none. */
@@ -190,18 +224,23 @@ export async function passGateway(
     WITH g AS (
     INSERT INTO gateway_log (
       task_id, run_id, target_kind, target, locality, label, decision, rule, reason,
-      bytes_out, payload_sha256, summary
+      bytes_out, payload_sha256, summary, what
     ) VALUES (
       ${meta.taskId ?? null}, ${meta.runId ?? null}, ${target.kind}, ${targetName(target)},
       ${localityOf(target)}, ${decision.label}::privacy_label, ${decision.decision}, ${decision.rule},
-      ${decision.reason}, ${bytesOut ?? null}, ${measured?.sha256 ?? null}, ${summary}
-    ) RETURNING id, task_id, run_id)
-    INSERT INTO gateway_texts (log_id, seq, body, bytes)
-    SELECT g.id, p.seq, decode(p.part ->> 'b', 'base64'), (p.part ->> 'n')::integer
-    FROM g, jsonb_array_elements(${kept}::text::jsonb) WITH ORDINALITY AS p(part, seq)
-    WHERE NOT EXISTS (
-      SELECT FROM conversations c
-      WHERE c.id = gateway_log_conversation(g.task_id, g.run_id) AND (c.incognito OR c.purged_at IS NOT NULL))`;
+      ${decision.reason}, ${bytesOut ?? null}, ${measured?.sha256 ?? null}, ${summary}, ${whatOf(meta.what)}
+    ) RETURNING id, task_id, run_id),
+    live AS (
+      SELECT g.id FROM g WHERE NOT EXISTS (
+        SELECT FROM conversations c
+        WHERE c.id = gateway_log_conversation(g.task_id, g.run_id) AND (c.incognito OR c.purged_at IS NOT NULL))),
+    texts AS (
+      INSERT INTO gateway_texts (log_id, seq, body, bytes)
+      SELECT live.id, p.seq, decode(p.part ->> 'b', 'base64'), (p.part ->> 'n')::integer
+      FROM live, jsonb_array_elements(${kept}::text::jsonb) WITH ORDINALITY AS p(part, seq))
+    INSERT INTO gateway_subjects (log_id, subject)
+    SELECT live.id, s.subject FROM live, (SELECT ${tied ? subjectOf(meta.subject) : null}::text AS subject) s
+    WHERE s.subject IS NOT NULL`;
   // Only now can an adapter spend it: the row is written.
   if (decision.decision === 'allow') markLogged(decision);
   return decision;
