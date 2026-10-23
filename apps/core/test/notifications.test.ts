@@ -9,7 +9,7 @@ import { DEFAULT_NOTIFICATIONS, type NotificationsConfig } from '@arianna/config
 import type { Sql } from '../src/db/client.ts';
 import { createNoticeBoard, createNotifier, noticeAllowed, noticeOf, type Notice, type NoticeOutcome } from '../src/notifications.ts';
 import { visibilityOf } from '../src/server/http.ts';
-import { createPusher, generateVapidKeys, PUSH_TEXTS, vapidKey, type PushKind } from '../src/voice/push.ts';
+import { createPusher, generateVapidKeys, PUSH_TEXTS, PushError, vapidKey, type PushKind } from '../src/voice/push.ts';
 import { decryptPush } from './support/push-decrypt.ts';
 
 const CONVERSATION = '11111111-2222-4333-8444-555555555555';
@@ -245,7 +245,7 @@ test('Web Push of a notice: the gateway sees only the fixed sentence of its kind
     { text: 'Arianna ha risposto', kind: 'reply' },
     { text: 'Arianna ti chiama', kind: 'call' },
   ]);
-  assert.deepEqual(Object.keys(posted[0] ?? {}).sort(), ['authorization', 'content-encoding', 'content-type', 'topic', 'ttl', 'urgency']);
+  assert.deepEqual(Object.keys(posted[0] ?? {}).sort(), ['authorization', 'content-encoding', 'content-type', 'ttl', 'urgency']);
   assert.equal(posted.at(0)?.['content-encoding'], 'aes128gcm');
   // Only the browser reads it: the kind and the conversation, nothing else.
   const read = (body: Buffer | undefined) => JSON.parse(decryptPush(body ?? Buffer.alloc(0), browser.getPrivateKey(), browser.getPublicKey(), auth).toString('utf8')) as unknown;
@@ -255,7 +255,8 @@ test('Web Push of a notice: the gateway sees only the fixed sentence of its kind
   // The same length whatever the kind and the conversation.
   assert.deepEqual(new Set(bodies.map((body) => body?.length)).size, 1);
   assert.equal(bodies[0]?.includes(Buffer.from(conversationId)), false);
-  assert.deepEqual([posted[0]?.topic, posted[0]?.ttl, posted[0]?.urgency], ['arianna-reply', '3600', 'normal']);
+  // No topic: Apple refuses it (400 BadWebPushTopic).
+  assert.deepEqual([posted[0]?.topic, posted[0]?.ttl, posted[0]?.urgency], [undefined, '3600', 'normal']);
   assert.deepEqual([posted[1]?.ttl, posted[1]?.urgency, posted[1]?.topic], ['30', 'high', undefined]);
   // The JWT names the push service and the contact, never a conversation.
   const claims = Buffer.from((posted[0]?.authorization ?? '').split('.')[1] ?? '', 'base64url').toString('utf8');
@@ -303,6 +304,37 @@ test('Web Push refused by the gateway: nothing is posted', async () => {
   });
   assert.equal(await pusher.notify('failure'), 0);
   assert.equal(posts, 0);
+});
+
+test('Web Push refused by the push service (403, 429…): an error with the status only, the subscription kept; a 201 is no error', async () => {
+  const keys = generateVapidKeys();
+  const endpoint = 'https://web.push.apple.com/QWxhZGRpbg';
+  const statements: string[] = [];
+  const sql = ((strings: TemplateStringsArray) => {
+    statements.push(strings.join('?'));
+    return Promise.resolve([{ endpoint, p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) }]);
+  }) as unknown as Sql;
+  for (const [status, sent, codes] of [[403, 0, ['status-403']], [429, 0, ['status-429']], [201, 1, []]] as const) {
+    const errors: unknown[] = [];
+    statements.length = 0;
+    const pusher = createPusher({
+      sql,
+      publicKey: keys.publicKey,
+      key: vapidKey(keys.publicKey, keys.privateKey),
+      subject: 'mailto:me@example.org',
+      gate: () => Promise.resolve(true),
+      post: () => Promise.resolve(status),
+      // The keys are not a point of the curve: that error is another one, left out here.
+      onError: (error) => {
+        if (error instanceof PushError) errors.push(error);
+      },
+    });
+    assert.equal(await pusher.notify('reply', { conversationId: randomUUID() }), sent);
+    assert.deepEqual(errors.map((error) => (error as PushError & { code: string }).code), codes);
+    for (const error of errors) assert.equal((error as Error).message.includes(endpoint), false);
+    // Unlike 404 and 410, a refusal does not forget the subscription.
+    assert.equal(statements.some((statement) => statement.includes('UPDATE')), false);
+  }
 });
 
 test('a failed task without a conversation does not notify: nothing to open', async () => {

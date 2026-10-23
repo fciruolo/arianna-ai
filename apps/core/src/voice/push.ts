@@ -1,5 +1,6 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, type KeyObject } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
+import type { TcpSocketConnectOpts } from 'node:net';
 
 import type { Sql } from '../db/client.ts';
 import { encryptPush } from './push-crypto.ts';
@@ -96,7 +97,7 @@ export type PushPoster = (endpoint: string, headers: Record<string, string>, bod
  * ending) timed out on every address (AggregateError ETIMEDOUT). A socket
  * option the https types do not list; Node passes it on to the connection.
  */
-const CONNECT: { autoSelectFamilyAttemptTimeout: number } = { autoSelectFamilyAttemptTimeout: 2_000 };
+const CONNECT: Pick<TcpSocketConnectOpts, 'autoSelectFamilyAttemptTimeout'> = { autoSelectFamilyAttemptTimeout: 2_000 };
 
 /** A POST over https, empty or with the encrypted payload; the answer status only. */
 export const postPush: PushPoster = (endpoint, headers, body) =>
@@ -195,9 +196,10 @@ export function createPusher(options: PusherOptions): Pusher {
         ({ endpoint }) => kind === 'call' || !skip.has(endpoint),
       );
       if (subscriptions.length === 0 || !(await options.gate(PUSH_TEXTS[kind], kind))) return 0;
-      // A call is worth only while it rings; a notice waits a while, and a newer
-      // one of the same kind replaces it at the push service (`topic`).
-      const timing = kind === 'call' ? { ttl: '30', urgency: 'high' } : { ttl: '3600', urgency: 'normal', topic: `arianna-${kind}` };
+      // A call is worth only while it rings; a notice waits a while. No `topic`:
+      // Apple refuses `arianna-<kind>` (400 BadWebPushTopic), and without it the
+      // push service does not learn the kind either.
+      const timing = kind === 'call' ? { ttl: '30', urgency: 'high' } : { ttl: '3600', urgency: 'normal' };
       // Only the kind, from a closed list, and the id the core gave the conversation: anything
       // that is not an id leaves as null, so no text can ride along (D-295).
       const conversationId = notifyOptions.conversationId !== undefined && notifyOptions.conversationId !== null && UUID.test(notifyOptions.conversationId) ? notifyOptions.conversationId : null;

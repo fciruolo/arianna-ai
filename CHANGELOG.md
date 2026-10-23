@@ -7,10 +7,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - Le notifiche push non vanno più in «tempo scaduto» quando il core è occupato a chiudere una risposta: ogni tentativo di collegamento al servizio di Apple ha 2 secondi invece di 250 millisecondi (D-295).
+- Le notifiche push arrivano sull'iPhone: Apple rifiutava l'intestazione «topic» (`BadWebPushTopic`), ora tolta; un rifiuto del servizio push compare nel log del core con il suo stato (D-295).
 
 ### Cambiato
 
-- Le notifiche push portano il tipo dell'avviso e la conversazione, cifrati per il solo browser iscritto (RFC 8291): sul telefono si legge «Arianna aspetta una tua decisione» e il tocco apre la conversazione giusta anche con la sessione scaduta; Apple e gli altri servizi push non leggono la conversazione (il tipo lo vedevano già dall'intestazione `topic`) (D-295).
+- Le notifiche push portano il tipo dell'avviso e la conversazione, cifrati per il solo browser iscritto (RFC 8291): sul telefono si legge «Arianna aspetta una tua decisione» e il tocco apre la conversazione giusta anche con la sessione scaduta; Apple e gli altri servizi push non leggono né il tipo né la conversazione: distinguono solo una chiamata da un avviso (D-295).
 
 ## [0.172.1] - 2026-10-23
 
