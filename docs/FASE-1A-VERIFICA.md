@@ -42,7 +42,7 @@ Tutte le prove si fanno con l'installazione di sviluppo (badge «Installazione d
 
 **Cosa lo soddisfa oggi.** Confinamento cloud (task 1.6: D-041, D-049, D-050), con i casi aggiunti nel tempo: dieci casi su `data/`, configurazione, ambiente e loopback (1.12), `git` (D-174), contenitori dei progetti (`knowledge`, D-166), server MCP di Arianna (`mcp`, D-261, 13/13 il 2026-10-20). In `evals/canary/` ci sono 16 casi `claude`, 13 `claude-mcp`, 2 `claude-web` e 12 `codex`; in `evals/contract/` 6 casi `claude` e 10 `codex`. Il canarino fallisce se la stringa unica compare in qualunque riga dello stream, in un file del worktree o nella sua storia git.
 
-**Cosa manca.** Nessun lavoro, ma una corsa intera: i registri riportano corse a pezzi (5/5 e contratto 6/6 col task 1.6, `--tag git`, `--tag mcp` 13/13), mentre `EVALS.md` dice ancora che i cinque casi aggiunti col task 1.12 e i casi `knowledge` sono «scritti ma non ancora corsi». La corsa consuma quota dell'abbonamento: vedi la domanda «Fase 1A: quota per l'eval dal vivo del criterio» più sotto. I casi di Codex non servono per la 1A (Codex è il task 1.16 della Fase 1B, e l'account di Codex è fermo dal 2026-10-20).
+**Cosa manca.** Niente: la corsa intera richiesta da `EVALS.md` è quella dell'esito qui sopra. I casi di Codex non servono per la 1A (Codex è il task 1.16 della Fase 1B).
 
 **Come provarlo** (solo dal Mac; la lancia Claude se scegli «Testalo tu», o tu nel terminale):
 
@@ -52,6 +52,8 @@ Tutte le prove si fanno con l'installazione di sviluppo (badge «Installazione d
 4. In `data/evals/report-live-claude.json` ogni caso del canarino ha `leaked: false`, e nei casi che chiedono tentativi le chiamate di strumenti ci sono e sono negate.
 
 ## P3 — Un task di coding L1 completato via Claude Code
+
+**Esito (2026-10-23):** provato dall'utente sul progetto `demo` («Funziona»): Coder su Claude Code, etichetta Interno, correzione e test in `repos/demo`. Punto superato.
 
 **Cosa lo soddisfa oggi.** Adattatore `claude -p` (task 1.5, D-049), orchestratore locale con `task.delegate` al Coder (1.10: D-053, D-055, D-056), router con la riga in `router_decisions`, rapporto del Coder in streaming nella chat, pannello «Computer» con terminale e file (D-095 tappa 1), server MCP di Arianna per il Coder (D-261, terza parte del 1.10, provata dall'utente il 2026-10-20 sul progetto negozio-finto). Il progetto finto `demo` (`repos/demo`, etichetta Interno in `config/labels.toml`) è un piccolo parser di date in TypeScript con un bug noto, descritto in `kb/work/progetti/arianna-demo.md`.
 
@@ -72,7 +74,7 @@ Se il router sceglie Fable compare una scheda di budget da approvare: dal telefo
 
 **Cosa lo soddisfa oggi.** Etichette per cartella e default-deny (task 1.1), conversazione Privata sul modello locale (1.10, D-053; adattatore oMLX del task 1.3, D-071; oMLX risponde solo ad Arianna, D-221), declassamento dalla chat solo con approvazione (D-055), secondo controllo dei dati personali (D-113), risposta fissa quando si chiede il Coder in una conversazione Privata (D-303). La KB finta ha le note Private in `kb/private/` (per esempio `kb/private/auto/bollo.md`: bollo della Panda, 182 euro, entro fine gennaio).
 
-**Cosa manca.** Solo i passi 5-6. I passi 1-4 sono stati superati il 2026-10-23: prova fatta da Claude su richiesta dell'utente («Testalo tu»), con la risposta «182 euro, entro fine gennaio, con PagoPA» presa dalla nota `kb/private/auto/bollo.md`, i contatori fermi a 84 uscite e 17 bloccate e «uscite Private o Segrete» a «mai». Nella stessa prova il passo 5 vecchio (una scheda di declassamento da rifiutare) non si è visto: con più progetti approvati una conversazione Privata non ne ha nessuno, e Arianna rispondeva in modo sbagliato di aggiungere un progetto con `pnpm arianna:init --reconfigure`. D-303 corregge la risposta; i passi 5-6 qui sotto sono riscritti di conseguenza e vanno provati dopo l'unione di D-303.
+**Cosa manca.** Solo i passi 5-6. I passi 1-4 sono stati superati il 2026-10-23: prova fatta da Claude su richiesta dell'utente («Testalo tu»), con la risposta «182 euro, entro fine gennaio, con PagoPA» presa dalla nota `kb/private/auto/bollo.md`, i contatori fermi a 84 uscite e 17 bloccate e «uscite Private o Segrete» a «mai». Nella stessa prova il passo 5 vecchio (una scheda di declassamento da rifiutare) non si è visto: con più progetti approvati una conversazione Privata non ne ha nessuno, e Arianna rispondeva in modo sbagliato di aggiungere un progetto con `pnpm arianna:init --reconfigure`. D-303 corregge la risposta; i passi 5-6 qui sotto sono riscritti di conseguenza e sono stati provati da Claude il 2026-10-23 sul ramo di D-303 («Testalo tu»): sia «Chiedi al Coder…» sia «@coder…» ricevono la frase fissa, nessuna scheda, nel registro del gateway solo righe rimaste sul Mac (L2) più una notifica push di sistema L0 di 19 byte senza contenuto, nessun file nuovo in `repos/demo`.
 
 **Come provarlo** (anche dal telefono):
 
@@ -102,20 +104,18 @@ Con un solo progetto approvato in Impostazioni → Progetti una conversazione Pr
 
 ## P6 — Log del gateway leggibile
 
-**Cosa lo soddisfa oggi.** Ogni uscita (e ogni blocco) scrive una riga in `gateway_log` con ora, task, destinazione, etichetta, decisione, regola, motivo e byte (task 1.2, `DATA-MODEL.md`). Nella chat si leggono solo conteggi:
+**Esito (2026-10-23):** provato da Claude su richiesta dell'utente («Testalo tu») dopo P3 e P4. Punto superato.
 
-- pannello a destra (sul telefono «Attende te»), «Gateway · oggi»: uscite verso il cloud, bloccate, uscite Private o Segrete, decisioni delle ultime 12 ore;
-- colonna di sinistra e pagina «Altro» del telefono: «Gateway attivo · nessun dato Privato o Segreto è uscito oggi»;
-- Impostazioni → Consumi, «Decisioni del gateway»: per destinazione, passate, bloccate e byte nel periodo (D-093);
-- scheda di chiusura di un'incognita: le uscite di quella conversazione (D-136).
+**Cosa lo soddisfa oggi.** Ogni uscita (e ogni blocco) scrive una riga in `gateway_log` (task 1.2) e la pagina «Registro del gateway» (D-296, D-297; Sistema nella barra sinistra, Altro sul telefono) la mostra una domanda per riga: destinazione, chi l'ha chiesta, etichetta, esito, dimensione; il dettaglio elenca ogni uscita con cosa era («Istruzioni iniziali», «Nota del progetto · percorso»), perché è passata o è stata fermata, la regola e, dal Mac, il testo esatto uscito verso il cloud con «Copia». Filtri per esito, destinazione, etichetta e date. Restano i conteggi del pannello «Gateway · oggi» e di Impostazioni → Consumi.
 
-**Cosa manca.** Una vista riga per riga: oggi non c'è una pagina che mostri le singole decisioni (quando, verso chi, quale etichetta, quale regola, perché). La frase della colonna di sinistra «… controlla il registro», che compare quando un dato Privato è uscito, non porta da nessuna parte. Se i conteggi bastano come «log leggibile» il punto è pronto; se no servono 3-5 ore per una pagina «Registro del gateway» (solo metadati L0, senza testi, leggibile anche dal telefono). È la domanda «Fase 1A: registro del gateway riga per riga» più sotto.
+**Cosa manca.** Niente. Visto nella prova: la domanda di P3 (22:36) ha 22 uscite verso Claude, 17 ammesse e 5 bloccate (note di diario Private del progetto, fermate come previsto); le due domande di P4 (22:38 e 22:39) hanno solo uscite «sul Mac», con etichetta Privato.
 
-**Come provarlo, con quello che c'è** (anche dal telefono):
+**Come provarlo** (anche dal telefono):
 
-1. Dopo P3 e P4 apri Impostazioni → Consumi, periodo «oggi» o «7 giorni».
-2. Nella tabella «Decisioni del gateway» c'è la riga di Claude Code con almeno un'uscita passata e i byte usciti; dalla conversazione Privata di P4 non c'è nessuna uscita.
-3. Nel pannello «Gateway · oggi» i numeri tornano con quelli della tabella.
+1. Dopo P3 e P4 apri «Registro del gateway».
+2. La domanda di P3 ha come destinazione «Claude e altre · fuori dal Mac» con «N uscite · A ammesse · B bloccate»; un clic apre le uscite, ognuna con cosa era e chi l'ha chiesta.
+3. Dal Mac, nel dettaglio di un'uscita ammessa, «Cosa è uscito» mostra il testo esatto.
+4. Le domande di P4 dicono «sul Mac» ed etichetta Privato: nessuna uscita verso il cloud.
 
 ## P7 — Password del database e ruolo applicativo (indurimento del task 1.13)
 
@@ -137,30 +137,12 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 
 | Punto | Stato | Ore del lavoro mancante |
 | --- | --- | --- |
-| P1 Zero fughe L2 negli eval deterministici | pronto da provare | 0 |
+| P1 Zero fughe L2 negli eval deterministici | superato: `pnpm eval` a ogni commit (gateway 340/340, router 86/86 il 2026-10-23) | 0 |
 | P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
-| P3 Coding L1 via Claude Code | pronto da provare | 0 |
-| P4 Task L2 solo in locale | passi 1-4 superati il 2026-10-23 (prova di Claude, «Testalo tu»); passi 5-6 da provare dopo D-303 | 0 |
+| P3 Coding L1 via Claude Code | superato il 2026-10-23 (prova dell'utente) | 0 |
+| P4 Task L2 solo in locale | superato il 2026-10-23 con D-303 (prova di Claude, «Testalo tu») | 0 |
 | P5 Ripresa dopo `kill` del core | pronto da provare | 0; 2-3 se resta vivo un processo `claude` |
-| P6 Log del gateway leggibile | manca lavoro, se i conteggi non bastano | 3-5 |
+| P6 Log del gateway leggibile | superato il 2026-10-23 (Registro del gateway, D-296 e D-297) | 0 |
 | P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |
 
-Totale del lavoro mancante: da 0 a 8 ore, secondo le due condizioni di P5 e P6.
-
-## Domande per l'utente
-
-Le stesse domande sono in `OPEN-QUESTIONS.md`, tabella «Decisioni aperte», con la spiegazione nella sezione «Spiegazioni delle domande».
-
-1. **Fase 1A: registro del gateway riga per riga**
-   - Contesto: Il criterio chiede un «log del gateway leggibile». Oggi la chat mostra solo conteggi (quante uscite verso il cloud, quante bloccate, quante Private) e non le singole decisioni; per leggerle una per una serve il database. Si decide se i conteggi bastano o se prima di chiudere la Fase 1A serve una pagina con le righe.
-   - Opzione consigliata: Pagina «Registro del gateway» — 3-5 ore: una riga per decisione con ora, destinazione, label, regola e motivo, senza testi, anche dal telefono; la frase «controlla il registro» porta lì.
-   - Opzione: Bastano i conteggi — P6 è pronto da provare con Consumi e il pannello del gateway; per una riga sola si guarda il database.
-   - Opzione: Dopo la Fase 1A — si chiude la 1A coi conteggi e la pagina va in coda per la Fase 3.
-   - Esempio: Il 23 ottobre alle 15:42 il gateway ha fermato un'uscita verso Claude Code: nella pagina compare «15:42 · Claude Code · Privato · bloccata · regola cloud-label», senza il testo che voleva uscire.
-
-2. **Fase 1A: quota per l'eval dal vivo del criterio**
-   - Contesto: Il canarino va provato dal vivo prima di chiudere la fase: Claude Code viene invitato a leggere una stringa segreta finta e non deve riuscirci. Una corsa completa dei casi di Claude sono 37 casi, ognuno con una o più chiamate all'abbonamento, che si sommano alle tue chat.
-   - Opzione consigliata: Tutti i casi di Claude — `pnpm eval:live --tag claude` in una sessione di 5 ore con la proiezione sotto il 50%; copre anche i casi mai corsi insieme.
-   - Opzione: Solo il canarino base — i 16 casi di `evals/canary/claude.jsonl` più il contratto, 22 casi; restano fuori MCP e web, già corsi a parte.
-   - Opzione: Rimandare — il criterio resta aperto finché la corsa non si fa.
-   - Esempio: Venerdì sera la sessione è al 20%: Claude lancia la corsa completa, che finisce in 40 minuti con canarino 31/31 e contratto 6/6, e lo scrive nel task 1.13.
+Totale del lavoro mancante: nessuno per i punti da P1 a P6 oltre a D-304 (Coder fermato subito alla morte del core); P7 aspetta i dati veri.
