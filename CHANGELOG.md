@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.171.0] - 2026-10-23
+
 ### Aggiunto
 
 - «Cosa è uscito» nel dettaglio di una riga del Registro del gateway: il testo esatto di ogni uscita ammessa verso il cloud fino a Interno (istruzioni, estratti, file, risultati degli strumenti), in un riquadro scorrevole con «Copia», dimensione e controllo dell’impronta del registro; mai per un’uscita bloccata («Fermata: conteneva un dato Privato/Segreto») né in incognito; si cancella con la conversazione e da solo dopo 30 giorni, e si legge solo dal Mac (D-297).
