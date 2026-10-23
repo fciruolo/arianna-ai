@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Le notifiche push portano il tipo dell'avviso e la conversazione, cifrati per il solo browser iscritto (RFC 8291): sul telefono si legge «Arianna aspetta una tua decisione» e il tocco apre la conversazione giusta anche con la sessione scaduta; Apple e gli altri servizi push non leggono la conversazione (il tipo lo vedevano già dall'intestazione `topic`) (D-295).
+
 ## [0.172.1] - 2026-10-23
 
 ### Corretto

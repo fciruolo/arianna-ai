@@ -118,9 +118,10 @@ export interface NotifierOptions {
   /**
    * The push of the moment, read at each event: undefined without
    * `[push]` (D-292). `helper`: the helper of the Mac shows this notice, so the
-   * browsers of the Mac are left out (D-128).
+   * browsers of the Mac are left out (D-128). `conversationId` travels
+   * encrypted for the phone (D-295).
    */
-  push: () => ((kind: PushKind, helper: boolean) => Promise<unknown>) | undefined;
+  push: () => ((kind: PushKind, helper: boolean, conversationId: string) => Promise<unknown>) | undefined;
   board: NoticeBoard;
   now?: () => Date;
   onError?: (error: unknown) => void;
@@ -153,7 +154,7 @@ export function createNotifier(options: NotifierOptions): Notifier {
     if (push === undefined || options.visiblePages() > 0) return 'pages';
     // Recorded before the push: the service worker asks for it as soon as the push arrives.
     options.board.record(notice);
-    await push(found.kind, helper);
+    await push(found.kind, helper, conversationId);
     return 'push';
   }
 

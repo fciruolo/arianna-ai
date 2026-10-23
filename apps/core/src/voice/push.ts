@@ -2,20 +2,26 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, t
 import { request as httpsRequest } from 'node:https';
 
 import type { Sql } from '../db/client.ts';
+import { encryptPush } from './push-crypto.ts';
 
 /**
- * Web Push without content (D-066, choice 7; I-1): the request carries no
- * body, so no RFC 8291 encryption is needed, only the VAPID header (RFC 8292)
- * signed ES256 with node:crypto. The service worker writes the notification
- * with a fixed sentence: it asks the core which kind it is (a call, a reply,
- * an approval, a failed task) over the same connection the chat uses, never
- * through the push service. The push services are cloud: the core sends only
- * after the gateway allowed the fixed L0 sentence of that kind on channel `push`.
+ * Web Push (D-066, choice 7; I-1) with the VAPID header (RFC 8292) signed
+ * ES256 with node:crypto. Since D-295 the request carries the kind of the
+ * notice and the id of its conversation, encrypted for the subscribed browser
+ * alone (RFC 8291, push-crypto.ts): the push service carries bytes it cannot
+ * read, and the phone knows what happened with its session expired. The
+ * service worker writes a fixed sentence for the kind, never a text; without
+ * a readable payload it asks the core, as before. The push services are
+ * cloud: the core sends only after the gateway allowed the fixed L0 sentence
+ * of that kind on channel `push`.
  */
 
 /** The push services of the browsers; any other endpoint is refused (no request to arbitrary hosts). */
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^([a-z0-9-]+\.)*push\.apple\.com$/, /^updates\.push\.services\.mozilla\.com$/, /^([a-z0-9-]+\.)*notify\.windows\.com$/];
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Every payload as long as the longest: its length does not tell the kind or whether a conversation is named. */
+const PAYLOAD_BYTES = 96;
 
 export class PushError extends Error {
   override name = 'PushError';
@@ -83,12 +89,12 @@ export function vapidHeader(endpoint: string, subject: string, publicKey: string
   return `vapid t=${header}.${claims}.${b64url(signature)}, k=${publicKey}`;
 }
 
-export type PushPoster = (endpoint: string, headers: Record<string, string>) => Promise<number>;
+export type PushPoster = (endpoint: string, headers: Record<string, string>, body?: Buffer) => Promise<number>;
 
-/** An empty POST over https; the answer status only. */
-export const postPush: PushPoster = (endpoint, headers) =>
+/** A POST over https, empty or with the encrypted payload; the answer status only. */
+export const postPush: PushPoster = (endpoint, headers, body) =>
   new Promise((resolve, reject) => {
-    const req = httpsRequest(endpoint, { method: 'POST', headers: { ...headers, 'content-length': '0' }, timeout: 10_000 }, (res) => {
+    const req = httpsRequest(endpoint, { method: 'POST', headers: { ...headers, 'content-length': String(body?.length ?? 0) }, timeout: 10_000 }, (res) => {
       res.resume();
       res.on('end', () => {
         resolve(res.statusCode ?? 0);
@@ -96,7 +102,7 @@ export const postPush: PushPoster = (endpoint, headers) =>
     });
     req.on('timeout', () => req.destroy(new PushError('push service timeout')));
     req.on('error', reject);
-    req.end();
+    req.end(body);
   });
 
 /** 404 and 410: the subscription is gone and must be forgotten. */
@@ -113,8 +119,11 @@ export interface Pusher {
   subscribe(subscription: Subscription, deviceId?: string): Promise<void>;
   /** `deviceId`: from the phone, only a subscription of that device. */
   unsubscribe(endpoint: string, deviceId?: string): Promise<void>;
-  /** An empty push to every subscribed browser, after the gateway allowed the fixed sentence of `kind`. */
-  notify(kind: PushKind, options?: { skip?: ReadonlySet<string> }): Promise<number>;
+  /**
+   * A push to every subscribed browser, after the gateway allowed the fixed
+   * sentence of `kind`: kind and conversation encrypted for each (D-295).
+   */
+  notify(kind: PushKind, options?: { skip?: ReadonlySet<string>; conversationId?: string | null }): Promise<number>;
 }
 
 /** The fixed sentences the service worker shows (public/sw.js); what the gateway checks on channel `push`. */
@@ -140,6 +149,15 @@ export interface PusherOptions {
 export function createPusher(options: PusherOptions): Pusher {
   const { sql } = options;
   const post = options.post ?? postPush;
+  // Keys that are not a point of the curve (a browser of before, a broken row): an empty push, and the service worker asks the core.
+  const encrypted = (payload: Buffer, p256dh: string, auth: string): Buffer | undefined => {
+    try {
+      return encryptPush(payload, p256dh, auth);
+    } catch (error) {
+      options.onError?.(error);
+      return undefined;
+    }
+  };
   return {
     publicKey: options.publicKey,
     async subscribe(subscription, deviceId) {
@@ -160,8 +178,8 @@ export function createPusher(options: PusherOptions): Pusher {
       const skip = notifyOptions.skip ?? new Set<string>();
       // The browsers of the Mac while its helper shows the notice (D-128): left out, never a call.
       const subscriptions = (
-        await sql<{ endpoint: string }[]>`
-          SELECT s.endpoint FROM push_subscriptions s
+        await sql<{ endpoint: string; p256dh: string; auth: string }[]>`
+          SELECT s.endpoint, s.p256dh, s.auth FROM push_subscriptions s
           WHERE s.removed_at IS NULL
             -- A phone unlinked meanwhile (D-292) gets nothing, whatever the race with its subscription.
             AND (s.device_id IS NULL OR EXISTS (SELECT FROM remote_devices d WHERE d.id = s.device_id AND d.revoked_at IS NULL))
@@ -173,15 +191,25 @@ export function createPusher(options: PusherOptions): Pusher {
       // A call is worth only while it rings; a notice waits a while, and a newer
       // one of the same kind replaces it at the push service (`topic`).
       const timing = kind === 'call' ? { ttl: '30', urgency: 'high' } : { ttl: '3600', urgency: 'normal', topic: `arianna-${kind}` };
+      // Only the kind, from a closed list, and the id the core gave the conversation: anything
+      // that is not an id leaves as null, so no text can ride along (D-295).
+      const conversationId = notifyOptions.conversationId !== undefined && notifyOptions.conversationId !== null && UUID.test(notifyOptions.conversationId) ? notifyOptions.conversationId : null;
+      const payload = Buffer.from(JSON.stringify({ kind, conversationId }).padEnd(PAYLOAD_BYTES, ' '));
       let sent = 0;
-      for (const { endpoint } of subscriptions) {
+      for (const { endpoint, p256dh, auth } of subscriptions) {
         // The table only says https: the host is checked again before anything is sent.
         if (!isPushEndpoint(endpoint)) continue;
         try {
-          const status = await post(endpoint, {
-            ...timing,
-            authorization: vapidHeader(endpoint, options.subject, options.publicKey, options.key),
-          });
+          const body = encrypted(payload, p256dh, auth);
+          const status = await post(
+            endpoint,
+            {
+              ...timing,
+              ...(body === undefined ? {} : { 'content-encoding': 'aes128gcm', 'content-type': 'application/octet-stream' }),
+              authorization: vapidHeader(endpoint, options.subject, options.publicKey, options.key),
+            },
+            body,
+          );
           if (isGone(status)) await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint}`;
           else if (status >= 200 && status < 300) sent += 1;
         } catch (error) {

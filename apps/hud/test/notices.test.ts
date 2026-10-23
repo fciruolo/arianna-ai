@@ -3,6 +3,7 @@
 // of a conversation.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 
 import { connectLive, type SocketLike } from '../src/lib/live.ts';
@@ -55,11 +56,63 @@ test('the fixed words, the link and the tag shared with the service worker', () 
   assert.ok(SW.includes('`arianna-${notice.kind}-${notice.conversationId ?? \'home\'}`'));
 });
 
-test('the service worker never reads a push payload, and asks the core only for kind and conversation', () => {
-  assert.doesNotMatch(SW, /event\.data/);
+test('the service worker writes only fixed sentences, never a field of the notice', () => {
   assert.match(SW, /fetch\('\/api\/notifications\/latest'/);
   assert.doesNotMatch(SW, /title:\s*notice\./);
   assert.doesNotMatch(SW, /body:\s*notice\./);
+});
+
+/** Runs public/sw.js with a fake worker scope: the notifications it shows and the requests to the core. */
+async function pushTo(data: unknown, latest: unknown = null): Promise<{ shown: { title: string; options: { body: string; tag: string; data: { url: string | null } } }[]; asked: number }> {
+  const handlers = new Map<string, (event: unknown) => void>();
+  const shown: { title: string; options: { body: string; tag: string; data: { url: string | null } } }[] = [];
+  let asked = 0;
+  const scope = {
+    addEventListener: (type: string, handler: (event: unknown) => void) => handlers.set(type, handler),
+    registration: { showNotification: (title: string, options: never) => shown.push({ title, options }) },
+    skipWaiting: () => Promise.resolve(),
+  };
+  const fetchCore = () => {
+    asked += 1;
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ notice: latest }) });
+  };
+  runInNewContext(SW, { self: scope, clients: {}, fetch: fetchCore });
+  let done: Promise<unknown> = Promise.resolve();
+  handlers.get('push')?.({ data, waitUntil: (work: Promise<unknown>) => (done = work) });
+  await done;
+  return { shown, asked };
+}
+
+const payload = (value: unknown) => ({ json: () => value });
+
+test('the service worker shows the kind the push carried (D-295), without asking the core', async () => {
+  const { shown, asked } = await pushTo(payload({ kind: 'approval', conversationId: ID }));
+  assert.equal(asked, 0);
+  assert.equal(shown.at(0)?.title, NOTICE_TITLE.approval);
+  assert.equal(shown.at(0)?.options.body, NOTICE_BODY.approval);
+  assert.equal(shown.at(0)?.options.tag, `arianna-approval-${ID}`);
+  assert.equal(shown.at(0)?.options.data.url, `/c/${ID}`);
+});
+
+test('the service worker: a text in the payload never shows, a bad id opens the chat', async () => {
+  const { shown } = await pushTo(payload({ kind: 'reply', conversationId: '../x', title: 'la fattura', body: 'la fattura' }));
+  assert.equal(shown.at(0)?.title, NOTICE_TITLE.reply);
+  assert.equal(shown.at(0)?.options.data.url, '/');
+  assert.doesNotMatch(JSON.stringify(shown), /fattura/);
+});
+
+test('the service worker without a readable payload asks the core, and with nothing writes the generic notice', async () => {
+  const asked = await pushTo(null, { kind: 'failure', conversationId: OTHER });
+  assert.equal(asked.asked, 1);
+  assert.equal(asked.shown.at(0)?.title, NOTICE_TITLE.failure);
+  const broken = await pushTo({ json: () => { throw new SyntaxError('not json'); } }, null);
+  assert.equal(broken.asked, 1);
+  assert.equal(broken.shown.at(0)?.title, 'Arianna');
+  const listed = await pushTo(payload({ kind: ['call'], conversationId: ID }), null);
+  assert.equal(listed.shown.at(0)?.title, 'Arianna');
+  const unknown = await pushTo(payload({ kind: 'secret', conversationId: ID }), null);
+  assert.equal(unknown.asked, 1);
+  assert.equal(unknown.shown.at(0)?.title, 'Arianna');
 });
 
 test('the page tells the core whether it is in view, only once the socket is ready', () => {

@@ -314,8 +314,8 @@ const voice = createVoiceSwitch({
   onError: report,
 });
 
-// Web Push (D-066, choice 7; on its own since D-292): a notification without
-// content when no chat is open, for the chat notifications and the calls,
+// Web Push (D-066, choice 7; on its own since D-292): a notification with only
+// its kind and conversation, encrypted for the browser (D-295), when no chat is open, for the chat notifications and the calls,
 // with the voice off too. Keys of [push] or of [voice.push]; a change applies
 // without a restart.
 // Undefined until the first application: the start of the core is not a change.
@@ -1633,7 +1633,7 @@ const notifier = createNotifier({
   },
   push: () => {
     const pusher = push.pusher();
-    return pusher === undefined ? undefined : (kind, helper) => pusher.notify(kind, helper ? { skip: server.macEndpoints() } : {});
+    return pusher === undefined ? undefined : (kind, helper, conversationId) => pusher.notify(kind, { conversationId, ...(helper ? { skip: server.macEndpoints() } : {}) });
   },
   board: notices,
   onError: report,

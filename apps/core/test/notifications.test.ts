@@ -1,7 +1,7 @@
 // Notifications of the web chat (I-1): which events notify, when, where,
 // and that nothing but a kind and a conversation id ever leaves.
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createECDH, randomBytes, randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 
 import { DEFAULT_NOTIFICATIONS, type NotificationsConfig } from '@arianna/config';
@@ -10,6 +10,7 @@ import type { Sql } from '../src/db/client.ts';
 import { createNoticeBoard, createNotifier, noticeAllowed, noticeOf, type Notice, type NoticeOutcome } from '../src/notifications.ts';
 import { visibilityOf } from '../src/server/http.ts';
 import { createPusher, generateVapidKeys, PUSH_TEXTS, vapidKey, type PushKind } from '../src/voice/push.ts';
+import { decryptPush } from './support/push-decrypt.ts';
 
 const CONVERSATION = '11111111-2222-4333-8444-555555555555';
 const OTHER = '99999999-2222-4333-8444-555555555555';
@@ -30,6 +31,7 @@ function harness(options: { config?: NotificationsConfig; visible?: number; push
   const helped: Notice[] = [];
   let helpers = options.helpers ?? 0;
   const pushes: PushKind[] = [];
+  const pushedTo: string[] = [];
   const board = createNoticeBoard();
   let config = options.config ?? DEFAULT_NOTIFICATIONS;
   let visible = options.visible ?? 0;
@@ -47,8 +49,9 @@ function harness(options: { config?: NotificationsConfig; visible?: number; push
     push: () =>
       options.push === false
         ? undefined
-        : (kind) => {
+        : (kind, _helper, conversationId) => {
             pushes.push(kind);
+            pushedTo.push(conversationId);
             return Promise.resolve(1);
           },
     board,
@@ -59,6 +62,7 @@ function harness(options: { config?: NotificationsConfig; visible?: number; push
     broadcasts,
     helped,
     pushes,
+    pushedTo,
     board,
     setReading: (next: string[]) => {
       reading = next;
@@ -114,7 +118,7 @@ test('noticeAllowed: kinds off, quiet hours across midnight and within a day', (
 });
 
 test('no page in view: the pages are told and the push goes; the board keeps kind and conversation only', async () => {
-  const { notifier, broadcasts, pushes, board } = harness();
+  const { notifier, broadcasts, pushes, pushedTo, board } = harness();
   assert.equal(await notifier.handle(reply), 'push');
   assert.equal(await notifier.handle(approval), 'push');
   assert.deepEqual(broadcasts, [
@@ -122,6 +126,8 @@ test('no page in view: the pages are told and the push goes; the board keeps kin
     { kind: 'approval', conversationId: OTHER },
   ]);
   assert.deepEqual(pushes, ['reply', 'approval']);
+  // The conversation goes with the push, encrypted for the phone (D-295).
+  assert.deepEqual(pushedTo, [CONVERSATION, OTHER]);
   assert.deepEqual(board.latest(), { kind: 'approval', conversationId: OTHER });
   assert.deepEqual(Object.keys(board.latest() ?? {}).sort(), ['conversationId', 'kind']);
 });
@@ -203,12 +209,16 @@ test('visibilityOf: the only frame a page may send', () => {
   }
 });
 
-test('Web Push of a notice: the gateway sees only the fixed sentence of its kind; the request has no body, only headers', async () => {
+test('Web Push of a notice: the gateway sees only the fixed sentence of its kind; the body is kind and conversation, encrypted for the browser (D-295)', async () => {
   const keys = generateVapidKeys();
   const gated: { text: string; kind: PushKind }[] = [];
   const posted: Record<string, string>[] = [];
+  const bodies: (Buffer | undefined)[] = [];
+  const browser = createECDH('prime256v1');
+  browser.generateKeys();
+  const auth = randomBytes(16);
   // Only the SELECT of the subscriptions runs in notify.
-  const sql = (() => Promise.resolve([{ endpoint: 'https://fcm.googleapis.com/fcm/send/abc' }])) as unknown as Sql;
+  const sql = (() => Promise.resolve([{ endpoint: 'https://fcm.googleapis.com/fcm/send/abc', p256dh: browser.getPublicKey('base64url'), auth: auth.toString('base64url') }])) as unknown as Sql;
   const pusher = createPusher({
     sql,
     publicKey: keys.publicKey,
@@ -218,24 +228,62 @@ test('Web Push of a notice: the gateway sees only the fixed sentence of its kind
       gated.push({ text, kind });
       return Promise.resolve(true);
     },
-    post: (_endpoint, headers) => {
+    post: (_endpoint, headers, body) => {
       posted.push(headers);
+      bodies.push(body);
       return Promise.resolve(201);
     },
   });
-  assert.equal(await pusher.notify('reply'), 1);
+  const conversationId = randomUUID();
+  assert.equal(await pusher.notify('reply', { conversationId }), 1);
   assert.equal(await pusher.notify('call'), 1);
+  // Not an id: it leaves as null, a text never rides along.
+  assert.equal(await pusher.notify('approval', { conversationId: 'la fattura di Rossi' }), 1);
+  assert.deepEqual(gated.slice(2).map(({ kind }) => kind), ['approval']);
+  gated.length = 2;
   assert.deepEqual(gated, [
     { text: 'Arianna ha risposto', kind: 'reply' },
     { text: 'Arianna ti chiama', kind: 'call' },
   ]);
-  assert.deepEqual(Object.keys(posted[0] ?? {}).sort(), ['authorization', 'topic', 'ttl', 'urgency']);
+  assert.deepEqual(Object.keys(posted[0] ?? {}).sort(), ['authorization', 'content-encoding', 'content-type', 'topic', 'ttl', 'urgency']);
+  assert.equal(posted.at(0)?.['content-encoding'], 'aes128gcm');
+  // Only the browser reads it: the kind and the conversation, nothing else.
+  const read = (body: Buffer | undefined) => JSON.parse(decryptPush(body ?? Buffer.alloc(0), browser.getPrivateKey(), browser.getPublicKey(), auth).toString('utf8')) as unknown;
+  assert.deepEqual(read(bodies[0]), { kind: 'reply', conversationId });
+  assert.deepEqual(read(bodies[1]), { kind: 'call', conversationId: null });
+  assert.deepEqual(read(bodies[2]), { kind: 'approval', conversationId: null });
+  // The same length whatever the kind and the conversation.
+  assert.deepEqual(new Set(bodies.map((body) => body?.length)).size, 1);
+  assert.equal(bodies[0]?.includes(Buffer.from(conversationId)), false);
   assert.deepEqual([posted[0]?.topic, posted[0]?.ttl, posted[0]?.urgency], ['arianna-reply', '3600', 'normal']);
   assert.deepEqual([posted[1]?.ttl, posted[1]?.urgency, posted[1]?.topic], ['30', 'high', undefined]);
   // The JWT names the push service and the contact, never a conversation.
   const claims = Buffer.from((posted[0]?.authorization ?? '').split('.')[1] ?? '', 'base64url').toString('utf8');
   assert.deepEqual(Object.keys(JSON.parse(claims) as object).sort(), ['aud', 'exp', 'sub']);
   assert.deepEqual(Object.values(PUSH_TEXTS), ['Arianna ti chiama', 'Arianna ha risposto', 'Arianna aspetta una tua decisione', 'Un lavoro è fallito', 'Arianna ha un promemoria']);
+});
+
+test('Web Push to keys that are not a point of the curve: an empty push, the service worker asks the core', async () => {
+  const keys = generateVapidKeys();
+  const posted: { headers: Record<string, string>; body: Buffer | undefined }[] = [];
+  const errors: unknown[] = [];
+  const sql = (() => Promise.resolve([{ endpoint: 'https://fcm.googleapis.com/fcm/send/abc', p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) }])) as unknown as Sql;
+  const pusher = createPusher({
+    sql,
+    publicKey: keys.publicKey,
+    key: vapidKey(keys.publicKey, keys.privateKey),
+    subject: 'mailto:me@example.org',
+    gate: () => Promise.resolve(true),
+    post: (_endpoint, headers, body) => {
+      posted.push({ headers, body });
+      return Promise.resolve(201);
+    },
+    onError: (error) => errors.push(error),
+  });
+  assert.equal(await pusher.notify('approval', { conversationId: randomUUID() }), 1);
+  assert.equal(posted[0]?.body, undefined);
+  assert.equal(posted[0]?.headers['content-encoding'], undefined);
+  assert.equal(errors.length, 1);
 });
 
 test('Web Push refused by the gateway: nothing is posted', async () => {

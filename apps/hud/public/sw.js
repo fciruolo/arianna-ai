@@ -1,8 +1,10 @@
 // Service worker of the web chat (D-066, I-1): the notifications of Web Push.
-// A push carries no content. The worker asks the core what it was about (a
-// call, a reply, an approval, a failed task, a reminder) over the chat's own connection,
-// never through the push service, and writes a fixed sentence: never the text
-// or the title of a conversation.
+// A push carries only what it was about (a call, a reply, an approval, a
+// failed task, a reminder) and the id of its conversation, encrypted for this
+// browser alone (D-295): the phone knows it with its session expired too.
+// Without a readable payload the worker asks the core, over the chat's own
+// connection. It writes a fixed sentence: never the text or the title of a
+// conversation.
 const TEXTS = {
   call: { title: 'Arianna ti chiama', body: 'Apri la chat per rispondere.' },
   reply: { title: 'Arianna ha risposto', body: 'Clicca per aprire la conversazione.' },
@@ -15,21 +17,35 @@ const ICON = '/notification-icon.png';
 const UNKNOWN = { title: 'Arianna', body: 'Apri la chat per vedere le novità.' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function latest() {
+/** Kind and conversation, checked: anything else is no notice. */
+function checked(notice) {
+  if (notice === null || typeof notice !== 'object' || typeof notice.kind !== 'string' || !Object.hasOwn(TEXTS, notice.kind)) return null;
+  const conversationId = typeof notice.conversationId === 'string' && UUID.test(notice.conversationId) ? notice.conversationId : null;
+  return { kind: notice.kind, conversationId };
+}
+
+/** The payload the browser decrypted (D-295); null when there is none or it is not ours. */
+function carried(data) {
   try {
-    const response = await fetch('/api/notifications/latest', { cache: 'no-store', credentials: 'same-origin' });
-    if (!response.ok) return null;
-    const { notice } = await response.json();
-    if (notice === null || typeof notice !== 'object' || !Object.hasOwn(TEXTS, notice.kind)) return null;
-    const conversationId = typeof notice.conversationId === 'string' && UUID.test(notice.conversationId) ? notice.conversationId : null;
-    return { kind: notice.kind, conversationId };
+    return data === null ? null : checked(data.json());
   } catch {
     return null;
   }
 }
 
-async function show() {
-  const notice = await latest();
+async function latest() {
+  try {
+    const response = await fetch('/api/notifications/latest', { cache: 'no-store', credentials: 'same-origin' });
+    if (!response.ok) return null;
+    const { notice } = await response.json();
+    return checked(notice);
+  } catch {
+    return null;
+  }
+}
+
+async function show(data) {
+  const notice = carried(data) ?? (await latest());
   if (notice === null) return self.registration.showNotification(UNKNOWN.title, { body: UNKNOWN.body, icon: ICON, tag: 'arianna', data: { url: '/' } });
   const text = TEXTS[notice.kind];
   const url = notice.conversationId === null ? '/' : `/c/${notice.conversationId}`;
@@ -41,7 +57,7 @@ async function show() {
 }
 
 self.addEventListener('push', (event) => {
-  event.waitUntil(show());
+  event.waitUntil(show(event.data));
 });
 
 // A new worker takes over at once: an older one (D-066) would show every push as a call.
