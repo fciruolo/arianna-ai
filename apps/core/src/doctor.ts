@@ -237,7 +237,7 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   if (rewritable !== '') problems.push(`may update append-only ${rewritable}`);
   if (names((table) => table.name === 'schema_migrations' && table.writes) !== '') problems.push('may write schema_migrations');
 
-  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183), of a fact of «Su di te» (D-114), of a queued message (D-218) and of a pending attachment of the chat (D-247).
+  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second, the erase of D-157, the deletions of the Finances (D-183), of a fact of «Su di te» (D-114), of a queued message (D-218), of a pending attachment of the chat (D-247) and of the texts of the gateway past 30 days (D-297).
   const definers = await owner<{ name: string }[]>`
     SELECT p.proname AS name FROM pg_proc p
     WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
@@ -252,10 +252,11 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
       AND p.oid IS DISTINCT FROM to_regprocedure('remove_dashboard_tile(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('message_attachment_discard(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('message_attachments_prune(timestamptz)')
+      AND p.oid IS DISTINCT FROM to_regprocedure('gateway_texts_prune()')
     ORDER BY p.proname`;
   if (definers.length > 0) problems.push(`may run as the owner through ${definers.map((row) => row.name).join(', ')}`);
   // The deletions of the Finances (D-183) too: an import undone, a category, a rule, a budget.
-  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)', 'queued_message_delete(bigint)', 'remove_dashboard_tile(uuid)', 'message_attachment_discard(uuid)', 'message_attachments_prune(timestamptz)']) {
+  for (const signature of ['purge_conversation(uuid)', 'purge_incognito(uuid)', 'lock_incognito(uuid)', 'erase_conversation(uuid)', 'finance_delete(text, uuid)', 'user_fact_delete(uuid)', 'queued_message_delete(bigint)', 'remove_dashboard_tile(uuid)', 'message_attachment_discard(uuid)', 'message_attachments_prune(timestamptz)', 'gateway_texts_prune()']) {
     const purgeName = signature.slice(0, signature.indexOf('('));
     const [purge] = await owner<{ public: boolean; pinned: boolean }[]>`
       SELECT has_function_privilege('public', p.oid, 'EXECUTE') AS public,

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { loadGatewayLog } from '../lib/api.ts';
+import { ApiError, loadGatewayLog, loadGatewayText } from '../lib/api.ts';
+import { copyText, COPY_FEEDBACK_MS, type CopyResult } from '../lib/clipboard.ts';
 import {
   appendPage,
   askerText,
   bytesText,
+  copyOfText,
   DECISION_TEXT,
   destinationOptions,
   EMPTY_FILTERS,
@@ -19,11 +21,18 @@ import {
   queryOf,
   ruleText,
   targetText,
+  TEXT_FROM_MAC,
+  textNotice,
+  textSizeText,
+  textStateNotice,
   timeText,
+  verifiedText,
   type GatewayLogEntry,
   type GatewayLogFilters,
   type GatewayLogTarget,
+  type GatewayText,
 } from '../lib/gateway-log.ts';
+import { onRemoteOrigin } from '../lib/remote.ts';
 import { LABEL_OPTION } from '../lib/labels.ts';
 import type { Label } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -33,7 +42,9 @@ import PageHeader from './PageHeader.vue';
 /**
  * «Registro del gateway» (D-296): one row per decision of the gateway, the
  * newest first, with filters and «Carica altre». A row opens its detail,
- * metadata only: the core never sends the text that left or was stopped.
+ * with its metadata and «Cosa è uscito» (D-297): the exact text of an exit
+ * allowed to the cloud up to Interno, asked only from the Mac and shown as
+ * text (never HTML); a blocked one says only its label.
  * On a phone each row is a card (D-293) and the filters fold under «Filtri».
  */
 const emit = defineEmits<{ open: [conversationId: string] }>();
@@ -88,15 +99,64 @@ function clearFilters(): void {
 watch(filters, () => void load(), { deep: true });
 onMounted(() => void load());
 
+const remote = onRemoteOrigin(window.location);
+/** «Cosa è uscito» of the open detail: the answer of the core, or why there is none. */
+const shown = ref<GatewayText | null>(null);
+const textProblem = ref<string | null>(null);
+const textLoading = ref(false);
+const copyState = ref<'idle' | CopyResult>('idle');
+let copyTimer: ReturnType<typeof setTimeout> | undefined;
+let textGeneration = 0;
+
+const notice = computed(() => (selected.value === null ? null : textNotice(selected.value, remote)));
+const stateNotice = computed(() => (shown.value === null ? null : textStateNotice(shown.value)));
+
+async function loadText(entry: GatewayLogEntry): Promise<void> {
+  const mine = ++textGeneration;
+  shown.value = null;
+  textProblem.value = null;
+  textLoading.value = false;
+  copyState.value = 'idle';
+  if (textNotice(entry, remote) !== null) return;
+  textLoading.value = true;
+  try {
+    const text = await loadGatewayText(entry.id);
+    if (mine === textGeneration) shown.value = text;
+  } catch (error) {
+    if (mine !== textGeneration) return;
+    textProblem.value =
+      error instanceof ApiError && error.status === 403
+        ? TEXT_FROM_MAC
+        : error instanceof ApiError && error.status === 404
+          ? 'Testo non disponibile.'
+          : 'Non riesco a leggere il testo: controlla che il core sia acceso e riprova.';
+  } finally {
+    if (mine === textGeneration) textLoading.value = false;
+  }
+}
+
+async function copyShown(): Promise<void> {
+  if (shown.value?.parts === undefined) return;
+  copyState.value = await copyText(copyOfText(shown.value.parts), typeof navigator === 'undefined' ? undefined : navigator.clipboard);
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => (copyState.value = 'idle'), COPY_FEEDBACK_MS);
+}
+
+onBeforeUnmount(() => clearTimeout(copyTimer));
+
 function openDetail(entry: GatewayLogEntry, event: Event): void {
   // The button of the row gets the focus back, also when the row itself was clicked.
   const row = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   opener = row?.querySelector<HTMLElement>('button') ?? row;
   selected.value = entry;
+  void loadText(entry);
   void nextTick(() => detail.value?.focus({ preventScroll: true }));
 }
 
 function closeDetail(): void {
+  textGeneration += 1;
+  shown.value = null;
+  textLoading.value = false;
   selected.value = null;
   if (opener?.isConnected === true) opener.focus({ preventScroll: true });
   opener = null;
@@ -294,9 +354,42 @@ function fullTime(ts: string): string {
         <button v-if="selected.conversation?.open" type="button" class="btn mt-4 px-3 py-1.5 text-[14px] touch:min-h-11" @click="openConversation(selected.conversation.id)">
           <Icon name="chat" :size="14" />Apri la conversazione
         </button>
-        <p class="mt-5 rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[13px] text-muted">
-          Questa pagina non mostra mai il testo uscito o fermato, né un suo riassunto: solo questi dati. Per sapere cosa è stato detto apri la conversazione.
-        </p>
+
+        <!-- «Cosa è uscito» (D-297): text interpolation only, never v-html: what left is data. -->
+        <section class="mt-6 flex flex-col gap-2" aria-labelledby="gateway-text-title">
+          <div class="flex items-center gap-2">
+            <h3 id="gateway-text-title" class="min-w-0 flex-1 text-[14px] font-semibold">Cosa è uscito</h3>
+            <button
+              v-if="shown?.state === 'text'"
+              type="button"
+              class="btn px-2.5 py-1 text-xs touch:min-h-11"
+              :aria-label="copyState === 'copied' ? 'Testo copiato' : 'Copia il testo uscito'"
+              @click="copyShown"
+            ><Icon name="copy" :size="13" />{{ copyState === 'copied' ? 'Copiato' : copyState === 'unavailable' ? 'Copia non disponibile' : 'Copia' }}</button>
+          </div>
+          <p v-if="notice" class="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[13px] text-muted">{{ notice }}</p>
+          <p v-else-if="textLoading" class="text-[13px] text-muted">Leggo il testo…</p>
+          <p v-else-if="textProblem" class="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[13px] text-muted" role="status">{{ textProblem }}</p>
+          <p v-else-if="stateNotice" class="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[13px] text-muted">{{ stateNotice }}</p>
+          <template v-else-if="shown?.state === 'text' && shown.parts">
+            <p class="text-xs text-muted">{{ textSizeText(shown) }} · esattamente come è uscito, nell’ordine in cui è uscito</p>
+            <div
+              v-for="(part, index) in shown.parts"
+              :key="index"
+              class="flex flex-col gap-1"
+            >
+              <p v-if="shown.parts.length > 1" class="text-xs text-muted">Parte {{ index + 1 }} di {{ shown.parts.length }} · {{ bytesText(part.bytes) }}<template v-if="part.truncated"> · troncato a 1 MB</template></p>
+              <pre
+                class="max-h-[50vh] overflow-auto rounded-lg border border-line bg-surface-2 px-3 py-2.5 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap"
+                tabindex="0"
+                :aria-label="shown.parts.length > 1 ? `Parte ${index + 1} del testo uscito` : 'Testo uscito'"
+              >{{ part.text }}</pre>
+              <p v-if="part.truncated" class="text-xs text-warn">Troncato a 1 MB: qui c’è solo il primo MB di {{ bytesText(part.bytes) }}.</p>
+            </div>
+            <p class="text-xs" :class="shown.verified === false ? 'text-danger' : 'text-muted'">{{ verifiedText(shown.verified) }}</p>
+          </template>
+          <p class="text-xs text-muted">Il testo si conserva solo per le uscite ammesse verso il cloud fino a Interno, mai in incognito; si cancella con la conversazione e da solo dopo 30 giorni.</p>
+        </section>
       </div>
     </aside>
   </div>

@@ -200,6 +200,7 @@ export function createAdvisor(deps: AdvisorDeps): Advise {
         purpose: `router-advice:${reason satisfies AdviceReason}`,
         timeoutMs: ADVICE_TIMEOUT_MS,
         model: 'sonnet',
+        taskId: target.taskId,
       });
     } catch (error) {
       // Out of quota or not available: nothing was sent, nothing counts. Refused by the gateway, too slow,

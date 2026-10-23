@@ -2,7 +2,9 @@
  * «Registro del gateway» (D-296): what the page shows of each decision of the
  * gateway, as the core gives it (GET /api/gateway/log): when, towards whom,
  * which label, allowed or blocked and by which rule, the size, who asked.
- * Never the text that left or was stopped: the core does not send it.
+ * The list never carries the text. «Cosa è uscito» (D-297): the detail of an
+ * exit allowed to the cloud up to Interno asks its exact text, only from the
+ * Mac (GET /api/gateway/log/:id/text); a blocked one says only its label.
  * Pure: the page asks, this decides.
  */
 import { agentName } from './italian.ts';
@@ -54,7 +56,7 @@ export const EMPTY_FILTERS: GatewayLogFilters = { decision: '', destination: '',
 
 export const GATEWAY_LOG_TITLE = 'Registro del gateway';
 export const GATEWAY_LOG_INTRO =
-  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni decisione, la più recente in alto. Solo chi, dove, quando, con quale etichetta e perché: mai il testo.';
+  'Ogni volta che qualcosa prova a uscire da Arianna passa dal gateway, che lo lascia andare o lo ferma: qui c’è una riga per ogni decisione, la più recente in alto. Chi, dove, quando, con quale etichetta e perché; nel dettaglio di un’uscita verso il cloud anche il testo esatto che è uscito, per 30 giorni e solo dal Mac.';
 
 const EXECUTOR_TEXT: Record<string, string> = { claude: 'Claude', codex: 'Codex', local: 'Modello locale' };
 const CHANNEL_TEXT: Record<string, string> = { web: 'Chat web', telegram: 'Telegram', phone: 'Telefono', voice: 'Voce', push: 'Notifiche push' };
@@ -237,4 +239,82 @@ export function emptyText(filters: GatewayLogFilters): { title: string; text: st
 /** Allowed towards the cloud with Privato or Segreto: the line of the left bar warns about these. */
 export function isPrivateOut(entry: Pick<GatewayLogEntry, 'decision' | 'locality' | 'label' | 'targetKind'>): boolean {
   return entry.decision === 'allow' && entry.locality === 'cloud' && (entry.label === 'L2' || entry.label === 'L3') && entry.targetKind !== 'link';
+}
+
+/** What the core says of the text of one exit (D-297). */
+export type GatewayTextState = 'text' | 'blocked' | 'local' | 'private' | 'gone' | 'none';
+
+export interface GatewayTextPart {
+  text: string;
+  bytes: number;
+  truncated: boolean;
+}
+
+export interface GatewayText {
+  id: string;
+  state: GatewayTextState;
+  label: Label;
+  parts?: GatewayTextPart[];
+  bytes?: number;
+  verified?: boolean | null;
+}
+
+export const TEXT_FROM_MAC = 'Il testo si legge dal Mac.';
+export const TEXT_GONE = 'Testo non più disponibile (conversazione eliminata o oltre 30 giorni).';
+
+/** «Fermata: …» of a blocked exit, by its label: never its text. */
+export function blockedText(label: Label): string {
+  if (label === 'L2' || label === 'L3') return `Fermata: conteneva un dato ${LABEL_TEXT[label]}. Non è uscito nulla e il testo non si conserva.`;
+  return 'Fermata: non è uscito nulla e il testo non si conserva.';
+}
+
+/**
+ * Why the detail shows no text without even asking the core: from the phone
+ * (the route is Mac only), a blocked exit, an exit that stayed on the Mac,
+ * an allowed one above Interno. Null: the page asks for it.
+ */
+export function textNotice(entry: Pick<GatewayLogEntry, 'decision' | 'locality' | 'label'>, remote: boolean): string | null {
+  if (entry.decision === 'block') return blockedText(entry.label);
+  if (entry.locality !== 'cloud') return 'Destinazione sul Mac: il testo non è uscito e non si conserva.';
+  if (entry.label === 'L2' || entry.label === 'L3') return 'Uscita Privata (l’indirizzo di un link o una richiesta del browser): il testo non si conserva.';
+  if (remote) return TEXT_FROM_MAC;
+  return null;
+}
+
+/** What the core answered, when it is not a text. */
+export function textStateNotice(text: Pick<GatewayText, 'state' | 'label'>): string | null {
+  switch (text.state) {
+    case 'text':
+      return null;
+    case 'blocked':
+      return blockedText(text.label);
+    case 'local':
+      return 'Destinazione sul Mac: il testo non è uscito e non si conserva.';
+    case 'private':
+      return 'Uscita Privata: il testo non si conserva.';
+    case 'gone':
+      return TEXT_GONE;
+    case 'none':
+      return 'Testo non salvato: l’uscita è precedente alla conservazione dei testi, o non è legata a una conversazione o a una card (per esempio il browser guidato da te).';
+  }
+}
+
+/** All the parts, in the order they left, as «Copia» puts them on the clipboard. */
+export function copyOfText(parts: readonly GatewayTextPart[]): string {
+  return parts.map((part) => part.text).join('\n\n');
+}
+
+/** «2,1 KB», with «troncato a 1 MB» when a part was cut, and the number of parts when more than one. */
+export function textSizeText(text: Pick<GatewayText, 'parts' | 'bytes'>): string {
+  const parts = text.parts ?? [];
+  const size = bytesText(text.bytes ?? parts.reduce((sum, part) => sum + part.bytes, 0));
+  const count = parts.length > 1 ? ` in ${String(parts.length)} parti` : '';
+  return `${size}${count}${parts.some((part) => part.truncated) ? ' · troncato a 1 MB' : ''}`;
+}
+
+/** Whether the kept text is the one the log measured (its sha256), in words. */
+export function verifiedText(verified: boolean | null | undefined): string {
+  if (verified === true) return 'Coincide con l’impronta (sha256) scritta nel registro al momento dell’uscita.';
+  if (verified === false) return 'Non coincide con l’impronta scritta nel registro: segnalalo.';
+  return 'Troncato: l’impronta del registro non si può confrontare.';
 }

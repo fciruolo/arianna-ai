@@ -205,7 +205,7 @@ import { attachmentFilesOf, attachmentIds, AttachmentError, discardAttachment, r
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
-import { GatewayLogQueryError, loadGatewayLog, parseGatewayLogQuery } from '../gateway-log.ts';
+import { gatewayLogId, GatewayLogQueryError, loadGatewayLog, loadGatewayText, parseGatewayLogQuery } from '../gateway-log.ts';
 import { appendEvent, type NewEvent } from '../events.ts';
 import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
 import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
@@ -2742,7 +2742,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     route('GET', '/api/status', async () => ({ body: await loadStatus(sql, agents()) })),
 
     // «Registro del gateway» (D-296): one row per decision, newest first, metadata only (never summary,
-    // reason or hash), without the rows of an incognito conversation. Readable from the phone too.
+    // reason or hash, nor the text of D-297), without the rows of an incognito conversation. Readable from the phone too.
     route('GET', '/api/gateway/log', async (_request, url) => {
       try {
         return { body: await loadGatewayLog(sql, parseGatewayLogQuery(url.searchParams)) };
@@ -2750,6 +2750,15 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
         if (error instanceof GatewayLogQueryError) throw new HttpError(400, error.message);
         throw error;
       }
+    }),
+    // «Cosa è uscito» (D-297): the exact text of one allowed exit to the cloud, kept 30 days at most and
+    // never in incognito. Only from the Mac: LOCAL_ONLY_PATHS of remote.ts refuses it on the remote port.
+    route('GET', '/api/gateway/log/:id/text', async (_request, _url, params) => {
+      const id = gatewayLogId(params.id ?? '');
+      if (id === undefined) throw new HttpError(400, 'id must be a row id');
+      const text = await loadGatewayText(sql, id);
+      if (text === undefined) throw new HttpError(404, 'not found');
+      return { body: text };
     }),
 
     // What this installation is (D-089): development or production, the name of its folder, the commit.

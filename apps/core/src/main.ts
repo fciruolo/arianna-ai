@@ -68,6 +68,7 @@ import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { configureWornNames, passGateway } from './gateway.ts';
+import { pruneGatewayTexts } from './gateway-log.ts';
 import { savedAskValues } from './orchestrator/saved-ask.ts';
 import { savedInAddress, startSavedPrivate } from './saved-private.ts';
 import { nameLabelOf, type LeaveRule } from './participants.ts';
@@ -586,6 +587,11 @@ const advise = createAdvisor({
 // ones never sent for a day go at start, with the files left without a row.
 const attachmentFiles = attachmentsDir(config.paths.data);
 pruneAttachments(sql, attachmentFiles).catch(report);
+// «Cosa è uscito» (D-297): the texts of the exits older than 30 days go, at start and every hour.
+const pruneTexts = (): void => void pruneGatewayTexts(sql).catch(report);
+pruneTexts();
+const gatewayTextsTicker = setInterval(pruneTexts, 60 * 60_000);
+gatewayTextsTicker.unref();
 
 // The screen of the browser in the chat (D-264, passo 4): view only, a token per conversation holding it.
 // Declared first: it reads the browser below only when asked (lazy), and the browser tells it when it goes.
@@ -1686,6 +1692,7 @@ async function shutdown(): Promise<void> {
   imWatcher.stop();
   clearInterval(godTicker);
   clearInterval(changesTicker);
+  clearInterval(gatewayTextsTicker);
   if (changesTimer !== undefined) clearTimeout(changesTimer);
   incognitoWatch.stop();
   clearInterval(dashboardTicker);

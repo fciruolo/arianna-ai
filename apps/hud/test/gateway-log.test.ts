@@ -5,6 +5,7 @@ import {
   appendPage,
   askerText,
   bytesText,
+  copyOfText,
   destinationOptions,
   EMPTY_FILTERS,
   emptyText,
@@ -16,7 +17,13 @@ import {
   rowLine,
   ruleText,
   targetText,
+  TEXT_FROM_MAC,
+  TEXT_GONE,
+  textNotice,
+  textSizeText,
+  textStateNotice,
   timeText,
+  verifiedText,
   type GatewayLogEntry,
 } from '../src/lib/gateway-log.ts';
 import { GATEWAY_LOG_PATH, isGatewayLogPath } from '../src/lib/route.ts';
@@ -143,4 +150,33 @@ test('the address of the page', () => {
   assert.equal(isGatewayLogPath(GATEWAY_LOG_PATH), true);
   assert.equal(isGatewayLogPath(`${GATEWAY_LOG_PATH}/`), true);
   assert.equal(isGatewayLogPath('/registro'), false);
+});
+
+test('«Cosa è uscito» (D-297): no text asked for a block, a local target, a private exit or from the phone', () => {
+  assert.equal(textNotice(entry(), false), null);
+  assert.equal(textNotice(entry(), true), TEXT_FROM_MAC);
+  assert.equal(textNotice(entry({ decision: 'block', label: 'L2' }), false), 'Fermata: conteneva un dato Privato. Non è uscito nulla e il testo non si conserva.');
+  assert.match(textNotice(entry({ decision: 'block', label: 'L3' }), true) ?? '', /^Fermata: conteneva un dato Segreto\./);
+  assert.match(textNotice(entry({ decision: 'block', label: 'L1', rule: 'scanner' }), false) ?? '', /^Fermata: non è uscito nulla/);
+  assert.match(textNotice(entry({ locality: 'local' }), false) ?? '', /^Destinazione sul Mac/);
+  assert.match(textNotice(entry({ label: 'L2', targetKind: 'link', target: 'link-click' }), false) ?? '', /^Uscita Privata/);
+});
+
+test('what the core answered, in words; the text itself is never a notice', () => {
+  assert.equal(textStateNotice({ state: 'text', label: 'L1' }), null);
+  assert.equal(textStateNotice({ state: 'gone', label: 'L1' }), TEXT_GONE);
+  assert.equal(textStateNotice({ state: 'gone', label: 'L1' }), 'Testo non più disponibile (conversazione eliminata o oltre 30 giorni).');
+  assert.match(textStateNotice({ state: 'blocked', label: 'L2' }) ?? '', /Privato/);
+  assert.match(textStateNotice({ state: 'none', label: 'L0' }) ?? '', /^Testo non salvato/);
+});
+
+test('size, parts, cut and the sha256 check of the text', () => {
+  const first = { text: 'Istruzioni', bytes: 10, truncated: false };
+  const parts = [first, { text: 'a', bytes: 2 * 1024 * 1024, truncated: true }];
+  assert.equal(textSizeText({ parts: [first], bytes: 10 }), '10 byte');
+  assert.equal(textSizeText({ parts, bytes: 10 + 2 * 1024 * 1024 }), '2 MB in 2 parti · troncato a 1 MB');
+  assert.equal(copyOfText(parts), 'Istruzioni\n\na');
+  assert.match(verifiedText(true), /^Coincide/);
+  assert.match(verifiedText(false), /^Non coincide/);
+  assert.match(verifiedText(null), /^Troncato/);
 });

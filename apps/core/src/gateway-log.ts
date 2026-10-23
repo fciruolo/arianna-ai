@@ -1,4 +1,4 @@
-import { isLabel, type Label } from '@arianna/policy';
+import { isLabel, sha256Hex, type Label } from '@arianna/policy';
 
 import type { Queryable } from './db/client.ts';
 
@@ -236,4 +236,90 @@ export async function loadGatewayLog(sql: Queryable, query: GatewayLogQuery): Pr
     }
   }
   return page;
+}
+
+/**
+ * «Cosa è uscito» (D-297): the exact text of one exit, read only from the Mac
+ * (`GET /api/gateway/log/:id/text`, in LOCAL_ONLY_PATHS of server/remote.ts).
+ * Kept in gateway_texts only for an exit allowed to the cloud up to L1, never
+ * in incognito, deleted with the conversation and after 30 days. What is not
+ * there says why, with no text: a blocked exit says only its label.
+ */
+export type GatewayTextState =
+  /** The text, part by part, in the order it left. */
+  | 'text'
+  /** Stopped by the gateway: nothing left, and nothing of it is kept. */
+  | 'blocked'
+  /** Towards a target on the Mac: it never left, the text is not kept. */
+  | 'local'
+  /** Allowed above Interno (the address of a link or of the browser): not kept. */
+  | 'private'
+  /** The conversation was deleted, or the exit is older than 30 days. */
+  | 'gone'
+  /** No text kept: an exit from before D-297, or one tied to no task or run (the browser driven by the user, a catalog). */
+  | 'none';
+
+export interface GatewayTextPart {
+  text: string;
+  /** The size of the whole part as it left. */
+  bytes: number;
+  /** Over 1 MiB: only its first MiB is kept. */
+  truncated: boolean;
+}
+
+export interface GatewayText {
+  id: string;
+  state: GatewayTextState;
+  label: Label;
+  parts?: GatewayTextPart[];
+  /** The sum of the parts as they left. */
+  bytes?: number;
+  /** The sha256 of the kept parts is the one in gateway_log; null when a part was cut. */
+  verified?: boolean | null;
+}
+
+/** How long a text is kept, and read. */
+export const GATEWAY_TEXT_DAYS = 30;
+
+/** An id of gateway_log as an address carries it, or undefined. */
+export function gatewayLogId(raw: string): string | undefined {
+  return /^[1-9]\d{0,17}$/.test(raw) ? raw : undefined;
+}
+
+/** The text of one exit; undefined for a row that does not exist or belongs to an incognito conversation. */
+export async function loadGatewayText(sql: Queryable, id: string): Promise<GatewayText | undefined> {
+  const [row] = await sql<{ decision: string; locality: string; label: string; sha256: string | null; old: boolean; purged: boolean }[]>`
+    SELECT g.decision, g.locality, g.label::text AS label, g.payload_sha256 AS sha256,
+      g.ts < now() - make_interval(days => ${GATEWAY_TEXT_DAYS}) AS old,
+      coalesce(c.purged_at IS NOT NULL, false) AS purged
+    FROM gateway_log g
+    -- As gateway_texts ties a row (0090): by task or run, a card «Piano» by its request.
+    LEFT JOIN conversations c ON c.id = gateway_log_conversation(g.task_id, g.run_id)
+    WHERE g.id = ${id}::bigint AND NOT coalesce(c.incognito, false)`;
+  if (row === undefined) return undefined;
+  const label: Label = isLabel(row.label) ? row.label : 'L2';
+  const base = { id, label };
+  if (row.decision !== 'allow') return { ...base, state: 'blocked' };
+  if (row.locality !== 'cloud') return { ...base, state: 'local' };
+  if (label !== 'L0' && label !== 'L1') return { ...base, state: 'private' };
+  const kept = await sql<{ body: Buffer; bytes: number }[]>`
+    SELECT body, bytes FROM gateway_texts
+    WHERE log_id = ${id}::bigint AND created_at >= now() - make_interval(days => ${GATEWAY_TEXT_DAYS})
+    ORDER BY seq`;
+  if (kept.length === 0) return { ...base, state: row.old || row.purged ? 'gone' : 'none' };
+  const parts = kept.map((part) => ({ text: part.body.toString('utf8'), bytes: part.bytes, truncated: part.bytes > part.body.length }));
+  const whole = parts.every((part) => !part.truncated);
+  return {
+    ...base,
+    state: 'text',
+    parts,
+    bytes: parts.reduce((sum, part) => sum + part.bytes, 0),
+    verified: whole ? row.sha256 !== null && sha256Hex(JSON.stringify(parts.map((part) => part.text))) === row.sha256 : null,
+  };
+}
+
+/** The texts older than 30 days go (D-297): at start and every hour. */
+export async function pruneGatewayTexts(sql: Queryable): Promise<number> {
+  const [row] = await sql<{ count: number }[]>`SELECT gateway_texts_prune() AS count`;
+  return row?.count ?? 0;
 }
