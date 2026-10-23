@@ -143,6 +143,15 @@ test('«@traduttore …» goes to that agent with the text after its name; the t
   assert.ok((logged?.n ?? 0) > 0);
 });
 
+test('«@Traduttore, …» with a capital letter goes to that agent too, never to Arianna to choose another', async () => {
+  const id = await work();
+  const { task } = await postUserMessage(db().sql, id, '@Traduttore, buongiorno a tutti', { mentionable: MENTIONABLE });
+  const [row] = await db().sql<{ addressed: string; agents: string[] }[]>`SELECT addressed, addressed_agents AS agents FROM tasks WHERE id = ${task.id}`;
+  assert.deepEqual([row?.addressed, [...(row?.agents ?? [])]], ['mention', ['traduttore']]);
+  await db().owner`UPDATE tasks SET status = 'done', assignee = 'user' WHERE id = ${task.id}`;
+  await db().owner`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
+});
+
 test('an «@» that names nobody Arianna may call, or without the list, is a message for Arianna', async () => {
   const id = await work();
   for (const [body, options] of [

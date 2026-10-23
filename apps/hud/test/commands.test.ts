@@ -128,7 +128,8 @@ test('«/progetta descrizione» reaches the core as a message, as «/giro» (D-2
 test('«@» and a name open the menu of the agents, those starting with it first; a space or other text closes it', () => {
   assert.equal(mentionQuery('@'), '');
   assert.equal(mentionQuery('@des'), 'des');
-  for (const draft of ['@designer ', 'ciao @des', '@Des', '']) assert.equal(mentionQuery(draft), undefined, draft);
+  assert.equal(mentionQuery('@Des'), 'des');
+  for (const draft of ['@designer ', 'ciao @des', '']) assert.equal(mentionQuery(draft), undefined, draft);
   assert.deepEqual(filterMentions('', ['coder', 'designer']), ['coder', 'designer']);
   assert.deepEqual(filterMentions('de', ['coder', 'designer']), ['designer', 'coder']);
   assert.deepEqual(filterMentions('x', ['coder', 'designer']), []);

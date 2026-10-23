@@ -14,9 +14,10 @@ export type Addressed = { kind: 'mention'; agent: string; brief: string } | { ki
 export const MAX_INTERVENTIONS = 6;
 export const MAX_PER_AGENT = 2;
 
-const MENTION = /^@([a-z][a-z0-9-]{0,40})[,:]?(?:\s+([\s\S]*))?$/;
-const ROUND = /^\/giro(?:\s+([\s\S]*))?$/;
-const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/;
+// The name in any letter case, as one writes it to a person: «@Coder» is the coder.
+const MENTION = /^@([a-z][a-z0-9-]{0,40})[,:]?(?:\s+([\s\S]*))?$/i;
+const ROUND = /^\/giro(?:\s+([\s\S]*))?$/i;
+const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/i;
 
 /**
  * What the message asks: a mention, a round, or nothing (a message for
@@ -26,7 +27,7 @@ const PLAN = /^\/progetta(?:\s+([\s\S]*))?$/;
 export function parseAddressed(body: string): Addressed | undefined {
   const text = body.trim();
   const mention = MENTION.exec(text);
-  if (mention?.[1] !== undefined) return { kind: 'mention', agent: mention[1], brief: (mention[2] ?? '').trim() };
+  if (mention?.[1] !== undefined) return { kind: 'mention', agent: mention[1].toLowerCase(), brief: (mention[2] ?? '').trim() };
   const round = ROUND.exec(text);
   if (round !== null) return { kind: 'round', brief: (round[1] ?? '').trim() };
   const plan = PLAN.exec(text);
