@@ -1,4 +1,5 @@
 import type { ThemeListing } from './themes.ts';
+import type { GatewayLogPage } from './gateway-log.ts';
 import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
@@ -814,6 +815,11 @@ export async function saveAdvisor(usageFile: string): Promise<AdvisorStatus> {
 /** «Consumi» (D-093, idea 10): counts, times and names of the period, never a text. */
 export async function loadUsage(period: UsagePeriod): Promise<UsageReport> {
   return call<UsageReport>('GET', `/api/usage?period=${encodeURIComponent(period)}`);
+}
+
+/** «Registro del gateway» (D-296): one page of decisions, metadata only; `query` from queryOf of lib/gateway-log.ts. */
+export async function loadGatewayLog(query: string): Promise<GatewayLogPage> {
+  return call<GatewayLogPage>('GET', `/api/gateway/log${query}`);
 }
 
 /** «Cosa è cambiato» (D-233): the core takes a fresh picture of the installation, then answers what it observed. */

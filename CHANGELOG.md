@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Pagina «Registro del gateway» (Sistema nella barra sinistra, Altro sul telefono): una riga per ogni uscita ammessa o bloccata, con ora, destinazione, chi l’ha chiesta, etichetta, esito e dimensione, filtri per esito, destinazione, etichetta e date, «Carica altre» e il dettaglio di una riga con la regola spiegata; mai il testo uscito, niente incognito; «controlla il registro» ora porta lì (D-296).
+
 ## [0.169.1] - 2026-10-23
 
 ### Corretto

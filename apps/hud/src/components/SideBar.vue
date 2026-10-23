@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { AREAS, NAV_GROUPS, NAV_STORAGE_KEY, groupOf, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
 import type { LiveState } from '../lib/live.ts';
+import { GATEWAY_LOG_PATH, openInside } from '../lib/route.ts';
 import type { Conversation, StatusSnapshot } from '../lib/types.ts';
 import ConversationList from './ConversationList.vue';
 import Icon from './Icon.vue';
@@ -17,7 +18,7 @@ import Icon from './Icon.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki' | 'pending' | 'more';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio' | 'dashboard' | 'routines' | 'followed' | 'wiki' | 'gateway' | 'pending' | 'more';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -51,6 +52,8 @@ const emit = defineEmits<{
   knowledge: [];
   /** The Wiki (D-280). */
   wiki: [];
+  /** «Registro del gateway» (D-296). */
+  gateway: [];
   projects: [];
   clients: [];
   finance: [];
@@ -114,6 +117,7 @@ function go(area: NavArea): void {
     case 'god': emit('god'); break;
     case 'followed': emit('followed'); break;
     case 'office': emit('office'); break;
+    case 'gateway': emit('gateway'); break;
     case 'settings': emit('settings'); break;
   }
 }
@@ -224,9 +228,9 @@ function itemClass(on: boolean): string {
     />
 
     <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[12px] leading-relaxed text-muted">
-      Gateway attivo ·
+      <a :href="GATEWAY_LOG_PATH" class="hover:text-ink" title="Apri il registro del gateway" @click="openInside($event, GATEWAY_LOG_PATH)">Gateway attivo</a> ·
       <template v-if="status.gateway.privateOut === 0">nessun dato Privato o Segreto è uscito oggi</template>
-      <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: controlla il registro</span>
+      <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: <a :href="GATEWAY_LOG_PATH" class="underline" @click="openInside($event, GATEWAY_LOG_PATH)">controlla il registro</a></span>
     </p>
   </aside>
 </template>

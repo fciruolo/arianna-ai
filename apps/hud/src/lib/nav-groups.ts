@@ -23,6 +23,7 @@ export type NavArea =
   | 'god'
   | 'followed'
   | 'office'
+  | 'gateway'
   | 'settings';
 
 export interface NavGroup {
@@ -34,7 +35,7 @@ export interface NavGroup {
 export const NAV_GROUPS: readonly NavGroup[] = [
   { id: 'work', title: 'Lavoro', areas: ['dashboard', 'secretary', 'projects', 'clients', 'cardwall', 'studio'] },
   { id: 'personal', title: 'Personale', areas: ['thoughts', 'routines', 'knowledge', 'wiki', 'finance'] },
-  { id: 'system', title: 'Sistema', areas: ['god', 'followed', 'office', 'settings'] },
+  { id: 'system', title: 'Sistema', areas: ['god', 'followed', 'office', 'gateway', 'settings'] },
 ];
 
 /** Only "Lavoro" open the first time. */
@@ -95,5 +96,7 @@ export const AREAS: Record<NavArea, { label: string; icon: IconName; title?: str
   // «Seguiti» (D-272): projects, accounts, oMLX and the catalogs followed on GitHub.
   followed: { label: 'Seguiti', icon: 'followed', title: 'Progetti, account e cataloghi seguiti su GitHub per prendere idee' },
   office: { label: 'Ufficio', icon: 'office' },
+  // «Registro del gateway» (D-296): every decision of the gateway, never the text.
+  gateway: { label: 'Registro del gateway', icon: 'gateway', title: 'Ogni uscita di Arianna, ammessa o bloccata, senza il testo' },
   settings: { label: 'Impostazioni', icon: 'settings' },
 };

@@ -295,6 +295,8 @@ CREATE TABLE gateway_log (
   payload_sha256 text,
   summary     text                                          -- mai contenuto L2
 );
+-- Letta da «Registro del gateway» (D-296, apps/core/src/gateway-log.ts, GET /api/gateway/log): solo
+-- metadati, mai summary, reason né payload_sha256, senza le righe di una conversazione in incognito.
 
 -- Task 1.7 (0005_router_decisions.sql, D-040): append-only
 CREATE TABLE router_decisions (

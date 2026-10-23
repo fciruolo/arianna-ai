@@ -6,6 +6,7 @@ import type { InstallationInfo } from '../lib/installation.ts';
 import type { LiveState } from '../lib/live.ts';
 import { AREAS, type NavArea } from '../lib/nav-groups.ts';
 import { moreGroups } from '../lib/phone-nav.ts';
+import { GATEWAY_LOG_PATH, openInside } from '../lib/route.ts';
 import { THEME_TEXT, type Theme } from '../lib/theme.ts';
 import type { StatusSnapshot } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -46,7 +47,7 @@ const THEME_ORDER: readonly Theme[] = ['light', 'dark', 'system'];
       <p v-if="status !== null" class="flex items-start gap-2 rounded-[14px] border border-line bg-surface px-3.5 py-2.5 text-[14px] text-muted">
         <span :class="status.gateway.privateOut === 0 ? 'text-ok' : 'text-danger'"><Icon name="gateway" :size="18" /></span>
         <span v-if="status.gateway.privateOut === 0">Gateway attivo · nessun dato Privato o Segreto è uscito oggi</span>
-        <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: controlla il registro</span>
+        <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: <a :href="GATEWAY_LOG_PATH" class="underline" @click="openInside($event, GATEWAY_LOG_PATH)">controlla il registro</a></span>
       </p>
 
       <section v-for="group in groups" :key="group.id" :aria-labelledby="`more-${group.id}`">

@@ -20,7 +20,7 @@ test('every page lights one entry: its own, or «Altro»', () => {
   assert.equal(tabOf('pending'), 'pending');
   assert.equal(tabOf('thoughts'), 'thoughts');
   assert.equal(tabOf('dashboard'), 'dashboard');
-  const others: AppPage[] = ['settings', 'voice-trial', 'new-agent', 'wiki', 'god', 'routines', 'office', 'studio', 'knowledge', 'projects', 'clients', 'finance', 'cardwall', 'followed', 'more'];
+  const others: AppPage[] = ['settings', 'voice-trial', 'new-agent', 'wiki', 'god', 'routines', 'office', 'studio', 'knowledge', 'projects', 'clients', 'finance', 'cardwall', 'followed', 'gateway', 'more'];
   for (const page of others) assert.equal(tabOf(page), 'more', page);
 });
 
