@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Chiedere il Coder in una conversazione Privata non manda più a riconfigurare i progetti: Arianna risponde con una frase fissa che il Coder lavora solo nelle conversazioni di Lavoro con un progetto e che i dati Privati restano qui; il suggerimento di aggiungere un progetto compare solo in una conversazione di Lavoro senza progetto, e un progetto non più approvato è rifiutato subito, senza delega (D-303).
+
 ## [0.173.0] - 2026-10-23
 
 ### Corretto

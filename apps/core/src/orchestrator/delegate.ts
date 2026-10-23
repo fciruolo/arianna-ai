@@ -493,8 +493,53 @@ export const DIRECT_LOCAL_TEXT = [
   'Never ask the user for credentials.',
 ].join(' ');
 
-/** What Arianna reads when no project is there for the Coder. */
-export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
+/** What Arianna reads when no project is there for the Coder (the run of a delegation without one). */
+export const NO_PROJECT = 'no project for the Coder: it works only in a work conversation with one of the approved projects; tell the user';
+
+/**
+ * Why an agent that works in a project folder cannot work in this
+ * conversation (D-303): a private one has no project (the Coder works only in
+ * a work conversation with one); a work one has none, or one that is not
+ * among the approved work parts (taken off the list, or not a git folder,
+ * D-145). Undefined: the project is there.
+ */
+export type NoProjectCase = 'private' | 'work' | 'not-approved';
+
+export function noProjectCase(mode: Conversation['mode'], repo: string | undefined, approved: string | undefined): NoProjectCase | undefined {
+  if (repo === undefined) return mode === 'work' ? 'work' : 'private';
+  return approved === undefined ? 'not-approved' : undefined;
+}
+
+/** What the model reads (the result of the call): our fixed English, L0. */
+export function noProjectError(agent: string, why: NoProjectCase): string {
+  if (why === 'private') {
+    return `${agent} does not work in a private conversation: it works only in a work conversation with a project, and the private data stay here; tell the user to open a new work conversation with the project`;
+  }
+  if (why === 'work') return `this work conversation has no project, and ${agent} works only in one of the approved projects; tell the user`;
+  return `the project of this work conversation is not among the approved projects ${agent} may open (taken off the list, or its folder is not a git repository); tell the user`;
+}
+
+/** Who, in the Italian of the fixed replies: «il Coder», «l’agente designer». */
+function agentText(agent: string): string {
+  return agent === 'coder' ? 'il Coder' : `l’agente ${agent}`;
+}
+
+/**
+ * What Arianna writes in the chat (D-303), our fixed Italian, L0: the local
+ * model once read the hint to add a project as the main point in a private
+ * conversation, where the project was there and the reason was the mode.
+ */
+export function noProjectReply(agent: string, why: NoProjectCase): string {
+  const who = agentText(agent);
+  if (why === 'private') {
+    return `${who.charAt(0).toUpperCase()}${who.slice(1)} non lavora nelle conversazioni Private: lavora solo in una conversazione di Lavoro con un progetto. Per un lavoro sul codice apri «Nuova conversazione» → «Lavoro» e scegli il progetto; i dati Privati di questa conversazione restano qui e non escono dal computer.`;
+  }
+  const add = 'Se il progetto non è nell’elenco, aggiungilo in Impostazioni → Progetti (o con `pnpm arianna:init --reconfigure`).';
+  if (why === 'work') {
+    return `Questa conversazione di Lavoro non ha un progetto, e ${who} lavora solo dentro un progetto approvato. Apri «Nuova conversazione» → «Lavoro» e scegli il progetto. ${add}`;
+  }
+  return `Il progetto di questa conversazione non è fra quelli approvati in cui ${who} può lavorare: è stato tolto dall’elenco, o la sua cartella non è un repository git. Controllalo in Impostazioni → Progetti (o con \`pnpm arianna:init --reconfigure\`).`;
+}
 
 /** Opens the project folder of a delegation, or says why the step cannot run there. */
 async function folderOf(

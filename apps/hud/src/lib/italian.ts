@@ -292,6 +292,10 @@ const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
   [/^the user did not want the Coder to work over uncommitted changes/, () => 'hai preferito non far lavorare il Coder sopra le tue modifiche non committate'],
   [/^the folder of (\S+) cannot be opened/, (repo) => `la cartella di ${repo} non si apre come repository git`],
   [/^no project for the Coder/, () => 'nessun progetto per il Coder: apri una conversazione di lavoro con un progetto approvato'],
+  // D-303: the Coder in a private conversation, a work conversation without its project.
+  [/^(\S+) does not work in a private conversation/, (agent) => `${agentName(agent)} non lavora nelle conversazioni Private: apri una conversazione di Lavoro con il progetto`],
+  [/^this work conversation has no project/, () => 'questa conversazione di Lavoro non ha un progetto'],
+  [/^the project of this work conversation is not among the approved projects/, () => 'il progetto di questa conversazione non è fra quelli approvati in cui l’agente può lavorare'],
   [/^the project (\S+) is no longer among the projects the user approved/, (name) => `il progetto ${name} non è più fra quelli approvati`],
   [/^the gateway refused the brief/, () => 'il gateway ha fermato il brief'],
   [/^the same call as step (\d+)/, (step) => `la stessa chiamata del passo ${step}, non rifatta`],

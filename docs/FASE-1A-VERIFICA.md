@@ -70,9 +70,9 @@ Se il router sceglie Fable compare una scheda di budget da approvare: dal telefo
 
 ## P4 — Un task L2 completato solo in locale
 
-**Cosa lo soddisfa oggi.** Etichette per cartella e default-deny (task 1.1), conversazione Privata sul modello locale (1.10, D-053; adattatore oMLX del task 1.3, D-071; oMLX risponde solo ad Arianna, D-221), declassamento dalla chat solo con approvazione (D-055), secondo controllo dei dati personali (D-113). La KB finta ha le note Private in `kb/private/` (per esempio `kb/private/auto/bollo.md`: bollo della Panda, 182 euro, entro fine gennaio).
+**Cosa lo soddisfa oggi.** Etichette per cartella e default-deny (task 1.1), conversazione Privata sul modello locale (1.10, D-053; adattatore oMLX del task 1.3, D-071; oMLX risponde solo ad Arianna, D-221), declassamento dalla chat solo con approvazione (D-055), secondo controllo dei dati personali (D-113), risposta fissa quando si chiede il Coder in una conversazione Privata (D-303). La KB finta ha le note Private in `kb/private/` (per esempio `kb/private/auto/bollo.md`: bollo della Panda, 182 euro, entro fine gennaio).
 
-**Cosa manca.** Niente.
+**Cosa manca.** Solo i passi 5-6. I passi 1-4 sono stati superati il 2026-10-23: prova fatta da Claude su richiesta dell'utente («Testalo tu»), con la risposta «182 euro, entro fine gennaio, con PagoPA» presa dalla nota `kb/private/auto/bollo.md`, i contatori fermi a 84 uscite e 17 bloccate e «uscite Private o Segrete» a «mai». Nella stessa prova il passo 5 vecchio (una scheda di declassamento da rifiutare) non si è visto: con più progetti approvati una conversazione Privata non ne ha nessuno, e Arianna rispondeva in modo sbagliato di aggiungere un progetto con `pnpm arianna:init --reconfigure`. D-303 corregge la risposta; i passi 5-6 qui sotto sono riscritti di conseguenza e vanno provati dopo l'unione di D-303.
 
 **Come provarlo** (anche dal telefono):
 
@@ -80,8 +80,10 @@ Se il router sceglie Fable compare una scheda di budget da approvare: dal telefo
 2. «Nuova conversazione» → «Privata». Scrivi: «Quanto costa il bollo della Panda e entro quando va pagato?»
 3. Arianna risponde «182 euro, entro fine gennaio» (o parole simili) citando la nota del bollo; il messaggio non ha il segno «cloud».
 4. Il numero «uscite verso il cloud» è uguale a prima e «uscite Private o Segrete» dice «mai».
-5. Prova del contrario, nella stessa conversazione: «Chiedi al Coder di scrivere nel progetto demo un file con il costo del bollo.» Compare una scheda di approvazione con «Approvando, questo testo esatto viene declassato e può uscire dalla macchina». Clicca «Rifiuta» (dal telefono chiede Face ID).
-6. Arianna dice che non può procedere; «uscite verso il cloud» non cambia.
+5. Prova del contrario, nella stessa conversazione: «Chiedi al Coder di scrivere nel progetto demo un file con il costo del bollo.» Arianna risponde subito, senza schede da approvare: «Il Coder non lavora nelle conversazioni Private: lavora solo in una conversazione di Lavoro con un progetto. Per un lavoro sul codice apri «Nuova conversazione» → «Lavoro» e scegli il progetto; i dati Privati di questa conversazione restano qui e non escono dal computer.» Nella risposta non c'è `pnpm arianna:init` né l'invito ad aggiungere un progetto.
+6. «Uscite verso il cloud» e «bloccate» sono uguali a prima, «uscite Private o Segrete» dice ancora «mai»; nel progetto `demo` non compare nessun file nuovo (`git -C repos/demo status` dal Mac).
+
+Con un solo progetto approvato in Impostazioni → Progetti una conversazione Privata usa quello e al passo 5 compare invece la scheda di declassamento (D-055): «Rifiuta» e «uscite verso il cloud» non cambia.
 
 ## P5 — Ripresa dopo `kill` del core
 
@@ -112,7 +114,7 @@ Se il router sceglie Fable compare una scheda di budget da approvare: dal telefo
 **Come provarlo, con quello che c'è** (anche dal telefono):
 
 1. Dopo P3 e P4 apri Impostazioni → Consumi, periodo «oggi» o «7 giorni».
-2. Nella tabella «Decisioni del gateway» c'è la riga di Claude Code con almeno un'uscita passata e i byte usciti; se in P4 hai rifiutato il declassamento non c'è nessuna uscita dalla conversazione Privata.
+2. Nella tabella «Decisioni del gateway» c'è la riga di Claude Code con almeno un'uscita passata e i byte usciti; dalla conversazione Privata di P4 non c'è nessuna uscita.
 3. Nel pannello «Gateway · oggi» i numeri tornano con quelli della tabella.
 
 ## P7 — Password del database e ruolo applicativo (indurimento del task 1.13)
@@ -138,7 +140,7 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | P1 Zero fughe L2 negli eval deterministici | pronto da provare | 0 |
 | P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
 | P3 Coding L1 via Claude Code | pronto da provare | 0 |
-| P4 Task L2 solo in locale | pronto da provare | 0 |
+| P4 Task L2 solo in locale | passi 1-4 superati il 2026-10-23 (prova di Claude, «Testalo tu»); passi 5-6 da provare dopo D-303 | 0 |
 | P5 Ripresa dopo `kill` del core | pronto da provare | 0; 2-3 se resta vivo un processo `claude` |
 | P6 Log del gateway leggibile | manca lavoro, se i conteggi non bastano | 3-5 |
 | P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |

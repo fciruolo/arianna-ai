@@ -40,6 +40,9 @@ import {
   isCloudRoute,
   directChatOf,
   NO_PROJECT,
+  noProjectCase,
+  noProjectError,
+  noProjectReply,
   planDelegation,
   repoFor,
   runDelegation,
@@ -915,7 +918,23 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     else if (brief === '') error = 'the brief is empty';
     else if (reason === '') error = 'the reason is empty: say in one short line why you bring this agent in';
     else if (ways !== undefined && ways.options.length === 0) error = noWayReason(agentName, target.card, ways.excluded, 'work');
-    else if (ways === undefined && isCloudRoute(where) && repo === undefined) error = NO_PROJECT;
+    // No project here (D-303): a private conversation has none, a work one may have none or one no longer approved.
+    // A prefer-first card whose first way is the local model (D-298) works without a folder.
+    const local = allowed !== undefined && target !== undefined && preferredWay(target.card, allowed) === 'local';
+    const noProject = error === undefined && ways === undefined && !local && isCloudRoute(where) && conversation !== undefined ? noProjectCase(conversation.mode, repo, approvedRepo(env, repo)) : undefined;
+    if (noProject !== undefined) {
+      // Arianna says why with our fixed words, not the model's (D-303): there is no other way in this conversation.
+      const result = `error: ${DELEGATE}: ${noProjectError(agentName, noProject)}`;
+      const reply = await openReply(sql, task.id, { runId: ctx.runId });
+      const stored = await reply.finish(noProjectReply(agentName, noProject), 'L0');
+      if (!stored.stored) {
+        await recordTurn(sql, { ...turn, label, result: `${UNDELIVERED} (${stored.reason})` });
+        return { kind: 'wait-user', reason: undelivered(stored.reason), usage };
+      }
+      await recordTurn(sql, { ...turn, label, result, messageId: stored.message.id });
+      return { kind: 'answered', messageId: stored.message.id, usage };
+    }
+    if (error === undefined && ways === undefined && !local && isCloudRoute(where) && repo === undefined) error = NO_PROJECT;
     if (error !== undefined || target === undefined) {
       const result = `error: ${DELEGATE}: ${error ?? ''}`;
       await recordTurn(sql, { ...turn, label, result });

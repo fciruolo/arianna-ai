@@ -125,6 +125,9 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   assert.equal(line('wait', 'something else'), 'In attesa dell’esecutore');
   assert.equal(line('error', 'the user did not approve sending the brief to the cloud: do what you can here'), 'Errore: il brief non è stato approvato per il cloud, provo un’altra strada');
   assert.equal(line('error', 'no project for the Coder: the user opens a work conversation'), 'Errore: nessun progetto per il Coder: apri una conversazione di lavoro con un progetto approvato, provo un’altra strada');
+  assert.equal(line('error', 'coder does not work in a private conversation: it works only in a work conversation with a project'), 'Errore: Coder non lavora nelle conversazioni Private: apri una conversazione di Lavoro con il progetto, provo un’altra strada');
+  assert.equal(line('error', 'this work conversation has no project, and coder works only in one of the approved projects; tell the user'), 'Errore: questa conversazione di Lavoro non ha un progetto, provo un’altra strada');
+  assert.equal(line('error', 'the project of this work conversation is not among the approved projects coder may open (taken off the list, or its folder is not a git repository); tell the user'), 'Errore: il progetto di questa conversazione non è fra quelli approvati in cui l’agente può lavorare, provo un’altra strada');
   assert.equal(line('error', 'the project site is no longer among the projects the user approved: tell the user'), 'Errore: il progetto site non è più fra quelli approvati, provo un’altra strada');
   assert.equal(line('error', 'claude: timeout'), 'Errore: Claude Code si è fermato (timeout), provo un’altra strada');
   assert.equal(reasonText('approval needed: budget'), 'serve la tua approvazione per il budget del modello');
