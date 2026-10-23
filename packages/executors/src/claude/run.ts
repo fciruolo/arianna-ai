@@ -12,7 +12,7 @@ import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
 import { preparedMcp, releaseMcp, type McpToolName, type PreparedMcp } from '../mcp.ts';
 import { preparedNotes } from '../notes.ts';
-import { checkRunPidDir, forgetRunPid, recordRunPid } from '../process-group.ts';
+import { checkRunPidDir, forgetRunPid, guardGroup, recordRunPid } from '../process-group.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { claudeArgs, claudeEnv, type ClaudeModel, type ClaudeTool } from './profile.ts';
 import { ClaudeStream, type ClaudeEvent, type ClaudeUsage, type StreamFailure } from './stream.ts';
@@ -408,6 +408,8 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       const child = spawn(file, argv, { cwd: job.cwd, env: claudeEnv(options.env ?? process.env, { mcp: job.mcp !== undefined }), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
       // D-302: a core killed now leaves the group running; the next one stops it from this file.
       const pidFile = options.pidDir === undefined || child.pid === undefined ? undefined : recordRunPid(options.pidDir, CLAUDE_EXECUTOR, child.pid);
+      // D-304: and a guardian stops the group within a second if the core dies, without waiting for that start.
+      const guard = child.pid === undefined ? undefined : guardGroup(child.pid);
 
       const signalGroup = (signal: NodeJS.Signals) => {
         if (child.pid === undefined) return;
@@ -506,6 +508,8 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
         forgetRunPid(pidFile);
         // A stopped run leaves nothing behind in its group.
         if (stopped !== undefined) signalGroup('SIGKILL');
+        // After the stop: the guardian, released, leaves the group alone.
+        guard?.release();
         if (killTimer !== undefined) clearTimeout(killTimer);
         if (pending.length > 0) {
           if (stopped === undefined) line(Buffer.concat(pending));

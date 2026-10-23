@@ -1,14 +1,18 @@
-// D-302: the process groups of the cloud runs a killed core left behind,
-// with real processes standing in for `claude` and its children.
+// D-302: the process groups of the cloud runs a killed core left behind, and
+// D-304: the guardian that stops them when the core dies, with real processes
+// standing in for the core, `claude` and its children.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { resolveHome } from '@arianna/config';
-import { forgetRunPid, processStart, readPidRecord, reapRunOrphans, recordRunPid } from '@arianna/executors';
+import { forgetRunPid, guardGroup, processStart, readPidRecord, reapRunOrphans, recordRunPid } from '@arianna/executors';
+
+import { guardians, noGuardianLeft } from './support/guardians.ts';
 
 const ROOT = join(resolveHome({}), 'data', 'test-tmp', `run-pids-${randomUUID()}`);
 const started: ChildProcess[] = [];
@@ -136,5 +140,107 @@ describe('run pid files (D-302)', () => {
     assert.deepEqual(await reapRunOrphans(folder, 100), []);
     assert.deepEqual(readdirSync(folder), ['notes.txt']);
     await assert.rejects(reapRunOrphans('data/run-pids'), TypeError);
+  });
+});
+
+const FAKE_CORE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-core.ts');
+
+/** A core that guards the group `pgid`, with its guardian's pid. */
+async function core(pgid: number): Promise<{ core: ChildProcess; guard: number; other: number; release: () => Promise<void> }> {
+  const child = spawn(process.execPath, [FAKE_CORE, String(pgid)], { detached: true, stdio: ['pipe', 'pipe', 'ignore'] });
+  started.push(child);
+  const lines: string[] = [];
+  let waiting: (() => void) | undefined;
+  child.stdout.on('data', (chunk: Buffer) => {
+    lines.push(...chunk.toString('utf8').split('\n').filter((line) => line !== ''));
+    waiting?.();
+  });
+  const next = async (): Promise<string> => {
+    while (lines.length === 0) await new Promise<void>((resolve) => (waiting = resolve));
+    return lines.shift() ?? '';
+  };
+  const { guard, other } = JSON.parse(await next()) as { guard?: number; other?: number };
+  assert.ok(typeof other === 'number');
+  assert.ok(typeof guard === 'number' && processStart(guard) !== undefined, 'the guardian runs');
+  return {
+    core: child,
+    guard,
+    other,
+    release: async () => {
+      child.stdin.write('release\n');
+      assert.equal(await next(), 'released');
+    },
+  };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('run guardian (D-304)', () => {
+  it('a core killed with SIGKILL takes the group down within a few seconds, without a restart', async () => {
+    const { leader, child } = await group();
+    const fake = await core(leader);
+    const killed = Date.now();
+    fake.core.kill('SIGKILL');
+    assert.ok(await gone(leader), 'leader stopped');
+    assert.ok(await gone(child), 'child in the group stopped');
+    assert.ok(Date.now() - killed < 3_000);
+    assert.ok(await gone(fake.guard), 'the guardian exits after the stop');
+    assert.ok(processStart(fake.other) !== undefined, 'a child the core started later did not hold the pipe open, and lives on');
+    process.kill(fake.other, 'SIGKILL');
+  });
+
+  it('a group that ignores SIGTERM gets SIGKILL about a second after the death of the core', async () => {
+    const { leader, child } = await group(true);
+    const fake = await core(leader);
+    const killed = Date.now();
+    fake.core.kill('SIGKILL');
+    assert.ok(await gone(leader));
+    assert.ok(await gone(child));
+    assert.ok(Date.now() - killed < 2_500, 'about a second of grace, not more');
+  });
+
+  it('while the core lives the group lives too', async () => {
+    const { leader, child } = await group();
+    const fake = await core(leader);
+    await sleep(1_500);
+    assert.ok(processStart(leader) !== undefined && processStart(child) !== undefined, 'the group still runs');
+    assert.ok(processStart(fake.guard) !== undefined, 'and its guardian waits');
+    fake.core.kill('SIGKILL');
+    assert.ok(await gone(leader));
+  });
+
+  it('a released guardian exits and leaves the group alone, even when the core dies later', async () => {
+    const { leader, child } = await group();
+    const fake = await core(leader);
+    await fake.release();
+    assert.ok(await gone(fake.guard), 'the guardian exits');
+    fake.core.kill('SIGKILL');
+    await sleep(1_500);
+    assert.ok(processStart(leader) !== undefined && processStart(child) !== undefined, 'the group still runs');
+  });
+
+  it('a core that dies after its group is gone: the guardian just exits', async () => {
+    const { leader, child } = await group();
+    const fake = await core(leader);
+    process.kill(-leader, 'SIGKILL');
+    assert.ok(await gone(leader));
+    assert.ok(await gone(child));
+    fake.core.kill('SIGKILL');
+    assert.ok(await gone(fake.guard), 'the guardian exits');
+  });
+
+  it('starts no guardian for a group that is no group, and release is harmless twice', async () => {
+    for (const pgid of [0, 1, -5, 1.5, Number.NaN]) {
+      const guard = guardGroup(pgid);
+      assert.equal(guard.pid, undefined);
+      guard.release();
+    }
+    const { leader } = await group();
+    const guard = guardGroup(leader);
+    assert.deepEqual(guardians().filter((one) => one.group === leader), [{ pid: guard.pid, group: leader }]);
+    guard.release();
+    guard.release();
+    assert.ok(await noGuardianLeft());
+    assert.ok(processStart(leader) !== undefined, 'released: the group still runs');
   });
 });

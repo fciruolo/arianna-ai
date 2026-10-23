@@ -154,7 +154,7 @@ export {
   type McpToolName,
   type PreparedMcp,
 } from './mcp.ts';
-export { forgetRunPid, processStart, readPidRecord, reapOrphan, reapRunOrphans, recordRunPid, RUN_PID_DIR, writePidRecord } from './process-group.ts';
+export { forgetRunPid, GUARD_NAME, guardGroup, processStart, readPidRecord, reapOrphan, reapRunOrphans, recordRunPid, RUN_PID_DIR, writePidRecord, type GroupGuard } from './process-group.ts';
 export {
   MAX_CODER_NOTES,
   MAX_CODER_NOTES_BYTES,
