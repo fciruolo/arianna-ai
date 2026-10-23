@@ -219,6 +219,8 @@ export function createPusher(options: PusherOptions): Pusher {
           );
           if (isGone(status)) await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint}`;
           else if (status >= 200 && status < 300) sent += 1;
+          // A refusal (403 for a bad VAPID signature, 413, 429…): the status only, never the endpoint.
+          else options.onError?.(Object.assign(new PushError(`push service answered ${String(status)}`), { code: `status-${String(status)}` }));
         } catch (error) {
           options.onError?.(error);
         }
