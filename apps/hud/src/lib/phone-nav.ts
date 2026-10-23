@@ -44,6 +44,7 @@ export type AppPage =
   | 'routines'
   | 'followed'
   | 'wiki'
+  | 'gateway'
   | 'pending'
   | 'more';
 

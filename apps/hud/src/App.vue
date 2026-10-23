@@ -35,6 +35,7 @@ import ThoughtsPage from './components/ThoughtsPage.vue';
 import DashboardPage from './components/DashboardPage.vue';
 import RoutinesPage from './components/RoutinesPage.vue';
 import FollowedPage from './components/FollowedPage.vue';
+import GatewayLogPage from './components/GatewayLogPage.vue';
 import WikiPage from './components/WikiPage.vue';
 import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
@@ -73,6 +74,8 @@ import {
   isRoutinesPath,
   isFollowedPath,
   FOLLOWED_PATH,
+  isGatewayLogPath,
+  GATEWAY_LOG_PATH,
   isWikiPath,
   WIKI_PATH,
   ROUTINES_PATH,
@@ -550,6 +553,11 @@ function openFollowed(): void {
   openPage('followed', FOLLOWED_PATH, 'Seguiti');
 }
 
+/** «Registro del gateway» (D-296): every decision of the gateway, metadata only. */
+function openGatewayLog(): void {
+  openPage('gateway', GATEWAY_LOG_PATH, 'Registro del gateway');
+}
+
 /** The Wiki (D-280): pages proposed by the local model from the notes, approved by the user. */
 function openWiki(): void {
   openPage('wiki', WIKI_PATH, 'Wiki');
@@ -786,6 +794,10 @@ function followMain(): void {
     openWiki();
     return;
   }
+  if (isGatewayLogPath(window.location.pathname)) {
+    openGatewayLog();
+    return;
+  }
   if (isThoughtsPath(window.location.pathname)) {
     openThoughts();
     return;
@@ -995,6 +1007,7 @@ function goArea(area: NavArea): void {
     case 'god': openGod(); break;
     case 'followed': openFollowed(); break;
     case 'office': openOffice(); break;
+    case 'gateway': openGatewayLog(); break;
     case 'settings': openSettings(); break;
   }
 }
@@ -1175,6 +1188,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @god="openGod"
       @knowledge="openKnowledge()"
       @wiki="openWiki"
+      @gateway="openGatewayLog"
       @office="openOffice"
       @projects="openProjects()"
       @clients="openClients()"
@@ -1238,6 +1252,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
           <template v-else-if="page === 'routines'">Arianna / <b class="font-medium text-ink">Routine</b></template>
           <template v-else-if="page === 'followed'">Arianna / <b class="font-medium text-ink">Seguiti</b></template>
           <template v-else-if="page === 'wiki'">Arianna / <b class="font-medium text-ink">Wiki</b></template>
+          <template v-else-if="page === 'gateway'">Arianna / <b class="font-medium text-ink">Registro del gateway</b></template>
           <template v-else-if="page === 'pending'">Arianna / <b class="font-medium text-ink">Attende te</b></template>
           <template v-else-if="page === 'more'">Arianna / <b class="font-medium text-ink">Altro</b></template>
           <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
@@ -1371,6 +1386,7 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       <RoutinesPage v-else-if="page === 'routines'" :version="routinesVersion" @open="openConversation" />
       <FollowedPage v-else-if="page === 'followed'" @omlx="omlxUpdate = updateHint($event)" />
       <WikiPage v-else-if="page === 'wiki'" @open-graph="openKnowledge" />
+      <GatewayLogPage v-else-if="page === 'gateway'" @open="openConversation" />
       <MorePage
         v-else-if="page === 'more'"
         :live="live"

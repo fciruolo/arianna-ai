@@ -86,6 +86,13 @@ export function isFollowedPath(pathname: string): boolean {
   return pathname === FOLLOWED_PATH || pathname === `${FOLLOWED_PATH}/`;
 }
 
+/** «Registro del gateway» (D-296): one row per decision of the gateway, metadata only. */
+export const GATEWAY_LOG_PATH = '/registro-gateway';
+
+export function isGatewayLogPath(pathname: string): boolean {
+  return pathname === GATEWAY_LOG_PATH || pathname === `${GATEWAY_LOG_PATH}/`;
+}
+
 /** The Wiki (D-280): pages proposed by the local model from the notes, approved by the user. */
 export const WIKI_PATH = '/wiki';
 

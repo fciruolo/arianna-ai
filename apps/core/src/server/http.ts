@@ -205,6 +205,7 @@ import { attachmentFilesOf, attachmentIds, AttachmentError, discardAttachment, r
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
+import { GatewayLogQueryError, loadGatewayLog, parseGatewayLogQuery } from '../gateway-log.ts';
 import { appendEvent, type NewEvent } from '../events.ts';
 import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
 import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
@@ -2739,6 +2740,17 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
     route('GET', '/api/status', async () => ({ body: await loadStatus(sql, agents()) })),
+
+    // «Registro del gateway» (D-296): one row per decision, newest first, metadata only (never summary,
+    // reason or hash), without the rows of an incognito conversation. Readable from the phone too.
+    route('GET', '/api/gateway/log', async (_request, url) => {
+      try {
+        return { body: await loadGatewayLog(sql, parseGatewayLogQuery(url.searchParams)) };
+      } catch (error) {
+        if (error instanceof GatewayLogQueryError) throw new HttpError(400, error.message);
+        throw error;
+      }
+    }),
 
     // What this installation is (D-089): development or production, the name of its folder, the commit.
     route('GET', '/api/installation', () => {
