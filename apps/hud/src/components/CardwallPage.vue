@@ -33,7 +33,9 @@ import {
   type WallState,
   ALL_FILTERS,
 } from '../lib/cardwall.ts';
+import { activeFilters, chosenText, type FilterField, type FilterKey, filtersButtonLabel, showCardsText, withFilter, withoutFilter } from '../lib/cardwall-filters.ts';
 import { neighbourColumn, phoneColumn } from '../lib/cardwall-phone.ts';
+import { followMedia, phoneMedia } from '../lib/studio-phone.ts';
 import { agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
@@ -42,6 +44,7 @@ import FilterMenu from './FilterMenu.vue';
 import ImBoard from './ImBoard.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
+import PhoneSheet from './PhoneSheet.vue';
 
 /**
  * The cardwall (I-13 tappa C2, D-152): the cards and the commitments of the
@@ -322,6 +325,55 @@ const PRIORITY_FILTERS = [
 const priorityOptions = [{ value: 'all', text: 'Ogni priorità' }, ...PRIORITY_FILTERS];
 const dueOptions = DUE_FILTERS.map((item) => ({ value: item.value, text: item.value === 'all' ? 'Ogni scadenza' : item.text }));
 const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS];
+
+// The phone (D-294): «Filtri», «Ordina» and «Colonne» on one line, each opening a sheet; the active filters as a row of chips.
+const filterFields = computed<FilterField[]>(() => [
+  { key: 'project', label: 'Progetto', icon: 'project', options: projectOptions.value },
+  { key: 'kind', label: 'Tipo', icon: 'card-body', options: KIND_OPTIONS },
+  { key: 'assignee', label: 'Chi la fa', icon: 'coder', options: assigneeOptions.value },
+  { key: 'priority', label: 'Priorità', icon: 'priority', options: priorityOptions },
+  { key: 'due', label: 'Scadenza', icon: 'calendar', options: dueOptions },
+  { key: 'label', label: 'Etichetta', icon: 'private', options: labelOptions },
+]);
+const activeList = computed(() => activeFilters(filterFields.value, state.value.filters));
+const sheet = ref<'filters' | 'sort' | 'columns' | null>(null);
+/** The filter whose choices the sheet shows; null: the list of the filters. */
+const sheetKey = ref<FilterKey | null>(null);
+const sheetField = computed(() => filterFields.value.find((field) => field.key === sheetKey.value));
+function openSheet(kind: 'filters' | 'sort' | 'columns'): void {
+  sheetKey.value = null;
+  sheet.value = kind;
+}
+function closeSheet(): void {
+  sheet.value = null;
+  sheetKey.value = null;
+}
+/** The row of the filter last opened: the focus goes back to it on the list. */
+const lastKey = ref<FilterKey | null>(null);
+function openField(key: FilterKey): void {
+  lastKey.value = key;
+  sheetKey.value = key;
+}
+/** A choice applies at once and goes back to the list of the filters. */
+function chooseFilter(field: FilterField, value: string): void {
+  state.value.filters = withFilter(state.value.filters, field, value);
+  sheetKey.value = null;
+}
+// A window grown past the phone (a big phone turned, a wider window) has the bar of the Mac: the sheets close.
+let stopPhone: (() => void) | undefined;
+onMounted(() => {
+  stopPhone = followMedia(phoneMedia(), (phone) => {
+    if (!phone) closeSheet();
+  });
+});
+onBeforeUnmount(() => stopPhone?.());
+function dropFilter(key: FilterKey): void {
+  state.value.filters = withoutFilter(state.value.filters, key);
+}
+function chooseSort(value: string): void {
+  sortChoice.value = value;
+  closeSheet();
+}
 </script>
 
 <template>
@@ -340,7 +392,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           <Icon name="calendar" :size="14" />IM
         </button>
       </div>
-      <div v-if="state.view !== 'im'" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 max-md:order-last max-md:basis-full" role="group" aria-label="Filtri">
+      <div v-if="state.view !== 'im'" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 max-md:hidden" role="group" aria-label="Filtri">
         <FilterMenu v-model="state.filters.project" label="Progetto" icon="project" :options="projectOptions" />
         <FilterMenu v-model="state.filters.kind" label="Tipo" icon="card-body" :options="KIND_OPTIONS" />
         <FilterMenu v-model="state.filters.assignee" label="Chi la fa" icon="coder" :options="assigneeOptions" />
@@ -358,10 +410,10 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           <Icon name="close" :size="14" />
         </button>
       </div>
-      <div v-if="state.view !== 'im'" class="ml-auto flex items-center gap-2">
+      <div v-if="state.view !== 'im'" class="ml-auto flex items-center gap-2 max-md:hidden">
         <FilterMenu v-model="sortChoice" label="Ordina per" icon="sort" :options="sortOptions" plain align-right />
         <FilterMenu v-if="state.view === 'board'" label="Colonne" icon="cardwall" icon-only align-right>
-          <div class="flex w-[220px] flex-col gap-1.5 text-[14px] phone:w-auto">
+          <div class="flex w-[220px] flex-col gap-1.5 text-[14px]">
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
             <p class="mt-2 mb-0.5 text-[13px] font-semibold text-muted">Mostra</p>
@@ -370,6 +422,35 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
             </label>
           </div>
         </FilterMenu>
+      </div>
+    </div>
+
+    <!-- The phone (D-294): one line of «Filtri», «Ordina» and «Colonne»; the active filters as chips that scroll sideways. -->
+    <div v-if="state.view !== 'im'" class="flex flex-col gap-2 md:hidden">
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn gap-2 px-3.5 text-[15px]" :class="activeList.length > 0 ? 'border-accent/60' : ''" :aria-label="filtersButtonLabel(activeList.length)" aria-haspopup="dialog" :aria-expanded="sheet === 'filters'" @click="openSheet('filters')">
+          <Icon name="filter" :size="16" />Filtri
+          <span v-if="activeList.length > 0" class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[12px] leading-5 font-semibold text-accent-ink" aria-hidden="true">{{ activeList.length }}</span>
+        </button>
+        <button type="button" class="btn gap-2 px-3.5 text-[15px]" aria-haspopup="dialog" :aria-expanded="sheet === 'sort'" @click="openSheet('sort')">
+          <Icon name="sort" :size="16" />Ordina
+        </button>
+        <button v-if="state.view === 'board'" type="button" class="btn ml-auto w-11 px-0" title="Colonne" aria-label="Colonne" aria-haspopup="dialog" :aria-expanded="sheet === 'columns'" @click="openSheet('columns')">
+          <Icon name="cardwall" :size="16" />
+        </button>
+      </div>
+      <div v-if="activeList.length > 0" class="-mx-4 flex shrink-0 items-center gap-1.5 overflow-x-auto px-4" role="group" aria-label="Filtri attivi">
+        <button
+          v-for="item in activeList"
+          :key="item.key"
+          type="button"
+          class="flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-accent/60 bg-accent/10 pr-3 pl-3.5 text-[14px] whitespace-nowrap"
+          :aria-label="`Togli il filtro ${item.label}: ${item.text}`"
+          @click="dropFilter(item.key)"
+        >
+          <span class="text-muted">{{ item.label }}:</span><b class="font-medium">{{ item.text }}</b><Icon name="close" :size="13" class="text-muted" />
+        </button>
+        <button type="button" class="h-11 shrink-0 px-2 text-[14px] text-accent" @click="resetFilters">Azzera</button>
       </div>
     </div>
 
@@ -551,5 +632,64 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       @close="selectedId = null"
       @changed="refresh"
     />
+    <!-- The sheets of the phone (D-294). -->
+    <PhoneSheet v-if="sheet === 'filters'" :title="sheetField?.label ?? 'Filtri'" :back="sheetField !== undefined ? 'Filtri' : null" :page="sheetKey ?? ''" @close="closeSheet" @back="sheetKey = null">
+      <ul v-if="sheetField === undefined" class="m-0 flex list-none flex-col p-0">
+        <li v-for="field in filterFields" :key="field.key" class="border-t border-line first:border-t-0">
+          <button type="button" class="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[15px]" :data-autofocus="lastKey === field.key ? '' : undefined" :aria-label="`${field.label}: ${chosenText(field, state.filters[field.key])}`" @click="openField(field.key)">
+            <Icon :name="field.icon" :size="16" class="shrink-0 text-muted" />
+            <span class="flex-1">{{ field.label }}</span>
+            <span class="max-w-[50%] truncate" :class="activeList.some((item) => item.key === field.key) ? 'text-accent' : 'text-muted'">{{ chosenText(field, state.filters[field.key]) }}</span>
+            <Icon name="expand" :size="16" class="shrink-0 text-muted" />
+          </button>
+        </li>
+      </ul>
+      <div v-else role="group" :aria-label="sheetField.label" class="flex flex-col">
+        <button
+          v-for="option in sheetField.options"
+          :key="option.value"
+          type="button"
+          :aria-pressed="state.filters[sheetField.key] === option.value"
+          :data-autofocus="state.filters[sheetField.key] === option.value ? '' : undefined"
+          class="flex min-h-12 w-full items-center gap-3 border-t border-line px-4 text-left text-[15px] first:border-t-0"
+          @click="chooseFilter(sheetField, option.value)"
+        >
+          <span class="flex-1">{{ option.text }}</span>
+          <Icon v-if="state.filters[sheetField.key] === option.value" name="approve" :size="16" class="shrink-0 text-accent" />
+        </button>
+      </div>
+      <template #footer>
+        <button type="button" class="btn flex-1 text-[15px]" :disabled="activeList.length === 0" @click="resetFilters">Azzera</button>
+        <button type="button" class="btn btn-primary flex-[2] text-[15px]" @click="closeSheet">{{ showCardsText(visibleCards.length) }}</button>
+      </template>
+    </PhoneSheet>
+    <PhoneSheet v-if="sheet === 'sort'" title="Ordina per" @close="closeSheet">
+      <div role="group" aria-label="Ordina per" class="flex flex-col">
+        <!-- An order chosen from a header of «Lista» is no choice of this sheet: it shows, not as a button. -->
+        <p v-if="sortChoice === ''" class="flex min-h-12 items-center px-4 text-[15px] text-muted">Ordine della lista (da un’intestazione)</p>
+        <button
+          v-for="option in SORT_MENU"
+          :key="option.value"
+          type="button"
+          :aria-pressed="sortChoice === option.value"
+          :data-autofocus="sortChoice === option.value ? '' : undefined"
+          class="flex min-h-12 w-full items-center gap-3 border-t border-line px-4 text-left text-[15px] first:border-t-0"
+          @click="chooseSort(option.value)"
+        >
+          <span class="flex-1">{{ option.text }}</span>
+          <Icon v-if="sortChoice === option.value" name="approve" :size="16" class="shrink-0 text-accent" />
+        </button>
+      </div>
+    </PhoneSheet>
+    <PhoneSheet v-if="sheet === 'columns'" title="Colonne" @close="closeSheet">
+      <div class="flex flex-col px-4 py-1 text-[15px]">
+        <label class="flex min-h-12 items-center gap-3"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
+        <label class="flex min-h-12 items-center gap-3 border-t border-line"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
+        <p class="mt-2 mb-0.5 text-[13px] font-semibold text-muted">Mostra</p>
+        <label v-for="column in allColumns" :key="column.id" class="flex min-h-12 items-center gap-3 border-t border-line">
+          <input type="checkbox" class="accent-[var(--accent)]" :checked="!state.prefs.hidden.includes(column.id)" @change="toggleHidden(column.id)" />{{ column.title }}
+        </label>
+      </div>
+    </PhoneSheet>
   </section>
 </template>

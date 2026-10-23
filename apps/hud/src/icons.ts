@@ -42,6 +42,7 @@ import {
   LifeBuoy,
   Link,
   List,
+  ListFilter,
   ListChecks,
   Lightbulb,
   Lock,
@@ -182,6 +183,8 @@ export const ICONS = {
   priority: Flag,
   'view-list': List,
   sort: ArrowDownUp,
+  // The filters of the cardwall on the phone (D-294).
+  filter: ListFilter,
   'sort-up': ChevronUp,
   'sort-down': ChevronDown,
   clients: Handshake,

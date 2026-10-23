@@ -7,7 +7,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - Col dito niente testi da Mac: Pensieri e Sviluppo senza «⌘/Ctrl+Invio», la Wiki dice «+» e «⋯» al posto del clic destro, Novità dice di toccare l’icona di GOD, il fumetto dell’Ufficio dice «Tocca» al posto del tasto E e si tocca, Finanze non dice più di passare sul grafico; sul telefono la Routine dice che giorni e ora si spostano dal modulo (D-294).
-- Col dito i filtri della Cardwall sono alti 44 px; sul telefono il loro menu è un foglio in basso che non esce più dallo schermo (D-294).
+- Sul telefono i filtri della Cardwall stanno in una riga sola, «Filtri» col numero di quelli attivi, «Ordina» e «Colonne», con i filtri attivi come chip da togliere con ×; «Filtri» apre un foglio dal basso con una riga per filtro, le sue scelte e «Mostra N card» (D-294).
+- Col dito i menu dei filtri (Cardwall sul Mac, IM) hanno voci da 44 px e sul telefono si aprono come foglio in basso (D-294).
 - Col dito le caselle di spunta hanno 44 px da toccare, e così i nomi e le suggerite delle sorgenti in Catalogo agenti e Skill (D-294).
 - Sul telefono i grafici di Finanze e Clienti hanno etichette leggibili, a 12 px, e meno nomi di mese quando non ci stanno (D-294).
 - L’avviso «Spostata · Annulla» del calendario delle routine resta sopra la riga della casa e sopra la barra in basso del telefono (D-294).
