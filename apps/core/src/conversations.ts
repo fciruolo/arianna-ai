@@ -7,7 +7,7 @@ import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
 import { createDelegation } from './orchestrator/delegations.ts';
-import { MAX_INTERVENTIONS, parseAddressed } from './addressed.ts';
+import { MAX_INTERVENTIONS, parseAddressed, type MentionBlock } from './addressed.ts';
 import { activeParticipants, leaveIdle, roundLine, type LeaveRule } from './participants.ts';
 import { attachmentRefusal, bindAttachments, type AttachmentInfo } from './attachments.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
@@ -708,6 +708,11 @@ export interface MessageOptions {
    * Without it a message starting with «@» or «/giro» is an ordinary message.
    */
   mentionable?: readonly string[];
+  /**
+   * The agents the core knows that «@name» cannot call, with the reason (D-299): the refusal says why.
+   * A function, read only for a name that is not callable: it reads the cards turned off from the disk.
+   */
+  unmentionable?: () => Readonly<Record<string, MentionBlock>>;
   /** Ids of pending attachments the message carries (D-247): only in a private conversation answered on the Mac. */
   attachments?: readonly string[];
 }
@@ -776,10 +781,31 @@ export function checkUserMessage(conversation: MessageTarget, body: string, opti
 }
 
 /**
+ * The refusal of «@name» for an agent Arianna cannot call (D-299): the chat
+ * reads the name and the reason from the text. `written` is the name as the
+ * user typed it, matched by the mention rule (a letter, then letters, digits, «-»).
+ */
+export function mentionRefusal(written: string, block: MentionBlock | undefined): ChatError {
+  switch (block) {
+    case 'off':
+      return new ChatError('invalid', `the agent ${written} is off`);
+    case 'own-chat':
+      return new ChatError('invalid', `the agent ${written} answers only in its own chat`);
+    case 'no-executor':
+      return new ChatError('invalid', `the agent ${written} takes no delegated step`);
+    case undefined:
+      return new ChatError('invalid', `no agent is called ${written}`);
+  }
+}
+
+/**
  * The agents a message addresses (D-107, tappa B2): «@name …» one agent
  * Arianna may delegate to, «/giro …» every agent in the conversation, in the
  * order they joined (at most MAX_INTERVENTIONS). Only in a conversation with
  * Arianna, never the secretary's; anything else is an ordinary message.
+ * There «@name» for an agent Arianna cannot call is refused (D-299), never
+ * an ordinary message: only «@arianna» and what the mention rule does not
+ * read as a name («@ 10 euro», «@@») go to Arianna.
  * Also when a message enters the queue (D-218): refused there, never later.
  */
 export async function addressedOf(
@@ -803,8 +829,10 @@ export async function addressedOf(
   }
   if (conversation.secretary) return undefined;
   if (parsed.kind === 'mention') {
-    // «@ciao» or an agent Arianna cannot call: an ordinary message.
-    if (!options.mentionable.includes(parsed.agent)) return undefined;
+    // «@arianna …» is a message to Arianna herself; «@Codr …», a name nobody has, is refused instead of going to her
+    // in silence (D-299), and so is an agent the core knows but Arianna cannot call, with the reason.
+    if (parsed.agent === CHAT_AGENT) return undefined;
+    if (!options.mentionable.includes(parsed.agent)) throw mentionRefusal(parsed.written, options.unmentionable?.()[parsed.agent]);
     if (parsed.brief === '') throw new ChatError('invalid', `write what you ask ${parsed.agent} after its name`);
     return { kind: 'mention', agents: [parsed.agent] };
   }

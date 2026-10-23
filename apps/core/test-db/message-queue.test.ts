@@ -78,6 +78,10 @@ test('"Modifica" and "Togli" change the queue before the message leaves; a remov
   assert.ok('queued' in queued);
   const changed = await editQueued(sql, queued.queued.id, 'e anche luglio');
   assert.equal(changed.body, 'e anche luglio');
+  // «@name» of the new text is checked as when it was written (D-299): a name nobody has is refused now, not when it would leave.
+  const named = { mentionable: ['coder'] };
+  await assert.rejects(editQueued(sql, queued.queued.id, '@Codr, rileggi', named), (error) => error instanceof ChatError && error.message === 'no agent is called Codr');
+  assert.equal((await editQueued(sql, queued.queued.id, '@coder rileggi', named)).body, '@coder rileggi');
   await removeQueued(sql, queued.queued.id);
   assert.deepEqual((await listQueue(sql, conversation.id)).messages, []);
   await assert.rejects(removeQueued(sql, queued.queued.id), (error) => error instanceof ChatError && error.code === 'not-found');

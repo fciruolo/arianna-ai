@@ -225,6 +225,22 @@ export function planErrorText(message: string): string | undefined {
   return undefined;
 }
 
+/**
+ * «@name» refused by the core (D-299): a name nobody has, or an agent Arianna
+ * cannot call here, with the reason; undefined for another error. The name is
+ * as the user wrote it.
+ */
+function mentionErrorText(message: string): string | undefined {
+  const unknown = /^no agent is called ([a-z][a-z0-9-]*)$/i.exec(message);
+  if (unknown?.[1] !== undefined) return `Non conosco l’agente @${unknown[1]}: controlla il nome (il menu di @ mostra chi puoi chiamare), o scrivi senza @ per parlare con Arianna.`;
+  const blocked = /^the agent ([a-z][a-z0-9-]*) (is off|answers only in its own chat|takes no delegated step)$/i.exec(message);
+  const name = blocked?.[1];
+  if (name === undefined) return undefined;
+  if (blocked?.[2] === 'is off') return `L’agente @${name} è spento: accendilo in Impostazioni → Agenti per chiamarlo.`;
+  if (blocked?.[2] === 'answers only in its own chat') return `@${name} risponde solo nella sua chat, non in una conversazione con Arianna.`;
+  return `@${name} non prende lavori da Arianna: non ha un esecutore per i passi delegati.`;
+}
+
 /** An error of the API (or of the network) as the user reads it. */
 export function errorText(cause: unknown): string {
   if (!(cause instanceof ApiError)) {
@@ -247,6 +263,8 @@ export function errorText(cause: unknown): string {
   if (plan !== undefined) return plan;
   const mention = /^write what you ask ([a-z][a-z0-9-]*) after its name$/.exec(cause.message);
   if (mention?.[1] !== undefined) return `Scrivi dopo @${mention[1]} cosa gli chiedi.`;
+  const blocked = mentionErrorText(cause.message);
+  if (blocked !== undefined) return blocked;
   const queueFull = /^the queue already holds (\d+) messages/.exec(cause.message);
   if (queueFull?.[1] !== undefined) return `La coda ha già ${queueFull[1]} messaggi: aspetta le risposte.`;
   const length = /^the message is longer than (\d+) characters$/.exec(cause.message);

@@ -39,7 +39,8 @@ import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment, type ClaudeStepMcp } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
-import { CHAT_AGENT, characterOn, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
+import { CHAT_AGENT, characterOn, CLAUDE_CHAT_AGENT, CODEX_CHAT_AGENT, LOCAL_CHAT_AGENT, loadConversation, type Conversation, type Message } from '../conversations.ts';
+import type { MentionBlock } from '../addressed.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
@@ -210,6 +211,24 @@ function delegable(name: string, agent: LoadedAgent, assignee: string): boolean 
  */
 export function mentionableAgents(agents: ReadonlyMap<string, LoadedAgent>): string[] {
   return [...agents].filter(([name, agent]) => delegable(name, agent, ORCHESTRATOR_AGENT)).map(([name]) => name).sort();
+}
+
+/**
+ * The agents the core knows that «@name» cannot call in a conversation with
+ * Arianna (D-299), with the reason: the user's agents turned off, those that
+ * answer only in a chat of their own (GOD, the Finances, the local model and
+ * the plain chats with Claude or ChatGPT of «Con chi parli»), those with no
+ * executor for a delegated step. Arianna is not among them: «@arianna …» is a
+ * message to her.
+ */
+export function mentionBlocks(agents: ReadonlyMap<string, LoadedAgent>, disabled: ReadonlyMap<string, LoadedAgent>): Record<string, MentionBlock> {
+  const blocks: Record<string, MentionBlock> = { [CLAUDE_CHAT_AGENT]: 'own-chat', [CODEX_CHAT_AGENT]: 'own-chat' };
+  for (const name of disabled.keys()) if (!agents.has(name)) blocks[name] = 'off';
+  for (const [name, agent] of agents) {
+    if (name === ORCHESTRATOR_AGENT || delegable(name, agent, ORCHESTRATOR_AGENT)) continue;
+    blocks[name] = name === GOD_AGENT || name === LOCAL_CHAT_AGENT || isFinanceCard(agent.card) ? 'own-chat' : 'no-executor';
+  }
+  return blocks;
 }
 
 /**

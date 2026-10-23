@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.172.1] - 2026-10-23
+
+### Corretto
+
+- «@Codr, …» con un nome che non è un agente chiamabile non va più ad Arianna in silenzio: è rifiutato e il messaggio torna nel campo con «Non conosco l’agente @Codr», o con il motivo se l’agente c’è ma non si può chiamare (spento, risponde solo nella sua chat, senza esecutore); «@arianna», «@ 10 euro», «@@» e gli indirizzi email restano messaggi per Arianna (D-299).
+
 ## [0.172.0] - 2026-10-23
 
 ### Cambiato

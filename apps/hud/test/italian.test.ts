@@ -175,6 +175,17 @@ test('the refusals of «@nome», «/giro» and the queue read in Italian (D-218,
   assert.equal(said('write what you ask Mario Rossi after its name'), 'Richiesta non valida.');
 });
 
+test('«@nome» for a name nobody has, or an agent Arianna cannot call, reads in Italian with the reason (D-299)', () => {
+  const said = (message: string) => errorText(new ApiError(400, message, {}));
+  assert.match(said('no agent is called Codr'), /^Non conosco l’agente @Codr: /);
+  assert.match(said('the agent spento is off'), /^L’agente @spento è spento: accendilo in Impostazioni → Agenti/);
+  assert.match(said('the agent god answers only in its own chat'), /^@god risponde solo nella sua chat/);
+  assert.match(said('the agent vecchio takes no delegated step'), /^@vecchio non prende lavori da Arianna/);
+  // Something else than a name never reaches the text.
+  assert.equal(said('no agent is called Mario Rossi'), 'Richiesta non valida.');
+  assert.equal(said('the agent spento is tired'), 'Richiesta non valida.');
+});
+
 test('the line of the thinking reads as Claude Code writes it (D-249)', () => {
   assert.equal(thoughtLineText(12_300, false), 'Ha ragionato per 12 s');
   assert.equal(thoughtLineText(65_000, false), 'Ha ragionato per 1 min 5 s');
