@@ -6,11 +6,22 @@ import { connectTarget, startVideoProxy, videoHostAllowed, type VideoProxy } fro
 
 // No test reaches the internet: an echo server on 127.0.0.1 stands for YouTube,
 // reached through a fake resolver; 127.0.0.1 counts as public only through the test option.
+// Every socket of the file, on both sides, is destroyed at the end: one left open
+// keeps the test process alive, and `pnpm test` has no timeout to end it.
 let echo: Server;
 let echoPort = 0;
+const opened = new Set<Socket>();
+const proxies = new Set<VideoProxy>();
+
+function track(socket: Socket): Socket {
+  opened.add(socket);
+  socket.once('close', () => opened.delete(socket));
+  return socket;
+}
 
 before(async () => {
   echo = createServer((socket) => {
+    track(socket);
     socket.on('data', (chunk) => socket.write(chunk));
     socket.on('error', () => undefined);
   });
@@ -18,9 +29,15 @@ before(async () => {
   echoPort = (echo.address() as AddressInfo).port;
 });
 
-after(() => {
+after(async () => {
+  // A test ended by its timeout never reaches its own stop().
+  await Promise.all([...proxies].map((through) => through.stop()));
+  for (const socket of opened) socket.destroy();
   echo.close();
 });
+
+// A wait that never ends (a port taken again by another file, a reply that never comes) fails the test instead.
+const LIMIT = { timeout: 10_000 };
 
 const NAMES: Record<string, string> = {
   'www.youtube.com': '127.0.0.1',
@@ -32,15 +49,17 @@ const resolve = (host: string) => {
   return address === undefined ? Promise.reject(new Error('dns')) : Promise.resolve([{ address, family: 4 }]);
 };
 
-function proxy(extra: { maxBytes?: number; maxMs?: number } = {}): Promise<VideoProxy> {
-  return startVideoProxy({ resolve, unsafeTest: { port: echoPort, addresses: ['127.0.0.1'] }, ...extra });
+async function proxy(extra: { maxBytes?: number; maxMs?: number } = {}): Promise<VideoProxy> {
+  const through = await startVideoProxy({ resolve, unsafeTest: { port: echoPort, addresses: ['127.0.0.1'] }, ...extra });
+  proxies.add(through);
+  return through;
 }
 
 /** Opens a CONNECT through the proxy; resolves with the status line and the socket. */
 function tunnel(through: VideoProxy, target: string, auth = true): Promise<{ status: string; socket: Socket }> {
   const url = new URL(through.url);
   return new Promise((resolvePromise, reject) => {
-    const socket = connect({ host: '127.0.0.1', port: Number(url.port) });
+    const socket = track(connect({ host: '127.0.0.1', port: Number(url.port) }));
     const header = auth ? `Proxy-Authorization: Basic ${Buffer.from(`${url.username}:${url.password}`).toString('base64')}\r\n` : '';
     socket.once('connect', () => socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n${header}\r\n`));
     let buffer = '';
@@ -53,12 +72,14 @@ function tunnel(through: VideoProxy, target: string, auth = true): Promise<{ sta
     };
     socket.on('data', onData);
     socket.once('error', reject);
+    socket.once('close', () => { reject(new Error('closed before the status line')); });
   });
 }
 
 function roundTrip(socket: Socket, text: string): Promise<string> {
-  return new Promise((resolvePromise) => {
+  return new Promise((resolvePromise, reject) => {
     socket.once('data', (chunk: Buffer) => { resolvePromise(chunk.toString()); });
+    socket.once('close', () => { reject(new Error('closed before the answer')); });
     socket.write(text);
   });
 }
@@ -74,7 +95,7 @@ test('the hosts of the list: YouTube and its media servers by name, nothing else
   for (const target of [undefined, 'www.youtube.com', '/path', 'www.youtube.com:0', 'www.youtube.com:99999', '[::1]:443', 'a b:443']) assert.equal(connectTarget(target), undefined, String(target));
 });
 
-test('a tunnel to an allowed host carries the bytes and counts them', async () => {
+test('a tunnel to an allowed host carries the bytes and counts them', LIMIT, async () => {
   const through = await proxy();
   try {
     assert.match(through.url, /^http:\/\/arianna:[A-Za-z0-9_-]{20,}@127\.0\.0\.1:\d+$/);
@@ -89,7 +110,7 @@ test('a tunnel to an allowed host carries the bytes and counts them', async () =
   }
 });
 
-test('refused: another host, another port, an address, no token, a private address behind a name, a plain request', async () => {
+test('refused: another host, another port, an address, no token, a private address behind a name, a plain request', LIMIT, async () => {
   const through = await proxy();
   try {
     assert.match((await tunnel(through, `example.org:${String(echoPort)}`)).status, / 403 /);
@@ -108,7 +129,7 @@ test('refused: another host, another port, an address, no token, a private addre
   }
 });
 
-test('past the bytes limit every tunnel closes and the proxy says why; nothing more is opened', async () => {
+test('past the bytes limit every tunnel closes and the proxy says why; nothing more is opened', LIMIT, async () => {
   const through = await proxy({ maxBytes: 10 });
   try {
     const { socket } = await tunnel(through, `www.youtube.com:${String(echoPort)}`);
@@ -122,7 +143,7 @@ test('past the bytes limit every tunnel closes and the proxy says why; nothing m
   }
 });
 
-test('past the time limit every tunnel closes; after stop nothing listens', async () => {
+test('past the time limit every tunnel closes; after stop nothing listens', LIMIT, async () => {
   const through = await proxy({ maxMs: 50 });
   const { socket } = await tunnel(through, `www.youtube.com:${String(echoPort)}`);
   await new Promise<void>((resolvePromise) => socket.once('close', () => { resolvePromise(); }));
@@ -131,8 +152,8 @@ test('past the time limit every tunnel closes; after stop nothing listens', asyn
   const port = Number(new URL(through.url).port);
   await assert.rejects(
     new Promise((resolvePromise, reject) => {
-      const late = connect({ host: '127.0.0.1', port });
-      late.once('connect', () => { resolvePromise(undefined); });
+      const late = track(connect({ host: '127.0.0.1', port }));
+      late.once('connect', () => { late.destroy(); resolvePromise(undefined); });
       late.once('error', reject);
     }),
   );

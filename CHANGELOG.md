@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.171.1] - 2026-10-23
+
+### Corretto
+
+- `video-proxy.test.ts` non tiene più appeso `pnpm test`: ogni socket del file si chiude alla fine e ogni attesa ha un limite di 10 s (D-273).
+
 ## [0.171.0] - 2026-10-23
 
 ### Aggiunto
