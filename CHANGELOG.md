@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.171.4] - 2026-10-23
+
+### Cambiato
+
+- `pnpm lint` da circa 63 a circa 26 secondi con gli stessi controlli (D-301): la regola `no-unsafe-enum-assignment`, un terzo del tempo, resta solo nella chat web, l'unica parte che riceve tipi enum (un test fallisce se un tipo enum arriva altrove), e ESLint lavora in due thread.
+
 ## [0.171.3] - 2026-10-23
 
 ### Corretto
