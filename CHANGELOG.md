@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.170.2] - 2026-10-23
+
 ### Corretto
 
 - «@Coder, …» con la maiuscola chiama il Coder come «@coder»: prima il nome si riconosceva solo minuscolo e il messaggio andava ad Arianna, che poteva darlo a un altro agente (una landing page chiesta al Coder era finita al Designer); anche il menu degli agenti mentre si scrive «@Co» resta aperto, e «/Giro» e «/Progetta» valgono come «/giro» e «/progetta» (D-107, D-219, D-235).
