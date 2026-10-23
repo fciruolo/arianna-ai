@@ -37,6 +37,7 @@ let clock: number;
 let codes: string[];
 let store: MemoryDevices;
 let devices: RemoteDevices;
+const unlinkListeners: ((deviceId: string) => void)[] = [];
 
 function fresh(): void {
   clock = Date.parse('2026-10-22T10:00:00Z');
@@ -52,6 +53,8 @@ function fresh(): void {
       return code;
     },
   });
+  // The server registers once: each new service gets its listeners again.
+  for (const listener of unlinkListeners) devices.onUnlink(listener);
 }
 
 function refusedWith(status: number, code: string): (error: unknown) => boolean {
@@ -313,7 +316,15 @@ before(async () => {
     port: 0,
     remote: { host: HOST, port: 0 },
     // The service of the test in progress: beforeEach makes a new one.
-    remoteDevices: new Proxy({} as RemoteDevices, { get: (_target, key) => Reflect.get(devices, key) as unknown }),
+    remoteDevices: new Proxy({} as RemoteDevices, {
+      get: (_target, key) =>
+        key === 'onUnlink'
+          ? (listener: (deviceId: string) => void) => {
+              unlinkListeners.push(listener);
+              devices.onUnlink(listener);
+            }
+          : (Reflect.get(devices, key) as unknown),
+    }),
   });
 });
 
@@ -554,5 +565,7 @@ test('HTTP: «Scollega» closes at once a live feed already open from the phone'
     });
   });
   await local(`/api/devices/${deviceId}/unlink`, { method: 'POST', body: {} });
-  assert.equal(await closed, 4401);
+  // At once, not at the next check of the session a minute later.
+  const late = new Promise<string>((resolve) => setTimeout(resolve, 5_000, 'late').unref());
+  assert.equal(await Promise.race([closed, late]), 4401);
 });

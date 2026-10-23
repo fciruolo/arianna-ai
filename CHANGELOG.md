@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Test di «Scollega» sul telefono: l’avviso di scollegamento arriva anche al servizio ricreato prima di ogni test, così il collegamento si chiude subito invece che al controllo della sessione un minuto dopo; il test ora fallisce oltre 5 secondi e `pnpm test` scende da circa 76 a 46 secondi (D-292).
+
 ## [0.170.0] - 2026-10-23
 
 ### Aggiunto
