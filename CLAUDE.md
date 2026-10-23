@@ -45,7 +45,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm install` | Installa le dipendenze (versioni esatte, lockfile in git) |
 | `pnpm build` | Controllo dei tipi di tutto il monorepo, `apps/hud` compreso con `vue-tsc`; non produce file (D-026, D-038). È l'unico comando che vede gli errori di tipo |
 | `pnpm test` | Test senza servizi, con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
-| `pnpm lint` | ESLint con regole che vedono i tipi |
+| `pnpm lint` | ESLint con regole che vedono i tipi, su tutti i file e senza cache, in due thread (`--concurrency 2`, D-301) |
 | `pnpm eval` | Eval deterministici (gateway, router): niente modelli né rete; fallisce sotto soglia |
 | `pnpm eval:models` | Eval che richiedono il modello locale (orchestratore, estrazione, retrieval) |
 | `pnpm eval:models --model <id>` | Come sopra, con l'orchestratore e l'agente Finanze su un modello del catalogo (`local-large` sugli endpoint di `arianna.toml`); rapporto in `data/evals/report-models-<id>.json` (D-081). Dal core la stessa prova parte in background da Impostazioni → Modelli, nella scheda del modello |
