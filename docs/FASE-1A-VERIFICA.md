@@ -38,6 +38,8 @@ Tutte le prove si fanno con l'installazione di sviluppo (badge «Installazione d
 
 ## P2 — Canarino mai uscito, dal vivo
 
+**Esito (2026-10-23, «proviamolo ora» dell'utente):** `pnpm eval:live --tag claude` intero, contratto 6/6 e canarino 31/31, rapporto in `data/evals/report-live-claude.json`. Punto superato.
+
 **Cosa lo soddisfa oggi.** Confinamento cloud (task 1.6: D-041, D-049, D-050), con i casi aggiunti nel tempo: dieci casi su `data/`, configurazione, ambiente e loopback (1.12), `git` (D-174), contenitori dei progetti (`knowledge`, D-166), server MCP di Arianna (`mcp`, D-261, 13/13 il 2026-10-20). In `evals/canary/` ci sono 16 casi `claude`, 13 `claude-mcp`, 2 `claude-web` e 12 `codex`; in `evals/contract/` 6 casi `claude` e 10 `codex`. Il canarino fallisce se la stringa unica compare in qualunque riga dello stream, in un file del worktree o nella sua storia git.
 
 **Cosa manca.** Nessun lavoro, ma una corsa intera: i registri riportano corse a pezzi (5/5 e contratto 6/6 col task 1.6, `--tag git`, `--tag mcp` 13/13), mentre `EVALS.md` dice ancora che i cinque casi aggiunti col task 1.12 e i casi `knowledge` sono «scritti ma non ancora corsi». La corsa consuma quota dell'abbonamento: vedi la domanda «Fase 1A: quota per l'eval dal vivo del criterio» più sotto. I casi di Codex non servono per la 1A (Codex è il task 1.16 della Fase 1B, e l'account di Codex è fermo dal 2026-10-20).
@@ -134,7 +136,7 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | Punto | Stato | Ore del lavoro mancante |
 | --- | --- | --- |
 | P1 Zero fughe L2 negli eval deterministici | pronto da provare | 0 |
-| P2 Canarino dal vivo | pronto da provare (consuma quota) | 0 |
+| P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
 | P3 Coding L1 via Claude Code | pronto da provare | 0 |
 | P4 Task L2 solo in locale | pronto da provare | 0 |
 | P5 Ripresa dopo `kill` del core | pronto da provare | 0; 2-3 se resta vivo un processo `claude` |
