@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- I test di «@nome», «/giro» e della chat diretta (`apps/core/test-db/addressed.test.ts`, `direct-chat.test.ts`) non dipendono più dai `[roles]` dell'installazione: con `pnpm arianna:init --defaults`, senza orchestratore locale, le deleghe si fermavano in attesa dell'utente (D-219, D-159).
+
 ## [0.171.0] - 2026-10-23
 
 ### Aggiunto

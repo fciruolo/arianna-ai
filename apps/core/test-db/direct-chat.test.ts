@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { loadAgent, userCard, userPresets, type Answer, type LoadedAgent } from '@arianna/agents';
-import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
+import { defaultCloudModels, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKind, type LocalModel } from '@arianna/executors';
 import { piiReport } from '@arianna/policy';
 
@@ -28,6 +28,7 @@ import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { loadTask } from '../src/tasks.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
+import { configWithLocalModel } from './support/config.ts';
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -37,7 +38,7 @@ const REPO = join(HOME, 'repos', 'site');
 const FAKE = join(ROOT, 'packages', 'executors', 'test', 'fixtures', 'fake-claude.ts');
 const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
 const OPTIONS = { allowedActions: () => [] as readonly string[], agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }) };
-const BASE = loadConfig();
+const BASE = configWithLocalModel();
 const PROJECTS = ['site'];
 
 const claude = createClaudeExecutor({
