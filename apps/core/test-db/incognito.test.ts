@@ -26,7 +26,7 @@ import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { loadStatus } from '../src/status.ts';
 import { openFailureChat } from '../src/system-chats.ts';
 import { canaryPlaces, newCanary } from './support/canary.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -72,7 +72,7 @@ before(async () => {
     },
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();

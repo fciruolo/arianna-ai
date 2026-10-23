@@ -7,6 +7,7 @@ import { piiReport } from '@arianna/policy';
 import { connect, type Sql } from '../../src/db/client.ts';
 import { prepareDatabase, resolveLogins } from '../../src/db/logins.ts';
 import { configurePiiGuard } from '../../src/pii-guard.ts';
+import { createTeardown } from '../../test/support/teardown.ts';
 
 // The second scanner (D-113) finds nothing in these tests: they are about
 // everything else. pii-gateway.test.ts sets its own fake service.
@@ -25,6 +26,20 @@ export interface TestDatabase {
 // Test files run in parallel against one cluster, and migrations touch what is
 // shared by every schema: the arianna_app role and its database-wide grants.
 const CLUSTER_LOCK = 'arianna.test-cluster';
+
+/**
+ * Time the setup of a file may take. Migrating waits for CLUSTER_LOCK, held in
+ * turn by every file of every run on this cluster: with other runs at work the
+ * wait goes well past the minute of `--test-timeout`, and the file would fail
+ * before its first test.
+ */
+export const SETUP_TIMEOUT_MS = 10 * 60_000;
+/** Time the teardown may take: dropping a schema waits for the migrations of the others too. */
+export const TEARDOWN_TIMEOUT_MS = 5 * 60_000;
+/** Time one close may take: below the hook's, so that a close that hangs is the error reported. */
+export const CLOSE_TIMEOUT_MS = TEARDOWN_TIMEOUT_MS - 30_000;
+/** Seconds `end` waits for running queries before it closes the sockets anyway. */
+const END_SECONDS = 10;
 
 /**
  * Runs `work` while no other test file migrates: for tests that change a role
@@ -53,11 +68,21 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const admin = connect(config, logins.owner);
   const owner = connect(config, logins.owner, { schema });
   const sql = connect(config, logins.app, { schema });
+  // Every pool is ended whatever happens to the others: an open socket keeps the test process alive.
   const close = async (): Promise<void> => {
-    await sql.end();
-    await owner.end();
-    await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-    await admin.end();
+    try {
+      await sql.end({ timeout: END_SECONDS });
+    } finally {
+      try {
+        await owner.end({ timeout: END_SECONDS });
+      } finally {
+        try {
+          await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        } finally {
+          await admin.end({ timeout: END_SECONDS });
+        }
+      }
+    }
   };
 
   try {
@@ -71,15 +96,20 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   return { sql, owner, schema, close };
 }
 
-/** Registers setup and teardown for the calling test file; call the result inside tests. */
+/**
+ * Registers setup and teardown for the calling test file; call the result inside tests.
+ * A setup that ends after the teardown (its hook timed out) closes what it opened.
+ */
 export function useTestDatabase(): () => TestDatabase {
   let db: TestDatabase | undefined;
-  before(async () => {
-    db = await createTestDatabase();
-  });
-  after(async () => {
-    await db?.close();
-  });
+  const teardown = createTeardown(CLOSE_TIMEOUT_MS);
+  before(
+    async () => {
+      db = await teardown.keep(await createTestDatabase(), (opened) => opened.close());
+    },
+    { timeout: SETUP_TIMEOUT_MS },
+  );
+  after(() => teardown.closeAll(), { timeout: TEARDOWN_TIMEOUT_MS });
   return () => {
     if (db === undefined) throw new Error('the test database is not ready');
     return db;

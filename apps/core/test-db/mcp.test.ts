@@ -15,26 +15,38 @@ import { passGateway } from '../src/gateway.ts';
 import { createMcpServer, type McpServer } from '../src/mcp/server.ts';
 import { DENIED_TEXT } from '../src/mcp/tools.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
+import { createTeardown } from '../test/support/teardown.ts';
 import { useTestDatabase } from './support/database.ts';
 
+// The server and the folder go even if the setup outlived its hook: a server left listening keeps the file from ending.
+// Its after hook is registered before the database's: hooks run in order and a failed one skips the rest, so the
+// server closes first, while the database it reads is still there.
+const teardown = createTeardown();
+after(() => teardown.closeAll());
 const db = useTestDatabase();
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `mcp-${randomUUID()}`);
 const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n\n[[folder]]\npath = "kb/private"\nlabel = "L2"\n\n[[folder]]\npath = "kb/progetti"\nlabel = "L1"\n');
 const RUN = randomUUID();
 const TASK = randomUUID();
 
+// Long enough for the four tests on a machine busy with the rest of test:db: a minute was not.
+const SESSION_MS = 10 * 60_000;
+
 let server: McpServer;
 let url: string;
 let token: string;
 
 before(async () => {
+  await teardown.keep(HOME, (home) => {
+    rmSync(home, { recursive: true, force: true });
+  });
   mkdirSync(join(HOME, 'kb', 'work'), { recursive: true });
   mkdirSync(join(HOME, 'kb', 'private'), { recursive: true });
   mkdirSync(join(HOME, 'kb', 'Progetti', 'cliente-b', 'Workplan'), { recursive: true });
   writeFileSync(join(HOME, 'kb', 'Progetti', 'cliente-b', 'Workplan', 'piano.md'), '---\ntitle: Piano del cliente B\n---\nPiano inventato del router del cliente B.\n');
   writeFileSync(join(HOME, 'kb', 'work', 'router.md'), '---\ntitle: Router finto\n---\nIl router sceglie l’esecutore in base all’etichetta.\n');
   writeFileSync(join(HOME, 'kb', 'private', 'caldaia.md'), '---\ntitle: Caldaia\n---\nNota privata inventata sulla caldaia.\n');
-  server = createMcpServer({
+  const created = createMcpServer({
     kb: createKb({ home: HOME, rules: RULES }),
     skills: { list: () => ({ skills: [] }), text: () => { throw new Error('no skills'); }, assigned: () => [], refusal: () => null },
     gate: (payload, context, executor, meta) => passGateway(db().sql, payload, context, { kind: 'executor', id: executor, locality: 'cloud' }, meta),
@@ -43,13 +55,9 @@ before(async () => {
     },
     version: '0.0.0-test',
   });
+  server = await teardown.keep(created, (opened) => opened.close());
   url = (await server.start()).url;
-  token = server.open({ runId: RUN, taskId: TASK, agent: 'coder', executor: 'claude', clearance: 'L1', tools: ['kb_read', 'kb_search'], expiresAt: new Date(Date.now() + 60_000) }).token;
-});
-
-after(async () => {
-  await server.close();
-  rmSync(HOME, { recursive: true, force: true });
+  token = server.open({ runId: RUN, taskId: TASK, agent: 'coder', executor: 'claude', clearance: 'L1', tools: ['kb_read', 'kb_search'], expiresAt: new Date(Date.now() + SESSION_MS) }).token;
 });
 
 async function call(name: string, args: Record<string, unknown>): Promise<{ isError: boolean; text: string }> {

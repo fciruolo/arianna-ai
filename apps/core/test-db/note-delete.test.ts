@@ -14,7 +14,7 @@ import { verifyEventChain } from '../src/events.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { enqueueOrganize, ORGANIZE_QUEUE } from '../src/organize.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -53,7 +53,7 @@ before(async () => {
     projectContainers: () => CONTAINERS,
     knowledge: { home: HOME, rules },
   });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 after(async () => {
   await server.close();
   await database?.close();

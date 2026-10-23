@@ -17,7 +17,7 @@ import { AGENT_OFF_TEXT } from '../src/voice/outgoing.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 import { callWhenDone, scheduleCall } from '../src/voice/ringer.ts';
 import { AGENT_VOICE_FRAME, agentCallText, CALL_TEXT, HISTORY_MESSAGES, VOICE_PROFILE_RULE, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -104,7 +104,7 @@ before(async () => {
     pollMs: 20,
     onError: (error) => errors.push(error),
   });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await calls.close();

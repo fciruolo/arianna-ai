@@ -18,7 +18,7 @@ import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { openReply } from '../src/reply.ts';
 import { startApiServer, type ApiServer, MAX_BODY_BYTES } from '../src/server/http.ts';
 import { loadTask } from '../src/tasks.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -54,7 +54,7 @@ before(async () => {
     directAgents: () => [{ agent: 'god', description: 'GOD', cloud: true, executors: ['claude'], modes: ['work'], project: false }],
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();

@@ -14,7 +14,7 @@ import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from '../src/voice/outgoin
 import { createPusher, generateVapidKeys, vapidKey } from '../src/voice/push.ts';
 import { callWhenDone, cancelCall, createRinger, scheduleCall, type Ringer } from '../src/voice/ringer.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -116,7 +116,7 @@ before(async () => {
     now: () => clock,
     intervalMs: 3_600_000,
   });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   ringer.stop();

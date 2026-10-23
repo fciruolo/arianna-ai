@@ -24,7 +24,7 @@ import { OUTGOING_TEXT, ROUTINE_NOTE_TEXT } from '../src/voice/outgoing.ts';
 import { createRinger, ROUTINE_CALL_WAIT_MS, type Ringer } from '../src/voice/ringer.ts';
 import { ROUTINE_CALL_TEXT } from '../src/voice/routine-call.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -102,7 +102,7 @@ before(async () => {
     routineScript: () => Promise.reject(new Error('the sources cannot be read')),
   });
   ringer = createRinger({ sql: db().sql, rules: () => rules, voiceUp: () => voiceUp, notify: () => undefined, clientsOnline: () => online, now: () => clock, intervalMs: 3_600_000 });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 after(async () => {
   ringer.stop();
   await calls.close();

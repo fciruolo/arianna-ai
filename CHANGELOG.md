@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.171.3] - 2026-10-23
+
+### Corretto
+
+- `pnpm test:db` non resta più appeso sui test di Telegram e MCP quando altre esecuzioni usano lo stesso database: preparazione e chiusura dei file hanno tempi propri e chiudono sempre tutto ciò che hanno aperto, e un file esce a test finiti (D-029).
+
 ## [0.171.2] - 2026-10-23
 
 ### Corretto

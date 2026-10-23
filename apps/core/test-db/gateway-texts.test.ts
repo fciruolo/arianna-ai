@@ -19,7 +19,7 @@ import { closeIncognito } from '../src/incognito.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { createTask } from '../src/tasks.ts';
-import { createTestDatabase, type TestDatabase } from './support/database.ts';
+import { createTestDatabase, SETUP_TIMEOUT_MS, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
 function db(): TestDatabase {
@@ -48,7 +48,7 @@ before(async () => {
       choices: () => ({}),
     },
   });
-});
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(async () => {
   await server.close();
