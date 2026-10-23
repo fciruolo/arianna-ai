@@ -14,6 +14,7 @@ import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 import { nodeToolchain } from '../claude/run.ts';
 import type { StreamFailure } from '../claude/stream.ts';
 import { preparedNotes } from '../notes.ts';
+import { checkRunPidDir, forgetRunPid, recordRunPid } from '../process-group.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { codexArgs, codexEnv, userInstructionFiles, type CodexAccess, type CodexModel } from './profile.ts';
 import { codexRefusalOf, CodexStream, type CodexEvent, type CodexUsage } from './stream.ts';
@@ -131,6 +132,8 @@ export interface CodexExecutorOptions {
   env?: NodeJS.ProcessEnv;
   /** Between SIGTERM and SIGKILL. Default 5 s. */
   killGraceMs?: number;
+  /** D-302: the folder of the runs' pid files, as for claude (`ClaudeExecutorOptions.pidDir`). */
+  pidDir?: string;
   /** ARIANNA_HOME: the sandbox never opens it, except the workspace. */
   home: string;
   /** Folders the sandbox may read besides the workspace and the system folders. Default: `codexToolchain`. Never a user root or the home directory. */
@@ -252,6 +255,7 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
   const fixed = typeof given === 'function' ? [] : [...given];
   const enabled = typeof given === 'function' ? given : (): readonly string[] => fixed;
   const folders = codexSandboxFolders(options);
+  if (options.pidDir !== undefined) checkRunPidDir(options.pidDir);
 
   async function check(launch: CodexLaunch): Promise<Checked> {
     if (!enabled().includes(CODEX_EXECUTOR)) throw new CodexError('not-enabled', 'codex: not enabled in [cloud] executors');
@@ -363,6 +367,8 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
 
       // Its own process group: stopping the run stops whatever the binary started.
       const child = spawn(file, argv, { cwd: job.cwd, env: codexEnv(options.env ?? process.env), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+      // D-302: a core killed now leaves the group running; the next one stops it from this file.
+      const pidFile = options.pidDir === undefined || child.pid === undefined ? undefined : recordRunPid(options.pidDir, CODEX_EXECUTOR, child.pid);
 
       const signalGroup = (signal: NodeJS.Signals) => {
         if (child.pid === undefined) return;
@@ -461,6 +467,7 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
       function finish(code: number | null): void {
         if (closed) return;
         closed = true;
+        forgetRunPid(pidFile);
         if (stopped !== undefined) signalGroup('SIGKILL');
         if (killTimer !== undefined) clearTimeout(killTimer);
         if (pending.length > 0) {

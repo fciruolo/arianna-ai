@@ -87,14 +87,14 @@ Se il router sceglie Fable compare una scheda di budget da approvare: dal telefo
 
 **Cosa lo soddisfa oggi.** Task, run e coda `jobs` con ripresa dopo riavvio (task 1.8, provato con `kill -9` nei test che usano PostgreSQL), cartella del Coder legata al task e riaperta dopo un riavvio (`reopenWorkspace`, D-055), registro degli eventi con catena di hash controllata dal `doctor` (task 0.3, 0.6).
 
-**Cosa manca.** Niente da costruire, ma un rischio da guardare nella prova: `claude` parte in un suo gruppo di processi (`detached` in `packages/executors/src/claude/run.ts`) e una nota di D-049 dice che un core ucciso con `kill -9` lascia vivo il gruppo di `claude` («serve salvare il pgid e chiuderlo all'avvio»); nel codice non c'è ancora una pulizia all'avvio per `claude` (c'è per oMLX, `local-servers.ts`). Se nella prova resta vivo un processo `claude` del run di prima, che continua a scrivere in `repos/demo` mentre il task ripreso riparte, va corretto: 2-3 ore.
+**Cosa manca.** Niente da costruire. Il rischio previsto da una nota di D-049 (un core ucciso con `kill -9` lascia vivo il gruppo di processi di `claude`) è stato visto nella prova del 2026-10-23: core ucciso alle 22:53:14, file del Coder scritti in `repos/demo` alle 22:53:16, e al riavvio un secondo Coder sugli stessi file. Corretto con D-302: ogni run di `claude` e `codex` salva pid e ora di partenza in `data/run-pids/`, e all'avvio il core chiude i gruppi rimasti prima che il task riprenda, con una riga `cloud orphan: claude pgid N stopped` nel log. Da riprovare.
 
 **Come provarlo** (il `kill` solo dal Mac; la ripresa si vede anche dal telefono):
 
 1. Ripeti i passi 1-2 di P3 con un lavoro più lungo, per esempio: «Fai aggiungere al Coder un test per l'ultimo giorno di ogni mese del 2026.»
 2. Mentre il messaggio del Coder si sta scrivendo, nel terminale del Mac: `pkill -9 -f "apps/core/src/main.ts"`. La chat perde il collegamento (pallino del core spento).
-3. Prima di riavviare, scrivi `pgrep -fl claude` e annota se c'è ancora un processo `claude` lanciato da Arianna (è il rischio descritto sopra).
-4. Riavvia con `pnpm start`. La chat si ricollega da sola (sul telefono basta riaprire l'app).
+3. Prima di riavviare, `ls data/run-pids/`: c'è un file `claude-<pid>.pid`, e `ps -o pid,pgid,lstart,command -g <pid>` mostra il gruppo del run ancora vivo (`pgrep -x claude` non lo vede: non fidarti del nome del processo).
+4. Riavvia con `pnpm start`. Nel log del core compare `cloud orphan: claude pgid <pid> stopped` prima che il lavoro riprenda; `ps -g <pid>` non mostra più nulla e `data/run-pids/` non ha più quel file. La chat si ricollega da sola (sul telefono basta riaprire l'app).
 5. Nella conversazione il lavoro riprende: il task torna «al lavoro» e alla fine Arianna risponde come in P3; nessun messaggio doppio, nessun task rimasto «in corso» per sempre.
 6. `pnpm arianna:doctor`: la riga della catena degli eventi deve passare (il doctor nel suo insieme fallisce con le password di sviluppo, ed è normale).
 
@@ -139,11 +139,11 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
 | P3 Coding L1 via Claude Code | pronto da provare | 0 |
 | P4 Task L2 solo in locale | pronto da provare | 0 |
-| P5 Ripresa dopo `kill` del core | pronto da provare | 0; 2-3 se resta vivo un processo `claude` |
+| P5 Ripresa dopo `kill` del core | da riprovare con D-302 (orfano di `claude` visto il 2026-10-23 e corretto) | 0 |
 | P6 Log del gateway leggibile | manca lavoro, se i conteggi non bastano | 3-5 |
 | P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |
 
-Totale del lavoro mancante: da 0 a 8 ore, secondo le due condizioni di P5 e P6.
+Totale del lavoro mancante: da 0 a 5 ore, secondo la condizione di P6.
 
 ## Domande per l'utente
 

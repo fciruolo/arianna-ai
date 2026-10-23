@@ -1,10 +1,9 @@
-import { execFileSync } from 'node:child_process';
-import { closeSync, fstatSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { LocalEndpointConfig } from '@arianna/config';
-import { authorization, ensureLocalKey, Watchdog, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
+import { authorization, ensureLocalKey, readPidRecord, reapOrphan, Watchdog, writePidRecord, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
 import { cleanChildEnv } from './child-env.ts';
 import { ensureOmlxHfCacheOff } from './omlx-settings.ts';
@@ -153,50 +152,6 @@ export function logTail(dataDir: string, id: string, maxBytes = 16 * 1024): stri
   }
 }
 
-interface PidRecord {
-  pid: number;
-  /** As `ps -o lstart=` prints it: with the pid, it names one process. */
-  started: string;
-}
-
-function processStart(pid: number): string | undefined {
-  try {
-    const started = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    return started === '' ? undefined : started;
-  } catch {
-    return undefined;
-  }
-}
-
-function readPid(file: string): PidRecord | undefined {
-  try {
-    const record = JSON.parse(readFileSync(file, 'utf8')) as Partial<PidRecord>;
-    return typeof record.pid === 'number' && Number.isInteger(record.pid) && record.pid > 1 && typeof record.started === 'string' ? { pid: record.pid, started: record.started } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function killGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    // Already gone.
-  }
-}
-
-/** Stops the server a previous core started and left behind, if it is still the same process. */
-async function reapOrphan(file: string, graceMs: number): Promise<number | undefined> {
-  const record = readPid(file);
-  rmSync(file, { force: true });
-  if (record === undefined || processStart(record.pid) !== record.started) return undefined;
-  killGroup(record.pid, 'SIGTERM');
-  const deadline = Date.now() + graceMs;
-  while (Date.now() < deadline && processStart(record.pid) === record.started) await new Promise((resolve) => setTimeout(resolve, 100));
-  killGroup(record.pid, 'SIGKILL');
-  return record.pid;
-}
-
 interface Supervised {
   endpoint: Pick<LocalEndpointConfig, 'id' | 'url' | 'command'>;
   watchdog: Watchdog;
@@ -240,9 +195,8 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
     if (entry !== undefined && event.type === 'refused') entry.refused = event.reason;
     try {
       if (event.type === 'spawn') {
-        const started = processStart(event.pid);
-        if (started !== undefined) writeFileSync(pidFile(event.endpoint), JSON.stringify({ pid: event.pid, started }), { mode: 0o600 });
-      } else if (event.type === 'exit' && readPid(pidFile(event.endpoint))?.pid === event.pid) {
+        writePidRecord(pidFile(event.endpoint), event.pid);
+      } else if (event.type === 'exit' && readPidRecord(pidFile(event.endpoint))?.pid === event.pid) {
         rmSync(pidFile(event.endpoint), { force: true });
       }
     } catch {

@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Dopo un `kill -9` del core i processi `claude` e `codex` del run interrotto non restano più vivi: al riavvio il core li riconosce (stesso pid e stessa ora di partenza, salvati in `data/run-pids`) e li chiude prima di riprendere il task, così due Coder non lavorano sugli stessi file (D-302).
+
 ## [0.173.0] - 2026-10-23
 
 ### Corretto
