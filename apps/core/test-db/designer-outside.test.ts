@@ -1,7 +1,9 @@
 // The Designer on a project outside ARIANNA_HOME (D-058, D-228), with the
 // database: the project written `~/Sites/<name>` in arianna.toml, a work
 // conversation on it, Arianna delegates to the Designer, the user chooses
-// Claude (approval `card.executor`, D-159) and the run starts in the folder
+// Claude (approval `card.executor`, D-159: here the Designer asks every time,
+// the folder is the subject; the committed one asks only when Claude cannot
+// take the work, D-298, card-plans.test.ts) and the run starts in the folder
 // where it is. A folder that git knows but without a first commit is a
 // repository like any other; a folder that is not a repository closes the
 // delegation with a line the user can act on, never a failed task.
@@ -36,7 +38,10 @@ const USER_HOME = join(SCRATCH, 'user');
 const FIXTURES = join(ROOT, 'packages', 'executors', 'test', 'fixtures');
 const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
 const BASE = loadConfig();
-const agents = new Map<string, LoadedAgent>(committedAgents(ROOT));
+// The Designer asks before every work (`executor_choice: ask`, D-159): the folder, not the choice, is under test.
+const agents = new Map<string, LoadedAgent>(
+  [...committedAgents(ROOT)].map(([name, agent]): [string, LoadedAgent] => [name, name === 'designer' ? { ...agent, card: { ...agent.card, executorChoice: 'ask' } } : agent]),
+);
 const OPTIONS = {
   allowedActions: () => [] as readonly string[],
   agentLimits: (task: Task) => {

@@ -1,6 +1,7 @@
 import type { AgentCard } from '@arianna/agents';
 import { projectNamed, workParts } from '@arianna/config';
 import { isAtMost, maxLabel, type Label } from '@arianna/policy';
+import type { Budget } from '@arianna/router';
 
 import { isExecutorChoice, type ExecutorChoice } from '../approvals.ts';
 import { CHAT_AGENT } from '../conversations.ts';
@@ -19,14 +20,16 @@ import type { Delegation } from './delegations.ts';
  * itself as the brief; otherwise the local model, as a task without a
  * conversation always ran. For an agent with `executor_choice: ask` the user
  * chooses first, among the ways allowed for that card (an approval of kind
- * `executor`). The report ends in the card, which goes to "Da verificare".
+ * `executor`); with `prefer-first` (D-298) the first executor of the card
+ * takes it without asking when it can, and the user chooses only otherwise.
+ * The report ends in the card, which goes to "Da verificare".
  */
 
 /** The action of an approval of kind `executor` (migration 0045). */
 export const EXECUTOR_ACTION = 'card.executor';
 
-/** Why a way is not offered for a card: above what the cloud may read, no approved project, the executor off. */
-export type ExcludedReason = 'label' | 'project' | 'off';
+/** Why a way is not offered for a card: above what the cloud may read, no approved project, the executor off, out of quota (D-298). */
+export type ExcludedReason = 'label' | 'project' | 'off' | 'quota';
 
 export interface ExecutorOptions {
   /** The ways the user may choose, in this order: Claude, Codex, the local model. */
@@ -65,16 +68,28 @@ export function approvedRepo(env: Pick<DelegateEnv, 'settings'>, name: string | 
  * within what the agent may read (its `max_label`) and a local model serves
  * the agents.
  */
-export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, task: Pick<Task, 'project' | 'label' | 'effectiveLabel'>): ExecutorOptions {
-  return waysFor(env, card, cardLabel(task), cardRepo(env, task));
+export function executorOptions(
+  env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>,
+  card: AgentCard,
+  task: Pick<Task, 'project' | 'label' | 'effectiveLabel'>,
+  outOfQuota: readonly CloudExecutor[] = [],
+): ExecutorOptions {
+  return waysFor(env, card, cardLabel(task), cardRepo(env, task), outOfQuota);
 }
 
 /**
  * The ways a work of `card` at `label`, in the approved project `repo`
  * (undefined: none), may run now: the rules of `executorOptions`, shared by
- * the cards and the delegations of the chat (D-159).
+ * the cards and the delegations of the chat (D-159). The cloud executors in
+ * `outOfQuota` are left out too (D-298: given only for `prefer-first`).
  */
-export function waysFor(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, label: Label, repo: string | undefined): ExecutorOptions {
+export function waysFor(
+  env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>,
+  card: AgentCard,
+  label: Label,
+  repo: string | undefined,
+  outOfQuota: readonly CloudExecutor[] = [],
+): ExecutorOptions {
   const options: ExecutorChoice[] = [];
   const excluded: ExecutorOptions['excluded'] = [];
   const available: readonly string[] = availableCloud(env);
@@ -85,6 +100,7 @@ export function waysFor(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' |
     if (!withinCloud) excluded.push({ executor, reason: 'label' });
     else if (repo === undefined) excluded.push({ executor, reason: 'project' });
     else if (!available.includes(executor)) excluded.push({ executor, reason: 'off' });
+    else if (outOfQuota.includes(executor)) excluded.push({ executor, reason: 'quota' });
     else options.push(executor);
   }
   if (card.executors.includes('local')) {
@@ -93,6 +109,31 @@ export function waysFor(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' |
     else options.push('local');
   }
   return { options, excluded };
+}
+
+/** Whether the user may be asked where a work of the agent runs: `executor_choice` `ask` or `prefer-first` (D-159, D-298). */
+export function choosesWay(card: Pick<AgentCard, 'executorChoice'>): boolean {
+  return card.executorChoice === 'ask' || card.executorChoice === 'prefer-first';
+}
+
+/**
+ * The way an agent with `executor_choice: prefer-first` takes without asking
+ * (D-298): the first executor of its card, when it is among the ways allowed
+ * now. Undefined for any other agent, or when the first cannot take the work:
+ * then the user chooses among `ways`, as with `ask`.
+ */
+export function preferredWay(card: Pick<AgentCard, 'executorChoice' | 'executors'>, ways: ExecutorOptions): ExecutorChoice | undefined {
+  if (card.executorChoice !== 'prefer-first') return undefined;
+  return ways.options.find((option) => option === card.executors[0]);
+}
+
+/**
+ * The cloud executors out of quota now, as the router reads them (whole
+ * executor blocks of `budgetOf`): for `prefer-first` (D-298) the first
+ * executor out of quota counts as not available, and the user chooses.
+ */
+export function outOfQuotaOf(budget: Budget): CloudExecutor[] {
+  return CLOUD_DELEGATES.filter((executor) => budget.blocked.some((block) => block.executor === executor && block.model === undefined));
 }
 
 /**
@@ -118,7 +159,9 @@ export function noWayReason(agent: string, card: AgentCard, excluded: ExecutorOp
       ? `${item.executor}: the ${what} is above what ${agent} may read there (${item.executor === 'local' ? card.maxLabel : 'cloud_max_label'})`
       : item.reason === 'project'
         ? `${item.executor}: no approved project with a folder`
-        : `${item.executor}: off`;
+        : item.reason === 'quota'
+          ? `${item.executor}: out of quota`
+          : `${item.executor}: off`;
   return excluded.length === 0 ? `no way for ${agent} to work on this ${what} now` : `no way for ${agent} to work on this ${what} now (${excluded.map(why).join('; ')})`;
 }
 

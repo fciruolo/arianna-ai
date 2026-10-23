@@ -10,7 +10,22 @@ import { resolveHome } from '@arianna/config';
 import { parseAddressed } from '../src/addressed.ts';
 import { assigneeText, checkPlan, checkStarts, defaultStarts, planAnswerText, planOf, PlanError } from '../src/card-plans.ts';
 import { planCardTitle, planRequestAnswer, quotaNote } from '../src/orchestrator/plan-job.ts';
-import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason, waysFor } from '../src/orchestrator/card-run.ts';
+import {
+  cardBrief,
+  cardEnd,
+  cardLabel,
+  choiceOf,
+  choosesWay,
+  defaultWay,
+  executorOptions,
+  isAgentCard,
+  LOCAL_CARD_NO_FILES,
+  localCardRequest,
+  noWayReason,
+  outOfQuotaOf,
+  preferredWay,
+  waysFor,
+} from '../src/orchestrator/card-run.ts';
 import { claudeToolsOf, codexAccessOf, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { committedAgents } from './support/committed-agents.ts';
@@ -156,10 +171,10 @@ function env(cloud: ('claude' | 'codex')[], local = true, projects = ['sito']): 
 
 const task = (label: 'L0' | 'L1' | 'L2' | 'L3', project: string | null = 'sito') => ({ label, effectiveLabel: 'L0' as const, project });
 
-test('the Designer: its own card, asked where each card runs, writing in the project but never running commands (D-159)', () => {
+test('the Designer: its own card, on Claude unless Claude cannot take the card, writing in the project but never running commands (D-159, D-298)', () => {
   assert.ok(designer !== undefined);
   const { card: d } = designer;
-  assert.deepEqual([d.maxLabel, d.cloudMaxLabel, d.executors, d.executorChoice, d.autonomy], ['L2', 'L1', ['claude', 'codex', 'local'], 'ask', 'A1']);
+  assert.deepEqual([d.maxLabel, d.cloudMaxLabel, d.executors, d.executorChoice, d.autonomy], ['L2', 'L1', ['claude', 'codex', 'local'], 'prefer-first', 'A1']);
   assert.deepEqual(d.tools, ['repo.read', 'repo.write', 'task.update']);
   assert.equal(d.trifecta.external_comms, false);
   assert.ok(!d.tools.some((tool) => tool.startsWith('kb.') || tool.startsWith('web.')), 'no knowledge base, no network');
@@ -211,6 +226,34 @@ test('the ways a card may run: the cloud only within the cloud ceiling, with an 
   assert.deepEqual(waysFor(env(['claude']), d, 'L1', 'sito'), executorOptions(env(['claude']), d, task('L1')));
   assert.deepEqual(waysFor(env(['claude']), d, 'L1', undefined).options, ['local']);
   assert.equal(noWayReason('designer', d, [{ executor: 'local', reason: 'off' }], 'work'), 'no way for designer to work on this work now (local: off)');
+});
+
+test('prefer-first (D-298): the Designer takes Claude without asking when it can, else the user chooses among the rest', () => {
+  assert.ok(designer !== undefined && coder !== undefined);
+  const d = designer.card;
+  assert.ok(choosesWay(d));
+  assert.ok(!choosesWay(coder.card));
+  // Claude on, the card within L1 in an approved project: Claude, no question.
+  assert.equal(preferredWay(d, executorOptions(env(['claude', 'codex']), d, task('L1'))), 'claude');
+  // Claude off: no way taken alone; the user chooses between ChatGPT and the local model.
+  const off = executorOptions(env(['codex']), d, task('L1'));
+  assert.equal(preferredWay(d, off), undefined);
+  assert.deepEqual(off, { options: ['codex', 'local'], excluded: [{ executor: 'claude', reason: 'off' }] });
+  // Claude out of quota: the same, with why.
+  const quota = executorOptions(env(['claude', 'codex']), d, task('L1'), outOfQuotaOf({ blocked: [{ executor: 'claude', cause: 'quota', until: '2026-10-23T20:00:00Z' }] }));
+  assert.equal(preferredWay(d, quota), undefined);
+  assert.deepEqual(quota, { options: ['codex', 'local'], excluded: [{ executor: 'claude', reason: 'quota' }] });
+  // A private card: Claude never reads it, the user chooses (here only the local model).
+  assert.equal(preferredWay(d, executorOptions(env(['claude', 'codex']), d, task('L2'))), undefined);
+  // An agent that asks never takes a way alone, even its first one.
+  assert.equal(preferredWay({ ...d, executorChoice: 'ask' }, executorOptions(env(['claude', 'codex']), d, task('L1'))), undefined);
+  // Only whole-executor blocks count: one model out of its cap leaves the executor available.
+  assert.deepEqual(outOfQuotaOf({ blocked: [{ executor: 'claude', model: 'opus', cause: 'cap' }, { executor: 'codex', cause: 'quota' }] }), ['codex']);
+  // With no way left, why reads the quota as such, not as "off".
+  assert.equal(
+    noWayReason('designer', d, [{ executor: 'claude', reason: 'quota' }, { executor: 'local', reason: 'off' }]),
+    'no way for designer to work on this card now (claude: out of quota; local: off)',
+  );
 });
 
 test('an agent that does not ask: the cloud way when it can run, else the local model, else none', () => {

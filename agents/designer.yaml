@@ -1,9 +1,11 @@
 # Designer (docs/AGENT-CARDS.md, D-159): writes self-contained HTML mockups in
 # the mockups/ folder of a project (docs/mockups/ in Arianna's own
 # repository). It is not the Coder with another name: it never runs commands
-# nor tests, and it writes only design files. Before each card the user
-# chooses where it runs (executor_choice: ask): Claude Code, Codex or the
-# local model, among the ones allowed for that card. In the cloud the private
+# nor tests, and it writes only design files. It works on Claude Code without
+# asking (executor_choice: prefer-first, the user's choice of 2026-10-23,
+# D-298); only when Claude cannot take the card (off, out of quota, the card
+# above L1 or without an approved project) the user chooses among the other
+# ways allowed for it, Codex or the local model, or "Non ora". In the cloud the private
 # data side is removed by cloud_max_label; locally the external communication
 # side is removed. No network and no knowledge base.
 name: designer
@@ -11,7 +13,7 @@ description: Designs pages and screens as self-contained HTML mockups in the pro
 max_label: L2
 cloud_max_label: L1
 executors: [claude, codex, local]
-executor_choice: ask
+executor_choice: prefer-first
 tools: [repo.read, repo.write, task.update]
 trifecta:
   private_data: true

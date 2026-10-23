@@ -118,6 +118,7 @@ export const EXCLUDED_TEXT: Record<string, string> = {
   label: 'la card è privata: nel cloud l’agente legge al massimo dati Interni',
   project: 'la card non ha un progetto approvato con la sua cartella',
   off: 'è spento in questo momento',
+  quota: 'ha finito la quota per ora',
 };
 
 /** The same, for a work Arianna hands to an agent from the chat (D-159): no card there. */
@@ -125,6 +126,7 @@ export const EXCLUDED_WORK_TEXT: Record<string, string> = {
   label: 'la conversazione ha dati privati: nel cloud l’agente legge al massimo dati Interni',
   project: 'la conversazione non ha un progetto approvato con la sua cartella',
   off: 'è spento in questo momento',
+  quota: 'ha finito la quota per ora',
 };
 
 /** The cloud models as the user reads them; an alias not listed is shown as it is. */

@@ -200,8 +200,7 @@ test('a Designer card on Claude: its style and skills reach the delivery as L0 d
   const executor = orchestrator(scripted([]), skills, ['claude']);
   try {
     await startCard(db().sql, card.id);
-    assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
-    await approve(card.id, 'claude');
+    // Claude can take the card: the Designer works there without asking (prefer-first, D-298).
     assert.deepEqual(await drain([card.id], executor), ['continued', 'to-verify']);
     assert.deepEqual(asked, [['designer', 128 * 1024, { style: 'sabbia', skills: ['acme/skills/alpha'] }]]);
     const { prompt } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };

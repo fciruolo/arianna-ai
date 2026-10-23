@@ -432,6 +432,16 @@ describe('parseAgentCard', () => {
       }), /executor_choice: expected one of ask/);
       rejects(card((c) => (c.executor_choice = 'ask')), /executor_choice ask needs at least two executors/);
     });
+    // D-298: the first executor without asking, the choice only when it cannot take the card.
+    it('accepts prefer-first on a card with several executors', () => {
+      assert.equal(parseAgentCard(card((c) => {
+        cloud(c);
+        c.executor_choice = 'prefer-first';
+      }), 'archivista').executorChoice, 'prefer-first');
+    });
+    it('refuses prefer-first with nothing to fall back on', () => {
+      rejects(card((c) => (c.executor_choice = 'prefer-first')), /executor_choice prefer-first needs at least two executors/);
+    });
   });
 });
 

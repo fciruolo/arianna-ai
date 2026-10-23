@@ -9,6 +9,7 @@ export {
   type AgentCard,
   type Autonomy,
   type Difficulty,
+  type ExecutorChoiceMode,
   type ExecutorKind,
 } from './card.ts';
 export { AGENTS_DIR, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK, type LoadedAgent } from './load.ts';
