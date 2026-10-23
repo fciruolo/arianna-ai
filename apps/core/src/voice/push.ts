@@ -91,10 +91,17 @@ export function vapidHeader(endpoint: string, subject: string, publicKey: string
 
 export type PushPoster = (endpoint: string, headers: Record<string, string>, body?: Buffer) => Promise<number>;
 
+/**
+ * Each address family gets 2 s: with Node's 250 ms a busy core (a reply just
+ * ending) timed out on every address (AggregateError ETIMEDOUT). A socket
+ * option the https types do not list; Node passes it on to the connection.
+ */
+const CONNECT: { autoSelectFamilyAttemptTimeout: number } = { autoSelectFamilyAttemptTimeout: 2_000 };
+
 /** A POST over https, empty or with the encrypted payload; the answer status only. */
 export const postPush: PushPoster = (endpoint, headers, body) =>
   new Promise((resolve, reject) => {
-    const req = httpsRequest(endpoint, { method: 'POST', headers: { ...headers, 'content-length': String(body?.length ?? 0) }, timeout: 10_000 }, (res) => {
+    const req = httpsRequest(endpoint, { method: 'POST', headers: { ...headers, 'content-length': String(body?.length ?? 0) }, timeout: 10_000, ...CONNECT }, (res) => {
       res.resume();
       res.on('end', () => {
         resolve(res.statusCode ?? 0);
