@@ -170,9 +170,9 @@ export function goesToArianna(draft: string): boolean {
   return meaning.kind === 'message' || (meaning.kind === 'command' && reachesCore(meaning.command.action));
 }
 
-/** «@na»: the start of a mention being typed (D-107, tappa B2), the menu of the agents shows; undefined otherwise. */
+/** «@na»: the start of a mention being typed (D-107, tappa B2), the menu of the agents shows; undefined otherwise. Any letter case, as the core reads it. */
 export function mentionQuery(draft: string): string | undefined {
-  return /^@([a-z0-9-]*)$/.exec(draft)?.[1];
+  return /^@([a-z0-9-]*)$/i.exec(draft)?.[1]?.toLowerCase();
 }
 
 /** The agents a mention being typed may still name, those starting with what is typed first. */

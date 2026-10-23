@@ -15,10 +15,14 @@ test('«@name text» addresses one agent; the brief is the rest of the message (
   // A comma or a colon after the name, as one writes to a person.
   assert.deepEqual(parseAddressed('@designer, fai tre colori'), { kind: 'mention', agent: 'designer', brief: 'fai tre colori' });
   assert.deepEqual(parseAddressed('@designer: fai tre colori'), { kind: 'mention', agent: 'designer', brief: 'fai tre colori' });
+  // The name in any letter case: «@Coder» is the coder, never a message for Arianna to give to another agent.
+  assert.deepEqual(parseAddressed('@Coder, implementa una landing page'), { kind: 'mention', agent: 'coder', brief: 'implementa una landing page' });
+  assert.deepEqual(parseAddressed('@DESIGNER fai tre colori'), { kind: 'mention', agent: 'designer', brief: 'fai tre colori' });
+  assert.deepEqual(parseAddressed('@Seo-Expert controlla i titoli'), { kind: 'mention', agent: 'seo-expert', brief: 'controlla i titoli' });
 });
 
 test('an «@» that is not a name at the start is an ordinary message', () => {
-  for (const body of ['scrivi a @designer', '@ designer ciao', '@Designer ciao', '@designer,ciao', 'email@example.com', '@1 ciao', '']) {
+  for (const body of ['scrivi a @designer', '@ designer ciao', '@designer,ciao', 'email@example.com', '@1 ciao', '']) {
     assert.equal(parseAddressed(body), undefined, body);
   }
 });
@@ -26,7 +30,8 @@ test('an «@» that is not a name at the start is an ordinary message', () => {
 test('«/giro text» addresses every agent of the conversation; other slashes do not', () => {
   assert.deepEqual(parseAddressed('/giro cosa ne pensate del preventivo?'), { kind: 'round', brief: 'cosa ne pensate del preventivo?' });
   assert.deepEqual(parseAddressed('/giro'), { kind: 'round', brief: '' });
-  for (const body of ['/girone ciao', '/Giro ciao', 'facciamo un /giro', '/nota testo']) assert.equal(parseAddressed(body), undefined, body);
+  assert.deepEqual(parseAddressed('/Giro cosa ne pensate?'), { kind: 'round', brief: 'cosa ne pensate?' });
+  for (const body of ['/girone ciao', 'facciamo un /giro', '/nota testo']) assert.equal(parseAddressed(body), undefined, body);
 });
 
 test('the brief of an addressed message is its text without «@name» or «/giro»; none for an ordinary one', () => {
