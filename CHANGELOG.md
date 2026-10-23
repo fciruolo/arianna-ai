@@ -8,6 +8,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Chiedere il Coder in una conversazione Privata non manda più a riconfigurare i progetti: Arianna risponde con una frase fissa che il Coder lavora solo nelle conversazioni di Lavoro con un progetto e che i dati Privati restano qui; il suggerimento di aggiungere un progetto compare solo in una conversazione di Lavoro senza progetto, e un progetto non più approvato è rifiutato subito, senza delega (D-303).
 
+## [0.173.1] - 2026-10-23
+
+### Corretto
+
+- Dopo un `kill -9` del core i processi `claude` e `codex` del run interrotto non restano più vivi: al riavvio il core li riconosce (stesso pid e stessa ora di partenza, salvati in `data/run-pids`) e li chiude prima di riprendere il task, così due Coder non lavorano sugli stessi file (D-302).
+
 ## [0.173.0] - 2026-10-23
 
 ### Corretto

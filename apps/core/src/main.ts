@@ -27,7 +27,7 @@ import {
   workParts,
   type TelegramConfig,
 } from '@arianna/config';
-import { claudeManagedSettingsPresent, createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, MCP_DIR, removeConversationWorkspace, removeStaleMcp, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
+import { claudeManagedSettingsPresent, createClaudeExecutor, createCodexExecutor, createLocalModel, localKeys, MCP_DIR, reapRunOrphans, removeConversationWorkspace, removeStaleMcp, RUN_PID_DIR, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
@@ -459,11 +459,21 @@ const localModel = () => {
 // folders would open the user's files (D-050): then the core runs without
 // delegation and says so.
 const rules = loadLabelRules();
+// D-302: a core killed while `claude` or `codex` worked (SIGKILL, crash) left their process groups
+// running; they stop now, before any worker takes a task back and launches a second run on the same files.
+const runPidDir = join(config.paths.data, RUN_PID_DIR);
+for (const { executor, pid } of await reapRunOrphans(runPidDir).catch((error: unknown) => {
+  report(error);
+  return [];
+})) {
+  console.log(`cloud orphan: ${executor} pgid ${String(pid)} stopped`);
+}
 let claude: ClaudeExecutor | undefined;
 try {
   // The exact name for `--model` is read at each launch too (`[cloud.models]`).
   claude = createClaudeExecutor({
     enabled: () => settings.current().cloud.executors,
+    pidDir: runPidDir,
     home: config.home,
     modelName: (model) => settings.current().cloud.models[model].name,
   });
@@ -478,6 +488,7 @@ try {
   const catalog = loadCloudCatalog(config.home);
   codex = createCodexExecutor({
     enabled: () => settings.current().cloud.executors,
+    pidDir: runPidDir,
     home: config.home,
     modelName: (model) => settings.current().cloud.models[model].name ?? catalogModelName(catalog, model),
   });
