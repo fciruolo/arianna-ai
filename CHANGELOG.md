@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.169.1] - 2026-10-23
+
 ### Corretto
 
 - Col dito niente testi da Mac: Pensieri e Sviluppo senza «⌘/Ctrl+Invio», la Wiki dice «+» e «⋯» al posto del clic destro, Novità dice di toccare l’icona di GOD, il fumetto dell’Ufficio dice «Tocca» al posto del tasto E e si tocca, Finanze non dice più di passare sul grafico; sul telefono la Routine dice che giorni e ora si spostano dal modulo (D-294).
