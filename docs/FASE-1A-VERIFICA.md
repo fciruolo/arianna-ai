@@ -139,7 +139,7 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
 | P3 Coding L1 via Claude Code | pronto da provare | 0 |
 | P4 Task L2 solo in locale | pronto da provare | 0 |
-| P5 Ripresa dopo `kill` del core | da riprovare con D-302 e D-304 (orfano di `claude` visto il 2026-10-23 e corretto; Coder vivo a core spento corretto con D-304) | 0 |
+| P5 Ripresa dopo `kill` del core | superato il 2026-10-23 con D-302 (0.173.1); Coder fermato entro un secondo dalla morte del core con D-304, da provare | 0 |
 | P6 Log del gateway leggibile | manca lavoro, se i conteggi non bastano | 3-5 |
 | P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |
 
