@@ -191,7 +191,7 @@ La conoscenza vive in file markdown che puoi aprire con qualsiasi editor, e un i
 
 - **Archivio:** i documenti originali (PDF, fatture, contratti, scansioni) restano immutati in una cartella cifrata, con checksum e metadati. Gli agenti non li modificano mai.
 - **Knowledge base:** pagine markdown con intestazione strutturata (tipo, etichetta di privacy, collegamenti, proprietà) in un repository git. È il "Notion evoluto": pagine, database con viste tabella, kanban e calendario, e collegamenti tra pagine.
-- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). Mem0 con Qdrant, che già usi, è un candidato per questo livello: la scelta si fa con un confronto misurato fra memorie a grafo e temporali (D-204). **Eccezione (D-114):** i fatti che dichiari tu, uno alla volta e ognuno con il suo livello («Solo in casa» o «Condivisibile»), vivono già prima della Fase 2 in PostgreSQL (`user_facts`, Impostazioni → «Su di te»); Mem0 resta per la memoria episodica e per ciò che Arianna impara da sé.
+- **Memoria degli agenti:** fatti stabili su di te (preferenze, persone, abitudini), episodi (cosa è successo e quando) e procedure (come si fa una cosa). La scelta si fa con un confronto misurato fra memorie a grafo e temporali (D-204, `MEMORIA-CONFRONTO.md`): candidate scelte dall'utente il 2026-10-23 Graphiti, Hindsight e una memoria nostra su PostgreSQL con pgvector; Mem0 in locale non ha più il grafo dalla v2 (resta solo nella sua piattaforma cloud) ed è in riserva. **Eccezione (D-114):** i fatti che dichiari tu, uno alla volta e ognuno con il suo livello («Solo in casa» o «Condivisibile»), vivono già prima della Fase 2 in PostgreSQL (`user_facts`, Impostazioni → «Su di te»); la memoria scelta dal confronto terrà la memoria episodica e ciò che Arianna impara da sé.
 
 **Ricerca.** Ogni interrogazione combina ricerca testuale, ricerca semantica con embedding e collegamenti tra pagine, poi un riordinamento fatto da un modello locale. Esistono indici separati per livello: gli embedding dei contenuti L2 sono calcolati solo da modelli locali e una sessione cloud non può interrogarli.
 
@@ -221,7 +221,7 @@ Per Arianna servono un RAG ibrido, tabelle SQL per i dati estratti e un harness 
 | Riordino dei risultati con un modello locale | Sì, Fase 2 | Migliora la precisione a basso costo |
 | Output strutturato vincolato (schema JSON) | Sì, Fase 1 | Rende affidabile l'estrazione dei campi dalle fatture anche con modelli locali piccoli |
 | GraphRAG o grafo estratto da un modello | Rinviare | L'indicizzazione richiede molte chiamate al modello, e quello locale è lento; serve per domande globali ("come sono cambiate le spese della casa in tre anni"), che si provano prima con SQL e riassunti per cartella |
-| Memoria temporale a grafo (fatti con data di validità) | Valutare in Fase 5 | Utile per "cosa era vero allora"; Mem0 ha un'opzione a grafo da verificare; non entra nel nucleo |
+| Memoria temporale a grafo (fatti con data di validità) | Valutare in Fase 5 | Utile per "cosa era vero allora"; Mem0 in locale non ha più il grafo (v2), Graphiti è fra le candidate di D-204; non entra nel nucleo |
 | Contesto lungo al posto del RAG | Solo per task cloud L0 e L1 | Per codice e documentazione pubblica conviene dare i file interi a Claude Code; per i dati L2 il modello locale ha un contesto limitato, quindi il RAG resta necessario |
 | Harness per il coding | Non scriverlo: usare Claude Code e Codex | Sono già harness completi (ciclo, strumenti, permessi, sessioni); tu scrivi solo l'adattatore. L'Agent SDK di Anthropic, secondo le condizioni ufficiali, richiede una chiave API, quindi non fa per te |
 | Harness per gli agenti locali | Scriverne uno sottile in TypeScript, oppure riusarne uno open source esistente (per esempio Hermes Agent, che già conosci) | Ciclo con strumenti MCP, tetti di passi e costo, eventi nel registro e sandbox; da confrontare con una prova di due giorni in Fase 1 prima di impegnarsi |
@@ -397,7 +397,7 @@ Il nucleo è in TypeScript con un servizio vocale in Python, tutto in container,
 | Nucleo e API | TypeScript su Node.js, monorepo con pnpm, WebSocket per gli eventi | Unico linguaggio con interfacce, SDK degli agenti e pixel-agents |
 | Database | PostgreSQL (task, eventi, registro, configurazione) | Affidabile, un solo posto per stato e code |
 | Code e flussi | Tabella `jobs` propria su Postgres dietro un'interfaccia (D-004) | Nessun servizio e nessuna dipendenza in più; DBOS o Temporal solo se serve |
-| Vettori e memoria | Qdrant con Mem0, che già usi | Un solo archivio vettoriale, già conosciuto |
+| Vettori e memoria | pgvector nel PostgreSQL di Arianna (deciso dall'utente il 2026-10-14); la memoria degli agenti dal confronto di D-204 | Un solo database, già nel sistema |
 | Modelli locali | Server compatibile con l'API OpenAI dietro un'interfaccia sostituibile (oggi oMLX) | Si cambia server o hardware senza toccare gli agenti |
 | Agenti cloud | `claude` e `codex` lanciati come processi, via un adattatore per ciascuno | Rispetta il vincolo "senza API" e isola il rischio di cambi di regole |
 | Strumenti | Server MCP per gli strumenti condivisi tra Arianna, Claude Code e Codex | Gli stessi strumenti funzionano in tutti gli esecutori |
@@ -425,7 +425,7 @@ Si scrivono le parti che contengono le tue regole (privacy, router, task, regist
 | Voce | Adottare | Pipecat, Silero, Parakeet o Whisper, TTS da provare |
 | Ufficio pixel-art | Adottare | pixel-agents (MIT) in modalità standalone incorporata nell'HUD, con un tuo HookProvider; asset da sostituire se condividi la cartella |
 | Fatture e documenti | Adottare | Parser FatturaPA, Docling o PaddleOCR-VL |
-| Memoria e ricerca | Adottare | La memoria migliore da un confronto misurato (Mem0, Graphiti e altre, D-204) |
+| Memoria e ricerca | Adottare | La memoria migliore da un confronto misurato (Graphiti, Hindsight e una nostra su PostgreSQL, D-204) |
 | Ripasso | Adottare | Una libreria FSRS, non un motore tuo |
 | Sandbox | Adottare | Docker Sandboxes o sandbox-runtime |
 | Test e tracce | Adottare | Promptfoo, Inspect AI, Langfuse |
@@ -437,7 +437,7 @@ Si scrivono le parti che contengono le tue regole (privacy, router, task, regist
 
 ## Installazione e portabilità
 
-Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac o server, anche tramite Synology Drive. Un installer (`arianna install`) controlla i prerequisiti, scarica i modelli locali (i Qwen che usi già) leggendo un catalogo con dimensione e checksum, avvia Postgres e Qdrant in Docker con i volumi dentro `data/` e lancia una diagnosi (`arianna doctor`). I pesi dei modelli non si sincronizzano: viaggia il catalogo e si riscaricano dove servono. I database non si sincronizzano mai dal vivo, solo come dump cifrati (`arianna export` e `arianna import`). Al primo avvio un wizard (`arianna init`) guida la configurazione; poi tutto è modificabile dal file `arianna.toml` o dalla pagina Impostazioni. I modelli si scelgono da un catalogo corto deciso da te, che conterrà solo il Qwen già provato (oggi è vuoto: le voci vere arrivano con oMLX sul Mac Studio); un modello nuovo entra come sperimentale e diventa verificato solo dopo gli eval. Dettagli e stime (28-44 ore, già incluse nei totali) in `docs/INSTALLER-PORTABILITY.md`.
+Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac o server, anche tramite Synology Drive. Un installer (`arianna install`) controlla i prerequisiti, scarica i modelli locali (i Qwen che usi già) leggendo un catalogo con dimensione e checksum, avvia Postgres in Docker con i volumi dentro `data/` e lancia una diagnosi (`arianna doctor`). I pesi dei modelli non si sincronizzano: viaggia il catalogo e si riscaricano dove servono. I database non si sincronizzano mai dal vivo, solo come dump cifrati (`arianna export` e `arianna import`). Al primo avvio un wizard (`arianna init`) guida la configurazione; poi tutto è modificabile dal file `arianna.toml` o dalla pagina Impostazioni. I modelli si scelgono da un catalogo corto deciso da te, che conterrà solo il Qwen già provato (oggi è vuoto: le voci vere arrivano con oMLX sul Mac Studio); un modello nuovo entra come sperimentale e diventa verificato solo dopo gli eval. Dettagli e stime (28-44 ore, già incluse nei totali) in `docs/INSTALLER-PORTABILITY.md`.
 
 **Sviluppo e produzione.** Sono due installazioni separate, non due modi della stessa: la cartella di sviluppo (codice e dati finti, l'unica in cui lavorano Claude Code e Codex) e l'installazione con i dati veri (D-030, da applicare a fine Fase 1A). Su richiesta dell'utente ciascuna dovrà mostrare un'etichetta che dice quale è (da fare). Un pulsante "Aggiorna" che porti nell'installazione il codice nuovo è solo proposto (D-088).
 

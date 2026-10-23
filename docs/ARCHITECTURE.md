@@ -31,7 +31,7 @@ Sintesi operativa della sezione "Architettura" di `SPEC.md`. In caso di conflitt
 | Schede agente | YAML + prompt | `agents/` |
 | HUD / ufficio pixel / cardwall | Interfaccia Vue 3 + Tailwind | `apps/hud` |
 | Voce | Servizio Python (Pipecat), VAD/STT/TTS locali | `apps/voice` |
-| Memoria | Archivio originali, KB markdown, Qdrant + Mem0 | `data/`, servizi |
+| Memoria | Archivio originali, KB markdown, pgvector in PostgreSQL, memoria degli agenti dal confronto di D-204 | `data/`, servizi |
 | Database | PostgreSQL: task, eventi, coda, audit | servizio Docker |
 
 ## Flusso di una richiesta
