@@ -2,7 +2,7 @@
 // fake oMLX run as a real process.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync, spawn as spawnProcess } from 'node:child_process';
+import { spawn as spawnProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer } from 'node:net';
@@ -11,7 +11,7 @@ import { after, afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { DATA_DIR, resolveHome, type LocalEndpointConfig } from '@arianna/config';
-import { ensureLocalKey, readLocalKey } from '@arianna/executors';
+import { ensureLocalKey, processStart, readLocalKey } from '@arianna/executors';
 
 import { createLocalServers, localServerEnv, loggedEvent, logTail, type LocalServerEvent, type LocalServers } from '../src/local-servers.ts';
 
@@ -416,7 +416,7 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     const pid = orphan.pid;
     assert.ok(pid !== undefined);
     orphan.unref();
-    const started = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    const started = processStart(pid);
     writeFileSync(join(tmpRoot, 'omlx.pid'), JSON.stringify({ pid, started }));
     create();
     await servers.sync([endpoint('omlx', port)]);

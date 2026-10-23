@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -488,6 +488,38 @@ describe('claude executor', () => {
     const aborted = new AbortController();
     aborted.abort();
     assert.equal((await failure((await start('hang', { signal: aborted.signal })).run.result)).kind, 'cancelled');
+  });
+
+  it('D-302: the pid file of a run lives while the process runs and goes when it ends', async () => {
+    const pidDir = join(DATA, `run-pids-${randomUUID()}`);
+    const files = () => (existsSync(pidDir) ? readdirSync(pidDir) : []);
+    let seen: string[] = [];
+    let record: unknown;
+    let cancel: () => void = () => undefined;
+    const { run } = await start(
+      'hang',
+      {
+        onEvent: (event) => {
+          if (event.type !== 'init') return;
+          seen = files();
+          record = seen[0] === undefined ? undefined : JSON.parse(readFileSync(join(pidDir, seen[0]), 'utf8'));
+          cancel();
+        },
+      },
+      { pidDir },
+    );
+    cancel = () => {
+      run.cancel();
+    };
+    assert.equal((await failure(run.result)).kind, 'cancelled');
+    assert.equal(seen.length, 1);
+    assert.match(seen[0] ?? '', /^claude-[0-9]+\.pid$/);
+    assert.equal((record as { pid: number }).pid, Number(/[0-9]+/.exec(seen[0] ?? '')?.[0]));
+    assert.equal(typeof (record as { started: unknown }).started, 'string');
+    assert.deepEqual(files(), [], 'a cancelled run removes its file');
+    await (await start('ok', {}, { pidDir })).run.result;
+    assert.deepEqual(files(), [], 'a run that ends normally removes its file');
+    assert.throws(() => executor({ pidDir: 'data/run-pids' }), TypeError);
   });
 
   it('a failing onEvent stops the run', async () => {

@@ -12,6 +12,7 @@ import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
 import { preparedMcp, releaseMcp, type McpToolName, type PreparedMcp } from '../mcp.ts';
 import { preparedNotes } from '../notes.ts';
+import { checkRunPidDir, forgetRunPid, recordRunPid } from '../process-group.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { claudeArgs, claudeEnv, type ClaudeModel, type ClaudeTool } from './profile.ts';
 import { ClaudeStream, type ClaudeEvent, type ClaudeUsage, type StreamFailure } from './stream.ts';
@@ -171,6 +172,13 @@ export interface ClaudeExecutorOptions {
   env?: NodeJS.ProcessEnv;
   /** Between SIGTERM and SIGKILL. Default 5 s. */
   killGraceMs?: number;
+  /**
+   * D-302: the folder of the runs' pid files (data/run-pids, absolute). Each
+   * run writes the pid and start time of its process group there and removes
+   * the file when it ends, so that the next core stops a group a killed core
+   * left running (`reapRunOrphans`). Undefined writes nothing.
+   */
+  pidDir?: string;
   /** ARIANNA_HOME: sandboxed commands never read it, wherever it is, except the workspace. */
   home: string;
   /**
@@ -255,6 +263,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
   const fixed = typeof given === 'function' ? [] : [...given];
   const enabled = typeof given === 'function' ? given : (): readonly string[] => fixed;
   const folders = sandboxFolders(options);
+  if (options.pidDir !== undefined) checkRunPidDir(options.pidDir);
 
   async function check(launch: ClaudeLaunch): Promise<Checked> {
     if (!enabled().includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
@@ -397,6 +406,8 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
 
       // Its own process group: stopping the run stops whatever the binary started.
       const child = spawn(file, argv, { cwd: job.cwd, env: claudeEnv(options.env ?? process.env, { mcp: job.mcp !== undefined }), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+      // D-302: a core killed now leaves the group running; the next one stops it from this file.
+      const pidFile = options.pidDir === undefined || child.pid === undefined ? undefined : recordRunPid(options.pidDir, CLAUDE_EXECUTOR, child.pid);
 
       const signalGroup = (signal: NodeJS.Signals) => {
         if (child.pid === undefined) return;
@@ -492,6 +503,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       function finish(code: number | null): void {
         if (closed) return;
         closed = true;
+        forgetRunPid(pidFile);
         // A stopped run leaves nothing behind in its group.
         if (stopped !== undefined) signalGroup('SIGKILL');
         if (killTimer !== undefined) clearTimeout(killTimer);
