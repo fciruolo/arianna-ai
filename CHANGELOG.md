@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.173.0] - 2026-10-23
+
 ### Corretto
 
 - Le notifiche push non vanno più in «tempo scaduto» quando il core è occupato a chiudere una risposta: ogni tentativo di collegamento al servizio di Apple ha 2 secondi invece di 250 millisecondi (D-295).
