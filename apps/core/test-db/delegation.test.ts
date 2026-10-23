@@ -980,6 +980,18 @@ test('the notes of a part (I-11 P3, D-166): the internal ones as a read-only cop
         ['allow', 'cloud'],
       ],
     );
+    // «Cosa era» (D-297): each note says it is one, with its path, the blocked one too; the brief is the brief.
+    const what = await db().sql<{ what: string | null; subject: string | null }[]>`
+      SELECT g.what, s.subject FROM gateway_log g LEFT JOIN gateway_subjects s ON s.log_id = g.id
+      WHERE g.task_id = ${task.id} AND g.target = 'claude' ORDER BY g.id`;
+    assert.deepEqual(
+      [...what].map((row) => [row.what, row.subject]),
+      [
+        ['project-note', 'Workplan/iban.md'],
+        ['project-note', 'Workplan/piano.md'],
+        ['brief', null],
+      ],
+    );
     const [event] = await db().sql<{ payload: Record<string, unknown>; label: string }[]>`
       SELECT payload, label FROM events WHERE task_id = ${task.id} AND kind = 'project.notes'`;
     assert.deepEqual([event?.label, event?.payload], ['L0', { agent: 'coder', executor: 'claude', given: 1, held: 4 }]);

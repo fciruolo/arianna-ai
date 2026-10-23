@@ -98,6 +98,10 @@ export interface GatewayLogGroup {
   label: Label;
   /** Exits allowed to the cloud with Privato or Segreto (not a link): the line is red. */
   privateOut: number;
+  /** Exits to the cloud, allowed or blocked. */
+  cloud: number;
+  /** Where the line says it went: its newest cloud target when it has one, else its newest row's. */
+  headline: { targetKind: GatewayTargetKind | 'other'; target: string; locality: 'local' | 'cloud' };
 }
 
 export interface GatewayLogTarget {
@@ -215,6 +219,9 @@ interface GroupRow extends Row {
   targets: number;
   top_label: string;
   private_out: number;
+  cloud: number;
+  cloud_kind: string | null;
+  cloud_target: string | null;
 }
 
 function code(value: string | null): string | null {
@@ -257,6 +264,11 @@ function groupOf(row: GroupRow): GatewayLogGroup {
     targets: row.targets,
     label: isLabel(row.top_label) ? row.top_label : 'L2',
     privateOut: row.private_out,
+    cloud: row.cloud,
+    headline:
+      row.cloud_kind !== null && row.cloud_target !== null
+        ? { targetKind: kindOf(row.cloud_kind), target: code(row.cloud_target) ?? 'other', locality: 'cloud' }
+        : { targetKind: kindOf(row.target_kind), target: code(row.target) ?? 'other', locality: row.locality === 'local' ? 'local' : 'cloud' },
   };
 }
 
@@ -317,14 +329,19 @@ async function loadGroups(sql: Queryable, query: GatewayLogQuery): Promise<{ gro
         count(DISTINCT (target_kind, target))::int AS targets,
         max(label)::text AS top_label,
         -- Allowed to the cloud with Privato or Segreto (not the address of a link): the line is red, as a row (D-296).
-        (count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud' AND label >= 'L2' AND target_kind <> 'link'))::int AS private_out
+        (count(*) FILTER (WHERE decision = 'allow' AND locality = 'cloud' AND label >= 'L2' AND target_kind <> 'link'))::int AS private_out,
+        -- The headline of a group with exits to the cloud is its newest cloud target: never «sul Mac» for it.
+        (count(*) FILTER (WHERE locality = 'cloud'))::int AS cloud,
+        (array_agg(target_kind ORDER BY id DESC) FILTER (WHERE locality = 'cloud'))[1] AS cloud_kind,
+        (array_agg(target ORDER BY id DESC) FILTER (WHERE locality = 'cloud'))[1] AS cloud_target
       FROM chosen
       GROUP BY coalesce(run_id::text, 'row:' || id::text)
       HAVING true
         ${query.decision === 'block' ? sql`AND count(*) FILTER (WHERE decision = 'block') > 0` : sql``}
         ${query.decision === 'allow' ? sql`AND count(*) FILTER (WHERE decision = 'allow') > 0` : sql``}
     )
-    SELECT ${rowColumns(sql)}, grouped.n, grouped.allowed, grouped.blocked, grouped.total_bytes, grouped.first_ts, grouped.targets, grouped.top_label, grouped.private_out
+    SELECT ${rowColumns(sql)}, grouped.n, grouped.allowed, grouped.blocked, grouped.total_bytes, grouped.first_ts, grouped.targets, grouped.top_label, grouped.private_out,
+      grouped.cloud, grouped.cloud_kind, grouped.cloud_target
     FROM grouped
     JOIN gateway_log g ON g.id = grouped.last_id
     LEFT JOIN runs r ON r.id = g.run_id

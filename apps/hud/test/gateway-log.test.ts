@@ -28,6 +28,7 @@ import {
   exitText,
   groupCounts,
   groupDecision,
+  groupHeadline,
   runQuery,
   whatText,
   type GatewayLogEntry,
@@ -203,7 +204,7 @@ test('«Cosa era» (D-297): the kind of each exit in Italian, with its subject f
 });
 
 function group(overrides: Partial<GatewayLogGroup> = {}): GatewayLogGroup {
-  return { entry: entry({ runId: 'r1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, ...overrides };
+  return { entry: entry({ runId: 'r1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, cloud: 20, headline: { targetKind: 'executor', target: 'claude', locality: 'cloud' }, ...overrides };
 }
 
 test('one line per request: the counts of the group, its outcome, its pages', () => {
@@ -220,4 +221,12 @@ test('one line per request: the counts of the group, its outcome, its pages', ()
   // The filters of the page but the outcome: the exits its counts count.
   assert.equal(runQuery('r1', null, { ...EMPTY_FILTERS, decision: 'block', label: 'L1' }), '?label=L1&run=r1&limit=100');
   assert.equal(queryOf({ ...EMPTY_FILTERS, decision: 'block' }, null, undefined, true), '?group=run&decision=block');
+});
+
+test('a line with exits to the cloud never reads «sul Mac»: its cloud target leads', () => {
+  assert.deepEqual(groupHeadline(group({ targets: 2, cloud: 16, count: 17 })), { target: 'Claude e altre', place: 'fuori dal Mac (16 di 17)' });
+  assert.deepEqual(groupHeadline(group()), { target: 'Claude', place: 'fuori dal Mac' });
+  assert.deepEqual(groupHeadline(group({ cloud: 0, count: 2, headline: { targetKind: 'executor', target: 'local', locality: 'local' } })), { target: 'Modello locale', place: 'sul Mac' });
+  assert.equal(whatText(entry({ what: 'project-note' })), 'Nota del progetto');
+  assert.equal(exitText(entry({ what: 'project-note' }), 'note/architettura.md'), 'Nota del progetto · note/architettura.md');
 });

@@ -160,6 +160,12 @@ test('one line per run: counts, bytes, the newest row; «Bloccate» keeps groups
   assert.deepEqual([mine?.count, mine?.blocked], [4, 1]);
   assert.equal(blocked.groups?.some((group) => group.entry.id === alone), false);
   assert.equal(mine?.privateOut, 0);
+  // A local step and a channel row in the same run: the line still leads with Claude, out of the Mac.
+  await passGateway(db().sql, fragment('passo'), createContext('L1'), { kind: 'executor', id: 'local', locality: 'local' }, { ...ids, what: 'local-turn' });
+  await passGateway(db().sql, fragment('risposta'), createContext('L1'), { kind: 'channel', id: 'web' }, { ...ids });
+  const mixed = (await loadGatewayLog(db().sql, parseGatewayLogQuery(new URLSearchParams('group=run')))).groups?.find((group) => group.entry.runId === ids.runId);
+  assert.deepEqual([mixed?.count, mixed?.cloud, mixed?.targets], [6, 4, 3]);
+  assert.deepEqual(mixed?.headline, { targetKind: 'executor', target: 'claude', locality: 'cloud' });
   // A Privato exit allowed to the cloud (the site of an access, D-276) makes the group red, as a row.
   await db().owner`
     INSERT INTO gateway_log (task_id, run_id, target_kind, target, locality, label, decision, rule, reason, bytes_out)

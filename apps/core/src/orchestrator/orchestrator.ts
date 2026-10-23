@@ -1196,7 +1196,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         ],
         context,
         { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
-        { taskId: task.id, runId },
+        { taskId: task.id, runId, what: 'local-turn' },
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
       const skillsCount = skills.length;

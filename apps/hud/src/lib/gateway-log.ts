@@ -48,6 +48,10 @@ export interface GatewayLogGroup {
   label: Label;
   /** Exits allowed to the cloud with Privato or Segreto (not a link): the line is red. */
   privateOut: number;
+  /** Exits to the cloud, allowed or blocked. */
+  cloud: number;
+  /** Where the line says it went: its newest cloud target when it has one (never «sul Mac» then). */
+  headline: { targetKind: GatewayTargetKind; target: string; locality: 'local' | 'cloud' };
 }
 
 export interface GatewayLogTarget {
@@ -345,6 +349,8 @@ export function verifiedText(verified: boolean | null | undefined): string {
 /** The name of each kind of exit (D-297, «Cosa era»): L0, shown from the phone too. */
 const WHAT_TEXT: Record<string, string> = {
   brief: 'Istruzioni iniziali',
+  'project-note': 'Nota del progetto',
+  'local-turn': 'Passo del modello locale',
   'cloud-text': 'Richiesta di Arianna a Claude',
   'mcp-skills': 'Elenco delle skill',
   'mcp-skill': 'Skill',
@@ -408,4 +414,11 @@ export function groupDecision(group: Pick<GatewayLogGroup, 'blocked' | 'allowed'
   if (group.blocked === 0) return 'ammesse';
   if (group.allowed === 0) return 'bloccate';
   return 'con blocchi';
+}
+
+/** «Claude e altre · fuori dal Mac»: a line with an exit to the cloud never reads «sul Mac». */
+export function groupHeadline(group: Pick<GatewayLogGroup, 'headline' | 'targets' | 'cloud' | 'count'>): { target: string; place: string } {
+  const target = `${targetText(group.headline.targetKind, group.headline.target)}${group.targets > 1 ? ' e altre' : ''}`;
+  if (group.cloud === 0) return { target, place: 'sul Mac' };
+  return { target, place: group.cloud === group.count ? 'fuori dal Mac' : `fuori dal Mac (${group.cloud.toLocaleString('it-IT')} di ${group.count.toLocaleString('it-IT')})` };
 }

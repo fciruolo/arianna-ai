@@ -19,6 +19,7 @@ import {
   GATEWAY_LOG_TITLE,
   groupCounts,
   groupDecision,
+  groupHeadline,
   isPrivateOut,
   originText,
   periodProblem,
@@ -368,13 +369,13 @@ function fullTime(ts: string): string {
                     <button
                       type="button"
                       class="rounded text-left"
-                      :aria-label="line.count > 1 ? `${timeText(line.entry.ts)}: le ${line.count} uscite di questo lavoro verso ${targetText(line.entry.targetKind, line.entry.target)}` : `${timeText(line.entry.ts)}: dettaglio della decisione verso ${targetText(line.entry.targetKind, line.entry.target)}`"
+                      :aria-label="line.count > 1 ? `${timeText(line.entry.ts)}: le ${line.count} uscite di questo lavoro verso ${groupHeadline(line).target}` : `${timeText(line.entry.ts)}: dettaglio della decisione verso ${targetText(line.entry.targetKind, line.entry.target)}`"
                       :aria-expanded="opened?.entry.id === line.entry.id || (opened === null && selected?.id === line.entry.id)"
                     >{{ timeText(line.entry.ts) }}</button>
                   </td>
                   <td class="px-3 py-2 max-md:order-3 max-md:col-span-2 max-md:p-0">
-                    <span class="block font-medium">{{ targetText(line.entry.targetKind, line.entry.target) }}<template v-if="line.targets > 1"> e altre</template></span>
-                    <span class="block text-xs text-muted">{{ line.entry.locality === 'cloud' ? 'fuori dal Mac' : 'sul Mac' }}<template v-if="line.count > 1"> · {{ groupCounts(line) }}</template><template v-else-if="line.entry.what"> · {{ whatText(line.entry) }}</template></span>
+                    <span class="block font-medium">{{ groupHeadline(line).target }}</span>
+                    <span class="block text-xs text-muted">{{ groupHeadline(line).place }}<template v-if="line.count > 1"> · {{ groupCounts(line) }}</template><template v-else-if="line.entry.what"> · {{ whatText(line.entry) }}</template></span>
                   </td>
                   <td class="min-w-0 px-3 py-2 max-md:order-4 max-md:col-span-2 max-md:p-0">
                     <span class="block">{{ askerText(line.entry) }}<template v-if="line.entry.model"> · <span class="text-muted">{{ line.entry.model }}</span></template></span>
