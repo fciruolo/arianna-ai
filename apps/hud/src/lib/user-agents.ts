@@ -14,8 +14,8 @@ export interface CardSummary {
   /** The label the gateway gives the prompt (tappa T3b). */
   promptLabel?: string;
   cloudMaxLabel?: string;
-  /** The user chooses where each card of the agent runs (D-159). */
-  executorChoice?: 'ask';
+  /** The user chooses where each card of the agent runs (D-159), or only when its first executor cannot (D-298). */
+  executorChoice?: 'ask' | 'prefer-first';
   executors: string[];
   tools: string[];
   trifecta: { private_data: boolean; untrusted_content: boolean; external_comms: boolean };

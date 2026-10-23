@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Il Designer lavora con Claude senza chiedere, sia da una card sia quando Arianna gli passa un lavoro dalla chat; la scheda «Con chi lavora?» compare solo quando Claude non può prenderlo (spento, quota finita, card privata o senza progetto approvato), con le altre strade ammesse e «Non ora»; una scelta già fatta per la card resta (D-298).
+
 ## [0.170.1] - 2026-10-23
 
 ### Corretto

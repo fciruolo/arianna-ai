@@ -1,6 +1,7 @@
 // The cardwall, tappa C3 (I-13, D-159), with the database: Arianna's plan
-// approved in the chat, the cards of the agents that run (the Designer asks
-// where), the report in the card, "Avvia", "Riprendi" and "Riprova".
+// approved in the chat, the cards of the agents that run (an agent that asks
+// where, and the Designer on Claude unless Claude cannot take it, D-298), the
+// report in the card, "Avvia", "Riprendi" and "Riprova".
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -16,6 +17,7 @@ import { ApprovalChoiceError, listApprovals, loadApproval } from '../src/approva
 import { cardDetail } from '../src/card-details.ts';
 import { CardError, createCard, listCards, moveCard, resumeCard, retryCard, startCard, updateCard } from '../src/cardwall.ts';
 import { createConversation, postUserMessage } from '../src/conversations.ts';
+import { appendEvent } from '../src/events.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed } from '../src/live.ts';
@@ -38,6 +40,13 @@ const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
 const BASE = configWithLocalModel();
 const PROJECTS = ['site'];
 const agents = new Map<string, LoadedAgent>(committedAgents(ROOT));
+/**
+ * The same agents with a Designer that asks before every work (`executor_choice: ask`, D-159): the tests of
+ * the choice itself. The committed Designer works on Claude without asking when it can (prefer-first, D-298).
+ */
+const ASKING = new Map<string, LoadedAgent>(
+  [...agents].map(([name, agent]): [string, LoadedAgent] => [name, name === 'designer' ? { ...agent, card: { ...agent.card, executorChoice: 'ask' } } : agent]),
+);
 const OPTIONS = {
   allowedActions: () => [] as readonly string[],
   agentLimits: (task: Task) => {
@@ -85,7 +94,7 @@ function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
-function orchestrator(model: LocalModel, cloud: 'claude'[] = [], plannerPrompt?: string): StepExecutor {
+function orchestrator(model: LocalModel, cloud: 'claude'[] = [], plannerPrompt?: string, cards: Map<string, LoadedAgent> = ASKING): StepExecutor {
   const settings = () => ({
     ...BASE,
     home: HOME,
@@ -93,7 +102,7 @@ function orchestrator(model: LocalModel, cloud: 'claude'[] = [], plannerPrompt?:
     cloud: { executors: cloud, models: defaultCloudModels() },
     projects: PROJECTS.map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
   });
-  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(cloud.length > 0 ? { claude } : {}), ...(plannerPrompt === undefined ? {} : { plannerPrompt }) });
+  return createOrchestrator({ sql: db().sql, agents: cards, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(cloud.length > 0 ? { claude } : {}), ...(plannerPrompt === undefined ? {} : { plannerPrompt }) });
 }
 
 async function drain(taskIds: readonly string[], executor: StepExecutor): Promise<string[]> {
@@ -618,6 +627,122 @@ test('a private conversation offers the Designer only the local model (D-159)', 
   assert.equal(approval.label, 'L2');
 });
 
+/** A Designer card from a plan (L1, in the project), started: what the committed Designer does with it (D-298). */
+async function startedDesignerCard(title: string) {
+  const parent = await createTask(db().sql, { title: 'Piano', label: 'L1', clearance: 'L1', status: 'inbox' });
+  const card = await createTask(db().sql, {
+    title,
+    goal: 'Due varianti.',
+    parentId: parent.id,
+    label: 'L1',
+    clearance: 'L1',
+    effectiveLabel: 'L1',
+    assignee: 'designer',
+    project: 'site',
+    status: 'inbox',
+  });
+  await startCard(db().sql, card.id);
+  return card;
+}
+
+test('the Designer card works on Claude without asking when Claude can take it (prefer-first, D-298)', async () => {
+  const card = await startedDesignerCard('Grafica su Claude');
+  try {
+    assert.deepEqual(await drain([card.id], orchestrator(scripted([]), ['claude'], undefined, agents)), ['continued', 'to-verify']);
+    assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${card.id}`).length, 0, 'no question');
+    const [delegation] = await loadDelegations(db().sql, card.id);
+    assert.deepEqual([delegation?.agent, delegation?.executor, delegation?.repo, delegation?.status], ['designer', 'claude', 'site', 'ok']);
+    const log = await db().sql<{ decision: string; label: string }[]>`SELECT decision, label FROM gateway_log WHERE task_id = ${card.id} AND target = 'claude'`;
+    assert.deepEqual([...log], [{ decision: 'allow', label: 'L1' }]);
+  } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+});
+
+test('Claude off: the Designer card asks among the other ways, as before; nothing leaves (prefer-first, D-298)', async () => {
+  const card = await startedDesignerCard('Grafica senza Claude acceso');
+  const model = scripted([{ action: 'reply', text: 'Proposta in locale.' }]);
+  const executor = orchestrator(model, [], undefined, agents);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  const approval = await waitingApproval(card.id);
+  assert.deepEqual([approval.kind, approval.action], ['executor', 'card.executor']);
+  assert.deepEqual(approval.detail.options, ['local']);
+  assert.deepEqual(approval.detail.excluded, [
+    { executor: 'claude', reason: 'off' },
+    { executor: 'codex', reason: 'off' },
+  ]);
+  await recordDecision(db().sql, approval.id, 'approved', 'web', 'local');
+  assert.deepEqual(await drain([card.id], executor), ['to-verify']);
+  assert.equal(model.requests.length, 1);
+  await nothingSentToClaude(card.id);
+});
+
+test('a way the user already chose for the card stays, even with Claude on again (prefer-first, D-298)', async () => {
+  const card = await startedDesignerCard('Grafica scelta in locale');
+  const chosen = await requestExecutor(db().sql, (await loadTask(db().sql, card.id)) as Task, 1, 'designer', { options: ['local'], excluded: [{ executor: 'claude', reason: 'off' }] });
+  await recordDecision(db().sql, chosen, 'approved', 'web', 'local');
+  const model = scripted([{ action: 'reply', text: 'Proposta in locale, come scelto.' }]);
+  assert.deepEqual(await drain([card.id], orchestrator(model, ['claude'], undefined, agents)), ['to-verify']);
+  assert.equal(model.requests.length, 1);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${card.id}`).length, 1, 'not asked again');
+  await nothingSentToClaude(card.id);
+});
+
+test('a way the user chose that is no longer allowed: asked again, never Claude on its own (prefer-first, D-298)', async () => {
+  const card = await startedDesignerCard('Grafica con la scelta superata');
+  // ChatGPT chosen earlier (Claude was out then), off now: Claude could take the card, yet the user is asked again.
+  const chosen = await requestExecutor(db().sql, (await loadTask(db().sql, card.id)) as Task, 1, 'designer', { options: ['codex', 'local'], excluded: [{ executor: 'claude', reason: 'quota' }] });
+  await recordDecision(db().sql, chosen, 'approved', 'web', 'codex');
+  assert.deepEqual(await drain([card.id], orchestrator(scripted([]), ['claude'], undefined, agents)), ['waiting-approval']);
+  const again = await waitingApproval(card.id);
+  assert.notEqual(again.id, chosen);
+  assert.deepEqual(again.detail.options, ['claude', 'local']);
+  await nothingSentToClaude(card.id);
+});
+
+test('a work handed to the Designer without a question: Claude off before its step, the work closes and nothing leaves (prefer-first, D-298)', async () => {
+  const model = scripted([TO_DESIGNER, { action: 'reply', text: 'Claude ora è spento: il lavoro non è partito.' }]);
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, LANDING);
+  // Only Arianna's step, with Claude on: the delegation is written, no approval.
+  const queue = createJobQueue(db().sql);
+  const job = await queue.claim(STEP_QUEUE, 'test-worker');
+  assert.ok(job !== undefined && job.payload.taskId === task.id);
+  assert.equal(await processStepJob(db().sql, orchestrator(model, ['claude'], undefined, agents), job, 'test-worker', OPTIONS), 'continued');
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
+  // Claude off before the delegation runs.
+  assert.deepEqual(await drain([task.id], orchestrator(model, [], undefined, agents)), ['answered']);
+  const [done] = await loadDelegations(db().sql, task.id);
+  assert.equal(done?.status, 'refused');
+  assert.match(done.result ?? '', /^error: task\.delegate: claude can no longer take this work/);
+  await nothingLeft(task.id);
+});
+
+test('Arianna hands a work to the Designer: on Claude without asking in a work conversation; in a private one the user chooses (prefer-first, D-298)', async () => {
+  const model = scripted([TO_DESIGNER, { action: 'reply', text: 'Il Designer ha preparato la landing.' }]);
+  const executor = orchestrator(model, ['claude'], undefined, agents);
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, LANDING);
+  try {
+    // The delegating step, the delegation on Claude, Arianna's answer.
+    assert.deepEqual(await drain([task.id], executor), ['continued', 'continued', 'answered']);
+    assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0, 'no question');
+    const [done] = await loadDelegations(db().sql, task.id);
+    assert.deepEqual([done?.agent, done?.executor, done?.repo, done?.status], ['designer', 'claude', 'site', 'ok']);
+    const [decision] = await db().sql<{ executor: string }[]>`SELECT executor FROM router_decisions WHERE task_id = ${task.id} ORDER BY id DESC LIMIT 1`;
+    assert.equal(decision?.executor, 'claude');
+  } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+  // A private conversation: Claude never reads it, so the user is asked, with the local model alone.
+  const { approval } = await askedDelegation(orchestrator(scripted([TO_DESIGNER]), ['claude'], undefined, agents), 'private');
+  assert.deepEqual(approval.detail.options, ['local']);
+  assert.deepEqual(approval.detail.excluded, [
+    { executor: 'claude', reason: 'label' },
+    { executor: 'codex', reason: 'label' },
+  ]);
+});
+
 test('Claude writes the cards in a work conversation, from the request alone (D-164)', async () => {
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Mi serve una landing per il sito.');
@@ -678,4 +803,26 @@ test('the local model writes the cards itself in a private conversation, and wit
         ] } }]);
   assert.deepEqual(await drain([task.id], orchestrator(alone)), ['waiting-approval']);
   assert.doesNotMatch(JSON.stringify(alone.requests[0]?.schema?.schema), /"request"/);
+});
+
+// Last in the file: the events are append-only, so the block of Claude's quota stays for an hour (as the
+// one of «Claude out of quota» above does): a test that needs Claude available goes before both.
+test('Claude out of quota: the Designer card and a work from a work conversation ask among the other ways, with why (prefer-first, D-298)', async () => {
+  await appendEvent(db().sql, { kind: 'executor.quota', label: 'L0', payload: { executor: 'claude', resetsAt: new Date(Date.now() + 3_600_000).toISOString(), overage: false } });
+  const card = await startedDesignerCard('Grafica senza quota');
+  assert.deepEqual(await drain([card.id], orchestrator(scripted([]), ['claude'], undefined, agents)), ['waiting-approval']);
+  const approval = await waitingApproval(card.id);
+  assert.deepEqual(approval.detail.options, ['local']);
+  assert.deepEqual(approval.detail.excluded, [
+    { executor: 'claude', reason: 'quota' },
+    { executor: 'codex', reason: 'off' },
+  ]);
+  await nothingSentToClaude(card.id);
+  // From the chat, in a work conversation: the same question under the message.
+  const { approval: asked } = await askedDelegation(orchestrator(scripted([TO_DESIGNER]), ['claude'], undefined, agents));
+  assert.deepEqual(asked.detail.options, ['local']);
+  assert.deepEqual(asked.detail.excluded, [
+    { executor: 'claude', reason: 'quota' },
+    { executor: 'codex', reason: 'off' },
+  ]);
 });

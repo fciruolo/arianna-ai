@@ -87,6 +87,7 @@ import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.
 import { plannerFor, writePlan } from './claude-plan.ts';
 import { planCardStep, planRequestStep } from './plan-job.ts';
 import { planningOf } from '../card-plans.ts';
+import { budgetOf } from './routing.ts';
 import {
   cardBrief,
   loadCardReturns,
@@ -95,6 +96,7 @@ import {
   cardLabel,
   cardRepo,
   choiceOf,
+  choosesWay,
   chosenExecutor,
   cloudOf,
   defaultWay,
@@ -105,7 +107,9 @@ import {
   approvedRepo,
   delegationExecutorApproval,
   notStartedText,
+  outOfQuotaOf,
   pendingExecutorApproval,
+  preferredWay,
   requestDelegationExecutor,
   requestExecutor,
   waysFor,
@@ -661,8 +665,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     if (delegation === undefined || (delegation.step >= step && !direct)) return undefined;
     if (isAgentCard(task)) {
       // The cloud executor the user chose for a card (D-159): the router takes that one only.
-      const ask = options.agents.get(task.assignee)?.card.executorChoice === 'ask';
-      const only = ask ? cloudOf(await chosenExecutor(sql, task.id)) : undefined;
+      // With prefer-first and no choice of the user's, the first executor of the card (cardStart took it, D-298).
+      const card = options.agents.get(task.assignee)?.card;
+      const ask = card !== undefined && choosesWay(card);
+      const chosen = ask ? await chosenExecutor(sql, task.id) : undefined;
+      const only = ask ? cloudOf(chosen ?? (card.executorChoice === 'prefer-first' ? card.executors[0] : undefined)) : undefined;
       // An agent that asks never delegates without a cloud choice of the user's: the delegation is closed, never routed.
       if (ask && only === undefined) {
         return { kind: 'closed', delegation, status: 'refused', result: `error: task.delegate: the user did not choose a cloud executor for ${task.assignee}` };
@@ -672,10 +679,19 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     // A delegation of the chat to an agent that asks (D-159): only the way the user chose for it. The direct chat
     // does not ask: the user chose who answers, and that it goes to the cloud, when the conversation was created (D-111).
     const target = options.agents.get(delegation.agent);
-    if (direct || target?.card.executorChoice !== 'ask') return planDelegation(env, task, delegation);
+    if (direct || target === undefined || !choosesWay(target.card)) return planDelegation(env, task, delegation);
     const asked = await delegationExecutorApproval(sql, delegation);
     if (asked === undefined) {
-      return { kind: 'closed', delegation, status: 'refused', result: `error: task.delegate: the user did not choose where ${delegation.agent} works` };
+      // prefer-first (D-298): no choice was asked because the first executor could take the work; checked again here.
+      const first = target.card.executorChoice === 'prefer-first' ? target.card.executors[0] : undefined;
+      if (first === undefined) {
+        return { kind: 'closed', delegation, status: 'refused', result: `error: task.delegate: the user did not choose where ${delegation.agent} works` };
+      }
+      const now = waysFor(env, target.card, delegation.label, approvedRepo(env, delegation.repo), outOfQuotaOf(await budgetOf(sql)));
+      if (preferredWay(target.card, now) === undefined) {
+        return { kind: 'closed', delegation, status: 'refused', result: `error: task.delegate: ${first} can no longer take this work: tell the user, who may ask again` };
+      }
+      return planDelegation(env, task, delegation, first);
     }
     if (asked.state === 'pending') return { kind: 'choose', delegation, approvalId: asked.id };
     if (asked.state !== 'approved' || asked.choice === undefined) return { kind: 'declined', delegation, label: asked.label };
@@ -745,19 +761,25 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       return cardEnd(task, latest, { kind: 'continue', usage: { steps: 0 } });
     }
     let only: CloudExecutor | undefined;
-    if (agent.card.executorChoice === 'ask') {
+    if (choosesWay(agent.card)) {
       const decided = ctx.approval?.kind === 'executor' ? ctx.approval : undefined;
       if (decided?.state === 'rejected') return { kind: 'wait-user', reason: `the user did not choose where ${task.assignee} works: resume the card to choose again`, usage: { steps: 0 } };
-      const choice = choiceOf(decided);
+      let choice = choiceOf(decided);
       if (choice === undefined) {
         const pending = await pendingExecutorApproval(sql, task.id);
         if (pending !== undefined) return { kind: 'confirm', approvalId: pending, usage: { steps: 0 } };
-        const choices = executorOptions(env, agent.card, wayTask);
-        if (choices.options.length === 0) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, choices.excluded), usage: { steps: 0 } };
-        return { kind: 'confirm', approvalId: await requestExecutor(sql, task, step, task.assignee, choices), usage: { steps: 0 } };
-      }
-      // Checked again: what was allowed when the user chose may not be now.
-      if (!executorOptions(env, agent.card, wayTask).options.includes(choice)) {
+        const prefers = agent.card.executorChoice === 'prefer-first';
+        const choices = executorOptions(env, agent.card, wayTask, prefers ? outOfQuotaOf(await budgetOf(sql)) : []);
+        // prefer-first (D-298): a way the user already chose for this card stays, while allowed (the next step reads
+        // the same choice); else the first executor of the card when it can take it. Only otherwise the user is asked.
+        const earlier = prefers ? await chosenExecutor(sql, task.id) : undefined;
+        choice = earlier === undefined ? preferredWay(agent.card, choices) : choices.options.includes(earlier) ? earlier : undefined;
+        if (choice === undefined) {
+          if (choices.options.length === 0) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, choices.excluded), usage: { steps: 0 } };
+          return { kind: 'confirm', approvalId: await requestExecutor(sql, task, step, task.assignee, choices), usage: { steps: 0 } };
+        }
+      } else if (!executorOptions(env, agent.card, wayTask).options.includes(choice)) {
+        // Checked again: what was allowed when the user chose may not be now.
         return { kind: 'wait-user', reason: `${choice} can no longer take this card: resume it to choose again`, usage: { steps: 0 } };
       }
       only = cloudOf(choice);
@@ -878,8 +900,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     const conversation = isCloudRoute(where) && task.conversationId !== null ? await loadConversation(sql, task.conversationId) : undefined;
     const repo = isCloudRoute(where) ? repoFor(conversation?.workspace, workParts(options.settings().projects)) : undefined;
     // An agent that asks (D-159): the user chooses among the ways allowed for this work, a card's own rules.
-    const asks = target?.card.executorChoice === 'ask' && !isAgentCard(task);
-    const ways = asks ? waysFor(env, target.card, label, approvedRepo(env, repo)) : undefined;
+    // With prefer-first (D-298) the first executor takes the work without asking when it can (no approval).
+    const asks = target !== undefined && choosesWay(target.card) && !isAgentCard(task);
+    const prefers = asks && target.card.executorChoice === 'prefer-first';
+    const allowed = asks ? waysFor(env, target.card, label, approvedRepo(env, repo), prefers ? outOfQuotaOf(await budgetOf(sql)) : []) : undefined;
+    const ways = allowed === undefined || target === undefined || preferredWay(target.card, allowed) !== undefined ? undefined : allowed;
     // The caps of one message of the user (D-107, tappa B2): agents never bounce on each other's work without end.
     const before = await loadDelegations(sql, task.id);
     let error: string | undefined;

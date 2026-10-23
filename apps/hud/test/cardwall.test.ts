@@ -521,6 +521,13 @@ test('the choice of where a card runs: the ways offered, the ones left out with 
   );
 });
 
+test('the choice of a Designer whose Claude is out of quota says so (D-298)', () => {
+  assert.deepEqual(
+    executorChoices({ title: 'Landing', agent: 'designer', options: ['codex', 'local'], excluded: [{ executor: 'claude', reason: 'quota' }], step: 1 })?.excluded,
+    [{ executor: 'Claude', why: 'ha finito la quota per ora' }],
+  );
+});
+
 test('the style and skills of a Designer card (D-163): names from the catalog, history and refusals in Italian', () => {
   const catalog = [
     { id: 'acme/skills/alpha', name: 'Alpha' },

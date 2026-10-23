@@ -152,20 +152,27 @@ watch(
 );
 onMounted(loadDetail);
 
-// Whether the agent asks where each card runs (executor_choice: ask, D-159): from its card, read from the core.
+// Whether the agent asks where each card runs (executor_choice: ask, D-159), or works with its first executor
+// and asks only when that one cannot (prefer-first, D-298): from its card, read from the core.
 const asks = ref(false);
+const prefers = ref<string | undefined>(undefined);
 async function loadAsks(): Promise<void> {
   const assignee = props.card.assignee;
   if (assignee === 'user') {
     asks.value = false;
+    prefers.value = undefined;
     return;
   }
   try {
     const listing = await listUserAgents();
     const agent = [...listing.official, ...listing.user].find((item) => item.name === assignee);
-    if (props.card.assignee === assignee) asks.value = agent?.card.executorChoice === 'ask';
+    if (props.card.assignee !== assignee) return;
+    asks.value = agent?.card.executorChoice === 'ask';
+    const first = agent?.card.executors[0];
+    prefers.value = agent?.card.executorChoice === 'prefer-first' && first !== undefined ? (CHOICE_TEXT[first] ?? first) : undefined;
   } catch {
     asks.value = false;
+    prefers.value = undefined;
   }
 }
 watch(() => props.card.assignee, () => void loadAsks());
@@ -859,7 +866,7 @@ function absoluteTime(at: string): string {
               <span v-if="chosen !== undefined" class="text-[13.5px] text-muted">Ultima scelta: {{ chosen }}</span>
             </div>
             <p v-if="actions.includes('start')" class="text-[13.5px] text-muted">
-              Con Avvia, la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template>.
+              Con Avvia, la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template><template v-else-if="prefers !== undefined">; lavora con {{ prefers }}, e ti chiedo con chi solo se {{ prefers }} non è disponibile</template>.
             </p>
             <div v-if="report !== null" class="rounded-lg border border-line bg-bg px-3 py-2.5">
               <p class="mb-1.5 flex items-center gap-2 text-[13px] text-muted">

@@ -299,7 +299,7 @@ describe('user agents, tappa T3 (D-119)', () => {
     assert.equal(service.list().official[0]?.works, 'claude');
   });
 
-  it('says which agent asks where each card runs (executor_choice: ask, D-159)', () => {
+  it('says how each agent chooses where its cards run (executor_choice, D-159, D-298)', () => {
     const designer = loadAgent(fileURLToPath(new URL('../../../agents', import.meta.url)), 'designer');
     agents.set('designer', designer);
     const listed = createUserAgents({ home, dataDir: join(home, 'data'), agents, official: new Set(['coder', 'designer']), now: () => clock }).list().official;
@@ -307,7 +307,7 @@ describe('user agents, tappa T3 (D-119)', () => {
       listed.map(({ name, card }) => [name, card.executorChoice]),
       [
         ['coder', undefined],
-        ['designer', 'ask'],
+        ['designer', 'prefer-first'],
       ],
     );
   });

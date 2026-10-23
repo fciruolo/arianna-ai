@@ -58,13 +58,18 @@ export interface AgentCard {
   /**
    * `ask`: before each card of this agent, the user chooses where it runs
    * (D-159): one of its cloud executors or the local model, among the ones
-   * allowed for that card. Absent: the router chooses, as for a delegation.
+   * allowed for that card. `prefer-first` (D-298): the first executor of the
+   * list when it can take the card now, without asking; otherwise the user
+   * chooses as with `ask`, among the ways left. Absent: the router chooses,
+   * as for a delegation.
    */
-  executorChoice?: 'ask';
+  executorChoice?: ExecutorChoiceMode;
 }
 
-/** Values of `executor_choice` (D-159). */
-export const EXECUTOR_CHOICES = ['ask'] as const;
+/** Values of `executor_choice` (D-159, D-298). */
+export const EXECUTOR_CHOICES = ['ask', 'prefer-first'] as const;
+
+export type ExecutorChoiceMode = (typeof EXECUTOR_CHOICES)[number];
 
 export class AgentCardError extends Error {
   override name = 'AgentCardError';
@@ -102,7 +107,7 @@ const KEYS = [
  * - every approval a tool needs is listed in `approvals`;
  * - autonomy above A1 needs the decision that granted it;
  * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance);
- * - `executor_choice: ask` needs at least two executors to choose from (D-159);
+ * - `executor_choice` (`ask` or `prefer-first`) needs at least two executors to choose from (D-159, D-298);
  * - `cloud_tools` lists only tools of `CLOUD_TOOLS`, once each, and needs `claude` among the executors (D-261).
  */
 export function parseAgentCard(raw: unknown, name: string): AgentCard {
@@ -235,10 +240,10 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     if (!isAtMost(promptLabel, maxLabel)) fail(`prompt_label ${promptLabel} is above max_label ${maxLabel}`);
   }
 
-  let executorChoice: 'ask' | undefined;
+  let executorChoice: ExecutorChoiceMode | undefined;
   if (card.executor_choice !== undefined) {
     executorChoice = oneOf(card.executor_choice, EXECUTOR_CHOICES, `${where}: executor_choice`);
-    if (executors.length < 2) fail('executor_choice ask needs at least two executors to choose from');
+    if (executors.length < 2) fail(`executor_choice ${executorChoice} needs at least two executors to choose from`);
   }
 
   const result: AgentCard = {

@@ -157,15 +157,13 @@ test('«Rimanda» on Claude: an Interno note keeps the cloud, a new delegation w
   try {
     await startCard(db().sql, card.id);
     const executor = orchestrator(scripted([]), ['claude']);
-    assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
-    await chooseExecutor(card.id, 'claude', ['claude', 'local']);
+    // Claude can take the card: the Designer works there without asking (prefer-first, D-298).
     assert.deepEqual(await drain([card.id], executor), ['continued', 'to-verify']);
 
     await sendBackCard(db().sql, card.id, { note: 'Più contrasto nei pulsanti.', label: 'L1' });
-    // The Designer asks where it works at each start: Claude is still offered, the card stays Interno.
-    assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
-    await chooseExecutor(card.id, 'claude', ['claude', 'local']);
+    // The card stays Interno: Claude again, still without asking.
     assert.deepEqual(await drain([card.id], executor), ['continued', 'to-verify']);
+    assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${card.id}`).length, 0);
     const delegations = await loadDelegations(db().sql, card.id);
     assert.equal(delegations.length, 2);
     const brief = delegations[1]?.brief ?? '';
