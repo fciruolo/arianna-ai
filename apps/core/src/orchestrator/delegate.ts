@@ -1038,7 +1038,8 @@ export async function projectNotesFor(
       [{ value: note.text, label: note.label, source: `project:${project}/${note.path}` }],
       contextOf(at.task, note.label),
       { kind: 'executor', id: executor, locality: 'cloud' },
-      { taskId: at.task.id, runId: at.runId, summary: PROJECT_NOTE_SUMMARY },
+      // «Cosa era» (D-297): a note of the project copied for the run (D-166), its path as subject, blocked ones too.
+      { taskId: at.task.id, runId: at.runId, summary: PROJECT_NOTE_SUMMARY, what: 'project-note', subject: note.path },
     );
     if (decision.decision === 'allow') given.push({ path: note.path, decision });
     else held += 1;

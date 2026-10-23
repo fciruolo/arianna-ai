@@ -1,5 +1,5 @@
 import type { ThemeListing } from './themes.ts';
-import type { GatewayLogPage } from './gateway-log.ts';
+import type { GatewayLogPage, GatewayText } from './gateway-log.ts';
 import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
@@ -820,6 +820,16 @@ export async function loadUsage(period: UsagePeriod): Promise<UsageReport> {
 /** «Registro del gateway» (D-296): one page of decisions, metadata only; `query` from queryOf of lib/gateway-log.ts. */
 export async function loadGatewayLog(query: string): Promise<GatewayLogPage> {
   return call<GatewayLogPage>('GET', `/api/gateway/log${query}`);
+}
+
+/** «Cosa era» (D-297): the subjects of the exits of one request, by row id; only from the Mac (the phone gets 403 local-only). */
+export async function loadGatewaySubjects(key: string): Promise<Record<string, string>> {
+  return (await call<{ subjects: Record<string, string> }>('GET', `/api/gateway/log/request/${encodeURIComponent(key)}/subjects`)).subjects;
+}
+
+/** «Cosa è uscito» (D-297): the exact text of one exit, only from the Mac (the phone gets 403 local-only). */
+export async function loadGatewayText(id: string): Promise<GatewayText> {
+  return call<GatewayText>('GET', `/api/gateway/log/${encodeURIComponent(id)}/text`);
 }
 
 /** «Cosa è cambiato» (D-233): the core takes a fresh picture of the installation, then answers what it observed. */

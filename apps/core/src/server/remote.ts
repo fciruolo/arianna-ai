@@ -35,6 +35,10 @@ const LOCAL_ONLY_PATHS: readonly RegExp[] = [
   /^\/api\/notifications\/(stream|this-mac)$/,
   /^\/api\/browser(\/|$)/,
   /^\/api\/browse\/[^/]+\/(open|reveal)$/,
+  // The exact text that left (D-297): read on the Mac only; the list of the log stays readable.
+  /^\/api\/gateway\/log\/[^/]+\/text$/,
+  // What each exit was about (D-297): paths, searches, sites, also of blocked exits.
+  /^\/api\/gateway\/log\/request\/[^/]+\/subjects$/,
 ];
 
 /**

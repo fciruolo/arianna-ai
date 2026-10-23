@@ -68,7 +68,15 @@ export async function readPage(input: ReadPageInput): Promise<ReadPageResult> {
   let savedSite: string | undefined;
   const allowed = async (page: PageConsent, next: string): Promise<string | undefined> => {
     const target: Target = { kind: 'web', page };
-    const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, input.meta);
+    // Each hop of a redirect says its own site (D-297): the subject of the first address is not this one's.
+    let meta = input.meta;
+    if (meta?.subject !== undefined) {
+      const hopSite = siteOf(next);
+      meta = { ...meta };
+      if (hopSite === undefined) delete meta.subject;
+      else meta.subject = hopSite;
+    }
+    const decision = await passGateway(sql, addressFragment(next, context.effective), context, target, meta);
     if (decision.decision === 'block' && decision.rule === 'saved-private' && decision.saved !== undefined) {
       saved = decision.saved;
       savedSite = siteOf(next);

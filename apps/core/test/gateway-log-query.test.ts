@@ -2,7 +2,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { GATEWAY_LOG_PAGE, GatewayLogQueryError, parseGatewayLogQuery } from '../src/gateway-log.ts';
+import { cutUtf8, KEPT_PART_BYTES, keptParts, subjectOf, whatOf } from '../src/gateway.ts';
+import { GATEWAY_LOG_PAGE, gatewayLogId, GatewayLogQueryError, parseGatewayLogQuery, requestKeyOf } from '../src/gateway-log.ts';
+import { MCP_EXIT_CODES, mcpSubject } from '../src/mcp/tools.ts';
 import { localOnly } from '../src/server/remote.ts';
 
 const parse = (query: string): ReturnType<typeof parseGatewayLogQuery> => parseGatewayLogQuery(new URLSearchParams(query));
@@ -32,4 +34,60 @@ test('anything unknown is refused', () => {
 
 test('the page is readable from the phone: only metadata, no setting of the exits', () => {
   assert.equal(localOnly('/api/gateway/log'), false);
+});
+
+test('«Cosa è uscito» (D-297): the text is read only from the Mac, the list stays readable from the phone', () => {
+  for (const path of ['/api/gateway/log/1/text', '/api/gateway/log/123456789/text', '/api/gateway/log/x/text']) assert.equal(localOnly(path), true, path);
+  for (const path of ['/api/gateway/log', '/api/gateway/log/1']) assert.equal(localOnly(path), false, path);
+});
+
+test('an id of the log: digits only, within a bigint', () => {
+  assert.equal(gatewayLogId('42'), '42');
+  for (const raw of ['', '0', '-1', '01', '1.5', 'abc', '9999999999999999999', '1;DROP']) assert.equal(gatewayLogId(raw), undefined, raw);
+});
+
+test('the parts kept: the UTF-8 that leaves, in order, cut at 1 MiB on a character boundary', () => {
+  assert.equal(keptParts(undefined), null);
+  assert.equal(keptParts([]), null);
+  const kept = JSON.parse(keptParts(['uno', 'è€\u0000']) ?? '[]') as { b: string; n: number }[];
+  assert.deepEqual(kept.map((part) => Buffer.from(part.b, 'base64').toString('utf8')), ['uno', 'è€\u0000']);
+  assert.deepEqual(kept.map((part) => part.n), [3, 6]);
+  const big = `${'a'.repeat(KEPT_PART_BYTES - 2)}€`;
+  const [cut] = JSON.parse(keptParts([big]) ?? '[]') as { b: string; n: number }[];
+  assert.equal(Buffer.from(cut?.b ?? '', 'base64').toString('utf8'), 'a'.repeat(KEPT_PART_BYTES - 2));
+  assert.equal(cut?.n, KEPT_PART_BYTES + 1);
+  assert.deepEqual(cutUtf8(Buffer.from('aé'), 2), Buffer.from('a'));
+  assert.deepEqual(cutUtf8(Buffer.from('aé'), 3), Buffer.from('aé'));
+});
+
+test('«Cosa era» (D-297): a closed code, a subject of one line', () => {
+  assert.equal(whatOf('mcp-kb-read'), 'mcp-kb-read');
+  for (const raw of [undefined, '', 'Brief', 'a b', 'x'.repeat(49)]) assert.equal(whatOf(raw), null, String(raw));
+  assert.equal(subjectOf(undefined), null);
+  assert.equal(subjectOf('  \n '), null);
+  assert.equal(subjectOf('kb/a.md'), 'kb/a.md');
+  assert.equal(subjectOf('a\nb\u0000c'), 'a b c');
+  assert.equal(Array.from(subjectOf('é'.repeat(600)) ?? '').length, 500);
+});
+
+test('the code and the subject of each tool of the MCP server, from its arguments alone', () => {
+  for (const code of Object.values(MCP_EXIT_CODES)) assert.equal(whatOf(code), code);
+  assert.equal(mcpSubject('list_skills', {}), undefined);
+  assert.equal(mcpSubject('get_skill', { id: 'catalog/x' }), 'catalog/x');
+  assert.equal(mcpSubject('kb_search', { query: 'fatture' }), 'fatture');
+  assert.equal(mcpSubject('kb_read', { path: ' kb/a.md ' }), 'kb/a.md');
+  assert.equal(mcpSubject('web_fetch', { url: 'https://www.example.com/pagina?q=1' }), 'example.com');
+  assert.equal(mcpSubject('web_fetch', { url: 'non un indirizzo' }), undefined);
+});
+
+test('groups by request and the rows of a group, by its key', () => {
+  const task = 't-0a5f3e1c-1111-4222-8333-000000000000';
+  assert.equal(parse('group=request').group, 'request');
+  for (const key of [task, 'r-0a5f3e1c-1111-4222-8333-000000000000', 'row-42']) assert.equal(parse(`request=${key}`).request, key);
+  for (const query of ['group=run', 'group=task', 'request=abc', 'request=row-0', 'request=x-0a5f3e1c-1111-4222-8333-000000000000', 'run=abc', `group=request&request=${task}`]) {
+    assert.throws(() => parse(query), GatewayLogQueryError, query);
+  }
+  assert.equal(requestKeyOf(task), task);
+  assert.equal(requestKeyOf('t-../x'), undefined);
+  assert.equal(localOnly(`/api/gateway/log/request/${task}/subjects`), true);
 });

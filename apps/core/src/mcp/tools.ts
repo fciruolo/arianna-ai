@@ -78,6 +78,37 @@ export interface GateMeta {
   taskId: string;
   runId: string;
   summary: string;
+  /** What the exit is (D-297): the closed code of the tool, `-denied` for a refusal. */
+  what?: string;
+  /** Its subject (D-297): the path, the search, the skill, the site; kept on the Mac only. */
+  subject?: string;
+}
+
+/** The code of each tool in gateway_log.what (D-297, «Cosa era»). */
+export const MCP_EXIT_CODES: Record<McpToolName, string> = {
+  list_skills: 'mcp-skills',
+  get_skill: 'mcp-skill',
+  kb_search: 'mcp-kb-search',
+  kb_read: 'mcp-kb-read',
+  web_fetch: 'mcp-web-page',
+};
+
+/** The subject of a call, from its arguments (already valid): never what it read. */
+export function mcpSubject(tool: McpToolName, args: Record<string, unknown>): string | undefined {
+  switch (tool) {
+    case 'list_skills':
+      return undefined;
+    case 'get_skill':
+      return typeof args.id === 'string' ? args.id : undefined;
+    case 'kb_search':
+      return typeof args.query === 'string' ? args.query : undefined;
+    case 'kb_read':
+      return typeof args.path === 'string' ? args.path.trim() : undefined;
+    case 'web_fetch': {
+      const address = typeof args.url === 'string' ? normalizedAddress(args.url) : undefined;
+      return address === undefined ? undefined : siteOf(address);
+    }
+  }
 }
 
 /** What a call did, for the event `mcp.call`: never arguments nor text. */
@@ -267,7 +298,8 @@ async function webFetch(session: McpSessionInput, usage: RunUsage, args: Record<
   }
   if (covered) usage.pages = (usage.pages ?? 0) + 1;
   const clearance = isAtMost(session.clearance, MCP_CEILING) ? session.clearance : MCP_CEILING;
-  const meta = { taskId: session.taskId, runId: session.runId, summary: 'mcp web_fetch address' };
+  const addressSite = siteOf(address);
+  const meta = { taskId: session.taskId, runId: session.runId, summary: 'mcp web_fetch address', what: 'mcp-web-address', ...(addressSite === undefined ? {} : { subject: addressSite }) };
   // Not covered: the gateway refuses it (`page-consent`) before any request, and writes its row.
   const read = await web.read({ address, consent, context: createContext(clearance, clearance), meta });
   if (!covered) {
@@ -337,7 +369,9 @@ export async function callTool(session: McpSessionInput, usage: RunUsage, name: 
     report(tool, 'invalid');
     return result(INVALID_TEXT, true);
   }
-  const meta: GateMeta = { taskId: session.taskId, runId: session.runId, summary: `mcp ${tool}` };
+  const subject = mcpSubject(tool, args);
+  const meta: GateMeta = { taskId: session.taskId, runId: session.runId, summary: `mcp ${tool}`, what: MCP_EXIT_CODES[tool], ...(subject === undefined ? {} : { subject }) };
+  const deniedMeta: GateMeta = { ...meta, what: `${MCP_EXIT_CODES[tool]}-denied` };
   let reserved = 0;
   try {
     // Never above L1, whatever the session says: the server answers a cloud run.
@@ -345,7 +379,7 @@ export async function callTool(session: McpSessionInput, usage: RunUsage, name: 
     const found = await answer(tool, session, usage, args, context, deps);
     if ('refused' in found) {
       // Nothing was read: what is offered is an empty, unlabeled fragment (L2), so the call still has its row, blocked.
-      await deps.gate([deniedFragment(tool)], context, session.executor, meta);
+      await deps.gate([deniedFragment(tool)], context, session.executor, deniedMeta);
       report(tool, found.decision ?? 'deny');
       return result(found.text ?? DENIED_TEXT, true);
     }
@@ -367,7 +401,7 @@ export async function callTool(session: McpSessionInput, usage: RunUsage, name: 
     usage.bytes += bytes;
     const read = recordRead(context, maxLabel(...found.fragments.map((fragment) => fragment.label)));
     if (!read.allowed) {
-      await deps.gate([deniedFragment(tool)], context, session.executor, meta);
+      await deps.gate([deniedFragment(tool)], context, session.executor, deniedMeta);
       usage.bytes -= reserved;
       pageEvent('error');
       report(tool, 'deny');

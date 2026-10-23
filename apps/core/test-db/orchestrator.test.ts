@@ -154,15 +154,16 @@ test('a multi-step task: search, read, answer in the chat', async () => {
   assert.equal(turns[2]?.messageId, message?.id);
 
   // Every model call and the answer passed the gateway.
-  const log = await db().sql<{ target: string; decision: string; label: string }[]>`
-    SELECT target, decision, label FROM gateway_log WHERE task_id = ${task.id} ORDER BY id`;
+  const log = await db().sql<{ target: string; decision: string; label: string; what: string | null }[]>`
+    SELECT target, decision, label, what FROM gateway_log WHERE task_id = ${task.id} ORDER BY id`;
+  // Each step of the local model says it is one (D-297, «Cosa era»).
   assert.deepEqual(
-    log.map((row) => [row.target, row.decision]),
+    log.map((row) => [row.target, row.decision, row.what]),
     [
-      ['local', 'allow'],
-      ['local', 'allow'],
-      ['local', 'allow'],
-      ['web', 'allow'],
+      ['local', 'allow', 'local-turn'],
+      ['local', 'allow', 'local-turn'],
+      ['local', 'allow', 'local-turn'],
+      ['web', 'allow', null],
     ],
   );
   const [usage] = await db().sql<{ steps: number; tokens: string }[]>`

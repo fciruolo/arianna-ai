@@ -47,6 +47,40 @@ export interface GatewayMeta {
    * the references the user let go with «Apri» in this conversation.
    */
   saved?: { approved: ReadonlySet<string> };
+  /**
+   * What this exit is (D-297, «Cosa era»): a closed code of the code, L0,
+   * shown also from the phone (`brief`, `mcp-kb-read`, `mcp-kb-read-denied`…).
+   */
+  what?: string;
+  /**
+   * Its subject: the path of a note, the text of a search, the id of a skill,
+   * the site of a page. Free text that may be private: kept apart in
+   * gateway_subjects, blocked exits too, only for a row of a task or a run,
+   * never in incognito, read only from the Mac, 30 days at most.
+   */
+  subject?: string;
+}
+
+const WHAT = /^[a-z][a-z0-9-]{0,47}$/;
+
+/** The code of `meta.what`, or null when it is not one. */
+export function whatOf(what: string | undefined): string | null {
+  return what !== undefined && WHAT.test(what) ? what : null;
+}
+
+/** The subject as gateway_subjects keeps it: one line, no control character, 500 characters at most; null when empty. */
+export function subjectOf(subject: string | undefined): string | null {
+  if (subject === undefined) return null;
+  // Every control character (a new line, a NUL that PostgreSQL text refuses) becomes one space.
+  let flat = '';
+  for (const char of subject) {
+    const code = char.codePointAt(0) ?? 0;
+    const control = code < 0x20 || code === 0x7f;
+    if (!control) flat += char;
+    else if (!flat.endsWith(' ')) flat += ' ';
+  }
+  const line = Array.from(flat.trim()).slice(0, 500).join('');
+  return line === '' ? null : line;
 }
 
 /** Text forms of a payload; undefined when a fragment has none. */
@@ -105,6 +139,33 @@ function measure(texts: readonly string[]): { bytes: number; sha256: string } {
   };
 }
 
+/** The largest part of an exit kept whole in gateway_texts (D-297); a longer one keeps its first MiB. */
+export const KEPT_PART_BYTES = 1024 * 1024;
+
+/** The first `max` bytes of a UTF-8 text, cut before a character that would not fit whole. */
+export function cutUtf8(bytes: Buffer, max: number): Buffer {
+  if (bytes.length <= max) return bytes;
+  let end = max;
+  // 10xxxxxx: a byte inside a character; back to the first byte of that character.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end);
+}
+
+/**
+ * The parts of an exit as gateway_texts keeps them (D-297): in order, the
+ * UTF-8 that leaves (base64 for the statement, so that any byte goes through)
+ * and its whole size. JSON for one parameter; null when there is nothing.
+ */
+export function keptParts(texts: readonly string[] | undefined): string | null {
+  if (texts === undefined || texts.length === 0) return null;
+  return JSON.stringify(
+    texts.map((text) => {
+      const bytes = Buffer.from(text, 'utf8');
+      return { b: cutUtf8(bytes, KEPT_PART_BYTES).toString('base64'), n: bytes.length };
+    }),
+  );
+}
+
 /**
  * The gateway as callers use it: decides, then writes the decision to
  * gateway_log, allowed or blocked. Send only after this resolves with `allow`,
@@ -153,15 +214,33 @@ export async function passGateway(
     knownSecrets.find(meta.summary).length === 0
       ? meta.summary
       : null;
+  // «Cosa è uscito» (D-297): the exact text of an exit allowed to the cloud up to L1, in the same
+  // statement as its row (both or neither), never for an incognito conversation (not even written).
+  // Only for a row tied to a task or a run: one without them cannot be tied to a conversation, so
+  // neither the incognito nor «Elimina» could reach its text (the browser driven by the user, a catalog).
+  const tied = meta.taskId !== undefined || meta.runId !== undefined;
+  const kept = tied && decision.decision === 'allow' && localityOf(target) === 'cloud' && isAtMost(decision.label, 'L1') ? keptParts(decision.texts) : null;
   await sql`
+    WITH g AS (
     INSERT INTO gateway_log (
       task_id, run_id, target_kind, target, locality, label, decision, rule, reason,
-      bytes_out, payload_sha256, summary
+      bytes_out, payload_sha256, summary, what
     ) VALUES (
       ${meta.taskId ?? null}, ${meta.runId ?? null}, ${target.kind}, ${targetName(target)},
       ${localityOf(target)}, ${decision.label}::privacy_label, ${decision.decision}, ${decision.rule},
-      ${decision.reason}, ${bytesOut ?? null}, ${measured?.sha256 ?? null}, ${summary}
-    )`;
+      ${decision.reason}, ${bytesOut ?? null}, ${measured?.sha256 ?? null}, ${summary}, ${whatOf(meta.what)}
+    ) RETURNING id, task_id, run_id),
+    live AS (
+      SELECT g.id FROM g WHERE NOT EXISTS (
+        SELECT FROM conversations c
+        WHERE c.id = gateway_log_conversation(g.task_id, g.run_id) AND (c.incognito OR c.purged_at IS NOT NULL))),
+    texts AS (
+      INSERT INTO gateway_texts (log_id, seq, body, bytes)
+      SELECT live.id, p.seq, decode(p.part ->> 'b', 'base64'), (p.part ->> 'n')::integer
+      FROM live, jsonb_array_elements(${kept}::text::jsonb) WITH ORDINALITY AS p(part, seq))
+    INSERT INTO gateway_subjects (log_id, subject)
+    SELECT live.id, s.subject FROM live, (SELECT ${tied ? subjectOf(meta.subject) : null}::text AS subject) s
+    WHERE s.subject IS NOT NULL`;
   // Only now can an adapter spend it: the row is written.
   if (decision.decision === 'allow') markLogged(decision);
   return decision;

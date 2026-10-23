@@ -5,6 +5,7 @@ import {
   appendPage,
   askerText,
   bytesText,
+  copyOfText,
   destinationOptions,
   EMPTY_FILTERS,
   emptyText,
@@ -16,8 +17,23 @@ import {
   rowLine,
   ruleText,
   targetText,
+  TEXT_FROM_MAC,
+  TEXT_GONE,
+  textNotice,
+  textSizeText,
+  textStateNotice,
   timeText,
+  verifiedText,
+  appendGroups,
+  exitText,
+  groupCounts,
+  groupDecision,
+  groupHeadline,
+  requestQuery,
+  groupAsker,
+  whatText,
   type GatewayLogEntry,
+  type GatewayLogGroup,
 } from '../src/lib/gateway-log.ts';
 import { GATEWAY_LOG_PATH, isGatewayLogPath } from '../src/lib/route.ts';
 
@@ -38,6 +54,9 @@ function entry(overrides: Partial<GatewayLogEntry> = {}): GatewayLogEntry {
     model: 'sonnet',
     conversation: null,
     card: null,
+    runId: null,
+    requestKey: 'row-7',
+    what: null,
     ...overrides,
   };
 }
@@ -143,4 +162,76 @@ test('the address of the page', () => {
   assert.equal(isGatewayLogPath(GATEWAY_LOG_PATH), true);
   assert.equal(isGatewayLogPath(`${GATEWAY_LOG_PATH}/`), true);
   assert.equal(isGatewayLogPath('/registro'), false);
+});
+
+test('«Cosa è uscito» (D-297): no text asked for a block, a local target, a private exit or from the phone', () => {
+  assert.equal(textNotice(entry(), false), null);
+  assert.equal(textNotice(entry(), true), TEXT_FROM_MAC);
+  assert.equal(textNotice(entry({ decision: 'block', label: 'L2' }), false), 'Fermata: conteneva un dato Privato. Non è uscito nulla e il testo non si conserva.');
+  assert.match(textNotice(entry({ decision: 'block', label: 'L3' }), true) ?? '', /^Fermata: conteneva un dato Segreto\./);
+  assert.match(textNotice(entry({ decision: 'block', label: 'L1', rule: 'scanner' }), false) ?? '', /^Fermata: non è uscito nulla/);
+  assert.match(textNotice(entry({ locality: 'local' }), false) ?? '', /^Destinazione sul Mac/);
+  assert.match(textNotice(entry({ label: 'L2', targetKind: 'link', target: 'link-click' }), false) ?? '', /^Uscita Privata/);
+});
+
+test('what the core answered, in words; the text itself is never a notice', () => {
+  assert.equal(textStateNotice({ state: 'text', label: 'L1' }), null);
+  assert.equal(textStateNotice({ state: 'gone', label: 'L1' }), TEXT_GONE);
+  assert.equal(textStateNotice({ state: 'gone', label: 'L1' }), 'Testo non più disponibile (conversazione eliminata o oltre 30 giorni).');
+  assert.match(textStateNotice({ state: 'blocked', label: 'L2' }) ?? '', /Privato/);
+  assert.match(textStateNotice({ state: 'none', label: 'L0' }) ?? '', /^Testo non salvato/);
+});
+
+test('size, parts, cut and the sha256 check of the text', () => {
+  const first = { text: 'Istruzioni', bytes: 10, truncated: false };
+  const parts = [first, { text: 'a', bytes: 2 * 1024 * 1024, truncated: true }];
+  assert.equal(textSizeText({ parts: [first], bytes: 10 }), '10 byte');
+  assert.equal(textSizeText({ parts, bytes: 10 + 2 * 1024 * 1024 }), '2 MB in 2 parti · troncato a 1 MB');
+  assert.equal(copyOfText(parts), 'Istruzioni\n\na');
+  assert.match(verifiedText(true), /^Coincide/);
+  assert.match(verifiedText(false), /^Non coincide/);
+  assert.match(verifiedText(null), /^Troncato/);
+});
+
+test('«Cosa era» (D-297): the kind of each exit in Italian, with its subject from the Mac', () => {
+  assert.equal(whatText(entry({ what: 'brief' })), 'Istruzioni iniziali');
+  assert.equal(whatText(entry({ what: 'mcp-kb-search' })), 'Ricerca nella KB');
+  assert.equal(whatText(entry({ what: 'mcp-kb-read-denied' })), 'Accesso negato (Lettura nota)');
+  assert.equal(whatText(entry({ what: null })), 'Claude');
+  assert.equal(whatText(entry({ what: 'sconosciuto' })), 'Uscita');
+  assert.equal(exitText(entry({ what: 'mcp-kb-read' }), 'kb/note/a.md'), 'Lettura nota · kb/note/a.md');
+  assert.equal(exitText(entry({ what: 'mcp-kb-read-denied' }), 'kb/private/b.md'), 'Accesso negato a kb/private/b.md');
+  assert.equal(exitText(entry({ what: 'mcp-skill' }), undefined), 'Skill');
+  assert.equal(exitText(entry({ what: 'mcp-web-page' }), ''), 'Pagina web');
+});
+
+function group(overrides: Partial<GatewayLogGroup> = {}): GatewayLogGroup {
+  return { entry: entry({ requestKey: 't-1' }), count: 20, allowed: 16, blocked: 4, bytes: 48 * 1024, firstTs: entry().ts, targets: 1, label: 'L2', privateOut: 0, cloud: 20, agents: ['coder'], headline: { targetKind: 'executor', target: 'claude', locality: 'cloud' }, ...overrides };
+}
+
+test('one line per request: the counts of the group, its outcome, its pages', () => {
+  assert.equal(groupCounts(group()), '20 uscite · 16 ammesse · 4 bloccate · 48 KB');
+  assert.equal(groupCounts(group({ count: 1, allowed: 1, blocked: 0, bytes: null })), '1 uscita · 1 ammessa · 0 bloccate');
+  assert.equal(groupDecision(group()), 'con blocchi');
+  assert.equal(groupDecision(group({ blocked: 0 })), 'ammesse');
+  assert.equal(groupDecision(group({ allowed: 0 })), 'bloccate');
+  const first = group({ entry: entry({ id: '9', requestKey: 't-1' }) });
+  const second = group({ entry: entry({ id: '5', requestKey: 't-2' }) });
+  assert.deepEqual(appendGroups([first], [first, second]).map((item) => item.entry.id), ['9', '5']);
+  assert.equal(requestQuery('t-1'), '?request=t-1&limit=100');
+  assert.equal(requestQuery('t-1', '42'), '?before=42&request=t-1&limit=100');
+  // The filters of the page but the outcome: the exits its counts count.
+  assert.equal(requestQuery('t-1', null, { ...EMPTY_FILTERS, decision: 'block', label: 'L1' }), '?label=L1&request=t-1&limit=100');
+  assert.equal(queryOf({ ...EMPTY_FILTERS, decision: 'block' }, null, undefined, true), '?group=request&decision=block');
+  // Who asked a question: the agents in the cloud, else Arianna.
+  assert.equal(groupAsker(group({ agents: ['designer', 'coder'] })), 'Designer e Coder');
+  assert.equal(groupAsker(group({ agents: [], entry: entry({ agent: null }) })), 'Arianna');
+});
+
+test('a line with exits to the cloud never reads «sul Mac»: its cloud target leads', () => {
+  assert.deepEqual(groupHeadline(group({ targets: 2, cloud: 16, count: 17 })), { target: 'Claude e altre', place: 'fuori dal Mac (16 di 17)' });
+  assert.deepEqual(groupHeadline(group()), { target: 'Claude', place: 'fuori dal Mac' });
+  assert.deepEqual(groupHeadline(group({ cloud: 0, count: 2, headline: { targetKind: 'executor', target: 'local', locality: 'local' } })), { target: 'Modello locale', place: 'sul Mac' });
+  assert.equal(whatText(entry({ what: 'project-note' })), 'Nota del progetto');
+  assert.equal(exitText(entry({ what: 'project-note' }), 'note/architettura.md'), 'Nota del progetto · note/architettura.md');
 });

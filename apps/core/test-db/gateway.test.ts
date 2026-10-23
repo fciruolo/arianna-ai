@@ -97,8 +97,10 @@ test('the gateway log is append-only', async () => {
   for (const statement of ["UPDATE gateway_log SET decision = 'allow'", 'DELETE FROM gateway_log', 'TRUNCATE gateway_log']) {
     // The role of the core lacks the privilege; the owner, who has it, meets the trigger.
     await assert.rejects(sql.unsafe(statement), /permission denied/);
-    await assert.rejects(owner.unsafe(statement), /append-only/);
+    // TRUNCATE meets first the texts of D-297 that reference the rows: refused all the same.
+    await assert.rejects(owner.unsafe(statement), statement.startsWith('TRUNCATE') ? /append-only|referenced in a foreign key/ : /append-only/);
   }
+  await assert.rejects(owner.unsafe('TRUNCATE gateway_log CASCADE'), /append-only/);
 });
 
 test('declassify: a context that has read finance data, or finance data itself, is refused before any approval (D-183)', async () => {

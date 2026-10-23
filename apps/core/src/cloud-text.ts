@@ -46,6 +46,12 @@ export interface CloudTextRequest {
   timeoutMs?: number;
   /** Sonnet by default; Opus for the examples of the styles (choice of the user, D-185). */
   model?: 'sonnet' | 'opus';
+  /**
+   * The task the request is about (the advisor's brief): its row of the
+   * gateway is tied to it, so an incognito conversation keeps no text of it
+   * and «Elimina» takes it (D-297).
+   */
+  taskId?: string;
 }
 
 /** A function that answers a request with Sonnet; a fake in the tests. */
@@ -66,7 +72,7 @@ export function createCloudText(deps: CloudTextDeps): AskCloudText {
         request.parts.map((part) => ({ value: part.text, label: part.label ?? 'L0', source: part.source })),
         createContext('L1', request.parts.some((part) => part.label === 'L1') ? 'L1' : 'L0'),
         { kind: 'executor', id: 'claude', locality: 'cloud' },
-        { summary: request.purpose },
+        { summary: request.purpose, what: 'cloud-text', ...(request.taskId === undefined ? {} : { taskId: request.taskId }) },
       );
       if (decision.decision === 'block') throw new CloudTextError('blocked', `il gateway ha fermato la richiesta: ${decision.reason}`);
       const run = claude.start({ ...launch, brief: decision });

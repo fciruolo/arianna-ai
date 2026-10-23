@@ -39,6 +39,8 @@ test('migrations apply from zero and create every table', async () => {
       'finance_settings',
       'finance_transactions',
       'gateway_log',
+      'gateway_subjects',
+      'gateway_texts',
       'god_carries',
       'god_plans',
       'god_subtasks',
