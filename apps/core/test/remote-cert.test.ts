@@ -100,14 +100,16 @@ test(`with ${openssl}: the certificate is made, checked by node:crypto, and the 
   assert.ok(Math.abs(days(leaf.validTo) - 800) <= 1, leaf.validTo);
   assert.ok(new Date(leaf.validTo).getTime() <= new Date(rootCert.validTo).getTime());
 
-  const loaded = loadRemoteTls(paths, HOST, now);
+  // openssl writes notBefore to the second, possibly after `now`: load with a time taken after the certificate exists.
+  const after = new Date(Math.ceil(Date.now() / 1000) * 1000);
+  const loaded = loadRemoteTls(paths, HOST, after);
   assert.equal(loaded.ok, true);
   assert.equal(checkCertificate({ cert: leaf.toString(), root: rootCert.toString() }, 'altro.tail0000.ts.net', now).ok, false);
   // Expired at the end of the leaf.
   assert.deepEqual(checkCertificate({ cert: leaf.toString(), root: rootCert.toString() }, HOST, new Date(new Date(leaf.validTo).getTime() + 1000)), { ok: false, problem: 'il certificato è scaduto' });
   // A fresh certificate is not renewed without --force.
-  assert.match(renewRefusal(loadRemoteTls(paths, HOST, now), false) ?? '', /--force/);
-  assert.equal(renewRefusal(loadRemoteTls(paths, HOST, now), true), undefined);
+  assert.match(renewRefusal(loadRemoteTls(paths, HOST, after), false) ?? '', /--force/);
+  assert.equal(renewRefusal(loadRemoteTls(paths, HOST, after), true), undefined);
   assert.equal(renewRefusal(loadRemoteTls(paths, HOST, new Date(new Date(leaf.validTo).getTime() - 30 * 86_400_000)), false), undefined);
   // Another name in arianna.toml, or the key gone: replaced without --force, never a dead end.
   assert.equal(renewRefusal(loadRemoteTls(paths, 'altro.tail0000.ts.net', now), false), undefined);
@@ -115,11 +117,11 @@ test(`with ${openssl}: the certificate is made, checked by node:crypto, and the 
 
   // The key: a regular file of mode 0600 or narrower, never through a symbolic link; the same line as a missing certificate.
   chmodSync(paths.key, 0o640);
-  const open = loadRemoteTls(paths, HOST, now);
+  const open = loadRemoteTls(paths, HOST, after);
   assert.equal(open.ok, false);
   assert.match(open.problem, /server\.key è leggibile da altri.*: lancia pnpm remote:cert$/);
   chmodSync(paths.key, 0o400);
-  assert.equal(loadRemoteTls(paths, HOST, now).ok, true);
+  assert.equal(loadRemoteTls(paths, HOST, after).ok, true);
   chmodSync(paths.key, 0o600);
   const linked = { ...paths, key: join(root, 'linked.key') };
   symlinkSync(paths.key, linked.key);
@@ -134,9 +136,9 @@ test(`with ${openssl}: the certificate is made, checked by node:crypto, and the 
   // A second root does not sign for the first: the leaf is refused against it.
   const other = remotePaths(join(root, 'other'));
   generateCertificate({ openssl, paths: other, host: HOST, now });
-  assert.equal(checkCertificate({ cert: leaf.toString(), root: readFileSync(other.root, 'utf8') }, HOST, now).ok, false);
+  assert.equal(checkCertificate({ cert: leaf.toString(), root: readFileSync(other.root, 'utf8') }, HOST, after).ok, false);
   // The key of another certificate does not match.
-  assert.deepEqual(checkCertificate({ cert: leaf.toString(), root: rootCert.toString(), key: readFileSync(other.key, 'utf8') }, HOST, now), { ok: false, problem: 'la chiave non è quella del certificato' });
+  assert.deepEqual(checkCertificate({ cert: leaf.toString(), root: rootCert.toString(), key: readFileSync(other.key, 'utf8') }, HOST, after), { ok: false, problem: 'la chiave non è quella del certificato' });
 });
 
 test('a failing openssl leaves no temporary file and nothing in data/remote', () => {
