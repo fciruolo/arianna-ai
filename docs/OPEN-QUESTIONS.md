@@ -27,8 +27,10 @@
 | ~~Incognito: verifica dal vivo del profilo di Claude Code~~ | **Deciso (utente, 2026-10-17):** si fa insieme in una sessione apposta (l'utente autorizza la lettura del solo elenco dei file del profilo); promemoria in «Prima dei dati veri» di `HANDOFF.md` | |
 | ~~Modelli: schede cloud da rileggere~~ | **Deciso (utente, 2026-10-14):** togliere i prezzi API dalle schede (l'utente usa gli abbonamenti); restano frasi e contesto. Lavoro piccolo in coda in `HANDOFF.md` | |
 | ~~Modelli da Hugging Face: scelte di D-139~~ | **Deciso (utente, 2026-10-14):** le regole di D-139 vanno bene così; D-139 accettata | |
-| Notifiche dal telefono: contenuto cifrato | Cifrare nel push il tipo della notifica e l'id della conversazione (RFC 8291), così l'iPhone dice cosa è successo anche a sessione scaduta (D-292) | Prima di accendere le notifiche |
-| Notifiche dal telefono: contatto per Apple | Un'email dell'utente nel campo `subject` delle chiavi VAPID (D-292) | Prima di accendere le notifiche |
+| ~~Notifiche dal telefono: contenuto cifrato~~ | **Deciso (utente, 2026-10-23):** «Contenuto cifrato»: tipo e id della conversazione cifrati per il browser (RFC 8291, D-295) | |
+| ~~Notifiche dal telefono: contatto per Apple~~ | **Deciso (utente, 2026-10-23):** la sua email nel `subject` di `[push]` (D-295) | |
+| ~~Fase 1A: registro del gateway riga per riga~~ | **Deciso (utente, 2026-10-23):** «Pagina Registro del gateway», D-296 | |
+| ~~Fase 1A: quota per l'eval dal vivo del criterio~~ | **Deciso (utente, 2026-10-23):** «proviamolo ora»: `pnpm eval:live --tag claude` lanciato il 2026-10-23 | |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -66,18 +68,3 @@ Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzion
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
-
-### oq-notifiche-dal-telefono-contenuto-cifrato
-
-- Contesto: oggi una notifica push non porta niente. Quando arriva, il service worker dell'iPhone chiede al core di che cosa si tratta, ma per chiederlo serve la sessione del telefono, che scade dopo 30 minuti di inattività. Le notifiche arrivano quasi sempre a telefono fermo, quindi a sessione scaduta: si vedrebbe quasi sempre il generico «Arianna — Apri la chat per vedere le novità».
-- Opzione consigliata: Contenuto cifrato — il push porta il tipo fisso («approval», «reply»…) e l'id della conversazione, cifrati con la chiave del solo iPhone (RFC 8291, con node:crypto, nessuna dipendenza nuova): Apple non li legge; il tocco apre la conversazione giusta, che chiede Face ID come sempre; 3-4 ore.
-- Opzione: Solo il tipo cifrato — come sopra, senza l'id della conversazione: il tocco apre la chat e non la conversazione; esce ancora meno.
-- Opzione: Lascia generico — nessun codice, solo la configurazione; a telefono fermo quasi sempre «Apri la chat per vedere le novità».
-- Esempio: alle 15:00 chiudi la chat, alle 16:10 il Coder si ferma su un'approvazione del progetto finto «negozio-finto»: oggi vedi «Arianna — Apri la chat per vedere le novità»; col contenuto cifrato vedi «Arianna aspetta una tua decisione» e il tocco apre quella conversazione.
-
-### oq-notifiche-dal-telefono-contatto-per-apple
-
-- Contesto: i servizi push (per l'iPhone, Apple) vogliono un contatto del mittente nel campo `subject` delle chiavi VAPID; arriva ad Apple in chiaro a ogni notifica e serve a contattarti se le notifiche danno problemi.
-- Opzione consigliata: Un'email tua — è ciò che Apple si aspetta; ad Apple arriva un'email, che conosce già dall'Apple ID se è la stessa; la scrivi in Impostazioni → Notifiche.
-- Opzione: Un indirizzo https neutro — per esempio un tuo sito; nessuna email ad Apple. Non il nome della macchina in Tailscale, che resterebbe nei registri di Apple.
-- Esempio: `subject = "mailto:mario.rossi@example.com"` oppure `subject = "https://example.com"` nella sezione `[push]` di `arianna.toml`.
