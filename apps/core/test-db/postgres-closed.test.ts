@@ -10,7 +10,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import { loadConfig } from '@arianna/config';
 
-import { connect, type Sql } from '../src/db/client.ts';
+import { connect, POOL_MAX, type Sql } from '../src/db/client.ts';
 import { resolveLogins } from '../src/db/logins.ts';
 
 /** A TCP proxy to the database whose open connections can be closed with a clean FIN. */
@@ -48,6 +48,7 @@ async function startProxy(host: string, port: number): Promise<Proxy> {
 let proxy: Proxy;
 let sql: Sql;
 
+// The development database as its owner, not createTestDatabase: the test only runs SELECTs and creates nothing.
 before(async () => {
   const config = loadConfig();
   const logins = await resolveLogins(config);
@@ -67,8 +68,8 @@ test('a transaction without a closed connection commits', async () => {
   assert.deepEqual([...rows], [{ one: 1 }]);
 });
 
-/** Connections of the pool of `connect` (its `max`): one more closure than these shows a connection the pool lost. */
-const POOL_SIZE = 5;
+/** One more closure than the connections of the pool shows a connection the pool lost. */
+const POOL_SIZE = POOL_MAX;
 
 test('a connection closed during a query of a transaction rejects it and leaves the process alive', { timeout: 30_000 }, async () => {
   for (let round = 0; round <= POOL_SIZE; round += 1) {
