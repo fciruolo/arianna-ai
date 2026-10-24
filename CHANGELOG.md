@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.181.0] - 2026-10-24
+
 ### Aggiunto
 
 - Fatture elettroniche FatturaPA nella pagina Finanze, scheda «Fatture e scadenze»: si trascinano o si scelgono uno o più file .xml o firmati .xml.p7m, Arianna legge fornitore, cliente, numero, data, righe, riepilogo IVA, totale e rate di pagamento e tiene solo i dati letti, mai il file; la stessa fattura importata due volte (anche una volta XML e una firmata) entra una volta sola; le fatture si cercano, si aprono con le righe e si tolgono con una conferma (D-310).
