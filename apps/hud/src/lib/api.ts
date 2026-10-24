@@ -64,7 +64,9 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, payload?: unknown): Promise<T> {
+  // The core takes a write only as application/json (security.ts): one without a body sends an empty object.
+  const body = payload === undefined && method !== 'GET' ? {} : payload;
   const send = (extra: Record<string, string> = {}): Promise<Response> =>
     fetch(path, {
       method,
@@ -2071,7 +2073,7 @@ export async function readInvoice(id: string): Promise<InvoiceDetail> {
 }
 
 export async function deleteInvoice(id: string): Promise<void> {
-  await call('DELETE', `${FINANCE}/invoices/${financeId(id)}`);
+  await call('DELETE', `${FINANCE}/invoices/${financeId(id)}`, {});
 }
 
 /** The instalments of the invoices: `open` (not yet paid) or `all`. */

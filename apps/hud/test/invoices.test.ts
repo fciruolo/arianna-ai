@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { ApiError } from '../src/lib/api.ts';
 import {
   deadlineGroup,
+  decimalText,
   documentTypeText,
   groupDeadlines,
   importText,
@@ -28,6 +29,16 @@ describe('invoices of the page Finanze', () => {
     assert.equal(vatRateText('22.00', null), '22%');
     assert.equal(vatRateText('5.50', null), '5,50%');
     assert.equal(vatRateText('0.00', 'N2.2'), '0% (N2.2)');
+  });
+
+  it('writes the decimals of the XML the Italian way, without rounding', () => {
+    assert.equal(decimalText('1000.00'), '1.000,00');
+    assert.equal(decimalText('12.50000000'), '12,50');
+    assert.equal(decimalText('0.12345678'), '0,12345678');
+    assert.equal(decimalText('-2.00'), '-2,00');
+    assert.equal(decimalText('1.00', 0), '1');
+    assert.equal(decimalText('2.5', 0), '2,5');
+    assert.equal(decimalText('1e3'), '1e3');
   });
 
   it('sends only .xml and .p7m files up to 10 MB', () => {

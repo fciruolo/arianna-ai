@@ -115,6 +115,15 @@ export function vatRateText(rate: string, nature: string | null): string {
   return nature === null ? `${text}%` : `${text}% (${nature})`;
 }
 
+/** A decimal of the XML as the user reads it, without float rounding: `1000.00` → `1.000,00`, `12.50000000` → `12,50`, `1.00` with no minimum → `1`. */
+export function decimalText(value: string, minDecimals = 2): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (match === null) return value;
+  const whole = (match[2] ?? '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const decimals = (match[3] ?? '').replace(/0+$/, '').padEnd(minDecimals, '0');
+  return `${match[1] ?? ''}${whole}${decimals === '' ? '' : `,${decimals}`}`;
+}
+
 /** The codes of the invoice routes (InvoiceErrorCode of @arianna/invoices), in Italian. */
 export const INVOICE_ERROR_TEXT: Readonly<Record<string, string>> = {
   'too-large': 'Il file è troppo grande: al massimo 10 MB.',
