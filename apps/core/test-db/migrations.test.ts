@@ -54,6 +54,8 @@ test('migrations apply from zero and create every table', async () => {
       'message_attachments',
       'message_queue_pauses',
       'messages',
+      'milestone_dependencies',
+      'milestones',
       'model_evals',
       'project_hidden_consents',
       'push_subscriptions',

@@ -76,6 +76,9 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
     }
     case 'routine':
       return typeof detail.title === 'string' ? `Attivare la routine «${detail.title}»` : 'Attivare una routine';
+    // The closing of a milestone (D-313): asked by the core when its cards are all done.
+    case 'milestone':
+      return typeof detail.title === 'string' && typeof detail.project === 'string' ? `Chiudere la milestone «${detail.title}» di ${detail.project}` : 'Chiudere una milestone';
     case 'browser':
       return typeof detail.site === 'string' && detail.site.trim() !== '' ? `Aprire un indirizzo su ${detail.site.trim()}` : 'Aprire un indirizzo che non hai scritto';
     // A folder of the Mac Arianna would read (D-314): its name, as the card says it.

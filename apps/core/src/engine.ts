@@ -13,6 +13,7 @@ import { appendEvent } from './events.ts';
 import { contextOf, outputSource } from './finance-mark.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
 import { claimStep, completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue, type StepLane } from './jobs.ts';
+import { applyMilestoneDecision, lockMilestoneOfApproval } from './milestones.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
 import { decideRoutineProposal, proposedRoutineId } from './routine-proposals.ts';
 import {
@@ -549,6 +550,8 @@ export async function recordDecisionIn(
 ): Promise<StoredApproval> {
   // The rows that start go in the plan before the decision freezes it (D-235).
   if (state === 'approved') await setPlanStarts(tx, approvalId, plan);
+  // The milestone before its approval (D-313): the order of «Chiudi» and of a card that changes.
+  await lockMilestoneOfApproval(tx, approvalId);
   const decided = await decideApproval(tx, approvalId, state, via, choice);
   await appendEvent(tx, {
     kind: 'approval.decided',
@@ -574,6 +577,8 @@ export async function recordDecisionIn(
   // A routine proposed in the chat (D-256): active with its next run, or retired, with the decision.
   const routineId = proposedRoutineId(decided);
   if (routineId !== undefined) await decideRoutineProposal(tx, routineId, state, decided.id);
+  // The closing of a milestone Arianna asked for (D-313): closed, or kept open until its cards change.
+  if (decided.kind === 'milestone') await applyMilestoneDecision(tx, decided);
   // The card «Piano» of «/progetta» (D-235) closes in Fatto with the decision: nothing more to run.
   if (await closePlanningCard(tx, decided)) return decided;
   if (decided.taskId !== null) {

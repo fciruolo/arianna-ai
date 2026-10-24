@@ -172,6 +172,8 @@ export interface CardFieldsInput {
   style?: string | null;
   /** Skills of the catalog, `owner/repo/slug`; only on a Designer card (D-163). */
   skills?: string[];
+  /** A milestone of the card's project (D-313); null takes the card out of it. */
+  milestone?: string | null;
 }
 
 /** A card written on the wall: it starts in the inbox. Its id. */
@@ -250,6 +252,39 @@ export async function addCardDependency(id: string, on: string): Promise<void> {
 
 export async function removeCardDependency(id: string, on: string): Promise<void> {
   await call('DELETE', `/api/cards/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(on)}`, {});
+}
+
+/** A milestone of a project (D-313): title, what «fatta» means, due day. Its id. */
+export interface MilestoneInput {
+  title?: string;
+  description?: string | null;
+  due?: string | null;
+}
+
+export async function createMilestone(project: string, input: MilestoneInput & { title: string }): Promise<string> {
+  return (await call<{ milestone: { id: string } }>('POST', '/api/milestones', { project, ...input })).milestone.id;
+}
+
+export async function updateMilestone(id: string, input: MilestoneInput): Promise<void> {
+  await call('POST', `/api/milestones/${encodeURIComponent(id)}`, input);
+}
+
+/** «Chiudi», «Riapri» by hand. */
+export async function milestoneAction(id: string, action: 'close' | 'reopen'): Promise<void> {
+  await call('POST', `/api/milestones/${encodeURIComponent(id)}/${action}`, {});
+}
+
+/** One place up or down among the milestones of its project. */
+export async function moveMilestone(id: string, direction: 'up' | 'down'): Promise<void> {
+  await call('POST', `/api/milestones/${encodeURIComponent(id)}/move`, { direction });
+}
+
+export async function addMilestoneDependency(id: string, on: string): Promise<void> {
+  await call('POST', `/api/milestones/${encodeURIComponent(id)}/dependencies`, { on });
+}
+
+export async function removeMilestoneDependency(id: string, on: string): Promise<void> {
+  await call('DELETE', `/api/milestones/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(on)}`, {});
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {

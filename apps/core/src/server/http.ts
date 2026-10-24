@@ -27,6 +27,17 @@ import { MacPathError, type MacEnv } from '../mac-files.ts';
 import { addMacFolder, checkFolderInput, folderView, listMacFolders, removeMacFolder } from '../mac-folders.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
+import {
+  addMilestoneDependency,
+  closeMilestone,
+  createMilestone,
+  listMilestones,
+  moveMilestone,
+  removeMilestoneDependency,
+  reopenMilestone,
+  updateMilestone,
+  type MilestoneNames,
+} from '../milestones.ts';
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, sendBackCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import type { CalendarDay } from '../feasts.ts';
@@ -165,6 +176,7 @@ import { OmlxBusyError, type OmlxReleases } from '../omlx-release.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
+import type { WarmthStatus } from '../model-warmth.ts';
 import type { ModelsOverview } from '../models-overview.ts';
 import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, readPageFile, type GraphCache } from '../knowledge.ts';
 import {
@@ -511,6 +523,8 @@ export interface LocalApi {
   log(id: string): string;
   /** The account of the local models and the swap level (D-107, stage E): catalog ids and numbers, L0. */
   memory?(): MemorySnapshot;
+  /** The warm model (D-316): minutes before an unload for inactivity and the state of each server's models, L0. */
+  warmth?(): WarmthStatus | undefined;
 }
 
 export interface ApiServer {
@@ -544,7 +558,7 @@ export const MAX_BODY_BYTES = 128 * 1024;
 /** A file attached to a card, in base64 with its name: a third more than the file, and some room. */
 const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
 /** What the user writes on a card, new or changed (cardwall.ts). */
-const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills'];
+const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills', 'milestone'];
 /** A logo comes as JSON with its bytes in base64: a third more than the image, and some room. */
 const MAX_LOGO_BODY = Math.ceil((MAX_LOGO_BYTES * 4) / 3) + 4 * 1024;
 const MAX_DOCUMENT_BODY = Math.ceil((MAX_DOCUMENT_BYTES * 4) / 3) + 64 * 1024;
@@ -900,7 +914,8 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
     // With `memory`: the account of the local models and the swap level (D-107, stage E), L0.
     route('GET', '/api/settings', () => {
       const memory = local?.memory?.();
-      return Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [], ...(memory === undefined ? {} : { memory }) } });
+      const warmth = local?.warmth?.();
+      return Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [], ...(memory === undefined ? {} : { memory }), ...(warmth === undefined ? {} : { warmth }) } });
     }),
     // Models, cloud models, characters, [voice]: written at once.
     route('POST', '/api/settings', async (request) => ({ body: need().update(await readJson(request)) })),
@@ -2743,6 +2758,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     ...routineRoutes(routines, sql),
     ...deviceRoutes(remoteDevices),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards, stopCard),
+    ...milestoneRoutes(sql, () => ({ projects: projectContainers().map(({ name, label }) => ({ name, label })) })),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
@@ -4055,7 +4071,10 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
     route('GET', '/api/cards', async () => {
       const today = localDay();
       const current = known();
-      return { body: { today, cards: await listCards(sql, today), projects: current.projects, agents: current.agents } };
+      const list = await listCards(sql, today);
+      // The milestones of the projects (D-313): the open ones, those just closed, and those a card on the wall names.
+      const named = [...new Set(list.map((card) => card.milestone).filter((id): id is string => id !== null))];
+      return { body: { today, cards: list, milestones: await listMilestones(sql, named, today), projects: current.projects, agents: current.agents } };
     }),
     route('POST', '/api/cards', async (request) => {
       const body = await readJson(request);
@@ -4207,6 +4226,70 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
         await removeDependency(sql, id, on);
         return { body: { ok: true } };
       });
+    }),
+  ];
+}
+
+/**
+ * The milestones of the projects on the cardwall (D-313): written, changed,
+ * ordered, closed and reopened by hand. The closing Arianna asks for is an
+ * approval of kind `milestone`, decided with the other approvals.
+ */
+function milestoneRoutes(sql: Sql, names: () => MilestoneNames): Route[] {
+  const guard = async <T>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof CardError) throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'invalid' ? 400 : 409, error.message);
+      throw error;
+    }
+  };
+  const done = async (work: () => Promise<void>): Promise<{ body: { ok: true } }> =>
+    guard(async () => {
+      await work();
+      return { body: { ok: true } };
+    });
+  return [
+    route('POST', '/api/milestones', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['project', 'title', 'description', 'due']);
+      return guard(async () => ({ status: 201, body: { milestone: await createMilestone(sql, body, names()) } }));
+    }),
+    route('POST', '/api/milestones/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['title', 'description', 'due']);
+      return done(() => updateMilestone(sql, id, body, names()));
+    }),
+    route('POST', '/api/milestones/:id/close', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return done(() => closeMilestone(sql, id));
+    }),
+    route('POST', '/api/milestones/:id/reopen', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return done(() => reopenMilestone(sql, id));
+    }),
+    route('POST', '/api/milestones/:id/move', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['direction']);
+      return done(() => moveMilestone(sql, id, body.direction));
+    }),
+    route('POST', '/api/milestones/:id/dependencies', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['on']);
+      const on = typeof body.on === 'string' && isUuid(body.on) ? body.on : undefined;
+      if (on === undefined) throw new HttpError(400, 'on must be the id of a milestone');
+      return done(() => addMilestoneDependency(sql, id, on));
+    }),
+    route('DELETE', '/api/milestones/:id/dependencies/:on', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const on = idParam(params, 'on');
+      onlyFields(await readJson(request), []);
+      return done(() => removeMilestoneDependency(sql, id, on));
     }),
   ];
 }

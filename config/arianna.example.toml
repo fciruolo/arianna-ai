@@ -50,6 +50,13 @@ user = "arianna"
 # Port 8000 may be taken by another container: 7001 is the suggestion. Do not
 # also run oMLX as a Homebrew service: the watchdog would only adopt it,
 # without being able to restart it.
+# `idle_unload_minutes` (D-316): minutes without a request to a local model
+# before the core unloads it, to free the memory; 0 never, 30 by default.
+# The next request loads it again (tens of seconds for a large model). Also
+# in Impostazioni -> Server dei modelli.
+#
+# [local]
+# idle_unload_minutes = 30
 #
 # [[local.endpoints]]
 # id = "omlx"

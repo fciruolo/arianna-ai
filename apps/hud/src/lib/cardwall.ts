@@ -2,6 +2,7 @@ import { ApiError } from './api.ts';
 import { dayLabel } from './commitments.ts';
 import { agentTitle, errorText, relativeTimeText } from './italian.ts';
 import { CHOICE_TEXT, EXCLUDED_TEXT, EXCLUDED_WORK_TEXT } from './labels.ts';
+import type { Milestone } from './milestones.ts';
 import type { ExecutorChoice, Label, TaskStatus } from './types.ts';
 
 /**
@@ -36,6 +37,8 @@ export interface Card {
   column: CardColumn;
   status: TaskStatus | CommitmentStatus;
   project: string | null;
+  /** The milestone of its project it is in (D-313); null or absent (an older core): none. */
+  milestone?: string | null;
   /** 'user' or an agent. */
   assignee: string;
   /** "YYYY-MM-DD". */
@@ -71,6 +74,8 @@ export interface Card {
 export interface CardWall {
   today: string;
   cards: Card[];
+  /** The milestones of the projects (D-313); absent from an older core. */
+  milestones?: Milestone[];
   projects: string[];
   agents: string[];
 }

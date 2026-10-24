@@ -15,11 +15,14 @@ import {
   DEFAULT_APPEARANCE,
   DEFAULT_SECRETARY,
   CONFIG_FILE,
+  DEFAULT_IDLE_UNLOAD_MINUTES,
   DEFAULT_LEAVE_AFTER,
   DEFAULT_SPRITE_MODEL,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_VOICE,
+  isIdleUnloadMinutes,
   isLeaveAfter,
+  MAX_IDLE_UNLOAD_MINUTES,
   MAX_LEAVE_AFTER,
   diffConfig,
   homeRelativePath,
@@ -81,7 +84,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'push', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary', 'appearance'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'push', 'personas', 'series', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'localIdle', 'notifications', 'secretary', 'appearance'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -136,6 +139,8 @@ export interface SettingsValues {
   sprites: SpriteModel;
   /** Messages of the user before an idle agent leaves (I-8, D-130): `[participants] leave_after`; 0 never, ten when absent. */
   participants: number;
+  /** Minutes without requests before a local model is unloaded (D-316): `[local] idle_unload_minutes`; 0 never, 30 when absent. */
+  localIdle: number;
   /** `[voice]` without the push keys, which are `push`. */
   voice: Omit<VoiceConfig, 'push'> | null;
   /**
@@ -796,6 +801,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     skills: skillsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
+    localIdle: settings.idleUnloadMinutes ?? DEFAULT_IDLE_UNLOAD_MINUTES,
     voice: voiceOf(settings.voice),
     push: pushOf(settings),
     notifications: notificationsOf(settings.notifications),
@@ -825,6 +831,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
     case 'participants':
       return settings.leaveAfter ?? DEFAULT_LEAVE_AFTER;
+    case 'localIdle':
+      return settings.idleUnloadMinutes ?? DEFAULT_IDLE_UNLOAD_MINUTES;
     case 'notifications':
       return settings.notifications;
     // Both places, vault references included: moving the keys from [voice.push] to [push] is a change.
@@ -1104,6 +1112,10 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       if (given.participants !== undefined) {
         if (!isLeaveAfter(given.participants)) invalid(`participants: a whole number from 0 (never) to ${String(MAX_LEAVE_AFTER)}`);
         next.leaveAfter = given.participants;
+      }
+      if (given.localIdle !== undefined) {
+        if (!isIdleUnloadMinutes(given.localIdle)) invalid(`localIdle: a whole number from 0 (never) to ${String(MAX_IDLE_UNLOAD_MINUTES)}`);
+        next.idleUnloadMinutes = given.localIdle;
       }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);

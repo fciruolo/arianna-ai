@@ -104,6 +104,8 @@ export const ACTION_TEXT: Record<string, string> = {
   'browser.send': 'Invio questi dati al sito?',
   // D-283: a value saved for a client or a contact would leave.
   'browser.private': 'Lascio uscire questo dato salvato?',
+  // D-313: the closing of a milestone whose cards are all done.
+  'milestone.close': 'Chiudo la milestone?',
   // D-314: a folder of the Mac Arianna would read.
   'mac.read': 'Posso guardare in questa cartella?',
 };

@@ -59,7 +59,7 @@ GRANT UPDATE (removed_at) ON mac_folders TO arianna_app;
 
 ALTER TABLE approvals DROP CONSTRAINT approvals_kind_check;
 ALTER TABLE approvals ADD CONSTRAINT approvals_kind_check
-  CHECK (kind IN ('action', 'declassify', 'budget', 'setting', 'workspace', 'commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'mac'));
+  CHECK (kind IN ('action', 'declassify', 'budget', 'setting', 'workspace', 'commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'milestone', 'mac'));
 
 ALTER TABLE approvals ADD CONSTRAINT approvals_mac_fields
   CHECK (kind <> 'mac' OR (

@@ -8,6 +8,21 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Arianna legge le cartelle del Mac, solo lettura, nelle chat Private e con il modello locale: elenca, dà informazioni, legge file di testo e cerca per nome; una cartella non ancora permessa chiede con una scheda a tre scelte («Solo questa volta», «Per tutta questa conversazione», «Sempre»), con la frase scritta dal codice e il comando equivalente; la lista permanente in Impostazioni → Cartelle del Mac; tutto ciò che legge è Privato e non esce mai dal Mac; in incognito non guarda (D-314).
 
+## [0.179.0] - 2026-10-24
+
+### Aggiunto
+
+- Modello caldo: dopo ogni avvio o riavvio del server dei modelli Arianna carica e prepara il modello della chat in background, così la prima domanda non aspetta il caricamento; saltato con la memoria sotto pressione, durante una chiamata o con altre richieste in corso (D-316).
+- Scarico dei modelli locali dopo `[local] idle_unload_minutes` minuti senza richieste (30 se manca, 0 mai), mai durante una chiamata, un lavoro in corso o una routine imminente; scheda «Modelli in memoria» in Impostazioni → Server dei modelli con i minuti e lo stato del modello (D-316).
+
+## [0.178.0] - 2026-10-24
+
+### Aggiunto
+
+- Milestone per progetto nel cardwall: scelto un progetto, la Bacheca divide le colonne in una fascia per milestone (titolo, scadenza, «2 di 3 fatte», «bloccata da …»), più «Senza milestone»; ogni fascia si ripiega; milestone create, modificate, riordinate, chiuse e riaperte dalla pagina, card spostate fra milestone trascinandole o dal dettaglio; una card sta solo in una milestone del suo progetto, controllato dal database (D-313).
+- Quando tutte le card di una milestone sono in Fatto, Arianna chiede nella chat della Segretaria se chiuderla (Sì/No, anche dalla fascia e da «Attende te»); con «No» non lo richiede finché le card non cambiano; l'avviso non porta il titolo (D-313).
+- Il promemoria del mattino della Segretaria nomina le milestone aperte che scadono entro 3 giorni o sono scadute (D-313).
+
 ## [0.177.0] - 2026-10-24
 
 ### Aggiunto

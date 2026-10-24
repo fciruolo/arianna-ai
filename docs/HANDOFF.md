@@ -2,18 +2,17 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere: **solo lo stato attuale**, corto. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti. La storia delle consegne precedenti (fino al 2026-10-13 sera) sta in `docs/HANDOFF-STORIA.md`: non si legge a inizio sessione, ci si cerca con `grep` quando serve un dettaglio passato. Quando un paragrafo di stato diventa storia, si sposta in fondo a `HANDOFF-STORIA.md` invece di accumularsi qui; la riga «Aggiornato» tiene solo l'ultima data.
 
-Aggiornato: 2026-10-24, mattina.
+Aggiornato: 2026-10-24, mezzogiorno.
 
-**Stato (2026-10-24, mattina).** `main` alla **0.174.0**, pushato coi tag; cartella principale, core e chat su `main`; chat compilata (`apps/hud/dist`) rifatta su 0.173.3 (0.174.0 non tocca la chat).
-- **0.174.0 D-305** («Funziona» dopo la prova di Claude): l'hook `pre-commit` avvisa, senza bloccare, quando `docs/HANDOFF.md` in stage supera 20 KB. Lo stesso giorno HANDOFF è stato ripulito da 69 a 14 KB (stati vecchi e sezioni fisse di prima in fondo a `HANDOFF-STORIA.md`, note tecniche in `docs/NOTE-TECNICHE.md`).
-- **Unite stamattina** («Funziona» dell'utente su prove fatte da Claude di notte): 0.173.2 D-303 (frase fissa quando si chiede il Coder in una Privata o senza progetto), 0.173.3 D-304 (guardiano `arianna-run-guard` che ferma `claude`/`codex` entro un secondo dalla morte del core). Ieri sera 0.173.1 D-302 (orfani chiusi al riavvio).
-- **Fase 1A chiusa** (D-309, scelta dell'utente del 2026-10-24): P1-P6 superati; P7 (chiave age vera, password vere, `pnpm db:migrate`, doctor verde) è il primo passo di «Prima dei dati veri». Parte la Fase 2, con lavori in parallelo (richiesta dell'utente: la settimana di quota si azzera il 2026-10-24 alle 16).
-- **Lavori in corso (2026-10-24, subagenti in worktree, un ramo ciascuno):** D-306 `task/d306-registro-nomi` (Registro del gateway: nomi in italiano per «(web-resource-user)» e «(web-typed-user)», titolo del gruppo = domanda che l'ha fatto partire); D-307 `task/d307-memoria-casi` (passo (b) del confronto delle memorie: `evals/memory/`, adattatore finto, `pnpm eval:memory`); D-308 `task/d308-pgvector` (pgvector nel PostgreSQL: immagine, migrazione 0092, prova su un database separato, procedura per spostare il database di sviluppo). Fatture FatturaPA decise (D-310, `fast-xml-parser`) ma non partite.
-- **Giudice della prova delle memorie deciso** (utente, 2026-10-24): parole attese, poi Claude via gateway sulle sole risposte dubbie, solo nella prova coi casi L0 (in produzione nessun giudice). Detto all'agente di D-307, che lascia il giudice come interfaccia senza chiamate.
-- **Pulizia:** restano solo `main` e `task/d261-codex-mcp` (Codex fermo); i worktree di D-302 e D-304 tolti il 2026-10-24. Copia di scorta dei rami tolti il 2026-10-23: `data/test-tmp/rami-tolti.bundle`.
-- **Il Mac va in stop di notte:** per comandi lunghi senza l'utente usare `caffeinate -i` (un `pnpm check` fermo 16 minuti è fallito per tempo scaduto).
-- **Piccole cose viste nelle prove:** decise il 2026-10-24 (D-309): `repos/demo` resta con i file non committati, Pasqua 2030 nessuna correzione, le due del Registro in D-306.
-- **Nel database di sviluppo:** conversazioni di prova Private «Quanto costa il bollo della Panda e entro quando va pagato?», «Chiedi al Coder di scrivere nel progetto demo…», e di Lavoro su demo «Fai aggiungere al Coder un test per l'ultimo giorno…», «…daysInYear…», «…easterSunday…».
+**Stato (2026-10-24, mezzogiorno).** `main` alla **0.179.0**, pushato coi tag; cartella principale, core e chat su `main`. Il database di sviluppo gira sull'immagine con pgvector (D-308), copia di scorta di prima in `data/backups/arianna-prima-di-pgvector.dump`.
+- **Fase 1A chiusa** (D-309): P7 (chiave age vera, password vere, `pnpm db:migrate`, doctor verde) è il primo passo di «Prima dei dati veri». Fase 2 in corso.
+- **Unite oggi:** 0.174.1 D-306 (Registro del gateway: nomi in italiano, titolo del gruppo = sua domanda), 0.175.0 D-307 (casi della prova delle memorie, `pnpm eval:memory`), 0.176.0 D-308 (pgvector 0.8.7, migrazione 0092, riga «Ricerca per significato» in Installazione), 0.176.1 D-312 (Impostazioni divise in Aspetto e Installazione), 0.176.2 D-311 (data e ora al secondo in fondo a ogni richiesta al modello locale), 0.177.0 D-315 (finestra quando una festa cambia il tema da sola; Halloween parte il 2026-10-25), 0.178.0 D-313 (milestone per progetto nel cardwall, chiusura proposta da Arianna nella Segretaria), 0.179.0 D-316 (modello caldo all'avvio, scarico dopo 30 minuti senza domande).
+- **In corso:** D-314 `task/d314-mac-m1` (I-22 tappa M1: strumenti del Mac in sola lettura, permesso a tre scelte, «Sempre» solo dal Mac, migrazione 0094; il buco 0093 è di D-313, già in main). Proposta I-22 e scelte dell'utente nel ramo `task/i22-strumenti-mac` (solo documenti, da unire con D-314).
+- **Da misurare:** la prima risposta del modello locale a memoria libera. Con lo swap pieno (12,5 GB, test di un agente in corso) i pesi del 35B finiscono su disco in pochi minuti e la prima risposta è arrivata in 141 s anche dopo il riscaldamento. Se resta lenta: pesi bloccati in RAM in oMLX o un orchestratore più piccolo (scelte da fare con l'utente).
+- **Decise e non partite:** fatture FatturaPA (D-310, `fast-xml-parser`); seguiti di D-313 (strumento della chat per creare milestone con approvazione, `/progetta` diviso in milestone, nome accessibile della casella «Bloccata da» che oggi è l'id); I-22 tappe M2 (azioni con scheda), M3 (Annulla e registro), M4 (Comandi Rapidi scelti dall'utente); il terminale si decide dopo M1-M3.
+- **Lavoro in parallelo:** l'utente ha scelto «massimo parallelo» anche durante le prove, sapendo che il modello locale sarà più lento.
+- **Pulizia:** worktree dei subagenti di oggi in `.claude/worktrees/agent-*` bloccati da questo processo: dopo un `/exit` si tolgono con `git worktree remove` e i rami `task/d30x`/`task/d31x` già in main con `git branch -d`; resta `task/d261-codex-mcp` (Codex fermo).
+- **Il Mac va in stop di notte:** per comandi lunghi senza l'utente usare `caffeinate -i`.
 
 ## Dove siamo
 
@@ -23,9 +22,9 @@ Aggiornato: 2026-10-24, mattina.
 
 ## Prossimi passi, in ordine
 
-1. Portare a `main` D-306, D-307 e D-308 (reviewer, `pnpm check`, ramo `prova/…`, una domanda di prova per lavoro). D-308 cambia l'immagine del database di sviluppo: procedura nel ramo, backup prima.
+1. Portare a `main` D-314 (con la proposta I-22) dopo la prova dell'utente; poi rimisurare la prima risposta del modello locale a memoria libera (D-316).
 2. Passi (c) e (d) di `MEMORIA-CONFRONTO.md` (giudice Claude via gateway da collegare in (c)).
-3. Fatture FatturaPA (D-310), primo lavoro della Fase 2 per valore; D-096 backup cifrato per ultimo, prima dei dati veri.
+3. Fatture FatturaPA (D-310), seguiti di D-313, I-22 M2-M4; D-096 backup cifrato per ultimo, prima dei dati veri.
 4. Il resto in sospeso sta in `docs/OPEN-QUESTIONS.md` e in `docs/PROPOSTE.md`.
 
 Come si porta un lavoro di un subagente fino a `main`: `reviewer` sul suo ramo, correzioni, `pnpm check` (e `pnpm test:db` se tocca il database), un ramo `prova/…` con `main` dentro su cui spostare la cartella principale, riavvio di core e chat, una domanda a opzioni per lavoro; con «Funziona» unione su `main` con versione, CHANGELOG, tag e push, ritorno su `main`. Le migrazioni di un ramo vanno finite prima di avviare il core su quel ramo (una migrazione applicata non si cambia più).

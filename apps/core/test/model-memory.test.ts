@@ -603,3 +603,95 @@ describe('createModelMemory, unloadNow (I-3, stage M4)', () => {
     assert.equal(memory.snapshot().loaded.length, 1);
   });
 });
+
+// D-316: the unload after inactivity.
+describe('createModelMemory, unloadIdle (D-316)', () => {
+  function clocked(config: LocalEndpointConfig[], extra: Partial<ModelMemoryOptions> = {}) {
+    let time = 0;
+    const built = memoryWith(config, { now: () => time, ...extra });
+    return { ...built, at: (value: number) => { time = value; } };
+  }
+
+  it('unloads a model idle for the given time, with reason idle', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, unloaded, events, at } = clocked(config);
+    at(1_000);
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    at(1_000 + 30 * 60_000);
+    assert.deepEqual(await memory.unloadIdle(30 * 60_000), [{ endpoint: 'omlx', model: 'big-27b' }]);
+    assert.deepEqual(unloaded, ['big-27b']);
+    assert.deepEqual(events, [{ type: 'unloaded', endpoint: 'omlx', model: 'big-27b', reason: 'idle' }]);
+    assert.deepEqual(memory.snapshot().loaded, []);
+  });
+
+  it('keeps a model used more recently than the given time', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, unloaded, at } = clocked(config);
+    at(1_000);
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    at(1_000 + 29 * 60_000);
+    assert.deepEqual(await memory.unloadIdle(30 * 60_000), []);
+    assert.deepEqual(unloaded, []);
+    assert.equal(memory.snapshot().loaded.length, 1);
+  });
+
+  it('unloads nothing while any request is in flight, even on another model', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b', 'local-voice': 'small-4b' })];
+    const { memory, unloaded, at } = clocked(config);
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    let open: () => void = () => undefined;
+    const running = memory.wrap(fakeModel(new Promise<void>((resolve) => { open = resolve; })), config).chat({ model: 'local-voice', messages: [] });
+    assert.equal(memory.activeRequests(), 1);
+    at(60 * 60_000);
+    assert.deepEqual(await memory.unloadIdle(30 * 60_000), []);
+    open();
+    await running;
+    assert.equal(memory.activeRequests(), 0);
+    assert.deepEqual(unloaded, []);
+  });
+
+  it('never unloads a pinned model (the model of a call)', async () => {
+    const config = [endpoint({ 'local-voice': 'small-4b' })];
+    const { memory, unloaded, at } = clocked(config, { pinned: () => true });
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-voice', messages: [] });
+    at(60 * 60_000);
+    assert.deepEqual(await memory.unloadIdle(30 * 60_000), []);
+    assert.deepEqual(unloaded, []);
+  });
+
+  it('keeps a model used by a short request while the unload of another awaited', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b', 'local-voice': 'small-4b' })];
+    let finish: () => void = () => undefined;
+    const unloadedNames: string[] = [];
+    const { memory, at } = clocked(config, {
+      unload: (_endpoint, name) => {
+        unloadedNames.push(name);
+        return name === 'big-27b' ? new Promise<boolean>((resolve) => { finish = () => { resolve(true); }; }) : Promise.resolve(true);
+      },
+    });
+    const model = memory.wrap(fakeModel(), config);
+    at(1_000);
+    await model.chat({ model: 'local-large', messages: [] });
+    at(2_000);
+    await model.chat({ model: 'local-voice', messages: [] });
+    at(60 * 60_000);
+    const idle = memory.unloadIdle(30 * 60_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    // While big-27b is being unloaded, a short request uses small-4b and ends.
+    await model.chat({ model: 'local-voice', messages: [] });
+    finish();
+    assert.deepEqual(await idle, [{ endpoint: 'omlx', model: 'big-27b' }]);
+    assert.deepEqual(unloadedNames, ['big-27b']);
+    assert.deepEqual(memory.snapshot().loaded.map(({ model: name }) => name), ['small-4b']);
+  });
+
+  it('keeps in the account a model the server did not confirm unloaded', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, events, at } = clocked(config, { unload: () => Promise.resolve(false) });
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    at(60 * 60_000);
+    assert.deepEqual(await memory.unloadIdle(30 * 60_000), []);
+    assert.deepEqual(events, []);
+    assert.equal(memory.snapshot().loaded.length, 1);
+  });
+});

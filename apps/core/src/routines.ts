@@ -56,6 +56,8 @@ export const REPORT_MAX_ITEMS = 7;
 const REPORT_TITLE_MAX = 120;
 /** A run later than this after its time says sorry for the delay. */
 export const LATE_AFTER_MS = 5 * 60_000;
+/** D-316: a routine due within this time keeps the local models in memory. */
+export const ROUTINE_SOON_MS = 5 * 60_000;
 /** A run later than this is not made up: one line says it was missed. */
 export const MISSED_AFTER_MS = 2 * 3_600_000;
 /** The summary waits for the local model this long after the run, then the report stays without it. */
@@ -1692,4 +1694,16 @@ export function createRoutineService(env: RoutineEnv): RoutineService {
     split: (id, body) => splitRoutine(env.sql, id, parseSplitInput(body), now()),
     unsplit: (id, body) => unsplitRoutine(env.sql, id, parseUnsplitInput(body), now()),
   };
+}
+
+/**
+ * D-316: an active routine due within `withinMs`, or late by less than MISSED_AFTER_MS (later than that it is
+ * missed, not run): its task would load the local model again at once.
+ */
+export async function routineDueSoon(sql: Queryable, withinMs: number): Promise<boolean> {
+  const [row] = await sql<{ soon: boolean }[]>`
+    SELECT EXISTS (SELECT FROM routines WHERE status = 'active'
+                   AND next_run_at <= now() + make_interval(secs => ${withinMs / 1000})
+                   AND next_run_at > now() - make_interval(secs => ${MISSED_AFTER_MS / 1000})) AS soon`;
+  return row?.soon === true;
 }

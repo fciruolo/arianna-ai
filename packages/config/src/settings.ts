@@ -15,6 +15,7 @@ import type { SeriesOverrides } from './series.ts';
 import type { ProjectRules } from './project-rules.ts';
 import type { ProjectFolder, ProjectLabel, ProjectPlanner } from './projects.ts';
 import type { Roles } from './roles.ts';
+import { DEFAULT_IDLE_UNLOAD_MINUTES } from './local.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
 import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
 import type { AppearanceConfig } from './appearance.ts';
@@ -54,6 +55,8 @@ export interface Settings {
   server: ServerConfig;
   roles: Roles;
   endpoints: EndpointSettings[];
+  /** `[local] idle_unload_minutes` (D-316): written only when the file has it; absent, 30. */
+  idleUnloadMinutes?: number;
   cloud: {
     executors: CloudExecutor[];
     /** `[cloud.models]` (D-071); absent, every alias on under its own name. */
@@ -137,6 +140,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
         ...(explicit ? { models: { ...endpoint.models } } : {}),
       };
     }),
+    // Absent when the file does not say it: the default is not written in.
+    ...(local.idle_unload_minutes === undefined ? {} : { idleUnloadMinutes: config.local.idleUnloadMinutes }),
     cloud: {
       executors: [...config.cloud.executors],
       // Absent means every alias on under its own name: kept absent, as written.
@@ -421,6 +426,13 @@ export function renderSettings(settings: Settings): string {
     '# Port 8000 may be taken by another container: 7001 is the suggestion. Do not',
     '# also run oMLX as a Homebrew service: the watchdog would only adopt it,',
     '# without being able to restart it.',
+    '# `idle_unload_minutes` (D-316): minutes without a request to a local model',
+    '# before the core unloads it, to free the memory; 0 never, 30 by default.',
+    '# The next request loads it again (tens of seconds for a large model). Also',
+    '# in Impostazioni -> Server dei modelli.',
+    ...(settings.idleUnloadMinutes === undefined
+      ? ['#', '# [local]', `# idle_unload_minutes = ${String(DEFAULT_IDLE_UNLOAD_MINUTES)}`]
+      : ['[local]', `idle_unload_minutes = ${String(settings.idleUnloadMinutes)}`]),
     ...(settings.endpoints.length === 0
       ? [
           '#',
