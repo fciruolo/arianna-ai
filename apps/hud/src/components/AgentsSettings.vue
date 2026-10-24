@@ -777,7 +777,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
           <input id="leave-after" v-model.number="form.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[14px]" />
           tuoi messaggi senza lavoro per lui
         </label>
-        <p class="text-[13px] text-muted">Saluta e rientra quando gli serve un lavoro. 0 = resta sempre. Il Coder non esce da solo: lo togli tu.</p>
+        <p class="text-[13px] text-muted">Saluta e rientra quando gli serve un lavoro. 0 vuol dire che resta sempre. Il Coder non esce da solo: lo togli tu.</p>
         <p v-if="leaveAfterProblem(form.participants) !== undefined" class="text-[13px] text-warn">{{ leaveAfterProblem(form.participants) }}</p>
       </div>
     </aside>
@@ -960,7 +960,7 @@ const INPUT = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-
           <p v-if="previewOf(current.id)?.pack === SERIES_PACK" class="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[13px]">
             Personalità, battute e citazioni vere di questo personaggio:
             <a href="/impostazioni/personaggi-delle-serie" class="text-accent hover:underline" @click.prevent="openCharacter(previewOf(current.id)!.character)">Impostazioni → Personaggi</a>.
-            <span v-if="(form.personas[current.id]?.traits.trim() ?? '') !== ''" class="mt-1 block text-warn">Per questo agente hai scritto una Personalità tua (tab Personalità): vince su quella del personaggio.</span>
+            <span v-if="(form.personas[current.id]?.traits.trim() ?? '') !== ''" class="mt-1 block text-warn">Per questo agente hai scritto una Personalità tua (scheda «Personalità»): vince su quella del personaggio.</span>
           </p>
           <div class="flex flex-col gap-3">
             <h3 class="text-[14px] font-medium">Galleria</h3>

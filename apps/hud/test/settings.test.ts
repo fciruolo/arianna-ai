@@ -136,8 +136,8 @@ test('a model of an agent says why it would not start a conversation now', () =>
   assert.equal(modelBlocker('opus', values({}, ['claude'])), undefined);
   assert.equal(modelBlocker('opus', values({ opus: 'claude-opus-5-5' }, ['claude'])), undefined);
   assert.equal(modelBlocker('opus', values({ opus: false }, ['claude'])), 'spento in Modelli');
-  assert.equal(modelBlocker('opus', values({}, [])), 'esecutore spento');
-  assert.equal(modelBlocker('sol', values({}, ['claude'])), 'esecutore spento');
+  assert.equal(modelBlocker('opus', values({}, [])), 'Claude Code spento');
+  assert.equal(modelBlocker('sol', values({}, ['claude'])), 'Codex spento');
   assert.equal(modelBlocker('sol', values({}, ['claude', 'codex'])), undefined, 'Codex has its adapter (D-140)');
 });
 

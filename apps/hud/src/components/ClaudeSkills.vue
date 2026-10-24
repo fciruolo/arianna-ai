@@ -82,7 +82,7 @@ async function open(id: string): Promise<void> {
     title="Le tue skill di Claude Code"
     description="Arianna copia le skill della tua cartella di Claude Code solo quando premi il pulsante: i soli SKILL.md e le licenze, mai script né altri file. Ognuna resta privata, e arriva solo agli agenti su questo computer, finché non la segni condivisibile."
   >
-    <template #header><span title="Il testo può contenere dati tuoi: privato finché non decidi tu">privato per default</span></template>
+    <template #header><span title="Il testo può contenere dati tuoi: privato finché non decidi tu">privato finché non decidi tu</span></template>
     <div v-if="error" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-danger/50 bg-danger/9 px-3 py-2.5 text-[14px]" role="alert">
       <span class="min-w-[220px] flex-1">{{ error }}</span>
       <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="refresh">Riprova</button>

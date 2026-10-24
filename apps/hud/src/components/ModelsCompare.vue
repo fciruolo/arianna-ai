@@ -191,7 +191,7 @@ const card = 'flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-sur
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <button v-if="reference !== null" type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="!canReference" @click="tryModel(reference.modelId)">Prova di riferimento: {{ reference.name }}</button>
-          <span v-if="reference === null" class="text-[13.5px] text-muted">Nessun modello fa l’orchestratore in «Chi fa cosa»: sceglilo nella scheda «Elenco».</span>
+          <span v-if="reference === null" class="text-[13.5px] text-muted">Nessun modello ha il compito «Ragiona e risponde in chat» in «Chi fa cosa»: sceglilo nella scheda «Elenco».</span>
           <span v-else-if="!reference.present" class="text-[13.5px] text-muted">I file del modello in uso non sono sul Mac.</span>
         </div>
       </div>
@@ -200,7 +200,7 @@ const card = 'flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-sur
         <div :class="card">
           <div class="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[14px]">
             <label class="inline-flex items-center gap-1.5">
-              Ruolo
+              Compito
               <select v-model="role" class="field px-2 py-1 text-[14px]" @change="load">
                 <option v-for="(label, id) in ROLE_LABEL" :key="id" :value="id">{{ label }}</option>
               </select>
@@ -212,7 +212,7 @@ const card = 'flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-sur
               type="button"
               class="btn px-3 py-1 text-[13.5px]"
               :disabled="!canReference"
-              :title="reference === null ? 'Nessun modello fa l’orchestratore' : referenceOpen ? 'Una prova del modello in uso è già in corso' : undefined"
+              :title="reference === null ? 'Nessun modello ha il compito «Ragiona e risponde in chat»' : referenceOpen ? 'Una prova del modello in uso è già in corso' : undefined"
               @click="reference !== null && tryModel(reference.modelId)"
             >
               Prova di riferimento
@@ -398,7 +398,7 @@ const card = 'flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-sur
                       <button v-if="!allCases && cases.differing.length > SHOWN_CASES" type="button" class="mr-1 font-semibold text-accent hover:underline" @click="allCases = true">
                         …altre {{ cases.differing.length - SHOWN_CASES }}.
                       </button>
-                      Le domande sono quelle finte di <span class="font-mono">evals/orchestrator</span>: niente dati tuoi. Delle risposte dei modelli resta solo giusta o sbagliata, con il motivo in breve.
+                      Le domande sono quelle finte della prova: niente dati tuoi. Delle risposte dei modelli resta solo giusta o sbagliata, con il motivo in breve.
                     </td>
                   </tr>
                 </tbody>

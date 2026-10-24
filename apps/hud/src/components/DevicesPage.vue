@@ -98,7 +98,7 @@ const input = 'field w-full min-w-0 px-2.5 py-1.5 text-[14px] text-ink';
       <h3 class="font-semibold">La porta per il telefono non è configurata</h3>
       <p class="text-muted">
         Per aprire Arianna dal telefono serve <code class="font-mono text-[13px]">[server.remote]</code> in <code class="font-mono text-[13px]">config/arianna.toml</code>, con il nome
-        <code class="font-mono text-[13px]">*.ts.net</code> del Mac in Tailscale, poi un riavvio del core. I passi sono in docs/SECURITY.md, «Accesso dal telefono».
+        <code class="font-mono text-[13px]">*.ts.net</code> del Mac in Tailscale, poi un riavvio di Arianna. I passi sono in docs/SECURITY.md, «Accesso dal telefono».
       </p>
     </section>
     <template v-else>

@@ -613,7 +613,7 @@ function openChat(agent: string): void {
 }
 /** Another section from inside Agenti: the texts of the user's agents not saved are lost, so ask first (D-133). */
 function textsLeft(): boolean {
-  return !agentTextsDirty.value || window.confirm('Descrizione e prompt cambiati di un tuo agente non sono salvati: cambiando sezione si perdono. Vuoi cambiare?');
+  return !agentTextsDirty.value || window.confirm('Hai cambiato descrizione o prompt di un tuo agente senza salvarli: cambiando sezione si perdono. Vuoi cambiare sezione?');
 }
 function openSection(slug: string): void {
   if (textsLeft()) emit('section', slug);
@@ -1333,10 +1333,10 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                       :value="project.planner ?? ''"
                       class="field w-[190px] px-2 py-1.5 text-[14px]"
                       :aria-label="`Chi pianifica in ${project.name}`"
-                      title="Chi scrive le card di /progetta e dei piani di questo progetto (D-235). In una conversazione privata pianifica sempre il modello locale."
+                      title="Chi scrive le card di /progetta e dei piani di questo progetto. In una conversazione privata pianifica sempre il modello locale."
                       @change="setPlanner(project, ($event.target as HTMLSelectElement).value)"
                     >
-                      <option value="">Piani: come oggi</option>
+                      <option value="">Piani: predefinito</option>
                       <option value="opus">Piani: Opus</option>
                       <option value="sonnet">Piani: Sonnet</option>
                       <option value="local">Piani: modello locale</option>
@@ -1546,7 +1546,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
                 v-if="forms !== null && view?.values?.localIdle !== undefined"
                 id="model-memory"
                 title="Modelli in memoria"
-                description="Dopo ogni avvio del server Arianna carica e prepara il suo modello, così la prima domanda non aspetta. Se per un po' nessuno chiede niente ai modelli locali, li scarica per liberare la memoria del Mac: la domanda dopo aspetta che il modello si ricarichi (qualche decina di secondi)."
+                description="Dopo ogni avvio del server, Arianna carica e prepara il suo modello, così la prima domanda non aspetta. Se per un po’ nessuno chiede niente ai modelli sul Mac, li scarica per liberare la memoria del Mac: la domanda dopo aspetta che il modello si ricarichi (qualche decina di secondi)."
                 :busy="locked"
               >
                 <template #header><span class="pill text-ok border-ok/50">Vale subito</span></template>

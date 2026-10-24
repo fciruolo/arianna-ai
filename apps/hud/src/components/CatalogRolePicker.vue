@@ -193,7 +193,7 @@ const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(ch
         <div class="flex flex-wrap gap-1.5">
           <span class="pill">{{ chosen.division }}</span>
           <span class="pill">{{ chosen.source }}</span>
-          <span class="pill border-info/50 text-info">Testo di terzi · L0</span>
+          <span class="pill border-info/50 text-info">Testo di terzi · Pubblico</span>
         </div>
         <h3 class="text-[20px] font-semibold">{{ chosen.name }}</h3>
         <p class="text-[14px] text-muted"><TranslatedText :key="chosen.id" :original="chosen.description" :italian="italian(chosen.id)" /></p>

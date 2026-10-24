@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Testi delle Impostazioni più chiari e coerenti: tolti sigle e nomi tecnici (D-235, «core», «router», «orchestratore», «esecutore», «L0», «tab», «vault»), le parti in attesa di riavvio hanno i nomi che si vedono nelle pagine («Claude e Codex», «Server dei modelli», «Link da riassumere»), un modello spento dice se manca Claude Code o Codex, corretti refusi e apostrofi (testi-impostazioni).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto

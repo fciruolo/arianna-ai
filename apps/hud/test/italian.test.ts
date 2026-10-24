@@ -8,7 +8,7 @@ import { activityLink, activityText, errorText, reasonText, spriteErrorText, tho
 test('spriteErrorText: why a character was not drawn, in Italian, never the core words (D-123)', () => {
   const text = (code: string, message: string, resetsAt: string | null = null) => spriteErrorText(new SpriteApiError(400, message, code, resetsAt));
   assert.match(text('unavailable', 'claude is not on in [cloud] executors'), /Claude non è attivo/);
-  assert.match(text('unavailable', 'no local server serves local-large (the orchestrator of [roles])'), /Nessun server locale/);
+  assert.match(text('unavailable', 'no local server serves local-large (the orchestrator of [roles])'), /Nessun server dei modelli ha la mente di Arianna/);
   assert.match(text('invalid', 'hint looks like personal data or a secret (iban): not sent'), /^Il suggerimento sembra contenere dati personali/);
   assert.match(text('quota', 'claude is out of quota', '2026-10-05T18:00:00.000Z'), /^La quota di Claude è esaurita\. Riprova dopo le/);
   assert.match(text('bad-reply', 'the drawing is not valid: head.front: 10 rows'), /disegno non valido/);

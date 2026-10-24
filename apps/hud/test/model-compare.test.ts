@@ -91,7 +91,7 @@ test('the verdict: speed ratio, questions wrong more and where, thresholds; comp
     },
     {
       name: 'MiniCPM-V 4.7',
-      text: 'scrive 3,1 volte più veloce di Qwen3.8 27B (55 contro 18 token al secondo) e sbaglia 8 domande in più (5 nella scelta degli strumenti, 2 nella ripresa dopo un errore): sta sotto la soglia in tre capacità su cinque, come orchestratore non va.',
+      text: 'scrive 3,1 volte più veloce di Qwen3.8 27B (55 contro 18 token al secondo) e sbaglia 8 domande in più (5 nella scelta degli strumenti, 2 nella ripresa dopo un errore): sta sotto la soglia in tre capacità su cinque, come mente di Arianna non va.',
     },
   ]);
   // Fewer wrong, slower, on other questions, without a speed.
