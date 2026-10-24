@@ -20,7 +20,7 @@ import { eraseConversation } from '../src/erase.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepContext } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import type { MacEnv } from '../src/mac-files.ts';
-import { addMacFolder, checkFolderInput, conversationMacFolders, listMacFolders, removeMacFolder } from '../src/mac-folders.ts';
+import { addMacFolder, checkFolderInput, conversationMacFolders, listMacFolders, MAX_MAC_FOLDERS, removeMacFolder } from '../src/mac-folders.ts';
 import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
@@ -318,14 +318,22 @@ test('a conversation deleted for good after «Sempre»: it goes, and the folder 
   const { taskId, card } = await askDesktop(conversationId);
   await recordDecision(db().sql, card?.id ?? '', 'approved', 'web', 'always');
   await drain(taskId, scripted([REPLY('Fatto.')]));
+  const [before] = await listMacFolders(db().sql);
+  const id = before?.id ?? '';
+  // The app role never touches approval_id; the trigger holds for the owner too: never another card, never with a removal.
+  await assert.rejects(db().sql`UPDATE mac_folders SET approval_id = NULL WHERE id = ${id}`, /permission denied/);
+  // Another card (the trigger runs before the foreign key).
+  await assert.rejects(db().owner`UPDATE mac_folders SET approval_id = ${randomUUID()} WHERE id = ${id}`, /mac_folders_guard/);
+  await assert.rejects(db().owner`UPDATE mac_folders SET approval_id = NULL, removed_at = now() WHERE id = ${id}`, /mac_folders_guard/);
   await archiveConversation(db().sql, conversationId, true);
   await eraseConversation(db().sql, conversationId);
   const listed = await listMacFolders(db().sql);
-  assert.deepEqual(listed.map((folder) => folder.path), [DESKTOP]);
-  const [row] = await db().sql<{ approval: string | null }[]>`SELECT approval_id::text AS approval FROM mac_folders WHERE id = ${listed[0]?.id ?? ''}`;
+  assert.deepEqual(listed.map((folder) => [folder.id, folder.path]), [[id, DESKTOP]]);
+  const [row] = await db().sql<{ approval: string | null }[]>`SELECT approval_id::text AS approval FROM mac_folders WHERE id = ${id}`;
   assert.equal(row?.approval, null);
-  // Only the card going to null: never another card, never a removal undone.
-  await assert.rejects(db().sql`UPDATE mac_folders SET approval_id = ${randomUUID()} WHERE id = ${listed[0]?.id ?? ''}`, /mac_folders_guard|permission denied/);
+  // A removal once, never undone.
+  await db().owner`UPDATE mac_folders SET removed_at = now() WHERE id = ${id}`;
+  await assert.rejects(db().owner`UPDATE mac_folders SET removed_at = NULL WHERE id = ${id}`, /mac_folders_guard/);
 });
 
 test('«Sempre» on a folder already in the list: the model does not read that the list is full', async () => {
@@ -338,6 +346,19 @@ test('«Sempre» on a folder already in the list: the model does not read that t
   const text = (await macResults(db().sql, second.taskId, turns)).get(1) ?? '';
   assert.match(text, /always: it is now in the list of the settings/);
   assert.doesNotMatch(text, /full/);
+});
+
+test('«Sempre» with the list full on a folder taken off before: the model reads that it holds for this call only', async () => {
+  await clearList();
+  await addMacFolder(db().sql, DESKTOP);
+  const [old] = await listMacFolders(db().sql);
+  await removeMacFolder(db().sql, old?.id ?? '');
+  for (let index = 0; index < MAX_MAC_FOLDERS; index += 1) await db().sql`INSERT INTO mac_folders (path) VALUES (${join(BASE, `piena-${String(index)}`)})`;
+  const { taskId, card } = await askDesktop(await privateChat());
+  await recordDecision(db().sql, card?.id ?? '', 'approved', 'web', 'always');
+  const text = (await macResults(db().sql, taskId, await loadTurns(db().sql, taskId))).get(1) ?? '';
+  assert.match(text, /the list of the settings is full/);
+  await clearList();
 });
 
 test('after a crash, a step that asked waits again while the card is pending; decided, the steps go on', async () => {

@@ -525,7 +525,9 @@ async function find(path: string, real: string, name: string, home: string, home
       }
       const shownPath = join(next.shown, entry.name);
       if (entry.name.normalize('NFC').toLowerCase().includes(wanted)) {
-        found.push(`- ${displayPath(shownPath, home)}${entry.isDirectory() ? '/' : ''}`);
+        const unknownType = !entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink() && !entry.isFIFO() && !entry.isSocket() && !entry.isBlockDevice() && !entry.isCharacterDevice();
+        const isFolder = entry.isDirectory() || (unknownType && (await lstat(join(next.real, entry.name)).catch(() => undefined))?.isDirectory() === true);
+        found.push(`- ${displayPath(shownPath, home)}${isFolder ? '/' : ''}`);
         if (found.length >= MAX_FOUND) {
           stopped = true;
           break;

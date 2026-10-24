@@ -1256,7 +1256,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
       // routine.propose (D-256): offered to Arianna in every conversation but incognito and the secretary's, so that
-      // the fixed prompt stays the same in a private and a work conversation (the prefix cache, D-075); the core
+      // it does not split the fixed prompt of a private and a work conversation (the prefix cache, D-075; the tools of
+      // the folders of the Mac, D-314, offered in private conversations only, do split them from the list of tools on); the core
       // writes a routine only in a private conversation of the user with her (routineProposalAllowed), else an error.
       const routinesOffered = !incognito && !secretary && task.conversationId !== null && task.assignee === ORCHESTRATOR_AGENT;
       const routines = routinesOffered && (await routineProposalAllowed(sql, task.conversationId));
