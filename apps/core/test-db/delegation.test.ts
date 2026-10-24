@@ -715,6 +715,23 @@ test('a change to the files of the Mac handed to the Coder in a private conversa
     assert.equal(await lastAnswer(single.conversation.id), MAC_READ_ONLY_REPLY);
     const [cards] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM approvals WHERE task_id = ${single.task.id}`;
     assert.equal(cards?.count, 0);
+    // Not when the user named the Coder: the answer is about the Coder (D-303).
+    const byNameChat = await createConversation(db().sql, { mode: 'private' });
+    const byName = { conversation: byNameChat, ...(await postUserMessage(db().sql, byNameChat.id, '@coder rinomina la cartella Fatture nei Documenti.', { mentionable: ['coder'] })) };
+    await drain(byName.task.id, orchestrator({ model: scripted([REPLY]), mac, projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(byName.conversation.id), noProjectReply('coder', 'private'));
+    // Common words are not places: «la versione desktop», «i documenti del progetto».
+    const words = await ask('private', 'Chiedi al Coder di aggiungere la versione desktop e aggiornare i documenti del progetto.');
+    await drain(words.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), mac, projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(words.conversation.id), noProjectReply('coder', 'private'));
+    // Without the folders of the Mac in the core: the words of D-303 even with a folder named.
+    const off = await ask('private', 'Sposta il file dalla Scrivania ai Documenti.');
+    await drain(off.task.id, orchestrator({ model: scripted([change, REPLY]), projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(off.conversation.id), noProjectReply('coder', 'private'));
+    // A work conversation is never about the Mac: the words of D-303 for a work conversation without a project.
+    const work = await ask('work', 'Sposta il file dalla Scrivania ai Documenti.');
+    await drain(work.task.id, orchestrator({ model: scripted([change, REPLY]), mac, projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(work.conversation.id), noProjectReply('coder', 'work'));
     // A request about code, in a private conversation that never read the Mac: the words of D-303.
     const code = await ask('private', 'Chiedi al Coder di scrivere nel progetto demo un file con il costo del bollo.');
     await drain(code.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), mac, projects: ['site', 'other'] }));

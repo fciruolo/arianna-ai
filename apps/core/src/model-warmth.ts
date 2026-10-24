@@ -17,7 +17,8 @@ import type { ModelMemory } from './model-memory.ts';
  *     private conversation, then a new work one (D-314 made their tools
  *     differ), one after the other. Not with swap or memory pressure already
  *     high, not while another request or a call is at work: checked again
- *     before each of them. Once per start of the server: an unload for
+ *     before each of them. A failure or a stop of the first one leaves the
+ *     second unsent, with no event of its own. Once per start of the server: an unload for
  *     inactivity never starts it again, or the memory would never be freed.
  * (b) **unload after inactivity**: a model of the account idle for
  *     `[local] idle_unload_minutes` (30 by default, 0 never) leaves the

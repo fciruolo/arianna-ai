@@ -959,8 +959,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     // D-303 about projects, nor a card to send the brief to a project (with a single project a private conversation has it).
     // Not when the user named the agent: then the answer is about that agent.
     const readOnly =
-      error === undefined && !byUser && isCloudRoute(where) && conversation?.mode === 'private' && options.mac !== undefined && task.conversationId !== null &&
-      (await macConversation(sql, task.conversationId)) && (await macFilesInPlay(sql, task.conversationId, [brief, task.title]));
+      error === undefined && ways === undefined && !local && !byUser && isCloudRoute(where) && conversation?.mode === 'private' && options.mac !== undefined && task.conversationId !== null &&
+      (await macConversation(sql, task.conversationId)) && (await macFilesInPlay(sql, task.conversationId, task.id, brief));
     const noProject = !readOnly && error === undefined && ways === undefined && !local && isCloudRoute(where) && conversation !== undefined ? noProjectCase(conversation.mode, repo, approvedRepo(env, repo)) : undefined;
     if (readOnly || noProject !== undefined) {
       // Arianna says why with our fixed words, not the model's (D-303): there is no other way in this conversation.
@@ -1029,8 +1029,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
    * D-316: the first step of Arianna in a new private conversation and in a new work conversation
    * without a project, as `ask` sends them, with the fixed WARMUP_MESSAGE in place of the user's and
    * one token each: oMLX loads the model, compiles the grammar of each schema and keeps the blocks
-   * of each system prompt. Two since D-314: the tools of the folders of the Mac are offered in a
-   * private conversation only, so the two prompts part from the list of tools on. Work without a
+   * of each system prompt. Two: their tools differ (web.fetch only in work, D-262; the tools of the
+   * folders of the Mac only in a private one, D-314), so the two prompts part from the list of tools on. Work without a
    * project because a new work conversation of the chat starts so more often than with one, and a
    * project changes nothing before the list of tools but the planner (Claude when it is on, as here).
    * The same tools as those steps (they are in the prompt and in the schema), chosen by the same

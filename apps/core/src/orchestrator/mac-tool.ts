@@ -54,21 +54,33 @@ export const MAC_READ_ONLY_REPLY =
 export const MAC_READ_ONLY_ERROR =
   'the files of the Mac are read only for now: nothing there is created, changed, moved or deleted, by you or by an agent; the user was told';
 
-/** Words that name the folders of the Mac in a request: the Italian and English names, a path from the home, an external disk. */
-const MAC_WORDS = /~\/|\/Volumes\b|\b(scrivania|desktop|documenti|documents|scaricati|downloads?)\b/iu;
+/**
+ * A folder of the Mac named as a place, not a common word: a path from the
+ * home or of an external disk, «Desktop/…», or «sulla Scrivania», «nei
+ * Documenti», «dai Scaricati» (a preposition before the Italian name). «La
+ * versione desktop», «un pulsante di download», «i documenti del progetto»
+ * do not count.
+ */
+const MAC_PLACES = /~\/|\/Volumes\/|\b(?:Desktop|Documents|Downloads)\/|\b(?:sull[a']|nell[a']|dall[a']|all[a']|sulla|nella|dalla|alla|in|ne[il]|de[il]|da[il]|a[il]|su[il])\s*(?:scrivania|documenti|scaricati)\b/iu;
+
+/** How many of the latest tasks of the conversation a read of the Mac counts in: this answer and the two before. */
+export const MAC_RECENT_TASKS = 3;
 
 /**
  * Whether a delegation in a private conversation is about the files of the
- * Mac (D-314): its brief or the user's message name a folder of the Mac, or
- * the conversation has already read the Mac (a mac call that returned
- * something). Our test, never the model's word.
+ * Mac (D-314): its brief or a message of the user of this task names a
+ * folder of the Mac as a place, or one of the latest tasks of the
+ * conversation read the Mac (a mac call that returned something). Our test,
+ * never the model's word.
  */
-export async function macFilesInPlay(sql: Queryable, conversationId: string, texts: readonly string[]): Promise<boolean> {
-  if (texts.some((text) => MAC_WORDS.test(text))) return true;
+export async function macFilesInPlay(sql: Queryable, conversationId: string, taskId: string, brief: string): Promise<boolean> {
+  const messages = await sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${taskId} AND role = 'user'`;
+  if ([brief, ...messages.map((row) => row.body)].some((text) => MAC_PLACES.test(text))) return true;
   const [row] = await sql<{ read: boolean }[]>`
     SELECT EXISTS (
-      SELECT FROM task_turns tt JOIN tasks t ON t.id = tt.task_id
-      WHERE t.conversation_id = ${conversationId} AND tt.answer ->> 'tool' LIKE 'mac.%'
+      SELECT FROM task_turns tt
+      WHERE tt.task_id IN (SELECT t.id FROM tasks t WHERE t.conversation_id = ${conversationId} ORDER BY t.created_at DESC, t.id DESC LIMIT ${MAC_RECENT_TASKS})
+        AND tt.answer ->> 'tool' LIKE 'mac.%'
         AND tt.result IS NOT NULL AND tt.result NOT LIKE 'error: %' AND tt.result <> ${WAITING_MAC}
     ) AS read`;
   return row?.read === true;

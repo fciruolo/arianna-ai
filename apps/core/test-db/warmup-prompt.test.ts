@@ -10,7 +10,8 @@ import { after, afterEach, test } from 'node:test';
 
 import { type Answer } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
-import type { ChatRequest, LocalModel } from '@arianna/executors';
+import type { ChatRequest, ClaudeExecutor, LocalModel } from '@arianna/executors';
+import type { AgentBrowser } from '../src/browser/agent-browser.ts';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, STEP_QUEUE } from '../src/engine.ts';
@@ -52,24 +53,32 @@ function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
-const orchestrator = (model: LocalModel, mac?: MacEnv) =>
+/** The richest work prompt: Claude on (the planner, the Coder to delegate to, profile.share), the browser built. */
+interface Extras {
+  cloud?: boolean;
+  browser?: boolean;
+}
+const orchestrator = (model: LocalModel, mac?: MacEnv, extras: Extras = {}) =>
   createOrchestrator({
     ...(mac === undefined ? {} : { mac }),
     sql: db().sql,
     agents,
     kb: createKb({ home: HOME, rules: RULES }),
     model: () => model,
-    settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas: {} }),
+    settings: () => ({ ...CONFIG, cloud: { executors: extras.cloud === true ? ['claude'] : [], models: defaultCloudModels() }, personas: {} }),
     rules: RULES,
+    // Only whether they are there decides the tools and the planner of a first step; neither runs here.
+    ...(extras.cloud === true ? { claude: {} as ClaudeExecutor } : {}),
+    ...(extras.browser === true ? { browser: { agent: { holder: null } as unknown as AgentBrowser, installed: () => true } } : {}),
   });
 
 /** The request of the first step of Arianna in a new private conversation, as the engine sends it. */
-async function realFirstStep(text: string, mac?: MacEnv, mode: 'private' | 'work' = 'private'): Promise<ChatRequest> {
+async function realFirstStep(text: string, mac?: MacEnv, mode: 'private' | 'work' = 'private', extras: Extras = {}): Promise<ChatRequest> {
   const conversation = await createConversation(db().sql, { mode });
   const { task } = await postUserMessage(db().sql, conversation.id, text);
   const model = scripted([{ action: 'reply', text: 'Va bene.' }]);
   const queue = createJobQueue(db().sql);
-  const executor = orchestrator(model, mac);
+  const executor = orchestrator(model, mac, extras);
   for (let guard = 0; guard < 40 && model.requests.length === 0; guard += 1) {
     const job = await queue.claim(STEP_QUEUE, 'test-worker');
     if (job === undefined) break;
@@ -108,6 +117,22 @@ test('the work warm-up: the same system prompt and schema as the first step of a
     assert.equal(warm.maxTokens, 1);
     assert.deepEqual(warm.messages.slice(1), [{ role: 'user', content: WARMUP_MESSAGE }]);
   }
+  // With Claude on, the browser built and a fact of «Su di te» at Internal: the planner, the Coder, profile.share,
+  // the browser tools; the same both ways.
+  await db().sql`INSERT INTO user_facts (topic, text, label) VALUES ('lingua', 'Italiano finto', 'L1'::privacy_label)`;
+  const rich: Extras = { cloud: true, browser: true };
+  for (const part of ['work', 'private'] as const) {
+    const real = await realFirstStep(part === 'work' ? 'Come imposto i test del progetto?' : 'Che file ho sulla Scrivania?', mac, part, rich);
+    const warm = await warmOf(orchestrator(scripted([]), mac, rich), part);
+    assert.ok(warm !== undefined);
+    const examplesEnd = systemOf(real).indexOf('</examples>');
+    assert.ok(examplesEnd > 0);
+    assert.equal(systemOf(warm).slice(0, examplesEnd), systemOf(real).slice(0, examplesEnd), part);
+    assert.deepEqual(warm.schema, real.schema, part);
+    if (part === 'work') assert.match(systemOf(real), /^- browser\.open:/m);
+  }
+  // Claude on changes the work prompt (the planner, the Coder): the case above is not the plain one.
+  assert.notEqual(systemOf(await warmOf(orchestrator(scripted([]), mac, rich), 'work')), systemOf(await warmOf(orchestrator(scripted([]), mac), 'work')));
   // The two prompts part from the list of tools on: the reason of the second warm-up.
   const work = await warmOf(orchestrator(scripted([]), mac), 'work');
   const own = await warmOf(orchestrator(scripted([]), mac), 'private');
