@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - pgvector 0.8.7 nel PostgreSQL di Arianna, base della ricerca ibrida della Fase 2: estensione `vector` nello schema `extensions` (migrazione `0092`), usabile dal core senza poter creare nulla lì (D-308).
 - Controllo `database.vector` di `pnpm arianna:doctor`: estensione presente, usabile da `arianna_app` e alla versione dell'immagine (D-308).
+- Riga «Ricerca per significato (pgvector)» in «Pronta per i dati veri» delle Impostazioni: la controlla il core stesso col suo ruolo, ed è richiesta anche nell'ultimo esito del doctor del Terminale (D-308).
 
 ### Cambiato
 

@@ -92,3 +92,13 @@ test('rows: what is missing first, the terminal last among them; what passed apa
   assert.equal(missingText(1), 'Manca 1 cosa');
   assert.equal(missingText(3), 'Mancano 3 cose');
 });
+
+test('pgvector has its row (D-308): its name, and failing it the page is not ready', () => {
+  assert.equal(READINESS_TEXT.vector.title, 'Ricerca per significato (pgvector)');
+  const terminal = { at: at(12, 18, 40), ok: true, stale: false };
+  const report = (ok: boolean) => parseReadiness({ readiness: { ready: true, checkedAt: at(13, 10, 12), checks: [{ id: 'vector', ok }], terminal } });
+  assert.deepEqual(report(true)?.checks, [{ id: 'vector', ok: true }]);
+  assert.equal(report(true)?.ready, true);
+  assert.deepEqual(report(false)?.checks, [{ id: 'vector', ok: false }]);
+  assert.equal(report(false)?.ready, false);
+});

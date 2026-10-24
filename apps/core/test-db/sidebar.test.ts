@@ -351,6 +351,7 @@ test('«Pronta per i dati veri» (D-192): none before a check, then groups and o
     { id: 'passwords', ok: false },
     { id: 'default-passwords', ok: false },
     { id: 'events', ok: false },
+    { id: 'vector', ok: false },
     { id: 'folders', ok: false },
     { id: 'models', ok: false },
     { id: 'programs', ok: false },
