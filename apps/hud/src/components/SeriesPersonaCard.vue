@@ -92,9 +92,9 @@ const count = (text: string): number => Array.from(text.replace(/\s+/g, ' ').tri
     </div>
     <p v-if="loadError" role="alert" class="text-[13px] text-danger">{{ loadError }}</p>
     <p v-if="person?.refused" role="alert" class="text-[12.5px] text-warn">
-      Il tuo testo salvato contiene qualcosa che sembra un dato personale o un valore del vault: il modello riceve quello originale. Correggilo e salva di nuovo, oppure ripristina.
+      Il tuo testo salvato contiene qualcosa che sembra un dato personale o un valore della cassaforte delle password: il modello riceve quello originale. Correggilo e salva di nuovo, oppure ripristina.
     </p>
-    <p v-if="ownTraits" class="text-[12.5px] text-warn">Per questo agente hai scritto una Personalità tua (tab Personalità): vince su quella del personaggio, che qui resta solo per gli altri agenti che lo indossano.</p>
+    <p v-if="ownTraits" class="text-[12.5px] text-warn">Per questo agente hai scritto una Personalità tua (scheda «Personalità» in Agenti): vince su quella del personaggio, che qui resta solo per gli altri agenti che lo indossano.</p>
 
     <template v-if="draft !== null && person !== undefined">
       <label class="flex flex-col gap-1 text-[13px]">

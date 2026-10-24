@@ -239,7 +239,7 @@ async function newDesignerSession(): Promise<void> {
     await startDesignerSession(id, props.studioFile);
     emit('restarted', id);
   } catch (cause) {
-    sessionProblem.value = `Sessione nuova non aperta. ${errorText(cause)}`;
+    sessionProblem.value = `La sessione nuova non si è aperta. ${errorText(cause)}`;
   } finally {
     sessionBusy.value = false;
   }
@@ -886,7 +886,7 @@ function submit(confirmed = false): void {
   if (attachmentItems.value.length > 0) {
     const problem = attachmentsUploading.value
       ? 'Aspetta che gli allegati finiscano di caricarsi.'
-      : (attachProblem.value ?? (working.value ? 'Un allegato non aspetta in coda: mandalo quando la risposta in corso è finita.' : undefined));
+      : (attachProblem.value ?? (working.value ? 'Gli allegati non si mettono in coda: mandali quando la risposta in corso è finita.' : undefined));
     if (problem !== undefined) {
       commandHint.value = problem;
       return;
@@ -1603,7 +1603,7 @@ onBeforeUnmount(() => clearInterval(clock));
       <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false; composer?.focus()" />
       <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">
-          Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
+          Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: il controllo automatico non riconosce i dati personali scritti in frasi normali.
         </span>
         <button ref="confirmButton" type="button" class="btn px-2.5 py-1 text-xs" @click="submit(true)">Invia comunque</button>
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
@@ -1611,7 +1611,7 @@ onBeforeUnmount(() => clearInterval(clock));
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p v-if="modelNote !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-muted">{{ modelNote }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted max-md:hidden short:mt-1.5">
-        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · incognito: /nota spento, "Copia" funziona</span>
+        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · incognito: /nota spento, «Copia» funziona</span>
         <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · + altre azioni<template v-if="modelKeysText !== null"> · {{ modelKeysText }}</template> · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span>
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}

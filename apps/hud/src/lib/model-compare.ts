@@ -69,7 +69,7 @@ export const MEASURES = [
   { name: 'plan', label: 'Piano', title: 'Piano', hint: 'Divide un lavoro in passi', long: 'nei piani' },
 ] as const;
 
-export const ROLE_LABEL: Record<string, string> = { orchestrator: 'Orchestratore' };
+export const ROLE_LABEL: Record<string, string> = { orchestrator: 'Mente di Arianna' };
 
 /** The capability of a fake question, as the column «Capacità» says it. */
 export function capabilityText(capability: string | null): string {
@@ -397,7 +397,7 @@ export function verdict(trials: readonly ComparisonTrial[]): VerdictLine[] {
     const below = belowOf(trial);
     const total = MEASURES.filter((measure) => measureOf(trial, measure.name) !== null).length;
     let end: string;
-    if (below.length >= 3) end = `: sta sotto la soglia in ${NUMBER_WORDS[below.length] ?? String(below.length)} capacità su ${NUMBER_WORDS[total] ?? String(total)}, come orchestratore non va.`;
+    if (below.length >= 3) end = `: sta sotto la soglia in ${NUMBER_WORDS[below.length] ?? String(below.length)} capacità su ${NUMBER_WORDS[total] ?? String(total)}, come mente di Arianna non va.`;
     else if (below.length > 0) end = `, sotto la soglia ${below.map(({ measure, found }) => `${measure.long} (${percentText(found.rate)} contro ${percentText(found.threshold)})`).join(' e ')}.`;
     else end = ', sopra la soglia in tutte le capacità.';
     lines.push({ name: trial.model.name, text: `${parts.join(' e ')}${end}` });

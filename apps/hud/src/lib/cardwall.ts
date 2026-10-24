@@ -261,7 +261,7 @@ const MOVES_FROM: Record<MoveTarget, readonly TaskStatus[]> = {
 };
 
 export const AGENT_DONE_TEXT = 'La card di un agente si chiude da «Da verificare», con le sue prove.';
-export const RUNNING_TEXT = 'La card è al lavoro: la sposta il motore, non si trascina.';
+export const RUNNING_TEXT = 'La card è al lavoro: la sposta Arianna da sola, non si trascina.';
 export const NOT_BY_HAND_TEXT = 'Questo spostamento non si fa a mano.';
 
 type Movable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'>;
@@ -711,7 +711,7 @@ export function isWebAddress(value: string): boolean {
 
 const CAUSE_TEXT: Record<string, string> = {
   user: 'da te',
-  engine: 'dal motore',
+  engine: 'da Arianna',
   agent: 'da un agente',
   approval: 'con una decisione',
 };
@@ -867,8 +867,8 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^no such dependency/, 'Questa dipendenza non c’è più.'],
   // The style and skills of a Designer card (D-163).
   [/^the style and the skills are only for a card of the Designer/, 'Stile e skill si scelgono solo su una card del Designer.'],
-  [/^no such style in the catalog/, 'Questo stile non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.'],
-  [/^no such skill in the catalog/, 'Questa skill non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.'],
+  [/^no such style in the catalog/, 'Questo stile non è nel catalogo in uso: aggiornalo in Impostazioni → Skill e stili.'],
+  [/^no such skill in the catalog/, 'Questa skill non è nel catalogo in uso: aggiornalo in Impostazioni → Skill e stili.'],
   [/^at most (\d+) skills on a card/, (match) => `Una card tiene al massimo ${match[1] ?? ''} skill.`],
   [/^style must be/, 'Lo stile non è valido.'],
   [/^(skills must be a list|a skill is)/, 'La skill non è valida.'],
@@ -881,7 +881,7 @@ export function cardErrorText(cause: unknown): string {
       const match = pattern.exec(cause.message);
       if (match !== null) return typeof said === 'string' ? said : said(match);
     }
-    if (cause.status === 413) return 'Il file è troppo grande per arrivare al core.';
+    if (cause.status === 413) return 'Il file è troppo grande da caricare.';
     if (cause.status === 409) return 'Questo spostamento non è permesso.';
   }
   return errorText(cause);

@@ -78,7 +78,7 @@ const input = 'field w-full min-w-0 px-2.5 py-1.5 text-[14px] text-ink';
       {{ loadProblem }} <button type="button" class="text-accent hover:underline" @click="reload">Riprova</button>
     </p>
     <p v-else-if="view === undefined" class="text-[14px] text-muted">Carico…</p>
-    <p v-else-if="!view.available" class="hud-card px-4 py-3 text-[14.5px] text-muted">Questo core non legge le cartelle del Mac.</p>
+    <p v-else-if="!view.available" class="hud-card px-4 py-3 text-[14.5px] text-muted">In questa installazione Arianna non legge le cartelle del Mac.</p>
     <template v-else>
       <section class="hud-card flex flex-col gap-2 px-4 py-3">
         <h3 class="text-[15px] font-semibold">Cartelle che Arianna legge senza chiedere</h3>

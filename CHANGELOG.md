@@ -12,6 +12,51 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Le caselle «Bloccata da» del modulo di una milestone hanno un nome accessibile esplicito, il titolo della milestone, mai il suo id, anche per gli strumenti che leggevano il valore (D-313).
 
+## [0.181.0] - 2026-10-24
+
+### Aggiunto
+
+- Fatture elettroniche FatturaPA nella pagina Finanze, scheda «Fatture e scadenze»: si trascinano o si scelgono uno o più file .xml o firmati .xml.p7m, Arianna legge fornitore, cliente, numero, data, righe, riepilogo IVA, totale e rate di pagamento e tiene solo i dati letti, mai il file; la stessa fattura importata due volte (anche una volta XML e una firmata) entra una volta sola; le fatture si cercano, si aprono con le righe e si tolgono con una conferma (D-310).
+- Scadenzario delle fatture: le rate ancora da pagare in ordine di scadenza, divise in «Scadute», «Nei prossimi 30 giorni», «Più avanti» e «Senza data di scadenza», ciascuna da segnare pagata (e da riaprire); tutto Privato (L2), solo su questo Mac, nessun modello lo legge (D-310).
+
+### Corretto
+
+- «Togli» di una fattura, «Scarica» dei personaggi di pixel-agents, la cancellazione di una battuta delle serie e «Togli» di una cartella del Mac non finiscono più in «Richiesta non valida»: la chat manda sempre un corpo JSON vuoto con le scritture senza dati, come il core chiede; prezzo e quantità delle righe di una fattura scritti all'italiana («1.000,00» invece di «1000.00») (D-310).
+
+### Sicurezza
+
+- L'XML delle fatture si legge con `fast-xml-parser` 5.11.2 con opzioni fisse: un DOCTYPE o una dichiarazione di entità fa rifiutare il file prima della lettura, nessuna entità viene espansa, gli allegati non vengono letti; il file firmato si apre con l'openssl di sistema senza rete, dallo standard input, senza scrivere su disco e senza controllare la firma (D-310).
+
+## [0.180.5] - 2026-10-24
+
+### Cambiato
+
+- Frasi fisse del core più chiare e coerenti con l'interfaccia: il percorso «Nuova conversazione» → «Lavoro» (o → «Privata») invece di «apri una conversazione nuova» o «privata»; «di’ all’utente» al posto del refuso «dì»; avvisi di approvazione di budget e cartella con modifiche allineati alla chat; «i dati di Finanze» invece di «delle finanze» (revisione dei testi del 2026-10-24).
+
+## [0.180.4] - 2026-10-24
+
+### Cambiato
+
+- Testi delle Impostazioni più chiari e coerenti: tolti sigle e nomi tecnici (D-235, «core», «router», «orchestratore», «esecutore», «L0», «tab», «vault»), le parti in attesa di riavvio hanno i nomi che si vedono nelle pagine («Claude e Codex», «Server dei modelli», «Link da riassumere»), un modello spento dice se manca Claude Code o Codex, corretti refusi e apostrofi (testi-impostazioni).
+
+## [0.180.3] - 2026-10-24
+
+### Cambiato
+
+- Testi della chat, del cardwall e delle schede di approvazione più chiari: niente «declassato», «motore», «scanner» né «core» mostrati all'utente, i cataloghi di stili e skill rimandano a Impostazioni → Skill e stili e i progetti a Impostazioni → Progetti invece che al comando del terminale, «Quando è finito» uguale fra piano e card, «Copia» fra caporali (revisione dei testi).
+
+## [0.180.2] - 2026-10-24
+
+### Corretto
+
+- Il core non si chiude più quando la connessione al database cade nel mezzo di una transazione, per esempio al riavvio di Docker (D-317).
+
+## [0.180.1] - 2026-10-24
+
+### Corretto
+
+- Quando dice che sul Mac può solo guardare e leggere, Arianna parla con parole semplici e non scrive più i nomi interni degli strumenti («mac.read», «mac.list»); il caso dell'eval accetta anche che prima cerchi o elenchi il file, purché non deleghi la modifica (D-314).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto

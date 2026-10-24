@@ -79,7 +79,7 @@ test('the notice of the core is read only in its shape', () => {
   assert.equal(parseNotice(null), undefined);
 });
 
-const COPY_LINE = 'Copia passa dagli appunti del sistema, che possono conservarne una copia.';
+const COPY_LINE = '«Copia» passa dagli appunti del sistema, che possono conservarne una copia.';
 const CACHE_LINE = 'Il modello locale tiene una cache su disco derivata dai testi (non leggibile come testo), finché non viene sostituita.';
 
 test('"Cosa resta fuori da Arianna" says the texts of the document, by mode', () => {

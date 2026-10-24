@@ -60,7 +60,7 @@ export const DEFAULT_SECRETARY: SecretaryValues = { enabled: true, morning: '09:
 export function secretaryProblem(form: SecretaryValues): string | undefined {
   const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
   if (![form.morning, form.afternoon, form.evening].every((value) => clock.test(value))) return 'Scrivi i tre orari.';
-  if (!(form.morning < form.afternoon && form.afternoon < form.evening)) return 'Gli orari vanno in ordine: mattina, dopo pranzo, fine giornata.';
+  if (!(form.morning < form.afternoon && form.afternoon < form.evening)) return 'Gli orari vanno in ordine: mattina, dopo pranzo, sera.';
   if (form.days.length === 0) return 'Scegli almeno un giorno, o spegni i promemoria.';
   return undefined;
 }
@@ -288,7 +288,7 @@ export const STATE_TEXT: Record<WatchdogState, string> = {
 };
 
 export const SECTION_TEXT: Record<string, string> = {
-  roles: 'Ruoli dei modelli locali',
+  roles: 'Chi fa cosa',
   cloudModels: 'Modelli cloud accesi',
   characters: 'Personaggi',
   personas: 'Personalità',
@@ -296,17 +296,17 @@ export const SECTION_TEXT: Record<string, string> = {
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
   participants: 'Uscita degli agenti',
-  localIdle: 'Scarico dei modelli inattivi',
-  voice: 'Voce',
+  localIdle: 'Modelli in memoria',
+  voice: 'Voce e chiamate',
   notifications: 'Notifiche',
   secretary: 'Segretaria',
   appearance: 'Tema',
-  executors: 'Esecutori cloud',
+  executors: 'Claude e Codex',
   telegram: 'Telegram',
   projects: 'Progetti',
-  endpoints: 'Server locali',
-  fetchSites: 'Domini approvati',
-  coderSites: 'Siti per il Coder',
+  endpoints: 'Server dei modelli',
+  fetchSites: 'Link da riassumere',
+  coderSites: 'Siti che il Coder può leggere',
   paths: 'percorsi',
   database: 'database',
   server: 'server',
@@ -411,7 +411,7 @@ export const CODEX_MODELS: readonly string[] = ['luna', 'sol', 'astra'];
  */
 export function modelBlocker(model: CloudModelAlias, values: Pick<SettingsValues, 'cloudModels' | 'executors'>): string | undefined {
   if (values.cloudModels.models[model] === false) return 'spento in Modelli';
-  if (!values.executors.includes(executorOfModel(model))) return 'esecutore spento';
+  if (!values.executors.includes(executorOfModel(model))) return executorOfModel(model) === 'codex' ? 'Codex spento' : 'Claude Code spento';
   return undefined;
 }
 
@@ -776,7 +776,7 @@ export function writeError(status: number, message: string): { text: string; rel
   if (push !== undefined) return { text: push, reload: status === 409 };
   const project = projectProblemText(message);
   if (status === 409) {
-    if (/changed since the page read it/.test(message)) return { text: 'Il file arianna.toml è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.', reload: true };
+    if (/changed since the page read it/.test(message)) return { text: 'Il file delle impostazioni è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.', reload: true };
     return { text: `Le impostazioni non si leggono: ${project ?? message}`, reload: true };
   }
   if (status === 404 || status === 410) return { text: 'La conferma è scaduta o è già stata usata: rivedi di nuovo le uscite.', reload: false };

@@ -101,7 +101,7 @@ test('«Allega file» in the «+» menu: on in a private chat, off with its reas
 
 test('the refusals of the core read in Italian', () => {
   assert.match(errorText(new ApiError(400, 'attachments go only in a private conversation: they never leave the Mac')), /conversazione privata/);
-  assert.match(errorText(new ApiError(409, 'an attachment cannot wait in the queue: send it when the answer is done')), /non aspetta in coda/);
+  assert.match(errorText(new ApiError(409, 'an attachment cannot wait in the queue: send it when the answer is done')), /non si mettono in coda/);
   assert.match(errorText(new ApiError(409, 'no local model reads images: assign the vision role in the settings')), /Guarda le immagini allegate/);
   assert.match(errorText(new ApiError(415, 'the file must be a PNG, JPEG, WebP or GIF image, or a .txt, .md, .csv or .json text')), /Si allegano solo/);
 });

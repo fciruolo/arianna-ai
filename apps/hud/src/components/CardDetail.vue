@@ -127,7 +127,7 @@ const lockedText = computed(() => {
   if (!locked.value) return undefined;
   if (props.card.status === 'done') return 'Una card fatta non cambia chi la fa.';
   if (props.card.status === 'running') return 'È al lavoro: chi la fa non cambia.';
-  return 'Il motore l’ha già avuta: chi la fa non cambia più.';
+  return 'Arianna l’ha già presa in carico: chi la fa non cambia più.';
 });
 
 // The card in full, read from the core; again when the live feed says something changed.
@@ -690,7 +690,7 @@ function absoluteTime(at: string): string {
                 <option v-for="style in styleCatalog" :key="style.id" :value="style.id">{{ style.name }}</option>
               </select>
               <span v-if="styleGone" class="text-[13px] text-warn">Non è più nel catalogo: la card parte senza.</span>
-              <span v-else-if="catalogsLoaded && styleCatalog.length === 0" class="text-[13px] text-muted">Nessuno stile: scarica il catalogo di Open Design in Impostazioni → Agenti.</span>
+              <span v-else-if="catalogsLoaded && styleCatalog.length === 0" class="text-[13px] text-muted">Nessuno stile: scarica il catalogo di Open Design in Impostazioni → Skill e stili.</span>
             </span>
 
             <span id="card-skills-label" class="text-muted">Skill</span>
@@ -707,7 +707,7 @@ function absoluteTime(at: string): string {
                 <option value="">Aggiungi una skill…</option>
                 <option v-for="skill in skillOptions" :key="skill.id" :value="skill.id">{{ skill.name }} · {{ skill.source }}</option>
               </select>
-              <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[13px] text-muted">Nessuna skill: aggiungi una sorgente in Impostazioni → Agenti.</span>
+              <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[13px] text-muted">Nessuna skill: aggiungi una sorgente in Impostazioni → Skill e stili.</span>
               <span v-if="chosenStyle !== null || chosenSkills.length > 0" class="text-[13px] text-muted">Il Designer li legge come testo di riferimento, con la loro licenza.</span>
             </span>
           </template>
@@ -884,7 +884,7 @@ function absoluteTime(at: string): string {
               <span v-if="chosen !== undefined" class="text-[13.5px] text-muted">Ultima scelta: {{ chosen }}</span>
             </div>
             <p v-if="actions.includes('start')" class="text-[13.5px] text-muted">
-              Con Avvia, la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template><template v-else-if="prefers !== undefined">; lavora con {{ prefers }}, e ti chiedo con chi solo se {{ prefers }} non è disponibile</template>.
+              Con «Avvia», la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template><template v-else-if="prefers !== undefined">; lavora con {{ prefers }}, e ti chiedo con chi solo se {{ prefers }} non è disponibile</template>.
             </p>
             <div v-if="report !== null" class="rounded-lg border border-line bg-bg px-3 py-2.5">
               <p class="mb-1.5 flex items-center gap-2 text-[13px] text-muted">

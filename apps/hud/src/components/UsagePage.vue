@@ -130,7 +130,7 @@ const tiles = computed(() => {
                   <th scope="col" class="px-3 py-2 font-medium">Esito</th>
                   <th scope="col" class="px-3 py-2 text-right font-medium">Deleghe</th>
                   <th scope="col" class="px-3 py-2 text-right font-medium">Tempo medio</th>
-                  <th scope="col" class="px-3 py-2 text-right font-medium" title="Token in entrata → in uscita, quando l’esecutore li dice">Token</th>
+                  <th scope="col" class="px-3 py-2 text-right font-medium" title="Token in entrata → in uscita, quando Claude Code, Codex o il modello sul Mac li comunicano">Token</th>
                 </tr>
               </thead>
               <tbody>
@@ -203,7 +203,7 @@ const tiles = computed(() => {
           </section>
 
           <section v-if="report.difficulties.length > 0" class="flex flex-col gap-2" aria-labelledby="usage-difficulties">
-            <h2 id="usage-difficulties" class="text-[15px] font-semibold">Scelte del router per difficoltà</h2>
+            <h2 id="usage-difficulties" class="text-[15px] font-semibold">Scelta del modello per difficoltà</h2>
             <div class="overflow-x-auto rounded-xl border border-line">
               <table class="w-full border-collapse text-left text-[14px]">
                 <thead class="bg-surface-2 text-[13px] text-muted">
@@ -211,7 +211,7 @@ const tiles = computed(() => {
                     <th scope="col" class="px-3 py-2 font-medium">Difficoltà</th>
                     <th scope="col" class="px-3 py-2 text-right font-medium">Sul Mac</th>
                     <th scope="col" class="px-3 py-2 text-right font-medium">Cloud</th>
-                    <th scope="col" class="px-3 py-2 text-right font-medium" title="Il router ha aspettato: quota finita, da riprovare o in attesa di te">Attese</th>
+                    <th scope="col" class="px-3 py-2 text-right font-medium" title="Arianna ha aspettato: quota finita, da riprovare o in attesa di te">Attese</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -140,7 +140,7 @@ const ERRORS: Record<string, string> = {
   'too many notes with the same name in this second': 'Troppe note con lo stesso nome in questo secondo: riprova.',
   'the message contains a NUL character': 'Il messaggio contiene un carattere non valido.',
   'only a work conversation has a project': 'Solo una conversazione di lavoro può avere un progetto.',
-  'project is not among the approved projects': 'Questo progetto non è fra quelli approvati: aggiungilo con pnpm arianna:init --reconfigure.',
+  'project is not among the approved projects': 'Questo progetto non è fra quelli approvati: aggiungilo in Impostazioni → Progetti.',
   'project must be a string': 'Il progetto non è valido.',
   'body too large': 'Il messaggio è troppo grande.',
   'not found': 'Non trovato: forse è stato cancellato o l’indirizzo è sbagliato.',
@@ -177,7 +177,7 @@ const ERRORS: Record<string, string> = {
     'Gli allegati restano sul Mac: qui potrebbero leggerli Claude o ChatGPT. Allegali in una conversazione privata.',
   'attachments are off in incognito: nothing of it may stay': 'In incognito non si allega niente: non resterebbe nulla della conversazione.',
   'attachments go only in a private conversation with Arianna or the local model': 'Gli allegati vanno solo in una conversazione privata con Arianna o con il modello locale.',
-  'an attachment cannot wait in the queue: send it when the answer is done': 'Un allegato non aspetta in coda: mandalo quando la risposta in corso è finita.',
+  'an attachment cannot wait in the queue: send it when the answer is done': 'Gli allegati non si mettono in coda: mandali quando la risposta in corso è finita.',
   'no local model reads images: assign the vision role in the settings':
     'Nessun modello locale legge le immagini: in Impostazioni → Modelli scegli chi «Guarda le immagini allegate».',
   'an image is 10 MB at most': 'Un’immagine può essere al massimo di 10 MB.',
@@ -714,7 +714,7 @@ export function spriteReasonText(reason: string): string {
   if (/not on in \[cloud\] executors/.test(reason)) return 'Claude non è attivo fra gli esecutori cloud (Impostazioni → Esecutori): attivalo o scegli il modello locale per i personaggi.';
   if (/is off in \[cloud\.models\]/.test(reason)) return 'Il modello scelto per i personaggi è spento in Impostazioni → Modelli: riaccendilo o scegline un altro.';
   if (/cannot run on this installation/.test(reason)) return 'Claude non può partire su questa installazione (sandbox rifiutata): scegli il modello locale per i personaggi.';
-  if (/no local server serves/.test(reason)) return 'Nessun server locale serve il modello dell’orchestratore: configuralo in Server locali o scegli Claude per i personaggi.';
+  if (/no local server serves/.test(reason)) return 'Nessun server dei modelli ha la mente di Arianna: configuralo in Server dei modelli o scegli Claude per i personaggi.';
   return 'Il modello scelto per i personaggi non è disponibile ora.';
 }
 

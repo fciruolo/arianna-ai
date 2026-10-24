@@ -11,7 +11,7 @@ import { ApiError } from './api.ts';
 
 export const FINANCE_PATH = '/finanze';
 
-export type FinanceTab = 'conti' | 'importa' | 'movimenti' | 'categorie' | 'riepilogo' | 'avvisi';
+export type FinanceTab = 'conti' | 'importa' | 'movimenti' | 'categorie' | 'riepilogo' | 'avvisi' | 'fatture';
 
 export const FINANCE_TABS: readonly (readonly [FinanceTab, string])[] = [
   ['riepilogo', 'Riepilogo'],
@@ -20,6 +20,8 @@ export const FINANCE_TABS: readonly (readonly [FinanceTab, string])[] = [
   ['conti', 'Conti'],
   ['categorie', 'Categorie e budget'],
   ['avvisi', 'Avvisi'],
+  // FatturaPA invoices and their deadlines (D-310).
+  ['fatture', 'Fatture e scadenze'],
 ];
 
 const TAB_SLUGS = new Set<string>(FINANCE_TABS.map(([slug]) => slug));

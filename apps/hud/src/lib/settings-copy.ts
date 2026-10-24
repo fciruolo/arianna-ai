@@ -80,7 +80,7 @@ export function serverDown(server: LocalServerStatus): string | undefined {
   const what = server.id === 'voice' ? 'le chiamate non partono' : 'i modelli sul Mac non rispondono';
   // D-263: the core did not start it, because it could not turn off the Hugging Face cache in its settings.
   if (server.refused === 'omlx-settings-unreadable') {
-    return `${serverName(server.id)} non è partito: il suo file settings.json nella cartella dei dati non si legge (o è un collegamento), quindi Arianna non può spegnere la cache di Hugging Face. Correggilo o toglilo, poi Riavvia; pnpm arianna:doctor dice cosa.`;
+    return `${serverName(server.id)} non è partito: il suo file settings.json nella cartella dei dati non si legge (o è un collegamento), quindi Arianna non può spegnere la cache di Hugging Face. Correggilo o toglilo, poi Riavvia; il controllo pnpm arianna:doctor dice cosa non va.`;
   }
   if (server.refused !== undefined) {
     return `${serverName(server.id)} non è partito: Arianna non riesce a scrivere il suo settings.json nella cartella dei dati per spegnere la cache di Hugging Face. Controlla i permessi della cartella, poi Riavvia.`;

@@ -57,7 +57,7 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
         return `Dare a ${agentTitle(detail.agent)} il dato «${detail.topic}», una volta`;
       }
       const labels = declassifyLabels(detail);
-      return labels === undefined ? 'Far uscire un testo declassato dalla macchina' : `Far uscire un testo declassato (${labels}) dalla macchina`;
+      return labels === undefined ? 'Far uscire dal Mac un testo con l’etichetta abbassata' : `Far uscire dal Mac un testo con l’etichetta abbassata (${labels})`;
     }
     case 'workspace':
       return typeof detail.repo === 'string'

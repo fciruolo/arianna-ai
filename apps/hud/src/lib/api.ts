@@ -21,6 +21,7 @@ import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ClientDashboard } from './client-dashboard.ts';
 import type { ClientDocument, DocumentForm } from './client-documents.ts';
 import type { Account, BankProfile, Budget, Category, FinanceAlert, ImportRecord, Preview, Rule, Summary, Tx } from './finance.ts';
+import type { Deadline, InvoiceDetail, InvoiceImport, InvoiceSummary } from './invoices.ts';
 import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
@@ -63,7 +64,9 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, payload?: unknown): Promise<T> {
+  // The core takes a write only as application/json (security.ts): one without a body sends an empty object.
+  const body = payload === undefined && method !== 'GET' ? {} : payload;
   const send = (extra: Record<string, string> = {}): Promise<Response> =>
     fetch(path, {
       method,
@@ -2053,6 +2056,34 @@ export async function readFinanceSummary(filter: { account?: string; from?: stri
 /** The checks of a month (`YYYY-MM`), the current one without it. */
 export async function readFinanceAlerts(month?: string): Promise<FinanceAlert[]> {
   return (await call<{ alerts: FinanceAlert[] }>('GET', `${FINANCE}/alerts${month === undefined ? '' : `?${new URLSearchParams({ month }).toString()}`}`)).alerts;
+}
+
+/** FatturaPA invoices (D-310): the .xml or .xml.p7m in base64, never kept by the core. */
+export async function importInvoice(name: string, data: string): Promise<InvoiceImport> {
+  return call<InvoiceImport>('POST', `${FINANCE}/invoices`, { name, data });
+}
+
+export async function listInvoices(filter: { from?: string; to?: string; q?: string } = {}): Promise<InvoiceSummary[]> {
+  const query = new URLSearchParams(Object.entries(filter).filter((entry) => entry[1] !== '')).toString();
+  return (await call<{ invoices: InvoiceSummary[] }>('GET', `${FINANCE}/invoices${query === '' ? '' : `?${query}`}`)).invoices;
+}
+
+export async function readInvoice(id: string): Promise<InvoiceDetail> {
+  return (await call<{ invoice: InvoiceDetail }>('GET', `${FINANCE}/invoices/${financeId(id)}`)).invoice;
+}
+
+export async function deleteInvoice(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/invoices/${financeId(id)}`, {});
+}
+
+/** The instalments of the invoices: `open` (not yet paid) or `all`. */
+export async function listDeadlines(status: 'open' | 'all' = 'open'): Promise<Deadline[]> {
+  return (await call<{ deadlines: Deadline[] }>('GET', `${FINANCE}/deadlines?status=${status}`)).deadlines;
+}
+
+/** Marks an instalment paid on a day, or open again with null. */
+export async function setDeadlinePaid(id: string, paidOn: string | null): Promise<Deadline> {
+  return (await call<{ deadline: Deadline }>('PATCH', `${FINANCE}/deadlines/${financeId(id)}`, { paidOn })).deadline;
 }
 
 // ---------------------------------------------------------------------------

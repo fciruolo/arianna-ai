@@ -120,7 +120,7 @@ watch(
       Frasi che {{ name }} dice davvero nella serie, prese dal doppiaggio italiano su Wikiquote (esce solo il nome della pagina) o chieste a Claude (escono il nome del personaggio e della serie e le battute già in elenco), più quelle che scrivi tu. A ogni risposta Arianna ne pesca 5 a caso, non usate di recente in quella chat: il modello ne usa al massimo una. Quelle segnate «nomina altri» solo nelle chat private.
     </p>
     <p v-if="status !== null && !status.wikiquote.page" class="text-[12.5px] text-muted">Wikiquote italiano non ha una pagina di questa serie: puoi chiedere a Claude o scriverle tu.</p>
-    <p v-if="ownQuotes" class="text-[12.5px] text-warn">Tempo fa avevi riscritto le battute fisse: valgono ancora le tue, e l'elenco resta da parte finché non premi «Ripristina il testo originale».</p>
+    <p v-if="ownQuotes" class="text-[12.5px] text-warn">Tempo fa avevi riscritto le battute fisse: valgono ancora le tue, e l’elenco resta da parte finché non premi «Ripristina il testo originale».</p>
     <p v-if="status?.running" role="status" class="text-[12.5px] text-muted">
       {{ status.job === 'wikiquote' ? 'Leggo le pagine della serie una alla volta, con una pausa fra l’una e l’altra: meno di un minuto.' : 'Di solito ci vogliono uno o due minuti' }}; puoi chiudere la pagina, la raccolta continua.
     </p>
@@ -131,7 +131,7 @@ watch(
     <p v-if="error" role="alert" class="text-[12.5px] text-danger">{{ error }}</p>
 
     <div v-if="status !== null && lines.length === 0 && !ownQuotes" class="rounded-lg bg-surface-2 px-3 py-2 text-[12.5px] text-muted">
-      Finché l'elenco è vuoto usa queste, scritte da noi nello stile del personaggio:
+      Finché l’elenco è vuoto usa queste, scritte per Arianna nello stile del personaggio:
       <ul class="mt-1 list-disc pl-5">
         <li v-for="line in fallback" :key="line">{{ line }}</li>
       </ul>
@@ -169,7 +169,7 @@ watch(
       @cancel="asking = false"
     >
       <p>Arianna scarica da {{ status.wikiquote.host }} la pagina della serie: esce solo il nome della pagina (per esempio «{{ status.wikiquote.page }}»).</p>
-      <p class="text-[13px] text-muted">Prende le battute di {{ name }} dal doppiaggio italiano, con l'episodio, e le aggiunge all'elenco senza doppioni. Te lo chiedo solo questa volta: le prossime volte il pulsante scarica subito.</p>
+      <p class="text-[13px] text-muted">Prende le battute di {{ name }} dal doppiaggio italiano, con l’episodio, e le aggiunge all’elenco senza doppioni. Te lo chiedo solo questa volta: le prossime volte il pulsante scarica subito.</p>
     </ConfirmDialog>
   </section>
 </template>

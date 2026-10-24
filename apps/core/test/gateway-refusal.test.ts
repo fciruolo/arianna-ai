@@ -22,9 +22,9 @@ test('the message says where it did not go and why, by the kind of the rule', ()
   assert.match(gatewayRefusalReply('second check not available (timeout)', 'claude'), /non ha risposto\. Riprova fra poco\.$/);
   assert.match(gatewayRefusalReply('scanner matched: iban', 'claude'), /un dato riservato/);
   assert.match(gatewayRefusalReply('payload contains the value of vault://x', 'claude'), /segreto del vault/);
-  assert.match(gatewayRefusalReply('the session has read finance data: it stays local', 'claude'), /finanze/);
-  assert.match(gatewayRefusalReply('the session has read L2: it stays local', 'claude'), /dati privati/);
-  assert.match(gatewayRefusalReply('L2 cannot go to a cloud target; at most L1', 'claude'), /dati privati/);
+  assert.match(gatewayRefusalReply('the session has read finance data: it stays local', 'claude'), /dati di Finanze/);
+  assert.match(gatewayRefusalReply('the session has read L2: it stays local', 'claude'), /dati privati.*«Nuova conversazione» → «Lavoro»/);
+  assert.match(gatewayRefusalReply('L2 cannot go to a cloud target; at most L1', 'claude'), /dati privati.*«Nuova conversazione» → «Lavoro»/);
   assert.equal(gatewayRefusalReply('something new', null), 'Non ho mandato il messaggio all’agente: il gateway l’ha fermato.');
 });
 

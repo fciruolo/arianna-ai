@@ -8,7 +8,7 @@ import { activityLink, activityText, errorText, reasonText, spriteErrorText, tho
 test('spriteErrorText: why a character was not drawn, in Italian, never the core words (D-123)', () => {
   const text = (code: string, message: string, resetsAt: string | null = null) => spriteErrorText(new SpriteApiError(400, message, code, resetsAt));
   assert.match(text('unavailable', 'claude is not on in [cloud] executors'), /Claude non è attivo/);
-  assert.match(text('unavailable', 'no local server serves local-large (the orchestrator of [roles])'), /Nessun server locale/);
+  assert.match(text('unavailable', 'no local server serves local-large (the orchestrator of [roles])'), /Nessun server dei modelli ha la mente di Arianna/);
   assert.match(text('invalid', 'hint looks like personal data or a secret (iban): not sent'), /^Il suggerimento sembra contenere dati personali/);
   assert.match(text('quota', 'claude is out of quota', '2026-10-05T18:00:00.000Z'), /^La quota di Claude è esaurita\. Riprova dopo le/);
   assert.match(text('bad-reply', 'the drawing is not valid: head.front: 10 rows'), /disegno non valido/);
@@ -57,7 +57,7 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'the message is empty'), 'Il messaggio è vuoto.');
   assert.equal(api(400, 'the message is longer than 16000 characters'), 'Il messaggio supera 16000 caratteri.');
   assert.equal(api(409, 'the approval is already approved'), 'Questa richiesta è già stata decisa.');
-  assert.equal(api(400, 'project is not among the approved projects'), 'Questo progetto non è fra quelli approvati: aggiungilo con pnpm arianna:init --reconfigure.');
+  assert.equal(api(400, 'project is not among the approved projects'), 'Questo progetto non è fra quelli approvati: aggiungilo in Impostazioni → Progetti.');
   assert.equal(api(422, 'a work conversation cannot hold this title (iban)'), 'Il titolo di una conversazione di lavoro non può contenere IBAN.');
   assert.equal(api(400, 'the title must be one line'), 'Il titolo dev’essere su una riga.');
   assert.equal(api(409, 'the conversation is archived: restore it to write'), 'La conversazione è archiviata: ripristinala per scrivere.');

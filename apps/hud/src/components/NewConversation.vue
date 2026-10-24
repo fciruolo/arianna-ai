@@ -298,8 +298,7 @@ function submit(): void {
           </select>
         </label>
         <p v-else class="text-[13.5px] leading-snug text-muted">
-          {{ agentTitle(policy.agent) }} lavora in un progetto, e non ce n'è uno approvato: aggiungilo con
-          <code class="font-mono">pnpm arianna:init --reconfigure</code>.
+          {{ agentTitle(policy.agent) }} lavora in un progetto, e non ce n’è uno approvato: aggiungilo in Impostazioni → Progetti.
         </p>
       </template>
       <!-- On the cloud: a short title, one sentence, the rest behind "Dettagli" (D-158). -->
@@ -330,8 +329,7 @@ function submit(): void {
         </select>
       </label>
       <p v-else class="text-[13.5px] leading-snug text-muted">
-        Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno con
-        <code class="font-mono">pnpm arianna:init --reconfigure</code>.
+        Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno in Impostazioni → Progetti.
       </p>
     </template>
 
