@@ -45,7 +45,23 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 40
 
 Le forme `MonthTotal`, `CategoryTotal`, `BalancePoint`, `YearOverYear`, `FinanceAlert` sono quelle esportate da `@arianna/finance` (`packages/finance/src/analysis/`).
 
+## Fatture e scadenze (D-310)
+
+Fatture elettroniche FatturaPA (formato 1.2, FPR12 e FPA12; la semplificata FSM10 non si legge ancora), lette da `@arianna/invoices` (`packages/invoices`) con `fast-xml-parser`. Il file **non** viene conservato: solo i dati letti, con il nome scelto dall'utente. Un `.xml.p7m` (DER o base64) si apre con l'openssl di sistema senza verificare la firma.
+
+- `POST /api/finance/invoices` `{ name, data }` → `201 { imported: InvoiceSummary[], duplicates }`. `data` è il file in base64 (al più 10 MiB decodificati, altrimenti 413). Tutte le fatture del file o nessuna; una fattura già presente (stessa impronta: fornitore, tipo, numero e data) è contata in `duplicates` e saltata.
+- `GET /api/finance/invoices?from=&to=&q=` → `{ invoices: InvoiceSummary[] }` (dalla più recente, al più 500; `from`/`to` giorni o mesi come per i movimenti, sulla data della fattura; `q` cerca nei nomi di fornitore e cliente e nel numero, senza maiuscole)
+- `GET /api/finance/invoices/:id` → `{ invoice: InvoiceDetail }`
+- `DELETE /api/finance/invoices/:id` → `204`: toglie la fattura con righe e rate (`fatturapa_delete`).
+- `GET /api/finance/deadlines?status=open|all` → `{ deadlines: Deadline[] }`: le rate (`DettaglioPagamento`), predefinito `open` (non pagate); per data di scadenza, quelle senza data in fondo; al più 1000.
+- `PATCH /api/finance/deadlines/:id` `{ paidOn: Day | null }` → `{ deadline: Deadline }`: segna la rata pagata in quel giorno, o di nuovo aperta.
+
+`InvoiceSummary = { id, fileName, signed, documentType, number, issuedOn, currency, totalCents: number | null, taxableCents, vatCents, supplier: Party, customer: Party, open, openCents, importedAt }` con `Party = { name, vat: string | null, taxCode: string | null }` (`vat` è paese più codice, per esempio `IT12345678901`); `open` e `openCents` sono il numero e la somma delle rate non pagate. `InvoiceDetail = InvoiceSummary & { format: 'FPR12' | 'FPA12', lines: Line[], vatSummary: VatRow[], payments: Deadline[] }`, `Line = { number, description, quantity: string | null, unitPrice: string, totalCents, vatRate: string, nature: string | null }` (quantità e prezzo come scritti nel file, fino a 8 decimali; `vatRate` come `22.00`), `VatRow = { vatRate, nature, taxableCents, vatCents }`. `Deadline = { id, invoice, method, dueOn: Day | null, amountCents, paidOn: Day | null, currency, documentType, number, issuedOn, supplier, customer }` (`method` è `ModalitaPagamento`, per esempio `MP05` bonifico; `supplier` e `customer` sono i nomi).
+
+Codici d'errore della lettura (`InvoiceErrorCode` di `@arianna/invoices`): `too-large` (413), `not-xml`, `doctype` (DOCTYPE o dichiarazione di entità, rifiutati prima della lettura), `bad-xml`, `not-fatturapa`, `unsupported`, `bad-field` (manca o è sbagliato un campo obbligatorio), `too-many` (più di 200 fatture in un file, 5000 righe o 100 rate in una fattura), `bad-signature` (il `.p7m` non si apre). Eventi `invoice.imported`, `invoice.payment.updated`, `invoice.deleted` con soli id e conteggi.
+
 ## Privacy
 
 - Tabelle `finance_*` nel PostgreSQL locale, etichetta Privato (L2) con fonte `finance:*`; nessuna rotta, strumento o evento le manda a un esecutore cloud, a Telegram, al telefono o in una notifica con contenuto (D-183, regola `finance` del gateway).
+- Tabelle `fatturapa_invoices`, `fatturapa_lines` e `fatturapa_payments` (D-310, migrazione 0095), etichetta almeno Privato (L2): le legge solo la pagina «Finanze»; nessun modello, strumento della chat, agente o canale le legge, e gli eventi portano solo id e conteggi.
 - Le conversazioni con l'agente «Finanze» e i loro task hanno il segno `finance` salvato nel database (colonna che non torna mai a false), e il core ricrea i loro contesti con `createContext(..., { finance: true })`.

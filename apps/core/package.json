@@ -17,6 +17,7 @@
     "@arianna/evals": "workspace:*",
     "@arianna/executors": "workspace:*",
     "@arianna/finance": "workspace:*",
+    "@arianna/invoices": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@arianna/pptx": "workspace:*",
     "@arianna/router": "workspace:*",
