@@ -65,7 +65,7 @@ export const CHANGE_GROUPS: readonly GroupInfo[] = [
   { id: 'skills', title: 'Skill e stili', icon: 'puzzle', slug: 'skill-e-stili', link: 'Apri Skill e stili' },
   { id: 'agents', title: 'Agenti', icon: 'bot', slug: 'agenti', link: 'Apri Agenti' },
   { id: 'projects', title: 'Progetti', icon: 'project', slug: 'progetti', link: 'Apri Progetti' },
-  { id: 'appearance', title: 'Aspetto', icon: 'studio', slug: 'aspetto-e-installazione', link: 'Apri Aspetto e installazione' },
+  { id: 'appearance', title: 'Aspetto', icon: 'studio', slug: 'aspetto', link: 'Apri Aspetto' },
   { id: 'arianna', title: 'Versione di Arianna', icon: 'package', slug: 'novita', link: 'Apri Novità' },
 ];
 

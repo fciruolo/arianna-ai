@@ -968,8 +968,8 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         <UsagePage v-else-if="active === 'usage'" />
         <DevProgressPage v-else-if="active === 'dev-progress'" @pending="emit('devPending', $event)" @knowledge="openKnowledge" />
 
-        <!-- Aspetto e installazione: the theme of this browser (D-158) and what this installation is (D-098) -->
-        <template v-else-if="active === 'system'">
+        <!-- Aspetto (D-312): the theme of the chat (D-103) and the mode of this browser (D-158) -->
+        <template v-else-if="active === 'appearance'">
           <SettingsCard id="theme" title="Tema" :busy="busy === 'appearance'">
             <template #header>
               <span v-if="saved === 'appearance'" class="pill text-ok border-ok/50">Salvato</span>
@@ -1006,7 +1006,15 @@ const grid = 'grid gap-3 sm:grid-cols-6';
             </div>
             <p class="text-[13px] text-muted">Automatico segue il Mac. Lo cambi anche dal pulsante in alto a destra.</p>
           </SettingsCard>
-          <SettingsCard id="installation" title="Installazione">
+          <p class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/8 px-3 py-2.5 text-[14px]">
+            <Icon name="info" :size="16" class="mt-0.5 shrink-0 text-info" />
+            <span>Le impostazioni stanno in un file sul Mac. Se lo modifichi a mano e poi salvi da qui, le tue note dentro il file si perdono.</span>
+          </p>
+        </template>
+
+        <!-- Installazione (D-312): what this installation is (D-098) and «Pronta per i dati veri» (D-192) -->
+        <template v-else-if="active === 'installation'">
+          <SettingsCard id="installation" title="Questa installazione">
             <template #header>sola lettura</template>
             <dl v-if="installation !== undefined" class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-3">
               <div class="bg-surface px-3 py-2">
@@ -1028,10 +1036,6 @@ const grid = 'grid gap-3 sm:grid-cols-6';
             <p v-else class="text-[14px] text-muted">Arianna non dice che installazione è: riprova fra poco, o riavviala.</p>
             <InstallationReadiness />
           </SettingsCard>
-          <p class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/8 px-3 py-2.5 text-[14px]">
-            <Icon name="info" :size="16" class="mt-0.5 shrink-0 text-info" />
-            <span>Le impostazioni stanno in un file sul Mac. Se lo modifichi a mano e poi salvi da qui, le tue note dentro il file si perdono.</span>
-          </p>
         </template>
 
         <template v-else>

@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.176.1] - 2026-10-24
+
+### Cambiato
+
+- Impostazioni: «Aspetto e installazione» è divisa in due pagine del gruppo Sistema, «Aspetto» (tema e chiaro/scuro) e «Installazione» (tipo, versione, cartella e «Pronta per i dati veri»); il vecchio indirizzo apre «Aspetto» (D-312).
+
 ## [0.176.0] - 2026-10-24
 
 ### Aggiunto
