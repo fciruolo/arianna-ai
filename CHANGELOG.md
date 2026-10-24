@@ -4,11 +4,23 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.180.5] - 2026-10-24
+
+### Cambiato
+
+- Frasi fisse del core più chiare e coerenti con l'interfaccia: il percorso «Nuova conversazione» → «Lavoro» (o → «Privata») invece di «apri una conversazione nuova» o «privata»; «di’ all’utente» al posto del refuso «dì»; avvisi di approvazione di budget e cartella con modifiche allineati alla chat; «i dati di Finanze» invece di «delle finanze» (revisione dei testi del 2026-10-24).
+
+## [0.180.4] - 2026-10-24
+
+### Cambiato
+
+- Testi delle Impostazioni più chiari e coerenti: tolti sigle e nomi tecnici (D-235, «core», «router», «orchestratore», «esecutore», «L0», «tab», «vault»), le parti in attesa di riavvio hanno i nomi che si vedono nelle pagine («Claude e Codex», «Server dei modelli», «Link da riassumere»), un modello spento dice se manca Claude Code o Codex, corretti refusi e apostrofi (testi-impostazioni).
+
+## [0.180.3] - 2026-10-24
+
 ### Cambiato
 
 - Testi della chat, del cardwall e delle schede di approvazione più chiari: niente «declassato», «motore», «scanner» né «core» mostrati all'utente, i cataloghi di stili e skill rimandano a Impostazioni → Skill e stili e i progetti a Impostazioni → Progetti invece che al comando del terminale, «Quando è finito» uguale fra piano e card, «Copia» fra caporali (revisione dei testi).
-- Testi delle Impostazioni più chiari e coerenti: tolti sigle e nomi tecnici (D-235, «core», «router», «orchestratore», «esecutore», «L0», «tab», «vault»), le parti in attesa di riavvio hanno i nomi che si vedono nelle pagine («Claude e Codex», «Server dei modelli», «Link da riassumere»), un modello spento dice se manca Claude Code o Codex, corretti refusi e apostrofi (testi-impostazioni).
-- Frasi fisse del core più chiare e coerenti con l'interfaccia: il percorso «Nuova conversazione» → «Lavoro» (o → «Privata») invece di «apri una conversazione nuova» o «privata»; «di’ all’utente» al posto del refuso «dì»; avvisi di approvazione di budget e cartella con modifiche allineati alla chat; «i dati di Finanze» invece di «delle finanze» (revisione dei testi del 2026-10-24).
 
 ## [0.180.2] - 2026-10-24
 
