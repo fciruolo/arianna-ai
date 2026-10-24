@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { BASE_THEME, CHARACTER_ID, THEME_ID } from '@arianna/config';
 
 import { readSmall } from './characters.ts';
-import { inWindow, windowLength, type CalendarDay } from './feasts.ts';
+import { inWindow, isoDay, windowLength, windowOf, type CalendarDay } from './feasts.ts';
 
 /**
  * The themes of the web chat (D-103): colours, background and costumes of the
@@ -263,15 +263,37 @@ export function feastOf(themes: readonly Theme[], today: CalendarDay): Theme | u
   return found?.theme;
 }
 
+/** The period of the feast of `today` (D-315), as `<theme>@<first day>`, with its last day. */
+export function periodOf(theme: Theme, today: CalendarDay): { key: string; until: string } | undefined {
+  if (theme.dates === undefined) return undefined;
+  const window = windowOf(theme.dates, today);
+  return window === undefined ? undefined : { key: `${theme.id}@${isoDay(window.from)}`, until: isoDay(window.to) };
+}
+
+/** The feast of `today`, unless the user sent its period away (D-315): then Base stays until the next feast. */
+export function feastNotSkipped(themes: readonly Theme[], today: CalendarDay, skip: string | undefined): Theme | undefined {
+  const feast = feastOf(themes, today);
+  if (feast === undefined || skip === undefined) return feast;
+  return periodOf(feast, today)?.key === skip ? undefined : feast;
+}
+
+/** The switch of the feasts, the day they see and the period the user sent away (D-315). */
+export interface FeastsNow {
+  on: boolean;
+  today: CalendarDay;
+  skip?: string;
+}
+
 /**
  * The theme in use: the one chosen when it is served, otherwise Base; with
- * the feasts on (D-246), Base gives way to the feast of the day. A theme
- * chosen by hand, seasonal ones included, is never replaced.
+ * the feasts on (D-246), Base gives way to the feast of the day, unless the
+ * user sent that period away (D-315). A theme chosen by hand, seasonal ones
+ * included, is never replaced.
  */
-export function currentTheme(chosen: string, themes: readonly Theme[], feasts?: { on: boolean; today: CalendarDay }): string {
+export function currentTheme(chosen: string, themes: readonly Theme[], feasts?: FeastsNow): string {
   const served = themes.some((theme) => theme.id === chosen) ? chosen : BASE_THEME;
   if (served !== BASE_THEME || feasts?.on !== true) return served;
-  return feastOf(themes, feasts.today)?.id ?? BASE_THEME;
+  return feastNotSkipped(themes, feasts.today, feasts.skip)?.id ?? BASE_THEME;
 }
 
 /**
@@ -314,7 +336,7 @@ function readThemeSync(dir: string, id: string): Theme | undefined {
  * answer as `currentTheme` over `listThemes`, so the prompt names the costume
  * the chat shows. The folders are read only when Base gives way to a feast.
  */
-export function currentThemeSync(dir: string, chosen: string, feasts?: { on: boolean; today: CalendarDay }): string {
+export function currentThemeSync(dir: string, chosen: string, feasts?: FeastsNow): string {
   const served = readThemeSync(dir, chosen) === undefined ? BASE_THEME : chosen;
   if (served !== BASE_THEME || feasts?.on !== true) return served;
   let folders: string[];
@@ -324,5 +346,5 @@ export function currentThemeSync(dir: string, chosen: string, feasts?: { on: boo
     return BASE_THEME;
   }
   const themes = folders.flatMap((folder) => readThemeSync(dir, folder) ?? []);
-  return feastOf(themes, feasts.today)?.id ?? BASE_THEME;
+  return feastNotSkipped(themes, feasts.today, feasts.skip)?.id ?? BASE_THEME;
 }

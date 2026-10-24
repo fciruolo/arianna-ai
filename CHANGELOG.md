@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Quando una festa cambia il tema da sola (per esempio Halloween dal 25 ottobre), la prima volta che apri la chat una finestra lo dice e chiede «Va bene» o «Torna a Base»; «Torna a Base» vale per tutto quel periodo, la risposta vale su tutti i dispositivi, e a fine festa un avviso dice che il tema è tornato Base (D-315).
+
 ### Corretto
 
 - Arianna, il Modello locale e gli agenti che rispondono sul modello locale, anche in chiamata, conoscono data e ora: in fondo all'ultimo messaggio di ogni richiesta c'è «Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).», un pezzo L0 che passa dal gateway; il prompt fisso resta identico e la cache dei prefissi tiene (D-311).

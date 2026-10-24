@@ -103,3 +103,38 @@ export function themeDay(env: Readonly<Record<string, string | undefined>>, now:
   }
   return localDay(now);
 }
+
+function fromSerial(value: number): CalendarDay {
+  const date = new Date(value * 86_400_000);
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+/**
+ * The days of the window that holds `today` (D-315), both ends included, or
+ * undefined when `today` is outside: a window across the new year begins in
+ * the year before when `today` is in its second part.
+ */
+export function windowOf(dates: FeastDates, today: CalendarDay): { from: CalendarDay; to: CalendarDay } | undefined {
+  if (!inWindow(dates, today)) return undefined;
+  if ('feast' in dates) {
+    const [first, last] = MOVABLE[dates.feast];
+    const easter = serial(easterSunday(today.year));
+    return { from: fromSerial(easter + first), to: fromSerial(easter + last) };
+  }
+  const part = (text: string): { month: number; day: number } => {
+    const [month = 1, day = 1] = text.split('-').map(Number);
+    return { month, day };
+  };
+  const from = part(dates.from);
+  const to = part(dates.to);
+  const across = from.month * 100 + from.day > to.month * 100 + to.day;
+  const inSecondPart = across && today.month * 100 + today.day <= to.month * 100 + to.day;
+  const fromYear = inSecondPart ? today.year - 1 : today.year;
+  const toYear = across ? fromYear + 1 : fromYear;
+  return { from: { year: fromYear, ...from }, to: { year: toYear, ...to } };
+}
+
+/** A day as `YYYY-MM-DD`. */
+export function isoDay(day: CalendarDay): string {
+  return `${String(day.year)}-${String(day.month).padStart(2, '0')}-${String(day.day).padStart(2, '0')}`;
+}

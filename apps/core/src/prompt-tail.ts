@@ -90,6 +90,15 @@ export interface TailConfig {
   agentsNow?: () => TailAgents;
   /** The archive of real lines (D-224); `configureSeriesLines` when not given (tests give it). */
   lines?: LinesSource;
+  /** The period of a feast the user sent away (D-315); `configureFeastSkip` when not given (tests give it). */
+  feastSkip?: () => string | undefined;
+}
+
+let feastSkip: () => string | undefined = () => undefined;
+
+/** What tells the tail which period of a feast the user sent away (D-315): there Base stays, as in the chat. */
+export function configureFeastSkip(read: () => string | undefined): void {
+  feastSkip = read;
 }
 
 /** What the tail reads of the archive of real lines (D-224): `SeriesLines` of series-lines.ts. */
@@ -156,7 +165,9 @@ function characterResolver(config: TailConfig): { choose: (agent: string) => str
     const dir = home === undefined ? undefined : join(home, 'apps', 'hud', 'themes');
     const chosen = config.appearance?.theme;
     // D-246: in the days of a feast Base gives way to it, as in the chat.
-    const feasts = { on: config.appearance?.seasonal === true, today: config.today?.() ?? themeDay(process.env, new Date()) };
+    // D-315: a period of a feast the user sent away keeps Base, as in the chat.
+    const skip = (config.feastSkip ?? feastSkip)();
+    const feasts = { on: config.appearance?.seasonal === true, today: config.today?.() ?? themeDay(process.env, new Date()), ...(skip === undefined ? {} : { skip }) };
     const theme = chosen === undefined || dir === undefined || !feasts.on ? chosen : currentThemeSync(dir, chosen, feasts);
     const read = config.themeCharacters ?? (dir === undefined ? undefined : (id: string) => themeCharactersSync(dir, id));
     themed = theme === undefined || read === undefined ? {} : read(theme);

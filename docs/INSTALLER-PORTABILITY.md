@@ -104,6 +104,7 @@ In Synology Drive l'attività di sincronizzazione punta a `data/` della cartella
 | `data/postgres/` | **Mai dal vivo** | Rischio di corruzione; si sincronizzano i dump in `backups/` |
 | `data/vault/` | Sì, cifrato | La chiave `age` resta fuori dalla cartella sincronizzata |
 | `data/remote/` | No | Certificato e chiave della porta remota in modo `tls = "own"` (D-292), 0600: la chiave non lascia il Mac; su un'altra macchina si rifà con `pnpm remote:cert` |
+| `data/themes/` | Sì | Le risposte all'avviso del cambio automatico di tema (D-315), `notice.json`: solo id di temi e date, nessun dato privato |
 | `.git` | Con cautela | Conflitti di sincronizzazione; preferire un remote git e non sincronizzare `.git` |
 
 Per privacy: Synology Drive sul tuo NAS è locale e va bene per L2; iCloud, Google Drive o altri cloud di terzi ricevono L2, quindi o cifratura prima della sincronizzazione o esclusione di `archive/` e `kb/`.
