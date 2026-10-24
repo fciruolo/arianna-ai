@@ -232,6 +232,11 @@ test('before a card, a folder of an external disk that is not there may be asked
   assert.equal(await volumeRefusal(DESKTOP, ENV), undefined);
 });
 
+test('an allowed folder gone from the disk is an error the model reads, never a failed step', async () => {
+  const gone = join(DESKTOP, 'cartella-sparita');
+  await assert.rejects(runMacCall(macCall('mac.list', { path: '~/Desktop/cartella-sparita' }, ENV), gone, ENV), (error: unknown) => error instanceof MacPathError && /does not exist/.test(error.message));
+});
+
 test('control and direction characters in a path are refused; ~/library is the Library too', () => {
   assert.throws(() => resolveMacPath('~/Desktop/a\nb', HOME), /not valid/);
   assert.throws(() => resolveMacPath('~/Desktop/‮txt.exe', HOME), /not valid/);

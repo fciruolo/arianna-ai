@@ -185,7 +185,8 @@ interface MacAsk {
 async function macAsksByStep(sql: Queryable, taskId: string): Promise<Map<number, MacAsk>> {
   const rows = await sql<{ id: string; state: string; choice: string | null; folder: string | null; place: string | null; step: number | null; listed: boolean }[]>`
     SELECT id::text, state::text, choice, detail ->> 'folder' AS folder, detail ->> 'place' AS place, (detail ->> 'step')::int AS step,
-      EXISTS (SELECT FROM mac_folders f WHERE f.approval_id = approvals.id) AS listed
+      EXISTS (SELECT FROM mac_folders f WHERE f.approval_id = approvals.id
+        OR (f.path = approvals.detail ->> 'folder' AND f.added_at <= approvals.decided_at)) AS listed
     FROM approvals WHERE task_id = ${taskId} AND kind = 'mac'`;
   const asks = new Map<number, MacAsk>();
   for (const row of rows) if (row.step !== null) asks.set(row.step, { id: row.id, state: row.state, choice: row.choice, folder: row.folder ?? '', place: row.place ?? 'the folder', listed: row.listed });

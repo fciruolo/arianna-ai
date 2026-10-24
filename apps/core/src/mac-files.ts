@@ -354,7 +354,14 @@ export async function runMacCall(call: MacCall, folder: string, env: MacEnv): Pr
     } catch {
       // A home that is not there: only the path as written is compared.
     }
-    const realFolder = await realpath(folder);
+    let realFolder: string;
+    try {
+      realFolder = await realpath(folder);
+    } catch (error) {
+      // An allowed folder gone from the disk, or one the model guessed: an error it reads, never a failed step.
+      if (missing(error)) throw new MacPathError(`${displayPath(folder, home)} does not exist`);
+      throw error;
+    }
     // The allowed folder itself, resolved now: a link or a disk alias (the system disk under VOLUMES) that makes it the whole
     // home, the root or /Volumes is refused, unless the user allowed exactly that folder by its own name.
     const wide = realFolder === sep || realFolder === VOLUMES || homes.includes(realFolder);
@@ -498,7 +505,8 @@ async function find(path: string, real: string, name: string, home: string, home
     let dir;
     try {
       if (next.depth > 0) {
-        // Each subfolder resolved again before it is opened: one replaced by a link since it was listed is skipped.
+        // Each subfolder resolved again before it is opened: one replaced by a link since it was listed is skipped
+        // (a short window stays between realpath and opendir, which has no O_NOFOLLOW).
         const resolved = await realpath(next.real);
         if (resolved !== next.real || !inside(resolved, real) || pathRefusal(resolved, homes, env.excluded) !== undefined) continue;
       }
@@ -524,7 +532,10 @@ async function find(path: string, real: string, name: string, home: string, home
         }
       }
       // Links are never followed: a folder reached through one may be anywhere.
-      if (entry.isDirectory() && !entry.isSymbolicLink() && next.depth < MAX_DEPTH) queue.push({ real: join(next.real, entry.name), shown: shownPath, depth: next.depth + 1 });
+      // A disk that gives no type (network disks, some external ones): lstat says it, links never followed.
+      const unknown = !entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink() && !entry.isFIFO() && !entry.isSocket() && !entry.isBlockDevice() && !entry.isCharacterDevice();
+      const folder = entry.isDirectory() || (unknown && (await lstat(join(next.real, entry.name)).catch(() => undefined))?.isDirectory() === true);
+      if (folder && next.depth < MAX_DEPTH) queue.push({ real: join(next.real, entry.name), shown: shownPath, depth: next.depth + 1 });
     }
   }
   const head = `Names containing «${name}» in ${displayPath(path, home)} of the user's Mac and its subfolders (at most ${String(MAX_DEPTH)} levels down):`;

@@ -464,7 +464,7 @@ CREATE TABLE mac_folders (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   path        text NOT NULL,             -- assoluto; il core lo risolve con realpath a ogni chiamata; unico fra le righe vive (mac_folders_live)
   added_at    timestamptz NOT NULL DEFAULT now(),
-  approval_id uuid REFERENCES approvals (id),  -- la scheda «Sempre»; NULL dalle Impostazioni
+  approval_id uuid REFERENCES approvals (id) ON DELETE SET NULL,  -- la scheda «Sempre»; NULL dalle Impostazioni o dopo l'eliminazione per sempre della sua conversazione (la cartella resta)
   removed_at  timestamptz                -- «Togli»: una volta sola, mai indietro (mac_folders_guard); arianna_app non cancella
 );
 

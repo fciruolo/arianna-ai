@@ -16,6 +16,7 @@ import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { ApprovalChoiceError, decideApproval } from '../src/approvals.ts';
 import { archiveConversation, createConversation, postUserMessage, purgeConversation } from '../src/conversations.ts';
+import { eraseConversation } from '../src/erase.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepContext } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import type { MacEnv } from '../src/mac-files.ts';
@@ -24,7 +25,7 @@ import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
-import { MAC_INCOGNITO, macReplay, WAITING_MAC } from '../src/orchestrator/mac-tool.ts';
+import { MAC_INCOGNITO, macReplay, macResults, WAITING_MAC } from '../src/orchestrator/mac-tool.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -309,6 +310,34 @@ test('the purge of a conversation empties its cards of folders to {"purged": tru
     SELECT a.state::text, a.detail FROM approvals a JOIN tasks t ON t.id = a.task_id WHERE t.conversation_id = ${conversationId} AND a.kind = 'mac' ORDER BY a.requested_at`;
   assert.deepEqual(rows.map((row) => [row.state, row.detail]), [['approved', { purged: true }], ['expired', { purged: true }]]);
   assert.deepEqual(await conversationMacFolders(db().sql, conversationId), []);
+});
+
+test('a conversation deleted for good after «Sempre»: it goes, and the folder stays in the list', async () => {
+  await clearList();
+  const conversationId = await privateChat();
+  const { taskId, card } = await askDesktop(conversationId);
+  await recordDecision(db().sql, card?.id ?? '', 'approved', 'web', 'always');
+  await drain(taskId, scripted([REPLY('Fatto.')]));
+  await archiveConversation(db().sql, conversationId, true);
+  await eraseConversation(db().sql, conversationId);
+  const listed = await listMacFolders(db().sql);
+  assert.deepEqual(listed.map((folder) => folder.path), [DESKTOP]);
+  const [row] = await db().sql<{ approval: string | null }[]>`SELECT approval_id::text AS approval FROM mac_folders WHERE id = ${listed[0]?.id ?? ''}`;
+  assert.equal(row?.approval, null);
+  // Only the card going to null: never another card, never a removal undone.
+  await assert.rejects(db().sql`UPDATE mac_folders SET approval_id = ${randomUUID()} WHERE id = ${listed[0]?.id ?? ''}`, /mac_folders_guard|permission denied/);
+});
+
+test('«Sempre» on a folder already in the list: the model does not read that the list is full', async () => {
+  await clearList();
+  const first = await askDesktop(await privateChat());
+  const second = await askDesktop(await privateChat());
+  await recordDecision(db().sql, first.card?.id ?? '', 'approved', 'web', 'always');
+  await recordDecision(db().sql, second.card?.id ?? '', 'approved', 'web', 'always');
+  const turns = await loadTurns(db().sql, second.taskId);
+  const text = (await macResults(db().sql, second.taskId, turns)).get(1) ?? '';
+  assert.match(text, /always: it is now in the list of the settings/);
+  assert.doesNotMatch(text, /full/);
 });
 
 test('after a crash, a step that asked waits again while the card is pending; decided, the steps go on', async () => {

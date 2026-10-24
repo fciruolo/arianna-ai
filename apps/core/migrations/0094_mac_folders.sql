@@ -24,19 +24,28 @@ CREATE TABLE mac_folders (
               CHECK (left(path, 1) = '/' AND length(path) BETWEEN 2 AND 1000 AND path !~ '[[:cntrl:]]'),
   added_at    timestamptz NOT NULL DEFAULT now(),
   -- The card «Sempre» that added it; null for a folder added in the settings.
-  approval_id uuid REFERENCES approvals (id),
+  -- Emptied when the asking conversation is deleted for good (erase_conversation): the folder stays in the list.
+  approval_id uuid REFERENCES approvals (id) ON DELETE SET NULL,
   removed_at  timestamptz
 );
 
 -- One live row per folder.
 CREATE UNIQUE INDEX mac_folders_live ON mac_folders (path) WHERE removed_at IS NULL;
 
--- Only «Togli»: removed_at from null to a time, nothing else changes, never back.
+-- Only «Togli» (removed_at from null to a time, once, never back) or the
+-- deletion of the card that added it (approval_id to null, nothing else).
 CREATE FUNCTION mac_folders_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.removed_at IS NOT NULL OR NEW.removed_at IS NULL
-     OR NEW.id <> OLD.id OR NEW.path <> OLD.path OR NEW.added_at <> OLD.added_at
-     OR NEW.approval_id IS DISTINCT FROM OLD.approval_id THEN
+  IF NEW.id <> OLD.id OR NEW.path <> OLD.path OR NEW.added_at <> OLD.added_at THEN
+    RAISE EXCEPTION 'mac_folders_guard: a folder is only taken off, once';
+  END IF;
+  IF NEW.approval_id IS DISTINCT FROM OLD.approval_id THEN
+    IF NEW.approval_id IS NOT NULL OR NEW.removed_at IS DISTINCT FROM OLD.removed_at THEN
+      RAISE EXCEPTION 'mac_folders_guard: a folder is only taken off, once';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD.removed_at IS NOT NULL OR NEW.removed_at IS NULL THEN
     RAISE EXCEPTION 'mac_folders_guard: a folder is only taken off, once';
   END IF;
   RETURN NEW;

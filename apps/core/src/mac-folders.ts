@@ -79,7 +79,6 @@ export async function checkFolderInput(raw: unknown, env: MacEnv): Promise<strin
   }
   const realRefused = pathRefusal(real, homes, env.excluded);
   if (realRefused !== undefined) throw new MacPathError(REFUSAL_ITALIAN[realRefused]);
-  if (real === '/') throw new MacPathError(REFUSAL_ITALIAN.outside);
   return real;
 }
 
