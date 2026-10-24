@@ -44,7 +44,7 @@ export const MAX_PAGE_TEXT = 6_000;
 const MAX_USER_MESSAGES = 200;
 
 export const NOT_USER_ADDRESS = 'In una conversazione Interna leggo solo gli indirizzi che hai scritto tu.';
-export const NOT_HERE = 'In questa conversazione non leggo pagine web: ha letto dati Privati o di Finanze.';
+export const NOT_HERE = 'In questa conversazione non leggo pagine web: ha letto dati privati o di Finanze.';
 export const TASK_LIMIT = `Ho già letto ${String(MAX_PAGES_PER_TASK)} pagine per questa risposta: rispondi con quello che hai.`;
 export const DAY_LIMIT = `Oggi ho già letto ${String(MAX_PAGES_PER_DAY)} pagine, il massimo di un giorno: riprova domani.`;
 

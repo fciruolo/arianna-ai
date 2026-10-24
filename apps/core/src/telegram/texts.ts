@@ -7,7 +7,7 @@ import { APPROVAL_ACTIONS, type ApprovalAction } from '@arianna/agents';
  */
 export const TEXTS = {
   start:
-    'Ciao, sono Arianna. Qui parli con me nella conversazione di Lavoro: ciò che è Privato resta nella chat web.',
+    'Ciao, sono Arianna. Qui parli con me nella conversazione di lavoro: ciò che è privato resta nella chat web.',
   notText: 'Qui leggo solo messaggi di testo.',
   invalid: 'Questo messaggio è vuoto o troppo lungo: scrivilo nella chat web.',
   replyReference: 'La risposta è pronta nella chat web.',
@@ -40,7 +40,7 @@ function oneLine(value: string): string {
 
 /** The scanner refused a message: the kinds it found are names, not content. */
 export function scannerRefusal(kinds: readonly string[]): string {
-  return `Questo messaggio non può stare nella conversazione di lavoro (${kinds.join(', ')}): scrivilo nella chat web, in una conversazione Privata.`;
+  return `Questo messaggio non può stare nella conversazione di lavoro (${kinds.join(', ')}): scrivilo nella chat web, in una conversazione privata.`;
 }
 
 /**
