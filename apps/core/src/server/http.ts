@@ -29,7 +29,7 @@ import { addDependency, CardError, checkDesignChoice, createCard, listCards, mov
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import type { CalendarDay } from '../feasts.ts';
 import { answerNotice, FEAST_ANSWERS, feastNotice, FeastNoticeError, type FeastNoticeStore } from '../feast-notice.ts';
-import { currentTheme, listThemes } from '../themes.ts';
+import { currentTheme, feastsNow, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import { GithubError } from '../github-api.ts';
 import { PixelAgentsError, type PixelAgentsResult } from '../pixel-agents-pack.ts';
@@ -2803,10 +2803,8 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       let themed: Record<string, string> = {};
       if (characters.themes !== undefined) {
         const { themes } = await listThemes(characters.themes.dir);
-        const feasts = characters.themes.feasts?.();
         // D-315: a period of a feast the user sent away keeps the costumes of Base.
-        const skip = characters.themes.notice?.read().skip;
-        const current = currentTheme(characters.themes.chosen(), themes, feasts === undefined || skip === undefined ? feasts : { ...feasts, skip });
+        const current = currentTheme(characters.themes.chosen(), themes, feastsNow(characters.themes.feasts?.(), characters.themes.notice?.read() ?? {}));
         themed = themes.find((theme) => theme.id === current)?.characters ?? {};
       }
       return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed), names: characters.names?.() ?? {} } };
@@ -2849,7 +2847,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const feasts = themes.feasts?.();
       // D-315: the period the user sent away keeps Base; the notice of an automatic change, until answered.
       const state = themes.notice?.read() ?? {};
-      const now = feasts === undefined ? undefined : { ...feasts, ...(state.skip === undefined ? {} : { skip: state.skip }) };
+      const now = feastsNow(feasts, state);
       const notice = now === undefined || themes.notice === undefined ? null : feastNotice(chosen, listing.themes, now, state);
       return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes, now), seasonal: feasts?.on ?? false, notice } };
     }),
@@ -2865,7 +2863,7 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       if (answer === undefined || typeof body.key !== 'string') throw new HttpError(400, `answer: one of ${FEAST_ANSWERS.join(', ')}; key: text`);
       const listing = await listThemes(themes.dir);
       const state = themes.notice.read();
-      const notice = feastNotice(themes.chosen(), listing.themes, { ...themes.feasts(), ...(state.skip === undefined ? {} : { skip: state.skip }) }, state);
+      const notice = feastNotice(themes.chosen(), listing.themes, themes.feasts(), state);
       if (notice?.key !== body.key) throw new HttpError(409, 'the notice changed: reload');
       try {
         themes.notice.write(answerNotice(notice, answer, state));

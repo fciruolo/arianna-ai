@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { themeNoticeText, type ThemeListing, type ThemeNotice } from '../lib/themes.ts';
 import Icon from './Icon.vue';
@@ -21,7 +21,9 @@ function close(): void {
 }
 function onKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
+    // Heard first (capture): no other window of the page closes with the same key.
     event.preventDefault();
+    event.stopImmediatePropagation();
     close();
     return;
   }
@@ -29,7 +31,12 @@ function onKey(event: KeyboardEvent): void {
   const focusable = [...dialog.value.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]')];
   const head = focusable[0];
   const tail = focusable[focusable.length - 1];
-  if (head === undefined || tail === undefined) return;
+  if (head === undefined || tail === undefined) {
+    // Everything disabled while the answer is saved: the focus stays on the window.
+    event.preventDefault();
+    dialog.value.focus();
+    return;
+  }
   const inside = dialog.value.contains(document.activeElement);
   if (event.shiftKey && (document.activeElement === head || !inside)) {
     event.preventDefault();
@@ -39,13 +46,25 @@ function onKey(event: KeyboardEvent): void {
     head.focus();
   }
 }
+// Where the focus was before the window: it goes back there when the window closes.
+let before: HTMLElement | null = null;
 onMounted(() => {
-  window.addEventListener('keydown', onKey);
+  before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  window.addEventListener('keydown', onKey, true);
   void nextTick(() => (first.value ?? dialog.value)?.focus());
 });
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey);
+  window.removeEventListener('keydown', onKey, true);
+  if (before?.isConnected === true) before.focus();
 });
+// While the answer is saved the buttons are disabled: the focus moves to the window, not to the page.
+watch(
+  () => props.busy,
+  (busy) => {
+    if (busy) dialog.value?.focus();
+    else void nextTick(() => first.value?.focus());
+  },
+);
 </script>
 
 <template>

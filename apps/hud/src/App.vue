@@ -531,10 +531,11 @@ async function answerNotice(answer: 'ok' | 'back'): Promise<void> {
   noticeProblem.value = null;
   try {
     await answerThemeNotice(notice.key, answer);
-    await store.refreshThemes();
+    // The colours and the costumes of the characters: both follow the answer.
+    await Promise.all([store.refreshThemes(), store.refreshCharacters()]);
   } catch (cause) {
     // Answered meanwhile on another device: what the core says now wins.
-    if (cause instanceof ApiError && cause.status === 409) await store.refreshThemes();
+    if (cause instanceof ApiError && cause.status === 409) await Promise.all([store.refreshThemes(), store.refreshCharacters()]);
     else noticeProblem.value = 'Non sono riuscita a salvare la risposta: riprova.';
   } finally {
     noticeBusy.value = false;

@@ -284,6 +284,12 @@ export interface FeastsNow {
   skip?: string;
 }
 
+/** The feasts as the core reads them, with the period the user sent away (D-315): one place for the chat, the costumes and the prompt. */
+export function feastsNow(feasts: { on: boolean; today: CalendarDay } | undefined, state: { skip?: string }): FeastsNow | undefined {
+  if (feasts === undefined) return undefined;
+  return state.skip === undefined ? { on: feasts.on, today: feasts.today } : { on: feasts.on, today: feasts.today, skip: state.skip };
+}
+
 /**
  * The theme in use: the one chosen when it is served, otherwise Base; with
  * the feasts on (D-246), Base gives way to the feast of the day, unless the

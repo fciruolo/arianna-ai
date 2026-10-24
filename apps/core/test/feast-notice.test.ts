@@ -105,6 +105,29 @@ test('«Torna a Base» keeps Base for that period only, in the chat and in the p
   assert.equal(periodOf(base, day('2026-10-28')), undefined);
 });
 
+test('the end is said only soon after the feast, and never between two feasts in a row (D-315)', async () => {
+  const { themes } = await listThemes(REPO_THEMES);
+  const ok = { seen: 'halloween@2026-10-25' };
+  // Seven days after its last day the end is still said; later, or with the feasts off for months, never.
+  assert.equal(feastNotice('base', themes, { on: true, today: day('2026-11-08') }, ok)?.kind, 'end');
+  assert.equal(feastNotice('base', themes, { on: true, today: day('2026-11-09') }, ok), null);
+  assert.equal(feastNotice('base', themes, { on: true, today: day('2027-03-01') }, ok), null);
+  // Christmas seen, then nothing until Carnevale: the start of Carnevale, no end of Christmas in between.
+  assert.deepEqual(feastNotice('base', themes, { on: true, today: day('2027-02-05') }, { seen: 'natale@2026-12-08' }), { kind: 'start', key: 'carnevale@2027-02-04', theme: 'carnevale', until: '2027-02-09' });
+  // A shorter feast inside a longer one (2008: Saint Patrick inside Easter): sent away, it hides the longer
+  // one in its days too; the day after, the longer one starts with its own notice.
+  const patrick = feastNotice('base', themes, { on: true, today: day('2008-03-17') }, {});
+  assert.ok(patrick !== null);
+  assert.equal(patrick.key, 'san-patrizio@2008-03-15');
+  const back = answerNotice(patrick, 'back', {});
+  assert.equal(currentTheme('base', themes, { on: true, today: day('2008-03-17'), skip: 'san-patrizio@2008-03-15' }), 'base');
+  assert.equal(feastNotice('base', themes, { on: true, today: day('2008-03-18') }, back)?.key, 'pasqua@2008-03-16');
+  // Windows: Carnevale from Easter, Christmas outside its days.
+  const carnevale = windowOf({ feast: 'carnevale' }, day('2026-02-15'));
+  assert.deepEqual(carnevale === undefined ? undefined : [isoDay(carnevale.from), isoDay(carnevale.to)], ['2026-02-12', '2026-02-17']);
+  assert.equal(windowOf({ from: '12-08', to: '01-06' }, day('2026-07-15')), undefined);
+});
+
 test('the store of the answers: a missing or broken file is no answer, a bad key is dropped (D-315)', () => {
   const data = join(root, 'store');
   const store = feastNoticeStore(data);

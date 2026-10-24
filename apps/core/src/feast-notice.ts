@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BASE_THEME } from '@arianna/config';
 
-import type { CalendarDay } from './feasts.ts';
+import { readSmallSync } from './characters.ts';
+import { windowOf, type CalendarDay } from './feasts.ts';
 import { feastNotSkipped, periodOf, type Theme } from './themes.ts';
 
 /**
@@ -34,6 +35,8 @@ export type FeastAnswer = (typeof FEAST_ANSWERS)[number];
 
 const PERIOD_KEY = /^[a-z0-9][a-z0-9-]{0,39}@\d{4}-\d{2}-\d{2}$/;
 const MAX_BYTES = 1024;
+/** How many days after the last day of a feast its end is still said (D-315). */
+export const END_NOTICE_DAYS = 7;
 
 export class FeastNoticeError extends Error {
   override name = 'FeastNoticeError';
@@ -54,9 +57,16 @@ export function feastNotice(chosen: string, themes: readonly Theme[], feasts: { 
     return period.key === seen ? null : { kind: 'start', key: period.key, theme: feast.id, until: period.until };
   }
   if (seen === BASE_THEME) return null;
-  // The feast seen has ended: said once, if its theme is still there to be named.
-  const ended = seen.split('@')[0] ?? '';
-  return themes.some((theme) => theme.id === ended) ? { kind: 'end', key: BASE_THEME, theme: ended } : null;
+  // The feast seen has ended: said once, if its theme is still there to be named and its last day is
+  // recent, so feasts switched off for months do not bring back the end of one long gone.
+  const [ended = '', first = ''] = seen.split('@');
+  const theme = themes.find((entry) => entry.id === ended);
+  if (theme?.dates === undefined) return null;
+  const [year = 0, month = 0, day = 0] = first.split('-').map(Number);
+  const window = windowOf(theme.dates, { year, month, day });
+  if (window === undefined) return null;
+  const since = (Date.UTC(feasts.today.year, feasts.today.month - 1, feasts.today.day) - Date.UTC(window.to.year, window.to.month - 1, window.to.day)) / 86_400_000;
+  return since > 0 && since <= END_NOTICE_DAYS ? { kind: 'end', key: BASE_THEME, theme: ended } : null;
 }
 
 /** The state after an answer to `notice`: «Va bene» marks it seen, «Torna a Base» skips the period. */
@@ -84,9 +94,8 @@ export function feastNoticeStore(dataDir: string): FeastNoticeStore {
   return {
     read() {
       try {
-        if (!lstatSync(path).isFile()) return {};
-        const raw = readFileSync(path);
-        if (raw.length > MAX_BYTES) return {};
+        // A regular file of at most 1 KB, never through a link.
+        const raw = readSmallSync(path, MAX_BYTES);
         const value: unknown = JSON.parse(raw.toString('utf8'));
         if (typeof value !== 'object' || value === null) return {};
         const { seen, skip } = value as Record<string, unknown>;
