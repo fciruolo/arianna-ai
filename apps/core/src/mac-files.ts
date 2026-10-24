@@ -200,6 +200,33 @@ export function macCall(tool: MacToolId, args: Record<string, unknown>, env: Mac
 }
 
 /**
+ * Before a card for a folder of an external disk (under VOLUMES): the folder
+ * resolved, when it is there. A disk that is an alias of the system disk
+ * could make it the home, the root or the Library: refused without asking.
+ * Only names are resolved (realpath), nothing is listed nor read. Undefined
+ * when it may be asked.
+ */
+export async function volumeRefusal(folder: string, env: MacEnv): Promise<string | undefined> {
+  if (!inside(folder, VOLUMES)) return undefined;
+  let real: string;
+  try {
+    real = await realpath(folder);
+  } catch {
+    return undefined;
+  }
+  const home = resolve(env.home);
+  let homes = [home];
+  try {
+    homes = [...new Set([home, await realpath(home)])];
+  } catch {
+    // A home that is not there.
+  }
+  if (real === sep || real === VOLUMES || homes.includes(real)) return 'the folder is the whole disk or home seen through an external disk: ask the user which folder inside it';
+  const refused = pathRefusal(real, homes, env.excluded);
+  return refused === undefined ? undefined : REFUSAL_TEXT[refused];
+}
+
+/**
  * The folder whose permission covers the call: the folder itself for
  * `mac.list` and `mac.find`, the folder that holds the file for `mac.read`
  * and `mac.info` (a folder of the home itself for `mac.info ~/Desktop`).
@@ -275,7 +302,7 @@ export function permissionText(folder: string, env: MacEnv): string {
   return `macOS non ha dato a ${app} il permesso di leggere ${place}: apri Impostazioni di Sistema → Privacy e sicurezza → File e cartelle e attiva la cartella per ${app} (oppure Accesso completo al disco), poi riavvia Arianna.`;
 }
 
-/** macOS refused the folder (EPERM or EACCES): the orchestrator tells the user where to allow it. */
+/** macOS refused the folder (EPERM, its privacy permissions): the orchestrator tells the user where to allow it. */
 export class MacPermissionError extends Error {
   override name = 'MacPermissionError';
   readonly folder: string;
@@ -285,10 +312,21 @@ export class MacPermissionError extends Error {
   }
 }
 
-const refusedByMacos = (error: unknown): boolean => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === 'EPERM' || code === 'EACCES';
-};
+const codeOf = (error: unknown): unknown => (error as { code?: unknown } | null)?.code;
+/** EPERM: the privacy permissions of macOS (File e cartelle, Accesso completo al disco). */
+const refusedByMacos = (error: unknown): boolean => codeOf(error) === 'EPERM';
+/** EACCES: the owner and mode of the file itself, not a permission of macOS. */
+const refusedByOwner = (error: unknown): boolean => codeOf(error) === 'EACCES';
+
+/** What the model reads for a file or folder whose own permissions refuse Arianna (EACCES): not the settings of macOS. */
+export const OWNER_REFUSAL = 'the permissions of this file or folder (its owner and mode) do not let the user read it: this is not a permission of macOS, nothing to change in the System Settings. Tell the user';
+
+/** An error of the disk as the orchestrator handles it: macOS refused the folder, or the file's own permissions did. */
+export function diskRefusal(error: unknown, folder: string): unknown {
+  if (refusedByMacos(error)) return new MacPermissionError(folder);
+  if (refusedByOwner(error)) return new MacPathError(OWNER_REFUSAL);
+  return error;
+}
 const missing = (error: unknown): boolean => {
   const code = (error as { code?: unknown } | null)?.code;
   return code === 'ENOENT' || code === 'ENOTDIR';
@@ -346,8 +384,7 @@ export async function runMacCall(call: MacCall, folder: string, env: MacEnv): Pr
         return await find(call.path, real, call.name ?? '', home, homes, env);
     }
   } catch (error) {
-    if (refusedByMacos(error)) throw new MacPermissionError(folder);
-    throw error;
+    throw diskRefusal(error, folder);
   }
 }
 
@@ -460,10 +497,15 @@ async function find(path: string, real: string, name: string, home: string, home
   for (let next = queue.shift(); next !== undefined && !stopped; next = queue.shift()) {
     let dir;
     try {
+      if (next.depth > 0) {
+        // Each subfolder resolved again before it is opened: one replaced by a link since it was listed is skipped.
+        const resolved = await realpath(next.real);
+        if (resolved !== next.real || !inside(resolved, real) || pathRefusal(resolved, homes, env.excluded) !== undefined) continue;
+      }
       dir = await opendir(next.real);
     } catch (error) {
-      // A subfolder macOS or its owner refused: skipped, the others are read.
-      if (refusedByMacos(error) && next.depth > 0) continue;
+      // A subfolder macOS or its owner refused, or gone meanwhile: skipped, the others are read.
+      if ((refusedByMacos(error) || refusedByOwner(error) || missing(error)) && next.depth > 0) continue;
       throw error;
     }
     for await (const entry of dir) {

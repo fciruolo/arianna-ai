@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -14,13 +15,16 @@ import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@a
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { ApprovalChoiceError, decideApproval } from '../src/approvals.ts';
-import { createConversation, postUserMessage } from '../src/conversations.ts';
-import { processStepJob, recordDecision, STEP_QUEUE } from '../src/engine.ts';
+import { archiveConversation, createConversation, postUserMessage, purgeConversation } from '../src/conversations.ts';
+import { processStepJob, recordDecision, STEP_QUEUE, type StepContext } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import type { MacEnv } from '../src/mac-files.ts';
-import { addMacFolder, checkFolderInput, listMacFolders, removeMacFolder } from '../src/mac-folders.ts';
+import { addMacFolder, checkFolderInput, conversationMacFolders, listMacFolders, removeMacFolder } from '../src/mac-folders.ts';
+import { startLiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
+import { loadTurns } from '../src/orchestrator/turns.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
-import { MAC_INCOGNITO, WAITING_MAC } from '../src/orchestrator/mac-tool.ts';
+import { MAC_INCOGNITO, macReplay, WAITING_MAC } from '../src/orchestrator/mac-tool.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -288,4 +292,90 @@ test('the settings add only an existing folder the rules allow; the same folder 
   await assert.rejects(db().sql`UPDATE mac_folders SET removed_at = NULL WHERE id = ${listed?.id ?? ''}`, /mac_folders_guard/);
   // Added again after «Togli»: a new row, live.
   assert.deepEqual(await addMacFolder(db().sql, DOCUMENTS), { added: true });
+});
+
+test('the purge of a conversation empties its cards of folders to {"purged": true} and ends its grants for the conversation', async () => {
+  await clearList();
+  const conversationId = await privateChat();
+  const first = await askDesktop(conversationId);
+  await recordDecision(db().sql, first.card?.id ?? '', 'approved', 'web', 'conversation');
+  await drain(first.taskId, scripted([REPLY('Fatto.')]));
+  const { task } = await postUserMessage(db().sql, conversationId, 'E nelle fatture?');
+  await drain(task.id, scripted([LIST('~/Documents/Fatture'), REPLY('Aspetto.')]));
+  assert.deepEqual(await conversationMacFolders(db().sql, conversationId), [DESKTOP]);
+  await archiveConversation(db().sql, conversationId, true);
+  await purgeConversation(db().sql, conversationId);
+  const rows = await db().sql<{ state: string; detail: unknown }[]>`
+    SELECT a.state::text, a.detail FROM approvals a JOIN tasks t ON t.id = a.task_id WHERE t.conversation_id = ${conversationId} AND a.kind = 'mac' ORDER BY a.requested_at`;
+  assert.deepEqual(rows.map((row) => [row.state, row.detail]), [['approved', { purged: true }], ['expired', { purged: true }]]);
+  assert.deepEqual(await conversationMacFolders(db().sql, conversationId), []);
+});
+
+test('after a crash, a step that asked waits again while the card is pending; decided, the steps go on', async () => {
+  await clearList();
+  const conversationId = await privateChat();
+  const { taskId, card } = await askDesktop(conversationId);
+  const task = await loadTask(db().sql, taskId);
+  assert.ok(task !== undefined);
+  const [turn] = await loadTurns(db().sql, taskId);
+  assert.ok(turn !== undefined);
+  const ctx = { task, step: 2, runId: randomUUID() } as unknown as StepContext;
+  assert.deepEqual(await macReplay(db().sql, ctx, turn), { kind: 'confirm', approvalId: card?.id, usage: { steps: 0 } });
+  await recordDecision(db().sql, card?.id ?? '', 'approved', 'web', 'once');
+  assert.deepEqual(await macReplay(db().sql, ctx, turn), { kind: 'continue', usage: { steps: 0 } });
+  // A turn that did not wait for a card is not replayed here.
+  assert.equal(await macReplay(db().sql, ctx, { ...turn, result: 'altro' }), undefined);
+});
+
+test('HTTP: the folders of the settings, with the reasons in Italian; «Togli» of a folder not there is 404; the decision takes the three choices', async () => {
+  await clearList();
+  const live = await startLiveFeed(db().sql);
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, mac: MAC });
+  const origin = `http://127.0.0.1:${String(server.port)}`;
+  const call = (method: string, path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> =>
+    new Promise((resolve, reject) => {
+      const payload = body === undefined ? undefined : JSON.stringify(body);
+      const request = httpRequest(`${origin}${path}`, { method, agent: false, headers: method === 'GET' ? {} : { 'content-type': 'application/json', origin } }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          } catch {
+            // Not JSON.
+          }
+          resolve({ status: response.statusCode ?? 0, body: parsed });
+        });
+      });
+      request.on('error', reject);
+      request.end(payload);
+    });
+  try {
+    assert.deepEqual(await call('GET', '/api/mac/folders'), { status: 200, body: { available: true, folders: [] } });
+    const added = await call('POST', '/api/mac/folders', { path: 'Documenti' });
+    assert.equal(added.status, 200);
+    assert.deepEqual((added.body.folders as { path: string; place: string; via: string }[]).map((folder) => [folder.path, folder.place, folder.via]), [['~/Documents', 'Documenti', 'settings']]);
+    const library = await call('POST', '/api/mac/folders', { path: '~/Library' });
+    assert.equal(library.status, 400);
+    assert.match(String(library.body.error), /Libreria/);
+    assert.equal((await call('POST', '/api/mac/folders', { path: '~/Mancante' })).status, 400);
+    assert.equal((await call('POST', '/api/mac/folders', { path: '~/Documents', other: 1 })).status, 400);
+    assert.equal((await call('DELETE', `/api/mac/folders/${randomUUID()}`)).status, 404);
+    assert.equal((await call('DELETE', '/api/mac/folders/not-an-id')).status, 404);
+    const id = (added.body.folders as { id: string }[])[0]?.id ?? '';
+    assert.equal((await call('DELETE', `/api/mac/folders/${id}`)).status, 200);
+    assert.equal((await call('DELETE', `/api/mac/folders/${id}`)).status, 404);
+    // The decision: an unknown choice and the executor of a card are refused on a card of a folder; «Sempre» from the Mac adds it.
+    const { card } = await askDesktop(await privateChat());
+    const decision = `/api/approvals/${card?.id ?? ''}/decision`;
+    assert.equal((await call('POST', decision, { state: 'approved', choice: 'per-sempre' })).status, 400);
+    assert.equal((await call('POST', decision, { state: 'approved', choice: 'claude' })).status, 400);
+    assert.equal((await call('POST', decision, { state: 'approved' })).status, 400);
+    assert.equal((await call('POST', decision, { state: 'approved', choice: 'always' })).status, 200);
+    assert.deepEqual((await listMacFolders(db().sql)).map((folder) => [folder.path, folder.via]), [[DESKTOP, 'approval']]);
+  } finally {
+    await server.close();
+    await live.close();
+  }
 });

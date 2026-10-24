@@ -16,6 +16,7 @@ import {
   permissionText,
   placeName,
   runMacCall,
+  volumeRefusal,
   type MacEnv,
 } from '../mac-files.ts';
 import { conversationMacFolders, permanentMacFolders } from '../mac-folders.ts';
@@ -116,6 +117,9 @@ export async function macTool(tool: MacToolId, args: Record<string, unknown>, st
     if (await refusedInTask(env.sql, env.task.id, asked)) {
       return { kind: 'error', text: `error: ${tool}: the user did not allow reading ${displayPath(asked, home)} in this answer. Do not ask again; tell the user you did not look.`, detail: `mac · ${placeName(asked, home)}: hai detto No` };
     }
+    // An external disk that is an alias of the system disk: refused before any card.
+    const volume = await volumeRefusal(asked, env.mac);
+    if (volume !== undefined) return { kind: 'error', text: `error: ${tool}: ${volume}`, detail: `mac · ${volume}` };
     const place = placeName(asked, home);
     return {
       kind: 'ask',

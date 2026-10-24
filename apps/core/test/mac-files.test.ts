@@ -12,6 +12,7 @@ import { resolveHome } from '@arianna/config';
 import {
   askCommand,
   askSentence,
+  diskRefusal,
   displayPath,
   folderToAsk,
   grantedFolder,
@@ -23,11 +24,13 @@ import {
   MAX_ENTRIES,
   MAX_FOUND,
   MAX_TEXT,
+  OWNER_REFUSAL,
   pathRefusal,
   permissionText,
   placeName,
   resolveMacPath,
   runMacCall,
+  volumeRefusal,
   type MacEnv,
 } from '../src/mac-files.ts';
 
@@ -193,13 +196,21 @@ test('mac.find: names that contain the text, any case, down to MAX_DEPTH levels,
   assert.match(many.text, /the search stopped/);
 });
 
-test('a folder macOS refuses (EACCES or EPERM) is a MacPermissionError, and the user reads where to allow it, in Italian', { skip: process.getuid?.() === 0 }, async () => {
+test('EPERM (macOS) is a MacPermissionError with where to allow it, in Italian; EACCES (the owner of the file) is not', { skip: process.getuid?.() === 0 }, async () => {
   chmodSync(join(DESKTOP, 'Progetti'), 0o000);
   try {
-    await assert.rejects(runMacCall(macCall('mac.list', { path: '~/Desktop/Progetti' }, ENV), DESKTOP, ENV), (error: unknown) => error instanceof MacPermissionError && error.folder === DESKTOP);
+    // chmod 000 is EACCES: the permissions of the folder itself, never the message of the System Settings.
+    await assert.rejects(runMacCall(macCall('mac.list', { path: '~/Desktop/Progetti' }, ENV), DESKTOP, ENV), (error: unknown) => error instanceof MacPathError && error.message === OWNER_REFUSAL);
+    // mac.find skips a subfolder its owner closed and reads the others.
+    const found = await runMacCall(macCall('mac.find', { path: '~/Desktop', name: 'lista' }, ENV), DESKTOP, ENV);
+    assert.match(found.text, /lista-spesa-finta\.txt/);
   } finally {
     chmodSync(join(DESKTOP, 'Progetti'), 0o755);
   }
+  const eperm = diskRefusal(Object.assign(new Error('operation not permitted'), { code: 'EPERM' }), DESKTOP);
+  assert.ok(eperm instanceof MacPermissionError && eperm.folder === DESKTOP);
+  const other = new Error('other');
+  assert.equal(diskRefusal(other, DESKTOP), other);
   assert.equal(
     permissionText(DESKTOP, ENV),
     'macOS non ha dato a Terminale il permesso di leggere Scrivania: apri Impostazioni di Sistema → Privacy e sicurezza → File e cartelle e attiva la cartella per Terminale (oppure Accesso completo al disco), poi riavvia Arianna.',
@@ -214,6 +225,11 @@ test('an allowed folder that resolves to the whole home is refused, unless the u
   await assert.rejects(runMacCall(macCall('mac.list', { path: '~/Desktop/casa-link' }, ENV), viaLink, ENV), /link to the whole home/);
   const home = await runMacCall(macCall('mac.list', { path: '~' }, ENV), HOME, ENV);
   assert.match(home.text, /- Desktop\//);
+});
+
+test('before a card, a folder of an external disk that is not there may be asked; a folder of the home is not resolved here', async () => {
+  assert.equal(await volumeRefusal(join('/', 'Volumes', `disco-finto-${randomUUID()}`, 'Foto'), ENV), undefined);
+  assert.equal(await volumeRefusal(DESKTOP, ENV), undefined);
 });
 
 test('control and direction characters in a path are refused; ~/library is the Library too', () => {
