@@ -153,6 +153,15 @@ test('milestone.propose: nothing before the decision; «Crea la milestone» in t
   assert.equal((await db().sql`SELECT 1 FROM milestones WHERE approval_id = ${approvalId}`).length, 1);
 });
 
+test('a due day the user said and the model left out: the code reads it from the message (D-313)', async () => {
+  const title = `Pagamenti ${randomUUID().slice(0, 6)}`;
+  const { task } = await ask('work', `Progetta la milestone ${title} che deve fare carrello e checkout, entro fine novembre`);
+  const model = scripted([{ action: 'call', tool: 'milestone.propose', arguments: { title, cards: ['Carrello', 'Checkout'] } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const [approval] = await db().sql<{ detail: Record<string, unknown> }[]>`SELECT detail FROM approvals WHERE id = ${await waitingApproval(task.id)}`;
+  assert.match(String(approval?.detail.due), /^\d{4}-11-30$/);
+});
+
 test('«Non ora»: no milestone, no card; and in a work conversation the project is its own, at its label', async () => {
   const title = `Sezione dashboard ${randomUUID().slice(0, 6)}`;
   const { task } = await ask('work', `Crea la milestone ${title} con design e implementazione.`);

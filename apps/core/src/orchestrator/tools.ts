@@ -16,9 +16,11 @@ import {
 
 import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
+import { localDay } from '../commitment-dates.ts';
 import type { Queryable } from '../db/client.ts';
 import { runFinanceTool } from '../finance-tools.ts';
 import { checkMilestoneProposal, milestoneProposalLabelOk, proposalLabel, sameOpenMilestone, WAITING_MILESTONE, type MilestoneProposal } from '../milestone-proposals.ts';
+import { dueOfWords } from '../plan-milestone.ts';
 import { checkRoutineProposal, proposalLabelOk, WAITING_ROUTINE, type RoutineProposal } from '../routine-proposals.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { checkProposal, listUserFacts, MAX_FACTS } from '../user-facts.ts';
@@ -310,8 +312,12 @@ async function proposeMilestone(args: Record<string, unknown>, env: ToolEnv): Pr
   if (isFinanceContext(env.context)) return { text: 'error: milestone.propose: this conversation has read finance data: the user writes the milestone on the cardwall', label: 'L0' };
   if (!milestoneProposalLabelOk(env.context.effective)) return { text: 'error: milestone.propose: this conversation holds data above Privato: the user writes the milestone on the cardwall', label: 'L0' };
   const workspace = await workspaceProject(env);
-  const checked = checkMilestoneProposal(args, { projects: env.milestones.projects, ...(workspace === undefined ? {} : { workspace }) });
-  if ('error' in checked) return { text: `error: milestone.propose: ${checked.error}`, label: 'L0' };
+  const proposed = checkMilestoneProposal(args, { projects: env.milestones.projects, ...(workspace === undefined ? {} : { workspace }) });
+  if ('error' in proposed) return { text: `error: milestone.propose: ${proposed.error}`, label: 'L0' };
+  // A due day the user said and the model left out (D-313): the code reads it from the user's message, as for «/progetta».
+  const latest = proposed.due === null && (args.due === undefined || args.due === null || args.due === '') ? (await userTexts(env)).bodies[0] : undefined;
+  const said = latest === undefined ? null : dueOfWords(latest, localDay());
+  const checked = said === null ? proposed : { ...proposed, due: said };
   if (!milestoneProposalLabelOk(proposalLabel(env.context.effective, checked))) return { text: 'error: milestone.propose: the project is above Privato', label: 'L0' };
   if (await sameOpenMilestone(env.sql, checked.project, checked.title)) {
     return { text: `error: milestone.propose: ${checked.project} already has an open milestone with this title: tell the user, who moves the cards into it on the cardwall`, label: 'L0' };

@@ -46,10 +46,11 @@ export function milestoneOfBrief(brief: string, today: string): PlanMilestone | 
   // eslint-disable-next-line no-control-regex
   if (title === '' || Array.from(title).length > MAX_MILESTONE_TITLE || /[\u0000-\u001f\u007f]/.test(title)) return undefined;
   if (named[3] !== undefined && (title.split(' ').length > NAME_WORDS || NOT_A_NAME.test(title))) return undefined;
-  return { title, due: dueOfBrief(brief.slice(named.index + named[0].length), today) };
+  return { title, due: dueOfWords(brief.slice(named.index + named[0].length), today) };
 }
 
-function dueOfBrief(text: string, today: string): string | null {
+/** The due day after «entro», «scadenza», «scade», «per il» in the user's words, computed by the code; null when none reads. */
+export function dueOfWords(text: string, today: string): string | null {
   // Each «entro …», «per il …» in turn: «per il cliente Rossi, entro fine novembre» has its day in the second.
   for (const found of text.matchAll(DUE)) {
     // «entro venerdì e deve fare…»: the day ends where another clause begins.

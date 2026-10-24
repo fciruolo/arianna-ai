@@ -11,7 +11,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Corretto
 
-- La scadenza di una milestone o di un impegno scritta come «fine novembre», «inizio dicembre», «metà gennaio», «fine mese» o «fine anno» non si perde più: il core la legge, e se non capisce un giorno Arianna lo chiede invece di lasciarlo fuori (D-313).
+- La scadenza di una milestone o di un impegno scritta come «fine novembre», «inizio dicembre», «metà gennaio», «fine mese» o «fine anno» non si perde più: il core la legge, la prende dal tuo messaggio anche quando il modello se la dimentica, e se non capisce un giorno Arianna lo chiede invece di lasciarlo fuori (D-313).
 - Le risposte sulle milestone dicono «Cardwall», il nome della pagina, invece di «Bacheca» (D-313).
 - In una conversazione di lavoro Arianna sa di che progetto è, e non chiede più «per quale progetto?» quando le chiedi una milestone (D-313).
 - Le caselle «Bloccata da» del modulo di una milestone hanno un nome accessibile esplicito, il titolo della milestone, mai il suo id, anche per gli strumenti che leggevano il valore (D-313).
