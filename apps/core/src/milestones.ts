@@ -173,20 +173,32 @@ export async function createMilestone(sql: Sql, input: NewMilestone, names: Mile
   const due = checkDue(input.due);
   const label = milestoneLabel(project, names);
   if (!isAtMost(label, CLOSING_LABEL)) throw new CardError('invalid', 'a milestone is at most Privato');
-  return sql.begin(async (tx) => {
-    // One project at a time: two milestones written at once get two places.
-    await tx`SELECT pg_advisory_xact_lock(hashtext('milestones:' || ${project}))`;
-    const [count] = await tx<{ open: number; next: number }[]>`
-      SELECT count(*) FILTER (WHERE status = 'open')::int AS open, coalesce(max(position) + 1, 0)::int AS next FROM milestones WHERE project = ${project}`;
-    if ((count?.open ?? 0) >= MAX_OPEN_MILESTONES) throw new CardError('conflict', `a project has ${String(MAX_OPEN_MILESTONES)} open milestones at most`);
-    const [row] = await tx<{ id: string }[]>`
-      INSERT INTO milestones (project, title, description, due_on, position, label)
-      VALUES (${project}, ${title}, ${description}, ${due}::date, ${count?.next ?? 0}, ${label}::privacy_label)
-      RETURNING id::text`;
-    if (row === undefined) throw new Error('INSERT INTO milestones returned no row');
-    await changed(tx, row.id, { created: true });
-    return row;
-  });
+  return sql.begin((tx) => insertMilestone(tx, { project, title, description, due, label }));
+}
+
+/**
+ * A milestone checked by the caller, written in the caller's transaction:
+ * open, last in its project's order. `approvalId`: the approval of
+ * `milestone.propose` that created it from the chat (D-313, seguito 2).
+ * A project with MAX_OPEN_MILESTONES open ones refuses it (`conflict`).
+ */
+export async function insertMilestone(
+  tx: Queryable,
+  input: { project: string; title: string; description: string | null; due: string | null; label: Label; approvalId?: string },
+): Promise<{ id: string }> {
+  const { project } = input;
+  // One project at a time: two milestones written at once get two places.
+  await tx`SELECT pg_advisory_xact_lock(hashtext('milestones:' || ${project}))`;
+  const [count] = await tx<{ open: number; next: number }[]>`
+    SELECT count(*) FILTER (WHERE status = 'open')::int AS open, coalesce(max(position) + 1, 0)::int AS next FROM milestones WHERE project = ${project}`;
+  if ((count?.open ?? 0) >= MAX_OPEN_MILESTONES) throw new CardError('conflict', `a project has ${String(MAX_OPEN_MILESTONES)} open milestones at most`);
+  const [row] = await tx<{ id: string }[]>`
+    INSERT INTO milestones (project, title, description, due_on, position, label, approval_id)
+    VALUES (${project}, ${input.title}, ${input.description}, ${input.due}::date, ${count?.next ?? 0}, ${input.label}::privacy_label, ${input.approvalId ?? null}::uuid)
+    RETURNING id::text`;
+  if (row === undefined) throw new Error('INSERT INTO milestones returned no row');
+  await changed(tx, row.id, { created: true });
+  return row;
 }
 
 async function lockMilestone(tx: Queryable, id: string): Promise<{ id: string; project: string; title: string; label: Label; status: 'open' | 'closed' }> {

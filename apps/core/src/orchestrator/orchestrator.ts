@@ -80,6 +80,8 @@ import {
 } from './profile-share.ts';
 import type { ImToolEnv } from './im-tool.ts';
 import { routineDecisionAnswer, routineReplay } from './routine-tool.ts';
+import { milestoneDecisionAnswer, milestoneReplay } from './milestone-tool.ts';
+import { MILESTONE_PROPOSE, WAITING_MILESTONE, writeMilestoneProposal } from '../milestone-proposals.ts';
 import { ROUTINE_PROPOSE, routineProposalAllowed, WAITING_ROUTINE, writeRoutineProposal } from '../routine-proposals.ts';
 import { isLocalTool, runTool, SKIPPED_NOTE, type LocalTool } from './tools.ts';
 import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web-tool.ts';
@@ -239,6 +241,8 @@ export interface OrchestratorOptions {
  * `routine.propose` (D-256) only with `routines`: a conversation of Arianna,
  * never incognito nor the secretary's; the tool itself writes a routine only
  * in a private one (routineProposalAllowed).
+ * `milestone.propose` (D-313, seguito 2) only with `milestones`: a
+ * conversation of Arianna, never incognito nor the secretary's.
  * `web.fetch` (D-262) only with `web`: a step whose context is at most
  * Internal, without finance data, not incognito (webFetchOffered).
  * The browser tools (D-264, passo 3) only with `browser`: the same steps as
@@ -259,6 +263,7 @@ export function orchestratorTools(
   web = false,
   browser = false,
   mac = false,
+  milestones = false,
 ): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
@@ -268,6 +273,7 @@ export function orchestratorTools(
         (tool !== PROFILE_READ || profile) &&
         (tool !== PROFILE_SHARE || (delegation && !secretary && shares)) &&
         (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary)) &&
+        (tool !== MILESTONE_PROPOSE || (milestones && !incognito && !secretary)) &&
         (tool !== WEB_FETCH || (web && !incognito))) ||
         (browser && !incognito && isBrowserTool(tool)) ||
         (mac && isMacTool(tool)) ||
@@ -1231,6 +1237,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       if (ctx.approval?.kind === 'fact') return proposeDecisionAnswer(sql, ctx);
       // The user decided a routine Arianna proposed (D-256): active or discarded with the decision, the answer here.
       if (ctx.approval?.kind === 'routine') return routineDecisionAnswer(sql, ctx);
+      // The user decided a milestone Arianna proposed (D-313, seguito 2): created with its cards with the decision, the answer here.
+      if (ctx.approval?.kind === 'milestone_plan') return milestoneDecisionAnswer(sql, ctx);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       // An addressed message (D-107, tappa B2) is never answered by Claude in a system chat: the agents named answer it.
@@ -1256,6 +1264,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           (await macReplay(sql, ctx, done)) ??
           (await proposeReplay(sql, ctx, done)) ??
           (await routineReplay(sql, ctx, done)) ??
+          (await milestoneReplay(sql, ctx, done)) ??
           (await executorReplay(done, delegations));
         if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
@@ -1382,6 +1391,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
               webFetchOffered(context, incognito),
               browserOffered(context, incognito, options.browser?.installed() === true),
               macOffered,
+              // milestone.propose (D-313): where routine.propose is offered, so that the fixed prompt does not split.
+              routinesOffered,
             )
           : browserChatTools(agent);
       // A conversation that read private or finance data keeps no browser (D-264, passo 3); the chat of an access keeps its own (D-281).
@@ -1621,6 +1632,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           profileClearance: tailClearance,
           shareTargets,
           routines,
+          ...(routinesOffered ? { milestones: { projects: options.settings().projects.map(({ name, label }) => ({ name, label })) } } : {}),
         });
         // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
         if (ran.context !== undefined) context = ran.context;
@@ -1639,6 +1651,11 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_ROUTINE });
           const written = await writeRoutineProposal(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.routine });
           return { ...ran, approvalId: written.approvalId };
+        }
+        // A milestone (D-313, seguito 2): the turn and its approval together; nothing is created before the user approves it.
+        if (ran.milestone !== undefined) {
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_MILESTONE });
+          return { ...ran, approvalId: await writeMilestoneProposal(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.milestone }) };
         }
         // A saved private value of the user in the address of web.fetch (D-283): the card «Apri / No» with the turn.
         if (ran.private !== undefined && refusedFetch) {
@@ -1659,7 +1676,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       if (result.approvalId !== undefined) {
         // The IM number only: the title stays in the approval. A fact: the tool's name only (D-213).
         if (result.private !== undefined) await show(task, step, 'wait', 'web · C’è un dato che hai salvato fra i clienti: chiedo a te se può uscire.');
-        else if (result.share !== undefined || result.propose !== undefined || result.routine !== undefined) await show(task, step, 'wait', tool);
+        else if (result.share !== undefined || result.propose !== undefined || result.routine !== undefined || result.milestone !== undefined) await show(task, step, 'wait', tool);
         else await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
         return { kind: 'confirm', approvalId: result.approvalId, usage };
       }
@@ -1688,14 +1705,15 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'profile.share': 'wait',
   'profile.propose': 'write',
   'routine.propose': 'wait',
+  'milestone.propose': 'wait',
   'web.fetch': 'read',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   // The finance tools and profile.read show only their name (D-183, D-114): what the model looks for stays in the turn.
-  // routine.propose too (D-256): its title is the user's text, it stays in the approval.
-  if (tool.startsWith('finance.') || PROFILE_TOOLS.includes(tool) || tool === ROUTINE_PROPOSE) return tool;
+  // routine.propose too (D-256), and milestone.propose (D-313): its title is the user's text, it stays in the approval.
+  if (tool.startsWith('finance.') || PROFILE_TOOLS.includes(tool) || tool === ROUTINE_PROPOSE || tool === MILESTONE_PROPOSE) return tool;
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);

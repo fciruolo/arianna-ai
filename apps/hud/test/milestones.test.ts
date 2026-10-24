@@ -1,5 +1,7 @@
 // The milestones on the cardwall (D-313): bands, words, folds, drags. Fake data only.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import type { Card } from '../src/lib/cardwall.ts';
@@ -15,6 +17,7 @@ import {
   milestoneBlockedText,
   milestoneChoices,
   milestoneClosing,
+  milestoneProposal,
   noMilestoneId,
   progressText,
   progressValue,
@@ -152,4 +155,31 @@ test('the approval of the closing: its card and its line in «Decisioni in attes
   assert.equal(milestoneClosing({ kind: 'milestone', detail: { title: 3 } }), undefined);
   assert.equal(pendingAskText(approval), 'Chiudere la milestone «Accessi» di panificio-rossi');
   assert.equal(pendingAskText({ ...approval, detail: {} }), 'Chiudere una milestone');
+});
+
+test('each box of «Bloccata da» is named by the title of the milestone, never by its id', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'src', 'components', 'CardwallPage.vue'), 'utf8');
+  const box = /<input v-model="editingMilestone\.blockedBy"[^>]*>/.exec(source)?.[0];
+  assert.ok(box !== undefined, 'the box of «Bloccata da» is in the form');
+  assert.match(box, /:aria-label="other\.title"/);
+  assert.match(box, /:value="other\.id"/);
+  assert.doesNotMatch(box, /:aria-label="other\.id"/);
+});
+
+test('the card of a milestone Arianna proposes in the chat (D-313): title, project, day, «Fatta quando», new cards', () => {
+  const approval = {
+    kind: 'milestone_plan',
+    detail: { project: 'panificio-rossi', projectLabel: 'L1', title: 'Accessi', description: 'Si entra con email', due: '2026-10-30', cards: ['Design', 'Database', 7], step: 2 },
+  };
+  assert.deepEqual(milestoneProposal(approval, '2026-10-24'), {
+    title: 'Accessi',
+    project: 'panificio-rossi',
+    description: 'Si entra con email',
+    due: 'venerdì 30 ottobre',
+    cards: ['Design', 'Database'],
+  });
+  assert.equal(milestoneProposal({ ...approval, detail: { ...approval.detail, due: null, description: '' } }, '2026-10-24')?.due, null);
+  assert.equal(milestoneProposal({ kind: 'milestone_plan', detail: { purged: true } }, '2026-10-24'), undefined);
+  assert.equal(milestoneProposal({ kind: 'milestone', detail: approval.detail }, '2026-10-24'), undefined);
+  assert.equal(pendingAskText({ id: 'a', kind: 'milestone_plan', action: 'milestone.propose', detail: approval.detail } as never), 'Creare la milestone «Accessi» di panificio-rossi');
 });

@@ -89,6 +89,15 @@ test('routine.propose only where the step may propose a routine, never in incogn
   assert.ok(!orchestratorTools(arianna, true, true, false, true, false, false, true).includes('routine.propose'));
 });
 
+test('milestone.propose only in a conversation of Arianna, never in incognito nor the secretary (D-313)', () => {
+  assert.ok(arianna !== undefined);
+  assert.ok(arianna.card.tools.includes('milestone.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true).includes('milestone.propose'));
+  assert.ok(orchestratorTools(arianna, true, true, false, false, false, false, false, false, false, false, true).includes('milestone.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true, true, false, false, false, false, false, false, false, true).includes('milestone.propose'));
+  assert.ok(!orchestratorTools(arianna, true, true, false, true, false, false, false, false, false, false, true).includes('milestone.propose'));
+});
+
 test('a card that does not list task.update never gets it, with cards or not', () => {
   assert.ok(arianna !== undefined);
   const without = { ...arianna, card: { ...arianna.card, tools: arianna.card.tools.filter((tool) => tool !== 'task.update') } };

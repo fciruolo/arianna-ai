@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Arianna propone una milestone dalla chat («crea la milestone Accessi su panificio-rossi con design, database e implementazione»): una scheda con titolo, progetto, scadenza, «Fatta quando» e card nuove; solo con «Crea la milestone» nascono la milestone (Privata) e le sue card in Inbox, assegnate a te e non avviate; mai in incognito né nella segretaria (D-313).
+
+### Corretto
+
+- Le caselle «Bloccata da» del modulo di una milestone hanno un nome accessibile esplicito, il titolo della milestone, mai il suo id, anche per gli strumenti che leggevano il valore (D-313).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto

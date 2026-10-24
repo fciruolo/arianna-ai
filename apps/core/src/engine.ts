@@ -16,6 +16,7 @@ import { claimStep, completeJob, createJobQueue, enqueueJob, errorCode, failJob,
 import { applyMilestoneDecision, lockMilestoneOfApproval } from './milestones.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
 import { decideRoutineProposal, proposedRoutineId } from './routine-proposals.ts';
+import { applyMilestoneProposal } from './milestone-proposals.ts';
 import {
   checkUsage,
   endRun,
@@ -467,7 +468,7 @@ export async function processStepJob(
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
           WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id}
-            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'mac') OR (kind = 'declassify' AND action = 'share_fact'))`;
+            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'mac', 'milestone_plan') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           // A card «Piano» (D-235) closes in Fatto here, as the decision would have closed it waiting.
@@ -577,6 +578,8 @@ export async function recordDecisionIn(
   // A routine proposed in the chat (D-256): active with its next run, or retired, with the decision.
   const routineId = proposedRoutineId(decided);
   if (routineId !== undefined) await decideRoutineProposal(tx, routineId, state, decided.id);
+  // A milestone Arianna proposed in the chat (D-313, seguito 2): created with its cards with the decision.
+  if (decided.kind === 'milestone_plan' && state === 'approved') await applyMilestoneProposal(tx, decided);
   // The closing of a milestone Arianna asked for (D-313): closed, or kept open until its cards change.
   if (decided.kind === 'milestone') await applyMilestoneDecision(tx, decided);
   // The card «Piano» of «/progetta» (D-235) closes in Fatto with the decision: nothing more to run.

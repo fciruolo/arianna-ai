@@ -80,6 +80,9 @@ export const TOOLS = {
   // A routine of the user (D-110, tappa A2; D-256): closed fields only, written off ("proposed") by the core; it
   // runs only after the user approves it in the web chat or on the page «Routine». Never a free recurring prompt.
   'routine.propose': { description: 'Propose a recurring report (days, time, closed sources), active only after the user approves it', opens: [], localOnly: true },
+  // A milestone of a project with its new cards (D-313, seguito 2): nothing is created until the user approves
+  // it in the web chat; then the core writes the milestone (Privato) and the cards in the inbox, none of them started.
+  'milestone.propose': { description: 'Propose a milestone of a project with its new cards, created after the user approves it', opens: [], localOnly: true },
   // The folders of the Mac (D-314, I-22, tappa M1): read only, by the core in Node, only in a private conversation
   // with Arianna on the local model. Everything read, names included, is L2. A folder not yet allowed asks the user
   // first («Solo questa volta», «Per tutta questa conversazione», «Sempre»); no agent adds a folder by itself.

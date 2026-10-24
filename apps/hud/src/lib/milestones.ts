@@ -1,4 +1,5 @@
 import { dueText, type Card } from './cardwall.ts';
+import { dayLabel } from './commitments.ts';
 import type { Label } from './types.ts';
 
 /**
@@ -100,6 +101,35 @@ export function milestoneClosing(approval: { kind: string; detail: Record<string
 }
 export const CLOSE_YES = 'Sì, chiudila';
 export const CLOSE_NO = 'No, lasciala aperta';
+
+// A milestone Arianna proposes in the chat (D-313, seguito 2): nothing is created before «Crea la milestone».
+
+export const PROPOSAL_YES = 'Crea la milestone';
+export const PROPOSAL_NO = 'Non ora';
+export const PROPOSAL_NOTE = 'Le card nascono in Inbox, assegnate a te: nessuna parte da sola. La milestone resta su questo Mac (Privato).';
+
+export interface MilestoneProposalCard {
+  title: string;
+  project: string;
+  description: string | null;
+  /** "venerdì 30 ottobre", as a card says its day. */
+  due: string | null;
+  cards: string[];
+}
+
+/** The card of an approval of kind `milestone_plan`, or undefined when it is not a whole one. */
+export function milestoneProposal(approval: { kind: string; detail: Record<string, unknown> }, today: string): MilestoneProposalCard | undefined {
+  if (approval.kind !== 'milestone_plan') return undefined;
+  const { title, project, description, due, cards } = approval.detail;
+  if (typeof title !== 'string' || typeof project !== 'string' || !Array.isArray(cards)) return undefined;
+  return {
+    title,
+    project,
+    description: typeof description === 'string' && description.trim() !== '' ? description : null,
+    due: typeof due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(due) ? dayLabel(due, today) : null,
+    cards: (cards as unknown[]).filter((card): card is string => typeof card === 'string'),
+  };
+}
 
 /** The milestones a card may go in: the open ones of its project, and the one it is in. */
 export function milestoneChoices(card: Pick<Card, 'kind' | 'project' | 'milestone'>, milestones: readonly Milestone[]): Milestone[] {

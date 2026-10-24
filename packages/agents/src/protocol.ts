@@ -84,6 +84,17 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
     },
     ['title', 'days', 'at', 'sources'],
   ),
+  // MAX_MILESTONE_TITLE of apps/core/src/milestones.ts, MAX_PROPOSED_CARDS and the rest of apps/core/src/milestone-proposals.ts (D-313).
+  'milestone.propose': object(
+    {
+      title: text(200),
+      project: text(100),
+      description: text(500),
+      due: text(80),
+      cards: { type: 'array', maxItems: 12, items: text(120) },
+    },
+    ['title', 'cards'],
+  ),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -152,6 +163,8 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
     'Propose to remember a stable fact the user just told you about themselves (where they live, their job, a preference): "topic" one or two general words (the place, the job, the children: never names or numbers in the topic); if the list of facts already has a topic for this same thing, use exactly that topic, so that its text is replaced; "text" the fact in the user\'s words. The user confirms it in the chat; it is saved as private ("Solo in casa"). Never for health, documents or credentials, never for something said in passing or about other people.',
   'routine.propose':
     'Propose a routine: a report that Arianna writes by herself in a chat of its own on fixed days at a fixed time, again and again ("ogni lunedì alle 9 fammi il resoconto", "tutte le sere alle 18 dimmi cosa ho da fare"). Only when the user asks for something recurring; for a report now, or once, never. "title" is a short name of one line (at most 80 characters), in the user\'s words; "days" are ISO days, 1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday, 6 Saturday, 7 Sunday ("ogni giorno": all seven; "nei giorni feriali": 1 to 5); "at" is the time as HH:MM, 24 hours ("alle 9": "09:00"); "sources" are what goes in the report, only from this list: "todo" (the user\'s open cards), "waiting" (decisions waiting for the user), "cards" (cards at work), "done-since" (cards done since the last report), "failed-since" (cards failed since the last report), "notes" (new thoughts to sort), "dashboard" (refreshes every tile of the user\'s Dashboard with the local model; the user chooses single tiles on the page Routine, never you): for a general report ("cosa ho da fare e cosa aspetta me") use "todo" and "waiting"; "summary" adds three lines of the local model (default true); "channel" is "chat" (the default) or "call" when the user asks to be called ("chiamami ogni mattina alle 10"): the report is in the chat anyway, and Arianna also calls on the voice of this Mac. The report is written by the core; email, Telegram and the real phone are not available: say so if the user asked for those. Nothing starts until the user approves the routine in the chat: call it once, and never say it is active before.',
+  'milestone.propose':
+    'Propose a milestone of a project: a stage of the work with a name and the cards that make it ("crea la milestone Accessi su panificio-rossi con design, database e implementazione"). Only when the user asks for a milestone (or a stage, a phase, a tappa of a project); for cards alone use task.create or task.plan. "title" is its name in the user\'s words, one line; "project" the project as the user named it, left out in a conversation of a project; "description" only if the user said when it is done ("fatta quando…"); "due" the due day exactly as the user said it (venerdì, 15 novembre), only if they said one: the core computes the date, never compute it yourself; "cards" the titles of the new cards, short, one per piece of work the user named, in their order ([] when they named none). The cards are born in the Inbox of the cardwall, none of them starts. Nothing is created until the user approves it in the chat: call it once, never call task.create or task.plan for the same cards, and never say it exists before. Without a known project it answers with the known ones: ask the user which.',
   'commitment.add':
     'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':

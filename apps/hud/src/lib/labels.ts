@@ -106,6 +106,8 @@ export const ACTION_TEXT: Record<string, string> = {
   'browser.private': 'Lascio uscire questo dato salvato?',
   // D-313: the closing of a milestone whose cards are all done.
   'milestone.close': 'Chiudo la milestone?',
+  // D-313, seguito 2: a milestone with its new cards, proposed in the chat.
+  'milestone.propose': 'Creo la milestone?',
   // D-314: a folder of the Mac Arianna would read.
   'mac.read': 'Posso guardare in questa cartella?',
 };

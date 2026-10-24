@@ -27,7 +27,8 @@ import {
 } from '../lib/plan-approval.ts';
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
-import { CLOSE_NO, CLOSE_YES, MILESTONE_NOTE, milestoneClosing } from '../lib/milestones.ts';
+import { CLOSE_NO, CLOSE_YES, MILESTONE_NOTE, milestoneClosing, milestoneProposal, PROPOSAL_NO, PROPOSAL_NOTE, PROPOSAL_YES } from '../lib/milestones.ts';
+import { todayInput } from '../lib/im-billing.ts';
 import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
 import { afterText, MAC_CHOICE_TEXT, MAC_NO, MAC_NOTE, MAC_PHONE_NOTE, macChoices, macRead } from '../lib/mac-approval.ts';
 import type { Approval, ApprovalChoice, ExecutorChoice, MacChoice } from '../lib/types.ts';
@@ -215,6 +216,8 @@ const report = computed(() => {
 const im = computed(() => (props.approval.kind === 'im' ? imConfirmation(props.approval.detail) : undefined));
 /** The closing of a milestone the core asks for (D-313): its title and project. */
 const milestone = computed(() => milestoneClosing(props.approval));
+/** A milestone Arianna proposes in the chat (D-313, seguito 2): nothing is created before «Crea la milestone». */
+const newMilestone = computed(() => milestoneProposal(props.approval, todayInput()));
 const COMMITMENT_NOTE = {
   add: 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
   done: 'Confermando, l’impegno risulta fatto.',
@@ -409,6 +412,17 @@ const remoteOrigin = onRemoteOrigin(window.location);
           >.
         </p>
       </template>
+      <template v-else-if="newMilestone !== undefined">
+        <p class="text-[15px]">
+          Milestone <strong>«{{ newMilestone.title }}»</strong> di {{ newMilestone.project }}<template v-if="newMilestone.due !== null"> · scade {{ newMilestone.due }}</template>
+        </p>
+        <p v-if="newMilestone.description !== null" class="text-[14px] break-words"><span class="text-muted">Fatta quando:</span> {{ newMilestone.description }}</p>
+        <ol v-if="newMilestone.cards.length > 0" class="flex list-decimal flex-col gap-0.5 pl-5 text-[14px]">
+          <li v-for="(card, index) in newMilestone.cards" :key="index" class="break-words">{{ card }}</li>
+        </ol>
+        <p v-else class="text-[14px] text-muted">Nessuna card nuova: ce le sposti tu dalla Bacheca.</p>
+        <p class="text-xs text-muted">{{ PROPOSAL_NOTE }}</p>
+      </template>
       <template v-else-if="milestone !== undefined">
         <p class="text-[15px]">Chiudere la milestone <strong>«{{ milestone.title }}»</strong> di {{ milestone.project }}?</p>
         <p class="text-[13px] text-muted">{{ MILESTONE_NOTE }}</p>
@@ -460,9 +474,9 @@ const remoteOrigin = onRemoteOrigin(window.location);
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary max-md:flex-1" @click="choose('approved')">
-        <Icon :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ milestone !== undefined ? CLOSE_YES : share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ newMilestone !== undefined ? PROPOSAL_YES : milestone !== undefined ? CLOSE_YES : share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ milestone !== undefined ? CLOSE_NO : share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ newMilestone !== undefined ? PROPOSAL_NO : milestone !== undefined ? CLOSE_NO : share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
     <!-- From the phone (D-292) every decision asks Face ID: said before the tap (D-293). -->
     <p v-if="remoteOrigin" class="flex items-center gap-1.5 px-[15px] pb-2.5 text-[12.5px] text-muted"><Icon name="face-id" :size="14" />Dal telefono ogni decisione chiede Face ID.</p>

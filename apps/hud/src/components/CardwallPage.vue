@@ -651,7 +651,10 @@ function chooseSort(value: string): void {
       /></label>
       <fieldset v-if="blockerOptions.length > 0" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px]">
         <legend class="mb-1 text-[13px] text-muted">Bloccata da</legend>
-        <label v-for="other in blockerOptions" :key="other.id" class="flex items-center gap-1.5"><input v-model="editingMilestone.blockedBy" type="checkbox" :value="other.id" class="accent-[var(--accent)]" />{{ other.title }}</label>
+        <!-- The name of each box is the title of the milestone, never its id (D-313): the value stays the id. -->
+        <label v-for="other in blockerOptions" :key="other.id" class="flex items-center gap-1.5"
+          ><input v-model="editingMilestone.blockedBy" type="checkbox" :value="other.id" :aria-label="other.title" class="accent-[var(--accent)]" /><span>{{ other.title }}</span></label
+        >
       </fieldset>
       <p class="w-full text-[12.5px] text-muted">Titolo e descrizione restano su questo Mac (Privato): non vanno a nessun modello nel cloud.</p>
       <div class="flex gap-1.5">

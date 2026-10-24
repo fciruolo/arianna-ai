@@ -18,6 +18,7 @@ import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
 import { runFinanceTool } from '../finance-tools.ts';
+import { checkMilestoneProposal, milestoneProposalLabelOk, proposalLabel, sameOpenMilestone, WAITING_MILESTONE, type MilestoneProposal } from '../milestone-proposals.ts';
 import { checkRoutineProposal, proposalLabelOk, WAITING_ROUTINE, type RoutineProposal } from '../routine-proposals.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { checkProposal, listUserFacts, MAX_FACTS } from '../user-facts.ts';
@@ -41,6 +42,7 @@ import { webFetch, type WebPage, type WebToolEnv } from './web-tool.ts';
  * `profile.read` reads one fact of «Su di te» within the step's clearance (D-114, tappa B).
  * `profile.share` asks the user to let one fact out to an agent, `profile.propose` to remember one (D-114, tappe C e D).
  * `routine.propose` proposes a routine, written off until the user approves it (D-256).
+ * `milestone.propose` proposes a milestone with its new cards, created once the user approves it (D-313).
  * `web.fetch` reads one public page through the gateway, in a context at most L1 (web-tool.ts, D-262).
  */
 export const LOCAL_TOOLS = [
@@ -57,6 +59,7 @@ export const LOCAL_TOOLS = [
   'profile.share',
   'profile.propose',
   'routine.propose',
+  'milestone.propose',
   'web.fetch',
 ] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
@@ -94,6 +97,12 @@ export interface ToolEnv {
    */
   routines?: boolean;
   /**
+   * The projects a milestone may be of (D-313, seguito 2), with their label:
+   * a conversation with Arianna, never incognito nor the secretary's. Without
+   * it the tool proposes nothing.
+   */
+  milestones?: { projects: readonly { name: string; label: Label }[] };
+  /**
    * What `web.fetch` needs (D-262): the pool, the run, the signal. Without it
    * the tool reads nothing. `incognito`: the conversation is incognito, where
    * the tool is never offered.
@@ -116,6 +125,8 @@ export interface ToolResult {
   propose?: FactProposal;
   /** `routine.propose`: the routine the user approves in the web chat, written off with the turn (D-256). */
   routine?: RoutineProposal;
+  /** `milestone.propose`: the milestone the user approves in the web chat, its approval written with the turn (D-313). */
+  milestone?: MilestoneProposal;
   /** `web.fetch`: the page read, for the line of the chat (D-262). */
   page?: WebPage;
   /** `web.fetch`: a saved private value of the user in the address (D-283), for the card «Apri / No». */
@@ -155,6 +166,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await proposeFact(args, env);
       case 'routine.propose':
         return proposeRoutine(args, env);
+      case 'milestone.propose':
+        return await proposeMilestone(args, env);
       case 'web.fetch':
         return await webFetch(args, env);
     }
@@ -282,6 +295,28 @@ function proposeRoutine(args: Record<string, unknown>, env: ToolEnv): ToolResult
   const checked = checkRoutineProposal(args);
   if ('error' in checked) return { text: `error: routine.propose: ${checked.error}`, label: 'L0' };
   return { text: WAITING_ROUTINE, label: 'L0', routine: checked };
+}
+
+/**
+ * `milestone.propose` (D-313, seguito 2): the fields checked by code
+ * (checkMilestoneProposal), nothing written here: the orchestrator writes the
+ * approval with the turn, and the milestone with its cards is created only
+ * once the user approves it. Never from a context above Privato (a milestone
+ * is at most L2) or that has read finance data (the title would carry it),
+ * never a second open milestone with the same title in the project.
+ */
+async function proposeMilestone(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  if (env.milestones === undefined) return { text: 'error: milestone.propose: a milestone is proposed only in a conversation with Arianna: the user writes it on the cardwall', label: 'L0' };
+  if (isFinanceContext(env.context)) return { text: 'error: milestone.propose: this conversation has read finance data: the user writes the milestone on the cardwall', label: 'L0' };
+  if (!milestoneProposalLabelOk(env.context.effective)) return { text: 'error: milestone.propose: this conversation holds data above Privato: the user writes the milestone on the cardwall', label: 'L0' };
+  const workspace = await workspaceProject(env);
+  const checked = checkMilestoneProposal(args, { projects: env.milestones.projects, ...(workspace === undefined ? {} : { workspace }) });
+  if ('error' in checked) return { text: `error: milestone.propose: ${checked.error}`, label: 'L0' };
+  if (!milestoneProposalLabelOk(proposalLabel(env.context.effective, checked))) return { text: 'error: milestone.propose: the project is above Privato', label: 'L0' };
+  if (await sameOpenMilestone(env.sql, checked.project, checked.title)) {
+    return { text: `error: milestone.propose: ${checked.project} already has an open milestone with this title: tell the user, who moves the cards into it on the cardwall`, label: 'L0' };
+  }
+  return { text: WAITING_MILESTONE, label: 'L0', milestone: checked };
 }
 
 /** The project of the conversation's workspace (a container, or `container:part`, D-145), when it has one. */
