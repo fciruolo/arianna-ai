@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Il core non si chiude più quando la connessione al database cade nel mezzo di una transazione, per esempio al riavvio di Docker (D-317).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto
