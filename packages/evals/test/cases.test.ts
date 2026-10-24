@@ -42,7 +42,8 @@ test('every group folder under evals/ belongs to a registered group', () => {
   const folders = readdirSync(join(resolveHome({}), 'evals'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  const known = GROUPS.map((group) => group.name);
+  // evals/memory has its own two files and runner, `pnpm eval:memory` (D-307).
+  const known = [...GROUPS.map((group) => group.name), 'memory'];
   assert.deepEqual(folders.filter((folder) => !known.includes(folder)), []);
 });
 

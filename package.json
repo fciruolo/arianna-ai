@@ -15,6 +15,7 @@
     "eval": "node packages/evals/src/cli.ts deterministic",
     "eval:models": "node packages/evals/src/cli.ts models",
     "eval:live": "node packages/evals/src/cli.ts live",
+    "eval:memory": "node packages/evals/src/memory-cli.ts",
     "check": "pnpm build && pnpm test && pnpm lint && pnpm eval",
     "db:up": "node scripts/compose.ts up --detach --wait",
     "db:down": "node scripts/compose.ts down",
