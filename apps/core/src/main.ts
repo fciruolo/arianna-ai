@@ -100,6 +100,7 @@ import { createModelEvals, machineBusy, trialOpen, trialRunning } from './model-
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createImWatcher } from './im-watch.ts';
+import { createMilestoneWatcher } from './milestones.ts';
 import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
 import { createSecretaryTicker } from './reminders.ts';
 import { createRoutineService, createRoutineSummarizer, createRoutineTicker, routineCallScript } from './routines.ts';
@@ -1675,6 +1676,9 @@ godTicker.unref();
 
 const imWatcher = createImWatcher({ sql, projects: projectContainers, env: { home: config.home, rules }, onError: report });
 imWatcher.start();
+// The milestones whose cards are all done: Arianna asks whether to close them (D-313).
+const milestoneWatcher = createMilestoneWatcher({ sql, onError: report });
+milestoneWatcher.start();
 
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
@@ -1703,6 +1707,7 @@ async function shutdown(): Promise<void> {
   routineTicker.stop();
   omlxReleases.stop();
   imWatcher.stop();
+  milestoneWatcher.stop();
   clearInterval(godTicker);
   clearInterval(changesTicker);
   clearInterval(gatewayTextsTicker);
