@@ -1077,6 +1077,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       work,
       work && options.browser?.installed() === true,
       !work && options.mac !== undefined,
+      // milestone.propose (D-313): offered with routine.propose, in every conversation of Arianna the warm-up stands for.
+      true,
     );
     // The planner of a work conversation within L1 (plannerFor): Claude when it is on; the local model in a private one.
     const planner: Planner = work && tools.includes(PLAN) && canAnswerDirectly(env) && plannerModelOf({ mode: 'work', model: null }, enabledCloudModels(env.settings().cloud)) !== undefined ? 'claude' : 'self';
