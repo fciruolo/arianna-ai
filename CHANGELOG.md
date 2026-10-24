@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.174.1] - 2026-10-24
+
 ### Corretto
 
 - Registro del gateway: il filtro «Destinazione» dà un nome in italiano a ogni destinazione del browser dell'agente («risorsa di una pagina indicata da te», «testo scritto in una pagina indicata da te»…) invece del codice fra parentesi (D-306).
