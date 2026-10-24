@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Casi del confronto delle memorie in `evals/memory/` (15 episodi inventati, una cancellazione, 21 domande con date, contraddizioni e privacy) e il comando `pnpm eval:memory`, che per ora prova un adattatore finto: controlli di privacy al 100% (incognite e L3 mai salvate, cancellazione vera, etichetta ereditata, niente ricordi Privati in una conversazione di Lavoro) e parole attese, con rapporto senza testo in `data/evals/report-memory-fake.json` (D-307).
+
 ## [0.174.0] - 2026-10-24
 
 ### Aggiunto
