@@ -44,9 +44,10 @@ export function parseInstallation(value: unknown): InstallationInfo | undefined 
 /*
  * «Pronta per i dati veri» (D-192, `/api/installation/readiness`): the core
  * answers closed ids and outcomes, never a detail; the names and what to do
- * are written here, for a person who does not read code.
+ * are written here, for a person who does not read code. READINESS_IDS is the
+ * list of apps/core/src/readiness.ts: test/readiness-ids.test.ts compares them.
  */
-export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
+export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'vector', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
 export type ReadinessId = (typeof READINESS_IDS)[number];
 
 export interface ReadinessCheck {
@@ -112,6 +113,11 @@ export const READINESS_TEXT: Record<ReadinessId, { title: string; ok: string; fi
     title: 'Registro degli eventi integro',
     ok: 'Nessun evento cambiato o tolto.',
     fix: 'Il registro degli eventi non torna o non si legge. Non mettere dati veri: esegui pnpm arianna:doctor nel Terminale per i dettagli.',
+  },
+  vector: {
+    title: 'Ricerca per significato (pgvector)',
+    ok: 'Pronta nel database, alla versione giusta.',
+    fix: 'La ricerca per significato nel database manca, è vecchia o Arianna non può usarla. Esegui pnpm arianna:doctor nel Terminale, che dice cosa manca; i passi per sistemarla sono in docs/DATA-MODEL.md.',
   },
   folders: {
     title: 'Cartelle dei dati private',

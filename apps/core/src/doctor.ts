@@ -5,7 +5,7 @@
 import type { AriannaConfig } from '@arianna/config';
 import type { Secret } from '@arianna/vault';
 
-import { connect, type Sql } from './db/client.ts';
+import { connect, type Queryable, type Sql } from './db/client.ts';
 import { APP_ROLE, DEV_PASSWORDS, passwordOf, resolveLogins, type DbLogin, type DbLogins } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { verifyEventChain } from './events.ts';
@@ -179,10 +179,12 @@ async function checkMigrations(owner: Sql, checks: DoctorCheck[]): Promise<void>
  * pgvector (migration 0092, D-308): installed in `extensions`, usable by the
  * application role, and at the version of the image. After an update of the
  * image (apps/core/postgres/Dockerfile) the database keeps the old version
- * until the owner runs `ALTER EXTENSION vector UPDATE`.
+ * until the owner runs `ALTER EXTENSION vector UPDATE`. Every query reads
+ * catalogs open to any role: the doctor runs it as the owner, the core of
+ * «Pronta per i dati veri» (D-192) as the application role.
  */
-async function checkVector(owner: Sql, checks: DoctorCheck[]): Promise<void> {
-  const [row] = await owner<{ schema: string | null; installed: string | null; available: string | null; usage: boolean | null }[]>`
+export async function vectorCheck(sql: Queryable): Promise<DoctorCheck> {
+  const [row] = await sql<{ schema: string | null; installed: string | null; available: string | null; usage: boolean | null }[]>`
     SELECT n.nspname AS schema, e.extversion AS installed, a.default_version AS available,
            has_schema_privilege(${APP_ROLE}, n.oid, 'USAGE') AS usage
     FROM pg_available_extensions a
@@ -200,7 +202,11 @@ async function checkVector(owner: Sql, checks: DoctorCheck[]): Promise<void> {
     ok = true;
     detail = `pgvector ${row.installed} in extensions`;
   }
-  checks.push({ id: 'database.vector', ok, detail });
+  return { id: 'database.vector', ok, detail };
+}
+
+async function checkVector(owner: Sql, checks: DoctorCheck[]): Promise<void> {
+  checks.push(await vectorCheck(owner));
 }
 
 /** The application role can work on rows and nothing else (migration 0007). */

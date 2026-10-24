@@ -3,7 +3,9 @@ import { test } from 'node:test';
 
 import { loadConfig } from '@arianna/config';
 
+import { resolveLogin } from '../src/db/logins.ts';
 import { runDoctor } from '../src/doctor.ts';
+import { coreChecks, groupChecks } from '../src/readiness.ts';
 import { useTestDatabase, withClusterLock } from './support/database.ts';
 
 // pgvector (migration 0092, D-308): the type works for the application role
@@ -67,6 +69,23 @@ test('doctor: database.vector passes, and fails when the application role cannot
     await owner`REVOKE USAGE ON SCHEMA extensions FROM arianna_app`;
     try {
       assert.deepEqual(await vector(), { id: 'database.vector', ok: false, detail: 'arianna_app cannot use the schema extensions' });
+    } finally {
+      await owner`GRANT USAGE ON SCHEMA extensions TO arianna_app`;
+    }
+  });
+});
+
+test('«Pronta per i dati veri» (D-192): the core checks pgvector as the application role, row «vector»', async () => {
+  const { owner, sql } = db();
+  const config = loadConfig();
+  const app = await resolveLogin(config, 'app');
+  const vectorGroup = async (): Promise<{ id: string; ok: boolean } | undefined> =>
+    groupChecks(await coreChecks(config, sql, app, () => Promise.resolve('1.0'))).find((group) => group.id === 'vector');
+  await withClusterLock(owner, async () => {
+    assert.deepEqual(await vectorGroup(), { id: 'vector', ok: true });
+    await owner`REVOKE USAGE ON SCHEMA extensions FROM arianna_app`;
+    try {
+      assert.deepEqual(await vectorGroup(), { id: 'vector', ok: false });
     } finally {
       await owner`GRANT USAGE ON SCHEMA extensions TO arianna_app`;
     }
