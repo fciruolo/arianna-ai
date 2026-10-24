@@ -65,7 +65,7 @@ function harness(extra: Partial<ModelWarmthOptions> = {}, swap?: SwapSample, end
   const warmth = createModelWarmth({
     endpoints: () => endpoints,
     alias: 'local-large',
-    request: () => Promise.resolve(REQUEST),
+    requests: () => Promise.resolve([{ part: 'private' as const, request: REQUEST }]),
     model: () => memory.wrap(raw, endpoints),
     memory,
     callActive: () => false,
@@ -106,6 +106,26 @@ describe('warm-up (D-316)', () => {
     // Up again without a restart (a health check that passed again): no second warm-up.
     await warmth.serverUp('omlx');
     assert.equal(requests.length, 1);
+  });
+
+  it('sends the private step, then the work step, one after the other, each with its event (D-316 with D-314)', async () => {
+    const WORK = { ...REQUEST, messages: [{ role: 'system' as const, content: 'lavoro' }] };
+    const { warmth, requests, events } = harness({ requests: () => Promise.resolve([{ part: 'private' as const, request: REQUEST }, { part: 'work' as const, request: WORK }]) });
+    await warmth.serverUp('omlx');
+    assert.deepEqual(requests.map((request) => request.messages), [REQUEST.messages, WORK.messages]);
+    assert.deepEqual(events.map(({ outcome, part }) => [outcome, part]), [['warmed', 'private'], ['warmed', 'work']]);
+  });
+
+  it('the work step follows the same rules: skipped when something started at work after the private one', async () => {
+    let checks = 0;
+    const WORK = { ...REQUEST, messages: [{ role: 'system' as const, content: 'lavoro' }] };
+    const { warmth, requests, events } = harness({
+      requests: () => Promise.resolve([{ part: 'private' as const, request: REQUEST }, { part: 'work' as const, request: WORK }]),
+      busy: () => Promise.resolve((checks += 1) > 1),
+    });
+    await warmth.serverUp('omlx');
+    assert.equal(requests.length, 1);
+    assert.deepEqual(events.map(({ outcome, part }) => [outcome, part]), [['warmed', 'private'], ['skipped-busy', 'work']]);
   });
 
   it('warms again after a restart of the server', async () => {
@@ -153,7 +173,7 @@ describe('warm-up (D-316)', () => {
   });
 
   it('without the card of Arianna nothing is sent; a check that throws is a failure, said once', async () => {
-    const none = harness({ request: () => Promise.resolve(undefined) });
+    const none = harness({ requests: () => Promise.resolve([]) });
     await none.warmth.serverUp('omlx');
     assert.equal(none.requests.length, 0);
     assert.equal(none.events[0]?.outcome, 'skipped-no-agent');
@@ -180,7 +200,7 @@ describe('warm-up (D-316)', () => {
     const warmth = createModelWarmth({
       endpoints: () => [ENDPOINT],
       alias: 'local-large',
-      request: () => Promise.resolve(REQUEST),
+      requests: () => Promise.resolve([{ part: 'private' as const, request: REQUEST }]),
       model: () => memory.wrap(failing, [ENDPOINT]),
       memory,
       callActive: () => false,

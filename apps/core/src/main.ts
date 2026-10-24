@@ -733,7 +733,7 @@ const orchestrator = createOrchestrator({
 const warmth = createModelWarmth({
   endpoints: () => settings.current().local.endpoints,
   alias: ORCHESTRATOR_MODEL,
-  request: () => orchestrator.warmupRequest(),
+  requests: () => orchestrator.warmupRequests(),
   model: localModel,
   memory,
   callActive: () => callActive(),
@@ -742,7 +742,7 @@ const warmth = createModelWarmth({
   idleMinutes: () => settings.current().local.idleUnloadMinutes,
   onEvent: (event) => {
     const seconds = (event.ms / 1000).toFixed(1);
-    console.log(`local ${event.endpoint}: warm ${event.outcome}${event.code === undefined ? '' : ` (${event.code})`} in ${seconds} s`);
+    console.log(`local ${event.endpoint}: warm${event.part === undefined ? '' : ` ${event.part}`} ${event.outcome}${event.code === undefined ? '' : ` (${event.code})`} in ${seconds} s`);
     appendEvent(sql, { kind: 'local.warm', label: 'L0', payload: { ...event } }).catch(report);
   },
   onError: report,

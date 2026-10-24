@@ -87,11 +87,11 @@ import { approvedPrivateSteps, REFUSED_SAVED, refusedSaved, requestSavedPrivate,
 import { approvedRedo, BROWSER_ACTION_EVENT, PAGE_CHANGED, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, promisesClose, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import type { MacEnv } from '../mac-files.ts';
-import { MAC_RESULT_LABEL, macConversation, macRedo, macReplay, macResults, macTool, requestMacRead, WAITING_MAC } from './mac-tool.ts';
+import { MAC_READ_ONLY_ERROR, MAC_READ_ONLY_REPLY, MAC_RESULT_LABEL, macConversation, macFilesInPlay, macRedo, macReplay, macResults, macTool, requestMacRead, WAITING_MAC } from './mac-tool.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
 import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.ts';
-import { plannerFor, writePlan } from './claude-plan.ts';
+import { plannerFor, plannerModelOf, writePlan } from './claude-plan.ts';
 import { planCardStep, planRequestStep } from './plan-job.ts';
 import { planningOf } from '../card-plans.ts';
 import { budgetOf } from './routing.ts';
@@ -508,9 +508,16 @@ export function answerThought(turns: readonly Pick<Turn, 'thought' | 'thoughtMs'
 
 /**
  * The orchestrator, and who may do a card of a plan now (D-235): the user and the agents the planner may choose.
- * `warmupRequest` (D-316): the request that warms the local model, see there.
+ * `warmupRequests` (D-316): the requests that warm the local model, see there.
  */
-export type Orchestrator = StepExecutor & { planAssignees(): string[]; warmupRequest(): Promise<ChatRequest | undefined> };
+export type Orchestrator = StepExecutor & { planAssignees(): string[]; warmupRequests(): Promise<WarmupRequest[]> };
+
+/** Which first step a warm-up request copies (D-316, with D-314): a new private conversation, or a new work one without a project. */
+export type WarmupPart = 'private' | 'work';
+export interface WarmupRequest {
+  part: WarmupPart;
+  request: ChatRequest;
+}
 
 /** The message of the warm-up (D-316): fixed, L0, never a word of the user's. */
 export const WARMUP_MESSAGE = 'Ciao';
@@ -947,12 +954,19 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     // No project here (D-303): a private conversation has none, a work one may have none or one no longer approved.
     // A prefer-first card whose first way is the local model (D-298) works without a folder.
     const local = allowed !== undefined && target !== undefined && preferredWay(target.card, allowed) === 'local';
-    const noProject = error === undefined && ways === undefined && !local && isCloudRoute(where) && conversation !== undefined ? noProjectCase(conversation.mode, repo, approvedRepo(env, repo)) : undefined;
-    if (noProject !== undefined) {
+    // A change to the files of the Mac (D-314, M1: the tools only read) handed by the model to an agent that works in a
+    // project, in a private conversation of the user with Arianna: our words say that the Mac is read only, never those of
+    // D-303 about projects, nor a card to send the brief to a project (with a single project a private conversation has it).
+    // Not when the user named the agent: then the answer is about that agent.
+    const readOnly =
+      error === undefined && !byUser && isCloudRoute(where) && conversation?.mode === 'private' && options.mac !== undefined && task.conversationId !== null &&
+      (await macConversation(sql, task.conversationId)) && (await macFilesInPlay(sql, task.conversationId, [brief, task.title]));
+    const noProject = !readOnly && error === undefined && ways === undefined && !local && isCloudRoute(where) && conversation !== undefined ? noProjectCase(conversation.mode, repo, approvedRepo(env, repo)) : undefined;
+    if (readOnly || noProject !== undefined) {
       // Arianna says why with our fixed words, not the model's (D-303): there is no other way in this conversation.
-      const result = `error: ${DELEGATE}: ${noProjectError(agentName, noProject)}`;
+      const result = `error: ${DELEGATE}: ${readOnly || noProject === undefined ? MAC_READ_ONLY_ERROR : noProjectError(agentName, noProject)}`;
       const reply = await openReply(sql, task.id, { runId: ctx.runId });
-      const stored = await reply.finish(noProjectReply(agentName, noProject), 'L0');
+      const stored = await reply.finish(readOnly || noProject === undefined ? MAC_READ_ONLY_REPLY : noProjectReply(agentName, noProject), 'L0');
       if (!stored.stored) {
         await recordTurn(sql, { ...turn, label, result: `${UNDELIVERED} (${stored.reason})` });
         return { kind: 'wait-user', reason: undelivered(stored.reason), usage };
@@ -1012,19 +1026,29 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
   }
 
   /**
-   * D-316: the first step of Arianna in a new private conversation, as `ask` sends it, with the
-   * fixed WARMUP_MESSAGE in place of the user's and one token: oMLX loads the model, compiles the
-   * grammar of the schema and keeps the blocks of the system prompt. The same tools as that step
-   * (they are in the prompt and in the schema), chosen by the same functions; whether the profile
-   * «Su di te» exists only decides two tool ids, its text never enters; the tools of the folders of the Mac
- * (D-314) are there whenever the core reads them, as in a new private conversation. No persona and no profile in
-   * the tail: they come after the examples, so the blocks before them (D-075) are the step's.
-   * Undefined without Arianna's card.
+   * D-316: the first step of Arianna in a new private conversation and in a new work conversation
+   * without a project, as `ask` sends them, with the fixed WARMUP_MESSAGE in place of the user's and
+   * one token each: oMLX loads the model, compiles the grammar of each schema and keeps the blocks
+   * of each system prompt. Two since D-314: the tools of the folders of the Mac are offered in a
+   * private conversation only, so the two prompts part from the list of tools on. Work without a
+   * project because a new work conversation of the chat starts so more often than with one, and a
+   * project changes nothing before the list of tools but the planner (Claude when it is on, as here).
+   * The same tools as those steps (they are in the prompt and in the schema), chosen by the same
+   * functions: in work, web.fetch (a first message of a work conversation is at most Internal) and
+   * the browser when its image is built, never the mac tools. Whether the profile «Su di te» exists
+   * only decides two tool ids, its text never enters. No persona and no profile in the tail: they
+   * come after the examples, so the blocks before them (D-075) are the step's. Empty without
+   * Arianna's card.
    */
-  async function warmupRequest(): Promise<ChatRequest | undefined> {
+  async function warmupRequests(): Promise<WarmupRequest[]> {
     const agent = options.agents.get(ORCHESTRATOR_AGENT);
-    if (agent === undefined) return undefined;
-    const tailClearance = minLabel(clearanceFor('private'), agent.card.maxLabel);
+    if (agent === undefined) return [];
+    const privateStep = await warmupOf(agent, 'private');
+    return [{ part: 'private', request: privateStep }, { part: 'work', request: await warmupOf(agent, 'work') }];
+  }
+
+  async function warmupOf(agent: LoadedAgent, part: WarmupPart): Promise<ChatRequest> {
+    const tailClearance = minLabel(clearanceFor(part), agent.card.maxLabel);
     const delegates = delegateTargets(env, ORCHESTRATOR_AGENT);
     const shareTargets = delegates.filter((target) => {
       const card = options.agents.get(target.name)?.card;
@@ -1034,11 +1058,26 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     const facts = await listUserFacts(sql);
     const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, false, false, false, shareTargets.length > 0).includes(PROFILE_SHARE);
     const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
-    const tools = orchestratorTools(agent, delegates.length > 0, false, false, false, readsProfile && profile?.topicsOnly === true, profile !== undefined && shareTargets.length > 0, true, false, false, options.mac !== undefined);
+    const work = part === 'work';
+    const tools = orchestratorTools(
+      agent,
+      delegates.length > 0,
+      false,
+      false,
+      false,
+      readsProfile && profile?.topicsOnly === true,
+      profile !== undefined && shareTargets.length > 0,
+      true,
+      work,
+      work && options.browser?.installed() === true,
+      !work && options.mac !== undefined,
+    );
+    // The planner of a work conversation within L1 (plannerFor): Claude when it is on; the local model in a private one.
+    const planner: Planner = work && tools.includes(PLAN) && canAnswerDirectly(env) && plannerModelOf({ mode: 'work', model: null }, enabledCloudModels(env.settings().cloud)) !== undefined ? 'claude' : 'self';
     return {
       model: ORCHESTRATOR_MODEL,
-      messages: chatMessages(agent.prompt, tools, [{ role: 'user', content: WARMUP_MESSAGE }], true, '', delegates, 'self', ''),
-      schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, true, delegates, 'self') },
+      messages: chatMessages(agent.prompt, tools, [{ role: 'user', content: WARMUP_MESSAGE }], true, '', delegates, planner, ''),
+      schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, true, delegates, planner) },
       temperature: 0,
       maxTokens: 1,
     };
@@ -1046,7 +1085,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
 
   return {
     planAssignees: () => ['user', ...delegateTargets(env, ORCHESTRATOR_AGENT).map((target) => target.name)],
-    warmupRequest,
+    warmupRequests,
 
     async plan(task: Task, step: number): Promise<RunSpec> {
       const key = `${task.id}:${String(step)}`;

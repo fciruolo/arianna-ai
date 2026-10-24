@@ -18,6 +18,9 @@ import { SHARE_MARK } from '@arianna/policy';
 import { Secret } from '@arianna/vault';
 
 import { archiveConversation, createConversation, postUserMessage, purgeConversation, setConversationModel } from '../src/conversations.ts';
+import type { MacEnv } from '../src/mac-files.ts';
+import { addMacFolder, listMacFolders, removeMacFolder } from '../src/mac-folders.ts';
+import { MAC_READ_ONLY_ERROR, MAC_READ_ONLY_REPLY } from '../src/orchestrator/mac-tool.ts';
 import { eraseConversation } from '../src/erase.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
@@ -118,6 +121,8 @@ interface Setup {
   closedCoder?: boolean;
   /** `[personas]` (D-107); absent, none. */
   personas?: Record<string, Persona>;
+  /** The folders of the Mac (D-314); absent, the mac tools are never offered. */
+  mac?: MacEnv;
 }
 
 // The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
@@ -151,6 +156,7 @@ function orchestrator(setup: Setup): StepExecutor {
     ...CLOCK,
     ...(setup.withClaude === false ? {} : { claude }),
     ...(setup.skills === undefined ? {} : { skills: setup.skills }),
+    ...(setup.mac === undefined ? {} : { mac: setup.mac }),
   });
 }
 
@@ -678,6 +684,45 @@ async function lastAnswer(conversationId: string): Promise<string | undefined> {
     SELECT body FROM messages WHERE conversation_id = ${conversationId} AND role = 'assistant' ORDER BY id DESC LIMIT 1`;
   return row?.body;
 }
+
+test('a change to the files of the Mac handed to the Coder in a private conversation: the fixed words of read only, not those of D-303 (D-314)', async () => {
+  const home = join(HOME, 'casa-mac-finta');
+  mkdirSync(join(home, 'Desktop'), { recursive: true });
+  writeFileSync(join(home, 'Desktop', 'lista-spesa-finta.txt'), 'Pane finto\nLatte finto\n');
+  const mac: MacEnv = { home, excluded: [join(HOME, 'data')] };
+  await addMacFolder(db().sql, join(home, 'Desktop'));
+  try {
+    // The conversation read the Mac before: «segna che…» names no folder, and still is about the list it read.
+    const chat = await ask('private', 'Leggimi la lista della spesa sulla Scrivania.');
+    const read: Answer = { action: 'call', tool: 'mac.read', arguments: { path: '~/Desktop/lista-spesa-finta.txt' } };
+    await drain(chat.task.id, orchestrator({ model: scripted([read, { action: 'reply', text: 'Pane finto e latte finto.' }]), mac, projects: ['site', 'other'] }));
+    const [first] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${chat.task.id} ORDER BY step LIMIT 1`;
+    assert.match(first?.result ?? '', /^File ~.Desktop.lista-spesa-finta/);
+    const { task } = await postUserMessage(db().sql, chat.conversation.id, 'Segna che pure il pane è stato preso.');
+    const change: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'coder', reason: 'per modificare la lista', brief: 'Mark bread as bought in lista-spesa-finta.txt.' } };
+    assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([change, REPLY]), mac, projects: ['site', 'other'] })), ['answered']);
+    assert.equal(await lastAnswer(chat.conversation.id), MAC_READ_ONLY_REPLY);
+    const [turn] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${task.id}`;
+    assert.equal(turn?.result, `error: task.delegate: ${MAC_READ_ONLY_ERROR}`);
+    assert.equal((await loadDelegations(db().sql, task.id)).length, 0);
+    // A folder named in the request is enough, in a conversation that read nothing yet.
+    const named = await ask('private', 'Sposta il file dalla Scrivania ai Documenti.');
+    await drain(named.task.id, orchestrator({ model: scripted([change, REPLY]), mac, projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(named.conversation.id), MAC_READ_ONLY_REPLY);
+    // With a single project a private conversation has it (a card would send the brief there): still the words of read only.
+    const single = await ask('private', 'Rinomina la cartella Fatture nei Documenti.');
+    await drain(single.task.id, orchestrator({ model: scripted([change, REPLY]), mac }));
+    assert.equal(await lastAnswer(single.conversation.id), MAC_READ_ONLY_REPLY);
+    const [cards] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM approvals WHERE task_id = ${single.task.id}`;
+    assert.equal(cards?.count, 0);
+    // A request about code, in a private conversation that never read the Mac: the words of D-303.
+    const code = await ask('private', 'Chiedi al Coder di scrivere nel progetto demo un file con il costo del bollo.');
+    await drain(code.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), mac, projects: ['site', 'other'] }));
+    assert.equal(await lastAnswer(code.conversation.id), noProjectReply('coder', 'private'));
+  } finally {
+    for (const folder of await listMacFolders(db().sql)) await removeMacFolder(db().sql, folder.id);
+  }
+});
 
 test('without a project, or without a cloud executor, the Coder does not start (D-303)', async () => {
   // A work conversation without its project: Arianna says so with our words, the model is not asked again.

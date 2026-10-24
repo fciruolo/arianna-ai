@@ -12,10 +12,12 @@ import type { ModelMemory } from './model-memory.ts';
  *
  * (a) **warm-up**: when a server that serves the orchestrator comes up (the
  *     start of the core, a restart of the watchdog, «Riavvia»), the core sends
- *     it once, in the background, the first step of Arianna with a fixed
- *     message and one token (the orchestrator's `warmupRequest`). Not with
- *     swap or memory pressure already high, not while another request or a
- *     call is at work. Once per start of the server: an unload for
+ *     it once, in the background, the first steps of Arianna with a fixed
+ *     message and one token (the orchestrator's `warmupRequests`): a new
+ *     private conversation, then a new work one (D-314 made their tools
+ *     differ), one after the other. Not with swap or memory pressure already
+ *     high, not while another request or a call is at work: checked again
+ *     before each of them. Once per start of the server: an unload for
  *     inactivity never starts it again, or the memory would never be freed.
  * (b) **unload after inactivity**: a model of the account idle for
  *     `[local] idle_unload_minutes` (30 by default, 0 never) leaves the
@@ -29,7 +31,11 @@ import type { ModelMemory } from './model-memory.ts';
 
 export type WarmOutcome = 'warmed' | 'skipped-swap' | 'skipped-busy' | 'skipped-no-agent' | 'failed';
 
-export type WarmthEvent = { type: 'warm'; endpoint: string; outcome: WarmOutcome; ms: number; code?: string };
+/** Which first step a warm-up request copies: a private conversation, a work one (D-316 with D-314). */
+export type WarmPart = 'private' | 'work';
+
+/** `part`: the request it is about; absent when the warm-up stopped before the first one. */
+export type WarmthEvent = { type: 'warm'; endpoint: string; outcome: WarmOutcome; ms: number; part?: WarmPart; code?: string };
 
 export type ModelState = 'warming' | 'loaded' | 'idle-unloaded' | 'not-loaded';
 
@@ -43,8 +49,8 @@ export interface ModelWarmthOptions {
   endpoints: () => readonly LocalEndpointConfig[];
   /** The alias of the orchestrator: only a server that serves it is warmed. */
   alias: string;
-  /** The warm-up request; undefined when there is nothing to warm. */
-  request: () => Promise<ChatRequest | undefined>;
+  /** The warm-up requests, sent one after the other; none when there is nothing to warm. */
+  requests: () => Promise<readonly { part: WarmPart; request: ChatRequest }[]>;
   /** The local model wrapped by the memory account, so that the warm-up is counted. */
   model: () => LocalModel;
   memory: Pick<ModelMemory, 'snapshot' | 'checkSwap' | 'activeRequests' | 'unloadIdle'>;
@@ -134,51 +140,70 @@ export function createModelWarmth(options: ModelWarmthOptions): ModelWarmth {
     settled.add(endpoint);
     if (!serves(endpoint)) return;
     const started = now();
-    const done = (outcome: WarmOutcome, code?: string): void => {
-      emit({ type: 'warm', endpoint, outcome, ms: now() - started, ...(code === undefined ? {} : { code }) });
+    const done = (outcome: WarmOutcome, part?: WarmPart, code?: string): void => {
+      emit({ type: 'warm', endpoint, outcome, ms: now() - started, ...(part === undefined ? {} : { part }), ...(code === undefined ? {} : { code }) });
     };
-    try {
-      await options.memory.checkSwap();
-    } catch (error) {
-      fail(error);
-    }
-    const level = options.memory.snapshot().swap?.level ?? 'ok';
-    if (level !== 'ok') {
-      done('skipped-swap');
-      return;
-    }
-    let request: ChatRequest | undefined;
-    try {
-      // A request at work loads the model by itself; a warm-up beside it would only compete.
-      if (options.memory.activeRequests() > 0 || options.callActive() || (await options.busy())) {
-        done('skipped-busy');
-        return;
+    /** The same rules before each request: no swap, nothing else at work. False: said, and the warm-up stops. */
+    const ready = async (part?: WarmPart): Promise<boolean> => {
+      try {
+        await options.memory.checkSwap();
+      } catch (error) {
+        fail(error);
       }
-      request = await options.request();
+      if ((options.memory.snapshot().swap?.level ?? 'ok') !== 'ok') {
+        done('skipped-swap', part);
+        return false;
+      }
+      try {
+        // A request at work loads the model by itself; a warm-up beside it would only compete.
+        if (options.memory.activeRequests() > 0 || options.callActive() || (await options.busy())) {
+          done('skipped-busy', part);
+          return false;
+        }
+      } catch (error) {
+        // The database did not answer, for instance: said once, never thrown into the watchdog's listener.
+        fail(error);
+        done('failed', part, 'error');
+        return false;
+      }
+      return true;
+    };
+    if (!(await ready())) return;
+    let requests: readonly { part: WarmPart; request: ChatRequest }[];
+    try {
+      requests = await options.requests();
     } catch (error) {
-      // The database did not answer, for instance: said once, never thrown into the watchdog's listener.
       fail(error);
-      done('failed', 'error');
+      done('failed', undefined, 'error');
       return;
     }
-    if (request === undefined) {
+    if (requests.length === 0) {
       done('skipped-no-agent');
       return;
     }
-    if (halted()) return;
-    const abort = new AbortController();
-    aborts.add(abort);
     warming.add(endpoint);
     try {
-      await options.model().chat({ ...request, timeoutMs: options.warmTimeoutMs ?? 300_000, signal: abort.signal });
-      done('warmed');
-    } catch (error) {
-      // One token cannot close the JSON: the server answered, the work is done.
-      if (error instanceof LocalModelError && error.kind === 'bad-response') done('warmed');
-      else done('failed', error instanceof LocalModelError ? error.kind : 'error');
+      for (const [index, item] of requests.entries()) {
+        if (index > 0 && !(await ready(item.part))) return;
+        if (halted()) return;
+        const abort = new AbortController();
+        aborts.add(abort);
+        try {
+          await options.model().chat({ ...item.request, timeoutMs: options.warmTimeoutMs ?? 300_000, signal: abort.signal });
+          done('warmed', item.part);
+        } catch (error) {
+          // One token cannot close the JSON: the server answered, the work is done.
+          if (error instanceof LocalModelError && error.kind === 'bad-response') done('warmed', item.part);
+          else {
+            done('failed', item.part, error instanceof LocalModelError ? error.kind : 'error');
+            return;
+          }
+        } finally {
+          aborts.delete(abort);
+        }
+      }
     } finally {
       warming.delete(endpoint);
-      aborts.delete(abort);
     }
   }
 

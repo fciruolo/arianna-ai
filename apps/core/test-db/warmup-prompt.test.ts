@@ -64,8 +64,8 @@ const orchestrator = (model: LocalModel, mac?: MacEnv) =>
   });
 
 /** The request of the first step of Arianna in a new private conversation, as the engine sends it. */
-async function realFirstStep(text: string, mac?: MacEnv): Promise<ChatRequest> {
-  const conversation = await createConversation(db().sql, { mode: 'private' });
+async function realFirstStep(text: string, mac?: MacEnv, mode: 'private' | 'work' = 'private'): Promise<ChatRequest> {
+  const conversation = await createConversation(db().sql, { mode });
   const { task } = await postUserMessage(db().sql, conversation.id, text);
   const model = scripted([{ action: 'reply', text: 'Va bene.' }]);
   const queue = createJobQueue(db().sql);
@@ -86,9 +86,37 @@ async function realFirstStep(text: string, mac?: MacEnv): Promise<ChatRequest> {
 
 const systemOf = (request: ChatRequest | undefined): string => request?.messages[0]?.content ?? '';
 
+/** The warm-up request of one part (D-316 with D-314): the private conversation or the work one. */
+async function warmOf(executor: ReturnType<typeof orchestrator>, part: 'private' | 'work'): Promise<ChatRequest | undefined> {
+  return (await executor.warmupRequests()).find((item) => item.part === part)?.request;
+}
+
+test('two warm-ups, private then work, in this order', async () => {
+  assert.deepEqual((await orchestrator(scripted([])).warmupRequests()).map((item) => item.part), ['private', 'work']);
+});
+
+test('the work warm-up: the same system prompt and schema as the first step of a new work conversation without a project, with or without the Mac', async () => {
+  const mac: MacEnv = { home: join(HOME, 'casa-finta'), excluded: [] };
+  for (const env of [undefined, mac]) {
+    const real = await realFirstStep('Come imposto i test del progetto?', env, 'work');
+    assert.doesNotMatch(systemOf(real), /^- mac\.list:/m);
+    assert.match(systemOf(real), /^- web\.fetch:/m);
+    const warm = await warmOf(orchestrator(scripted([]), env), 'work');
+    assert.ok(warm !== undefined);
+    assert.equal(systemOf(warm), systemOf(real));
+    assert.deepEqual(warm.schema, real.schema);
+    assert.equal(warm.maxTokens, 1);
+    assert.deepEqual(warm.messages.slice(1), [{ role: 'user', content: WARMUP_MESSAGE }]);
+  }
+  // The two prompts part from the list of tools on: the reason of the second warm-up.
+  const work = await warmOf(orchestrator(scripted([]), mac), 'work');
+  const own = await warmOf(orchestrator(scripted([]), mac), 'private');
+  assert.notEqual(systemOf(work), systemOf(own));
+});
+
 test('without a profile: the same system prompt byte for byte and the same schema as the real first step, one token, a fixed message', async () => {
   const real = await realFirstStep('Quanto pago di condominio?');
-  const warm = await orchestrator(scripted([])).warmupRequest();
+  const warm = await warmOf(orchestrator(scripted([])), 'private');
   assert.ok(warm !== undefined);
   assert.equal(systemOf(warm), systemOf(real));
   assert.deepEqual(warm.schema, real.schema);
@@ -102,7 +130,7 @@ test('with the folders of the Mac (D-314): the warm-up offers the same mac tools
   const mac: MacEnv = { home: join(HOME, 'casa-finta'), excluded: [] };
   const real = await realFirstStep('Che file ho sulla Scrivania?', mac);
   assert.match(systemOf(real), /^- mac\.list:/m);
-  const warm = await orchestrator(scripted([]), mac).warmupRequest();
+  const warm = await warmOf(orchestrator(scripted([]), mac), 'private');
   assert.ok(warm !== undefined);
   assert.equal(systemOf(warm), systemOf(real));
   assert.deepEqual(warm.schema, real.schema);
@@ -112,7 +140,7 @@ test('with a profile «Su di te»: the same prompt up to the end of the examples
   await db().sql`INSERT INTO user_facts (topic, text, label) VALUES ('città', ${CITY}, 'L2'::privacy_label)`;
   const real = await realFirstStep('Ciao!');
   assert.ok(systemOf(real).includes(CITY), 'the real step reads the profile');
-  const warm = await orchestrator(scripted([])).warmupRequest();
+  const warm = await warmOf(orchestrator(scripted([])), 'private');
   assert.ok(warm !== undefined);
   const examplesEnd = systemOf(real).indexOf('</examples>');
   assert.ok(examplesEnd > 0);
@@ -128,7 +156,7 @@ test('the warm-up writes nothing: no task, no message, no gateway row', async ()
     return [row?.tasks ?? -1, row?.messages ?? -1, row?.gateway ?? -1];
   };
   const before = await count();
-  assert.ok((await orchestrator(scripted([])).warmupRequest()) !== undefined);
+  assert.equal((await orchestrator(scripted([])).warmupRequests()).length, 2);
   assert.deepEqual(await count(), before);
 });
 

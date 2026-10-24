@@ -41,6 +41,39 @@ export const WAITING_MAC = 'waiting for the user to decide in the chat whether A
 export const MAC_INCOGNITO =
   'error: mac: this conversation is incognito: the folders of the Mac are never read here, and the user is not asked. Tell the user, in their language, that in incognito you do not look at the folders of the Mac, and suggest asking the same in a normal private chat.';
 
+/**
+ * A change to the files of the Mac asked while the tools only read (D-314, M1):
+ * the delegation to the Coder that the model tries in a private conversation
+ * gets these fixed words instead of those of D-303, which speak of projects.
+ * Our Italian, L0; the code hint stays for a request that was about code.
+ */
+export const MAC_READ_ONLY_REPLY =
+  'Per ora sul Mac posso solo guardare e leggere i file: crearli, modificarli, spostarli o cancellarli arriverà con la prossima tappa. Se invece è un lavoro sul codice di un progetto, apri «Nuova conversazione» → «Lavoro» e scegli il progetto.';
+
+/** What the model reads as the result of that delegation: our fixed English, L0. */
+export const MAC_READ_ONLY_ERROR =
+  'the files of the Mac are read only for now: nothing there is created, changed, moved or deleted, by you or by an agent; the user was told';
+
+/** Words that name the folders of the Mac in a request: the Italian and English names, a path from the home, an external disk. */
+const MAC_WORDS = /~\/|\/Volumes\b|\b(scrivania|desktop|documenti|documents|scaricati|downloads?)\b/iu;
+
+/**
+ * Whether a delegation in a private conversation is about the files of the
+ * Mac (D-314): its brief or the user's message name a folder of the Mac, or
+ * the conversation has already read the Mac (a mac call that returned
+ * something). Our test, never the model's word.
+ */
+export async function macFilesInPlay(sql: Queryable, conversationId: string, texts: readonly string[]): Promise<boolean> {
+  if (texts.some((text) => MAC_WORDS.test(text))) return true;
+  const [row] = await sql<{ read: boolean }[]>`
+    SELECT EXISTS (
+      SELECT FROM task_turns tt JOIN tasks t ON t.id = tt.task_id
+      WHERE t.conversation_id = ${conversationId} AND tt.answer ->> 'tool' LIKE 'mac.%'
+        AND tt.result IS NOT NULL AND tt.result NOT LIKE 'error: %' AND tt.result <> ${WAITING_MAC}
+    ) AS read`;
+  return row?.read === true;
+}
+
 /** Every result of a mac tool is L2 (D-314): names of files included. */
 export const MAC_RESULT_LABEL = 'L2';
 
