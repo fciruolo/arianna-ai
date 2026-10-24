@@ -27,6 +27,7 @@ import type { Queryable, Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
+import { clockPart, joinTrailer } from '../clock-part.ts';
 import { linesPart, minLabel, profilePart, promptTail, tailParts } from '../prompt-tail.ts';
 import { listUserFacts } from '../user-facts.ts';
 import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
@@ -215,6 +216,10 @@ export interface OrchestratorOptions {
   browser?: { agent: BrowserToolEnv['browser']; installed: () => boolean };
   /** The folders of the Mac (D-314, I-22, tappa M1): the home and what is never read; absent, the mac tools are never offered. */
   mac?: MacEnv;
+  /** The clock of the line of now at the end of each request to the local model (D-311); tests fix it. Default: the time of this Mac. */
+  now?: () => Date;
+  /** The time zone of that line; default the one of this Mac (systemTimeZone). */
+  timeZone?: string;
 }
 
 /**
@@ -522,6 +527,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.advise === undefined ? {} : { advise: options.advise }),
     ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, StepPlan>();
@@ -1236,6 +1243,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const tail = [...tailParts(env.settings(), task.assignee, tailClearance, { lines: true, character }), ...(profile === undefined ? [] : [profile])];
       // Real lines of the character drawn by the core for this answer (D-224), L0, after the history.
       const lines = linesPart(env.settings(), task.assignee, tailClearance, task.conversationId ?? `task:${task.id}`, character);
+      // The date and time of now (D-311), L0, after the lines: in the last message, never in the fixed prompt (D-075).
+      const clock = clockPart((options.now ?? (() => new Date()))(), options.timeZone);
       // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
       // prompt, a block of L0 data within the local limit; never for Arianna, never for a card
       // closing untrusted_content (skillsPart). The user's own skills of Claude Code (D-255) within
@@ -1253,6 +1262,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           ...skills.map((part) => ({ value: part.text, label: part.label, source: part.source })),
           ...tail.map((part) => ({ value: part.text, label: part.label, source: part.source })),
           ...(lines === undefined ? [] : [{ value: lines.text, label: lines.label, source: lines.source }]),
+          { value: clock.text, label: clock.label, source: clock.source },
         ],
         context,
         { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
@@ -1261,13 +1271,16 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
       const skillsCount = skills.length;
       const linesCount = lines === undefined ? 0 : 1;
-      if (decision.texts.length !== history.length + skillsCount + tail.length + linesCount) throw new Error('the gateway allowed a different number of texts');
+      if (decision.texts.length !== history.length + skillsCount + tail.length + linesCount + 1) throw new Error('the gateway allowed a different number of texts');
       const allowedSkills = skills.length === 0 ? undefined : decision.texts.slice(history.length, history.length + skillsCount).join('\n\n');
       const allowedTail = promptTail(decision.texts.slice(history.length + skillsCount, history.length + skillsCount + tail.length));
       // The assignee plays a person of the series in this step (D-225), as the gateway let its block out:
       // a chat reply may be written once more, livelier.
       const playing = tail.some((part, index) => part.source.startsWith(SERIES_SOURCE_PREFIX) && (decision.texts[history.length + skillsCount + index] ?? '') !== '');
-      const allowedLines = lines === undefined ? '' : (decision.texts.at(-1) ?? '');
+      // After history, skills and tail: the lines when drawn (D-224), then the time (D-311).
+      const trailing = history.length + skillsCount + tail.length;
+      const allowedLines = lines === undefined ? '' : (decision.texts[trailing] ?? '');
+      const trailer = joinTrailer(allowedLines, decision.texts[trailing + linesCount] ?? '');
       const prompt = allowedSkills === undefined || allowedSkills === '' ? agent.prompt : `${agent.prompt}\n\n${allowedSkills}`;
       // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
       const allowed = joinSameRole(history.map((part, index) => ({ ...part, value: { role: part.value.role, content: decision.texts[index] ?? '' } }))).map(
@@ -1330,7 +1343,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         const lively = options.livelyReplies === true && playing && turns.length === 0;
         // A chat reply as free text (D-251): only where there is a chat; a card keeps the text of the JSON in its turn.
         const free = options.freeReplies === true && task.conversationId !== null;
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, allowedLines, lively, showsLive(label, task.clearance) ? live : undefined, free);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner, allowedTail, trailer, lively, showsLive(label, task.clearance) ? live : undefined, free);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

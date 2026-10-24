@@ -644,6 +644,11 @@ export async function loadThemes(): Promise<ThemeListing> {
   return call<ThemeListing>('GET', '/api/themes');
 }
 
+/** The answer to the notice of an automatic change of theme (D-315), kept by the core for every device. */
+export async function answerThemeNotice(key: string, answer: 'ok' | 'back'): Promise<void> {
+  await call<{ ok: true }>('POST', '/api/themes/notice', { key, answer });
+}
+
 /** Downloads the characters of pixel-agents into data/characters/pixel-agents (D-206): only their PNGs and licence. */
 export async function downloadPixelAgents(): Promise<PixelAgentsResult> {
   return call<PixelAgentsResult>('POST', '/api/characters/pixel-agents');

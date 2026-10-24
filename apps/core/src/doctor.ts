@@ -5,7 +5,7 @@
 import type { AriannaConfig } from '@arianna/config';
 import type { Secret } from '@arianna/vault';
 
-import { connect, type Sql } from './db/client.ts';
+import { connect, type Queryable, type Sql } from './db/client.ts';
 import { APP_ROLE, DEV_PASSWORDS, passwordOf, resolveLogins, type DbLogin, type DbLogins } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { verifyEventChain } from './events.ts';
@@ -71,6 +71,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorCheck[]> 
     for (const [id, check] of [
       ['database.migrations', checkMigrations],
       ['database.app-role', checkAppRole],
+      ['database.vector', checkVector],
     ] as const) {
       try {
         await check(owner, checks);
@@ -174,6 +175,40 @@ async function checkMigrations(owner: Sql, checks: DoctorCheck[]): Promise<void>
   });
 }
 
+/**
+ * pgvector (migration 0092, D-308): installed in `extensions`, usable by the
+ * application role, and at the version of the image. After an update of the
+ * image (apps/core/postgres/Dockerfile) the database keeps the old version
+ * until the owner runs `ALTER EXTENSION vector UPDATE`. Every query reads
+ * catalogs open to any role: the doctor runs it as the owner, the core of
+ * «Pronta per i dati veri» (D-192) as the application role.
+ */
+export async function vectorCheck(sql: Queryable): Promise<DoctorCheck> {
+  const [row] = await sql<{ schema: string | null; installed: string | null; available: string | null; usage: boolean | null }[]>`
+    SELECT n.nspname AS schema, e.extversion AS installed, a.default_version AS available,
+           has_schema_privilege(${APP_ROLE}, n.oid, 'USAGE') AS usage
+    FROM pg_available_extensions a
+    LEFT JOIN pg_extension e ON e.extname = a.name
+    LEFT JOIN pg_namespace n ON n.oid = e.extnamespace
+    WHERE a.name = 'vector'`;
+  let ok = false;
+  let detail: string;
+  if (row === undefined) detail = 'not in the image: start the database with the image of compose.yaml (pnpm db:up)';
+  else if (row.installed === null) detail = `not installed: run pnpm db:migrate (image has ${String(row.available)})`;
+  else if (row.schema !== 'extensions') detail = `installed in ${String(row.schema)}, not in extensions`;
+  else if (row.usage !== true) detail = `${APP_ROLE} cannot use the schema extensions`;
+  else if (row.installed !== row.available) detail = `version ${row.installed}, the image has ${String(row.available)}: run ALTER EXTENSION vector UPDATE as the owner`;
+  else {
+    ok = true;
+    detail = `pgvector ${row.installed} in extensions`;
+  }
+  return { id: 'database.vector', ok, detail };
+}
+
+async function checkVector(owner: Sql, checks: DoctorCheck[]): Promise<void> {
+  checks.push(await vectorCheck(owner));
+}
+
 /** The application role can work on rows and nothing else (migration 0007). */
 async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   const problems: string[] = [];
@@ -211,6 +246,10 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
     SELECT has_schema_privilege(${APP_ROLE}, current_schema(), 'CREATE') AS create,
            has_database_privilege(${APP_ROLE}, current_database(), 'TEMPORARY') AS temp`;
   if (scope?.create === true) problems.push('can create objects in the schema');
+  // The schema of pgvector (migration 0092, D-308): USAGE only.
+  const [extensions] = await owner<{ create: boolean }[]>`
+    SELECT has_schema_privilege(${APP_ROLE}, n.oid, 'CREATE') AS create FROM pg_namespace n WHERE n.nspname = 'extensions'`;
+  if (extensions?.create === true) problems.push('can create objects in the schema extensions');
   // A temporary table would shadow a table read by a trigger function.
   if (scope?.temp === true) problems.push('can create temporary tables');
 

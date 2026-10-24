@@ -15,6 +15,16 @@ export interface ConnectOptions {
   schema?: string;
 }
 
+/**
+ * The schema of the tables first, then `extensions`, where migration 0092
+ * keeps pgvector (D-308): `vector`, its operators and operator classes need
+ * no schema in front. Without `schema` the default of PostgreSQL, `"$user",
+ * public`, then `extensions`.
+ */
+export function searchPath(schema?: string): string {
+  return `${schema ?? '"$user", public'}, extensions`;
+}
+
 /** Connects as `login`: the owner for migrations and setup, the application role for everything else. */
 export function connect(config: AriannaConfig, login: DbLogin, options: ConnectOptions = {}): Sql {
   return postgres({
@@ -26,6 +36,6 @@ export function connect(config: AriannaConfig, login: DbLogin, options: ConnectO
     password: () => passwordOf(login),
     max: 5,
     onnotice: () => undefined,
-    ...(options.schema === undefined ? {} : { connection: { search_path: options.schema } }),
+    connection: { search_path: searchPath(options.schema) },
   });
 }

@@ -15,16 +15,20 @@ import type { AriannaConfig } from '@arianna/config';
 import type { Sql } from './db/client.ts';
 import type { DbLogin } from './db/logins.ts';
 import { MIGRATIONS_DIR } from './db/migrate.ts';
-import { appPasswordCheck, defaultPasswordsCheck, type DoctorCheck } from './doctor.ts';
+import { appPasswordCheck, defaultPasswordsCheck, vectorCheck, type DoctorCheck } from './doctor.ts';
 import { verifyEventChain } from './events.ts';
 import { installationChecks, type Runner } from './install-checks.ts';
 
-/** The groups the page names, in the order it shows them; `other` holds an id this list does not know (it still counts). */
-export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
+/**
+ * The groups the page names, in the order it shows them; `other` holds an id
+ * this list does not know (it still counts). The chat has the same list in
+ * apps/hud/src/lib/installation.ts: test/readiness-ids.test.ts compares them.
+ */
+export const READINESS_IDS = ['passwords', 'default-passwords', 'events', 'vector', 'folders', 'models', 'memory', 'model-log', 'model-server', 'programs', 'voice', 'projects', 'other'] as const;
 export type ReadinessId = (typeof READINESS_IDS)[number];
 
 /** Groups that must be there: one missing (a check that did not run) is a failure, never a silent pass. */
-export const REQUIRED_GROUPS: readonly ReadinessId[] = ['passwords', 'default-passwords', 'events', 'folders', 'models', 'programs', 'projects'];
+export const REQUIRED_GROUPS: readonly ReadinessId[] = ['passwords', 'default-passwords', 'events', 'vector', 'folders', 'models', 'programs', 'projects'];
 
 export interface ReadinessCheck {
   id: ReadinessId;
@@ -48,12 +52,13 @@ export interface ReadinessReport {
 }
 
 /** What the record of the doctor must hold: the checks of the owner, and the full check of the passwords. */
-export const TERMINAL_IDS = ['database.owner', 'database.migrations', 'database.app-role', 'database.passwords'] as const;
+export const TERMINAL_IDS = ['database.owner', 'database.migrations', 'database.app-role', 'database.passwords', 'database.vector'] as const;
 
 function groupOf(id: string): ReadinessId {
   if (id === 'database.passwords') return 'passwords';
   if (id === 'database.default-passwords') return 'default-passwords';
   if (id === 'events.chain') return 'events';
+  if (id === 'database.vector') return 'vector';
   if (id.startsWith('layout.')) return 'folders';
   if (id === 'models' || id === 'models.guard-dir') return 'models';
   if (id === 'models.ram') return 'memory';
@@ -236,6 +241,8 @@ export async function coreChecks(config: AriannaConfig, sql: Sql, app: DbLogin, 
       const chain = await verifyEventChain(sql);
       return [{ id: 'events.chain', ok: chain.ok, detail: chain.ok ? 'intact' : 'broken' }];
     })),
+    // pgvector (D-308), as the application role: the core uses it, so the core sees it.
+    ...(await safely('database.vector', async () => [await vectorCheck(sql)])),
   ];
 }
 

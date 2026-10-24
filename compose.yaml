@@ -5,8 +5,15 @@ name: arianna
 
 services:
   postgres:
-    # Minor version and multi-arch digest pinned (D-028); update both together.
-    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    # postgres:17.11-alpine by digest (D-028) plus pgvector 0.8.7 (D-308), built
+    # here from apps/core/postgres/Dockerfile, where versions and digests are
+    # pinned: the tag names what is inside, change it with them. With
+    # pull_policy never compose builds the image when it is missing and never
+    # asks a registry for it (`localhost/` would mean a registry on this Mac).
+    image: localhost/arianna-postgres:17.11-pgvector0.8.7
+    build:
+      context: apps/core/postgres
+    pull_policy: never
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${ARIANNA_DB_USER:-arianna}

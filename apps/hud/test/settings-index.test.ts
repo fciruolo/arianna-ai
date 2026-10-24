@@ -23,7 +23,7 @@ test('six groups by subject (D-192), with the new names of the entries', () => {
       ['Voce e chiamate', 'Notifiche', 'Dispositivi', 'Segretaria'],
       ['Progetti', 'Regole dei progetti'],
       ['Claude e Codex', 'Link da riassumere', 'Siti che il Coder può leggere', 'Cartelle del Mac'],
-      ['Server dei modelli', 'Aspetto e installazione'],
+      ['Server dei modelli', 'Aspetto', 'Installazione'],
       ['Novità', 'Cosa è cambiato', 'Consumi', 'Sviluppo di Arianna'],
     ],
   );
@@ -77,8 +77,6 @@ test('the old addresses of renamed or merged sections open the new one (D-192)',
     ['esecutori-cloud', 'executors'],
     ['server-locali', 'servers'],
     ['link-scaricati', 'links'],
-    ['aspetto', 'system'],
-    ['installazione', 'system'],
     ['personaggi', 'agents'],
     ['personalita', 'agents'],
     ['modelli-locali', 'models'],
@@ -90,6 +88,21 @@ test('the old addresses of renamed or merged sections open the new one (D-192)',
   // A near miss is not an old address.
   assert.equal(resolveSection('modelli-locale').explicit, false);
   assert.equal(resolveSection('tema').explicit, false);
+});
+
+test('«Aspetto e installazione» is two entries (D-312): Aspetto and Installazione, and the old address opens Aspetto', () => {
+  assert.ok(!items.some((entry) => entry.slug === 'aspetto-e-installazione'));
+  assert.deepEqual(resolveSection('aspetto'), { item: byId('appearance'), explicit: true });
+  assert.deepEqual(resolveSection('installazione'), { item: byId('installation'), explicit: true });
+  assert.deepEqual(resolveSection('aspetto-e-installazione'), { item: byId('appearance'), explicit: true });
+  assert.equal(hrefOf(byId('appearance')), '/impostazioni/aspetto');
+  assert.equal(hrefOf(byId('installation')), '/impostazioni/installazione');
+  // Neither is saved from the page: the theme has its own button, the installation is only read.
+  assert.equal(byId('appearance').behaviour, 'browser');
+  assert.equal(byId('installation').behaviour, 'read');
+  // A near miss of the old address is not one.
+  assert.equal(resolveSection('aspetto-installazione').explicit, false);
+  assert.equal(resolveSection('aspetto-e-installazione/').explicit, false);
 });
 
 test('Novità and Sviluppo di Arianna are sections now, and their old pages lead there', () => {
@@ -134,7 +147,7 @@ test('the parts each section edits: any of them makes it dirty, the others do no
   assert.equal(sectionDirty('voice', (section) => section === 'push'), false);
   assert.equal(sectionDirty('voice', (section) => section === 'voice'), true);
   // Read-only and browser-only sections are never dirty.
-  for (const id of ['system', 'changelog', 'dev-progress', 'skills']) assert.equal(sectionDirty(id, () => true), false, id);
+  for (const id of ['appearance', 'installation', 'changelog', 'dev-progress', 'skills']) assert.equal(sectionDirty(id, () => true), false, id);
 });
 
 test('sections left with unsaved edits are named, the open one never', () => {
@@ -148,7 +161,7 @@ test('sections left with unsaved edits are named, the open one never', () => {
     ['Modelli', 'Server dei modelli'],
   );
   assert.deepEqual(
-    pendingTitles('system', () => false),
+    pendingTitles('appearance', () => false),
     [],
   );
 });

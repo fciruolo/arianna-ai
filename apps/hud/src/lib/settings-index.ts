@@ -222,13 +222,21 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'I programmi sul Mac che fanno girare i modelli e la voce. Vedono i dati privati, perciò un cambio chiede conferma.',
         example: 'se la chat smette di rispondere e qui oMLX «non risponde», premi Riavvia.',
       },
-      // The theme (D-103), the mode of this browser (D-158) and what this installation is (D-098), in one entry.
+      // The theme (D-103) and the mode of this browser (D-158): what the chat looks like (D-312).
       {
-        id: 'system',
-        slug: 'aspetto-e-installazione',
-        title: 'Aspetto e installazione',
+        id: 'appearance',
+        slug: 'aspetto',
+        title: 'Aspetto',
         behaviour: 'browser',
-        lead: 'Il tema della chat (colori, sfondo e costumi, su tutti i dispositivi), chiaro o scuro in questo browser e cosa è questa installazione di Arianna.',
+        lead: 'Il tema della chat (colori, sfondo e costumi, uguale su tutti i dispositivi) e chiaro o scuro in questo browser.',
+      },
+      // What this installation is (D-098) and «Pronta per i dati veri» (D-192), out of Aspetto (D-312).
+      {
+        id: 'installation',
+        slug: 'installazione',
+        title: 'Installazione',
+        behaviour: 'read',
+        lead: 'Cosa è questa installazione di Arianna: sviluppo o dati veri, versione, cartella, e se è pronta per i dati veri.',
       },
     ],
   },
@@ -279,7 +287,10 @@ export interface ChosenSection {
  * modelli and Modelli cloud are in Modelli (D-137); the voice trial is a
  * button of Voce (D-066); Esecutori cloud and Etichette are «Claude e Codex»,
  * Server locali is «Server dei modelli», Domini approvati is «Link da
- * riassumere», Aspetto and Installazione are one entry (D-192).
+ * riassumere» (D-192). «Aspetto e installazione» is two entries again
+ * (D-312): its old address opens Aspetto, the first of the two and the part
+ * it showed on top; every link to «Pronta per i dati veri» now names
+ * Installazione.
  */
 const MOVED: Record<string, string> = {
   personaggi: 'agenti',
@@ -292,8 +303,7 @@ const MOVED: Record<string, string> = {
   etichette: 'claude-e-codex',
   'server-locali': 'server-dei-modelli',
   'link-scaricati': 'link-da-riassumere',
-  aspetto: 'aspetto-e-installazione',
-  installazione: 'aspetto-e-installazione',
+  'aspetto-e-installazione': 'aspetto',
 };
 
 /** The section of a slug; none or unknown gives the first section. An old slug gives its new section. */

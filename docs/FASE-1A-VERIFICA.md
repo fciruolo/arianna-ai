@@ -128,7 +128,7 @@ Con un solo progetto approvato in Impostazioni → Progetti una conversazione Pr
 **Come provarlo** (solo dal Mac):
 
 1. Oggi, con l'installazione di sviluppo: `pnpm arianna:doctor` passa i controlli dei limiti di `arianna_app` e delle migrazioni e fallisce quelli delle password (rifiutate perché di sviluppo).
-2. In Impostazioni → Aspetto e installazione, «Pronta per i dati veri», si vede lo stesso elenco.
+2. In Impostazioni → Installazione, «Pronta per i dati veri», si vede lo stesso elenco.
 3. Al passaggio ai dati veri: chiave age e vault (`pnpm vault:init`, `pnpm vault:edit`), password vere con `\password` di psql, `pnpm db:migrate`, poi `pnpm arianna:doctor` tutto verde.
 
 ## Oltre il criterio, prima dei dati veri

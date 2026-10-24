@@ -45,7 +45,8 @@ import { connect } from './db/client.ts';
 import { configurePiiGuard, createPiiGuard, guardStarter, stopPiiGuard } from './pii-guard.ts';
 import { chatCharacters } from './character-chat.ts';
 import { servedRowsSync } from './characters.ts';
-import { characterDirsOf, configureSeriesLines, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
+import { feastNoticeStore } from './feast-notice.ts';
+import { characterDirsOf, configureFeastSkip, configureSeriesLines, configureTailAgents, wornSeriesNames } from './prompt-tail.ts';
 import { createSeriesLines } from './series-lines.ts';
 import { createWikiquoteClient } from './wikiquote.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
@@ -1280,6 +1281,9 @@ await godLanding.recover().then(
 const characterDirs = characterDirsOf(config.home, config.paths.data);
 // D-217: the names of the people of the series worn now are no persons for the second scanner, whole.
 configureWornNames(() => wornSeriesNames({ ...settings.current(), home: config.home, paths: config.paths }));
+// D-315: a period of a feast the user sent away keeps Base in the prompt too.
+const feastNotices = feastNoticeStore(config.paths.data);
+configureFeastSkip(() => feastNotices.read().skip);
 configureTailAgents(() => ({ official: [...agents.keys()], user: userAgents.list().user.map((agent) => agent.name) }));
 // «Cosa è cambiato» (D-233): a picture of the installation, only ids, versions and states, compared
 // with the last one in data/changes/state.json; what differs goes in the event log. Taken at start,
@@ -1483,6 +1487,8 @@ const server = await startApiServer({
       chosen: () => settings.current().appearance.theme,
       // D-246: the feasts in place of Base; ARIANNA_TODAY=YYYY-MM-DD shows one out of season in development.
       feasts: () => ({ on: settings.current().appearance.seasonal, today: themeDay(process.env, new Date()) }),
+      // D-315: the answers to the notice of an automatic change of theme, the same on every device.
+      notice: feastNotices,
     },
     // D-223: what the user rewrote of the people of the series, for their card in the settings.
     series: () => settings.current().series,

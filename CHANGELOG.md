@@ -8,6 +8,36 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Arianna legge le cartelle del Mac, solo lettura, nelle chat Private e con il modello locale: elenca, dà informazioni, legge file di testo e cerca per nome; una cartella non ancora permessa chiede con una scheda a tre scelte («Solo questa volta», «Per tutta questa conversazione», «Sempre»), con la frase scritta dal codice e il comando equivalente; la lista permanente in Impostazioni → Cartelle del Mac; tutto ciò che legge è Privato e non esce mai dal Mac; in incognito non guarda (D-314).
 
+## [0.177.0] - 2026-10-24
+
+### Aggiunto
+
+- Quando una festa cambia il tema da sola (per esempio Halloween dal 25 ottobre), la prima volta che apri la chat una finestra lo dice e chiede «Va bene» o «Torna a Base»; «Torna a Base» vale per tutto quel periodo, la risposta vale su tutti i dispositivi, e a fine festa un avviso dice che il tema è tornato Base (D-315).
+
+## [0.176.2] - 2026-10-24
+
+### Corretto
+
+- Arianna, il Modello locale e gli agenti che rispondono sul modello locale, anche in chiamata, conoscono data e ora: in fondo all'ultimo messaggio di ogni richiesta c'è «Adesso: venerdì 23 ottobre 2026, 10:12:37 (Europe/Rome).», un pezzo L0 che passa dal gateway; il prompt fisso resta identico e la cache dei prefissi tiene (D-311).
+
+## [0.176.1] - 2026-10-24
+
+### Cambiato
+
+- Impostazioni: «Aspetto e installazione» è divisa in due pagine del gruppo Sistema, «Aspetto» (tema e chiaro/scuro) e «Installazione» (tipo, versione, cartella e «Pronta per i dati veri»); il vecchio indirizzo apre «Aspetto» (D-312).
+
+## [0.176.0] - 2026-10-24
+
+### Aggiunto
+
+- pgvector 0.8.7 nel PostgreSQL di Arianna, base della ricerca ibrida della Fase 2: estensione `vector` nello schema `extensions` (migrazione `0092`), usabile dal core senza poter creare nulla lì (D-308).
+- Controllo `database.vector` di `pnpm arianna:doctor`: estensione presente, usabile da `arianna_app` e alla versione dell'immagine (D-308).
+- Riga «Ricerca per significato (pgvector)» in «Pronta per i dati veri» delle Impostazioni: la controlla il core stesso col suo ruolo, ed è richiesta anche nell'ultimo esito del doctor del Terminale (D-308).
+
+### Cambiato
+
+- Il database gira con un'immagine costruita in locale da `apps/core/postgres/Dockerfile` (`postgres:17.11-alpine` per digest più pgvector verificato con sha256); la prima `pnpm db:up` la costruisce. Per il database esistente bastano `pnpm db:up` e `pnpm db:migrate`, passi in `docs/DATA-MODEL.md` (D-308).
+
 ## [0.175.0] - 2026-10-24
 
 ### Aggiunto

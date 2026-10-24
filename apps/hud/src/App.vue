@@ -24,6 +24,7 @@ import ClientsPage from './components/ClientsPage.vue';
 import FinancePage from './components/FinancePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
+import ThemeNotice from './components/ThemeNotice.vue';
 import NewAgentPage from './components/NewAgentPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
@@ -41,7 +42,7 @@ import GodPage from './components/GodPage.vue';
 import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
-import { listMessages, listSides, loadConversation, loadDevPending, loadInstallation, loadOmlxRelease, loadQueue, loadTask, openSide, sendMessage } from './lib/api.ts';
+import { answerThemeNotice, ApiError, listMessages, listSides, loadConversation, loadDevPending, loadInstallation, loadOmlxRelease, loadQueue, loadTask, openSide, sendMessage } from './lib/api.ts';
 import { updateHint } from './lib/omlx-release.ts';
 import { createSideChat } from './lib/side-store.ts';
 import { pendingText } from './lib/dev-progress.ts';
@@ -513,6 +514,37 @@ function openNewAgent(): void {
 const settingsSection = ref<string | undefined>(undefined);
 /** The settings hold edits not saved (D-105): the back button of the browser asks before leaving them. */
 const settingsDirty = ref(false);
+
+// D-315: the window of an automatic change of theme, until answered on any device. Closed without an
+// answer (Esc, the cross, «Cambia tema») it comes back the next time the chat opens.
+const noticeClosed = ref<string | null>(null);
+const noticeBusy = ref(false);
+const noticeProblem = ref<string | null>(null);
+const themeNotice = computed(() => {
+  const notice = store.themes.value?.notice ?? null;
+  return notice === null || notice.key === noticeClosed.value ? null : notice;
+});
+async function answerNotice(answer: 'ok' | 'back'): Promise<void> {
+  const notice = themeNotice.value;
+  if (notice === null || noticeBusy.value) return;
+  noticeBusy.value = true;
+  noticeProblem.value = null;
+  try {
+    await answerThemeNotice(notice.key, answer);
+    // The colours and the costumes of the characters: both follow the answer.
+    await Promise.all([store.refreshThemes(), store.refreshCharacters()]);
+  } catch (cause) {
+    // Answered meanwhile on another device: what the core says now wins.
+    if (cause instanceof ApiError && cause.status === 409) await Promise.all([store.refreshThemes(), store.refreshCharacters()]);
+    else noticeProblem.value = 'Non sono riuscita a salvare la risposta: riprova.';
+  } finally {
+    noticeBusy.value = false;
+  }
+}
+function closeNotice(): void {
+  noticeClosed.value = themeNotice.value?.key ?? null;
+  noticeProblem.value = null;
+}
 
 function openSettings(slug?: string): void {
   settingsSection.value = slug;
@@ -1780,6 +1812,17 @@ const splitTabs = computed<{ pane: Pane; title: string }[]>(() => [
       @close="store.closeFailure"
       @retry="store.retry"
       @chat="store.openSystemChat"
+    />
+    <ThemeNotice
+      v-if="themeNotice !== null && store.themes.value !== null && callSession === null && incoming === null"
+      :listing="store.themes.value"
+      :notice="themeNotice"
+      :busy="noticeBusy"
+      :problem="noticeProblem"
+      @ok="answerNotice('ok')"
+      @back="answerNotice('back')"
+      @close="closeNotice"
+      @settings="closeNotice(); openSettings('aspetto')"
     />
     <NoticeToasts :toasts="toasts" @open="store.openToast" @dismiss="store.dismissToast" />
   </div>

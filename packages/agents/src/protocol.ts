@@ -443,7 +443,8 @@ const THOUGHT_RULE =
 
 /**
  * The request messages: the system prompt, then the history. `trailer` (the
- * real lines of a character drawn for this answer, D-224) goes after the last
+ * real lines of a character drawn for this answer, D-224, then the date and
+ * time of now, D-311) goes after the last
  * message of the user or of a tool, outside its fence: what changes at each
  * answer stays past the cached prefix.
  */

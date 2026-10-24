@@ -92,6 +92,10 @@ let local = ENDPOINTS;
 let calls: Calls;
 let roles: { voice?: string } = { voice: 'qwen3-4b-instruct-2507-4bit' };
 
+// The clock of the line of now after the words of a turn (D-311): fixed, so that the last message is known to the letter.
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
+
 before(async () => {
   database = await createTestDatabase();
   calls = createCalls({
@@ -102,6 +106,7 @@ before(async () => {
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
     pollMs: 20,
+    ...CLOCK,
     onError: (error) => errors.push(error),
   });
 }, { timeout: SETUP_TIMEOUT_MS });
@@ -148,7 +153,7 @@ test('the user calls from a conversation: the voice gets the offer, the models a
     ['assistant', 'voice', 'Ciao! Tutto bene.', 'L2'],
   ]);
   assert.equal(asked.at(-1)?.model, 'local-voice');
-  assert.equal(asked.at(-1)?.messages.at(-1)?.content, 'Ciao Arianna, come va?');
+  assert.equal(asked.at(-1)?.messages.at(-1)?.content, `Ciao Arianna, come va?\n\n${NOW_LINE}`);
 
   // Without the right token nothing passes.
   await assert.rejects(calls.turn(call.id, 'x'.repeat(43), 'ciao'), { code: 'unauthorized' });
@@ -193,6 +198,9 @@ test('the window is read while the greeting is said, then each turn extends the 
   await calls.turn(call.id, tokenOf(call.id), 'Primo turno');
   const first = lastAsked();
   assert.deepEqual(first.messages.slice(0, warm.messages.length), warm.messages);
+  // The date and time of now (D-311) after the words of the turn only: the warm-up reads none, its prefix stays the turn's.
+  assert.equal(first.messages.at(-1)?.content, `Primo turno\n\n${NOW_LINE}`);
+  assert.ok(!warm.messages.some((message) => message.content.includes('Adesso:')));
   for (const words of ['Secondo turno', 'Terzo turno', 'Quarto turno', 'Quinto turno']) await calls.turn(call.id, tokenOf(call.id), words);
   // Ten messages more than the window at the start: none of the first ones dropped.
   const fifth = lastAsked();
@@ -287,7 +295,7 @@ test('turns run in order; a reply overtaken by newer words is dropped, not said'
   });
   const first = calls.turn(call.id, tokenOf(call.id), 'Prima frase');
   const second = calls.turn(call.id, tokenOf(call.id), 'Anzi, seconda frase');
-  await until(() => asked.at(-1)?.messages.at(-1)?.content === 'Prima frase');
+  await until(() => asked.at(-1)?.messages.at(-1)?.content === `Prima frase\n\n${NOW_LINE}`);
   open();
   modelGate = undefined;
   assert.deepEqual(await first, { say: '' });
@@ -444,7 +452,7 @@ test('newer words stop the model of the turn at work', async () => {
   stopped = false;
   nextReply = Array.from({ length: 80 }, (_, index) => `parola${String(index)}`).join(' ');
   const first = calls.turn(call.id, tokenOf(call.id), 'Parlami a lungo');
-  await until(() => asked.at(-1)?.messages.at(-1)?.content === 'Parlami a lungo');
+  await until(() => asked.at(-1)?.messages.at(-1)?.content === `Parlami a lungo\n\n${NOW_LINE}`);
   nextReply = 'Certo.';
   const second = calls.turn(call.id, tokenOf(call.id), 'Anzi no');
   assert.deepEqual(await first, { say: '' });
@@ -563,6 +571,7 @@ function directCalls(): Calls {
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
     pollMs: 20,
+    ...CLOCK,
     onError: (error) => errors.push(error),
     agents: () => directAgents,
     cloud: () => ({ claude: claudeOn, codex: false }),
@@ -599,7 +608,7 @@ test('a call in a direct chat with a local agent: it answers on its own model, w
   const system = turn.messages[0]?.content ?? '';
   assert.ok(system.startsWith(AGENT_VOICE_FRAME) && system.endsWith('Traduci in inglese il testo che ricevi.'));
   assert.ok(!system.includes(VOICE_SYSTEM_PROMPT));
-  assert.deepEqual(turn.messages.slice(1).map(({ content }) => content), ['Scritto prima in chat', 'Come si dice gatto?']);
+  assert.deepEqual(turn.messages.slice(1).map(({ content }) => content), ['Scritto prima in chat', `Come si dice gatto?\n\n${NOW_LINE}`]);
   // A line of the agent that looks like Arianna's delegation is only words: a local agent starts no task from a call.
   nextReply = 'DELEGA: cerca qualcosa';
   await directCalls().turn(call.id, tokenOf(call.id), 'Cerca qualcosa');
