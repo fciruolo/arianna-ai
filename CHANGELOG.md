@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.179.0] - 2026-10-24
+
 ### Aggiunto
 
 - Modello caldo: dopo ogni avvio o riavvio del server dei modelli Arianna carica e prepara il modello della chat in background, così la prima domanda non aspetta il caricamento; saltato con la memoria sotto pressione, durante una chiamata o con altre richieste in corso (D-316).
