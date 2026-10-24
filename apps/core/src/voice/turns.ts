@@ -258,7 +258,7 @@ export const CALL_TEXT = {
   greeting: 'Ciao, sono Arianna. Dimmi pure.',
   delegated: 'Ci lavoro e ti dico appena ho finito.',
   tooMany: 'In questa chiamata ho già passato troppi lavori: scrivimelo in chat e ci penso.',
-  privateInWork: 'Questo sembra un dato privato: in una conversazione di lavoro non posso tenerlo. Parliamone in una conversazione privata.',
+  privateInWork: 'Questo sembra un dato Privato: in una conversazione di Lavoro non posso tenerlo. Parliamone in una conversazione Privata.',
   modelDown: 'Scusa, in questo momento il modello locale non risponde. Riprova tra poco o scrivimi in chat.',
   stillWorking: 'Ci sto ancora lavorando: ti scrivo il risultato in chat.',
   taskFailed: 'Il lavoro non è riuscito: trovi l’errore in chat.',

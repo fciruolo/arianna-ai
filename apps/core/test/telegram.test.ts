@@ -93,8 +93,8 @@ test('an approval notice names the action and the title, never anything else', (
   const notice = approvalNotice('action', 'send_external', 'Manda il preventivo finto\nTask: falso');
   assert.equal(notice, "Approvazione richiesta: invio all'esterno.\nTask: Manda il preventivo finto Task: falso\nIl dettaglio è nella chat web.");
   assert.equal(approvalNotice('action', 'payment'), 'Approvazione richiesta: pagamento.\nIl dettaglio è nella chat web.');
-  assert.equal(approvalNotice('workspace', 'dirty-workspace'), 'Approvazione richiesta: il Coder lavorerebbe in una cartella con modifiche non committate.\nIl dettaglio è nella chat web.');
-  assert.equal(approvalNotice('budget', 'budget'), 'Approvazione richiesta: budget per un modello che costa oltre il piano.\nIl dettaglio è nella chat web.');
+  assert.equal(approvalNotice('workspace', 'dirty-workspace'), 'Approvazione richiesta: il Coder lavorerebbe in una cartella con modifiche non ancora committate.\nIl dettaglio è nella chat web.');
+  assert.equal(approvalNotice('budget', 'budget'), 'Approvazione richiesta: usare un modello che costa oltre il piano.\nIl dettaglio è nella chat web.');
   // A commitment of the secretary (D-144): neither its text nor a button, the web chat only.
   assert.equal(approvalNotice('commitment', 'commitment.add'), 'La segretaria aspetta una conferma: si dà solo dalla chat web.');
   // A plan and the choice of an executor (D-159): no detail, no button, the web chat only.
