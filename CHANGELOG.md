@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.180.1] - 2026-10-24
+
 ### Corretto
 
 - Quando dice che sul Mac può solo guardare e leggere, Arianna parla con parole semplici e non scrive più i nomi interni degli strumenti («mac.read», «mac.list»); il caso dell'eval accetta anche che prima cerchi o elenchi il file, purché non deleghi la modifica (D-314).
