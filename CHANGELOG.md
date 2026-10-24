@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.176.0] - 2026-10-24
+
 ### Aggiunto
 
 - pgvector 0.8.7 nel PostgreSQL di Arianna, base della ricerca ibrida della Fase 2: estensione `vector` nello schema `extensions` (migrazione `0092`), usabile dal core senza poter creare nulla lì (D-308).
