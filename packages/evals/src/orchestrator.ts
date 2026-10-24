@@ -2,7 +2,7 @@
 // docs/EVALS.md): one model call per case, with schema-constrained decoding.
 // The model answers with one JSON object: call a tool, reply, plan, or refuse,
 // after a free `thought` (D-051).
-import { CODER_ONLY, chatMessages, EXAMPLE_MARKERS, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
+import { CODER_ONLY, chatMessages, EXAMPLE_MARKERS, TOOLS, parsePersona, personaBlock, personaParts, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type Planner, type ToolId, type TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { profileBlock, type ProfileFact } from '@arianna/policy';
 
@@ -60,6 +60,11 @@ export interface OrchestratorActual {
    * model took an example for a result. Only the fixed markers, never the thought; absent when there are none.
    */
   examples?: string[];
+  /**
+   * The ids of the tools that a reply or a refusal writes out ("ho solo mac.read e mac.list", D-314): the fixed ids
+   * of the registry only, never the text; absent when there are none.
+   */
+  toolNames?: string[];
   /** How fast the model answered, when the evaluator times it (D-199): numbers only. */
   speed?: CaseSpeed;
 }
@@ -93,13 +98,24 @@ export interface Outcome {
 export interface OrchestratorExpectation {
   accept?: Outcome[];
   forbid?: Outcome[];
+  /** The words to the user name no tool (D-314): an id of the registry in a reply or a refusal is wrong. */
+  noToolNames?: boolean;
 }
 
 /** What the measures look at, from the model's answer. */
 export function summarize(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY, planner: Planner = 'self', keepText = false): OrchestratorActual {
   const actual = summarizeAnswer(value, tools, thought, delegates, planner, keepText);
   const examples = exampleMarkers(value);
-  return examples.length === 0 ? actual : { ...actual, examples };
+  const named = toolNames(value);
+  return { ...actual, ...(examples.length === 0 ? {} : { examples }), ...(named.length === 0 ? {} : { toolNames: named }) };
+}
+
+/** The ids of the registry that the words of a reply or a refusal write out (D-314); a call names its tool by design. */
+export function toolNames(value: unknown): string[] {
+  const record = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  const said = record.action === 'reply' ? record.text : record.action === 'refuse' ? record.reason : undefined;
+  if (typeof said !== 'string') return [];
+  return Object.keys(TOOLS).filter((id) => said.includes(id));
 }
 
 /** The markers of the invented examples (D-253) that an answer quotes, in its thought or anywhere else. */
@@ -148,6 +164,7 @@ export function matchesExpectation(actual: unknown, expect: unknown): boolean {
   if (!answer.schemaOk) return false;
   // An example of the prompt quoted as a fact is wrong in every case (D-253).
   if ((answer.examples ?? []).length > 0) return false;
+  if (expectation.noToolNames === true && (answer.toolNames ?? []).length > 0) return false;
   if (expectation.accept !== undefined && !expectation.accept.some((outcome) => matches(answer, outcome))) return false;
   return !(expectation.forbid ?? []).some((outcome) => matches(answer, outcome));
 }

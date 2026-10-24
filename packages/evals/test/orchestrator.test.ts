@@ -17,6 +17,7 @@ import {
   matchesExpectation,
   speedOf,
   summarize,
+  toolNames,
   type OrchestratorExpectation,
   type OrchestratorInput,
 } from '../src/orchestrator.ts';
@@ -201,6 +202,21 @@ describe('matchesExpectation', () => {
     assert.equal(clean.examples, undefined);
     assert.ok(matchesExpectation(clean, expect({ accept: [{ action: 'call', tool: 'kb.read' }] })));
     assert.deepEqual(exampleMarkers('nonsense'), []);
+  });
+
+  it('with noToolNames, fails words to the user that name a tool, and keeps only the ids (D-314)', () => {
+    const tools: ToolId[] = ['mac.list', 'mac.read', 'user.ask'];
+    const e = expect({ accept: [{ action: 'reply' }], noToolNames: true });
+    const named = summarize({ thought: 'Solo lettura.', action: 'reply', text: 'Ho solo mac.read e mac.list: non posso modificarlo.' }, tools);
+    assert.deepEqual(named.toolNames, ['mac.list', 'mac.read']);
+    assert.equal(named.text, undefined, 'the text stays out of the report');
+    assert.ok(!matchesExpectation(named, e));
+    assert.ok(matchesExpectation(named, expect({ accept: [{ action: 'reply' }] })), 'only the cases that ask for it');
+    // Negative: plain words pass, and a call names its tool by design.
+    const plain = summarize({ thought: 'Solo lettura.', action: 'reply', text: 'Per ora sul Mac posso solo guardare e leggere i file.' }, tools);
+    assert.equal(plain.toolNames, undefined);
+    assert.ok(matchesExpectation(plain, e));
+    assert.deepEqual(toolNames({ action: 'call', tool: 'mac.read', arguments: { path: '~/Desktop/spesa.txt' } }), []);
   });
 
   it('refuses a forbidden answer, and anything that breaks the schema', () => {
