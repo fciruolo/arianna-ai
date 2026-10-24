@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Fatture elettroniche FatturaPA nella pagina Finanze, scheda «Fatture e scadenze»: si trascinano o si scelgono uno o più file .xml o firmati .xml.p7m, Arianna legge fornitore, cliente, numero, data, righe, riepilogo IVA, totale e rate di pagamento e tiene solo i dati letti, mai il file; la stessa fattura importata due volte (anche una volta XML e una firmata) entra una volta sola; le fatture si cercano, si aprono con le righe e si tolgono con una conferma (D-310).
+- Scadenzario delle fatture: le rate ancora da pagare in ordine di scadenza, divise in «Scadute», «Nei prossimi 30 giorni», «Più avanti» e «Senza data di scadenza», ciascuna da segnare pagata (e da riaprire); tutto Privato (L2), solo su questo Mac, nessun modello lo legge (D-310).
+
+### Sicurezza
+
+- L'XML delle fatture si legge con `fast-xml-parser` 5.11.2 con opzioni fisse: un DOCTYPE o una dichiarazione di entità fa rifiutare il file prima della lettura, nessuna entità viene espansa, gli allegati non vengono letti; il file firmato si apre con l'openssl di sistema senza rete, dallo standard input, senza scrivere su disco e senza controllare la firma (D-310).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto

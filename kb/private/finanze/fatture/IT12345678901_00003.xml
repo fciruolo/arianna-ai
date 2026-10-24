@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- Nota di credito finta per lo sviluppo di Arianna (D-310), scritta in ISO-8859-1: dati inventati. -->
+<FatturaElettronica versione="FPR12">
+  <FatturaElettronicaHeader>
+    <CedentePrestatore>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>12345678901</IdCodice></IdFiscaleIVA>
+        <Anagrafica><Denominazione>Elettroforniture Finte S.r.l.</Denominazione></Anagrafica>
+      </DatiAnagrafici>
+    </CedentePrestatore>
+    <CessionarioCommittente>
+      <DatiAnagrafici>
+        <CodiceFiscale>FNTMRA80A01H501U</CodiceFiscale>
+        <Anagrafica><Nome>Mario</Nome><Cognome>Finto</Cognome></Anagrafica>
+      </DatiAnagrafici>
+    </CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali>
+      <DatiGeneraliDocumento>
+        <TipoDocumento>TD04</TipoDocumento>
+        <Divisa>EUR</Divisa>
+        <Data>2026-10-22</Data>
+        <Numero>NC-0003</Numero>
+        <ImportoTotaleDocumento>30.50</ImportoTotaleDocumento>
+      </DatiGeneraliDocumento>
+    </DatiGenerali>
+    <DatiBeniServizi>
+      <DettaglioLinee>
+        <NumeroLinea>1</NumeroLinea>
+        <Descrizione>Reso: una confezione di lampadine è arrivata rotta (città finta)</Descrizione>
+        <Quantita>1.00</Quantita>
+        <PrezzoUnitario>25.00</PrezzoUnitario>
+        <PrezzoTotale>25.00</PrezzoTotale>
+        <AliquotaIVA>22.00</AliquotaIVA>
+      </DettaglioLinee>
+      <DatiRiepilogo>
+        <AliquotaIVA>22.00</AliquotaIVA>
+        <ImponibileImporto>25.00</ImponibileImporto>
+        <Imposta>5.50</Imposta>
+      </DatiRiepilogo>
+    </DatiBeniServizi>
+  </FatturaElettronicaBody>
+</FatturaElettronica>

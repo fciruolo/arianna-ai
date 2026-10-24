@@ -116,6 +116,7 @@ import {
   updateCategory as updateFinanceCategory,
 } from '../finance.ts';
 import { dayParam, FinanceError, MAX_IMPORT_BODY, monthParam } from '../finance-format.ts';
+import { deleteInvoice as deleteFatturaPa, getInvoice as getFatturaPa, importInvoiceFile, listDeadlines, listInvoices as listFatturePa, opensslEnvelope, setDeadlinePaid } from '../invoices.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { RELEASE_STATUS, ReleaseError, type NoteReleaser, type ProposalOutcome } from '../note-release.ts';
@@ -3697,6 +3698,7 @@ function financeRoutes(sql: Sql): Route[] {
     return Number(value);
   };
   const id = (params: Params, key: string): string => params[key] ?? '';
+  const openEnvelope = opensslEnvelope();
   return [
     route('GET', '/api/finance/accounts', guard(async () => {
       await ensureFinanceCategories(sql);
@@ -3780,6 +3782,27 @@ function financeRoutes(sql: Sql): Route[] {
       };
     })),
     route('GET', '/api/finance/alerts', guard(async (_request, url) => ({ body: { alerts: await financeAlerts(sql, monthParam(url.searchParams.get('month'), 'month')) } }))),
+
+    // FatturaPA invoices and their deadlines (D-310): the XML or the signed .p7m, never kept.
+    route('POST', '/api/finance/invoices', guard(async (request) => ({ status: 201, body: await importInvoiceFile(sql, await readJson(request, MAX_IMPORT_BODY), openEnvelope) }))),
+    route('GET', '/api/finance/invoices', guard(async (_request, url) => {
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      const q = query(url, 'q');
+      return { body: { invoices: await listFatturePa(sql, { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), ...(q === undefined ? {} : { q }) }) } };
+    })),
+    route('GET', '/api/finance/invoices/:id', guard(async (_request, _url, params) => ({ body: { invoice: await getFatturaPa(sql, id(params, 'id')) } }))),
+    route('DELETE', '/api/finance/invoices/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFatturaPa(sql, id(params, 'id'));
+      return done;
+    })),
+    route('GET', '/api/finance/deadlines', guard(async (_request, url) => {
+      const status = query(url, 'status') ?? 'open';
+      if (status !== 'open' && status !== 'all') throw new FinanceError('invalid', 400, 'status must be open or all');
+      return { body: { deadlines: await listDeadlines(sql, status) } };
+    })),
+    route('PATCH', '/api/finance/deadlines/:id', guard(async (request, _url, params) => ({ body: { deadline: await setDeadlinePaid(sql, id(params, 'id'), await readJson(request)) } }))),
   ];
 }
 

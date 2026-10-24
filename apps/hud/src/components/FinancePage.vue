@@ -8,6 +8,7 @@ import FinanceAccounts from './FinanceAccounts.vue';
 import FinanceAlerts from './FinanceAlerts.vue';
 import FinanceCategories from './FinanceCategories.vue';
 import FinanceImport from './FinanceImport.vue';
+import FinanceInvoices from './FinanceInvoices.vue';
 import FinanceSummary from './FinanceSummary.vue';
 import FinanceTransactions from './FinanceTransactions.vue';
 import Icon from './Icon.vue';
@@ -15,7 +16,7 @@ import Icon from './Icon.vue';
 /**
  * The page "Finanze" (I-18, D-183): accounts, imports of bank statements,
  * movements, categories with rules and budgets, the summary in charts and the
- * checks of the month. Everything stays between this page and the core of
+ * checks of the month, the FatturaPA invoices with their deadlines (D-310). Everything stays between this page and the core of
  * this Mac (rule `finance` of the gateway): the notice at the top says so on
  * every tab.
  */
@@ -106,6 +107,7 @@ function openMovements(next: TxFilter): void {
           <FinanceAccounts v-else-if="shown === 'conti'" :accounts="accounts" @changed="loadAccounts" />
           <FinanceCategories v-else-if="shown === 'categorie'" :categories="categories" @changed="loadCategories" />
           <FinanceAlerts v-else-if="shown === 'avvisi'" :accounts="accounts" :categories="categories" @open="openMovements" />
+          <FinanceInvoices v-else-if="shown === 'fatture'" />
         </template>
       </div>
     </div>
