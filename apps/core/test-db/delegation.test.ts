@@ -23,7 +23,7 @@ import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '.
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
-import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, REPORT_LANGUAGE_TEXT, type AgentSkills } from '../src/orchestrator/delegate.ts';
+import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, noProjectError, noProjectReply, PROJECT_RULES_INTRO, projectRulesPart, REPORT_LANGUAGE_TEXT, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { FACT_ASK_TEXT } from '../src/orchestrator/profile-share.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
@@ -666,12 +666,49 @@ test('fable chosen by the user waits for the budget approval, then runs', async 
   assert.deepEqual([delegation?.status, delegation?.model], ['ok', 'fable']);
 });
 
-test('without a repository, or without a cloud executor, the call fails as a tool error', async () => {
+/** The latest answer of Arianna in the conversation. */
+async function lastAnswer(conversationId: string): Promise<string | undefined> {
+  const [row] = await db().sql<{ body: string }[]>`
+    SELECT body FROM messages WHERE conversation_id = ${conversationId} AND role = 'assistant' ORDER BY id DESC LIMIT 1`;
+  return row?.body;
+}
+
+test('without a project, or without a cloud executor, the Coder does not start (D-303)', async () => {
+  // A work conversation without its project: Arianna says so with our words, the model is not asked again.
   const noRepo = await ask('work', 'Senza repository.');
   const model = scripted([DELEGATE, REPLY]);
-  assert.deepEqual(await drain(noRepo.task.id, orchestrator({ model, projects: ['site', 'other'] })), ['continued', 'answered']);
-  assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /error: task\.delegate: no project for the Coder/);
+  assert.deepEqual(await drain(noRepo.task.id, orchestrator({ model, projects: ['site', 'other'] })), ['answered']);
+  assert.equal(model.requests.length, 1);
+  assert.equal(await lastAnswer(noRepo.conversation.id), noProjectReply('coder', 'work'));
   assert.equal((await loadDelegations(db().sql, noRepo.task.id)).length, 0);
+  const [turn] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${noRepo.task.id}`;
+  assert.equal(turn?.result, `error: task.delegate: ${noProjectError('coder', 'work')}`);
+
+  // A private conversation, several projects: the Coder does not work here; nothing leaves.
+  const privateChat = await ask('private', 'Chiedi al Coder di scrivere nel progetto demo un file con il costo del bollo.');
+  const privateModel = scripted([DELEGATE, REPLY]);
+  assert.deepEqual(await drain(privateChat.task.id, orchestrator({ model: privateModel, projects: ['site', 'other'] })), ['answered']);
+  const privateReply = await lastAnswer(privateChat.conversation.id);
+  assert.equal(privateReply, noProjectReply('coder', 'private'));
+  assert.doesNotMatch(privateReply, /arianna:init/);
+  assert.equal((await loadDelegations(db().sql, privateChat.task.id)).length, 0);
+  const [approvals] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM approvals WHERE task_id = ${privateChat.task.id}`;
+  assert.equal(approvals?.count, 0);
+
+  // The same when the user names the Coder (D-107 B2): the core answers with the same words.
+  const namedChat = await createConversation(db().sql, { mode: 'private' });
+  const named = { conversation: namedChat, ...(await postUserMessage(db().sql, namedChat.id, '@coder scrivi un file con il costo del bollo.', { mentionable: ['coder'] })) };
+  const namedModel = scripted([REPLY]);
+  assert.deepEqual(await drain(named.task.id, orchestrator({ model: namedModel, projects: ['site', 'other'] })), ['answered']);
+  assert.equal(await lastAnswer(named.conversation.id), noProjectReply('coder', 'private'));
+  assert.equal((await loadDelegations(db().sql, named.task.id)).length, 0);
+
+  // A work conversation whose project is no longer approved: refused before any delegation.
+  const gone = await ask('work', 'Progetto tolto.', 'other', ['site', 'other']);
+  const goneModel = scripted([DELEGATE, REPLY]);
+  assert.deepEqual(await drain(gone.task.id, orchestrator({ model: goneModel, projects: ['site'] })), ['answered']);
+  assert.equal(await lastAnswer(gone.conversation.id), noProjectReply('coder', 'not-approved'));
+  assert.equal((await loadDelegations(db().sql, gone.task.id)).length, 0);
 
   // No cloud executor: task.delegate is not even offered.
   const offline = await ask('work', 'Senza cloud.', 'site');
@@ -1006,11 +1043,11 @@ test('the notes of a part (I-11 P3, D-166): the internal ones as a read-only cop
 
 test('the container that is not a git repository is never the folder of a step (D-145)', async () => {
   containerFixture('cantiere-solo', false);
-  const { task } = await ask('work', 'Lavora sul contenitore.', 'cantiere-solo', ['cantiere-solo']);
-  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-solo'] })), ['continued', 'answered']);
-  const [delegation] = await loadDelegations(db().sql, task.id);
-  assert.equal(delegation?.status, 'failed');
-  assert.match(delegation.result ?? '', /no longer among the projects the user approved/);
+  const { conversation, task } = await ask('work', 'Lavora sul contenitore.', 'cantiere-solo', ['cantiere-solo']);
+  // Not a work part: refused before any delegation, with our words (D-303).
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-solo'] })), ['answered']);
+  assert.equal((await loadDelegations(db().sql, task.id)).length, 0);
+  assert.equal(await lastAnswer(conversation.id), noProjectReply('coder', 'not-approved'));
 });
 
 test('a container that is one git with a private note in its management folders: the Coder does not open it (D-145)', async () => {
@@ -1023,10 +1060,13 @@ test('a container that is one git with a private note in its management folders:
   assert.ok(!existsSync(join(dir, '.fake-claude.json')));
 });
 
-test('a project taken off the list: the delegation ends with an error Arianna reads', async () => {
+test('a project taken off the list after the delegation: the delegation ends with an error Arianna reads', async () => {
   const { task } = await ask('work', 'Progetto tolto.', 'site');
-  const model = scripted([DELEGATE, REPLY]);
-  assert.deepEqual(await drain(task.id, orchestrator({ model, projects: [] })), ['continued', 'answered']);
+  const setup: Setup = { model: scripted([DELEGATE, REPLY]), projects: ['site'] };
+  const executor = orchestrator(setup);
+  assert.deepEqual(await drain(task.id, executor, 1), ['continued']);
+  setup.projects = [];
+  assert.deepEqual(await drain(task.id, executor, 5), ['answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.ok(delegation !== undefined);
   assert.equal(delegation.status, 'failed');
