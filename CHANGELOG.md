@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- L'hook `pre-commit` avvisa, senza rifiutare il commit, quando la versione in stage di `docs/HANDOFF.md` supera 20 KB, e ricorda di spostare gli stati vecchi in `docs/HANDOFF-STORIA.md` (D-305).
+
 ## [0.173.3] - 2026-10-24
 
 ### Corretto

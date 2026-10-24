@@ -4,8 +4,17 @@
 # A commit that only touches the .md and .html of docs/ and CHANGELOG.md skips `pnpm check` (D-200):
 # no test, build, lint or eval reads those files (the tests use their own invented copies). Renames are
 # listed as a deletion and an addition, so moving code into docs/ still runs the check.
+# When docs/HANDOFF.md is staged and its staged version (not the one on disk) exceeds handoff_max_kb, a
+# warning goes to stderr and the commit goes on (D-305): HANDOFF holds only the current state (D-200).
 # Enabled by `pnpm install` through the "prepare" script (core.hooksPath).
+handoff_max_kb=20
 node scripts/conflict-markers.ts || exit 1
+if [ -n "$(git diff --cached --no-renames --name-only --diff-filter=d -- docs/HANDOFF.md)" ]; then
+  handoff_bytes=$(git cat-file -s :docs/HANDOFF.md 2>/dev/null) || handoff_bytes=0
+  if [ "$handoff_bytes" -gt $((handoff_max_kb * 1024)) ]; then
+    echo "pre-commit: docs/HANDOFF.md è a $(((handoff_bytes + 1023) / 1024)) KB, oltre $handoff_max_kb: sposta gli stati vecchi in fondo a docs/HANDOFF-STORIA.md (D-200, D-305)" >&2
+  fi
+fi
 others=$(git diff --cached --no-renames --name-only | grep -v -E -e '^docs/.*\.(md|html)$' -e '^CHANGELOG\.md$')
 if [ -z "$others" ] && [ -n "$(git diff --cached --name-only)" ]; then
   echo "pre-commit: solo documenti (.md e .html di docs/, CHANGELOG.md), pnpm check saltato (D-200)"
