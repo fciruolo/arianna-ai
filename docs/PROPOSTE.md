@@ -3134,10 +3134,10 @@ Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte
 ### Scelte dell'utente (2026-10-24, D-314)
 
 Domande chiuse con le domande a opzioni; il dettaglio è in D-314.
-- **Cartelle all'inizio:** nessuna. Quando Arianna deve leggere una cartella non ancora permessa compare una scheda con tre scelte: «Solo questa volta» (quella sola chiamata), «Per tutta questa conversazione», «Sempre» (la cartella entra nella lista di Impostazioni → Cartelle del Mac, dove si toglie o se ne aggiungono a mano). Nessun agente aggiunge cartelle.
+- **Cartelle all'inizio:** nessuna. Quando Arianna deve leggere una cartella non ancora permessa compare una scheda con tre scelte: «Solo questa volta» (quella sola chiamata), «Per tutta questa conversazione», «Sempre» (la cartella entra nella lista di Impostazioni → Cartelle del Mac, dove si toglie o se ne aggiungono a mano). Nessun agente aggiunge cartelle. «Sempre» si sceglie solo dal Mac: dal telefono la scheda ha le altre due scelte e «No».
 - **Leggere ed elencare:** liberi dentro le cartelle permesse (`mac.list`, `mac.info`, `mac.read`, `mac.find`), senza scheda.
 - **La scheda:** frase in italiano scritta dal codice, con sotto in piccolo il comando equivalente; dice anche se la richiesta arriva dopo che il passo ha letto contenuti non dell'utente (pagina web, file). Vale anche per le azioni di M2.
 - **Incognito:** strumenti spenti; Arianna dice che in incognito non guarda le cartelle e propone una chat normale.
 - **Comandi Rapidi (M4):** sì, solo quelli scelti dall'utente in Impostazioni, ognuno con il sì.
 - **Terminale (M5):** si decide dopo aver usato M1-M3.
-- **Tappa M1 (sola lettura):** in costruzione sul ramo `task/d314-mac-m1`; M2 (azioni con scheda e Cestino), M3 (Annulla e registro) e M4 vengono dopo.
+- **Tappa M1 (sola lettura):** fatta, da provare, sul ramo `task/d314-mac-m1`; M2 (azioni con scheda e Cestino), M3 (Annulla e registro) e M4 vengono dopo.
