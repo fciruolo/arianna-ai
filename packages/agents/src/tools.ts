@@ -80,6 +80,14 @@ export const TOOLS = {
   // A routine of the user (D-110, tappa A2; D-256): closed fields only, written off ("proposed") by the core; it
   // runs only after the user approves it in the web chat or on the page «Routine». Never a free recurring prompt.
   'routine.propose': { description: 'Propose a recurring report (days, time, closed sources), active only after the user approves it', opens: [], localOnly: true },
+  // The folders of the Mac (D-314, I-22, tappa M1): read only, by the core in Node, only in a private conversation
+  // with Arianna on the local model. Everything read, names included, is L2. A folder not yet allowed asks the user
+  // first («Solo questa volta», «Per tutta questa conversazione», «Sempre»); no agent adds a folder by itself.
+  // A file of the Mac may come from anyone: untrusted content. Nothing of it leaves this machine.
+  'mac.list': { description: 'List a folder of the Mac the user allowed', opens: ['untrusted_content'], localOnly: true },
+  'mac.info': { description: 'Details of a file or folder of the Mac the user allowed', opens: ['untrusted_content'], localOnly: true },
+  'mac.read': { description: 'Read a text file of the Mac the user allowed, up to a limit', opens: ['untrusted_content'], localOnly: true },
+  'mac.find': { description: 'Find files by name in a folder of the Mac the user allowed', opens: ['untrusted_content'], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only
@@ -150,4 +158,12 @@ export function isFinanceTool(tool: ToolId): boolean {
 /** A card that reads finance data (the agent of the Finances): any tool of FINANCE_TOOLS. */
 export function isFinanceCard(card: { readonly tools: readonly ToolId[] }): boolean {
   return card.tools.some(isFinanceTool);
+}
+
+/** The tools of the folders of the Mac (D-314, tappa M1): read only, run by the core, offered and refused together. */
+export const MAC_TOOLS = ['mac.list', 'mac.info', 'mac.read', 'mac.find'] as const satisfies readonly ToolId[];
+export type MacToolId = (typeof MAC_TOOLS)[number];
+
+export function isMacTool(tool: ToolId): tool is MacToolId {
+  return (MAC_TOOLS as readonly string[]).includes(tool);
 }

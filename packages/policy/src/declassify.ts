@@ -1,7 +1,7 @@
 // Lowering a label (docs/PRIVACY-POLICY-SPEC.md, rule 3): only with the user's
 // approval of the exact text, identified by its sha256. Pure: the core loads
 // the approval and writes the returned change to label_changes.
-import { isContext, isFinanceContext, isFinanceSource, type Context, type Labeled } from './context.ts';
+import { isContext, isFinanceContext, isFinanceSource, isMacSource, type Context, type Labeled } from './context.ts';
 import { PolicyError } from './errors.ts';
 import { isAtMost, isLabel, labelOrDefault, type Label } from './labels.ts';
 import { payloadText, sha256Hex } from './payload.ts';
@@ -38,11 +38,13 @@ export function assertDeclassifiable(context: Context): void {
  * What an approval request for declassifying `item` to `to` stores in
  * `approvals.detail`: the exact text shown to the user, its sha256 and both labels.
  * `context` is the conversation or task the text was written in. Finance data
- * (`finance:*` source) is never declassified, nor is anything of a context
+ * (`finance:*` source) and what the core read from the Mac (`mac:*`, D-314) are never declassified, nor is anything of a context
  * that has read finance data or was not made by the policy.
  */
 export function declassifyRequest(item: Labeled<unknown>, to: Label, context: Context): { text: string; sha256: string; from: Label; to: Label } {
   if (isFinanceSource(item.source)) throw new PolicyError('declassify: finance data never leaves this machine');
+  // A file of the Mac as read by the core (D-314) is never lowered: its names and contents stay on this machine.
+  if (isMacSource(item.source)) throw new PolicyError('declassify: what is read from the Mac never leaves this machine');
   assertDeclassifiable(context);
   const from = labelOrDefault(item.label);
   const text = payloadText(item.value);

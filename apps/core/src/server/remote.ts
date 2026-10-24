@@ -31,6 +31,8 @@ export const LOCAL_ONLY = 'local-only';
  */
 const LOCAL_ONLY_PATHS: readonly RegExp[] = [
   /^\/api\/devices(\/|$)/,
+  // The folders of the Mac Arianna may read (D-314): paths of the user, changed only from the Mac.
+  /^\/api\/mac\/folders(\/|$)/,
   /^\/api\/settings\/privacy\//,
   /^\/api\/notifications\/(stream|this-mac)$/,
   /^\/api\/browser(\/|$)/,

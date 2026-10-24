@@ -199,6 +199,15 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
         lead: 'Quando lavora con Claude, il Coder può leggere una pagina web solo se l’indirizzo glielo scrivi tu nella richiesta, oppure se è di uno di questi siti. Ogni pagina passa dal controllo di Arianna e resta nel registro.',
         example: 'con nodejs.org nell’elenco, il Coder può aprire da solo la documentazione di Node mentre corregge il tuo progetto, senza che tu gli incolli il link.',
       },
+      // The folders of the Mac Arianna reads (D-314, I-22): nothing leaves, so no lock; changed only from the Mac.
+      {
+        id: 'mac-folders',
+        slug: 'cartelle-del-mac',
+        title: 'Cartelle del Mac',
+        behaviour: 'now',
+        lead: 'Le cartelle del Mac che Arianna legge senza chiederti il permesso, solo nelle chat Private e solo con il modello del Mac: elencare, leggere un file di testo, cercare per nome. All’inizio nessuna: quando ne serve una, Arianna te lo chiede con una scheda.',
+        example: 'aggiungi «Documenti/Fatture»: a «quante fatture ho?» Arianna risponde senza scheda; se la togli, la volta dopo te lo chiede di nuovo.',
+      },
     ],
   },
   {

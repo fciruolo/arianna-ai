@@ -11,7 +11,7 @@ import type { RemoteDecision } from '../lib/remote-decisions.ts';
 import { routerReasonText } from '../lib/router-reasons.ts';
 import { activeText } from '../lib/sidebar.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Approval, CharacterChoice, CharacterListing, ExecutorChoice, StatusSnapshot } from '../lib/types.ts';
+import type { Approval, CharacterChoice, CharacterListing, ApprovalChoice, StatusSnapshot } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
@@ -31,7 +31,7 @@ const props = defineProps<{
   poseFor: (id: string) => Pose;
   approvals: Approval[];
   remoteDecisions: RemoteDecision[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
   /** «Attende te» on the phone (D-293): a page of its own, without the border and the button that folds the bar. */
   asPage?: boolean;
 }>();

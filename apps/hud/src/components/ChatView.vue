@@ -45,7 +45,7 @@ import {
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { isAddingLine, isEventLine, participantPose, withText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, QueueView, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ApprovalChoice, Message, MessageCredit, Participant, QueueView, StatusSnapshot, Task } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
@@ -99,7 +99,7 @@ const props = defineProps<{
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
   /** The calls of this conversation (D-066), shown as receipts among the messages. */

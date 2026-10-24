@@ -66,6 +66,10 @@ test('the limits of the phone follow the remote door of the core', () => {
   const devices = byId.get('devices');
   assert.ok(devices !== undefined);
   assert.equal(remoteLimit(devices), 'mac-only');
+  // The folders of the Mac (D-314): /api/mac/folders is refused from the phone.
+  const folders = byId.get('mac-folders');
+  assert.ok(folders !== undefined);
+  assert.equal(remoteLimit(folders), 'mac-only');
   // The sections that let data out save through /api/settings/privacy/, refused from the phone.
   for (const item of byId.values()) if (item.privacy === true) assert.equal(remoteLimit(item), 'read-only', item.id);
   const models = byId.get('models');

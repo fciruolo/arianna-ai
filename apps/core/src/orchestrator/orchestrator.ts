@@ -1,6 +1,7 @@
 import {
   answerText,
   isBrowserTool,
+  isMacTool,
   chatMessages,
   offerable,
   promptLabelOf,
@@ -84,6 +85,8 @@ import { WEB_FETCH, webFetchOffered, type WebPage, type WebToolEnv } from './web
 import { approvedPrivateSteps, REFUSED_SAVED, refusedSaved, requestSavedPrivate, WAITING_PRIVATE } from './saved-ask.ts';
 import { approvedRedo, BROWSER_ACTION_EVENT, PAGE_CHANGED, browserChatSite, browserOffered, browserReplay, browserResults, browserTool, promisesClose, requestBrowserOpen, requestBrowserSend, WAITING_BROWSER, WAITING_SEND, type BrowserToolEnv } from './browser-tool.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
+import type { MacEnv } from '../mac-files.ts';
+import { MAC_RESULT_LABEL, macConversation, macRedo, macReplay, macResults, macTool, requestMacRead, WAITING_MAC } from './mac-tool.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
 import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.ts';
@@ -210,6 +213,8 @@ export interface OrchestratorOptions {
   fetchLink?: WebToolEnv['fetchLink'];
   /** The browser of Arianna (D-264, passo 3) and whether its image is built; absent, the browser tools are never offered. */
   browser?: { agent: BrowserToolEnv['browser']; installed: () => boolean };
+  /** The folders of the Mac (D-314, I-22, tappa M1): the home and what is never read; absent, the mac tools are never offered. */
+  mac?: MacEnv;
 }
 
 /**
@@ -233,6 +238,9 @@ export interface OrchestratorOptions {
  * Internal, without finance data, not incognito (webFetchOffered).
  * The browser tools (D-264, passo 3) only with `browser`: the same steps as
  * `web.fetch`, once the browser image is built (browserOffered).
+ * The tools of the folders of the Mac (D-314) only with `mac`: a private
+ * conversation of the user with Arianna (macConversation); in incognito they
+ * are offered and answer that they read nothing there.
  */
 export function orchestratorTools(
   agent: LoadedAgent,
@@ -245,6 +253,7 @@ export function orchestratorTools(
   routines = false,
   web = false,
   browser = false,
+  mac = false,
 ): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
@@ -256,6 +265,7 @@ export function orchestratorTools(
         (tool !== ROUTINE_PROPOSE || (routines && !incognito && !secretary)) &&
         (tool !== WEB_FETCH || (web && !incognito))) ||
         (browser && !incognito && isBrowserTool(tool)) ||
+        (mac && isMacTool(tool)) ||
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
@@ -348,7 +358,8 @@ async function historyOf(
   }
   // A profile.share the user decided (D-114, tappa C): the model reads the decision, never the text.
   // A waiting share (D-114) or link to another site (D-264): the model reads the decision of the user.
-  const shared = new Map([...(await shareResults(sql, task.id, turns)), ...(await browserResults(sql, task.id, turns))]);
+  // A waiting card of a folder of the Mac (D-314): the model reads the decision of the user.
+  const shared = new Map([...(await shareResults(sql, task.id, turns)), ...(await browserResults(sql, task.id, turns)), ...(await macResults(sql, task.id, turns))]);
   // A card sent back (D-235): each note after the turns before it, as the user's.
   const returns = task.conversationId === null ? await loadCardReturns(sql, task.id) : [];
   let nextReturn = 0;
@@ -372,7 +383,9 @@ async function historyOf(
     const source = `turn:${task.id}:${String(turn.step)}`;
     history.push({ value: { role: 'assistant', content: answerText(turn.answer) }, label: turn.label, source });
     if (turn.result !== null) {
-      history.push({ value: { role: 'tool', content: clip(shared.get(turn.step) ?? turn.result) }, label: turn.label, source });
+      // What a tool of the Mac returned (D-314) keeps the source `mac:`: Private wherever it goes next, whatever its label.
+      const resultSource = turn.answer.action === 'call' && isMacTool(turn.answer.tool) ? `mac:${source}` : source;
+      history.push({ value: { role: 'tool', content: clip(shared.get(turn.step) ?? turn.result) }, label: turn.label, source: resultSource });
     } else if (turn.answer.action === 'call' && turn.answer.tool === DELEGATE) {
       // A call that opened a delegation: its outcome is the result.
       const result = delegationResult(delegations.find((delegation) => delegation.step === turn.step));
@@ -1154,6 +1167,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ??
           (await shareReplay(sql, ctx, done)) ??
           (await browserReplay(sql, ctx, done)) ??
+          (await macReplay(sql, ctx, done)) ??
           (await proposeReplay(sql, ctx, done)) ??
           (await routineReplay(sql, ctx, done)) ??
           (await executorReplay(done, delegations));
@@ -1211,6 +1225,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       const browserChat = options.browser === undefined || task.conversationId === null || task.clearance !== 'L2' || task.finance || incognito
         ? undefined
         : await browserChatSite(sql, options.browser.agent, task.conversationId);
+      // The folders of the Mac (D-314): only in a private conversation of the user with Arianna, on the local model.
+      const macOffered = options.mac !== undefined && browserChat === undefined && task.clearance === 'L2' && task.assignee === ORCHESTRATOR_AGENT && !secretary && (await macConversation(sql, task.conversationId));
       const facts = browserChat === undefined ? await listUserFacts(sql) : [];
       // A private fact says how to ask for it when profile.share is offered at this step (D-213).
       const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, incognito, secretary, false, shareTargets.size > 0).includes(PROFILE_SHARE);
@@ -1272,6 +1288,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
               // A public page (D-262): only while the step has read nothing above Internal, nor finance data.
               webFetchOffered(context, incognito),
               browserOffered(context, incognito, options.browser?.installed() === true),
+              macOffered,
             )
           : browserChatTools(agent);
       // A conversation that read private or finance data keeps no browser (D-264, passo 3); the chat of an access keeps its own (D-281).
@@ -1286,6 +1303,8 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
       // After «Apri» of a card of the browser (D-286): the core makes the approved call again itself, as this step,
       // and the model reads its outcome after; never the old page first.
       const redo = await approvedRedo(sql, task.id, turns, tools);
+      // After a yes on a card of a folder of the Mac (D-314): the core makes the same call again itself, as this step.
+      const macAgain = redo === undefined ? await macRedo(sql, task.id, turns, tools) : undefined;
       // A click or a typed text only on the element as it was read, within REDO_ELEMENT_MS (D-286): otherwise the model reads the page again.
       if (redo?.element !== undefined) {
         const agentBrowser = options.browser?.agent;
@@ -1297,7 +1316,7 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
           return { kind: 'continue', usage: { steps: 0 } };
         }
       }
-      const redone = redo?.answer;
+      const redone = redo?.answer ?? macAgain?.answer;
       // The call made again by the core is recorded as such (D-286): the card and the tool, never its arguments.
       if (redo !== undefined) await appendEvent(sql, { kind: 'browser.redo', label: 'L0', taskId: task.id, runId, payload: { approvalId: redo.approvalId, tool: redo.answer.tool, outcome: 'redone' } });
       if (redone === undefined) await show(task, step, 'thinking');
@@ -1432,6 +1451,29 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
         }
         await recordTurn(sql, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
         await show(task, step, ran.text.startsWith('error: ') ? 'error' : answer.tool === 'browser.read' ? 'read' : 'tool', ran.detail);
+        return { kind: 'continue', usage };
+      }
+      // The folders of the Mac (D-314): read at once inside an allowed folder; otherwise the card with three choices.
+      if (isMacTool(answer.tool) && options.mac !== undefined) {
+        const ran = await macTool(answer.tool, answer.arguments, step, {
+          mac: options.mac,
+          sql,
+          task,
+          incognito,
+          turns,
+          ...(macAgain === undefined ? {} : { once: macAgain.folder }),
+        });
+        const macLabel = maxLabel(label, MAC_RESULT_LABEL);
+        if (ran.kind === 'ask') {
+          const approvalId = await sql.begin(async (tx) => {
+            await recordTurn(tx, { ...turn, label: macLabel, result: WAITING_MAC });
+            return requestMacRead(tx, { taskId: task.id, detail: ran.detail });
+          });
+          await show(task, step, 'wait', ran.activity);
+          return { kind: 'confirm', approvalId, usage };
+        }
+        await recordTurn(sql, { ...turn, label: macLabel, result: ran.text });
+        await show(task, step, ran.kind === 'error' ? 'error' : answer.tool === 'mac.find' ? 'search' : 'read', ran.detail);
         return { kind: 'continue', usage };
       }
       if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };

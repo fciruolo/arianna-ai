@@ -65,7 +65,7 @@ import { activityText, agentName, reasonText, relativeTimeText } from '../lib/it
 import { CHOICE_TEXT } from '../lib/labels.ts';
 import { listUserAgents } from '../lib/user-agents.ts';
 import { useModal } from '../lib/modal.ts';
-import type { Approval, ExecutorChoice, SavedActivity } from '../lib/types.ts';
+import type { Approval, ApprovalChoice, SavedActivity } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
@@ -94,7 +94,7 @@ const props = defineProps<{
   splitInbox: boolean;
   /** The pending approvals of the chat: those of this card show here (D-159). */
   approvals?: Approval[];
-  decide?: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide?: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 const emit = defineEmits<{ close: []; changed: [] }>();
 
@@ -571,7 +571,7 @@ function sendBack(): void {
   });
 }
 
-async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }): Promise<void> {
+async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }): Promise<void> {
   if (props.decide === undefined) return;
   await props.decide(approval, state, choice, plan);
   emit('changed');

@@ -28,7 +28,8 @@ import {
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
 import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
-import type { Approval, ExecutorChoice } from '../lib/types.ts';
+import { afterText, MAC_CHOICE_TEXT, MAC_CHOICES, MAC_NO, MAC_NOTE, macRead } from '../lib/mac-approval.ts';
+import type { Approval, ApprovalChoice, ExecutorChoice, MacChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import { onRemoteOrigin } from '../lib/remote.ts';
@@ -36,7 +37,7 @@ import { onRemoteOrigin } from '../lib/remote.ts';
 const props = defineProps<{
   approval: Approval;
   /** `plan`: the cards of a plan to start at once, «Avvia subito», and the revision shown (D-235). */
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 const busy = ref(false);
 
@@ -167,6 +168,18 @@ const browser = computed(() => browserClick(props.approval));
 const send = computed(() => browserSend(props.approval));
 /** A value saved for a client or a contact that would leave (D-283): nothing leaves before «Apri». */
 const saved = computed(() => browserPrivate(props.approval));
+/** A folder of the Mac Arianna would read (D-314): three choices with their duration, or «No». */
+const mac = computed(() => macRead(props.approval));
+const macAfter = computed(() => (mac.value === undefined ? undefined : afterText(mac.value.after)));
+
+async function chooseMac(choice: MacChoice): Promise<void> {
+  busy.value = true;
+  try {
+    await props.decide(props.approval, 'approved', choice);
+  } finally {
+    busy.value = false;
+  }
+}
 const isDeclassify = computed(() => props.approval.kind === 'declassify' && share.value === undefined);
 /** A workspace approval names the repository and the files with uncommitted changes. */
 const workspace = computed(() => {
@@ -280,6 +293,13 @@ const remoteOrigin = onRemoteOrigin(window.location);
           <li v-for="line in saved.lines" :key="line" class="text-[15px]"><strong>{{ line }}</strong></li>
         </ul>
         <p class="text-xs text-muted">{{ PRIVATE_NOTE }}</p>
+      </template>
+      <template v-else-if="mac !== undefined">
+        <p class="text-[15px]">{{ mac.sentence }}</p>
+        <p class="font-mono text-xs break-all text-muted">{{ mac.command }}</p>
+        <p v-if="macAfter !== undefined" class="text-[13px] text-warn">{{ macAfter }}</p>
+        <p class="text-[14px]">Il permesso vale per <strong>{{ mac.place }}</strong> e le sue sottocartelle.</p>
+        <p class="text-xs text-muted">{{ MAC_NOTE }}</p>
       </template>
       <template v-else-if="browser !== undefined">
         <p class="text-[15px]">
@@ -414,6 +434,12 @@ const remoteOrigin = onRemoteOrigin(window.location);
         {{ CHOICE_TEXT[option] }}
       </button>
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
+    </div>
+    <div v-else-if="mac !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
+      <button v-for="(option, index) in MAC_CHOICES" :key="option" type="button" :disabled="busy" class="btn max-md:flex-1" :class="{ 'btn-primary': index === 0 }" @click="chooseMac(option)">
+        <Icon v-if="index === 0" :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ MAC_CHOICE_TEXT[option] }}
+      </button>
+      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ MAC_NO }}</button>
     </div>
     <div v-else-if="plan !== undefined && editing" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy || draftIssue !== undefined" class="btn btn-primary" @click="saveEdit">Salva le modifiche</button>

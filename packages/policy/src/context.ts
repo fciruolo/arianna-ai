@@ -69,12 +69,28 @@ export function isFinanceSource(source: unknown): boolean {
 }
 
 /**
+ * Sources of what the core read from the folders of the Mac start with this
+ * prefix, e.g. `mac:turn:<task>:<step>` (D-314, I-22): names and contents of
+ * the user's files, Private whatever label they were given.
+ */
+export const MAC_SOURCE_PREFIX = 'mac:';
+/** What is read from the Mac is at least Private (D-314): no rule lowers it below this label. */
+export const MAC_LABEL: Label = 'L2';
+
+/** True when `source` names data read from the folders of the Mac (`mac:*`), whatever its case and surrounding spaces. */
+export function isMacSource(source: unknown): boolean {
+  return typeof source === 'string' && source.trim().toLowerCase().startsWith(MAC_SOURCE_PREFIX);
+}
+
+/**
  * The label a value really has: its label (L2 when invalid), raised to L2 when
- * its source is finance data, whatever label it was given.
+ * its source is finance data (D-183) or read from the Mac (D-314), whatever
+ * label it was given.
  */
 export function labelOf(item: Labeled<unknown>): Label {
   const label = labelOrDefault(item.label);
-  return isFinanceSource(item.source) ? maxLabel(label, FINANCE_LABEL) : label;
+  if (isFinanceSource(item.source)) return maxLabel(label, FINANCE_LABEL);
+  return isMacSource(item.source) ? maxLabel(label, MAC_LABEL) : label;
 }
 
 /**

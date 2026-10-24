@@ -44,7 +44,7 @@ import { parseControl, parseMovedTo, type BlockedNavigation, type ControlState }
 import { actionPath, checkFailure, needsVerification, onRemoteOrigin, sessionEnded, stepUpHeader } from './remote.ts';
 import type { VersionComparison, WikiListing, WikiPageView, WikiProposal } from './wiki.ts';
 import type { VideoJob } from './video.ts';
-import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, AttachmentInfo, Changelog, CharacterChoice, ChatCharacter, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ApprovalChoice, OffInterlocutor, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, QueuedMessage, QueueView, RecentDelegation, SavedActivity, SavedTerminal, SideThread, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -613,7 +613,7 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
  * `choice`: the executor chosen for a card, with an approval of kind executor (D-159).
  * `plan`: the cards of a plan to start at once, «Avvia subito», by their number, and the revision shown (D-235).
  */
-export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<Approval> {
+export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: PlanChoice): Promise<Approval> {
   // From the phone (D-292) the core asks Face ID for exactly this decision: call() asks it and sends again.
   return (
     await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
@@ -2195,4 +2195,35 @@ export async function newPairingCode(name: string): Promise<{ code: string; expi
 /** «Scollega»: sessions and passkeys of the device end at once. */
 export async function unlinkDevice(id: string): Promise<void> {
   await call('POST', `/api/devices/${encodeURIComponent(id)}/unlink`, {});
+}
+
+/** A folder of the Mac Arianna may read (D-314), for Impostazioni → Cartelle del Mac on the Mac. */
+export interface MacFolderView {
+  id: string;
+  /** From the home, as `~/Documents/Fatture`. */
+  path: string;
+  /** Its name: «Scrivania», «Fatture» in Documenti. */
+  place: string;
+  addedAt: string;
+  /** Added with «Sempre» on a card, or here. */
+  via: 'approval' | 'settings';
+}
+
+export interface MacFoldersView {
+  /** False when the core runs without the folders of the Mac. */
+  available: boolean;
+  folders: MacFolderView[];
+}
+
+export async function loadMacFolders(): Promise<MacFoldersView> {
+  return call<MacFoldersView>('GET', '/api/mac/folders');
+}
+
+/** Adds a folder by its path; the core checks it (it exists, it is not hidden nor the Library) and answers in Italian. */
+export async function addMacFolder(path: string): Promise<MacFoldersView> {
+  return call<MacFoldersView>('POST', '/api/mac/folders', { path: path.trim() });
+}
+
+export async function removeMacFolder(id: string): Promise<MacFoldersView> {
+  return call<MacFoldersView>('DELETE', `/api/mac/folders/${encodeURIComponent(id)}`);
 }

@@ -27,7 +27,7 @@ import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
 import { splittable } from './lib/split.ts';
 import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
-import type { Approval, AttachmentInfo, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, AttachmentInfo, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ApprovalChoice, OffInterlocutor, MessageCredit, Participant, ProjectInfo, QueueView, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
@@ -1061,7 +1061,7 @@ export function createChatStore(options: { beside?: SharedLists } = {}) {
     }
   }
 
-  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: PlanChoice): Promise<void> {
+  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: PlanChoice): Promise<void> {
     error.value = null;
     try {
       await api.decide(approval.id, state, choice, plan);

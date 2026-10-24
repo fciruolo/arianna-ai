@@ -22,7 +22,9 @@ import { advisorStatus, writeAdvisorSettings } from '../orchestrator/advisor.ts'
 import { loadUsage, parsePeriod, USAGE_PERIODS } from '../usage.ts';
 import { loadChanges, type ChangeWatcher } from '../install-changes.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
-import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { ApprovalChoiceError, isApprovalChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { MacPathError, type MacEnv } from '../mac-files.ts';
+import { addMacFolder, checkFolderInput, folderView, listMacFolders, removeMacFolder } from '../mac-folders.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, sendBackCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
@@ -472,6 +474,12 @@ export interface ApiServerOptions {
    * session, always none, and refuses the rest.
    */
   remoteDevices?: RemoteDevices;
+  /**
+   * The folders of the Mac (D-314): the home and what is never read, for the
+   * page Impostazioni → Cartelle del Mac. Without it the page says the folders
+   * are off.
+   */
+  mac?: MacEnv;
   /** The remote port could not listen (a port taken): the core goes on without it. */
   onRemoteError?: (error: unknown) => void;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -3283,8 +3291,9 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const body = await readJson(request);
       onlyFields(body, ['state', 'choice', 'starts', 'revision']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
-      if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
-      const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
+      // An executor for a card (D-159), or how long a folder of the Mac is allowed (D-314).
+      if (body.choice !== undefined && !isApprovalChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex, local, once, conversation or always');
+      const choice = isApprovalChoice(body.choice) ? body.choice : undefined;
       const current = await loadApproval(sql, id);
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
@@ -3297,6 +3306,40 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * Impostazioni → Cartelle del Mac (D-314): the permanent list of the folders
+ * Arianna may read, changed only here by the user or with «Sempre» on a card;
+ * no agent calls these. On the port of the Mac only (LOCAL_ONLY_PATHS of
+ * remote.ts). Paths are shown from the home with their Italian name.
+ */
+function macFolderRoutes(sql: Sql, mac: MacEnv | undefined): Route[] {
+  const list = async (): Promise<Result> => {
+    if (mac === undefined) return { body: { available: false, folders: [] } };
+    return { body: { available: true, folders: (await listMacFolders(sql)).map((folder) => folderView(folder, mac.home)) } };
+  };
+  return [
+    route('GET', '/api/mac/folders', list),
+    route('POST', '/api/mac/folders', async (request) => {
+      if (mac === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      try {
+        const path = await checkFolderInput(body.path, mac);
+        await addMacFolder(sql, path);
+      } catch (error) {
+        if (error instanceof MacPathError) throw new HttpError(400, error.message);
+        throw error;
+      }
+      return list();
+    }),
+    route('DELETE', '/api/mac/folders/:id', async (_request, _url, params) => {
+      if (mac === undefined) throw new HttpError(404, 'not found');
+      if (!(await removeMacFolder(sql, idParam(params, 'id')))) throw new HttpError(404, 'not found');
+      return list();
     }),
   ];
 }
@@ -4971,6 +5014,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...profileRoutes(sql));
+  table.push(...macFolderRoutes(sql, options.mac));
   table.push(...attachmentRoutes(sql, options.attachments));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
   table.push(route('GET', '/api/notifications/latest', () => Promise.resolve({ body: { notice: options.notices?.latest() ?? null } })));

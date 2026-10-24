@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 
 import { useModal } from '../lib/modal.ts';
-import type { Approval, ExecutorChoice } from '../lib/types.ts';
+import type { Approval, ApprovalChoice } from '../lib/types.ts';
 import CardwallPage from './CardwallPage.vue';
 import Icon from './Icon.vue';
 
@@ -18,7 +18,7 @@ import Icon from './Icon.vue';
 defineProps<{
   version: number;
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 const emit = defineEmits<{ close: [] }>();
 

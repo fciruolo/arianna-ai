@@ -121,7 +121,8 @@ export const REMOTE_LIMIT_NOTE: Record<RemoteLimit, string> = {
 };
 
 export function remoteLimit(section: { id: string; privacy?: boolean }): RemoteLimit | undefined {
-  if (section.id === 'devices') return 'mac-only';
+  // Devices and the folders of the Mac (D-314): the core refuses them from the phone.
+  if (section.id === 'devices' || section.id === 'mac-folders') return 'mac-only';
   if (section.privacy === true) return 'read-only';
   return undefined;
 }

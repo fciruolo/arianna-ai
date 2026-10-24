@@ -237,7 +237,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export interface Approval {
   id: string;
   taskId: string | null;
-  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment' | 'plan' | 'executor' | 'im' | 'fact' | 'routine' | 'browser';
+  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment' | 'plan' | 'executor' | 'im' | 'fact' | 'routine' | 'browser' | 'mac';
   action: string;
   detail: Record<string, unknown>;
   label: Label;
@@ -248,14 +248,20 @@ export interface Approval {
   /** Of an incognito conversation (D-136): shown only in the page of that conversation. Optional: a core without it sends none. */
   incognito?: boolean;
   conversationId?: string | null;
-  /** The executor chosen on an approved approval of kind executor (D-159). Optional: a core without it sends none. */
-  choice?: ExecutorChoice | null;
+  /** The executor chosen on an approved approval of kind executor (D-159), or how long a folder of the Mac is allowed (D-314). Optional: a core without it sends none. */
+  choice?: ApprovalChoice | null;
   /** The chat task an approval of kind executor shows under: the plan's, when the card came from one (D-159). */
   chatTaskId?: string | null;
 }
 
 /** Where a card of an agent runs, as the user chooses it (D-159). */
 export type ExecutorChoice = 'claude' | 'codex' | 'local';
+
+/** How long a folder of the Mac is allowed (D-314): that call only, the whole conversation, always. */
+export type MacChoice = 'once' | 'conversation' | 'always';
+
+/** What a decision may carry: the executor of a card (D-159) or how long a folder of the Mac is allowed (D-314). */
+export type ApprovalChoice = ExecutorChoice | MacChoice;
 
 /** An entry of the event log: ids and references only, never content. */
 export interface LiveEvent {

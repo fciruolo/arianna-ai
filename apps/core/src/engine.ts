@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
-import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
+import { decideApproval, loadApproval, requestDeclassify, type ApprovalChoice, type DecisionChannel, type StoredApproval } from './approvals.ts';
+import { addMacFolder } from './mac-folders.ts';
+import { MacPathError } from './mac-files.ts';
 import { applyPlanApproval, closePlanningCard, setPlanStarts, type PlanDecision } from './card-plans.ts';
 import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
@@ -464,7 +466,7 @@ export async function processStepJob(
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
           WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id}
-            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser') OR (kind = 'declassify' AND action = 'share_fact'))`;
+            AND (kind IN ('commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'mac') OR (kind = 'declassify' AND action = 'share_fact'))`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           // A card «Piano» (D-235) closes in Fatto here, as the decision would have closed it waiting.
@@ -525,7 +527,7 @@ export async function recordDecision(
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
-  choice?: ExecutorChoice,
+  choice?: ApprovalChoice,
   plan?: PlanDecision,
 ): Promise<StoredApproval> {
   return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice, plan));
@@ -542,7 +544,7 @@ export async function recordDecisionIn(
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
-  choice?: ExecutorChoice,
+  choice?: ApprovalChoice,
   plan?: PlanDecision,
 ): Promise<StoredApproval> {
   // The rows that start go in the plan before the decision freezes it (D-235).
@@ -560,6 +562,15 @@ export async function recordDecisionIn(
   if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
   // A fact Arianna proposed (D-114, tappa D): written "Solo in casa" with the decision.
   if (decided.kind === 'fact' && state === 'approved') await applyFactProposal(tx, decided);
+  // «Sempre» on a card of a folder of the Mac (D-314): the folder joins the permanent list with the decision.
+  // A full list keeps the decision: the call still runs this once.
+  if (decided.kind === 'mac' && state === 'approved' && decided.choice === 'always' && typeof decided.detail.folder === 'string') {
+    try {
+      await addMacFolder(tx, decided.detail.folder, { approvalId: decided.id });
+    } catch (error) {
+      if (!(error instanceof MacPathError)) throw error;
+    }
+  }
   // A routine proposed in the chat (D-256): active with its next run, or retired, with the decision.
   const routineId = proposedRoutineId(decided);
   if (routineId !== undefined) await decideRoutineProposal(tx, routineId, state, decided.id);

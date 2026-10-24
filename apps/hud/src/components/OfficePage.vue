@@ -23,7 +23,7 @@ import { loadViewMode, saveViewMode, type OfficeViewMode } from '../lib/office/w
 import { pendingRows, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Approval, CharacterListing, Conversation, ExecutorChoice, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
+import type { Approval, CharacterListing, Conversation, ApprovalChoice, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
 import { labelWord } from '../lib/labels.ts';
 import OfficeCanvas from './OfficeCanvas.vue';
 import OfficeCardwall from './OfficeCardwall.vue';
@@ -49,7 +49,7 @@ const props = defineProps<{
   characters: CharacterListing | null;
   signals: OfficeSignals;
   cardsVersion: number;
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
   /** The agents the user may talk with directly now (D-111d): «Parla con…» opens a chat with them (D-212). */
   directAgents?: string[] | undefined;
   /** The theme in use (D-103): Scrubs and The Office have a place of their own (D-216); undefined is Base. */

@@ -19,8 +19,11 @@ export interface StoredApproval extends DeclassifyApproval {
   conversationId: string | null;
   /** Its task is in an incognito conversation (D-136): the chat shows it only in that conversation's page. */
   incognito: boolean;
-  /** The executor the user chose, on an approved approval of kind `executor` (D-159); null otherwise. */
-  choice: ExecutorChoice | null;
+  /**
+   * The executor the user chose, on an approved approval of kind `executor` (D-159); how long a folder of the Mac
+   * is allowed, on an approved approval of kind `mac` (D-314); null otherwise.
+   */
+  choice: ApprovalChoice | null;
   /**
    * The chat task an approval of kind `executor` shows under (D-159): the task
    * of the plan the card came from, whose conversation is `conversationId`;
@@ -33,6 +36,18 @@ export interface StoredApproval extends DeclassifyApproval {
 /** Where a card of an agent with `executor_choice: ask` runs (D-159): the column `approvals.choice`. */
 export const EXECUTOR_CHOICES = ['claude', 'codex', 'local'] as const;
 export type ExecutorChoice = (typeof EXECUTOR_CHOICES)[number];
+
+/**
+ * How long a folder of the Mac is allowed (D-314), on an approved card of kind `mac`: that call only, the whole
+ * conversation, or always (the folder joins the permanent list of Impostazioni → Cartelle del Mac).
+ */
+export const MAC_CHOICES = ['once', 'conversation', 'always'] as const;
+export type MacChoice = (typeof MAC_CHOICES)[number];
+export type ApprovalChoice = ExecutorChoice | MacChoice;
+
+export function isMacChoice(value: unknown): value is MacChoice {
+  return (MAC_CHOICES as readonly unknown[]).includes(value);
+}
 
 /**
  * The chat task of a card's executor approval, or of the plan of a card
@@ -103,23 +118,27 @@ export async function loadApproval(sql: Queryable, id: string): Promise<StoredAp
 /**
  * Records the user's decision. An approval is decided once: a second decision
  * throws. `choice`: the executor chosen on an approval of kind `executor`
- * (D-159), one of its `detail.options`; required to approve one, refused on
- * any other approval and on a rejection (the database checks it too).
+ * (D-159), one of its `detail.options`; how long a folder of the Mac is
+ * allowed on an approval of kind `mac` (D-314); required to approve one of
+ * those, refused on any other approval and on a rejection (the database
+ * checks it too).
  */
 export async function decideApproval(
   sql: Queryable,
   id: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
-  choice?: ExecutorChoice,
+  choice?: ApprovalChoice,
 ): Promise<StoredApproval> {
   if (choice !== undefined || state === 'approved') {
     const current = await loadApproval(sql, id);
     if (current !== undefined && current.kind === 'executor' && state === 'approved') {
       const options = Array.isArray(current.detail.options) ? current.detail.options : [];
       if (choice === undefined || !options.includes(choice)) throw new ApprovalChoiceError('choose one of the executors the approval offers');
+    } else if (current !== undefined && current.kind === 'mac' && state === 'approved') {
+      if (!isMacChoice(choice)) throw new ApprovalChoiceError('choose once, conversation or always');
     } else if (choice !== undefined) {
-      throw new ApprovalChoiceError('only an approved choice of executor carries a choice');
+      throw new ApprovalChoiceError('only an approved choice of executor or of a folder of the Mac carries a choice');
     }
   }
   const [row] = await sql.unsafe<StoredApproval[]>(
@@ -135,6 +154,11 @@ export async function decideApproval(
 /** A decision whose choice of executor does not fit the approval (D-159). */
 export class ApprovalChoiceError extends Error {
   override name = 'ApprovalChoiceError';
+}
+
+/** A choice the decision route takes: an executor (D-159) or how long a folder of the Mac is allowed (D-314). */
+export function isApprovalChoice(value: unknown): value is ApprovalChoice {
+  return isExecutorChoice(value) || isMacChoice(value);
 }
 
 export function isExecutorChoice(value: unknown): value is ExecutorChoice {

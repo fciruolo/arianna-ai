@@ -78,6 +78,9 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
       return typeof detail.title === 'string' ? `Attivare la routine «${detail.title}»` : 'Attivare una routine';
     case 'browser':
       return typeof detail.site === 'string' && detail.site.trim() !== '' ? `Aprire un indirizzo su ${detail.site.trim()}` : 'Aprire un indirizzo che non hai scritto';
+    // A folder of the Mac Arianna would read (D-314): its name, as the card says it.
+    case 'mac':
+      return typeof detail.place === 'string' && detail.place.trim() !== '' ? `Guardare nella cartella ${detail.place.trim()} del Mac` : 'Guardare in una cartella del Mac';
     case 'fact':
       return typeof detail.topic === 'string' ? `Ricordare «${detail.topic}» in «Su di te»` : 'Ricordare un dato in «Su di te»';
     case 'executor':

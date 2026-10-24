@@ -38,7 +38,7 @@ import { neighbourColumn, phoneColumn } from '../lib/cardwall-phone.ts';
 import { followMedia, phoneMedia } from '../lib/studio-phone.ts';
 import { agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
-import type { Approval, ExecutorChoice } from '../lib/types.ts';
+import type { Approval, ApprovalChoice } from '../lib/types.ts';
 import CardDetail from './CardDetail.vue';
 import FilterMenu from './FilterMenu.vue';
 import ImBoard from './ImBoard.vue';
@@ -60,7 +60,7 @@ import PhoneSheet from './PhoneSheet.vue';
 const props = defineProps<{
   version: number;
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ApprovalChoice, plan?: { starts: readonly number[]; revision: number }) => Promise<void>;
 }>();
 
 const storage = (() => {

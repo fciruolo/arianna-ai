@@ -1,7 +1,8 @@
 // Usage: node apps/core/src/main.ts
 // Starts the core: migrations, task worker, live feed, API, WebSocket and web chat.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -111,6 +112,7 @@ import { createKb, KB_DIR } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { macAppName, type MacEnv } from './mac-files.ts';
 import { createNoteReleaser } from './note-release.ts';
 import { createNoteOrganizer, MAX_RESUMED, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
@@ -669,7 +671,13 @@ const agentBrowser = new AgentBrowser({
   onReleased: () => { browserScreens.revoke(); },
 });
 
+// The folders of the Mac (D-314, I-22, tappa M1): read only, in the home of the user; never ARIANNA_HOME (data, vault).
+// macOS gives the permission of Scrivania, Documenti and Scaricati to the app that launched the core (TERM_PROGRAM).
+// ARIANNA_HOME as written and resolved: the reads compare resolved paths.
+const macEnv: MacEnv = { home: homedir(), excluded: [...new Set([config.home, realpathSync(config.home)])], app: macAppName(process.env.TERM_PROGRAM) };
+
 const orchestrator = createOrchestrator({
+  mac: macEnv,
   // D-225, tappa A: a chat reply of a character switched on is written once more, livelier.
   livelyReplies: true,
   // D-251: a chat reply of the local model is written once more as free text in Markdown.
@@ -1345,6 +1353,7 @@ const remoteListener = ((): { host: string; port: number; tls?: { cert: string; 
 })();
 const server = await startApiServer({
   sql,
+  mac: macEnv,
   live,
   changes: installChanges,
   host: config.server.host,

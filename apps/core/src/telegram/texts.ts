@@ -46,9 +46,9 @@ export function scannerRefusal(kinds: readonly string[]): string {
 /**
  * The kinds of approval decided in the web chat only: a declassification, a
  * commitment of the secretary (D-144), a plan and the choice of an executor
- * (D-159), an IM item, a fact, a routine (D-256), a link of the browser (D-264; the database refuses them from Telegram too).
+ * (D-159), an IM item, a fact, a routine (D-256), a link of the browser (D-264), a folder of the Mac (D-314; the database refuses them from Telegram too).
  */
-export const WEB_ONLY_KINDS = ['declassify', 'commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser'] as const;
+export const WEB_ONLY_KINDS = ['declassify', 'commitment', 'plan', 'executor', 'im', 'fact', 'routine', 'browser', 'mac'] as const;
 
 export function isWebOnly(kind: string): boolean {
   return (WEB_ONLY_KINDS as readonly string[]).includes(kind);

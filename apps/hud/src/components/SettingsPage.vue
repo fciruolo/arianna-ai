@@ -113,6 +113,7 @@ import ClaudeSkills from './ClaudeSkills.vue';
 import AgentsCatalog from './AgentsCatalog.vue';
 import Icon from './Icon.vue';
 import DevicesPage from './DevicesPage.vue';
+import MacFolders from './MacFolders.vue';
 import ProfileFacts from './ProfileFacts.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
@@ -963,6 +964,7 @@ const grid = 'grid gap-3 sm:grid-cols-6';
         <ProfileFacts v-else-if="active === 'about-you'" />
         <!-- The phones of the remote port (D-292, stage B): in the database, not in arianna.toml -->
         <template v-else-if="active === 'devices'"><DevicesPage v-if="chosenLimit !== 'mac-only'" /></template>
+        <template v-else-if="active === 'mac-folders'"><MacFolders v-if="chosenLimit !== 'mac-only'" /></template>
         <ChangelogPage v-else-if="active === 'changelog'" @open="openConversation" />
         <ChangesPage v-else-if="active === 'changes'" @section="openSection" />
         <UsagePage v-else-if="active === 'usage'" />
