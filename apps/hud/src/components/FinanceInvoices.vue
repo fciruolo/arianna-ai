@@ -5,6 +5,7 @@ import { deleteInvoice, importInvoice, listDeadlines, listInvoices, readInvoice,
 import { bytesToBase64, dayOf, formatCents, formatDay, formatMoment } from '../lib/finance.ts';
 import {
   DEADLINE_GROUP_TEXT,
+  decimalText,
   documentTypeText,
   groupDeadlines,
   importText,
@@ -273,8 +274,8 @@ function partyText(invoice: InvoiceSummary): string {
                   <tr v-for="(line, index) in opened.lines" :key="index" class="border-t border-line">
                     <td class="px-2 py-1 text-muted">{{ line.number }}</td>
                     <td class="px-2 py-1">{{ line.description }}</td>
-                    <td class="px-2 py-1 text-right tabular-nums">{{ line.quantity ?? '' }}</td>
-                    <td class="px-2 py-1 text-right tabular-nums">{{ line.unitPrice }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums">{{ line.quantity === null ? '' : decimalText(line.quantity, 0) }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums">{{ decimalText(line.unitPrice) }}</td>
                     <td class="px-2 py-1 text-right whitespace-nowrap">{{ vatRateText(line.vatRate, line.nature) }}</td>
                     <td class="px-2 py-1 text-right whitespace-nowrap tabular-nums">{{ formatCents(line.totalCents, { currency: opened.currency }) }}</td>
                   </tr>
