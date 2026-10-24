@@ -28,6 +28,8 @@ export interface GatewayLogEntry {
   model: string | null;
   /** `title` only where the list of conversations shows it; `open`: not purged. */
   conversation: { id: string; title: string | null; open: boolean } | null;
+  /** The start of the user's message that started its request (D-306), only where the conversation's title is shown. */
+  question: string | null;
   card: { id: string; title: string } | null;
   /** The run of the exit. */
   runId: string | null;
@@ -93,12 +95,13 @@ const WEB_TEXT: Record<string, string> = {
   'web-page-public': 'Web · pagina pubblica',
   'web-page-user': 'Web · pagina indicata da te',
   'web-page-sites': 'Web · sito della tua lista',
-  'web-resource-public': 'Browser · risorsa di una pagina',
-  'web-resource-user': 'Browser · risorsa di una pagina',
-  'web-resource-sites': 'Browser · risorsa di una pagina',
-  'web-typed-public': 'Browser · testo scritto',
-  'web-typed-user': 'Browser · testo scritto',
-  'web-typed-sites': 'Browser · testo scritto',
+  // A resource or a typed text carries the consent of the page it is on (D-306): each reads its own.
+  'web-resource-public': 'Browser · risorsa di una pagina pubblica',
+  'web-resource-user': 'Browser · risorsa di una pagina indicata da te',
+  'web-resource-sites': 'Browser · risorsa di un sito della tua lista',
+  'web-typed-public': 'Browser · testo scritto in una pagina pubblica',
+  'web-typed-user': 'Browser · testo scritto in una pagina indicata da te',
+  'web-typed-sites': 'Browser · testo scritto in un sito della tua lista',
   'web-typed-session': 'Browser · testo scritto dopo il tuo accesso',
   'web-session': 'Browser · sito del tuo accesso',
   'web-form': 'Browser · modulo inviato da te',
@@ -128,7 +131,7 @@ export function destinationOptions(targets: readonly GatewayLogTarget[]): { grou
     const options: DestinationOption[] = [{ value: kind, text: `Tutti: ${KIND_TEXT[kind].toLowerCase()}` }];
     for (const item of own) {
       const text = targetText(kind, item.target);
-      // Three targets of a resource read the same: one choice would hide the others, so the code tells them apart.
+      // Every known target has its own name (D-306); only an unknown one reading as another needs its code.
       const shown = seen.has(text) ? `${text} (${item.target})` : text;
       seen.add(text);
       options.push({ value: `${kind}/${item.target}`, text: shown });
@@ -201,6 +204,16 @@ export function originText(entry: Pick<GatewayLogEntry, 'conversation' | 'card'>
   if (entry.conversation !== null) return entry.conversation.title ?? (entry.conversation.open ? 'Conversazione senza titolo' : 'Conversazione cancellata');
   if (entry.card !== null) return entry.card.title === '' ? 'Card senza titolo' : `Card «${entry.card.title}»`;
   return null;
+}
+
+/**
+ * The title of a line (D-306): the start of the question that started it,
+ * with where it was asked below; without a question, only where.
+ */
+export function lineTitle(entry: Pick<GatewayLogEntry, 'question' | 'conversation' | 'card'>): { title: string | null; origin: string | null } {
+  const origin = originText(entry);
+  if (entry.conversation === null || entry.question === null || entry.question === '') return { title: null, origin };
+  return { title: entry.question, origin };
 }
 
 /** The row in one line, e.g. «09:41 · Claude · Coder · Interno · ammessa · 640 byte». */

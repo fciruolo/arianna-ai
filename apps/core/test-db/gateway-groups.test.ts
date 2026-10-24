@@ -149,6 +149,9 @@ test('one line per question: counts, bytes, the newest row; «Bloccate» keeps g
   assert.deepEqual([second.count, second.allowed, second.blocked, second.targets, second.label], [4, 3, 1, 1, 'L2']);
   assert.equal(second.entry.what, 'mcp-kb-search');
   assert.equal(second.entry.agent, 'coder');
+  // D-306: the line is titled by the question that started it, the row alone by nothing.
+  assert.equal(second.entry.question, 'Domanda');
+  assert.equal(first.entry.question, null);
   assert.ok((second.bytes ?? 0) > 0);
   assert.ok(page.next !== null);
   // The next page of groups starts below the newest row of the last group: no group twice.

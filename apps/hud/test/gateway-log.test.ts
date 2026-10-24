@@ -12,6 +12,7 @@ import {
   filtersActive,
   isPrivateOut,
   originText,
+  lineTitle,
   periodProblem,
   queryOf,
   rowLine,
@@ -34,6 +35,7 @@ import {
   whatText,
   type GatewayLogEntry,
   type GatewayLogGroup,
+  type GatewayLogTarget,
 } from '../src/lib/gateway-log.ts';
 import { GATEWAY_LOG_PATH, isGatewayLogPath } from '../src/lib/route.ts';
 
@@ -53,6 +55,7 @@ function entry(overrides: Partial<GatewayLogEntry> = {}): GatewayLogEntry {
     agent: 'coder',
     model: 'sonnet',
     conversation: null,
+    question: null,
     card: null,
     runId: null,
     requestKey: 'row-7',
@@ -148,6 +151,40 @@ test('the choices of «Destinazione» by kind, telling apart targets that read t
   assert.deepEqual(groups[0]?.options.map((option) => option.value), ['executor', 'executor/claude']);
   const web = groups[1]?.options.map((option) => option.text) ?? [];
   assert.equal(new Set(web).size, web.length);
+});
+
+// Every target the gateway writes (targetName of packages/policy): a new one gets its name here and in WEB_TEXT.
+const KNOWN_TARGETS: GatewayLogTarget[] = [
+  ...['claude', 'codex', 'local'].map((target) => ({ kind: 'executor' as const, target })),
+  ...['web', 'telegram', 'phone', 'voice', 'push'].map((target) => ({ kind: 'channel' as const, target })),
+  ...['web-search', 'web-session', 'web-form', 'web-typed-session']
+    .concat(...['public', 'user', 'sites'].map((consent) => [`web-page-${consent}`, `web-resource-${consent}`, `web-typed-${consent}`]))
+    .map((target) => ({ kind: 'web' as const, target })),
+  ...['list', 'click', 'video'].map((consent) => ({ kind: 'link' as const, target: `link-${consent}` })),
+];
+
+test('D-306: every known destination has its own Italian name, never its code in brackets', () => {
+  const texts = destinationOptions(KNOWN_TARGETS).flatMap((group) => group.options.map((option) => option.text));
+  assert.equal(texts.length, KNOWN_TARGETS.length + 4, 'one «Tutti» per kind');
+  assert.equal(new Set(texts).size, texts.length);
+  for (const text of texts) assert.doesNotMatch(text, /\(|web-|link-/, text);
+  assert.equal(targetText('web', 'web-resource-user'), 'Browser · risorsa di una pagina indicata da te');
+  assert.equal(targetText('web', 'web-typed-user'), 'Browser · testo scritto in una pagina indicata da te');
+});
+
+test('an unknown target that reads as another still shows its code', () => {
+  const options = destinationOptions([{ kind: 'web', target: 'web-new' }, { kind: 'web', target: 'web-newer' }]).flatMap((group) => group.options.map((option) => option.text));
+  assert.deepEqual(options, ['Tutti: web e browser', 'web-new', 'web-newer']);
+  const twins = destinationOptions([{ kind: 'executor', target: 'claude' }, { kind: 'executor', target: 'claude' }]).flatMap((group) => group.options.map((option) => option.text));
+  assert.deepEqual(twins, ['Tutti: modelli', 'Claude', 'Claude (claude)']);
+});
+
+test('D-306: a line is titled by its question, the conversation below; without a question only where', () => {
+  const conversation = { id: 'c', title: 'Riordino del codice', open: true };
+  assert.deepEqual(lineTitle({ conversation, question: 'Come riordino i moduli?', card: null }), { title: 'Come riordino i moduli?', origin: 'Riordino del codice' });
+  assert.deepEqual(lineTitle({ conversation: { ...conversation, title: null, open: false }, question: null, card: null }), { title: null, origin: 'Conversazione cancellata' });
+  assert.deepEqual(lineTitle({ conversation: null, question: null, card: { id: 't', title: 'Preventivo' } }), { title: null, origin: 'Card «Preventivo»' });
+  assert.deepEqual(lineTitle({ conversation: null, question: 'orfana', card: null }), { title: null, origin: null });
 });
 
 test('a private exit to the cloud is marked; a link or a block is not', () => {

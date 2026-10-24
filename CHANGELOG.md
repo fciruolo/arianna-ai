@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Registro del gateway: il filtro «Destinazione» dà un nome in italiano a ogni destinazione del browser dell'agente («risorsa di una pagina indicata da te», «testo scritto in una pagina indicata da te»…) invece del codice fra parentesi (D-306).
+- Registro del gateway: ogni gruppo mostra l'inizio della domanda che l'ha fatto partire, con sotto in piccolo il nome della conversazione, invece del primo messaggio della conversazione (D-306).
+
 ## [0.174.0] - 2026-10-24
 
 ### Aggiunto

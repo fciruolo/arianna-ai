@@ -75,6 +75,12 @@ export interface GatewayLogEntry {
   model: string | null;
   /** `title` only for a conversation of the list; `open`: not purged, «Apri la conversazione» can open it. */
   conversation: { id: string; title: string | null; open: boolean } | null;
+  /**
+   * The start of the message of the user that started its request (D-306):
+   * the title of the task of a turn of the chat, which is that start
+   * (taskTitle); only where `conversation.title` would be shown, else null.
+   */
+  question: string | null;
   /** A card (a task outside any conversation), with its title as on the Cardwall. */
   card: { id: string; title: string } | null;
   /** The run of the exit. */
@@ -217,6 +223,7 @@ interface Row {
   conversation_id: string | null;
   conversation_title: string | null;
   conversation_open: boolean | null;
+  question: string | null;
   card_id: string | null;
   card_title: string | null;
   run_id: string | null;
@@ -262,6 +269,7 @@ function entryOf(row: Row): GatewayLogEntry {
     agent: code(row.agent),
     model: row.model === null ? null : /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/.test(row.model) ? row.model : 'other',
     conversation: row.conversation_id === null ? null : { id: row.conversation_id, title: row.conversation_title, open: row.conversation_open === true },
+    question: row.question,
     card: row.card_id === null ? null : { id: row.card_id, title: row.card_title ?? '' },
     runId: row.run_id,
     requestKey: row.request_key,
@@ -289,6 +297,11 @@ function groupOf(row: GroupRow): GatewayLogGroup {
   };
 }
 
+/** A conversation the list shows (D-296): its title, and the question of a turn (D-306), only then. Needs `c`. */
+function listed(sql: Queryable) {
+  return sql`c.purged_at IS NULL AND NOT c.secretary AND c.side_of IS NULL AND c.dashboard_of IS NULL`;
+}
+
 /** The columns of a row as the page shows it, from `g` and its joins (fromRows). */
 function rowColumns(sql: Queryable) {
   return sql`
@@ -297,7 +310,9 @@ function rowColumns(sql: Queryable) {
     r.model,
     c.id::text AS conversation_id,
     -- The title only where the list of conversations shows it.
-    CASE WHEN c.purged_at IS NULL AND NOT c.secretary AND c.side_of IS NULL AND c.dashboard_of IS NULL THEN c.title END AS conversation_title,
+    CASE WHEN ${listed(sql)} THEN c.title END AS conversation_title,
+    -- The question of the group (D-306): the title of the turn, the start of its user message, under the same rule.
+    CASE WHEN ${listed(sql)} THEN t.title END AS question,
     c.purged_at IS NULL AS conversation_open,
     CASE WHEN t.conversation_id IS NULL THEN t.id::text END AS card_id,
     CASE WHEN t.conversation_id IS NULL THEN t.title END AS card_title,
