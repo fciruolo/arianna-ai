@@ -54,7 +54,7 @@ const card = 'min-w-0 rounded-xl border border-line bg-surface-2 p-4';
     <p class="mb-3 text-[14px] text-muted">
       Quando le regole non bastano a dire quanto è difficile un lavoro per Claude o Codex, Arianna chiede a Claude Sonnet una parola sola (banale, normale, difficile,
       critico) e sposta la scelta del modello di un gradino al più. Esce il testo della richiesta solo se è Pubblico o Interno; per i Privati e i Segreti decidono le
-      regole. Al più {{ status?.dailyCap ?? 50 }} pareri al giorno, nessuno con la settimana di Claude oltre il {{ status?.weekLimit ?? 90 }}%.
+      regole. Al più {{ status?.dailyCap ?? 50 }} pareri al giorno, nessuno quando hai usato più del {{ status?.weekLimit ?? 90 }}% della quota settimanale di Claude.
     </p>
     <p v-if="status !== null" class="mb-3 text-[14px]">
       Oggi: {{ status.today }} di {{ status.dailyCap }} pareri.

@@ -453,7 +453,7 @@ function another(): void {
             <template v-if="role !== null && sources">
               <h2 id="step-permissions" class="text-[16px] font-semibold">Cosa fa</h2>
               <p class="text-[14px] text-muted">
-                I permessi partono da quelli della divisione del ruolo; cambiali dentro quello che è ammesso per gli agenti nuovi. Il prompt resta il testo del ruolo, a L0: l’agente vede al massimo
+                I permessi partono da quelli della divisione del ruolo; cambiali dentro quello che è ammesso per gli agenti nuovi. Il prompt resta il testo del ruolo, che è Pubblico: l’agente vede al massimo
                 dati di lavoro.
               </p>
               <PermissionsPicker v-model="form.permissions" :sources="sources" id-prefix="new-agent" />

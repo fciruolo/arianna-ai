@@ -120,7 +120,7 @@ async function send(replace: boolean): Promise<void> {
         Carica PNG
         <input ref="input" type="file" accept="image/png" class="sr-only" @change="choose" />
       </label>
-      <span class="text-xs text-muted">Un foglio 112×96 o 112×128, nel formato dei pixel agent.</span>
+      <span class="text-xs text-muted">Un foglio 112×96 o 112×128, nel formato dei personaggi di pixel-agents.</span>
     </div>
     <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
     <p v-if="done" class="text-xs text-ok" role="status">{{ done }}</p>
