@@ -1718,7 +1718,7 @@ const MAX_REPEATS = 3;
 
 /** What the user reads when the local model keeps searching for what only a private conversation may read (D-241). */
 export const PRIVATE_ONLY_REPLY =
-  'Non trovo altro nelle note che questa conversazione può leggere. Se cerchi un documento privato, come una fattura, una spesa o una nota personale, aprilo in una conversazione privata, dove lo legge solo il modello locale.';
+  'Non trovo altro nelle note che questa conversazione può leggere. Se cerchi un documento privato, come una fattura, una spesa o una nota personale, chiedimelo in una conversazione Privata («Nuova conversazione» → «Privata»): lì lo legge solo il modello locale.';
 
 function repeatedResult(tool: ToolId, step: number, waits: boolean, privateLeftOut = false): string {
   const next = waits

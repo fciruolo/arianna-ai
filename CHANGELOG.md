@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Frasi fisse del core più chiare e coerenti con l'interfaccia: nomi delle label di privacy (Privato, Segreto, Finanze) con la maiuscola; il percorso «Nuova conversazione» → «Lavoro» (o → «Privata») invece di «apri una conversazione nuova» o «privata»; «di’ all’utente» al posto del refuso «dì»; avvisi di approvazione di budget e cartella con modifiche allineati alla chat (ritocco dei testi).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto
