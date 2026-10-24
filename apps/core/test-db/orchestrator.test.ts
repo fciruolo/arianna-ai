@@ -437,12 +437,16 @@ test('the date and time of now (D-311): at the end of the last message of every 
   ]);
   assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
   const [first, second] = model.requests;
-  assert.equal(first?.messages.at(-1)?.content, `Che giorno è oggi?\n\n${NOW_LINE}`);
+  // The project note of the work conversation (D-313) comes first, joined to the first message of the user.
+  assert.ok(first?.messages.at(-1)?.content.endsWith(`\n\nChe giorno è oggi?\n\n${NOW_LINE}`));
   // After a tool too: past the fence of its result, not inside it.
   assert.match(second?.messages.at(-1)?.content ?? '', new RegExp(`^<tool_result>\\n[\\s\\S]*\\n</tool_result>\\n\\n${NOW_LINE.replace(/[().]/g, '\\$&')}$`));
   // Only in the last message: the earlier request no longer carries it.
   assert.equal(second?.messages.filter((message) => message.content.includes('Adesso:')).length, 1);
   assert.doesNotMatch(fixedOf(first), /Adesso:|ottobre 2026/);
+  // The project of the work conversation (D-313): a note of the system before the chat, never in the fixed prompt.
+  assert.match(first?.messages[1]?.content ?? '', /^\[Messaggio del sistema, non dell’utente\]\nThis is a work conversation of the project demo: /);
+  assert.doesNotMatch(fixedOf(first), /work conversation of the project/);
   // An L0 part: the reply of a work conversation stays Internal.
   const [message] = await assistantMessages(task.id);
   assert.equal(message?.label, 'L1');
@@ -461,7 +465,7 @@ test('the date and time of now (D-311): at the end of the last message of every 
     timeZone: 'Europe/Rome',
   });
   assert.deepEqual(await drain(later.id, again, tomorrow), ['answered']);
-  assert.equal(again.requests[0]?.messages.at(-1)?.content, 'Che giorno è oggi?\n\nAdesso: sabato 24 ottobre 2026, 23:47:59 (Europe/Rome).');
+  assert.ok(again.requests[0]?.messages.at(-1)?.content.endsWith('\n\nChe giorno è oggi?\n\nAdesso: sabato 24 ottobre 2026, 23:47:59 (Europe/Rome).'));
   assert.equal(fixedOf(again.requests[0]), fixedOf(first));
 });
 

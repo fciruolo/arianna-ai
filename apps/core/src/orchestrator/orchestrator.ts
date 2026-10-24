@@ -343,6 +343,12 @@ async function historyOf(
     // D-064) reach the model as the user's, marked: chat templates take one
     // system prompt, at the start.
     const view = computed ?? (await conversationView(sql, task.conversationId, task.id, MAX_TEXT));
+    // The project of a work conversation (D-313): a tool that takes a project (milestone.propose) leaves it out here,
+    // so the model must know it is in one. First, before the chat: the same for the whole conversation, the prefix stays.
+    const project = view.messages.length === 0 ? undefined : await conversationProject(sql, task.conversationId);
+    if (project !== undefined) {
+      history.push({ value: { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${projectNote(project)}` }, label: maxLabel(task.label, 'L1'), source: `project:${task.conversationId}` });
+    }
     // A side thread (D-232) reads the answer it is about, and the messages of its mother before it, first.
     const side = view.messages.length === 0 ? undefined : await sideContext(sql, task.conversationId);
     if (side !== undefined) history.push(side);
@@ -365,12 +371,6 @@ async function historyOf(
     if (note !== undefined) {
       const label = maxLabel(...present.map((name) => nameLabelOf(agents.get(name))));
       history.push({ value: { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${note}` }, label, source: `participants:${task.conversationId}` });
-    }
-    // The project of a work conversation (D-313): a tool that takes a project (milestone.propose) leaves it out here,
-    // so the model must know it is in one. After the chat, as the note of who is here: the prefix stays.
-    const project = history.length === 0 ? undefined : await conversationProject(sql, task.conversationId);
-    if (project !== undefined) {
-      history.push({ value: { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${projectNote(project)}` }, label: maxLabel(task.label, 'L1'), source: `project:${task.conversationId}` });
     }
   }
   // A profile.share the user decided (D-114, tappa C): the model reads the decision, never the text.
