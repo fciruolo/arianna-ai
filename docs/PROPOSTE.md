@@ -215,7 +215,7 @@ attachment: data/files/inbox/<sha256>.<ext>   # per pdf, audio, video: l'origina
 - `pypdf` in Python: ammesso solo in `apps/voice`, fuori luogo.
 I PDF scansionati (senza testo) vanno all'OCR della Fase 2. Libri e paper altrui: nella KB titolo, autori, data, riassunto, citazioni brevi; l'originale resta in `data/files/` (archivio personale, non ridistribuito).
 
-**(g) Collegamenti e ricerca.** Fuori da questa decisione: wikilink proposti dall'Archivista (c) e la ricerca ibrida della Fase 2 (Qdrant, indici separati per etichetta). Fino ad allora `kb.search` testuale vede le note di `inbox/` con clearance L2.
+**(g) Collegamenti e ricerca.** Fuori da questa decisione: wikilink proposti dall'Archivista (c) e la ricerca ibrida della Fase 2 (pgvector nel PostgreSQL di Arianna, D-308, indici separati per etichetta). Fino ad allora `kb.search` testuale vede le note di `inbox/` con clearance L2.
 
 ### Alternative scartate
 

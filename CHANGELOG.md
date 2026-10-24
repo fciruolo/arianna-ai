@@ -10,6 +10,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Quando tutte le card di una milestone sono in Fatto, Arianna chiede nella chat della Segretaria se chiuderla (Sì/No, anche dalla fascia e da «Attende te»); con «No» non lo richiede finché le card non cambiano; l'avviso non porta il titolo (D-313).
 - Il promemoria del mattino della Segretaria nomina le milestone aperte che scadono entro 3 giorni o sono scadute (D-313).
 
+## [0.176.0] - 2026-10-24
+
+### Aggiunto
+
+- pgvector 0.8.7 nel PostgreSQL di Arianna, base della ricerca ibrida della Fase 2: estensione `vector` nello schema `extensions` (migrazione `0092`), usabile dal core senza poter creare nulla lì (D-308).
+- Controllo `database.vector` di `pnpm arianna:doctor`: estensione presente, usabile da `arianna_app` e alla versione dell'immagine (D-308).
+- Riga «Ricerca per significato (pgvector)» in «Pronta per i dati veri» delle Impostazioni: la controlla il core stesso col suo ruolo, ed è richiesta anche nell'ultimo esito del doctor del Terminale (D-308).
+
+### Cambiato
+
+- Il database gira con un'immagine costruita in locale da `apps/core/postgres/Dockerfile` (`postgres:17.11-alpine` per digest più pgvector verificato con sha256); la prima `pnpm db:up` la costruisce. Per il database esistente bastano `pnpm db:up` e `pnpm db:migrate`, passi in `docs/DATA-MODEL.md` (D-308).
+
 ## [0.175.0] - 2026-10-24
 
 ### Aggiunto

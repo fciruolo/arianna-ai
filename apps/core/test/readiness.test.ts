@@ -37,7 +37,7 @@ function dataDir(): string {
 
 const MIGRATION = '0099_test';
 const check = (id: string, ok: boolean, detail = 'a detail with /a/path and a project name'): DoctorCheck => ({ id, ok, detail });
-const TERMINAL_OK = [check('database.owner', true), check('database.migrations', true), check('database.app-role', true), check('database.passwords', true), check('database.default-passwords', true)];
+const TERMINAL_OK = [check('database.owner', true), check('database.migrations', true), check('database.app-role', true), check('database.passwords', true), check('database.vector', true), check('database.default-passwords', true)];
 const ALL_REQUIRED: ReadinessCheck[] = REQUIRED_GROUPS.map((id) => ({ id, ok: true }));
 
 test('checks go under closed groups: a group passes only when all its checks do; optional empty groups are left out', () => {
@@ -94,6 +94,15 @@ test('a required group without checks is a failure, never a silent pass; the voi
   assert.equal(readinessReport(groups, 'now', { at: 'x', ok: true, stale: false }).ready, false);
 });
 
+test('pgvector has a row of its own (D-308): database.vector goes under «vector», passing or not, and the group is required', () => {
+  assert.deepEqual(groupChecks([check('database.vector', true)]), [{ id: 'vector', ok: true }]);
+  assert.deepEqual(groupChecks([check('database.vector', false), check('events.chain', true)]), [
+    { id: 'events', ok: true },
+    { id: 'vector', ok: false },
+  ]);
+  assert.equal(REQUIRED_GROUPS.includes('vector'), true);
+});
+
 test('an id the list does not know still counts, under «other»', () => {
   assert.deepEqual(groupChecks([check('something.new', false)]), [{ id: 'other', ok: false }]);
   assert.deepEqual(groupChecks([check('something.new', true), check('voice.env', true)]), [
@@ -118,7 +127,7 @@ test('the record of the doctor: time, last migration, ids and outcomes only; a p
   const record = readDoctorRecord(data);
   assert.equal(record?.at, '2026-10-12T18:40:00.000Z');
   assert.equal(record.migration, MIGRATION);
-  assert.equal(record.checks.length, 6);
+  assert.equal(record.checks.length, 1 + TERMINAL_OK.length);
   // Written again: replaced whole; by default with the last migration of this code.
   writeDoctorRecord(data, [check('system.node', false)], { now: new Date('2026-10-13T08:00:00Z') });
   assert.deepEqual(readDoctorRecord(data), { at: '2026-10-13T08:00:00.000Z', migration: latestMigration(), checks: [{ id: 'system.node', ok: false }] });
@@ -157,6 +166,9 @@ test('the terminal passes only with every database check passed and the required
   // A required check missing.
   assert.equal(terminalOutcome(record(TERMINAL_OK.filter((item) => item.id !== 'database.owner')), MIGRATION)?.ok, false);
   assert.equal(terminalOutcome(record(TERMINAL_OK.filter((item) => item.id !== 'database.passwords')), MIGRATION)?.ok, false);
+  // A doctor of before pgvector (D-308) has no database.vector: not ok.
+  assert.equal(terminalOutcome(record(TERMINAL_OK.filter((item) => item.id !== 'database.vector')), MIGRATION)?.ok, false);
+  assert.equal(terminalOutcome(record([...TERMINAL_OK.filter((item) => item.id !== 'database.vector'), check('database.vector', false)]), MIGRATION)?.ok, false);
   // The owner's password short or equal to the app's: the doctor fails database.passwords, the page must say no.
   const shortOwner = record([...TERMINAL_OK.filter((item) => item.id !== 'database.passwords'), check('database.passwords', false)]);
   assert.equal(terminalOutcome(shortOwner, MIGRATION)?.ok, false);
@@ -192,7 +204,7 @@ function configOf(data: string): () => AriannaConfig {
   return () => ({ paths: { data }, voice: undefined }) as unknown as AriannaConfig;
 }
 
-const PASSING = [check('database.passwords', true), check('database.default-passwords', true), check('events.chain', true), check('layout.data', true), check('models', true), check('system.node', true), check('projects', true)];
+const PASSING = [check('database.passwords', true), check('database.default-passwords', true), check('events.chain', true), check('database.vector', true), check('layout.data', true), check('models', true), check('system.node', true), check('projects', true)];
 
 test('checks run one at a time and at most every 10 s; meanwhile the last outcome is answered', async () => {
   const data = dataDir();

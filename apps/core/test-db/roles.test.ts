@@ -148,6 +148,9 @@ test('doctor catches a role with too much, a table without grants and a migratio
     await owner.unsafe(`GRANT CREATE ON SCHEMA ${schema} TO arianna_app`);
     // Database-wide, revoked below under the lock: the other files never check it.
     await owner.unsafe(`GRANT TEMPORARY ON DATABASE ${config.database.name} TO arianna_app`);
+    // The schema of pgvector (D-308) is the database's too; pgvector.test.ts
+    // checks it under the same lock.
+    await owner`GRANT CREATE ON SCHEMA extensions TO arianna_app`;
     try {
       const checks = byId(await runDoctor({ config, schema }));
       assert.equal(checks('database.app-role').ok, false);
@@ -158,6 +161,7 @@ test('doctor catches a role with too much, a table without grants and a migratio
       assert.match(checks('database.app-role').detail, /cannot use sequence orphan_seq/);
       assert.match(checks('database.app-role').detail, /can create objects in the schema/);
       assert.match(checks('database.app-role').detail, /can create temporary tables/);
+      assert.match(checks('database.app-role').detail, /can create objects in the schema extensions/);
       assert.match(checks('database.app-role').detail, /may run as the owner through owner_hands/);
       assert.match(checks('database.app-role').detail, /may run as the owner through owner_hands, purge_conversation/);
       assert.match(checks('database.app-role').detail, /anyone may run purge_conversation/);
@@ -176,6 +180,7 @@ test('doctor catches a role with too much, a table without grants and a migratio
       await owner.unsafe(`ALTER FUNCTION purge_conversation(uuid) SET search_path = ${schema}, pg_temp`);
       await owner.unsafe(`REVOKE CREATE ON SCHEMA ${schema} FROM arianna_app`);
       await owner.unsafe(`REVOKE TEMPORARY ON DATABASE ${config.database.name} FROM arianna_app`);
+      await owner`REVOKE CREATE ON SCHEMA extensions FROM arianna_app`;
     }
     assert.equal(byId(await runDoctor({ config, schema }))('database.app-role').ok, true);
   });
