@@ -9,7 +9,7 @@ Aggiornato: 2026-10-24, mattina.
 - **Unite stamattina** («Funziona» dell'utente su prove fatte da Claude di notte): 0.173.2 D-303 (frase fissa quando si chiede il Coder in una Privata o senza progetto), 0.173.3 D-304 (guardiano `arianna-run-guard` che ferma `claude`/`codex` entro un secondo dalla morte del core). Ieri sera 0.173.1 D-302 (orfani chiusi al riavvio).
 - **Fase 1A chiusa** (D-309, scelta dell'utente del 2026-10-24): P1-P6 superati; P7 (chiave age vera, password vere, `pnpm db:migrate`, doctor verde) è il primo passo di «Prima dei dati veri». Parte la Fase 2, con lavori in parallelo (richiesta dell'utente: la settimana di quota si azzera il 2026-10-24 alle 16).
 - **Lavori in corso (2026-10-24, subagenti in worktree, un ramo ciascuno):** D-306 `task/d306-registro-nomi` (Registro del gateway: nomi in italiano per «(web-resource-user)» e «(web-typed-user)», titolo del gruppo = domanda che l'ha fatto partire); D-307 `task/d307-memoria-casi` (passo (b) del confronto delle memorie: `evals/memory/`, adattatore finto, `pnpm eval:memory`); D-308 `task/d308-pgvector` (pgvector nel PostgreSQL: immagine, migrazione 0092, prova su un database separato, procedura per spostare il database di sviluppo). Fatture FatturaPA decise (D-310, `fast-xml-parser`) ma non partite.
-- **Domanda aperta:** chi giudica le risposte dubbie della prova delle memorie (riga in `OPEN-QUESTIONS.md`). L'utente ha chiesto se il giudice Claude rischia di far uscire dati privati: risposto di no (solo i casi inventati di `evals/memory/`, L0, passando dal gateway); la domanda va rifatta.
+- **Giudice della prova delle memorie deciso** (utente, 2026-10-24): parole attese, poi Claude via gateway sulle sole risposte dubbie, solo nella prova coi casi L0 (in produzione nessun giudice). Detto all'agente di D-307, che lascia il giudice come interfaccia senza chiamate.
 - **Pulizia:** restano solo `main` e `task/d261-codex-mcp` (Codex fermo); i worktree di D-302 e D-304 tolti il 2026-10-24. Copia di scorta dei rami tolti il 2026-10-23: `data/test-tmp/rami-tolti.bundle`.
 - **Il Mac va in stop di notte:** per comandi lunghi senza l'utente usare `caffeinate -i` (un `pnpm check` fermo 16 minuti è fallito per tempo scaduto).
 - **Piccole cose viste nelle prove:** decise il 2026-10-24 (D-309): `repos/demo` resta con i file non committati, Pasqua 2030 nessuna correzione, le due del Registro in D-306.
@@ -24,7 +24,7 @@ Aggiornato: 2026-10-24, mattina.
 ## Prossimi passi, in ordine
 
 1. Portare a `main` D-306, D-307 e D-308 (reviewer, `pnpm check`, ramo `prova/…`, una domanda di prova per lavoro). D-308 cambia l'immagine del database di sviluppo: procedura nel ramo, backup prima.
-2. Rifare all'utente la domanda sul giudice della prova delle memorie; poi i passi (c) e (d) di `MEMORIA-CONFRONTO.md`.
+2. Passi (c) e (d) di `MEMORIA-CONFRONTO.md` (giudice Claude via gateway da collegare in (c)).
 3. Fatture FatturaPA (D-310), primo lavoro della Fase 2 per valore; D-096 backup cifrato per ultimo, prima dei dati veri.
 4. Il resto in sospeso sta in `docs/OPEN-QUESTIONS.md` e in `docs/PROPOSTE.md`.
 
