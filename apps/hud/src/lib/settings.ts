@@ -156,6 +156,8 @@ export interface SettingsValues {
   sprites: 'sonnet' | 'opus' | 'local';
   /** Messages of the user before an idle agent leaves the conversation (I-8, D-130): `[participants] leave_after`; 0 never. */
   participants: number;
+  /** Minutes without requests before a local model is unloaded (D-316): `[local] idle_unload_minutes`; 0 never. Optional: an older core sends none. */
+  localIdle?: number;
   voice: VoiceValues | null;
   /** Web Push (D-292), shown and saved from Notifiche; independent of the voice. Optional: an older core sends it in `voice`. */
   push?: PushValues;
@@ -211,6 +213,17 @@ export interface SettingsView {
   agentSkills?: Record<string, string | null>;
   /** Only from GET: a write answers without it. */
   local?: LocalServerStatus[];
+  /** The warm model (D-316), only from GET; an older core sends none. */
+  warmth?: WarmthStatus;
+}
+
+/** What the models of a server are doing (D-316). */
+export type ModelState = 'warming' | 'loaded' | 'idle-unloaded' | 'not-loaded';
+
+export interface WarmthStatus {
+  idleMinutes: number;
+  /** `since`: when the models were unloaded for inactivity; `models`: catalog ids in memory. */
+  endpoints: { id: string; state: ModelState; since: string | null; models: string[] }[];
 }
 
 export interface PrivacyChanges {
@@ -241,7 +254,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'push' | 'personas' | 'series' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary' | 'appearance';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'push' | 'personas' | 'series' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'localIdle' | 'notifications' | 'secretary' | 'appearance';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -283,6 +296,7 @@ export const SECTION_TEXT: Record<string, string> = {
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
   participants: 'Uscita degli agenti',
+  localIdle: 'Scarico dei modelli inattivi',
   voice: 'Voce',
   notifications: 'Notifiche',
   secretary: 'Segretaria',
@@ -851,6 +865,34 @@ export function fetchSiteOf(typed: string): string | undefined {
   const labels = host.split('.');
   if (host.length > 253 || labels.length < 2 || !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) || /^\d+$/.test(labels.at(-1) ?? '')) return undefined;
   return host;
+}
+
+/** The largest `[local] idle_unload_minutes` the core takes (D-316): a day. */
+export const MAX_IDLE_MINUTES = 1440;
+
+/** A valid number of minutes before an idle model is unloaded: a whole number, 0 (never) to MAX_IDLE_MINUTES. */
+export function idleMinutesProblem(value: unknown): string | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_IDLE_MINUTES
+    ? undefined
+    : `Un numero intero di minuti da 0 (mai) a ${String(MAX_IDLE_MINUTES)}.`;
+}
+
+/**
+ * The state of the models of a server in words (D-316): «In memoria», «In
+ * riscaldamento», «Scaricato per inattività alle 14:05», «Non in memoria».
+ * `time` writes the hour of an ISO instant in the page's locale.
+ */
+export function modelStateText(entry: { state: ModelState; since: string | null; models: readonly string[] }, time: (iso: string) => string): string {
+  switch (entry.state) {
+    case 'warming':
+      return 'In riscaldamento: il modello si carica in memoria';
+    case 'loaded':
+      return entry.models.length === 0 ? 'In memoria' : `In memoria: ${entry.models.join(', ')}`;
+    case 'idle-unloaded':
+      return entry.since === null ? 'Scaricato per inattività' : `Scaricato per inattività alle ${time(entry.since)}`;
+    case 'not-loaded':
+      return 'Non in memoria: si carica alla prossima domanda';
+  }
 }
 
 /** The largest `[participants] leave_after` the core takes (I-8, D-130). */
