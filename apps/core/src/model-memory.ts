@@ -582,9 +582,11 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
       for (const entry of idle) {
         // A request that came meanwhile keeps every model where it is.
         if (inFlight > 0 || halted()) break;
+        const id = key(entry.endpoint, entry.name);
+        // Checked again: a short request on the fast path may have used it while an earlier unload awaited.
+        if (loaded.get(id) !== entry || entry.busy > 0 || entry.lastUsed > since || pending.has(id) || isPinned(entry)) continue;
         const config = configOf(entry.endpoint, []);
         if (config === undefined) continue;
-        const id = key(entry.endpoint, entry.name);
         loaded.delete(id);
         let ok = false;
         try {

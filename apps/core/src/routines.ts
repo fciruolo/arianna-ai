@@ -1696,9 +1696,14 @@ export function createRoutineService(env: RoutineEnv): RoutineService {
   };
 }
 
-/** D-316: an active routine due within `withinMs`, or late: its task would load the local model again at once. */
+/**
+ * D-316: an active routine due within `withinMs`, or late by less than MISSED_AFTER_MS (later than that it is
+ * missed, not run): its task would load the local model again at once.
+ */
 export async function routineDueSoon(sql: Queryable, withinMs: number): Promise<boolean> {
   const [row] = await sql<{ soon: boolean }[]>`
-    SELECT EXISTS (SELECT FROM routines WHERE status = 'active' AND next_run_at <= now() + make_interval(secs => ${withinMs / 1000})) AS soon`;
+    SELECT EXISTS (SELECT FROM routines WHERE status = 'active'
+                   AND next_run_at <= now() + make_interval(secs => ${withinMs / 1000})
+                   AND next_run_at > now() - make_interval(secs => ${MISSED_AFTER_MS / 1000})) AS soon`;
   return row?.soon === true;
 }

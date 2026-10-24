@@ -143,6 +143,28 @@ describe('warm-up (D-316)', () => {
     assert.equal(other.events[0]?.outcome, 'skipped-busy');
   });
 
+  it('a server that only missed a few checks (down, then up) is not warmed again', async () => {
+    const { warmth, requests } = harness();
+    await warmth.serverUp('omlx');
+    onServerEvent(warmth, { type: 'state', endpoint: 'omlx', state: 'down' }, () => undefined);
+    onServerEvent(warmth, { type: 'state', endpoint: 'omlx', state: 'up' }, () => undefined);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests.length, 1);
+  });
+
+  it('without the card of Arianna nothing is sent; a check that throws is a failure, said once', async () => {
+    const none = harness({ request: () => Promise.resolve(undefined) });
+    await none.warmth.serverUp('omlx');
+    assert.equal(none.requests.length, 0);
+    assert.equal(none.events[0]?.outcome, 'skipped-no-agent');
+    const errors: unknown[] = [];
+    const broken = harness({ busy: () => Promise.reject(new Error('database down')), onError: (error) => errors.push(error) });
+    await broken.warmth.serverUp('omlx');
+    assert.equal(broken.requests.length, 0);
+    assert.deepEqual(broken.events.map(({ outcome, code }) => ({ outcome, code })), [{ outcome: 'failed', code: 'error' }]);
+    assert.equal(errors.length, 1);
+  });
+
   it('warms only a server that serves the orchestrator', async () => {
     const voiceOnly = { ...ENDPOINT, id: 'voice', models: { 'local-voice': 'big-35b' } };
     const { warmth, requests, events } = harness({}, undefined, [voiceOnly]);

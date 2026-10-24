@@ -84,11 +84,13 @@ export interface ServerEventLike {
 /**
  * What an event of the local servers means for the warm-up: a server started,
  * adopted, exited or lost is warmed again when it answers; `up` warms one not
- * yet warmed since. An unload for inactivity is none of these events.
+ * yet warmed since. An unload for inactivity is none of these events, nor
+ * is `down` (a watched server that missed a few checks has not restarted).
  */
 export function onServerEvent(warmth: Pick<ModelWarmth, 'serverReset' | 'serverUp'> | undefined, event: ServerEventLike, onError: (error: unknown) => void): void {
   if (warmth === undefined) return;
-  const lost = event.type === 'state' && (event.state === 'down' || event.state === 'failed' || event.state === 'stopped');
+  // Not `down`: a watched server that stops answering for a while has not restarted, and keeps what it holds.
+  const lost = event.type === 'state' && (event.state === 'failed' || event.state === 'stopped');
   if (event.type === 'spawn' || event.type === 'exit' || event.type === 'adopt' || lost) warmth.serverReset(event.endpoint);
   if (event.type === 'state' && event.state === 'up') warmth.serverUp(event.endpoint).catch(onError);
 }
@@ -127,7 +129,8 @@ export function createModelWarmth(options: ModelWarmthOptions): ModelWarmth {
   }
 
   async function serverUp(endpoint: string): Promise<void> {
-    if (stopped || settled.has(endpoint)) return;
+    // A restart during a warm-up: the one at work goes on, no second one beside it.
+    if (stopped || settled.has(endpoint) || warming.has(endpoint)) return;
     settled.add(endpoint);
     if (!serves(endpoint)) return;
     const started = now();
@@ -144,12 +147,20 @@ export function createModelWarmth(options: ModelWarmthOptions): ModelWarmth {
       done('skipped-swap');
       return;
     }
-    // A request at work loads the model by itself; a warm-up beside it would only compete.
-    if (options.memory.activeRequests() > 0 || options.callActive() || (await options.busy())) {
-      done('skipped-busy');
+    let request: ChatRequest | undefined;
+    try {
+      // A request at work loads the model by itself; a warm-up beside it would only compete.
+      if (options.memory.activeRequests() > 0 || options.callActive() || (await options.busy())) {
+        done('skipped-busy');
+        return;
+      }
+      request = await options.request();
+    } catch (error) {
+      // The database did not answer, for instance: said once, never thrown into the watchdog's listener.
+      fail(error);
+      done('failed', 'error');
       return;
     }
-    const request = await options.request();
     if (request === undefined) {
       done('skipped-no-agent');
       return;
@@ -181,6 +192,8 @@ export function createModelWarmth(options: ModelWarmthOptions): ModelWarmth {
       if (await options.busy()) return;
       if ((await options.soon?.()) === true) return;
       if (options.callActive() || options.memory.activeRequests() > 0) return;
+      // A model loaded again since an unload for inactivity: the old hour is not shown any more.
+      for (const entry of options.memory.snapshot().loaded) idleSince.delete(entry.endpoint);
       const unloaded = await options.memory.unloadIdle(minutes * 60_000);
       const at = now();
       for (const { endpoint } of unloaded) idleSince.set(endpoint, at);
@@ -208,7 +221,6 @@ export function createModelWarmth(options: ModelWarmthOptions): ModelWarmth {
           const models = loaded.filter((entry) => entry.endpoint === id).map((entry) => entry.model);
           if (warming.has(id)) return { id, state: 'warming' as const, since: null, models };
           if (models.length > 0) {
-            idleSince.delete(id);
             return { id, state: 'loaded' as const, since: null, models };
           }
           const since = idleSince.get(id);

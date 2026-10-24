@@ -17,6 +17,7 @@ import { processStepJob, STEP_QUEUE } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator, WARMUP_MESSAGE } from '../src/orchestrator/orchestrator.ts';
+import { createRoutine, routineDueSoon, ROUTINE_SOON_MS } from '../src/routines.ts';
 import { useTestDatabase } from './support/database.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 
@@ -117,4 +118,23 @@ test('the warm-up writes nothing: no task, no message, no gateway row', async ()
   const before = await count();
   assert.ok((await orchestrator(scripted([])).warmupRequest()) !== undefined);
   assert.deepEqual(await count(), before);
+});
+
+test('routineDueSoon (D-316): an active routine due within the time, or late, keeps the models; a later or paused one does not', async () => {
+  const routine = await createRoutine(db().sql, { title: 'Resoconto finto', days: [1, 2, 3, 4, 5, 6, 7], at: '09:00', timezone: 'UTC', sources: ['todo'], summary: false });
+  const at = async (offsetMs: number): Promise<void> => {
+    await db().sql`UPDATE routines SET next_run_at = now() + make_interval(secs => ${offsetMs / 1000}) WHERE id = ${routine.id}`;
+  };
+  await at(2 * 60_000);
+  assert.equal(await routineDueSoon(db().sql, ROUTINE_SOON_MS), true);
+  await at(-60_000);
+  assert.equal(await routineDueSoon(db().sql, ROUTINE_SOON_MS), true);
+  await at(60 * 60_000);
+  assert.equal(await routineDueSoon(db().sql, ROUTINE_SOON_MS), false);
+  // Late by more than two hours it is missed, not run: it no longer holds the models.
+  await at(-3 * 60 * 60_000);
+  assert.equal(await routineDueSoon(db().sql, ROUTINE_SOON_MS), false);
+  await at(60_000);
+  await db().sql`UPDATE routines SET status = 'paused', paused_by = 'user', next_run_at = NULL WHERE id = ${routine.id}`;
+  assert.equal(await routineDueSoon(db().sql, ROUTINE_SOON_MS), false);
 });

@@ -659,6 +659,32 @@ describe('createModelMemory, unloadIdle (D-316)', () => {
     assert.deepEqual(unloaded, []);
   });
 
+  it('keeps a model used by a short request while the unload of another awaited', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b', 'local-voice': 'small-4b' })];
+    let finish: () => void = () => undefined;
+    const unloadedNames: string[] = [];
+    const { memory, at } = clocked(config, {
+      unload: (_endpoint, name) => {
+        unloadedNames.push(name);
+        return name === 'big-27b' ? new Promise<boolean>((resolve) => { finish = () => { resolve(true); }; }) : Promise.resolve(true);
+      },
+    });
+    const model = memory.wrap(fakeModel(), config);
+    at(1_000);
+    await model.chat({ model: 'local-large', messages: [] });
+    at(2_000);
+    await model.chat({ model: 'local-voice', messages: [] });
+    at(60 * 60_000);
+    const idle = memory.unloadIdle(30 * 60_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    // While big-27b is being unloaded, a short request uses small-4b and ends.
+    await model.chat({ model: 'local-voice', messages: [] });
+    finish();
+    assert.deepEqual(await idle, [{ endpoint: 'omlx', model: 'big-27b' }]);
+    assert.deepEqual(unloadedNames, ['big-27b']);
+    assert.deepEqual(memory.snapshot().loaded.map(({ model: name }) => name), ['small-4b']);
+  });
+
   it('keeps in the account a model the server did not confirm unloaded', async () => {
     const config = [endpoint({ 'local-large': 'big-27b' })];
     const { memory, events, at } = clocked(config, { unload: () => Promise.resolve(false) });
