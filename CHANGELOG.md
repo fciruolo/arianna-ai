@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- pgvector 0.8.7 nel PostgreSQL di Arianna, base della ricerca ibrida della Fase 2: estensione `vector` nello schema `extensions` (migrazione `0092`), usabile dal core senza poter creare nulla lì (D-308).
+- Controllo `database.vector` di `pnpm arianna:doctor`: estensione presente, usabile da `arianna_app` e alla versione dell'immagine (D-308).
+
+### Cambiato
+
+- Il database gira con un'immagine costruita in locale da `apps/core/postgres/Dockerfile` (`postgres:17.11-alpine` per digest più pgvector verificato con sha256); la prima `pnpm db:up` la costruisce. Per il database esistente bastano `pnpm db:up` e `pnpm db:migrate`, passi in `docs/DATA-MODEL.md` (D-308).
+
 ## [0.174.0] - 2026-10-24
 
 ### Aggiunto

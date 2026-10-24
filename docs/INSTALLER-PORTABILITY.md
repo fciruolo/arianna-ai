@@ -9,7 +9,6 @@ arianna/                  # repository (codice, docs, agents/, evals/)
   data/                   # NON in git
     models/               # pesi dei modelli locali (grandi)
     postgres/             # volume Docker (mai sincronizzare dal vivo)
-    qdrant/               # volume Docker
     archive/              # documenti originali (L2)
     kb/                   # knowledge base markdown
     vault/                # segreti cifrati (sops + age)
@@ -42,7 +41,7 @@ Schema del catalogo (`version: 1`, D-048, sostituisce il manifest del 1.17): ogn
 2. Crea la struttura `data/` e `config/` se mancano.
 3. Legge il catalogo e scarica solo i modelli mancanti fra quelli assegnati a un ruolo in `data/models/`, con ripresa, verifica sha256 e barra di avanzamento.
 4. Configura il runtime locale (oMLX) perché punti a `data/models/`; se il runtime non lo consente, crea collegamenti simbolici. **Da verificare** nelle opzioni di oMLX.
-5. Avvia Postgres e Qdrant con Docker Compose usando volumi dentro `data/`.
+5. Avvia Postgres con Docker Compose usando un volume dentro `data/`; l'immagine con pgvector si costruisce in locale da `apps/core/postgres/Dockerfile` la prima volta (rete solo per la build, D-308).
 6. Applica le migrazioni e lancia `arianna doctor`: controlli di salute, modelli presenti, gateway attivo, catena di hash del registro eventi, test di contratto degli esecutori.
 7. Non tocca mai le credenziali di Claude Code e Codex: il login resta manuale e a carico dell'utente.
 
@@ -50,7 +49,7 @@ Comandi collegati: `arianna doctor` (diagnosi), `arianna models pull|list|verify
 
 Se `config/arianna.toml` manca, `install` parte dal wizard: i modelli da scaricare dipendono dalle risposte.
 
-**Stato (task 1.17, prima parte, D-047; catalogo al posto del manifest con il 1.18, D-048).** Esistono `pnpm arianna:install`, `pnpm arianna:doctor` e `pnpm arianna:models list|verify|pull` (`apps/installer`). Fatti i passi 1 (spazio libero per i download; la RAM dei modelli assegnati la controllano il wizard e il doctor, `models.ram`, dal 1.18), 2 (solo `data/`, perché `config/` è nel repository; `data/` e `data/vault` private, anche se esistevano già), 3, 5 (solo Postgres: Qdrant arriva con la Fase 2) e in parte 6 (prerequisiti, cartelle, modelli presenti, password, ruolo del database, migrazioni, catena degli eventi; gateway attivo e test di contratto degli esecutori arrivano con 1.10 e 1.5). Mancano il passo 4 (oMLX non è ancora installato; il wizard propone già un server oMLX con `--model-dir data/models`, così non servono collegamenti) e le voci vere del catalogo, da copiare dalla configurazione oMLX: fino ad allora il catalogo è vuoto e `install` non scarica nulla. Il download accetta solo HTTPS, segue al massimo 5 redirect, scrive `<file>.part`, riprende con `Range` e rinomina solo dopo dimensione e sha256 giusti; un file con lo sha256 sbagliato si scarta. `doctor` controlla le dimensioni (secondi), `models verify` gli sha256 (minuti per decine di GB); `models pull --verify` sostituisce anche un file della dimensione giusta con lo sha256 sbagliato. Una risposta 206 che parte dal byte sbagliato fa ripartire da zero; un 416 (file cambiato sul server) cancella il `.part`; il `.part` va su disco con `fsync` prima della rinomina. Non ancora gestiti: due `pull` contemporanei sullo stesso file (lo sha256 scarta il risultato), conflitti fra percorsi dello stesso modello nel catalogo (`a` e `a/b`; lo stesso percorso due volte ora è rifiutato), spazio misurato sul disco di `data/models` anche quando un modello è un collegamento verso un altro disco.
+**Stato (task 1.17, prima parte, D-047; catalogo al posto del manifest con il 1.18, D-048).** Esistono `pnpm arianna:install`, `pnpm arianna:doctor` e `pnpm arianna:models list|verify|pull` (`apps/installer`). Fatti i passi 1 (spazio libero per i download; la RAM dei modelli assegnati la controllano il wizard e il doctor, `models.ram`, dal 1.18), 2 (solo `data/`, perché `config/` è nel repository; `data/` e `data/vault` private, anche se esistevano già), 3, 5 (solo Postgres, con pgvector dentro dal D-308: niente Qdrant) e in parte 6 (prerequisiti, cartelle, modelli presenti, password, ruolo del database, migrazioni, catena degli eventi; gateway attivo e test di contratto degli esecutori arrivano con 1.10 e 1.5). Mancano il passo 4 (oMLX non è ancora installato; il wizard propone già un server oMLX con `--model-dir data/models`, così non servono collegamenti) e le voci vere del catalogo, da copiare dalla configurazione oMLX: fino ad allora il catalogo è vuoto e `install` non scarica nulla. Il download accetta solo HTTPS, segue al massimo 5 redirect, scrive `<file>.part`, riprende con `Range` e rinomina solo dopo dimensione e sha256 giusti; un file con lo sha256 sbagliato si scarta. `doctor` controlla le dimensioni (secondi), `models verify` gli sha256 (minuti per decine di GB); `models pull --verify` sostituisce anche un file della dimensione giusta con lo sha256 sbagliato. Una risposta 206 che parte dal byte sbagliato fa ripartire da zero; un 416 (file cambiato sul server) cancella il `.part`; il `.part` va su disco con `fsync` prima della rinomina. Non ancora gestiti: due `pull` contemporanei sullo stesso file (lo sha256 scarta il risultato), conflitti fra percorsi dello stesso modello nel catalogo (`a` e `a/b`; lo stesso percorso due volte ora è rifiutato), spazio misurato sul disco di `data/models` anche quando un modello è un collegamento verso un altro disco.
 
 ## Wizard iniziale e impostazioni
 
@@ -102,7 +101,7 @@ In Synology Drive l'attività di sincronizzazione punta a `data/` della cartella
 | `data/models/`, `data/guard/models/` | No | Si riscaricano dal catalogo; escludere per risparmiare spazio e banda |
 | `data/catalogs/` | No | Testo pubblico di terzi (agency-agents, D-079; stili e skill di Open Design, D-160, con `open-design.lock.json`): si riscarica dal repository |
 | `data/omlx-cache/` | No | Cache del prefisso di oMLX (D-075), fino a 10 GB: si rigenera e contiene stato derivato dai prompt, quindi L2; mai sincronizzarla |
-| `data/postgres/`, `data/qdrant/` | **Mai dal vivo** | Rischio di corruzione; si sincronizzano i dump in `backups/` |
+| `data/postgres/` | **Mai dal vivo** | Rischio di corruzione; si sincronizzano i dump in `backups/` |
 | `data/vault/` | Sì, cifrato | La chiave `age` resta fuori dalla cartella sincronizzata |
 | `data/remote/` | No | Certificato e chiave della porta remota in modo `tls = "own"` (D-292), 0600: la chiave non lascia il Mac; su un'altra macchina si rifà con `pnpm remote:cert` |
 | `.git` | Con cautela | Conflitti di sincronizzazione; preferire un remote git e non sincronizzare `.git` |
@@ -111,7 +110,7 @@ Per privacy: Synology Drive sul tuo NAS è locale e va bene per L2; iCloud, Goog
 
 ## Export e import
 
-- `arianna export`: dump di Postgres, snapshot Qdrant, archivio, KB, configurazione e vault cifrato in `backups/arianna-AAAA-MM-GG.tar.age`. I modelli non sono inclusi, ma il catalogo e `arianna.toml` sì.
+- `arianna export`: dump di Postgres (vettori di pgvector compresi), archivio, KB, configurazione e vault cifrato in `backups/arianna-AAAA-MM-GG.tar.age`. I modelli non sono inclusi, ma il catalogo e `arianna.toml` sì.
 - `arianna import <file>`: ripristina su una macchina nuova dopo `arianna install`.
 - Il ripristino va provato davvero (criterio di uscita della Fase 2).
 

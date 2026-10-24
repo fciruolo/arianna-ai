@@ -12,7 +12,7 @@ Dai documenti (`SPEC.md` «Memoria e knowledge base» e «Valutazione: RAG, graf
 - **Fatti dichiarati dall'utente** (D-114, D-213): `user_facts` in PostgreSQL, uno per riga, «Solo in casa» (L2) o «Condivisibile» (L1), mai L3; nei passi locali come pezzo etichettato in coda al prompt; verso il cloud un fatto alla volta con `profile.share` e l'approvazione `share_fact`. Arianna può proporre un fatto, l'utente lo conferma. La memoria nuova **non sostituisce** `user_facts`: lo legge come fonte di verità per ciò che l'utente ha detto di sé.
 - **Knowledge base** (`kb/`, note dell'inbox, archivio): pagine markdown con etichetta nell'intestazione; oggi la ricerca è testuale e deterministica (`apps/core/src/search.ts`, strumenti `kb.search` e `kb.read` dell'orchestratore). La ricerca ibrida con embedding è un altro epic della Fase 2 («ricerca ibrida», 10-15 h) e non fa parte di questo confronto, salvo dove una candidata la fa anche lei.
 - **Riassunti delle conversazioni** (D-077, `conversation_summaries`): memoria di breve periodo dentro una conversazione, non fra conversazioni.
-- **Nessun embedding oggi**: nel catalogo `config/models.catalog.yaml` il ruolo `embedder` esiste ma nessun modello lo ha; il PostgreSQL di `compose.yaml` è `postgres:17.11-alpine`, **senza pgvector** (la scelta di pgvector al posto di Qdrant, 2026-10-14, in `OPEN-QUESTIONS.md`, non è ancora costruita).
+- **Nessun embedding oggi**: nel catalogo `config/models.catalog.yaml` il ruolo `embedder` esiste ma nessun modello lo ha; il PostgreSQL di `compose.yaml` ha **pgvector** 0.8.7 dal 2026-10-24 (D-308: immagine nostra su `postgres:17.11-alpine`, estensione nello schema `extensions`, migrazione `0092`).
 
 **Cosa manca e deve fare la memoria nuova** (il livello «memoria degli agenti» della SPEC):
 1. **Fatti sull'utente che Arianna impara da sé** dalle conversazioni (preferenze, abitudini), distinti da quelli dichiarati, sempre proposti e mai scritti come se li avesse detti l'utente.
@@ -218,7 +218,7 @@ Una seconda passata con 500 episodi generati da un programma (stesse persone e c
 
 **Mem0 non per prima**: dalla v2.0.0 la versione aperta non ha più il grafo né il ragionamento temporale, e i suoi risultati migliori sono della piattaforma cloud; resta il riferimento «vettori semplici» da aggiungere solo se servirà un quarto termine di paragone (con l'SDK TypeScript non chiede Python). Cognee e MemOS restano in riserva.
 
-**Da correggere quando l'utente sceglie** (D-013): `SPEC.md` («Mem0 con Qdrant», righe «Vettori e memoria» e «Memoria temporale a grafo… Valutare in Fase 5»), `ARCHITECTURE.md` («Qdrant + Mem0») e `ROADMAP.md` («ricerca ibrida Qdrant», «Mem0») parlano ancora di Qdrant e di Mem0 col grafo, mentre pgvector è deciso e il grafo di Mem0 in locale non esiste più.
+**Da correggere quando l'utente sceglie** (D-013): Qdrant è già tolto da `SPEC.md`, `ARCHITECTURE.md` e `ROADMAP.md` (pgvector costruito con D-308); restano da allineare alla scelta le righe su Mem0 e sulla memoria a grafo («Memoria temporale a grafo… Valutare in Fase 5» in `SPEC.md`, «Mem0 è un candidato» in `ROADMAP.md`).
 
 **Ordine proposto, dopo le risposte:** (a) voci in `DECISIONS.md` per le dipendenze della prova; (b) `evals/memory/` con i casi qui sopra e `pnpm eval:memory` con l'adattatore finto (test deterministici del formato e dei controlli di privacy, senza modelli); (c) le tre candidate una alla volta in `data/memlab/`; (d) rapporto con la tabella delle metriche e la scelta da fare all'utente con le domande a opzioni.
 

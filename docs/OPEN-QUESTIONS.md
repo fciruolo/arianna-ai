@@ -15,7 +15,7 @@
 | ~~Codex con provider locale invia telemetria o contenuti altrove?~~ | **Deciso (utente, 2026-10-14):** Codex si tratta come cloud; la verifica si fa solo se servirà usarlo con un modello locale su progetti privati | |
 | ~~Codice clienti con NDA~~ | **Deciso (utente, 2026-10-14):** un progetto di un cliente nasce Privato (L2, mai al cloud) finché l'utente non legge il contratto e abbassa lui la label | |
 | ~~Remote git (GitHub privato, NAS, nessuno)~~ | **Deciso (utente, 2026-10-14):** GitHub privato, com'è oggi (`origin`); in git solo codice e documenti, mai `data/`, configurazione o vault | |
-| ~~`pgvector` al posto di Qdrant~~ | **Deciso (utente, 2026-10-14):** pgvector nel PostgreSQL di Arianna; Qdrant solo se Mem0 lo richiede davvero | |
+| ~~`pgvector` al posto di Qdrant~~ | **Deciso (utente, 2026-10-14):** pgvector nel PostgreSQL di Arianna; Qdrant solo se Mem0 lo richiede davvero. Costruito con D-308 (pgvector 0.8.7, migrazione `0092`) | |
 | ~~Editor della knowledge base~~ | **Deciso (utente, 2026-10-14):** Obsidian sulla cartella `kb/`, accanto alle pagine Pensieri e Conoscenza | |
 | ~~Fonti e persone per il Mentor~~ | **Deciso (utente, 2026-10-15):** lista di 15 fonti proposta da Claude e approvata, in `SPEC.md` (sezione del Mentor, «Fonti»); si rivede all'inizio della Fase 5 | |
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
