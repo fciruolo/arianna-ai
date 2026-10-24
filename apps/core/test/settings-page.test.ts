@@ -231,6 +231,23 @@ describe('update (ordinary)', () => {
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { appearance: 'corsia' } }), refused('invalid'));
   });
 
+  it('the minutes before an unload for inactivity (D-316): ordinary, written in [local] alone, the servers untouched', () => {
+    assert.equal(page.read().values?.localIdle, 30);
+    const before = parseConfig(text(), home, loadCatalog(home), userHome);
+    page.update({ fingerprint: fingerprint(), values: { localIdle: 5 } });
+    assert.deepEqual(changes, [{ sections: ['localIdle'], privacy: false }]);
+    const after = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.equal(after.local.idleUnloadMinutes, 5);
+    assert.deepEqual({ ...after, local: before.local }, before, 'nothing else changes');
+    assert.deepEqual(after.local.endpoints, before.local.endpoints);
+    assert.equal(page.read().values?.localIdle, 5);
+    page.update({ fingerprint: fingerprint(), values: { localIdle: 0 } });
+    assert.equal(parseConfig(text(), home, loadCatalog(home), userHome).local.idleUnloadMinutes, 0);
+    for (const bad of [-1, 1441, 2.5, '30', null]) {
+      assert.throws(() => page.update({ fingerprint: fingerprint(), values: { localIdle: bad } }), refused('invalid', /localIdle/), String(bad));
+    }
+  });
+
   it("the agents' models (D-116): only an agent with a card, only a model the card allows", () => {
     page.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'opus' }, arianna: { model: null } } } });
     assert.deepEqual(changes, [{ sections: ['agents'], privacy: false }]);

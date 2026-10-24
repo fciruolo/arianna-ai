@@ -95,7 +95,7 @@ export {
   userHomeOf,
 } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
-export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
+export { DEFAULT_IDLE_UNLOAD_MINUTES, isIdleUnloadMinutes, MAX_IDLE_UNLOAD_MINUTES, type LocalConfig, type LocalEndpointConfig } from './local.ts';
 export {
   defaultFolderLabel,
   isFolderName,

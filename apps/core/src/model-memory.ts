@@ -237,7 +237,7 @@ export async function readSwap(platform: NodeJS.Platform = process.platform): Pr
 // ---- The account ----------------------------------------------------------
 
 export type ModelMemoryEvent =
-  | { type: 'unloaded'; endpoint: string; model: string; reason: 'role-changed' | 'budget' | 'user' }
+  | { type: 'unloaded'; endpoint: string; model: string; reason: 'role-changed' | 'budget' | 'user' | 'idle' }
   | { type: 'refused'; endpoint: string; model: string; needGib: number; busyGib: number; budgetGib: number }
   | { type: 'swap'; level: SwapLevel; previous: SwapLevel; usedGib: number; pressure: number | null };
 
@@ -286,6 +286,15 @@ export interface ModelMemory {
    * model stays in the account.
    */
   unloadNow(endpoint: LocalEndpointConfig, name: string): Promise<'unloaded' | 'busy' | 'failed'>;
+  /**
+   * D-316: unloads every model of the account idle for at least `idleMs`,
+   * in the queue with the admissions. Nothing while any request is in flight
+   * (`activeRequests`), and never a pinned model. Resolves with what the
+   * server confirmed unloaded; one it did not confirm stays in the account.
+   */
+  unloadIdle(idleMs: number): Promise<{ endpoint: string; model: string }[]>;
+  /** Requests through `wrap` in flight now, on any model and endpoint. */
+  activeRequests(): number;
   /** The server of `endpoint` started or exited: it holds nothing. */
   serverReset(endpoint: string): void;
   snapshot(): MemorySnapshot;
@@ -316,6 +325,8 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
   let queue: Promise<unknown> = Promise.resolve();
   let swap: { level: SwapLevel; sample: SwapSample } | undefined;
   let stopped = false;
+  /** Every request through `wrap` in flight, the ones on no endpoint of the account too. */
+  let inFlight = 0;
 
   function serial<T>(work: () => Promise<T>): Promise<T> {
     const next = queue.then(work);
@@ -379,7 +390,7 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
   }
 
   /** Takes the model out of the account at once and unloads it; the promise ends with the unload. */
-  function drop(endpoint: LocalEndpointConfig, name: string, reason: 'role-changed' | 'budget' | 'user'): Promise<void> {
+  function drop(endpoint: LocalEndpointConfig, name: string, reason: 'role-changed' | 'budget' | 'user' | 'idle'): Promise<void> {
     const id = key(endpoint.id, name);
     const gib = loaded.get(id)?.gib ?? ramOf(name);
     loaded.delete(id);
@@ -457,32 +468,40 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
   function wrap(model: LocalModel, endpoints: readonly LocalEndpointConfig[]): LocalModel {
     const wrapped: LocalModel = {
       async chat(request: ChatRequest): Promise<ChatResult> {
-        const endpoint = targetEndpoint(endpoints, request.model, options.isAvailable);
-        const name = endpoint?.models[request.model];
-        if (endpoint === undefined || name === undefined) return model.chat(request);
-        const id = key(endpoint.id, name);
-        const known = loaded.get(id);
-        let entry: LoadedModel;
-        if (known !== undefined && !unloading.has(id)) {
-          // Already in the account: nothing to make room for, no wait behind an unload.
-          known.busy += 1;
-          entry = known;
-        } else {
-          entry = await serial(() => admit(endpoint, name, endpoints));
-        }
+        inFlight += 1;
         try {
-          const result = await model.chat(request);
-          entry.confirmed = true;
-          return result;
-        } catch (error) {
-          // Never answered and the error proves it was not loaded: out of the account.
-          if (entry.confirmed !== true && entry.busy === 1 && provesNotLoaded(error) && loaded.get(id) === entry) loaded.delete(id);
-          throw error;
+          return await counted(request);
         } finally {
-          release(entry);
+          inFlight -= 1;
         }
       },
     };
+    async function counted(request: ChatRequest): Promise<ChatResult> {
+      const endpoint = targetEndpoint(endpoints, request.model, options.isAvailable);
+      const name = endpoint?.models[request.model];
+      if (endpoint === undefined || name === undefined) return model.chat(request);
+      const id = key(endpoint.id, name);
+      const known = loaded.get(id);
+      let entry: LoadedModel;
+      if (known !== undefined && !unloading.has(id)) {
+        // Already in the account: nothing to make room for, no wait behind an unload.
+        known.busy += 1;
+        entry = known;
+      } else {
+        entry = await serial(() => admit(endpoint, name, endpoints));
+      }
+      try {
+        const result = await model.chat(request);
+        entry.confirmed = true;
+        return result;
+      } catch (error) {
+        // Never answered and the error proves it was not loaded: out of the account.
+        if (entry.confirmed !== true && entry.busy === 1 && provesNotLoaded(error) && loaded.get(id) === entry) loaded.delete(id);
+        throw error;
+      } finally {
+        release(entry);
+      }
+    }
     const unload = model.unload?.bind(model);
     if (unload !== undefined) {
       wrapped.unload = async (alias: string): Promise<boolean> => {
@@ -551,10 +570,46 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
     });
   }
 
+  /** Read through a function: `stop()` may flip the flag while an unload awaits. */
+  const halted = (): boolean => stopped;
+
+  function unloadIdle(idleMs: number): Promise<{ endpoint: string; model: string }[]> {
+    return serial(async () => {
+      if (stopped || inFlight > 0) return [];
+      const since = now() - idleMs;
+      const idle = [...loaded.values()].filter((entry) => entry.busy === 0 && entry.lastUsed <= since && !pending.has(key(entry.endpoint, entry.name)) && !isPinned(entry));
+      const done: { endpoint: string; model: string }[] = [];
+      for (const entry of idle) {
+        // A request that came meanwhile keeps every model where it is.
+        if (inFlight > 0 || halted()) break;
+        const config = configOf(entry.endpoint, []);
+        if (config === undefined) continue;
+        const id = key(entry.endpoint, entry.name);
+        loaded.delete(id);
+        let ok = false;
+        try {
+          ok = await unloadWithin(config, entry.name);
+        } catch (error) {
+          fail(error);
+        }
+        if (ok) {
+          emit({ type: 'unloaded', endpoint: entry.endpoint, model: shown(entry.name, entry.gib), reason: 'idle' });
+          done.push({ endpoint: entry.endpoint, model: shown(entry.name, entry.gib) });
+        } else if (!loaded.has(id)) {
+          // Not confirmed: the server may still hold it, the account keeps it.
+          loaded.set(id, entry);
+        }
+      }
+      return done;
+    });
+  }
+
   return {
     wrap,
     modelsChanged,
     unloadNow,
+    unloadIdle,
+    activeRequests: () => inFlight,
     serverReset(endpoint) {
       for (const [id, entry] of loaded) if (entry.endpoint === endpoint) loaded.delete(id);
       for (const id of pending.keys()) if (id.startsWith(`${endpoint}\u0000`)) pending.delete(id);

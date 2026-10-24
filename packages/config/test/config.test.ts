@@ -38,7 +38,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
     server: { host: '127.0.0.1', port: 7420 },
     roles: {},
-    local: { endpoints: [] },
+    local: { endpoints: [], idleUnloadMinutes: 30 },
     cloud: { executors: [], models: defaultCloudModels() },
     projects: [],
     projectRules: { projects: {} },
@@ -363,6 +363,7 @@ test('local endpoints are parsed in order, command optional', () => {
       },
       { id: 'lmstudio', url: 'http://[::1]:1234/v1', models: { 'local-large': 'qwen-large-gguf' } },
     ],
+    idleUnloadMinutes: 30,
   });
 });
 
