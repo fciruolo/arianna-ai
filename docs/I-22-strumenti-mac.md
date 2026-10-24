@@ -1,6 +1,6 @@
 # I-22, Arianna agisce sul Mac: studio e proposta
 
-Stato: **proposta di Claude, da decidere** (2026-10-24). Nessun codice. Le domande per l'utente sono in fondo a `docs/PROPOSTE.md`, sezione «I-22».
+Stato: **scelte dell'utente del 2026-10-24 in D-314** (`docs/DECISIONS.md`): nessuna cartella all'inizio, scheda con tre scelte («Solo questa volta», «Per tutta questa conversazione», «Sempre»), lettura libera dentro le cartelle permesse, incognito spento. Tappa M1 (sola lettura) in costruzione; M2-M4 dopo, M5 da decidere dopo M1-M3. Lo studio qui sotto resta com'era.
 
 ## In una frase
 

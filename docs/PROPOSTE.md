@@ -2251,7 +2251,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-19 | Studio di design «come Open Design»: pagina Studio con chat del Designer e canvas, commenti sugli elementi, varianti affiancate, modifica diretta, esportazione HTML, PDF e PPTX | funzione | 40-60 h (tappe O1-O6) | D-159, D-160, D-163 | D-184, O1-O6 unite in 0.76.0; contratto in `docs/STUDIO-API.md` |
 | I-20 | Studio, seguito chiesto alla prova del 2026-10-12: conferma di «Elimina» in una finestra modale che spiega lo spostamento in `eliminati/`, con spunta per l'eliminazione definitiva; pulsante per passare fra Studio e Progetti e pulsante «Studio» nella chat diretta col Designer; nella scheda File di un progetto eliminare e spostare file e cartelle (per ripristinare o cancellare i mockup); scelta di stile e skill in una finestra con esempi visivi degli stili e la spiegazione delle skill; su ogni variante, quale stile e quali skill il Designer ha usato | funzione | 8-14 h | I-19 | D-185, unita in 0.77.0 e 0.78.0 |
 | I-21 | Novità di Open Design: all'aggiornamento del catalogo (o una volta a settimana) il core legge note di rilascio e cambi del repository `nexu-io/open-design` (anche le funzioni software nuove, non solo stili e skill) e le propone nella pagina «Sviluppo di Arianna»; l'utente sceglie cosa rifare nello Studio, che segue il giro solito (ramo, prova, versione). Nessun codice di Open Design si esegue | funzione | 4-6 h | D-160, I-19 | D-186, unita in 0.78.0 |
-| I-22 | Arianna agisce sul Mac: elenca e legge le cartelle scelte dall'utente, e crea, sposta, rinomina, copia, mette nel Cestino e apre file solo dopo il sì a una scheda in italiano con il comando equivalente; niente shell libera, niente cancellazione definitiva, niente rete. Studio in `docs/I-22-strumenti-mac.md` | funzione | 22-32 h (tappe M1-M3), M4-M5 facoltative | D-171, D-268, `packages/policy` | Proposta del 2026-10-24, da decidere (domande in fondo, sezione «I-22») |
+| I-22 | Arianna agisce sul Mac: elenca e legge le cartelle scelte dall'utente, e crea, sposta, rinomina, copia, mette nel Cestino e apre file solo dopo il sì a una scheda in italiano con il comando equivalente; niente shell libera, niente cancellazione definitiva, niente rete. Studio in `docs/I-22-strumenti-mac.md` | funzione | 22-32 h (tappe M1-M3), M4-M5 facoltative | D-171, D-268, `packages/policy` | Scelte del 2026-10-24 (D-314); M1, sola lettura, in costruzione |
 
 ### I-1, notifiche delle risposte
 
@@ -3111,7 +3111,7 @@ Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte
 - Il doctor controlla ffmpeg, Deno e yt-dlp solo dove c'è l'ambiente di `apps/voice`, nel gruppo «Ambiente della voce e dei video» della pagina «Pronta per i dati veri». ffmpeg e Deno mancanti si dicono ma non fanno fallire (sono facoltativi: senza, solo sottotitoli); fanno fallire un Deno più vecchio di 2.6.6 e uno yt-dlp più vecchio di 90 giorni (yt-dlp 2026.8.19 li compie il 2026-11-17).
 - Un lavoro che lascia il posto a una chiamata mentre scarica o trascrive riparte da capo: una seconda riga `link-video` e un secondo scaricamento. Se interrotto durante il riassunto, la trascrizione già ottenuta si riusa senza uscire di nuovo.
 
-## I-22 — Arianna agisce sul Mac (proposta del 2026-10-24)
+## I-22 — Arianna agisce sul Mac (proposta del 2026-10-24, scelte in D-314)
 
 **Cosa ha chiesto l'utente.** Che Arianna possa rispondere a «che file ho sulla Scrivania?» e fare «creami una cartella Prova sulla Scrivania», chiedendo sempre il permesso prima di ogni azione («voglio dare il comando mkdir …/Desktop/Prova, posso?» → sì → lo esegue); se in rete o nei progetti seguiti c'è già una soluzione, e una soluzione «definitiva ma solida».
 
@@ -3131,45 +3131,13 @@ Decisioni D-273 (tappa A), D-274 (Deno) e D-275 (ffmpeg); D-197 emendata. Scelte
 - **La scheda la scrive il codice, non il modello:** «Arianna vuole **creare la cartella** "Prova" in **Scrivania**», sotto il comando equivalente `mkdir ~/Desktop/Prova`, «Sì / No»; se il passo ha letto file o pagine prima di proporre, la scheda lo dice («Proposta dopo aver letto: note.txt»); più file dello stesso passo in una scheda sola. Ogni azione eseguita si può **annullare**.
 - **Tappe.** M1 sola lettura (8-12 h); M2 azioni con approvazione, tipo di approvazione `mac` con una migrazione (10-14 h); M3 Annulla e registro (4-6 h); M4 Comandi Rapidi scelti dall'utente (4-6 h, facoltativa); M5 comandi avanzati con il comando esatto, senza shell, con programmi da un elenco chiuso e sandbox Seatbelt senza rete (18-26 h, facoltativa, da decidere dopo M1-M3). Nessuna dipendenza nuova fino a M5.
 
-### Domande per l'utente
+### Scelte dell'utente (2026-10-24, D-314)
 
-1. **Quali cartelle del Mac Arianna può vedere all'inizio?** Raccomandazione: Scrivania, Documenti e Scaricati, cambiabili in Impostazioni.
-   - Contesto: Arianna lavora solo nelle cartelle che scegli tu; tutto il resto del Mac per lei non esiste. Le cartelle si cambiano quando vuoi in Impostazioni → Privacy, e un agente non può mai aggiungerne. Si decide da quali si parte; macOS chiederà una volta il permesso per ciascuna di queste tre.
-   - Opzione consigliata: Scrivania, Documenti e Scaricati — copre le domande di tutti i giorni; le altre cartelle si aggiungono a mano.
-   - Opzione: Solo la Scrivania — il minimo per provare; per «cerca in Scaricati» dovrai aggiungere la cartella prima.
-   - Opzione: Tutta la cartella Inizio — Arianna vede tutto tranne cartelle nascoste e Libreria; più comodo, ma più file privati alla portata di un errore.
-   - Esempio: Chiedi «quanti PDF ho in Scaricati?». Con la consigliata Arianna risponde «12, il più recente è preventivo-finto.pdf»; con «Solo la Scrivania» risponde che Scaricati non è fra le cartelle ammesse e ti dice dove aggiungerla.
-
-2. **Cosa mostra la scheda di approvazione?** Raccomandazione: la frase in italiano scritta dal codice, con sotto il comando equivalente.
-   - Contesto: prima di ogni azione che cambia qualcosa compare una scheda con «Sì / No». La frase la scrive il codice dagli argomenti dell'azione, non il modello, quindi dice sempre esattamente cosa succederà. Il comando equivalente serve a chi vuole vedere la forma «da terminale», ma non è ciò che si esegue.
-   - Opzione consigliata: Frase più comando equivalente — chiara per tutti, e vedi anche il comando come l'hai immaginato tu.
-   - Opzione: Solo la frase in italiano — scheda più pulita, nessun comando.
-   - Opzione: Solo il comando — come Claude Code; per spostamenti di molti file o nomi lunghi diventa difficile da leggere.
-   - Esempio: Scrivi «creami una cartella Prova sulla Scrivania». Con la consigliata vedi «Arianna vuole creare la cartella "Prova" in Scrivania», sotto in piccolo `mkdir ~/Desktop/Prova`, e i pulsanti Sì e No.
-
-3. **Leggere ed elencare chiede il permesso?** Raccomandazione: no dentro le cartelle ammesse; il permesso si chiede per ogni azione che cambia qualcosa.
-   - Contesto: elencare o leggere un file non cambia nulla e resta sul Mac (i file sono Privati e li legge solo il modello locale). Chiedere anche per questo moltiplica le schede, e chi approva troppe schede finisce per non leggerle più. Le azioni che cambiano qualcosa chiedono sempre.
-   - Opzione consigliata: Lettura libera, azioni con permesso — «che file ho sulla Scrivania?» risponde subito; creare, spostare, copiare, Cestino e apri chiedono sempre.
-   - Opzione: Permesso anche per leggere — una scheda in più anche per elencare o leggere un file.
-   - Opzione: «Sì per questa chat» su crea e copia — come la consigliata, ma creare cartelle e copiare si approvano una volta per tutta la conversazione; Cestino e spostamenti chiedono sempre.
-   - Esempio: Chiedi «leggimi lista-spesa-finta.txt sulla Scrivania e poi mettila in una cartella Liste». Con la consigliata Arianna legge subito, poi ti mostra una sola scheda per creare Liste e spostare il file.
-
-4. **Più avanti, anche i comandi del terminale veri?** Raccomandazione: decidere dopo aver usato le prime tre tappe.
-   - Contesto: gli strumenti proposti fanno le azioni del Finder. Lavori come convertire un video o ridimensionare cento foto richiedono programmi veri. Si possono aggiungere in modo stretto: il comando esatto nella scheda, eseguito senza shell, solo programmi da un elenco che scegli tu, in una gabbia di macOS senza rete e con scrittura solo nelle cartelle ammesse. Costa 18-26 ore e il comando lo devi leggere tu.
-   - Opzione consigliata: Decidiamo dopo M1-M3 — prima si usano gli strumenti, poi si vede se manca davvero qualcosa.
-   - Opzione: Sì, programmato dopo M3 — si costruisce comunque, con l'elenco chiuso di programmi e la gabbia senza rete.
-   - Opzione: No, solo gli strumenti — niente terminale; i lavori fuori elenco restano al Terminale o al Coder nei progetti.
-   - Esempio: Chiedi «riduci le foto della cartella Vacanze-finte a 1600 pixel». Senza terminale Arianna risponde che non ha uno strumento per farlo; con il terminale ti propone «`/usr/bin/sips -Z 1600 …` sui 40 file di Vacanze-finte, posso?».
-
-5. **Gli strumenti del Mac nelle conversazioni incognite?** Raccomandazione: spenti, per ora.
-   - Contesto: una conversazione incognita non deve lasciare tracce in Arianna. Leggere non lascia nulla, ma una cartella creata o un file spostato restano sul Mac anche dopo la chiusura, e l'«Annulla» richiede di ricordare l'azione. Si decide se in incognito gli strumenti ci sono.
-   - Opzione consigliata: Spenti in incognito — niente azioni sul Mac da una conversazione che non lascia memoria.
-   - Opzione: Solo lettura in incognito — elencare e leggere sì, azioni no.
-   - Opzione: Tutti, come nelle altre chat — le azioni restano sul Mac e la scheda di chiusura le elenca, senza Annulla dopo la chiusura.
-   - Esempio: In una chat incognita chiedi «che file ho sulla Scrivania?». Con la consigliata Arianna risponde che in incognito non può guardare le cartelle del Mac e ti propone di chiederlo in una chat normale.
-
-6. **Arianna può lanciare i tuoi Comandi Rapidi?** Raccomandazione: sì, solo quelli che scegli tu in Impostazioni, ognuno con il permesso.
-   - Contesto: i Comandi Rapidi di macOS sono piccoli programmi che hai creato tu con l'app Comandi Rapidi (per esempio «Ridimensiona immagini» o «Avvia la musica»). Arianna potrebbe lanciarli per nome. Un comando rapido può fare molto (anche mandare messaggi), quindi solo quelli che metti in elenco, e sempre con una scheda. AppleScript libero resta escluso.
-   - Opzione consigliata: Sì, quelli scelti, con permesso — tappa M4 di 4-6 ore; ogni lancio chiede il sì.
-   - Opzione: No — Arianna non tocca i Comandi Rapidi.
-   - Esempio: Hai in elenco il comando rapido «Modalità concentrazione». Scrivi «attiva la concentrazione per un'ora»: Arianna ti mostra «Arianna vuole lanciare il comando rapido "Modalità concentrazione"», tu premi Sì.
+Domande chiuse con le domande a opzioni; il dettaglio è in D-314.
+- **Cartelle all'inizio:** nessuna. Quando Arianna deve leggere una cartella non ancora permessa compare una scheda con tre scelte: «Solo questa volta» (quella sola chiamata), «Per tutta questa conversazione», «Sempre» (la cartella entra nella lista di Impostazioni → Cartelle del Mac, dove si toglie o se ne aggiungono a mano). Nessun agente aggiunge cartelle.
+- **Leggere ed elencare:** liberi dentro le cartelle permesse (`mac.list`, `mac.info`, `mac.read`, `mac.find`), senza scheda.
+- **La scheda:** frase in italiano scritta dal codice, con sotto in piccolo il comando equivalente; dice anche se la richiesta arriva dopo che il passo ha letto contenuti non dell'utente (pagina web, file). Vale anche per le azioni di M2.
+- **Incognito:** strumenti spenti; Arianna dice che in incognito non guarda le cartelle e propone una chat normale.
+- **Comandi Rapidi (M4):** sì, solo quelli scelti dall'utente in Impostazioni, ognuno con il sì.
+- **Terminale (M5):** si decide dopo aver usato M1-M3.
+- **Tappa M1 (sola lettura):** in costruzione sul ramo `task/d314-mac-m1`; M2 (azioni con scheda e Cestino), M3 (Annulla e registro) e M4 vengono dopo.
