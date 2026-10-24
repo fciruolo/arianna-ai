@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { cardAction, createCard, loadCards, markCommitmentDone, moveCard } from '../lib/api.ts';
+import {
+  addMilestoneDependency,
+  cardAction,
+  createCard,
+  createMilestone,
+  loadCards,
+  markCommitmentDone,
+  milestoneAction,
+  moveCard,
+  moveMilestone,
+  removeMilestoneDependency,
+  updateCard,
+  updateMilestone,
+} from '../lib/api.ts';
 import {
   assigneeText,
   blockedText,
@@ -37,6 +50,26 @@ import { activeFilters, chosenText, type FilterField, type FilterKey, filtersBut
 import { neighbourColumn, phoneColumn } from '../lib/cardwall-phone.ts';
 import { followMedia, phoneMedia } from '../lib/studio-phone.ts';
 import { agentName, reasonText } from '../lib/italian.ts';
+import {
+  type Band,
+  bandDrop,
+  blockerChoices,
+  chosenProject,
+  CLOSE_NO,
+  CLOSE_QUESTION,
+  CLOSE_YES,
+  isFolded,
+  loadFolds,
+  type Milestone,
+  milestoneBlockedText,
+  milestoneDueText,
+  NO_MILESTONE_TITLE,
+  progressText,
+  progressValue,
+  saveFolds,
+  toggleFold,
+  wallBands,
+} from '../lib/milestones.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import CardDetail from './CardDetail.vue';
@@ -99,10 +132,97 @@ onMounted(refresh);
 onBeforeUnmount(() => window.clearTimeout(timer));
 
 const today = computed(() => wall.value?.today ?? '');
+
+// The milestones (D-313): chosen a project, the board is one band per milestone, then «Senza milestone».
+const folds = ref(loadFolds(storage));
+watch(folds, (value) => saveFolds(storage, value), { deep: true });
+const project = computed(() => chosenProject(state.value.filters.project));
+const milestones = computed(() => wall.value?.milestones ?? []);
+const projectMilestones = computed(() => milestones.value.filter((milestone) => milestone.project === project.value));
+const banded = computed(() => state.value.view === 'board' && project.value !== null);
 const allColumns = computed(() => wallColumns(state.value.prefs));
 const columns = computed(() => allColumns.value.filter((column) => !state.value.prefs.hidden.includes(column.id)));
 const visibleCards = computed(() => (wall.value?.cards ?? []).filter((card) => matches(card, state.value.filters, today.value)));
 const groups = computed(() => groupCards(visibleCards.value, columns.value, state.value.sort));
+/** Without a project chosen, one band without a header: the board of always. */
+const bands = computed<Band[]>(() => (banded.value && project.value !== null ? wallBands(visibleCards.value, milestones.value, project.value) : [{ id: 'all', milestone: null, cards: visibleCards.value }]));
+const bandGroups = computed(() => new Map(bands.value.map((band) => [band.id, groupCards(band.cards, columns.value, state.value.sort)])));
+function cardsIn(band: Band, column: WallColumnId): Card[] {
+  return bandGroups.value.get(band.id)?.get(column) ?? [];
+}
+function folded(band: Band): boolean {
+  return banded.value && isFolded(band, folds.value);
+}
+function fold(band: Band): void {
+  folds.value = toggleFold(band, folds.value);
+}
+
+// A milestone written or changed: title, due day, what «fatta» means, «bloccata da».
+const editingMilestone = ref<{ id: string | null; title: string; due: string; description: string; blockedBy: string[] } | null>(null);
+const milestoneTitle = ref<HTMLInputElement | null>(null);
+function openMilestone(milestone: Milestone | null): void {
+  editingMilestone.value =
+    milestone === null
+      ? { id: null, title: '', due: '', description: '', blockedBy: [] }
+      : { id: milestone.id, title: milestone.title, due: milestone.due ?? '', description: milestone.description ?? '', blockedBy: milestone.dependsOn.map((item) => item.id) };
+  adding.value = false;
+  void nextTick(() => milestoneTitle.value?.focus());
+}
+const blockerOptions = computed(() => {
+  const draft = editingMilestone.value;
+  if (draft === null || project.value === null) return [];
+  return draft.id === null ? projectMilestones.value : blockerChoices({ id: draft.id, project: project.value }, milestones.value);
+});
+async function saveMilestone(): Promise<void> {
+  const draft = editingMilestone.value;
+  const name = project.value;
+  if (draft === null || name === null || draft.title.trim() === '' || saving.value) return;
+  saving.value = true;
+  problem.value = null;
+  try {
+    const fields = { title: draft.title.trim(), due: draft.due === '' ? null : draft.due, description: draft.description.trim() === '' ? null : draft.description };
+    const created = draft.id === null;
+    const id = draft.id ?? (await createMilestone(name, fields));
+    // Created: a second «Salva» after an error changes this one, never makes another.
+    draft.id = id;
+    if (!created) await updateMilestone(id, fields);
+    const before = milestones.value.find((item) => item.id === id)?.dependsOn.map((item) => item.id) ?? [];
+    for (const on of draft.blockedBy) if (!before.includes(on)) await addMilestoneDependency(id, on);
+    for (const on of before) if (!draft.blockedBy.includes(on)) await removeMilestoneDependency(id, on);
+    editingMilestone.value = null;
+  } catch (cause) {
+    problem.value = cardErrorText(cause);
+  } finally {
+    saving.value = false;
+    await refresh();
+  }
+}
+async function milestoneStep(work: () => Promise<void>): Promise<void> {
+  problem.value = null;
+  try {
+    await work();
+  } catch (cause) {
+    problem.value = cardErrorText(cause);
+  }
+  await refresh();
+}
+function moveBand(band: Band, direction: 'up' | 'down'): void {
+  const milestone = band.milestone;
+  if (milestone !== null) void milestoneStep(() => moveMilestone(milestone.id, direction));
+}
+function closeBand(band: Band, action: 'close' | 'reopen'): void {
+  const milestone = band.milestone;
+  if (milestone !== null) void milestoneStep(() => milestoneAction(milestone.id, action));
+}
+/** «La chiudo?» answered from the band: the same decision as in the chat (D-313). */
+async function answerClosing(milestone: Milestone, decision: 'approved' | 'rejected'): Promise<void> {
+  const approval = props.approvals.find((item) => item.id === milestone.proposal);
+  if (approval === undefined) {
+    problem.value = 'Non trovo la domanda di chiusura: aprila in «Attende te» o nella chat della Segretaria.';
+    return;
+  }
+  await milestoneStep(() => props.decide(approval, decision));
+}
 const rows = computed(() => sortCards(visibleCards.value, state.value.sort));
 const selected = computed(() => wall.value?.cards.find((card) => card.id === selectedId.value));
 watch(selected, (card) => {
@@ -188,13 +308,15 @@ const TABLE_HEADERS: { key: SortKey; text: string; class: string }[] = [
 
 // A new card: title, project, who does it, priority, due day. The project of the filter comes in already chosen.
 const adding = ref(false);
-const draft = ref({ title: '', project: '', assignee: 'user', priority: 0, due: '' });
+const draft = ref({ title: '', project: '', assignee: 'user', priority: 0, due: '', milestone: '' });
+/** The open milestones of the project of the new card (D-313). */
+const draftMilestones = computed(() => milestones.value.filter((milestone) => milestone.project === draft.value.project && milestone.status === 'open'));
 const titleInput = ref<HTMLInputElement | null>(null);
 const saving = ref(false);
 
 function openNew(): void {
   const project = state.value.filters.project;
-  draft.value = { title: '', project: project.startsWith('p:') ? project.slice(2) : '', assignee: 'user', priority: 0, due: '' };
+  draft.value = { title: '', project: project.startsWith('p:') ? project.slice(2) : '', assignee: 'user', priority: 0, due: '', milestone: '' };
   adding.value = true;
   void nextTick(() => titleInput.value?.focus());
 }
@@ -206,8 +328,9 @@ async function saveNew(): Promise<void> {
   saving.value = true;
   problem.value = null;
   try {
-    const { project, assignee, priority, due } = draft.value;
-    const id = await createCard({ title, ...(project === '' ? {} : { project }), assignee, ...(priority === 0 ? {} : { priority }), ...(due === '' ? {} : { due }) });
+    const { project, assignee, priority, due, milestone } = draft.value;
+    const inMilestone = project !== '' && milestone !== '' && draftMilestones.value.some((item) => item.id === milestone);
+    const id = await createCard({ title, ...(project === '' ? {} : { project }), assignee, ...(priority === 0 ? {} : { priority }), ...(due === '' ? {} : { due }), ...(inMilestone ? { milestone } : {}) });
     adding.value = false;
     await refresh();
     selectedId.value = id;
@@ -230,7 +353,8 @@ async function openCard(id: string): Promise<void> {
 
 // Drag and drop (HTML5, no library). The detail offers the same moves as buttons.
 const dragging = ref<Card | null>(null);
-const over = ref<WallColumnId | null>(null);
+/** The column under the card, `<band>:<column>`. */
+const over = ref<string | null>(null);
 
 function onDragStart(event: DragEvent, card: Card): void {
   dragging.value = card;
@@ -243,32 +367,47 @@ function onDragEnd(): void {
   over.value = null;
 }
 
-function onDragOver(event: DragEvent, column: WallColumn): void {
-  if (dragging.value === null || column.drop === null) return;
+/** Into another band, the card changes milestone (D-313); into another column, it moves as always. */
+function bandChange(card: Card, band: Band): ReturnType<typeof bandDrop> {
+  return banded.value ? bandDrop(card, band) : { kind: 'same' };
+}
+
+function onDragOver(event: DragEvent, column: WallColumn, band: Band): void {
+  const card = dragging.value;
+  if (card === null || (column.drop === null && bandChange(card, band).kind === 'same')) return;
   event.preventDefault();
   if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'move';
-  over.value = column.id;
+  over.value = `${band.id}:${column.id}`;
 }
 
-function onDragLeave(event: DragEvent, column: WallColumn): void {
+function onDragLeave(event: DragEvent, column: WallColumn, band: Band): void {
   const into = event.relatedTarget;
-  if (over.value === column.id && !(into instanceof Node && (event.currentTarget as HTMLElement).contains(into))) over.value = null;
+  if (over.value === `${band.id}:${column.id}` && !(into instanceof Node && (event.currentTarget as HTMLElement).contains(into))) over.value = null;
 }
 
-async function onDrop(event: DragEvent, column: WallColumn): Promise<void> {
+async function onDrop(event: DragEvent, column: WallColumn, band: Band): Promise<void> {
   event.preventDefault();
   const card = dragging.value;
   onDragEnd();
   if (card === null) return;
+  const change = bandChange(card, band);
+  if (change.kind === 'refuse') {
+    problem.value = change.message;
+    return;
+  }
   const action = dropAction(card, column);
-  if (action.kind === 'none' || action.kind === 'noop') return;
-  if (action.kind === 'refuse') {
+  if (action.kind === 'refuse' && change.kind === 'same') {
     problem.value = action.message;
     return;
   }
+  if ((action.kind === 'none' || action.kind === 'noop' || action.kind === 'refuse') && change.kind === 'same') return;
   problem.value = null;
   try {
-    if (action.kind === 'commitment-done') await markCommitmentDone(card.id);
+    if (change.kind === 'change') await updateCard(card.id, { milestone: change.milestone });
+    if (action.kind === 'none' || action.kind === 'noop') {
+      // Only the band changed.
+    } else if (action.kind === 'refuse') problem.value = action.message;
+    else if (action.kind === 'commitment-done') await markCommitmentDone(card.id);
     else if (action.kind === 'run' || action.kind === 'stop') {
       if ((await cardAction(card.id, action.kind)).left) problem.value = NOT_STOPPED_TEXT;
     }
@@ -381,6 +520,7 @@ function chooseSort(value: string): void {
     <!-- Toolbar: new card, view, filters, order, columns. -->
     <div class="flex flex-wrap items-center gap-2">
       <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :aria-expanded="adding" @click="adding ? (adding = false) : openNew()"><Icon name="new" :size="14" />Card</button>
+      <button v-if="banded" type="button" class="btn px-3 py-1.5 text-[14px]" :aria-expanded="editingMilestone !== null && editingMilestone.id === null" @click="editingMilestone !== null ? (editingMilestone = null) : openMilestone(null)"><Icon name="new" :size="14" />Milestone</button>
       <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Vista">
         <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px] touch:min-h-11" :class="state.view === 'board' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'board'" @click="state.view = 'board'">
           <Icon name="cardwall" :size="14" />Bacheca
@@ -470,6 +610,12 @@ function chooseSort(value: string): void {
           <option v-for="name in wall?.projects ?? []" :key="name" :value="name">{{ name }}</option>
         </select></label
       >
+      <label v-if="draftMilestones.length > 0" class="flex flex-1 flex-col gap-1 text-[13px] text-muted"
+        >Milestone<select v-model="draft.milestone" class="field px-2 py-1.5 text-[14px] text-ink">
+          <option value="">Nessuna</option>
+          <option v-for="milestone in draftMilestones" :key="milestone.id" :value="milestone.id">{{ milestone.title }}</option>
+        </select></label
+      >
       <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted"
         >Chi la fa<select v-model="draft.assignee" class="field px-2 py-1.5 text-[14px] text-ink">
           <option value="user">Tu</option>
@@ -485,6 +631,32 @@ function chooseSort(value: string): void {
       <div class="flex gap-1.5">
         <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="saving || draft.title.trim() === ''">Aggiungi</button>
         <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="adding = false">Annulla</button>
+      </div>
+    </form>
+
+    <!-- A milestone of the chosen project (D-313): new or changed. -->
+    <form
+      v-if="editingMilestone !== null && project !== null"
+      class="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3"
+      :aria-label="editingMilestone.id === null ? 'Nuova milestone' : 'Modifica la milestone'"
+      @submit.prevent="saveMilestone"
+      @keydown.esc.prevent="editingMilestone = null"
+    >
+      <label class="flex min-w-[220px] flex-[2] flex-col gap-1 text-[13px] text-muted"
+        >Milestone di {{ project }}<input ref="milestoneTitle" v-model="editingMilestone.title" maxlength="200" class="field px-2.5 py-1.5 text-[14.5px] text-ink" placeholder="Per esempio: Accessi" required
+      /></label>
+      <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted">Scadenza<input v-model="editingMilestone.due" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+      <label class="flex w-full flex-col gap-1 text-[13px] text-muted"
+        >Fatta quando (facoltativo)<textarea v-model="editingMilestone.description" maxlength="2000" rows="2" class="field px-2.5 py-1.5 text-[14px] text-ink" placeholder="Che cosa vuol dire che è fatta"
+      /></label>
+      <fieldset v-if="blockerOptions.length > 0" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px]">
+        <legend class="mb-1 text-[13px] text-muted">Bloccata da</legend>
+        <label v-for="other in blockerOptions" :key="other.id" class="flex items-center gap-1.5"><input v-model="editingMilestone.blockedBy" type="checkbox" :value="other.id" class="accent-[var(--accent)]" />{{ other.title }}</label>
+      </fieldset>
+      <p class="w-full text-[12.5px] text-muted">Titolo e descrizione restano su questo Mac (Privato): non vanno a nessun modello nel cloud.</p>
+      <div class="flex gap-1.5">
+        <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="saving || editingMilestone.title.trim() === ''">{{ editingMilestone.id === null ? 'Aggiungi' : 'Salva' }}</button>
+        <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="editingMilestone = null">Annulla</button>
       </div>
     </form>
 
@@ -513,60 +685,124 @@ function chooseSort(value: string): void {
       </button>
     </div>
 
-    <!-- Board: side by side from md, scrolling sideways inside the page; one column at a time on a phone. -->
-    <div v-if="wall !== null && state.view === 'board' && columns.length > 0" class="flex flex-col gap-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-x-auto md:pb-1" @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
+    <!-- Board: side by side from md, scrolling sideways inside the page; one column at a time on a phone.
+         Chosen a project, one band per milestone in order, then «Senza milestone» (D-313); each band folds. -->
+    <div
+      v-if="wall !== null && state.view === 'board' && columns.length > 0"
+      class="flex flex-col gap-3 md:min-h-0 md:flex-1"
+      :class="banded ? 'md:overflow-y-auto md:pb-1' : ''"
+      @touchstart.passive="onSwipeStart"
+      @touchend="onSwipeEnd"
+    >
       <section
-        v-for="column in columns"
-        :key="column.id"
-        class="flex flex-col rounded-xl border bg-surface transition-colors md:min-h-0 md:w-[272px] md:shrink-0"
-        :class="[over === column.id ? 'border-accent bg-accent/5' : 'border-line', { 'max-md:hidden': column.id !== shownColumn }]"
-        :aria-label="column.title"
-        @dragover="onDragOver($event, column)"
-        @dragleave="onDragLeave($event, column)"
-        @drop="onDrop($event, column)"
+        v-for="(band, bandIndex) in bands"
+        :key="band.id"
+        class="flex flex-col gap-2"
+        :class="banded ? 'rounded-xl border border-line bg-surface-2/40 p-2' : 'md:min-h-0 md:flex-1'"
+        :aria-label="banded ? (band.milestone?.title ?? NO_MILESTONE_TITLE) : undefined"
       >
-        <header class="flex items-center gap-2 border-b border-line px-3 py-2 max-md:hidden">
-          <h2 class="flex-1 text-[14.5px] font-semibold" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</h2>
-          <span class="text-[13px] text-muted tabular-nums">{{ groups.get(column.id)?.length ?? 0 }}</span>
+        <header v-if="banded" class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1">
+          <button type="button" class="flex min-w-0 items-center gap-1.5 text-left touch:min-h-11" :aria-expanded="!folded(band)" @click="fold(band)">
+            <Icon name="expand" :size="14" class="shrink-0 text-muted transition-transform" :class="{ 'rotate-90': !folded(band) }" />
+            <h2 class="truncate text-[15px] font-semibold" :class="{ 'text-muted': band.milestone === null || band.milestone.status === 'closed' }">{{ band.milestone?.title ?? NO_MILESTONE_TITLE }}</h2>
+          </button>
+          <template v-if="band.milestone !== null">
+            <LabelBadge :label="band.milestone.label" dot />
+            <span v-if="band.milestone.status === 'closed'" class="chip text-muted">Chiusa</span>
+            <span v-if="milestoneDueText(band.milestone, today) !== undefined" class="chip inline-flex items-center gap-1" :class="band.milestone.late ? 'text-danger' : 'text-muted'" title="Scadenza"
+              ><Icon name="calendar" :size="11" />{{ milestoneDueText(band.milestone, today) }}</span
+            >
+            <span class="inline-flex items-center gap-1.5 text-[13px] text-muted">
+              <span class="h-1.5 w-16 overflow-hidden rounded-full bg-line" role="progressbar" :aria-valuenow="progressValue(band.milestone)" aria-valuemin="0" aria-valuemax="100" :aria-label="progressText(band.milestone)">
+                <span class="block h-full rounded-full bg-accent" :style="{ width: `${String(progressValue(band.milestone))}%` }" />
+              </span>
+              {{ progressText(band.milestone) }}
+            </span>
+            <span v-if="milestoneBlockedText(band.milestone) !== undefined" class="truncate text-[13px] text-warn">{{ milestoneBlockedText(band.milestone) }}</span>
+            <span class="ml-auto flex items-center gap-0.5">
+              <button type="button" class="grid size-7 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-40 touch:size-11" title="Più su" aria-label="Sposta la milestone più su" :disabled="bandIndex === 0" @click="moveBand(band, 'up')">
+                <Icon name="sort-up" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="grid size-7 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-40 touch:size-11"
+                title="Più giù"
+                aria-label="Sposta la milestone più giù"
+                :disabled="bandIndex >= bands.length - 2"
+                @click="moveBand(band, 'down')"
+              >
+                <Icon name="sort-down" :size="14" />
+              </button>
+              <button type="button" class="grid size-7 place-items-center rounded text-muted hover:bg-surface-2 hover:text-ink touch:size-11" title="Modifica" aria-label="Modifica la milestone" @click="openMilestone(band.milestone)">
+                <Icon name="rename" :size="14" />
+              </button>
+              <button v-if="band.milestone.status === 'open'" type="button" class="btn px-2 py-0.5 text-[13px]" @click="closeBand(band, 'close')">Chiudi</button>
+              <button v-else type="button" class="btn px-2 py-0.5 text-[13px]" @click="closeBand(band, 'reopen')">Riapri</button>
+            </span>
+          </template>
+          <span v-else class="text-[13px] text-muted">{{ band.cards.length === 1 ? '1 card' : `${String(band.cards.length)} card` }}</span>
         </header>
-        <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
-          <li v-if="(groups.get(column.id)?.length ?? 0) === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">
-            <template v-if="column.drop === null">Nessuna card</template>
-            <template v-else><span class="touch:hidden">Nessuna card: trascinane una qui</span><span class="hidden touch:inline">Nessuna card: apri una card e usa «Sposta in»</span></template>
-          </li>
-          <li
-            v-for="card in groups.get(column.id) ?? []"
-            :key="`${card.kind}:${card.id}`"
-            draggable="true"
-            class="rounded-lg border border-line bg-surface-2 hover:border-line-strong"
-            :class="[cardClass(card), { 'opacity-50': dragging?.id === card.id }]"
-            @dragstart="onDragStart($event, card)"
-            @dragend="onDragEnd"
+        <p v-if="banded && band.milestone !== null && band.milestone.description !== null && !folded(band)" class="px-1 text-[13.5px] break-words whitespace-pre-line text-muted">Fatta quando: {{ band.milestone.description }}</p>
+        <div v-if="banded && band.milestone !== null && band.milestone.proposal !== null" class="flex flex-wrap items-center gap-2 rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-[14px]" role="group" aria-label="Chiusura della milestone">
+          <span class="flex-1">{{ CLOSE_QUESTION }}</span>
+          <button type="button" class="btn btn-primary px-2.5 py-1 text-[13.5px]" @click="answerClosing(band.milestone, 'approved')">{{ CLOSE_YES }}</button>
+          <button type="button" class="btn px-2.5 py-1 text-[13.5px]" @click="answerClosing(band.milestone, 'rejected')">{{ CLOSE_NO }}</button>
+        </div>
+        <div v-if="!folded(band)" class="flex flex-col gap-3 md:flex-row md:overflow-x-auto md:pb-1" :class="{ 'md:min-h-0 md:flex-1': !banded }">
+          <section
+            v-for="column in columns"
+            :key="column.id"
+            class="flex flex-col rounded-xl border bg-surface transition-colors md:w-[272px] md:shrink-0"
+            :class="[over === `${band.id}:${column.id}` ? 'border-accent bg-accent/5' : 'border-line', { 'max-md:hidden': column.id !== shownColumn, 'md:min-h-0': !banded }]"
+            :aria-label="column.title"
+            @dragover="onDragOver($event, column, band)"
+            @dragleave="onDragLeave($event, column, band)"
+            @drop="onDrop($event, column, band)"
           >
-            <button type="button" class="flex w-full flex-col gap-1.5 px-2.5 py-2 text-left" :aria-label="`Apri: ${card.title}`" @click="selectedId = card.id">
-              <span class="flex items-start gap-2">
-                <span class="min-w-0 flex-1 text-[14.5px] leading-snug break-words" :class="{ 'text-muted line-through': card.kind === 'commitment' && card.status !== 'open' }">{{ card.title }}</span>
-                <LabelBadge :label="card.label" dot />
-              </span>
-              <span class="flex flex-wrap items-center gap-1 text-[12.5px]">
-                <span v-if="priorityText(card.priority) !== undefined" class="chip inline-flex items-center gap-1" :class="PRIORITY_CLASS[card.priority]"><Icon name="priority" :size="11" />{{ priorityText(card.priority) }}</span>
-                <span v-if="card.kind === 'commitment'" class="chip text-accent">Impegno</span>
-                <span v-if="card.column === 'failed'" class="chip text-danger">Fallito</span>
-                <span v-if="complexityBadge(card) !== undefined" class="chip font-semibold text-ink tabular-nums" :title="complexityBadge(card)?.title"><span aria-hidden="true">{{ complexityBadge(card)?.text }}</span><span class="sr-only">{{ complexityBadge(card)?.title }}</span></span>
-                <span class="chip text-muted">{{ card.project ?? 'Generale' }}</span>
-                <span class="chip text-muted">{{ assigneeText(card.assignee, agentName) }}</span>
-                <span v-if="plannedText(card, today) !== undefined" class="chip inline-flex items-center gap-1 text-muted" title="Data esecuzione"><Icon name="calendar" :size="11" />{{ plannedText(card, today) }}</span>
-                <span v-if="dueText(card, today) !== undefined" class="chip" :class="card.late ? 'text-danger' : 'text-muted'" title="Scadenza">{{ dueText(card, today) }}</span>
-              </span>
-              <span v-if="cardMarks(card).length > 0" class="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted">
-                <span v-for="mark in cardMarks(card)" :key="mark.icon" class="inline-flex items-center gap-1" :title="mark.title"><Icon :name="mark.icon" :size="12" />{{ mark.text }}<span class="sr-only">{{ mark.title }}</span></span>
-              </span>
-              <span v-if="blockedText(card) !== undefined" class="truncate text-[13px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
-              <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="reasonText(card.waitingReason) ?? card.waitingReason">{{ reasonText(card.waitingReason) ?? card.waitingReason }}</span>
-              <span v-if="turnText(card) !== undefined" class="truncate text-[13px] text-muted">{{ turnText(card) }}</span>
-            </button>
-          </li>
-        </ul>
+            <header class="flex items-center gap-2 border-b border-line px-3 py-2 max-md:hidden">
+              <component :is="banded ? 'h3' : 'h2'" class="flex-1 text-[14.5px] font-semibold" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</component>
+              <span class="text-[13px] text-muted tabular-nums">{{ cardsIn(band, column.id).length }}</span>
+            </header>
+            <ul class="flex min-h-[64px] flex-col gap-2 p-2" :class="{ 'md:min-h-0 md:flex-1 md:overflow-y-auto': !banded }">
+              <li v-if="cardsIn(band, column.id).length === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">
+                <template v-if="column.drop === null">Nessuna card</template>
+                <template v-else><span class="touch:hidden">Nessuna card: trascinane una qui</span><span class="hidden touch:inline">Nessuna card: apri una card e usa «Sposta in»</span></template>
+              </li>
+              <li
+                v-for="card in cardsIn(band, column.id)"
+                :key="`${card.kind}:${card.id}`"
+                draggable="true"
+                class="rounded-lg border border-line bg-surface-2 hover:border-line-strong"
+                :class="[cardClass(card), { 'opacity-50': dragging?.id === card.id }]"
+                @dragstart="onDragStart($event, card)"
+                @dragend="onDragEnd"
+              >
+                <button type="button" class="flex w-full flex-col gap-1.5 px-2.5 py-2 text-left" :aria-label="`Apri: ${card.title}`" @click="selectedId = card.id">
+                  <span class="flex items-start gap-2">
+                    <span class="min-w-0 flex-1 text-[14.5px] leading-snug break-words" :class="{ 'text-muted line-through': card.kind === 'commitment' && card.status !== 'open' }">{{ card.title }}</span>
+                    <LabelBadge :label="card.label" dot />
+                  </span>
+                  <span class="flex flex-wrap items-center gap-1 text-[12.5px]">
+                    <span v-if="priorityText(card.priority) !== undefined" class="chip inline-flex items-center gap-1" :class="PRIORITY_CLASS[card.priority]"><Icon name="priority" :size="11" />{{ priorityText(card.priority) }}</span>
+                    <span v-if="card.kind === 'commitment'" class="chip text-accent">Impegno</span>
+                    <span v-if="card.column === 'failed'" class="chip text-danger">Fallito</span>
+                    <span v-if="complexityBadge(card) !== undefined" class="chip font-semibold text-ink tabular-nums" :title="complexityBadge(card)?.title"><span aria-hidden="true">{{ complexityBadge(card)?.text }}</span><span class="sr-only">{{ complexityBadge(card)?.title }}</span></span>
+                    <span class="chip text-muted">{{ card.project ?? 'Generale' }}</span>
+                    <span class="chip text-muted">{{ assigneeText(card.assignee, agentName) }}</span>
+                    <span v-if="plannedText(card, today) !== undefined" class="chip inline-flex items-center gap-1 text-muted" title="Data esecuzione"><Icon name="calendar" :size="11" />{{ plannedText(card, today) }}</span>
+                    <span v-if="dueText(card, today) !== undefined" class="chip" :class="card.late ? 'text-danger' : 'text-muted'" title="Scadenza">{{ dueText(card, today) }}</span>
+                  </span>
+                  <span v-if="cardMarks(card).length > 0" class="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted">
+                    <span v-for="mark in cardMarks(card)" :key="mark.icon" class="inline-flex items-center gap-1" :title="mark.title"><Icon :name="mark.icon" :size="12" />{{ mark.text }}<span class="sr-only">{{ mark.title }}</span></span>
+                  </span>
+                  <span v-if="blockedText(card) !== undefined" class="truncate text-[13px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
+                  <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="reasonText(card.waitingReason) ?? card.waitingReason">{{ reasonText(card.waitingReason) ?? card.waitingReason }}</span>
+                  <span v-if="turnText(card) !== undefined" class="truncate text-[13px] text-muted">{{ turnText(card) }}</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
       </section>
     </div>
 
@@ -624,6 +860,7 @@ function chooseSort(value: string): void {
       :cards="wall.cards"
       :projects="wall.projects"
       :agents="wall.agents"
+      :milestones="milestones"
       :today="today"
       :version="version"
       :split-inbox="state.prefs.splitInbox"

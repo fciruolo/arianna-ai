@@ -62,6 +62,7 @@ import {
   STATUS_COLUMN_TEXT,
 } from '../lib/cardwall.ts';
 import { activityText, agentName, reasonText, relativeTimeText } from '../lib/italian.ts';
+import { milestoneChoices, type Milestone } from '../lib/milestones.ts';
 import { CHOICE_TEXT } from '../lib/labels.ts';
 import { listUserAgents } from '../lib/user-agents.ts';
 import { useModal } from '../lib/modal.ts';
@@ -89,6 +90,8 @@ const props = defineProps<{
   cards: Card[];
   projects: string[];
   agents: string[];
+  /** The milestones of the projects (D-313): the card may go in one of its project's. */
+  milestones?: Milestone[];
   today: string;
   version: number;
   splitInbox: boolean;
@@ -116,6 +119,8 @@ const chosen = computed(() => (detail.value?.executor === null || detail.value?.
 const choices = computed(() => dependencyChoices(props.card, props.cards));
 /** Agents the select offers: the registry's, and the card's own when it is no longer there. */
 const agentChoices = computed(() => (props.card.assignee === 'user' || props.agents.includes(props.card.assignee) ? props.agents : [...props.agents, props.card.assignee]));
+/** The open milestones of the card's project, and the one it is in (D-313). */
+const milestoneOptions = computed(() => milestoneChoices(props.card, props.milestones ?? []));
 const projectChoices = computed(() => (props.card.project === null || props.projects.includes(props.card.project) ? props.projects : [...props.projects, props.card.project]));
 const locked = computed(() => assigneeLocked(props.card));
 const lockedText = computed(() => {
@@ -336,6 +341,11 @@ function editGoal(): void {
 function setProject(event: Event): void {
   const value = (event.target as HTMLSelectElement).value;
   void act(() => updateCard(props.card.id, { project: value === '' ? null : value }));
+}
+
+function setMilestone(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value;
+  void act(() => updateCard(props.card.id, { milestone: value === '' ? null : value }));
 }
 
 function setAssignee(event: Event): void {
@@ -652,6 +662,14 @@ function absoluteTime(at: string): string {
             <option value="">Generale</option>
             <option v-for="name in projectChoices" :key="name" :value="name">{{ name }}</option>
           </select>
+
+          <template v-if="card.project !== null && milestoneOptions.length > 0">
+            <label for="card-milestone" class="text-muted">Milestone</label>
+            <select id="card-milestone" class="field px-2 py-1.5 text-[14px]" :value="card.milestone ?? ''" :disabled="busy" @change="setMilestone">
+              <option value="">Nessuna</option>
+              <option v-for="milestone in milestoneOptions" :key="milestone.id" :value="milestone.id">{{ milestone.title }}{{ milestone.status === 'closed' ? ' (chiusa)' : '' }}</option>
+            </select>
+          </template>
 
           <label for="card-assignee" class="text-muted">Chi la fa</label>
           <span class="flex flex-col gap-1">
