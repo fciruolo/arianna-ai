@@ -1,0 +1,26 @@
+# Note tecniche
+
+Cose non ovvie imparate lavorando su un pezzo di codice preciso, spostate da `HANDOFF.md` il 2026-10-24 perché non servono a ogni sessione: si cercano con `grep` quando si tocca quella parte. Quelle che valgono per ogni sessione (hook, worktree, vault, telefono) restano in `HANDOFF.md`.
+
+- **Voce (D-066, D-067):** Kokoro in italiano non spezza i testi lunghi: `models.py` mette una frase per riga; Qwen3-TTS CustomVoice non divide il testo: una generazione per frase (`speak_parts`). Voxtral TTS vuole `mistral-common` ≥ 1.11 (fissato 1.11.7). `pnpm voice:lock` deve passare `--exclude-newer` a mano (con `UV_NO_CONFIG=1` uv ignora `[tool.uv]`). La prova veloce dei modelli di sintesi con i pesi veri, offline: `data/scratch/tts-smoke.py` (fuori da git) con il Python di `data/voice/venv`. Pipecat logga con loguru a DEBUG (anche i testi del TTS): `__main__.py` lo porta a WARNING prima di importarlo. Un test senza browser della chiamata è in `data/test-tmp/call_smoke.py` (client aiortc).
+- **Scheduler delle chiamate:** l'orologio iniettato (`now`) vale solo per le regole (silenzio, fine settimana, ora di una chiamata programmata); attese e conteggi usano l'ora vera come il database. La tabella `events` è solo in aggiunta: nei test non si può retrodatare un evento.
+- Il `"type": "module"` della radice aveva rotto l'hook; `.claude/hooks/package.json` lo tiene in CommonJS. Se l'hook va in errore, oggi Claude Code prosegue senza blocco.
+- `pnpm` applica un'età minima di un giorno alle release: se un pacchetto è troppo recente si sceglie la versione precedente, non si aggiunge un'eccezione.
+- TypeScript resta alla 6.0.x finché `typescript-eslint` non supporta la 7.
+- `pnpm install` attiva l'hook git solo su un'installazione vera, non quando è "Already up to date".
+- postgres.js restituisce una sottoclasse di `Array`: nei confronti con `assert.deepEqual` va convertita in array semplice.
+- In SQL, se la SELECT ha `id::text AS id`, `ORDER BY id` ordina sull'alias testuale: va scritto `ORDER BY tabella.id`.
+- I file di `test-db` girano in parallelo sullo stesso cluster, e la migrazione `0007` cambia cose condivise da tutti gli schemi (il ruolo `arianna_app` e i permessi sull'intero database). Sul Mac Studio, più veloce, `roles.test.ts` falliva sempre: un altro file revocava il TEMP concesso dal test. Ora le migrazioni dei test e i test che toccano ruoli o permessi sull'intero database usano `withClusterLock` (`apps/core/test-db/support/database.ts`).
+- In `zsh` gli script `node -e` con molte virgolette annidate falliscono: meglio modificare i file con gli strumenti di edit.
+- In un vincolo CHECK di PostgreSQL un'espressione che vale NULL (per esempio un campo JSON mancante) fa passare la riga: va avvolta in `coalesce(..., false)`.
+- Con `NODE_USE_ENV_PROXY=1` (o `--use-env-proxy`) e `HTTP_PROXY`, `fetch` e gli agent globali di Node mandano al proxy anche le richieste a 127.0.0.1: verso servizi locali si usa `node:http` con un agent proprio (`packages/executors/src/local/http.ts`).
+- Un processo figlio lanciato da un test eredita `NODE_TEST_CONTEXT` e si comporta come un file di test del runner: va tolto dall'ambiente. Un figlio che usa `fetch` attraverso un proxy può non terminare da solo: `process.exit`.
+- postgres.js serializza come stringa JSON una stringa passata a un parametro `::jsonb` (`'[]'` diventa `"[]"`): per i valori JSON si usa `sql.json(...)`.
+- In un file di `test-db` che avvia servizi nel proprio `before` (finto Telegram, feed), il database va creato con `createTestDatabase` nello stesso hook: con `useTestDatabase` il suo `before` può non essere ancora finito.
+- Il controllo dei tipi di `typescript-eslint` restringe `signal.aborted` a `false` dentro `while (!signal.aborted)`: per ricontrollarlo nel ciclo serve una funzione (`stopped()`).
+- `pnpm doctor` è un comando di pnpm e ha la precedenza sugli script: per questo il nostro si chiama `arianna:doctor`.
+- In una query su `pg_class` il planner può chiamare `has_sequence_privilege` prima del filtro su `relkind` (errore 42809 su una tabella TOAST): va protetto con `CASE`.
+- Per provare un comando interattivo (il wizard) si usa `expect` (`/usr/bin/expect`): `script` con l'input da una pipe manda la fine dell'input prima delle risposte. Il comando con `rm -rf` può essere negato: per le prove si usa una cartella nuova sotto `data/scratch`.
+- `fs.watch` su macOS può perdere le modifiche fatte subito dopo l'avvio: per la configurazione si usa `fs.watchFile`, con un confronto iniziale.
+- Nella cartella del progetto (D-056) `git` lanciato dal Coder dentro la sandbox stampa errori sulla cache di `xcrun` (non può scrivere nella cartella temporanea di sistema): innocui, il comando riesce; il Coder lo ha riferito nel rapporto della prova.
+- Gli strumenti di scrittura possono trasformare gli escape `\uXXXX` in caratteri veri: le espressioni regolari con caratteri invisibili vanno controllate con `od -c`.
