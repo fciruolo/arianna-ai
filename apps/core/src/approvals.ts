@@ -42,10 +42,14 @@ export type ExecutorChoice = (typeof EXECUTOR_CHOICES)[number];
 const CHAT_TASK = `(CASE WHEN approvals.kind IN ('executor', 'plan') THEN (SELECT p.id FROM tasks t JOIN tasks p ON p.id = t.parent_id
   WHERE t.id = approvals.task_id AND t.conversation_id IS NULL AND p.conversation_id IS NOT NULL) END)`;
 
+/** The closing of a milestone (D-313) is asked in the secretary conversation: the chat shows it there. */
+const SECRETARY_ASKS = `(CASE WHEN approvals.kind = 'milestone' THEN (SELECT c.id FROM conversations c WHERE c.secretary AND c.purged_at IS NULL) END)`;
+
 const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, label, state,
   requested_at AS "requestedAt", decided_at AS "decidedAt", decided_via AS "decidedVia",
   coalesce((SELECT t.conversation_id FROM tasks t WHERE t.id = approvals.task_id),
-    (SELECT t.conversation_id FROM tasks t WHERE t.id = ${CHAT_TASK}))::text AS "conversationId",
+    (SELECT t.conversation_id FROM tasks t WHERE t.id = ${CHAT_TASK}),
+    ${SECRETARY_ASKS})::text AS "conversationId",
   coalesce((SELECT c.incognito FROM tasks t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = coalesce(${CHAT_TASK}, approvals.task_id)), false) AS incognito,
   choice, ${CHAT_TASK}::text AS "chatTaskId"`;
 
@@ -87,7 +91,8 @@ export async function listApprovals(sql: Queryable, state: ApprovalState, limit 
     options.conversationId === undefined
       ? ''
       : `AND (task_id IN (SELECT id FROM tasks WHERE conversation_id = $3::uuid)
-          OR (kind IN ('executor', 'plan') AND task_id IN (SELECT t.id FROM tasks t JOIN tasks p ON p.id = t.parent_id WHERE t.conversation_id IS NULL AND p.conversation_id = $3::uuid)))`;
+          OR (kind IN ('executor', 'plan') AND task_id IN (SELECT t.id FROM tasks t JOIN tasks p ON p.id = t.parent_id WHERE t.conversation_id IS NULL AND p.conversation_id = $3::uuid))
+          OR (kind = 'milestone' AND $3::uuid IN (SELECT c.id FROM conversations c WHERE c.secretary AND c.purged_at IS NULL)))`;
   const rows = await sql.unsafe<StoredApproval[]>(
     `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ${where} ORDER BY ${order} LIMIT $2`,
     options.conversationId === undefined ? [state, limit] : [state, limit, options.conversationId],

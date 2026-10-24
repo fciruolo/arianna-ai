@@ -27,6 +27,7 @@ import {
 } from '../lib/plan-approval.ts';
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
+import { CLOSE_NO, CLOSE_YES, MILESTONE_NOTE, milestoneClosing } from '../lib/milestones.ts';
 import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
@@ -199,6 +200,8 @@ const report = computed(() => {
 });
 /** An IM item from a private conversation (D-167, P4b): the exact text and the IM it goes down to. */
 const im = computed(() => (props.approval.kind === 'im' ? imConfirmation(props.approval.detail) : undefined));
+/** The closing of a milestone the core asks for (D-313): its title and project. */
+const milestone = computed(() => milestoneClosing(props.approval));
 const COMMITMENT_NOTE = {
   add: 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
   done: 'Confermando, l’impegno risulta fatto.',
@@ -385,6 +388,10 @@ const remoteOrigin = onRemoteOrigin(window.location);
           >.
         </p>
       </template>
+      <template v-else-if="milestone !== undefined">
+        <p class="text-[15px]">Chiudere la milestone <strong>«{{ milestone.title }}»</strong> di {{ milestone.project }}?</p>
+        <p class="text-[13px] text-muted">{{ MILESTONE_NOTE }}</p>
+      </template>
       <template v-else-if="im !== undefined">
         <p>{{ im.sentence }}</p>
         <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ im.title }}</p>
@@ -426,9 +433,9 @@ const remoteOrigin = onRemoteOrigin(window.location);
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary max-md:flex-1" @click="choose('approved')">
-        <Icon :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ milestone !== undefined ? CLOSE_YES : share !== undefined ? SHARE_YES : proposal !== undefined ? PROPOSE_YES : routine !== undefined ? ROUTINE_YES : send !== undefined ? SEND_YES : saved !== undefined ? PRIVATE_YES : browser !== undefined ? BROWSER_YES : im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ milestone !== undefined ? CLOSE_NO : share !== undefined ? SHARE_NO : proposal !== undefined ? PROPOSE_NO : routine !== undefined ? ROUTINE_NO : send !== undefined ? SEND_NO : saved !== undefined ? PRIVATE_NO : browser !== undefined ? BROWSER_NO : im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
     <!-- From the phone (D-292) every decision asks Face ID: said before the tap (D-293). -->
     <p v-if="remoteOrigin" class="flex items-center gap-1.5 px-[15px] pb-2.5 text-[12.5px] text-muted"><Icon name="face-id" :size="14" />Dal telefono ogni decisione chiede Face ID.</p>

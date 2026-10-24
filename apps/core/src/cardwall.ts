@@ -10,6 +10,7 @@ import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
 import { stopTaskByUser } from './chat-stop.ts';
 import { appendEvent } from './events.ts';
 import { SLUG } from './git-catalog.ts';
+import { cardsChanged, checkCardMilestone } from './milestones.ts';
 import { nextStep } from './runs.ts';
 import { createTask, isHeld, loadTask, moveTask, releaseIfFree, TaskError, type Task } from './tasks.ts';
 import type { TaskStatus } from './task-status.ts';
@@ -62,6 +63,8 @@ export interface Card {
   status: TaskStatus | CommitmentStatus;
   /** The container's name (D-145); null: general. A commitment is always general. */
   project: string | null;
+  /** The milestone of its project it is in (D-313); null: none. A commitment is in none. */
+  milestone: string | null;
   /** 'user' or an agent; a commitment is the user's. */
   assignee: string;
   /** "YYYY-MM-DD", local day: the card's due day or the commitment's day. */
@@ -151,6 +154,7 @@ interface TaskRow {
   title: string;
   status: TaskStatus;
   project: string | null;
+  milestone: string | null;
   assignee: string;
   dueAt: Date | null;
   label: Label;
@@ -195,7 +199,7 @@ interface CommitmentRow {
 export async function listCards(sql: Queryable, today: string = localDay()): Promise<Card[]> {
   const since = addDays(today, -DONE_DAYS);
   const tasks = await sql<TaskRow[]>`
-    SELECT t.id::text, t.title, t.status, t.project, t.assignee, t.due_at AS "dueAt", t.label, t.waiting_reason AS "waitingReason", t.note,
+    SELECT t.id::text, t.title, t.status, t.project, t.milestone_id::text AS milestone, t.assignee, t.due_at AS "dueAt", t.label, t.waiting_reason AS "waitingReason", t.note,
       t.priority, t.planned_on::text AS planned, t.complexity, ${startedSql(sql)} AS started,
       (SELECT j.id::text FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedJob",
       (SELECT j.run_at FROM jobs j WHERE j.key = 'task:' || t.id::text AND j.status = 'queued') AS "queuedAt",
@@ -233,6 +237,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       column: columnOf(task.status, blockedBy.length > 0),
       status: task.status,
       project: task.project,
+      milestone: task.milestone,
       assignee: task.assignee,
       due,
       time: null,
@@ -264,6 +269,7 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
       column: commitmentColumn(item.status),
       status: item.status,
       project: null,
+      milestone: null,
       assignee: 'user',
       due: item.day,
       time: item.time,
@@ -342,6 +348,8 @@ export interface NewCard {
   style?: unknown;
   /** Skills of the catalog, `owner/repo/slug` (D-163); only on a Designer card. */
   skills?: unknown;
+  /** The id of a milestone of the card's project (D-313); only with a project. */
+  milestone?: unknown;
 }
 
 function checkTitle(value: unknown): string {
@@ -488,6 +496,12 @@ export async function createCard(sql: Sql, input: NewCard, names: CardNames): Pr
     if (priority !== 0 || planned !== null) await tx`UPDATE tasks SET priority = ${priority}, planned_on = ${planned}::date WHERE id = ${created.id}`;
     // Names of public text (D-163): the card's label stays what it is.
     if (style !== null || skills.length > 0) await tx`UPDATE tasks SET design_style = ${style}, design_skills = ${skills}::text[] WHERE id = ${created.id}`;
+    // In a milestone of its project (D-313): a card more, so a «No» to its closing no longer holds.
+    const milestone = await checkCardMilestone(tx, input.milestone, project, null);
+    if (milestone !== null) {
+      await tx`UPDATE tasks SET milestone_id = ${milestone} WHERE id = ${created.id}`;
+      await cardsChanged(tx, [milestone]);
+    }
     await appendEvent(tx, { kind: 'card.changed', taskId: created.id, label: 'L0', payload: { created: true } });
     return created;
   });
@@ -758,6 +772,7 @@ export interface CardFields {
   planned?: unknown;
   style?: unknown;
   skills?: unknown;
+  milestone?: unknown;
 }
 
 /**
@@ -790,9 +805,19 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
     const nextStyle = style !== undefined ? style : owner === DESIGNER_AGENT ? kept.style : null;
     const nextSkills = skills ?? (owner === DESIGNER_AGENT ? kept.skills : []);
     checkDesign(owner, style ?? null, skills ?? [], names, kept);
+    // The milestone (D-313): of the card's project; a card that changes project leaves its milestone unless a new one is given.
+    const [{ current } = { current: null }] = await tx<{ current: string | null }[]>`SELECT milestone_id::text AS current FROM tasks WHERE id = ${id}`;
+    const nextProject = project === undefined ? card.project : project;
+    const milestone =
+      'milestone' in fields
+        ? await checkCardMilestone(tx, fields.milestone, nextProject, current)
+        : nextProject !== card.project
+          ? null
+          : current;
     await tx`
       UPDATE tasks SET
-        project = ${project === undefined ? card.project : project},
+        project = ${nextProject},
+        milestone_id = ${milestone},
         assignee = ${assignee ?? card.assignee},
         due_at = ${dueAt === undefined ? card.dueAt : dueAt},
         title = ${title ?? card.title},
@@ -806,6 +831,7 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
         clearance = CASE WHEN ${written} THEN GREATEST(clearance, 'L2'::privacy_label) ELSE clearance END,
         updated_at = now()
       WHERE id = ${id}`;
+    if (milestone !== current) await cardsChanged(tx, [current, milestone]);
     await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { fields: Object.keys(fields) } });
     return (await loadTask(tx, id)) as Task;
   });

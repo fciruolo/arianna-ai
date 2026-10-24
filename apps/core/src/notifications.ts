@@ -37,6 +37,9 @@ export function noticeOf(event: Pick<PublicEvent, 'kind' | 'taskId' | 'payload'>
     if ((payload.agent !== undefined && payload.direct !== true) || payload.callId !== undefined) return undefined;
     // A moment of the secretary (D-149): written by the core, not the end of a task.
     if (typeof payload.reminder === 'string') return { kind: 'reminder', conversationId: payload.conversationId };
+    // A question of the core that waits for a decision (the closing of a milestone, D-313); its answer to a decision just taken is silent.
+    if (typeof payload.approval === 'string') return { kind: 'approval', conversationId: payload.conversationId };
+    if (payload.silent === true) return undefined;
     return { kind: 'reply', conversationId: payload.conversationId };
   }
   if (event.taskId === null) return undefined;
