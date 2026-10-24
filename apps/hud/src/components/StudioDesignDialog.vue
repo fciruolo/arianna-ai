@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
               <button type="button" class="shrink-0 text-[12.5px] text-muted underline hover:text-ink touch:py-2.5" @click="readAll('skill', entry.id, entry.name)">Leggi tutto</button>
             </li>
           </ul>
-          <p v-if="skills.length === 0" class="text-sm text-muted">Nessuna skill nel catalogo: si aggiungono in Impostazioni → Agenti.</p>
+          <p v-if="skills.length === 0" class="text-sm text-muted">Nessuna skill nel catalogo: si aggiungono in Impostazioni → Skill e stili.</p>
           <p v-else-if="shownSkills.length === 0" class="text-sm text-muted">Nessuna skill corrisponde alla ricerca.</p>
         </template>
 

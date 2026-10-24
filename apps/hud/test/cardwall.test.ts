@@ -454,7 +454,7 @@ test('the history in Italian, written by the code', () => {
   assert.equal(turnText({ turn: 2 }), "In coda, 2ª: un'altra card del progetto è al lavoro");
   assert.equal(turnText({ turn: null }), undefined);
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'inbox', to: 'waiting_user', cause: 'user' } }), 'Da «Da fare» a «Aspetta», da te');
-  assert.equal(historyText({ kind: 'task.status', payload: { from: 'running', to: 'to_verify', cause: 'engine' } }), 'Da «In corso» a «Da verificare», dal motore');
+  assert.equal(historyText({ kind: 'task.status', payload: { from: 'running', to: 'to_verify', cause: 'engine' } }), 'Da «In corso» a «Da verificare», da Arianna');
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'waiting_user', to: 'ready', cause: 'approval' } }), 'Da «Aspetta» a «Da fare», con una decisione');
   assert.equal(historyText({ kind: 'task.status', payload: { from: 'ready', to: 'failed', cause: 'purge' } }), 'Da «Da fare» a «Falliti»');
   assert.equal(historyText({ kind: 'task.blocked', payload: {} }), 'In attesa delle card da cui dipende');
@@ -543,6 +543,6 @@ test('the style and skills of a Designer card (D-163): names from the catalog, h
   assert.equal(historyText({ kind: 'card.design-skipped', payload: { agent: 'designer', skills: ['a/b/c', 'a/b/d'] } }), 'Senza 2 skill della card: non più nel catalogo o oltre il limite');
   assert.equal(historyText({ kind: 'card.design-skipped', payload: { agent: 'designer', skills: [] } }), undefined);
   assert.equal(cardErrorText(new ApiError(400, 'the style and the skills are only for a card of the Designer')), 'Stile e skill si scelgono solo su una card del Designer.');
-  assert.equal(cardErrorText(new ApiError(400, 'no such style in the catalog')), 'Questo stile non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.');
+  assert.equal(cardErrorText(new ApiError(400, 'no such style in the catalog')), 'Questo stile non è nel catalogo in uso: aggiornalo in Impostazioni → Skill e stili.');
   assert.equal(cardErrorText(new ApiError(400, 'at most 10 skills on a card')), 'Una card tiene al massimo 10 skill.');
 });

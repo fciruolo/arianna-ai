@@ -57,7 +57,7 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'the message is empty'), 'Il messaggio è vuoto.');
   assert.equal(api(400, 'the message is longer than 16000 characters'), 'Il messaggio supera 16000 caratteri.');
   assert.equal(api(409, 'the approval is already approved'), 'Questa richiesta è già stata decisa.');
-  assert.equal(api(400, 'project is not among the approved projects'), 'Questo progetto non è fra quelli approvati: aggiungilo con pnpm arianna:init --reconfigure.');
+  assert.equal(api(400, 'project is not among the approved projects'), 'Questo progetto non è fra quelli approvati: aggiungilo in Impostazioni → Progetti.');
   assert.equal(api(422, 'a work conversation cannot hold this title (iban)'), 'Il titolo di una conversazione di lavoro non può contenere IBAN.');
   assert.equal(api(400, 'the title must be one line'), 'Il titolo dev’essere su una riga.');
   assert.equal(api(409, 'the conversation is archived: restore it to write'), 'La conversazione è archiviata: ripristinala per scrivere.');

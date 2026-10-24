@@ -90,7 +90,7 @@ export function noticeLines(notice: IncognitoNotice): string[] {
   if (notice.project !== null) lines.push(`I file che il Coder cambia nel progetto ${notice.project} restano.`);
   if (notice.cloud) lines.push('Claude Code non salva la sessione; altri file del suo profilo (cronologie, copie dei file, debug) non sono ancora verificati.');
   if (notice.localCache) lines.push('Il modello locale tiene una cache su disco derivata dai testi (non leggibile come testo), finché non viene sostituita.');
-  lines.push('Copia passa dagli appunti del sistema, che possono conservarne una copia.');
+  lines.push('«Copia» passa dagli appunti del sistema, che possono conservarne una copia.');
   lines.push(AUDIT);
   return lines;
 }
@@ -271,7 +271,7 @@ export function endRetryDelay(status: number, error: string, attempt: number): n
 }
 
 /** Why "/nota" is off in incognito ("Salva in inbox" is not shown there at all): the error of the command. */
-export const NOTE_OFF_TEXT = 'In una conversazione incognita /nota è spento: niente si salva in kb/inbox. Usa "Copia" per tenere un testo.';
+export const NOTE_OFF_TEXT = 'In una conversazione incognita /nota è spento: niente si salva in kb/inbox. Usa «Copia» per tenere un testo.';
 
 /** Why a draft is not sent from an incognito conversation: "/nota" would write in kb/inbox. */
 export function noteRefusal(isNote: boolean, incognito: boolean): string | undefined {

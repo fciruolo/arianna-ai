@@ -313,7 +313,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
         <p class="text-xs text-muted">{{ BROWSER_NOTE }}</p>
       </template>
       <template v-else-if="isDeclassify && text !== undefined">
-        <p>Approvando, questo testo esatto viene declassato e può uscire dalla macchina. Nient'altro.</p>
+        <p>Approvando, l’etichetta di questo testo esatto si abbassa e il testo può uscire dal Mac. Nient’altro.</p>
         <pre class="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{{ text }}</pre>
       </template>
       <template v-else-if="workspace !== undefined">
@@ -327,7 +327,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
       </template>
       <template v-else-if="plan !== undefined && !editing">
         <p>
-          Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei: nascono tutte in Inbox, e partono subito
+          Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei: nascono tutte fra le card da fare (in Inbox, se la tieni a parte), e partono subito
           solo quelle con «Avvia subito».
         </p>
         <p v-if="writtenBy !== undefined" class="text-[13px] text-warn">{{ writtenBy }}.</p>
@@ -340,7 +340,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
               <span class="chip text-[12.5px]">{{ whoText(row.assignee) }}</span>
             </p>
             <p v-if="row.goal !== ''" class="mt-0.5 text-[13.5px] break-words text-muted">{{ row.goal }}</p>
-            <p v-if="row.criteria !== ''" class="mt-0.5 text-[13px] break-words"><span class="text-muted">Fatta quando:</span> {{ row.criteria }}</p>
+            <p v-if="row.criteria !== ''" class="mt-0.5 text-[13px] break-words"><span class="text-muted">Quando è finito:</span> {{ row.criteria }}</p>
             <p v-if="row.blockedBy.length > 0" class="mt-0.5 text-[13px] text-warn">bloccata da: {{ waitsText(row.blockedBy) }}</p>
             <label v-if="row.assignee !== 'user'" class="mt-1 flex w-fit items-center gap-1.5 text-[13px]">
               <input type="checkbox" :checked="row.start" :disabled="busy" @change="setStart(index, ($event.target as HTMLInputElement).checked)" />
@@ -362,7 +362,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
               <button type="button" class="btn px-2 py-1 text-[13px]" :disabled="busy" :aria-label="`Elimina la card ${index + 1}`" @click="dropRow(index + 1)">Elimina</button>
             </div>
             <textarea v-model="row.goal" maxlength="500" rows="2" class="field resize-y px-2 py-1 text-[13.5px]" :aria-label="`Obiettivo della card ${index + 1}`" placeholder="Obiettivo" />
-            <input v-model="row.criteria" maxlength="500" class="field px-2 py-1 text-[13.5px]" :aria-label="`Criterio di completamento della card ${index + 1}`" placeholder="Fatta quando…" />
+            <input v-model="row.criteria" maxlength="500" class="field px-2 py-1 text-[13.5px]" :aria-label="`«Quando è finito» della card ${index + 1}`" placeholder="Quando è finito…" />
             <div class="flex flex-wrap items-center gap-2 text-[13px]">
               <select :value="row.assignee" class="field px-2 py-1 text-[13.5px]" :aria-label="`Chi fa la card ${index + 1}`" @change="setAssignee(index, ($event.target as HTMLSelectElement).value)">
                 <option v-for="name in assignees" :key="name" :value="name">{{ whoText(name) }}</option>

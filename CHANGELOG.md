@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Testi della chat, del cardwall e delle schede di approvazione più chiari: niente «declassato», «motore», «scanner» né «core» mostrati all'utente, i cataloghi di stili e skill rimandano a Impostazioni → Skill e stili e i progetti a Impostazioni → Progetti invece che al comando del terminale, «Quando è finito» uguale fra piano e card, «Copia» fra caporali (revisione dei testi).
+
 ## [0.180.0] - 2026-10-24
 
 ### Aggiunto

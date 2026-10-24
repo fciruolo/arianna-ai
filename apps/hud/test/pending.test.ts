@@ -55,9 +55,9 @@ test('pendingKindText names privacy, budget, folder; an action by its action, el
 
 test('pendingAskText never shows the declassified text', () => {
   const ask = pendingAskText({ kind: 'declassify', action: 'declassify', detail: { from: 'L2', to: 'L1', text: 'segreto di prova' } });
-  assert.equal(ask, 'Far uscire un testo declassato (Privato → Interno) dalla macchina');
+  assert.equal(ask, 'Far uscire dal Mac un testo con l’etichetta abbassata (Privato → Interno)');
   assert.ok(!ask.includes('segreto'));
-  assert.equal(pendingAskText({ kind: 'declassify', action: 'declassify', detail: {} }), 'Far uscire un testo declassato dalla macchina');
+  assert.equal(pendingAskText({ kind: 'declassify', action: 'declassify', detail: {} }), 'Far uscire dal Mac un testo con l’etichetta abbassata');
 });
 
 test('pendingAskText names repo, model and executor when the detail has them', () => {
@@ -293,7 +293,7 @@ test('routerReasonText translates every wait of the router', () => {
 test('routerReasonText adds the notes it knows and leaves out the others', () => {
   assert.equal(
     routerReasonText(`${HEAD}; context not issued by the policy, read as L2; cloud excluded: privacy; local/qwen-large`),
-    'qwen-large su modello locale (contesto non etichettato dalla policy, trattato come Privato; cloud escluso per privacy)',
+    'qwen-large su modello locale (contesto senza un’etichetta data dal gateway, trattato come Privato; cloud escluso per privacy)',
   );
   assert.equal(
     routerReasonText(`${HEAD}; preferred opus excluded: privacy; preferred fable not installed; something new; claude/sonnet`),

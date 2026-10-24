@@ -14,15 +14,15 @@ export const LABEL_TEXT: Record<Label, string> = {
   L3: 'Segreto',
 };
 
-/** The colour of each label (tokens --l0 … --l3). */
 /** One line per label for a select: how protected it is, from the least to the most. */
 export const LABEL_OPTION: Record<Label, string> = {
   L0: 'Pubblico · la meno protetta, può uscire ovunque',
-  L1: 'Interno · va a Claude e Codex, dal gateway',
+  L1: 'Interno · può andare a Claude e Codex, passando dal gateway',
   L2: 'Privato · resta su questo computer',
   L3: 'Segreto · la più protetta, nessun modello la legge',
 };
 
+/** The colour of each label (tokens --l0 … --l3). */
 export const LABEL_CLASS: Record<Label, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 /** The legend: what each label means, an example, and where it may go. */
