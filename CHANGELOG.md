@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.180.0] - 2026-10-24
+
 ### Aggiunto
 
 - Arianna legge le cartelle del Mac, solo lettura, nelle chat Private e con il modello locale: elenca, dà informazioni, legge file di testo e cerca per nome; una cartella non ancora permessa chiede con una scheda a tre scelte («Solo questa volta», «Per tutta questa conversazione», «Sempre»), con la frase scritta dal codice e il comando equivalente; la lista permanente in Impostazioni → Cartelle del Mac; tutto ciò che legge è Privato e non esce mai dal Mac; in incognito non guarda (D-314).
