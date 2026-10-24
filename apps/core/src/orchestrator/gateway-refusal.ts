@@ -48,9 +48,9 @@ function why(reason: string): string {
   if (reason.startsWith('scanner matched: ')) return `c’è un dato riservato (un IBAN, un codice fiscale, un numero di carta, una chiave o un token). ${WHERE}`;
   if (reason.startsWith('payload contains the value of ')) return `c’è il valore di un segreto del vault. ${WHERE}`;
   if (reason.startsWith('finance data') || reason.startsWith('the session has read finance data')) return 'i dati di Finanze non escono mai da questo computer.';
-  if (reason.startsWith('L3 never leaves')) return 'contiene dati Segreti, che non escono mai dal vault.';
+  if (reason.startsWith('L3 never leaves')) return 'contiene dati segreti, che non escono mai dal vault.';
   if (reason.startsWith('the session has read ') || /cannot go to a cloud target/.test(reason)) {
-    return 'questa conversazione ha letto dati Privati, che restano su questo computer. Per lavorare con il cloud apri «Nuova conversazione» → «Lavoro».';
+    return 'questa conversazione ha letto dati privati, che restano su questo computer. Per lavorare con il cloud apri «Nuova conversazione» → «Lavoro».';
   }
   return 'il gateway l’ha fermato.';
 }

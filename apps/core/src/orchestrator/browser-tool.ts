@@ -102,7 +102,7 @@ const ACTION_OF: Record<BrowserToolId, BrowserAction['kind']> = {
 /** What the chat line says of each action, in Italian. */
 const VERB: Record<BrowserAction['kind'], string> = { open: 'apre', read: 'legge', click: 'clic', type: 'scrive', scroll: 'scorre', close: 'chiude' };
 
-export const NOT_HERE = 'In questa conversazione non uso il browser: ha letto dati Privati o di Finanze.';
+export const NOT_HERE = 'In questa conversazione non uso il browser: ha letto dati privati o di Finanze.';
 export const TASK_LIMIT = `Ho già fatto ${String(MAX_ACTIONS_PER_TASK)} azioni nel browser per questa risposta: rispondi con quello che hai.`;
 
 /** Fixed texts of the failures, Italian: the chat shows them, the model reads them. */
@@ -111,7 +111,7 @@ export const FAILURE_TEXT: Record<Exclude<ActionResult, { ok: true }>['reason'],
   paused: 'Il browser lo sta usando l’utente: nessuna azione nel browser finché non te lo restituisce. Rispondi con quello che hai.',
   reread: 'L’utente ha usato il browser e te l’ha restituito: rileggi la pagina con browser.read prima di ogni altra azione.',
   authenticated:
-    'Nel browser c’è un accesso fatto dall’utente: le sue pagine sono Private e in una conversazione di Lavoro non le leggo. Di’ all’utente che può continuare lui dallo schermo del browser, oppure chiudere il browser (browser.close) per ripartire senza accesso.',
+    'Nel browser c’è un accesso fatto dall’utente: le sue pagine sono Private e in una conversazione di lavoro non le leggo. Di’ all’utente che può continuare lui dallo schermo del browser, oppure chiudere il browser (browser.close) per ripartire senza accesso.',
   'not-installed': 'Il browser non è installato su questo Mac.',
   'start-failed': 'Il browser non è partito: riprova fra poco.',
   'not-open': 'Il browser non è aperto: aprilo prima con browser.open.',
