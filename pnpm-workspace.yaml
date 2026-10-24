@@ -7,3 +7,5 @@ packages:
 # older version instead.
 savePrefix: ''
 minimumReleaseAge: 1440
+patchedDependencies:
+  postgres@3.4.9: patches/postgres@3.4.9.patch

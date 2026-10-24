@@ -25,6 +25,9 @@ export function searchPath(schema?: string): string {
   return `${schema ?? '"$user", public'}, extensions`;
 }
 
+/** Connections of the pool of `connect`. */
+export const POOL_MAX = 5;
+
 /** Connects as `login`: the owner for migrations and setup, the application role for everything else. */
 export function connect(config: AriannaConfig, login: DbLogin, options: ConnectOptions = {}): Sql {
   return postgres({
@@ -34,7 +37,7 @@ export function connect(config: AriannaConfig, login: DbLogin, options: ConnectO
     username: login.user,
     // Read at each new connection, so the value is not copied into the options.
     password: () => passwordOf(login),
-    max: 5,
+    max: POOL_MAX,
     onnotice: () => undefined,
     connection: { search_path: searchPath(options.schema) },
   });
