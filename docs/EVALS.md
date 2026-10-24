@@ -9,6 +9,7 @@ L'harness esiste dalla Fase 0. Nessuna modifica a policy, router o esecutori si 
 | `pnpm eval` | Niente modelli, niente rete; secondi | A ogni commit, dentro `pnpm check` | gateway, router |
 | `pnpm eval:models` | Modello locale acceso; minuti | Quando cambia orchestratore, prompt, modello o estrazione | orchestratore, estrazione, retrieval |
 | `pnpm eval:live` | Binari `claude` e `codex` con login; consuma quota | Prima di ogni criterio di uscita e una volta a settimana | contratto degli adattatori, canarino |
+| `pnpm eval:memory [--candidate <id>]` | Con `fake` niente; con le candidate vere (passo (c) di `MEMORIA-CONFRONTO.md`) il modello locale e la candidata in `data/memlab/<id>` | Durante il confronto delle memorie (D-307); fuori da `pnpm check` | confronto delle memorie |
 
 Tenere separati i livelli serve alla velocità: il controllo di ogni commit non deve aspettare un modello da 27B.
 
@@ -69,7 +70,11 @@ Regole del runner:
 - **Niente passaggi a vuoto:** un gruppo attivo senza casi fallisce.
 - **Etichette severe:** i casi con un'etichetta dichiarata severa per il gruppo (per esempio `privacy` nel router) devono passare tutti, qualunque sia la soglia.
 - **Un valutatore che va in errore** fa fallire il caso, non la corsa.
-- Una cartella sotto `evals/` senza un gruppo registrato fa fallire i test.
+- Una cartella sotto `evals/` senza un gruppo registrato fa fallire i test; l'unica eccezione è `evals/memory`, che ha un formato e un comando suoi (sotto).
+
+### Il confronto delle memorie (D-307)
+
+`evals/memory/` ha due file, non il formato `{ id, input, expect, tags }`: `world.jsonl` (episodi inventati con data, etichetta, conversazione e `incognito`, più righe `forget` che eliminano una conversazione) e `questions.jsonl` (domanda, `asOf`, `clearance`, `reference` ed `expect` con `any`, `all`, `none`, `abstain`). Il protocollo è in `MEMORIA-CONFRONTO.md` §3. `pnpm eval:memory [--candidate <id>]` (oggi solo l'adattatore finto `fake`) fa entrare gli episodi in ordine, poi fa le domande; ogni episodio L2, L3, incognito o poi cancellato ha i suoi `canaries`, stringhe uniche del suo testo; le domande hanno clearance L1 o L2 (gli episodi L1 non hanno canarini, quindi una lettura L0 non sarebbe protetta). I controlli di privacy (incognita e L3 rifiutate, cancellazione, etichetta di ogni ricordo mai sotto le sue fonti né sotto i canarini del suo testo, nessun ricordo sopra la clearance, stringhe di `none` e canarini sopra la clearance né nella risposta né nei ricordi consegnati, su ogni domanda) hanno soglia 100% e decidono l'uscita; l'esattezza (parole attese, poi il giudice: scelto Claude via gateway solo per la prova, da collegare al passo (c); oggi «nessun giudice», la risposta resta dubbia; una risposta con una fuga è sbagliata e non va al giudice) non ha ancora soglia. Rapporto in `data/evals/report-memory-<id>.json`, senza testo. Non è dentro `pnpm eval`: formato e controlli li provano i test di `packages/evals/test/memory.test.ts`.
 
 ### Il gruppo gateway
 

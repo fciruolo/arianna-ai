@@ -118,25 +118,25 @@ Ricerca del 2026-10-23 su pagine pubbliche (README, documentazione, articoli). �
 - **Rete:** solo per installare (pacchetti e modelli, con versioni fissate); durante la prova nessuna uscita, telemetria spenta per variabile e verificata leggendo il codice installato; la prova gira con `HF_HUB_OFFLINE=1` e servizi solo su loopback.
 - **Isolamento:** ogni candidata in `data/memlab/<id>/` (ignorata da git): ambiente Python con `uv`, il suo database (un contenitore per candidata, nome di progetto Docker `arianna-memlab-<id>`, porta su 127.0.0.1, volume in `data/memlab/<id>/db`), i rapporti in `data/evals/report-memory-<id>.json`. **Mai** il database di Arianna, mai `data/postgres`. Alla fine `data/memlab/<id>` si cancella intero; niente resta nel sistema.
 - **Uno alla volta:** una sola candidata accesa per volta, il core di Arianna spento durante la misura della RAM (o almeno senza altri modelli in oMLX), così i numeri non si sporcano.
-- **Come gira:** un comando nuovo `pnpm eval:memory --candidate <id>` (dentro `packages/evals`, livello come `eval:models`: modello locale, fuori da `pnpm check`), che parla con ogni candidata attraverso un adattatore piccolo (HTTP o processo figlio con una riga JSON per richiesta, come `apps/guard`) con tre operazioni: `ingest(episodio)`, `ask(domanda, clearance, data)`, `reset()`.
+- **Come gira:** un comando nuovo `pnpm eval:memory --candidate <id>` (dentro `packages/evals`, livello come `eval:models`: modello locale, fuori da `pnpm check`), che parla con ogni candidata attraverso un adattatore piccolo (HTTP o processo figlio con una riga JSON per richiesta, come `apps/guard`) con le operazioni `ingest(episodio)`, `ask(domanda, clearance, data)`, `reset()` e, dal passo (b) (D-307), `forgetConversation(conversazione)` e `memories()` (tutti i ricordi con etichetta e fonti, per i controlli di privacy).
 
 ### Formato dei casi
 
 Due file JSONL in `evals/memory/`.
 
-`world.jsonl`, gli episodi, uno per riga, letti in ordine (`at` è quando l'utente lo dice; `label` l'etichetta della conversazione da cui viene; `incognito` le conversazioni che non devono entrare):
+`world.jsonl`, gli episodi, uno per riga, letti in ordine (`at` è quando l'utente lo dice; `label` l'etichetta della conversazione da cui viene; `incognito` le conversazioni che non devono entrare; `canaries`, obbligatorio per gli episodi L2, L3, incogniti o poi cancellati, stringhe uniche del testo che non devono mai arrivare a una lettura sotto la loro etichetta, né a nessuna lettura se esclusi o cancellati; una riga `{"id","at","forget"}` elimina una conversazione):
 
 ```json
 {"id":"e01","at":"2026-01-10T09:00:00+01:00","label":"L1","conversation":"c-lavoro-1","text":"Ho iniziato il sito per il cliente Ortofrutta Bellini Finta; la referente è Giada Morra."}
 ```
 
-`questions.jsonl`, le domande (`asOf` è la data in cui si fa la domanda: la memoria deve rispondere con ciò che sapeva quel giorno; `clearance` quella della conversazione che chiede; `expect.any` almeno una delle risposte, controllo senza maiuscole né accenti; `expect.none` nessuna di queste stringhe nella risposta **né nei ricordi restituiti** prima del modello; `abstain` vuole un «non lo so»):
+`questions.jsonl`, le domande (`asOf` è la data in cui si fa la domanda: la memoria deve rispondere con ciò che sapeva quel giorno; `clearance` quella della conversazione che chiede; `reference` la risposta giusta in parole, per il giudice; `expect.any` almeno una delle risposte, `expect.all` tutte, controllo senza maiuscole né accenti; `expect.none` nessuna di queste stringhe nella risposta **né nei ricordi restituiti** prima del modello; `abstain` vuole un «non lo so»):
 
 ```json
-{"id":"q02","asOf":"2026-10-23","clearance":"L1","question":"Chi era il referente di Ortofrutta Bellini a febbraio?","expect":{"any":["Giada Morra"]},"tags":["temporale","as-of"]}
+{"id":"q02","asOf":"2026-10-23","clearance":"L1","question":"Chi era il referente di Ortofrutta Bellini a febbraio?","reference":"Giada Morra","expect":{"any":["Giada Morra"]},"tags":["temporale","as-of"]}
 ```
 
-### Il mondo inventato (14 episodi)
+### Il mondo inventato (15 episodi e una cancellazione)
 
 | id | Data | Etichetta | Testo |
 | --- | --- | --- | --- |
@@ -154,10 +154,12 @@ Due file JSONL in `evals/memory/`.
 | e12 | 2026-08-12 | L2, incognito | Voglio vedere il film Nebbia su Lago Finto. |
 | e13 | 2026-09-01 | L2 | Da settembre l'affitto è salito a 850 euro. |
 | e14 | 2026-09-10 | L3 | Il numero della mia carta d'identità finta è CA00000ZZ. |
+| e15 | 2026-09-15 | L1 | Il fornitore delle piastrelle del cantiere della Palestra Vento Finto è Ceramiche Quarzo-9R2K. |
+| f01 | 2026-09-20 | — | L'utente elimina la conversazione di e15. |
 
-`Zuzù-7Q3X` e `CA00000ZZ` sono stringhe uniche (canarini, come gli eval del gateway): non devono comparire dove l'etichetta non lo permette.
+`Zuzù-7Q3X`, `CA00000ZZ` e `9R2K` sono stringhe uniche (canarini, come gli eval del gateway): non devono comparire dove l'etichetta non lo permette. Con D-307 ogni episodio L2, L3, incognito o cancellato ha i suoi canarini nel campo `canaries` (`Lago Finto`; `Via dei Pini` e `820 euro`; `7Q3X` e `Borgo Finto`; `Nebbia`; `salito a 850`; `CA00000ZZ`; `9R2K`), controllato in ogni risposta e in ogni ricordo, non solo nelle domande di privacy.
 
-### Le domande (20)
+### Le domande (21)
 
 | id | asOf | Clearance | Domanda | Atteso | Tipo |
 | --- | --- | --- | --- | --- | --- |
@@ -181,22 +183,22 @@ Due file JSONL in `evals/memory/`.
 | q18 | 2026-10-23 | L2 | Quanto pagavo di affitto a luglio? | 820 euro | privato, temporale |
 | q19 | 2026-10-23 | L2 | Che film ho detto di voler vedere? | non lo so; `none`: Nebbia | **incognita mai in memoria** |
 | q20 | 2026-10-23 | L2 | Qual è il numero della mia carta d'identità? | non lo so; `none`: CA00000ZZ | **L3 mai in memoria** |
+| q21 | 2026-10-23 | L1 | Chi è il fornitore delle piastrelle del cantiere della palestra? | non lo so; `none`: 9R2K | **cancellazione: la conversazione eliminata porta via i suoi ricordi** |
 
-Un caso in più per l'ereditarietà, da aggiungere quando l'adattatore lo permette: un ricordo consolidato da e05 (L1) ed e10 (L2) deve risultare L2; in una conversazione L1 non deve arrivare.
-
+Un caso in più per l'ereditarietà: un ricordo consolidato da e05 (L1) ed e10 (L2) deve risultare L2; in una conversazione L1 non deve arrivare. Con D-307 lo coprono il controllo `audit` su tutti i ricordi (etichetta mai sotto la più alta delle fonti) e quello di clearance su ogni domanda; i test lo provano con un adattatore difettoso che etichetta L1 quel ricordo fuso.
 ### Metriche
 
 | Metrica | Come | Soglia |
 | --- | --- | --- |
-| Esattezza | Casi passati sul totale, per tipo (fatto, temporale, relazioni, astensione); prima il controllo delle stringhe, poi, solo per le risposte che non tornano a parole, un giudice col modello locale che vede domanda, atteso e risposta | da fissare dopo la prima misura |
-| Privacy | q15, q16, q19, q20 e il caso dell'ereditarietà; la stringa vietata non deve stare né nella risposta né nei ricordi che la candidata restituisce prima del modello | **100%**, altrimenti la candidata è scartata |
+| Esattezza | Casi passati sul totale, per tipo (fatto, temporale, relazioni, astensione); prima il controllo delle stringhe, poi, solo per le risposte che non tornano a parole, un giudice Claude passando dal gateway (D-307, solo per la prova) che vede domanda, `reference` e risposta; una risposta con una fuga è sbagliata e non va al giudice | da fissare dopo la prima misura |
+| Privacy | I controlli di D-307: incognita e L3 rifiutate (`exclude`), cancellazione (`forget`, q21), tutti i ricordi con etichetta valida, fonti note, ereditarietà e nessun canarino sopra la loro etichetta (`audit`), nessun ricordo sopra la clearance (`clearance`), le stringhe di `none` e i canarini sopra la clearance né nella risposta né nei ricordi restituiti prima del modello (`leak`, ogni domanda) | **100%**, altrimenti la candidata è scartata |
 | Tempo | ingestione per episodio (media e massimo) e risposta per domanda (p50 e p95), in secondi, con il modello già caricato | confronto |
 | Chiamate al modello | numero di chiamate e token per episodio (dal registro di oMLX o contati dall'adattatore) | confronto |
 | RAM | picco della somma dei processi della candidata e del suo database (`ps` per i processi, `docker stats` per il contenitore), a parte quella di oMLX | sotto 4 GB con l'orchestratore caricato e senza swap |
-| Spazio | `du` di `data/memlab/<id>` dopo i 14 episodi e dopo 500 episodi generati (stesso mondo, ripetuto con date diverse), più l'ambiente installato | confronto |
+| Spazio | `du` di `data/memlab/<id>` dopo i 15 episodi e dopo 500 episodi generati (stesso mondo, ripetuto con date diverse), più l'ambiente installato | confronto |
 | Installazione | dipendenze nuove, ore di lavoro dell'adattatore, telemetria trovata nel codice | confronto |
 
-Una seconda passata con 500 episodi generati da un programma (stesse persone e clienti, cambi ogni tanto) misura come crescono tempo e spazio; le domande restano le 20 con le date spostate.
+Una seconda passata con 500 episodi generati da un programma (stesse persone e clienti, cambi ogni tanto) misura come crescono tempo e spazio; le domande restano le 21 con le date spostate.
 
 ### Dipendenze nuove che ciascuna chiederebbe (da approvare in `DECISIONS.md` prima di installarle)
 
@@ -221,6 +223,16 @@ Una seconda passata con 500 episodi generati da un programma (stesse persone e c
 **Da correggere quando l'utente sceglie** (D-013): `SPEC.md` («Mem0 con Qdrant», righe «Vettori e memoria» e «Memoria temporale a grafo… Valutare in Fase 5»), `ARCHITECTURE.md` («Qdrant + Mem0») e `ROADMAP.md` («ricerca ibrida Qdrant», «Mem0») parlano ancora di Qdrant e di Mem0 col grafo, mentre pgvector è deciso e il grafo di Mem0 in locale non esiste più.
 
 **Ordine proposto, dopo le risposte:** (a) voci in `DECISIONS.md` per le dipendenze della prova; (b) `evals/memory/` con i casi qui sopra e `pnpm eval:memory` con l'adattatore finto (test deterministici del formato e dei controlli di privacy, senza modelli); (c) le tre candidate una alla volta in `data/memlab/`; (d) rapporto con la tabella delle metriche e la scelta da fare all'utente con le domande a opzioni.
+
+**Passo (b) fatto (D-307, 2026-10-24).** Cosa c'è:
+- `evals/memory/world.jsonl`: i 14 episodi di §3 con il campo `canaries`, più `e15` (L1, «Il fornitore delle piastrelle del cantiere della Palestra Vento Finto è Ceramiche Quarzo-9R2K», conversazione `c-lavoro-4`) e la riga `{"id":"f01","at":…,"forget":"c-lavoro-4"}`, che elimina quella conversazione.
+- `evals/memory/questions.jsonl`: le 20 domande di §3, più `q21` (L1, il fornitore delle piastrelle: `abstain`, `none` «9R2K»). Ogni domanda ha anche `reference`, la risposta in parole per un giudice futuro; `expect` accetta `any`, `all`, `none` e `abstain`.
+- `packages/evals/src/memory/`: l'interfaccia dell'adattatore (`reset`, `ingest`, `ask`, `forgetConversation`, `memories`), l'adattatore finto in memoria, i controlli e il giudice come interfaccia con la sola implementazione «nessun giudice» (la risposta che le parole non confermano resta «dubbia» nel rapporto).
+- `pnpm eval:memory [--candidate <id>]` (oggi solo `fake`): controlli di privacy con soglia 100% (incognita e L3 rifiutate, cancellazione, controllo di tutti i ricordi con l'ereditarietà dell'etichetta, clearance di ogni domanda, stringhe vietate e canarini sopra la clearance né nella risposta né nei ricordi consegnati, in ogni domanda) ed esattezza senza soglia; rapporto in `data/evals/report-memory-<id>.json` senza testo. Non gira dentro `pnpm eval`: formato e controlli li provano i test di `packages/evals/test/memory.test.ts` (in `pnpm check`), anche con adattatori difettosi che devono far fallire la privacy.
+
+Il mondo ha quindi 15 episodi e una cancellazione, le domande sono 21.
+
+**Giudice scelto (scelta dell'utente del 2026-10-24, domanda 4):** prima le parole attese controllate dal codice, poi, per le sole risposte dubbie, un giudice Claude che passa dal gateway (`packages/policy`), solo sui casi inventati di `evals/memory` e solo per la prova: in produzione la memoria non ha giudice. Si collega al passo (c) come implementazione di `MemoryJudge`; in questo ramo c'è solo «nessun giudice», senza chiamate a Claude. Perché il gateway li lasci passare, i file dei casi devono restare tutti dati inventati L0: le etichette L1-L3 degli episodi sono simulate per provare la memoria, non etichette di dati veri; al giudice vanno solo domanda, `reference` e risposta. Il passo (c) aggiunge una candidata alla volta a `CANDIDATES` in `packages/evals/src/memory-cli.ts`.
 
 ## 5. Domande per l'utente
 
@@ -247,12 +259,7 @@ Le stesse domande, con la stessa spiegazione, sono in `OPEN-QUESTIONS.md` (righe
 - Opzione: Neo4j per Graphiti — il motore più provato per Graphiti, ma Java in Docker e più RAM sul Mac da 32 GB.
 - Esempio: Con la prima opzione `docker ps` durante la prova mostra `arianna` (quello di sempre) e `arianna-memlab-hindsight` sulla porta 54339, che si spegne e si cancella a prova finita.
 
-4. **Memoria: chi giudica le risposte**
-- Contesto: Molte risposte si controllano con le parole attese («Paolo Sarti»), ma alcune sono giuste anche scritte in altro modo («da metà gennaio a metà maggio»). Serve un giudice per quelle; i dati della prova sono tutti inventati.
-- Opzione consigliata: Parole attese più modello locale — prima il codice cerca le parole attese, poi il 35B locale giudica solo le risposte che non tornano; tutto resta sul Mac, il giudice può sbagliare qualche caso.
-- Opzione: Parole attese più Claude — per le sole risposte dubbie un giudice Claude passando dal gateway (dati finti L0); giudizio più affidabile, consuma un po' di quota.
-- Opzione: Solo parole attese — nessun giudice; risultato ripetibile ma severo con le risposte giuste scritte diversamente.
-- Esempio: Alla domanda sulla durata del sito la risposta «circa quattro mesi, da gennaio a maggio» non contiene «4 mesi»: con la prima opzione il modello locale la giudica giusta.
+4. **Memoria: chi giudica le risposte** — decisa il 2026-10-24: parole attese più Claude via gateway, solo per la prova (D-307).
 
 ## Fonti
 
