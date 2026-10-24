@@ -29,6 +29,8 @@ import {
 } from '@arianna/executors';
 import { createContext, createLabelRules, fakePiiCheck, gatewayCheck as gatewayCheckWithPii, markLogged, secretMatcher, type Label, type Target } from '@arianna/policy';
 
+import { guardians, noGuardianLeft } from './support/guardians.ts';
+
 // The second scanner (D-113) finds nothing here: these tests are about the other rules (pii.test.ts has its own).
 const gatewayCheck = (
   payload: Parameters<typeof gatewayCheckWithPii>[0],
@@ -490,11 +492,12 @@ describe('claude executor', () => {
     assert.equal((await failure((await start('hang', { signal: aborted.signal })).run.result)).kind, 'cancelled');
   });
 
-  it('D-302: the pid file of a run lives while the process runs and goes when it ends', async () => {
+  it('D-302, D-304: the pid file and the guardian of a run live while the process runs and go when it ends', async () => {
     const pidDir = join(DATA, `run-pids-${randomUUID()}`);
     const files = () => (existsSync(pidDir) ? readdirSync(pidDir) : []);
     let seen: string[] = [];
     let record: unknown;
+    let guarded: number[] = [];
     let cancel: () => void = () => undefined;
     const { run } = await start(
       'hang',
@@ -502,6 +505,7 @@ describe('claude executor', () => {
         onEvent: (event) => {
           if (event.type !== 'init') return;
           seen = files();
+          guarded = guardians().filter((one) => one.group === Number(/[0-9]+/.exec(seen[0] ?? '')?.[0])).map((one) => one.group);
           record = seen[0] === undefined ? undefined : JSON.parse(readFileSync(join(pidDir, seen[0]), 'utf8'));
           cancel();
         },
@@ -516,9 +520,12 @@ describe('claude executor', () => {
     assert.match(seen[0] ?? '', /^claude-[0-9]+\.pid$/);
     assert.equal((record as { pid: number }).pid, Number(/[0-9]+/.exec(seen[0] ?? '')?.[0]));
     assert.equal(typeof (record as { started: unknown }).started, 'string');
+    assert.deepEqual(guarded, [Number(/[0-9]+/.exec(seen[0] ?? '')?.[0])], 'D-304: one guardian, on the group of the run');
     assert.deepEqual(files(), [], 'a cancelled run removes its file');
+    assert.ok(await noGuardianLeft(), 'D-304: a cancelled run leaves no guardian');
     await (await start('ok', {}, { pidDir })).run.result;
     assert.deepEqual(files(), [], 'a run that ends normally removes its file');
+    assert.ok(await noGuardianLeft(), 'D-304: nor does a run that ends normally');
     assert.throws(() => executor({ pidDir: 'data/run-pids' }), TypeError);
   });
 

@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.173.3] - 2026-10-24
+
+### Corretto
+
+- Se il core muore mentre `claude` o `codex` lavora, anche con `kill -9`, il loro gruppo di processi si ferma entro circa un secondo, senza aspettare il riavvio: il Coder non scrive più file nel progetto mentre il core è spento (D-304).
+
 ## [0.173.2] - 2026-10-24
 
 ### Corretto
@@ -1911,7 +1917,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Le etichette delle cartelle di gestione stanno in `[[project.folder]]` di `arianna.toml` e cambiano solo con i due passi della sezione privacy «Progetti» (I-11, D-145).
 - Quando il contenitore è esso stesso un git, una nota o un file sopra Interno nelle sue cartelle di gestione tiene fuori il Coder finché la tappa P3 non nega i file uno a uno (I-11, D-145).
 - `kb/progetti/` è fuori da git come `kb/inbox/`: le note dei progetti scritte con «+ Conoscenza» non finiscono mai nel repository di Arianna (I-11, D-145).
-
 
 ## [0.33.0] - 2026-10-09
 

@@ -14,7 +14,7 @@ import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 import { nodeToolchain } from '../claude/run.ts';
 import type { StreamFailure } from '../claude/stream.ts';
 import { preparedNotes } from '../notes.ts';
-import { checkRunPidDir, forgetRunPid, recordRunPid } from '../process-group.ts';
+import { checkRunPidDir, forgetRunPid, guardGroup, recordRunPid } from '../process-group.ts';
 import { preparedPath, workspaceContainer } from '../workspace.ts';
 import { codexArgs, codexEnv, userInstructionFiles, type CodexAccess, type CodexModel } from './profile.ts';
 import { codexRefusalOf, CodexStream, type CodexEvent, type CodexUsage } from './stream.ts';
@@ -369,6 +369,8 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
       const child = spawn(file, argv, { cwd: job.cwd, env: codexEnv(options.env ?? process.env), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
       // D-302: a core killed now leaves the group running; the next one stops it from this file.
       const pidFile = options.pidDir === undefined || child.pid === undefined ? undefined : recordRunPid(options.pidDir, CODEX_EXECUTOR, child.pid);
+      // D-304: and a guardian stops the group within a second if the core dies, without waiting for that start.
+      const guard = child.pid === undefined ? undefined : guardGroup(child.pid);
 
       const signalGroup = (signal: NodeJS.Signals) => {
         if (child.pid === undefined) return;
@@ -469,6 +471,8 @@ export function createCodexExecutor(options: CodexExecutorOptions): CodexExecuto
         closed = true;
         forgetRunPid(pidFile);
         if (stopped !== undefined) signalGroup('SIGKILL');
+        // After the stop: the guardian, released, leaves the group alone.
+        guard?.release();
         if (killTimer !== undefined) clearTimeout(killTimer);
         if (pending.length > 0) {
           if (stopped === undefined) line(Buffer.concat(pending));

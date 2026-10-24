@@ -5,8 +5,9 @@
 // group leader go in a file under data/; at the next start a process with the
 // same pid and the same start time is that orphan, and its group is stopped.
 // A process that only reused the pid has another start time and is never
-// touched.
-import { execFileSync } from 'node:child_process';
+// touched. A guardian (D-304) does not wait for that start: it stops the
+// group of a run within about a second of the death of the core.
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
@@ -158,4 +159,64 @@ export async function reapRunOrphans(dir: string, graceMs = 5_000): Promise<{ ex
   });
   const stopped = await Promise.all(files.map(async ({ executor, file }) => ({ executor, pid: await reapOrphan(file, graceMs) })));
   return stopped.flatMap(({ executor, pid }) => (pid === undefined ? [] : [{ executor, pid }]));
+}
+
+/**
+ * D-304: the guardian of a run's group, the system `/bin/sh`. `$1` is the
+ * group. It waits on its stdin, a pipe only the core holds: a line means the
+ * run ended in the core, and it exits; end of file without one means the core
+ * died (even by SIGKILL the kernel closes the pipe), and it stops the group:
+ * SIGTERM, up to about a second for it to exit, SIGKILL.
+ */
+const GUARD_SCRIPT = [
+  'IFS= read -r line && exit 0',
+  'kill -s TERM -- "-$1" 2>/dev/null || exit 0',
+  'i=0',
+  'while [ "$i" -lt 10 ] && kill -s 0 -- "-$1" 2>/dev/null; do sleep 0.1; i=$((i+1)); done',
+  'kill -s KILL -- "-$1" 2>/dev/null',
+  'exit 0',
+].join('\n');
+
+/** `$0` of the guardian, as `ps` shows it. */
+export const GUARD_NAME = 'arianna-run-guard';
+
+export interface GroupGuard {
+  /** The guardian's pid; undefined when it could not start (then only D-302 is left). */
+  readonly pid: number | undefined;
+  /** The run ended in the core: the guardian exits and leaves the group alone. Once is enough. */
+  release(): void;
+}
+
+/**
+ * Starts the guardian of the process group `pgid`, right after the group's
+ * leader is spawned: if this process dies, by any signal, the group is
+ * stopped within about a second, without waiting for the next start. The
+ * guardian sees only the group number: never the brief, the stream or the
+ * environment of the run. Its own group and session: a stop of the run's
+ * group or a Ctrl-C of the core's terminal does not reach it. Never throws.
+ */
+export function guardGroup(pgid: number): GroupGuard {
+  if (!Number.isSafeInteger(pgid) || pgid <= 1) return { pid: undefined, release: () => undefined };
+  try {
+    const guard = spawn('/bin/sh', ['-c', GUARD_SCRIPT, GUARD_NAME, String(pgid)], {
+      cwd: '/',
+      env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+      stdio: ['pipe', 'ignore', 'ignore'],
+      detached: true,
+    });
+    // Left referenced on purpose: it lives exactly as long as the run, whose binary keeps the loop alive anyway.
+    guard.on('error', () => undefined);
+    guard.stdin.on('error', () => undefined);
+    let released = false;
+    return {
+      pid: guard.pid,
+      release: () => {
+        if (released) return;
+        released = true;
+        guard.stdin.end('\n');
+      },
+    };
+  } catch {
+    return { pid: undefined, release: () => undefined };
+  }
 }

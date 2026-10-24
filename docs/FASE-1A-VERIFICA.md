@@ -91,14 +91,14 @@ Con un solo progetto approvato in Impostazioni → Progetti una conversazione Pr
 
 **Cosa lo soddisfa oggi.** Task, run e coda `jobs` con ripresa dopo riavvio (task 1.8, provato con `kill -9` nei test che usano PostgreSQL), cartella del Coder legata al task e riaperta dopo un riavvio (`reopenWorkspace`, D-055), registro degli eventi con catena di hash controllata dal `doctor` (task 0.3, 0.6).
 
-**Cosa manca.** Niente da costruire. Il rischio previsto da una nota di D-049 (un core ucciso con `kill -9` lascia vivo il gruppo di processi di `claude`) è stato visto nella prova del 2026-10-23: core ucciso alle 22:53:14, file del Coder scritti in `repos/demo` alle 22:53:16, e al riavvio un secondo Coder sugli stessi file. Corretto con D-302: ogni run di `claude` e `codex` salva pid e ora di partenza in `data/run-pids/`, e all'avvio il core chiude i gruppi rimasti prima che il task riprenda, con una riga `cloud orphan: claude pgid N stopped` nel log. Da riprovare.
+**Cosa manca.** Niente da costruire. Il rischio previsto da una nota di D-049 (un core ucciso con `kill -9` lascia vivo il gruppo di processi di `claude`) è stato visto nella prova del 2026-10-23: core ucciso alle 22:53:14, file del Coder scritti in `repos/demo` alle 22:53:16, e al riavvio un secondo Coder sugli stessi file. Corretto con D-302: ogni run di `claude` e `codex` salva pid e ora di partenza in `data/run-pids/`, e all'avvio il core chiude i gruppi rimasti prima che il task riprenda, con una riga `cloud orphan: claude pgid N stopped` nel log. Nella prova successiva (23:27:33) il Coder ha però continuato a scrivere finché il core era spento (file alle 23:27:34, core ripartito 14 minuti dopo). Corretto con D-304: accanto a ogni run un guardiano (`/bin/sh`, `ps` lo mostra come `arianna-run-guard <gruppo>`) si accorge della morte del core e ferma il gruppo entro circa un secondo, senza riavvio; D-302 resta come seconda difesa. Da riprovare.
 
 **Come provarlo** (il `kill` solo dal Mac; la ripresa si vede anche dal telefono):
 
 1. Ripeti i passi 1-2 di P3 con un lavoro più lungo, per esempio: «Fai aggiungere al Coder un test per l'ultimo giorno di ogni mese del 2026.»
 2. Mentre il messaggio del Coder si sta scrivendo, nel terminale del Mac: `pkill -9 -f "apps/core/src/main.ts"`. La chat perde il collegamento (pallino del core spento).
-3. Prima di riavviare, `ls data/run-pids/`: c'è un file `claude-<pid>.pid`, e `ps -o pid,pgid,lstart,command -g <pid>` mostra il gruppo del run ancora vivo (`pgrep -x claude` non lo vede: non fidarti del nome del processo).
-4. Riavvia con `pnpm start`. Nel log del core compare `cloud orphan: claude pgid <pid> stopped` prima che il lavoro riprenda; `ps -g <pid>` non mostra più nulla e `data/run-pids/` non ha più quel file. La chat si ricollega da sola (sul telefono basta riaprire l'app).
+3. Senza riavviare, entro un paio di secondi: `ls data/run-pids/` mostra ancora il file `claude-<pid>.pid` (lo toglie il core al riavvio), ma `ps -o pid,pgid,lstart,command -g <pid>` non mostra più nulla, `pgrep -fl arianna-run-guard` nemmeno, e `find repos/demo -newer data/run-pids/claude-<pid>.pid -type f -not -path '*/.git/*'` elencato più volte di fila non cambia (`pgrep -x claude` non vede il gruppo: non fidarti del nome del processo). Aspetta un minuto e ricontrolla: nessun file nuovo.
+4. Riavvia con `pnpm start`. Il gruppo è già fermo, quindi di solito nel log del core non compare `cloud orphan: …` (compare solo se fosse morto anche il guardiano: è la seconda difesa di D-302); `data/run-pids/` non ha più quel file. La chat si ricollega da sola (sul telefono basta riaprire l'app).
 5. Nella conversazione il lavoro riprende: il task torna «al lavoro» e alla fine Arianna risponde come in P3; nessun messaggio doppio, nessun task rimasto «in corso» per sempre.
 6. `pnpm arianna:doctor`: la riga della catena degli eventi deve passare (il doctor nel suo insieme fallisce con le password di sviluppo, ed è normale).
 
@@ -141,8 +141,8 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | P2 Canarino dal vivo | superato il 2026-10-23 (contratto 6/6, canarino 31/31) | 0 |
 | P3 Coding L1 via Claude Code | superato il 2026-10-23 (prova dell'utente) | 0 |
 | P4 Task L2 solo in locale | superato il 2026-10-23 con D-303 (prova di Claude, «Testalo tu») | 0 |
-| P5 Ripresa dopo `kill` del core | superato il 2026-10-23 con D-302 (0.173.1); resta il Coder vivo finché il core è spento, D-304 | 0; 2-3 per D-304 |
+| P5 Ripresa dopo `kill` del core | superato il 2026-10-23 con D-302 (0.173.1); Coder fermato entro un secondo dalla morte del core con D-304 (0.173.3) | 0 |
 | P6 Log del gateway leggibile | superato il 2026-10-23 (Registro del gateway, D-296 e D-297) | 0 |
 | P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |
 
-Totale del lavoro mancante: nessuno per i punti da P1 a P6 oltre a D-304 (Coder fermato subito alla morte del core); P7 aspetta i dati veri.
+Totale del lavoro mancante: nessuno per i punti da P1 a P6; P7 aspetta i dati veri.
