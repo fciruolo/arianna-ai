@@ -13,6 +13,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Il database gira con un'immagine costruita in locale da `apps/core/postgres/Dockerfile` (`postgres:17.11-alpine` per digest più pgvector verificato con sha256); la prima `pnpm db:up` la costruisce. Per il database esistente bastano `pnpm db:up` e `pnpm db:migrate`, passi in `docs/DATA-MODEL.md` (D-308).
 
+## [0.175.0] - 2026-10-24
+
+### Aggiunto
+
+- Casi del confronto delle memorie in `evals/memory/` (15 episodi inventati, una cancellazione, 21 domande con date, contraddizioni e privacy) e il comando `pnpm eval:memory`, che per ora prova un adattatore finto: controlli di privacy al 100% (incognite e L3 mai salvate, cancellazione vera, etichetta ereditata, niente ricordi Privati in una conversazione di Lavoro) e parole attese, con rapporto senza testo in `data/evals/report-memory-fake.json` (D-307).
+
+## [0.174.1] - 2026-10-24
+
+### Corretto
+
+- Registro del gateway: il filtro «Destinazione» dà un nome in italiano a ogni destinazione del browser dell'agente («risorsa di una pagina indicata da te», «testo scritto in una pagina indicata da te»…) invece del codice fra parentesi (D-306).
+- Registro del gateway: ogni gruppo mostra l'inizio della domanda che l'ha fatto partire, con sotto in piccolo il nome della conversazione, invece del primo messaggio della conversazione (D-306).
+
 ## [0.174.0] - 2026-10-24
 
 ### Aggiunto

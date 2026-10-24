@@ -13,7 +13,7 @@ Le ore sono **mie stime, non misurate**: lavoro effettivo di uno sviluppatore es
 | 5 Studio e mentor | Fonti, curriculum, ripasso FSRS, brief giornaliero | 25-45 | Una settimana di brief e ripassi utili |
 | **Totale** | | **285-457** | Con margine 25%: 356-571 |
 
-I dati veri entrano solo dopo il criterio della Fase 1A, e solo con una password del database non predefinita (`SECURITY.md`). La Fase 2 può partire appena chiusa la 1A: i task di 1B si fanno in parallelo, quando servono.
+I dati veri entrano solo dopo il criterio della Fase 1A, e solo con una password del database non predefinita (`SECURITY.md`). La Fase 2 può partire appena chiusa la 1A: i task di 1B si fanno in parallelo, quando servono. **Fase 1A chiusa il 2026-10-24** (D-309, scelta dell'utente, `FASE-1A-VERIFICA.md`): le password vere e la chiave age vera (P7 del task 1.13) restano il primo passo prima dei dati veri.
 
 Rispetto alla prima stesura il totale sale di 15-23 ore: è lavoro che la specifica chiedeva ma che nessun task copriva (confinamento degli esecutori cloud, ripresa dopo riavvio, test di accettazione dell'orchestratore, Telegram, vault). In cambio il primo sistema utilizzabile arriva prima: 98-148 ore con margine invece di 110-168.
 

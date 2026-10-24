@@ -22,6 +22,7 @@ import {
   groupAsker,
   groupHeadline,
   isPrivateOut,
+  lineTitle,
   originText,
   periodProblem,
   queryOf,
@@ -86,6 +87,8 @@ const destinationGroups = computed(() => destinationOptions(targets.value));
 const active = computed(() => filtersActive(filters.value));
 const period = computed(() => periodProblem(filters.value));
 const empty = computed(() => emptyText(filters.value));
+/** The question and the conversation of each line (D-306), once per line. */
+const lineTitles = computed(() => new Map((lines.value ?? []).map((line) => [line.entry.id, lineTitle(line.entry)])));
 const LABELS: readonly Label[] = ['L0', 'L1', 'L2', 'L3'];
 
 async function load(more = false): Promise<void> {
@@ -379,7 +382,9 @@ function fullTime(ts: string): string {
                   </td>
                   <td class="min-w-0 px-3 py-2 max-md:order-4 max-md:col-span-2 max-md:p-0">
                     <span class="block">{{ line.count === 1 ? askerText(line.entry) : groupAsker(line) }}<template v-if="line.count === 1 && line.entry.model"> · <span class="text-muted">{{ line.entry.model }}</span></template></span>
-                    <span v-if="originText(line.entry)" class="block max-w-[320px] truncate text-xs text-muted max-md:max-w-none">{{ originText(line.entry) }}</span>
+                    <!-- D-306: the question that started the line, the conversation's name below. -->
+                    <span v-if="lineTitles.get(line.entry.id)?.title" class="block max-w-[320px] truncate text-[13px] max-md:max-w-none">{{ lineTitles.get(line.entry.id)?.title }}</span>
+                    <span v-if="lineTitles.get(line.entry.id)?.origin" class="block max-w-[320px] truncate text-xs text-muted max-md:max-w-none">{{ lineTitles.get(line.entry.id)?.origin }}</span>
                   </td>
                   <td class="px-3 py-2 max-md:order-5 max-md:p-0 max-md:text-xs"><LabelBadge :label="line.label" /></td>
                   <td class="px-3 py-2 whitespace-nowrap max-md:order-2 max-md:p-0 max-md:text-right">
@@ -424,6 +429,10 @@ function fullTime(ts: string): string {
         <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-[14px]">
           <dt class="text-muted">Chi</dt>
           <dd>{{ groupAsker(opened) }}</dd>
+          <template v-if="lineTitle(opened.entry).title">
+            <dt class="text-muted">Domanda</dt>
+            <dd class="break-words">{{ lineTitle(opened.entry).title }}</dd>
+          </template>
           <template v-if="originText(opened.entry)">
             <dt class="text-muted">Da dove</dt>
             <dd class="break-words">{{ originText(opened.entry) }}</dd>
@@ -472,6 +481,10 @@ function fullTime(ts: string): string {
           <dd>{{ bytesText(selected.bytes) }}</dd>
           <dt class="text-muted">Chi</dt>
           <dd>{{ askerText(selected) }}<template v-if="selected.model"> · {{ selected.model }}</template></dd>
+          <template v-if="lineTitle(selected).title">
+            <dt class="text-muted">Domanda</dt>
+            <dd class="break-words">{{ lineTitle(selected).title }}</dd>
+          </template>
           <template v-if="originText(selected)">
             <dt class="text-muted">Da dove</dt>
             <dd class="break-words">{{ originText(selected) }}</dd>

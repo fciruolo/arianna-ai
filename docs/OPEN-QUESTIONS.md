@@ -34,7 +34,7 @@
 | ~~Memoria: quali candidate misurare per prime~~ | **Deciso (utente, 2026-10-23):** Graphiti, Hindsight e una memoria nostra su PostgreSQL (D-204, `MEMORIA-CONFRONTO.md`) | |
 | ~~Memoria: Python per la prova~~ | **Deciso (utente, 2026-10-23):** «Tutto in data/memlab»: ambienti Python solo in `data/memlab/<id>`, fuori da git, ogni dipendenza scritta prima in DECISIONS | |
 | ~~Memoria: database della prova~~ | **Deciso (utente, 2026-10-23):** con la stessa scelta, database separati solo per la prova in `data/memlab/`, cancellati a fine prova | |
-| Memoria: chi giudica le risposte | Parole attese controllate dal codice, poi il modello locale solo sulle risposte dubbie (D-204, `MEMORIA-CONFRONTO.md`) | Prima della prova delle memorie |
+| ~~Memoria: chi giudica le risposte~~ | **Deciso (utente, 2026-10-24):** parole attese controllate dal codice, poi un giudice Claude passando dal gateway sulle sole risposte dubbie, solo nella prova con i casi inventati L0 di `evals/memory/` (in produzione la memoria non ha giudice; D-204, D-307) | |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -72,11 +72,3 @@ Scelta dell'utente: **fatta il 2026-10-14**, una per una con le domande a opzion
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
-
-### oq-memoria-chi-giudica-le-risposte
-
-- Contesto: Molte risposte della prova si controllano con le parole attese («Paolo Sarti»), ma alcune sono giuste anche scritte in altro modo («da metà gennaio a metà maggio»). Serve un giudice per quelle; i dati della prova sono tutti inventati.
-- Opzione consigliata: Parole attese più modello locale — prima il codice cerca le parole attese, poi il 35B locale giudica solo le risposte che non tornano; tutto resta sul Mac, il giudice può sbagliare qualche caso.
-- Opzione: Parole attese più Claude — per le sole risposte dubbie un giudice Claude passando dal gateway (dati finti L0); giudizio più affidabile, consuma un po' di quota.
-- Opzione: Solo parole attese — nessun giudice; risultato ripetibile ma severo con le risposte giuste scritte diversamente.
-- Esempio: Alla domanda sulla durata del sito la risposta «circa quattro mesi, da gennaio a maggio» non contiene «4 mesi»: con la prima opzione il modello locale la giudica giusta.

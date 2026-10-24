@@ -47,7 +47,7 @@ before(async () => {
   const { sql, owner } = db();
   const work = await createConversation(sql, { mode: 'work' });
   await owner`UPDATE conversations SET title = 'Riordino del codice' WHERE id = ${work.id}`;
-  const chat = await createTask(sql, { title: `Domanda ${MARK}`, goal: `Obiettivo ${MARK}`, conversationId: work.id, label: 'L1', clearance: 'L1' });
+  const chat = await createTask(sql, { title: 'Come riordino i moduli?', goal: `Obiettivo ${MARK}`, conversationId: work.id, label: 'L1', clearance: 'L1' });
   const card = await createTask(sql, { title: 'Scheda del preventivo', assignee: 'coder' });
   const incognito = await createConversation(sql, { mode: 'private', incognito: true });
   const hidden = await createTask(sql, { title: INCOGNITO_TITLE, conversationId: incognito.id, label: 'L2', clearance: 'L2' });
@@ -96,7 +96,7 @@ function get(path: string): Promise<{ status: number; text: string }> {
 }
 
 interface Page {
-  entries: { id: string; target: string; decision: string; label: string; rule: string; agent: string | null; model: string | null; bytes: number | null; conversation: { id: string; title: string | null; open: boolean } | null; card: { id: string; title: string } | null }[];
+  entries: { id: string; target: string; decision: string; label: string; rule: string; agent: string | null; model: string | null; bytes: number | null; conversation: { id: string; title: string | null; open: boolean } | null; question: string | null; card: { id: string; title: string } | null }[];
   next: string | null;
   targets?: { kind: string; target: string }[];
 }
@@ -110,7 +110,7 @@ async function page(query: string): Promise<Page> {
 test('newest first, who asked, and never the text: no summary, reason or hash', async () => {
   const answer = await get('/api/gateway/log');
   assert.equal(answer.status, 200);
-  assert.equal(answer.text.includes(MARK), false, 'no summary, reason or title of a chat task');
+  assert.equal(answer.text.includes(MARK), false, 'no summary, reason or goal of a chat task');
   assert.equal(answer.text.includes(HASH), false, 'no sha256 of the payload');
   for (const field of ['summary', 'reason', 'payload', 'sha256']) assert.equal(answer.text.includes(`"${field}`), false, field);
   const body = JSON.parse(answer.text) as Page;
@@ -126,12 +126,16 @@ test('newest first, who asked, and never the text: no summary, reason or hash', 
   assert.equal(allowed.model, 'sonnet');
   assert.equal(allowed.bytes, 640);
   assert.deepEqual(allowed.conversation, { id: ids.work, title: 'Riordino del codice', open: true });
+  // D-306: the question of the turn, the start of the user's message, not the title of the conversation.
+  assert.equal(allowed.question, 'Come riordino i moduli?');
   assert.equal(allowed.card, null);
   const card = body.entries[2];
   assert.deepEqual(card?.card, { id: ids.card, title: 'Scheda del preventivo' });
+  assert.equal(card.question, null, 'a card has its title, no question');
+  assert.equal(body.entries[1]?.question, null, 'a row of the core has no question');
   assert.equal(card.agent, 'coder');
   assert.equal(body.entries[3]?.rule, 'pii');
-  assert.equal(body.entries[1]?.agent, null);
+  assert.equal(body.entries[1].agent, null);
   assert.equal(body.next, null);
   // executor/local is only in the incognito conversation: not offered.
   assert.deepEqual(body.targets?.map((item) => `${item.kind}/${item.target}`), ['channel/push', 'executor/claude', 'executor/codex', 'web/web-page-public']);
@@ -196,7 +200,7 @@ test('a purged conversation keeps its row, without title and without «Apri»', 
   const { sql, owner } = db();
   const gone = await createConversation(sql, { mode: 'work' });
   await owner`UPDATE conversations SET title = ${`Titolo ${MARK}`} WHERE id = ${gone.id}`;
-  const task = await createTask(sql, { title: 'Domanda', conversationId: gone.id, label: 'L1', clearance: 'L1' });
+  const task = await createTask(sql, { title: `Domanda ${MARK}`, conversationId: gone.id, label: 'L1', clearance: 'L1' });
   await owner`
     INSERT INTO gateway_log (task_id, target_kind, target, locality, label, decision, rule, reason)
     VALUES (${task.id}, 'executor', 'claude', 'cloud', 'L1', 'allow', 'cloud', 'x')`;
@@ -204,5 +208,34 @@ test('a purged conversation keeps its row, without title and without «Apri»', 
   await owner`SELECT purge_conversation(${gone.id}::uuid)`;
   const result = await loadGatewayLog(sql, parseGatewayLogQuery(new URLSearchParams('limit=1')));
   assert.deepEqual(result.entries[0]?.conversation, { id: gone.id, title: null, open: false });
+  assert.equal(result.entries[0].question, null, 'no question of a purged conversation (D-306)');
   assert.equal(JSON.stringify(result).includes(MARK), false);
+});
+
+test('D-306: no question where the list shows no title: the secretary, a side thread, a refresh of the Dashboard', async () => {
+  const { sql, owner } = db();
+  const mother = await createConversation(sql, { mode: 'private' });
+  const [answer] = await owner<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, label, body) VALUES (${mother.id}, 'assistant', 'L0', 'Risposta') RETURNING id::text`;
+  const [secretary] = await owner<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, title, secretary) VALUES ('private', 'L2', 'Segretaria', true) RETURNING id::text`;
+  const [side] = await owner<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, side_of, side_message_id) VALUES ('private', 'L2', ${mother.id}, ${answer?.id ?? ''}::bigint) RETURNING id::text`;
+  const [refresh] = await owner<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, agent, dashboard_of) VALUES ('private', 'L2', 'local-chat', ${mother.id}) RETURNING id::text`;
+  for (const conversation of [secretary, side, refresh]) {
+    const task = await createTask(sql, { title: `Domanda ${MARK}`, conversationId: conversation?.id ?? '', label: 'L1', clearance: 'L2' });
+    await owner`
+      INSERT INTO gateway_log (task_id, target_kind, target, locality, label, decision, rule, reason)
+      VALUES (${task.id}, 'executor', 'local', 'local', 'L1', 'allow', 'local', 'x')`;
+    for (const query of ['limit=1', 'group=request&limit=1']) {
+      const result = await loadGatewayLog(sql, parseGatewayLogQuery(new URLSearchParams(query)));
+      const entry = result.entries[0] ?? result.groups?.[0]?.entry;
+      assert.ok(entry !== undefined && entry.conversation !== null);
+      assert.equal(entry.conversation.id, conversation?.id);
+      assert.equal(entry.question, null);
+      assert.equal(entry.conversation.title, null);
+      assert.equal(JSON.stringify(result).includes(MARK), false);
+    }
+  }
 });

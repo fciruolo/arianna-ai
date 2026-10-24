@@ -1,5 +1,7 @@
 # Verifica del criterio di uscita della Fase 1A (task 1.13)
 
+**Esito (2026-10-24, D-309): Fase 1A chiusa** con i dati finti per scelta dell'utente, con P1-P6 superati. P7 non blocca la chiusura (il criterio di `ROADMAP.md` è «con dati finti»): resta come primo passo obbligatorio prima dei dati veri, in «Prima dei dati veri» di `HANDOFF.md`.
+
 Preparata il 2026-10-23 su `main` alla 0.169.0. Questo file scompone il criterio, dice cosa lo soddisfa già, cosa manca e come provarlo dalla chat. Non cambia il criterio: se un punto qui sembra diverso da `ROADMAP.md`, vale `ROADMAP.md`.
 
 ## Il criterio
@@ -143,6 +145,6 @@ Non fanno parte del criterio della 1A ma `HANDOFF.md` («Prima dei dati veri») 
 | P4 Task L2 solo in locale | superato il 2026-10-23 con D-303 (prova di Claude, «Testalo tu») | 0 |
 | P5 Ripresa dopo `kill` del core | superato il 2026-10-23 con D-302 (0.173.1); Coder fermato entro un secondo dalla morte del core con D-304 (0.173.3) | 0 |
 | P6 Log del gateway leggibile | superato il 2026-10-23 (Registro del gateway, D-296 e D-297) | 0 |
-| P7 Password del database e ruolo applicativo | richiede dati veri | 0 di codice; passi dell'utente |
+| P7 Password del database e ruolo applicativo | spostato a «Prima dei dati veri» (D-309) | 0 di codice; passi dell'utente |
 
-Totale del lavoro mancante: nessuno per i punti da P1 a P6; P7 aspetta i dati veri.
+Totale del lavoro mancante: nessuno. Fase 1A chiusa il 2026-10-24 (D-309); P7 si fa al passaggio ai dati veri, prima di metterli.
