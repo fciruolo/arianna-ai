@@ -100,6 +100,9 @@ function translator(): LoadedAgent {
   return { ...loadAgent(dir, 'traduttore'), origin: 'user' };
 }
 
+// The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(model: LocalModel, coderPrompt?: string, translatorReads: 'L1' | 'L2' = 'L1'): StepExecutor {
   const coder = loaded.get('coder');
   assert.ok(coder !== undefined);
@@ -114,7 +117,7 @@ function orchestrator(model: LocalModel, coderPrompt?: string, translatorReads: 
     cloud: { executors: ['claude' as const], models: defaultCloudModels() },
     projects: PROJECTS.map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
   });
-  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, claude });
+  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, claude, ...CLOCK });
 }
 
 async function drain(taskId: string, executor: StepExecutor): Promise<string[]> {
@@ -608,7 +611,7 @@ test('a direct chat with a local agent (D-111d): no project, its answer closes t
   assert.deepEqual(later.messages.slice(1).map((message) => [message.role, message.content]), [
     ['user', 'Buongiorno.'],
     ['assistant', 'Good morning.'],
-    ['user', 'Buonanotte.'],
+    ['user', `Buonanotte.\n\n${NOW_LINE}`],
   ]);
 });
 
@@ -663,7 +666,7 @@ test('a local agent remembers what was said in a call (D-158): the spoken turns 
   assert.deepEqual(request.messages.slice(1).map((message) => [message.role, message.content]), [
     ['user', 'Detto in chiamata.'],
     ['assistant', 'Risposta a voce.'],
-    ['user', 'E per iscritto?'],
+    ['user', `E per iscritto?\n\n${NOW_LINE}`],
   ]);
   // In a private chat with a card that may read Privato, the L2 lines of the call are read too;
   // with the card lowered to Interno nothing of that chat reaches the model.
@@ -672,7 +675,7 @@ test('a local agent remembers what was said in a call (D-158): the spoken turns 
   const reads = reporting(['Ok.']);
   const next = await postUserMessage(db().sql, privateChat.id, 'Ricordi?');
   assert.deepEqual(await drain(next.task.id, orchestrator(reads, undefined, 'L2')), ['answered']);
-  assert.deepEqual(reads.requests[0]?.messages.slice(1).map((message) => message.content), ['Riga privata detta a voce.', 'Ricordi?']);
+  assert.deepEqual(reads.requests[0]?.messages.slice(1).map((message) => message.content), ['Riga privata detta a voce.', `Ricordi?\n\n${NOW_LINE}`]);
   const lowered = reporting(['mai']);
   const again = await postUserMessage(db().sql, privateChat.id, 'Ancora?');
   await drain(again.task.id, orchestrator(lowered, undefined, 'L1'));

@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.176.2] - 2026-10-24
+
+### Corretto
+
+- Arianna, il Modello locale e gli agenti che rispondono sul modello locale, anche in chiamata, conoscono data e ora: in fondo all'ultimo messaggio di ogni richiesta c'è «Adesso: venerdì 23 ottobre 2026, 10:12:37 (Europe/Rome).», un pezzo L0 che passa dal gateway; il prompt fisso resta identico e la cache dei prefissi tiene (D-311).
+
 ## [0.176.1] - 2026-10-24
 
 ### Cambiato

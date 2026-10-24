@@ -74,6 +74,9 @@ function scripted(answers: Answer[], reports: unknown[]): LocalModel & { request
   };
 }
 
+// The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(model: LocalModel): StepExecutor {
   const agents = new Map<string, LoadedAgent>(loaded);
   for (const agent of [translator, critic, third, fourth]) agents.set(agent.card.name, agent);
@@ -85,7 +88,7 @@ function orchestrator(model: LocalModel): StepExecutor {
     projects: [{ name: 'site', path: 'repos/site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } satisfies Project],
     personas: {},
   });
-  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES });
+  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...CLOCK });
 }
 
 async function drain(taskId: string, executor: StepExecutor): Promise<string[]> {
@@ -126,7 +129,7 @@ test('«@traduttore …» goes to that agent with the text after its name; the t
   assert.ok(call !== undefined);
   assert.equal(call.schema?.name, LOCAL_REPORT_SCHEMA_NAME);
   // In a work conversation it reads the chat up to the message too (D-220), then the text after its name.
-  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: `${CHAT_WINDOW_MARK}\n${windowLine('Utente', '@traduttore buongiorno a tutti')}\n\n${BRIEF_MARK}\nbuongiorno a tutti` }]);
+  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: `${CHAT_WINDOW_MARK}\n${windowLine('Utente', '@traduttore buongiorno a tutti')}\n\n${BRIEF_MARK}\nbuongiorno a tutti\n\n${NOW_LINE}` }]);
   assert.deepEqual(await reports(task.id), [['traduttore', 'Good morning everyone.']]);
   assert.equal((await loadTask(db().sql, task.id))?.status, 'done');
   // It joined the chat called by the user, not by Arianna.

@@ -89,6 +89,9 @@ function fake(answers: Answer[], summaries: Summary[] = [], onSummary?: () => Pr
   return { model, requests, summaryRequests, answerRequests };
 }
 
+// The clock of the line of now at the end of each request (D-311): fixed, and left out of what these tests compare (they are about the history).
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(model: LocalModel) {
   return createOrchestrator({
     sql: db().sql,
@@ -97,6 +100,7 @@ function orchestrator(model: LocalModel) {
     model: () => model,
     settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }),
     rules: RULES,
+    ...CLOCK,
   });
 }
 
@@ -143,7 +147,7 @@ async function degraded(taskId: string): Promise<string[]> {
   return rows.map((row) => row.reason);
 }
 
-const contents = (request: ChatRequest | undefined) => (request?.messages ?? []).map((message) => message.content);
+const contents = (request: ChatRequest | undefined) => (request?.messages ?? []).map((message) => (message.content.endsWith(`\n\n${NOW_LINE}`) ? message.content.slice(0, -NOW_LINE.length - 2) : message.content));
 
 test('a short conversation is read whole, without a summary', async () => {
   const conversation = await createConversation(db().sql, { mode: 'private' });

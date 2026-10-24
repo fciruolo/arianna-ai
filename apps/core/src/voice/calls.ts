@@ -14,6 +14,7 @@ import { passGateway } from '../gateway.ts';
 import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
+import { clockPart, withTrailer } from '../clock-part.ts';
 import { minLabel, profilePart, tailParts, type TailConfig, type TailPart } from '../prompt-tail.ts';
 import type { RoutineCallScript } from '../routines.ts';
 import { loadTask } from '../tasks.ts';
@@ -142,6 +143,10 @@ export interface CallsOptions {
   agentModel?: (card: AgentCard, clearance: Label, label: Label) => Promise<string | undefined>;
   /** What the call of a routine says (D-259), read when the user answers; absent, a routine's call says the fixed greeting only. */
   routineScript?: (callId: string) => Promise<RoutineCallScript | undefined>;
+  /** The clock of the line of now at the end of the user's words in a turn (D-311); tests fix it. Default: the time of this Mac. */
+  now?: () => Date;
+  /** The time zone of that line; default the one of this Mac (systemTimeZone). */
+  timeZone?: string;
 }
 
 export interface Calls {
@@ -415,8 +420,11 @@ export function createCalls(options: CallsOptions): Calls {
   /**
    * What the voice model reads: the anchored window (D-072), allowed by the
    * gateway like the orchestrator does; undefined when the gateway blocks it.
+   * A turn (`clock`) reads the date and time of now after the user's words
+   * (D-311), L0, through the gateway with the rest; the warm-up does not, so
+   * that the prefix it leaves in oMLX is the one the turn reads (D-072).
    */
-  async function readPrompt(call: Call, conversation: Conversation, session: Session) {
+  async function readPrompt(call: Call, conversation: Conversation, session: Session, clock = false) {
     const all = await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH });
     // A routine's call (D-259): only what was said in this call, never the reports nor the chat around them.
     const gate = session.routine;
@@ -447,17 +455,20 @@ export function createCalls(options: CallsOptions): Calls {
       target = { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' };
     }
     const effective = maxLabel(conversation.effectiveLabel, prompt.label);
+    const now = clock ? clockPart((options.now ?? (() => new Date()))(), options.timeZone) : undefined;
     const decision = await passGateway(
       sql,
       [
         ...prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
         ...prompt.tail.map((part) => ({ value: part.content, label: part.label, source: part.source })),
+        ...(now === undefined ? [] : [{ value: now.text, label: now.label, source: now.source }]),
       ],
       contextOf(conversation, effective),
       target,
     );
-    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length + prompt.tail.length) return undefined;
-    const allowed = voiceMessages(prompt, decision.texts);
+    const count = prompt.messages.length + prompt.tail.length;
+    if (decision.decision === 'block' || decision.texts.length !== count + (now === undefined ? 0 : 1)) return undefined;
+    const allowed = withTrailer(voiceMessages(prompt, decision.texts.slice(0, count)), now === undefined ? '' : (decision.texts[count] ?? ''));
     return { prompt, effective, allowed };
   }
 
@@ -529,7 +540,7 @@ export function createCalls(options: CallsOptions): Calls {
     await storeUserTurn(call, words, conversation.clearance);
 
     session.warming?.abort();
-    const read = await readPrompt(call, conversation, session);
+    const read = await readPrompt(call, conversation, session, true);
     if (read !== undefined) session.anchor = read.prompt.anchor;
     if (read === undefined) {
       emit(CALL_TEXT.cannotRead);
