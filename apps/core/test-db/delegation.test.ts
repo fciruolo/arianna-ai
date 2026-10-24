@@ -120,6 +120,9 @@ interface Setup {
   personas?: Record<string, Persona>;
 }
 
+// The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(setup: Setup): StepExecutor {
   const coder = loaded.get('coder');
   assert.ok(coder !== undefined);
@@ -145,6 +148,7 @@ function orchestrator(setup: Setup): StepExecutor {
     model: () => setup.model,
     settings,
     rules: RULES,
+    ...CLOCK,
     ...(setup.withClaude === false ? {} : { claude }),
     ...(setup.skills === undefined ? {} : { skills: setup.skills }),
   });
@@ -235,7 +239,9 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
 
     // Arianna read the report as the result of her call, and the Coder's message was not read as chat history.
     const last = model.requests[1]?.messages.at(-1)?.content ?? '';
-    assert.match(last, /^<tool_result>\ncoder \(claude\/sonnet\) reported:\nok\n<\/tool_result>$/);
+    // The line of now (D-311) is for the local model: the brief to claude never carries it.
+    assert.doesNotMatch(received().prompt, /Adesso:/);
+    assert.match(last, new RegExp(`^<tool_result>\ncoder \\(claude/sonnet\\) reported:\nok\n</tool_result>\n\n${NOW_LINE.replace(/[().]/g, '\\$&')}$`));
     assert.equal(model.requests[1]?.messages.filter((m) => m.content === 'ok').length, 0);
 
     // The binary got the Coder's prompt and the brief, the model and the tools of the card.

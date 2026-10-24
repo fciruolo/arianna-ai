@@ -65,6 +65,9 @@ function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
+// The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 const orchestrator = (model: LocalModel) =>
   createOrchestrator({
     sql: db().sql,
@@ -73,6 +76,7 @@ const orchestrator = (model: LocalModel) =>
     model: () => model,
     settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas: {} }),
     rules: RULES,
+    ...CLOCK,
   });
 
 async function drain(taskId: string, model: LocalModel): Promise<string[]> {
@@ -189,7 +193,7 @@ test('past the limit: the topics alone (L1) and profile.read, which reads an L2 
   assert.match(system, /only their topics/);
   assert.ok(!system.includes(CITY) && !system.includes('z'.repeat(50)), 'no text in the block');
   // The text reaches the model as the result of its call, with the label of the fact.
-  assert.equal(model.requests[1]?.messages.at(-1)?.content, `<tool_result>\ncittà: ${CITY}\n</tool_result>`);
+  assert.equal(model.requests[1]?.messages.at(-1)?.content, `<tool_result>\ncittà: ${CITY}\n</tool_result>\n\n${NOW_LINE}`);
   const turns = await loadTurns(db().sql, task.id);
   assert.deepEqual(turns.map((turn) => turn.label), ['L2', 'L2']);
 });
@@ -204,7 +208,7 @@ test('past the limit in a work conversation: profile.read reads an L1 text, an L
     { action: 'reply', text: 'Sei uno sviluppatore web; la città non la so.' },
   ]);
   assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'continued', 'answered']);
-  assert.equal(model.requests[1]?.messages.at(-1)?.content, `<tool_result>\nlavoro: ${JOB}\n</tool_result>`);
+  assert.equal(model.requests[1]?.messages.at(-1)?.content, `<tool_result>\nlavoro: ${JOB}\n</tool_result>\n\n${NOW_LINE}`);
   assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', /the text of 'città' is private and not available in this conversation/);
   assert.match(model.requests[3]?.messages.at(-1)?.content ?? '', /no fact 'figli'; the topics are: città, lavoro, nota 0/);
   assert.ok(!everything(model).includes('Borgo Finto'));

@@ -55,9 +55,13 @@ const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
 // The tail of the prompt as with a fresh install: the theme, characters and personas of the user's
 // arianna.toml (a series theme adds the character's block, D-214, D-217) must not change what the tests read.
 const CONFIG = { ...loadConfig(), characters: {}, appearance: { ...DEFAULT_APPEARANCE }, personas: {} };
+// The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
+const NOW = new Date('2026-10-23T08:12:30Z');
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const CLOCK = { now: () => NOW, timeZone: 'Europe/Rome' };
 /** An orchestrator without delegation: no cloud executor. */
 const orchestrator = (model: LocalModel) =>
-  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES, ...CLOCK });
 
 type Scripted = (Answer & { thought?: string }) | LocalModelError | 'not-json';
 
@@ -135,7 +139,7 @@ test('a multi-step task: search, read, answer in the chat', async () => {
   const [first, second, third] = model.requests;
   assert.ok(first !== undefined);
   assert.equal(first.model, 'local-large');
-  assert.equal(first.messages.at(-1)?.content, "Cosa dice il contratto d'affitto sulla caparra?");
+  assert.equal(first.messages.at(-1)?.content, `Cosa dice il contratto d'affitto sulla caparra?\n\n${NOW_LINE}`);
   assert.match(second?.messages.at(-1)?.content ?? '', /^<tool_result>\n1\. kb\/private\/affitto\.md/);
   assert.match(third?.messages.at(-1)?.content ?? '', /tre mensilità/);
   // Past answers come back without their thought.
@@ -424,11 +428,48 @@ test('the engine refuses an answer whose message is not the task’s', async () 
   assert.deepEqual([waiting?.status, waiting?.waitingReason], ['waiting_user', 'finished without evidence']);
 });
 
+test('the date and time of now (D-311): at the end of the last message of every step, never in the fixed prompt', async () => {
+  const fixedOf = (request: ChatRequest | undefined): string => request?.messages[0]?.content ?? '';
+  const { task } = await ask('work', 'Che giorno è oggi?');
+  const model = scripted([
+    { action: 'call', tool: 'kb.search', arguments: { query: 'scadenze' } },
+    { action: 'reply', text: 'Oggi è venerdì 23 ottobre.' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
+  const [first, second] = model.requests;
+  assert.equal(first?.messages.at(-1)?.content, `Che giorno è oggi?\n\n${NOW_LINE}`);
+  // After a tool too: past the fence of its result, not inside it.
+  assert.match(second?.messages.at(-1)?.content ?? '', new RegExp(`^<tool_result>\\n[\\s\\S]*\\n</tool_result>\\n\\n${NOW_LINE.replace(/[().]/g, '\\$&')}$`));
+  // Only in the last message: the earlier request no longer carries it.
+  assert.equal(second?.messages.filter((message) => message.content.includes('Adesso:')).length, 1);
+  assert.doesNotMatch(fixedOf(first), /Adesso:|ottobre 2026/);
+  // An L0 part: the reply of a work conversation stays Internal.
+  const [message] = await assistantMessages(task.id);
+  assert.equal(message?.label, 'L1');
+
+  // Another minute, another day: the fixed prompt is the same byte for byte (the prefix cache, D-075).
+  const { task: later } = await ask('work', 'Che giorno è oggi?');
+  const again = scripted([{ action: 'reply', text: 'Sabato.' }]);
+  const tomorrow = createOrchestrator({
+    sql: db().sql,
+    agents,
+    kb,
+    model: () => again,
+    settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }),
+    rules: RULES,
+    now: () => new Date('2026-10-24T21:47:59Z'),
+    timeZone: 'Europe/Rome',
+  });
+  assert.deepEqual(await drain(later.id, again, tomorrow), ['answered']);
+  assert.equal(again.requests[0]?.messages.at(-1)?.content, 'Che giorno è oggi?\n\nAdesso: sabato 24 ottobre 2026, 23:47 (Europe/Rome).');
+  assert.equal(fixedOf(again.requests[0]), fixedOf(first));
+});
+
 test('a task without a conversation keeps its answer in the turn and goes to verify', async () => {
   const task = await submitTask(db().sql, { title: 'Cerca la data di scadenza Rossi', assignee: 'arianna', label: 'L1', clearance: 'L1', effectiveLabel: 'L1' });
   const model = scripted([{ action: 'reply', text: 'Il 31 marzo 2027.' }]);
   assert.deepEqual(await drain(task.id, model), ['to-verify']);
-  assert.equal(model.requests[0]?.messages.at(-1)?.content, 'Cerca la data di scadenza Rossi');
+  assert.equal(model.requests[0]?.messages.at(-1)?.content, `Cerca la data di scadenza Rossi\n\n${NOW_LINE}`);
   const [turn] = await loadTurns(db().sql, task.id);
   assert.deepEqual([turn?.answer, turn?.messageId], [{ action: 'reply', text: 'Il 31 marzo 2027.' }, null]);
   assert.deepEqual((await loadTask(db().sql, task.id))?.evidence, [{ kind: 'turn', ref: '1' }]);
@@ -493,7 +534,7 @@ test('in a system chat the model reads the messages of the system, marked, befor
   assert.doesNotMatch(messages.map((message) => message.content).join('\n'), /Domanda finita male/, 'the question is not attached');
   // The system message and the question are both the user's: one message, in order (D-092).
   assert.equal(messages.at(-1), system);
-  assert.ok(system.content.endsWith('\n\nCosa è successo?'));
+  assert.ok(system.content.endsWith(`\n\nCosa è successo?\n\n${NOW_LINE}`));
   assert.ok(messages.slice(1).every((message, index, all) => index === 0 || message.role !== all[index - 1]?.role), 'user and assistant alternate');
 });
 
@@ -546,7 +587,7 @@ test('task.update: the model finds the card in the list, puts it on hold with a 
   assert.ok(model.requests.every((request) => offered(request).includes('task.update')));
   assert.equal(
     model.requests[1]?.messages.at(-1)?.content,
-    `<tool_result>\nerror: task.update: no open card 'preventivo-fabbro' in this conversation. Open cards:\n- ${cardId} (inbox): Chiedere il preventivo al fabbro\n</tool_result>`,
+    `<tool_result>\nerror: task.update: no open card 'preventivo-fabbro' in this conversation. Open cards:\n- ${cardId} (inbox): Chiedere il preventivo al fabbro\n</tool_result>\n\n${NOW_LINE}`,
   );
   assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', new RegExp(`updated card ${cardId}: inbox → waiting_user, note saved`));
   // The offer is decided once per task, in the log.
@@ -607,7 +648,7 @@ test('task.update refuses what it may not do, as results the model reads', async
   assert.deepEqual(await drain(task.id, model), [...Array<string>(7).fill('continued'), 'answered']);
   const results = model.requests.slice(1).map((request) => request.messages.at(-1)?.content ?? '');
   const notFound = (id: string) =>
-    `<tool_result>\nerror: task.update: no open card '${id}' in this conversation. Open cards:\n- ${cardId} (inbox): Rinnovare la carta d’identità\n</tool_result>`;
+    `<tool_result>\nerror: task.update: no open card '${id}' in this conversation. Open cards:\n- ${cardId} (inbox): Rinnovare la carta d’identità\n</tool_result>\n\n${NOW_LINE}`;
   assert.equal(results[0], notFound(other.cardId));
   assert.equal(results[1], notFound('00000000-0000-0000-0000-000000000000'));
   assert.match(results[2] ?? '', /error: task\.update: with autonomy A1 a card goes to ready only through the user/);
@@ -711,7 +752,7 @@ test('task.update in a task without a conversation: its own cards only, and an e
 // The persona in the tail of the prompt (D-107, tappa A3). Invented texts.
 const PLAYFUL: Persona = { tone: 'scherzoso', address: 'lei', traits: 'Ama le metafore di cucina.' };
 const withPersonas = (model: LocalModel, personas: Record<string, Persona>) =>
-  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas }), rules: RULES });
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() }, personas }), rules: RULES, ...CLOCK });
 const systemOf = (request: ChatRequest | undefined): string => request?.messages[0]?.content ?? '';
 
 test('persona: in a private conversation its block goes after the examples and before the thought rule', async () => {
@@ -746,7 +787,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
   });
   try {
     const coxed = (model: LocalModel) =>
-      createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
+      createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES, ...CLOCK });
     const { task } = await ask('private', 'Ciao!');
     // A chat reply of a character is written twice (D-225): the second, livelier, is kept.
     const model = scripted([{ action: 'reply', text: 'Che vuoi?' }, { action: 'reply', text: 'Che vuoi, pivello?' }]);
@@ -754,7 +795,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
     const first = model.requests[0];
     assert.match(systemOf(first), /Call yourself "Dr\. Cox"/);
     assert.doesNotMatch(systemOf(first), /Che vuoi, pivello\?|character_lines/, 'the fixed catchphrases out, the lines not in the system prompt');
-    assert.match(first?.messages.at(-1)?.content ?? '', /Ciao!\n\n<character_lines>\n[^\n]*\n- Battuta vera 1\.\n<\/character_lines>$/);
+    assert.match(first?.messages.at(-1)?.content ?? '', /Ciao!\n\n<character_lines>\n[^\n]*\n- Battuta vera 1\.\n<\/character_lines>\n\nAdesso: venerdì 23 ottobre 2026, 10:12 \(Europe\/Rome\)\.$/);
     assert.deepEqual(drawn, [{ conversation: task.conversationId, named: true }]);
     // A work conversation: the lines without names of others, a new draw; the system prompt before the tail unchanged.
     const { task: work } = await ask('work', 'Ciao!');
@@ -773,7 +814,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
 
 // The switch «Personaggio» of the conversation (D-225, tappa A).
 const coxedArianna = (model: LocalModel) =>
-  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES, livelyReplies: true });
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES, ...CLOCK, livelyReplies: true });
 
 test('switch «Personaggio» on (D-225): a chat reply is written once more at a higher temperature, same prompt, and the second is kept', async () => {
   const { task } = await ask('private', 'Come va?');
@@ -822,6 +863,7 @@ test('switch «Personaggio» on with the free text (D-251): the free text is the
     model: () => model,
     settings: () => ({ ...CONFIG, characters: { arianna: 'serie/cox' }, cloud: { executors: [], models: defaultCloudModels() } }),
     rules: RULES,
+    ...CLOCK,
     livelyReplies: true,
     freeReplies: true,
   });
@@ -933,7 +975,7 @@ test('a side thread (D-232): Arianna reads the answer first, and the conversatio
   const context = read.find((item) => item.role === 'user' && item.content.includes(SIDE_MARK));
   assert.ok(context !== undefined);
   assert.match(context.content, /Imponibile 1\.000 euro/);
-  assert.equal(read.at(-1)?.content.endsWith('Cosa vuol dire imponibile?'), true);
+  assert.equal(read.at(-1)?.content.endsWith(`Cosa vuol dire imponibile?\n\n${NOW_LINE}`), true);
   const [reply] = await assistantMessages(asked.task.id);
   assert.deepEqual([reply?.label, (await loadTask(sql, asked.task.id))?.effectiveLabel], ['L2', 'L2']);
 
