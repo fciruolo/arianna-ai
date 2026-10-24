@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { activeTheme, applyTheme, contrast, CONTRAST_PAIRS, feastInUse, lowContrast, THEME_TOKENS, themeAttributes, themeProperties, type ChatTheme, type ThemeTokens } from '../src/lib/themes.ts';
+import { activeTheme, applyTheme, contrast, CONTRAST_PAIRS, feastInUse, lowContrast, THEME_TOKENS, themeAttributes, themeNoticeText, themeProperties, untilText, type ChatTheme, type ThemeTokens } from '../src/lib/themes.ts';
 
 const HUD = join(import.meta.dirname, '..');
 const THEMES_DIR = join(HUD, 'themes');
@@ -180,4 +180,24 @@ test('the feast in use is the one that took the place of the chosen theme, never
   assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'natale', current: 'natale', seasonal: true }), undefined);
   assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'base', current: 'base', seasonal: true }), undefined);
   assert.equal(feastInUse({ themes: repoThemes, refused: [], chosen: 'corsia', current: 'corsia', seasonal: true }), undefined);
+});
+
+test('the window of an automatic change of theme says what changed, and «Torna a» only at the start (D-315)', () => {
+  const theme = (id: string, name: string): ChatTheme => ({
+    id,
+    name,
+    kind: id === 'base' ? 'base' : 'stagionale',
+    background: { pattern: 'nessuno' },
+    hud: { corners: true, glow: 'medio', radius: 'hud' },
+    characters: {},
+    tokens: { dark: {}, light: {} },
+  });
+  const listing = { themes: [theme('base', 'Base'), theme('halloween', 'Halloween')], refused: [], chosen: 'base', current: 'halloween' };
+  const start = themeNoticeText(listing, { kind: 'start', key: 'halloween@2026-10-25', theme: 'halloween', until: '2026-11-01' });
+  assert.equal(start.text, 'Ho messo il tema «Halloween» 🎃, fino al 1° novembre: è il tema della festa di questi giorni. Ti va bene così?');
+  assert.equal(start.back, 'Torna a Base');
+  const end = themeNoticeText({ ...listing, current: 'base' }, { kind: 'end', key: 'base', theme: 'halloween' });
+  assert.equal(end.text, 'I giorni di «Halloween» sono finiti: sono tornata al tema Base.');
+  assert.equal(end.back, undefined);
+  assert.deepEqual(['2027-01-06', '2026-12-08', '2026-11-11', '2026-08-31'].map(untilText), ['fino al 6 gennaio', 'fino all’8 dicembre', 'fino all’11 novembre', 'fino al 31 agosto']);
 });

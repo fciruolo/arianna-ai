@@ -28,7 +28,8 @@ import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTE
 import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, runCard, sendBackCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import type { CalendarDay } from '../feasts.ts';
-import { currentTheme, listThemes } from '../themes.ts';
+import { answerNotice, FEAST_ANSWERS, feastNotice, FeastNoticeError, type FeastNoticeStore } from '../feast-notice.ts';
+import { currentTheme, feastsNow, listThemes } from '../themes.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import { GithubError } from '../github-api.ts';
 import { PixelAgentsError, type PixelAgentsResult } from '../pixel-agents-pack.ts';
@@ -269,7 +270,13 @@ export interface ApiServerOptions {
     dirs: CharacterDirs;
     choices: () => CharacterChoices;
     /** `feasts` (D-246): the switch of `[appearance]` and the day the themes see, for the feast that takes the place of Base. */
-    themes?: { dir: string; chosen: () => string; feasts?: () => { on: boolean; today: CalendarDay } };
+    themes?: {
+      dir: string;
+      chosen: () => string;
+      feasts?: () => { on: boolean; today: CalendarDay };
+      /** D-315: the answers to the notice of an automatic change of theme, kept by the core for every device. */
+      notice?: FeastNoticeStore;
+    };
     names?: () => Record<string, string>;
     /** `[series]` (D-223): what the user rewrote of the people of the series. */
     series?: () => SeriesOverrides;
@@ -2796,7 +2803,8 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       let themed: Record<string, string> = {};
       if (characters.themes !== undefined) {
         const { themes } = await listThemes(characters.themes.dir);
-        const current = currentTheme(characters.themes.chosen(), themes, characters.themes.feasts?.());
+        // D-315: a period of a feast the user sent away keeps the costumes of Base.
+        const current = currentTheme(characters.themes.chosen(), themes, feastsNow(characters.themes.feasts?.(), characters.themes.notice?.read() ?? {}));
         themed = themes.find((theme) => theme.id === current)?.characters ?? {};
       }
       return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs, themed), names: characters.names?.() ?? {} } };
@@ -2837,7 +2845,33 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       const listing = await listThemes(themes.dir);
       const chosen = themes.chosen();
       const feasts = themes.feasts?.();
-      return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes, feasts), seasonal: feasts?.on ?? false } };
+      // D-315: the period the user sent away keeps Base; the notice of an automatic change, until answered.
+      const state = themes.notice?.read() ?? {};
+      const now = feastsNow(feasts, state);
+      const notice = now === undefined || themes.notice === undefined ? null : feastNotice(chosen, listing.themes, now, state);
+      return { body: { ...listing, chosen, current: currentTheme(chosen, listing.themes, now), seasonal: feasts?.on ?? false, notice } };
+    }),
+    // The answer to the notice of an automatic change of theme (D-315): `key` must be the notice shown
+    // now, so an answer from another device that came first is not applied twice (409, the page reloads).
+    route('POST', '/api/themes/notice', async (request) => {
+      const themes = characters?.themes;
+      if (themes?.notice === undefined || themes.feasts === undefined) throw new HttpError(404, 'not found');
+      const body = await readJson(request, 1024);
+      const keys = Object.keys(body);
+      if (keys.some((key) => key !== 'key' && key !== 'answer')) throw new HttpError(400, 'body: only key and answer');
+      const answer = FEAST_ANSWERS.find((entry) => entry === body.answer);
+      if (answer === undefined || typeof body.key !== 'string') throw new HttpError(400, `answer: one of ${FEAST_ANSWERS.join(', ')}; key: text`);
+      const listing = await listThemes(themes.dir);
+      const state = themes.notice.read();
+      const notice = feastNotice(themes.chosen(), listing.themes, themes.feasts(), state);
+      if (notice?.key !== body.key) throw new HttpError(409, 'the notice changed: reload');
+      try {
+        themes.notice.write(answerNotice(notice, answer, state));
+      } catch (error) {
+        if (error instanceof FeastNoticeError) throw new HttpError(400, error.message);
+        throw error;
+      }
+      return { body: { ok: true } };
     }),
     // A sheet uploaded from the chat (D-118): decoded, written again, saved in data/characters/miei.
     // A character of the same name answers 409 with `existing`: the page asks, then sends `replace`.

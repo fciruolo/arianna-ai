@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.177.0] - 2026-10-24
+
+### Aggiunto
+
+- Quando una festa cambia il tema da sola (per esempio Halloween dal 25 ottobre), la prima volta che apri la chat una finestra lo dice e chiede «Va bene» o «Torna a Base»; «Torna a Base» vale per tutto quel periodo, la risposta vale su tutti i dispositivi, e a fine festa un avviso dice che il tema è tornato Base (D-315).
+
 ## [0.176.2] - 2026-10-24
 
 ### Corretto

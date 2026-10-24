@@ -67,10 +67,44 @@ export interface ThemeListing {
   current: string;
   /** `[appearance] seasonal` (D-246): the feasts take the place of Base in their days. An older core sends none. */
   seasonal?: boolean;
+  /** D-315: an automatic change of theme not answered yet, on any device; an older core sends none. */
+  notice?: ThemeNotice | null;
 }
+
+/** An automatic change of theme (D-315): a feast began (with its last day, `YYYY-MM-DD`) or ended. */
+export type ThemeNotice = { kind: 'start'; key: string; theme: string; until: string } | { kind: 'end'; key: string; theme: string };
 
 export const BASE_THEME = 'base';
 export const BASE_NAME = 'Base';
+
+const FEAST_SIGNS: Readonly<Record<string, string>> = { halloween: '🎃', natale: '🎄', carnevale: '🎭', pasqua: '🐣', 'san-patrizio': '☘️', estate: '☀️' };
+const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
+/** «fino al 1° novembre», «fino all’8 dicembre»: the last day of a feast in Italian. */
+export function untilText(iso: string): string {
+  const [, month = 1, day = 1] = iso.split('-').map(Number);
+  const number = day === 1 ? '1°' : String(day);
+  return `${day === 8 || day === 11 ? 'fino all’' : 'fino al '}${number} ${MONTHS[month - 1] ?? ''}`;
+}
+
+/**
+ * What the window of an automatic change of theme says (D-315). A feast takes
+ * only the place of Base (D-246), so the theme of before is always Base:
+ * `back` is the label of the button that returns to it, only at the start.
+ */
+export function themeNoticeText(listing: ThemeListing, notice: ThemeNotice): { title: string; text: string; back?: string } {
+  const name = listing.themes.find((theme) => theme.id === notice.theme)?.name ?? notice.theme;
+  const base = listing.themes.find((theme) => theme.id === BASE_THEME)?.name ?? BASE_NAME;
+  const sign = FEAST_SIGNS[notice.theme];
+  if (notice.kind === 'start') {
+    return {
+      title: `Tema «${name}»`,
+      text: `Ho messo il tema «${name}»${sign === undefined ? '' : ` ${sign}`}, ${untilText(notice.until)}: è il tema della festa di questi giorni. Ti va bene così?`,
+      back: `Torna a ${base}`,
+    };
+  }
+  return { title: `Fine del tema «${name}»`, text: `I giorni di «${name}» sono finiti: sono tornata al tema ${base}.` };
+}
 
 const COLOUR = /^#[0-9a-f]{6}([0-9a-f]{2})?$/;
 
