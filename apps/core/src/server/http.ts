@@ -3328,6 +3328,8 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
       // An executor for a card (D-159), or how long a folder of the Mac is allowed (D-314).
       if (body.choice !== undefined && !isApprovalChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex, local, once, conversation or always');
       const choice = isApprovalChoice(body.choice) ? body.choice : undefined;
+      // «Sempre» changes the permanent list of the folders of the Mac: from the Mac only, never from the phone (D-314).
+      if (choice === 'always' && remoteSessionOf(request) !== undefined) throw new HttpError(403, MAC_ALWAYS_MAC_ONLY);
       const current = await loadApproval(sql, id);
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
@@ -3343,6 +3345,9 @@ function routes(sql: Sql, { changes, cards, clients, projects, models, defaultMo
     }),
   ];
 }
+
+/** «Sempre» refused from the phone (D-314): the permanent list of the folders changes on the Mac only. */
+export const MAC_ALWAYS_MAC_ONLY = '«Sempre» si sceglie solo dal Mac: dal telefono scegli «Solo questa volta» o «Per tutta questa conversazione».';
 
 /**
  * Impostazioni → Cartelle del Mac (D-314): the permanent list of the folders

@@ -493,6 +493,25 @@ test('HTTP: every decision from the phone asks Face ID for exactly it; the serve
   assert.equal((await remote('/api/remote/verify', { method: 'POST', body: { path: '/api/conversations', body: {} }, headers: { cookie: cookie(mine.token) } })).status, 400);
 });
 
+test('HTTP: «Sempre» on a card of a folder of the Mac is refused from the phone, even with Face ID; the other choices pass (D-314)', async () => {
+  const mine = await pairDevice();
+  const path = '/api/approvals/0a5f3e1c-1111-4222-8333-444455556666/decision';
+  const decide = async (body: Record<string, unknown>) => {
+    const options = await remote('/api/remote/verify', { method: 'POST', body: { method: 'POST', path, body }, headers: { cookie: cookie(mine.token) } });
+    const check = mine.passkey.get({ challenge: (options.body.options as { challenge: string }).challenge }, HOST);
+    return remote(path, { method: 'POST', body, headers: { cookie: cookie(mine.token), ...header(check) } });
+  };
+  const always = await decide({ state: 'approved', choice: 'always' });
+  assert.equal(always.status, 403);
+  assert.match(String(always.body.error), /solo dal Mac/);
+  // «Solo questa volta» passes this check (the route then answers for itself: here without its database).
+  const once = await decide({ state: 'approved', choice: 'once' });
+  assert.doesNotMatch(String(once.body.error), /solo dal Mac/);
+  // On the port of the Mac «Sempre» is not refused by this rule.
+  const mac = await local(path, { method: 'POST', body: { state: 'approved', choice: 'always' } });
+  assert.doesNotMatch(String(mac.body.error), /solo dal Mac/);
+});
+
 test('HTTP: the live feed opens from the phone with a session only, never the screen of the browser', async () => {
   const handshake = (path: string, headers: Record<string, string> = {}) =>
     remote(path, { headers: { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', ...headers } });
@@ -537,7 +556,7 @@ test('HTTP: Impostazioni → Dispositivi on the Mac: the list with the last acce
 });
 
 test('what only the Mac does stays there with a session: devices, privacy, the browser of the agent, actions on the Mac', () => {
-  for (const path of ['/api/devices', '/api/devices/code', '/api/settings/privacy/confirm', '/api/notifications/stream', '/api/notifications/this-mac', '/api/browser/control', '/api/browse/demo/open', '/api/browse/demo/reveal']) {
+  for (const path of ['/api/mac/folders', '/api/mac/folders/0a5f3e1c-1111-4222-8333-444455556666', '/api/devices', '/api/devices/code', '/api/settings/privacy/confirm', '/api/notifications/stream', '/api/notifications/this-mac', '/api/browser/control', '/api/browse/demo/open', '/api/browse/demo/reveal']) {
     assert.equal(localOnly(path), true, path);
   }
   // The decisions are no longer Mac only: they ask Face ID (step-up).

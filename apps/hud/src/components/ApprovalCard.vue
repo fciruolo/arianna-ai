@@ -28,7 +28,7 @@ import {
 import { factProposal, factShare, PROPOSE_NO, PROPOSE_YES, SHARE_NO, SHARE_YES } from '../lib/profile-approval.ts';
 import { ROUTINE_NO, ROUTINE_NOTE, ROUTINE_YES, routineProposal } from '../lib/routine-approval.ts';
 import { BROWSER_NO, BROWSER_NOTE, BROWSER_YES, browserClick, browserPrivate, browserSend, PRIVATE_NO, PRIVATE_NOTE, PRIVATE_YES, SEND_NO, SEND_NOTE, SEND_YES } from '../lib/browser-approval.ts';
-import { afterText, MAC_CHOICE_TEXT, MAC_CHOICES, MAC_NO, MAC_NOTE, macRead } from '../lib/mac-approval.ts';
+import { afterText, MAC_CHOICE_TEXT, MAC_NO, MAC_NOTE, MAC_PHONE_NOTE, macChoices, macRead } from '../lib/mac-approval.ts';
 import type { Approval, ApprovalChoice, ExecutorChoice, MacChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
@@ -300,6 +300,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
         <p v-if="macAfter !== undefined" class="text-[13px] text-warn">{{ macAfter }}</p>
         <p class="text-[14px]">Il permesso vale per <strong>{{ mac.place }}</strong> e le sue sottocartelle.</p>
         <p class="text-xs text-muted">{{ MAC_NOTE }}</p>
+        <p v-if="remoteOrigin" class="text-xs text-muted">{{ MAC_PHONE_NOTE }}</p>
       </template>
       <template v-else-if="browser !== undefined">
         <p class="text-[15px]">
@@ -436,7 +437,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
     </div>
     <div v-else-if="mac !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
-      <button v-for="(option, index) in MAC_CHOICES" :key="option" type="button" :disabled="busy" class="btn max-md:flex-1" :class="{ 'btn-primary': index === 0 }" @click="chooseMac(option)">
+      <button v-for="(option, index) in macChoices(remoteOrigin)" :key="option" type="button" :disabled="busy" class="btn max-md:flex-1" :class="{ 'btn-primary': index === 0 }" @click="chooseMac(option)">
         <Icon v-if="index === 0" :name="remoteOrigin ? 'face-id' : 'approve'" :size="16" />{{ MAC_CHOICE_TEXT[option] }}
       </button>
       <button type="button" :disabled="busy" class="btn max-md:flex-1" @click="choose('rejected')">{{ MAC_NO }}</button>

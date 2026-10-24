@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ACTION_TEXT } from '../src/lib/labels.ts';
-import { afterText, MAC_CHOICE_TEXT, MAC_CHOICES, MAC_NO, macRead } from '../src/lib/mac-approval.ts';
+import { afterText, MAC_CHOICE_TEXT, MAC_CHOICES, MAC_NO, macChoices, macRead } from '../src/lib/mac-approval.ts';
 import { pendingAskText } from '../src/lib/pending-text.ts';
 
 const DETAIL = {
@@ -33,6 +33,11 @@ test('three choices, the narrowest first, and «No»', () => {
     ['Solo questa volta', 'Per tutta questa conversazione', 'Sempre'],
   );
   assert.equal(MAC_NO, 'No');
+});
+
+test('from the phone the card has no «Sempre»; on the Mac it has all three', () => {
+  assert.deepEqual(macChoices(true), ['once', 'conversation']);
+  assert.deepEqual(macChoices(false), ['once', 'conversation', 'always']);
 });
 
 test('a card asked after reading a page or a file says so; one asked after nothing says nothing', () => {

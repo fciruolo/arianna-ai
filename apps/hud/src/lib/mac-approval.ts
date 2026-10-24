@@ -17,6 +17,13 @@ export const MAC_CHOICE_TEXT: Record<MacChoice, string> = {
 
 export const MAC_NO = 'No';
 
+/** The choices the card shows: «Sempre» changes the permanent list, so from the phone it is not there (D-314; the core refuses it too). */
+export function macChoices(remote: boolean): readonly MacChoice[] {
+  return remote ? MAC_CHOICES.filter((choice) => choice !== 'always') : MAC_CHOICES;
+}
+
+export const MAC_PHONE_NOTE = '«Sempre» si sceglie solo dal Mac.';
+
 export const MAC_NOTE =
   'Arianna legge soltanto: non cambia, non sposta e non cancella nulla. Quello che legge resta su questo Mac e lo vede solo il modello locale. «Sempre» aggiunge la cartella in Impostazioni → Cartelle del Mac, dove puoi toglierla quando vuoi.';
 
