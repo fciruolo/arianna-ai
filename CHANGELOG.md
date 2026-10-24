@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.178.0] - 2026-10-24
+
 ### Aggiunto
 
 - Milestone per progetto nel cardwall: scelto un progetto, la Bacheca divide le colonne in una fascia per milestone (titolo, scadenza, «2 di 3 fatte», «bloccata da …»), più «Senza milestone»; ogni fascia si ripiega; milestone create, modificate, riordinate, chiuse e riaperte dalla pagina, card spostate fra milestone trascinandole o dal dettaglio; una card sta solo in una milestone del suo progetto, controllato dal database (D-313).
