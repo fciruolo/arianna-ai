@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.182.0] - 2026-10-24
+
 ### Aggiunto
 
 - «/progetta la milestone Accessi che deve fare login, registrazione e recupero password»: il piano mostra la milestone (e la scadenza dopo «entro»), e con «Crea le card» la milestone nasce con le card dentro, o le card vanno in quella aperta con lo stesso nome (D-313).
