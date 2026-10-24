@@ -57,7 +57,7 @@ const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
 const CONFIG = { ...loadConfig(), characters: {}, appearance: { ...DEFAULT_APPEARANCE }, personas: {} };
 // The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
 const NOW = new Date('2026-10-23T08:12:30Z');
-const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
 const CLOCK = { now: () => NOW, timeZone: 'Europe/Rome' };
 /** An orchestrator without delegation: no cloud executor. */
 const orchestrator = (model: LocalModel) =>
@@ -461,7 +461,7 @@ test('the date and time of now (D-311): at the end of the last message of every 
     timeZone: 'Europe/Rome',
   });
   assert.deepEqual(await drain(later.id, again, tomorrow), ['answered']);
-  assert.equal(again.requests[0]?.messages.at(-1)?.content, 'Che giorno è oggi?\n\nAdesso: sabato 24 ottobre 2026, 23:47 (Europe/Rome).');
+  assert.equal(again.requests[0]?.messages.at(-1)?.content, 'Che giorno è oggi?\n\nAdesso: sabato 24 ottobre 2026, 23:47:59 (Europe/Rome).');
   assert.equal(fixedOf(again.requests[0]), fixedOf(first));
 });
 
@@ -795,7 +795,7 @@ test('real lines of the character (D-224): drawn by the core for each answer, af
     const first = model.requests[0];
     assert.match(systemOf(first), /Call yourself "Dr\. Cox"/);
     assert.doesNotMatch(systemOf(first), /Che vuoi, pivello\?|character_lines/, 'the fixed catchphrases out, the lines not in the system prompt');
-    assert.match(first?.messages.at(-1)?.content ?? '', /Ciao!\n\n<character_lines>\n[^\n]*\n- Battuta vera 1\.\n<\/character_lines>\n\nAdesso: venerdì 23 ottobre 2026, 10:12 \(Europe\/Rome\)\.$/);
+    assert.match(first?.messages.at(-1)?.content ?? '', /Ciao!\n\n<character_lines>\n[^\n]*\n- Battuta vera 1\.\n<\/character_lines>\n\nAdesso: venerdì 23 ottobre 2026, 10:12:30 \(Europe\/Rome\)\.$/);
     assert.deepEqual(drawn, [{ conversation: task.conversationId, named: true }]);
     // A work conversation: the lines without names of others, a new draw; the system prompt before the tail unchanged.
     const { task: work } = await ask('work', 'Ciao!');

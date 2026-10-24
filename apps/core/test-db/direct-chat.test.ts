@@ -101,7 +101,7 @@ function translator(): LoadedAgent {
 }
 
 // The clock of the line of now at the end of each request (D-311): fixed, so that the last message is known to the letter.
-const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
 const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(model: LocalModel, coderPrompt?: string, translatorReads: 'L1' | 'L2' = 'L1'): StepExecutor {
   const coder = loaded.get('coder');

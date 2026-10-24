@@ -131,7 +131,7 @@ const REPLY: Answer = { action: 'reply', text: 'Ecco la traduzione: good morning
 /** What the agent reads after its system message in a work conversation (D-220): the chat up to the request, then the brief. */
 // The clock of the line of now (D-311): fixed, so that the agent's message is known to the letter.
 const NOW = new Date('2026-10-23T08:12:30Z');
-const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
 const BRIEF_TURN = `${CHAT_WINDOW_MARK}\n${windowLine('Utente', 'Traduci: buongiorno a tutti.')}\n\n${BRIEF_MARK}\nTraduci: buongiorno a tutti.`;
 const WORK_TURN = `${BRIEF_TURN}\n\n${NOW_LINE}`;
 

@@ -90,7 +90,7 @@ function fake(answers: Answer[], summaries: Summary[] = [], onSummary?: () => Pr
 }
 
 // The clock of the line of now at the end of each request (D-311): fixed, and left out of what these tests compare (they are about the history).
-const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).';
+const NOW_LINE = 'Adesso: venerdì 23 ottobre 2026, 10:12:30 (Europe/Rome).';
 const CLOCK = { now: () => new Date('2026-10-23T08:12:30Z'), timeZone: 'Europe/Rome' };
 function orchestrator(model: LocalModel) {
   return createOrchestrator({

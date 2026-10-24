@@ -2,20 +2,20 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CLOCK_SOURCE, clockPart, joinTrailer, nowText, withTrailer } from '../src/clock-part.ts';
 
-test('the line of now (D-311): weekday, day, month and year in Italian, to the minute, with the time zone', () => {
-  assert.equal(nowText(new Date('2026-10-23T08:12:59Z'), 'Europe/Rome'), 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).');
+test('the line of now (D-311): weekday, day, month and year in Italian, to the second, with the time zone', () => {
+  assert.equal(nowText(new Date('2026-10-23T08:12:59Z'), 'Europe/Rome'), 'Adesso: venerdì 23 ottobre 2026, 10:12:59 (Europe/Rome).');
   // The day of the zone, not of UTC: past midnight in Rome it is already Saturday.
-  assert.equal(nowText(new Date('2026-10-23T22:05:00Z'), 'Europe/Rome'), 'Adesso: sabato 24 ottobre 2026, 00:05 (Europe/Rome).');
-  assert.equal(nowText(new Date('2026-10-23T22:05:00Z'), 'UTC'), 'Adesso: venerdì 23 ottobre 2026, 22:05 (UTC).');
+  assert.equal(nowText(new Date('2026-10-23T22:05:07Z'), 'Europe/Rome'), 'Adesso: sabato 24 ottobre 2026, 00:05:07 (Europe/Rome).');
+  assert.equal(nowText(new Date('2026-10-23T22:05:00Z'), 'UTC'), 'Adesso: venerdì 23 ottobre 2026, 22:05:00 (UTC).');
   // After the change of the clocks: winter time, one hour from UTC.
-  assert.equal(nowText(new Date('2026-10-26T08:00:00Z'), 'Europe/Rome'), 'Adesso: lunedì 26 ottobre 2026, 09:00 (Europe/Rome).');
+  assert.equal(nowText(new Date('2026-10-26T08:00:00Z'), 'Europe/Rome'), 'Adesso: lunedì 26 ottobre 2026, 09:00:00 (Europe/Rome).');
   // Without a zone, the one of this Mac: still a whole line.
-  assert.match(nowText(new Date()), /^Adesso: \S+ \d{1,2} \S+ \d{4}, \d{2}:\d{2} \([^)]+\)\.$/);
+  assert.match(nowText(new Date()), /^Adesso: \S+ \d{1,2} \S+ \d{4}, \d{2}:\d{2}:\d{2} \([^)]+\)\.$/);
 });
 
 test('the part of now is L0, with a source of its own', () => {
   const part = clockPart(new Date('2026-10-23T08:12:00Z'), 'Europe/Rome');
-  assert.deepEqual(part, { text: 'Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).', label: 'L0', source: CLOCK_SOURCE });
+  assert.deepEqual(part, { text: 'Adesso: venerdì 23 ottobre 2026, 10:12:00 (Europe/Rome).', label: 'L0', source: CLOCK_SOURCE });
   assert.notEqual(part.label, 'L1');
 });
 

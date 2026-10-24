@@ -12,10 +12,15 @@ import { dayText, systemTimeZone, wallOf } from './routine-schedule.ts';
 
 export const CLOCK_SOURCE = 'arianna:clock';
 
-/** «Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).», to the minute, in `timezone` (this Mac's by default). */
+/**
+ * «Adesso: venerdì 23 ottobre 2026, 10:12:37 (Europe/Rome).», to the second of the request, in `timezone` (this
+ * Mac's by default). The seconds cost nothing to the cache: the line is in the last message, never in the prefix.
+ */
 export function nowText(now: Date, timezone: string = systemTimeZone()): string {
   const wall = wallOf(now.getTime(), timezone);
-  const clock = `${String(wall.hour).padStart(2, '0')}:${String(wall.minute).padStart(2, '0')}`;
+  // Every zone in use is offset by whole minutes: the seconds are the same as in UTC.
+  const seconds = now.getUTCSeconds();
+  const clock = [wall.hour, wall.minute, seconds].map((part) => String(part).padStart(2, '0')).join(':');
   return `Adesso: ${dayText(now, timezone)}, ${clock} (${timezone}).`;
 }
 
