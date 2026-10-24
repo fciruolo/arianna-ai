@@ -8,6 +8,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Arianna, il Modello locale e gli agenti che rispondono sul modello locale, anche in chiamata, conoscono data e ora: in fondo all'ultimo messaggio di ogni richiesta c'è «Adesso: venerdì 23 ottobre 2026, 10:12 (Europe/Rome).», un pezzo L0 che passa dal gateway; il prompt fisso resta identico e la cache dei prefissi tiene (D-311).
 
+### Cambiato
+
+- Impostazioni: «Aspetto e installazione» è divisa in due pagine del gruppo Sistema, «Aspetto» (tema e chiaro/scuro) e «Installazione» (tipo, versione, cartella e «Pronta per i dati veri»); il vecchio indirizzo apre «Aspetto» (D-312).
+
 ## [0.176.0] - 2026-10-24
 
 ### Aggiunto
