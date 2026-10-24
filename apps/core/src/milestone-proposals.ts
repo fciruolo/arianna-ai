@@ -113,7 +113,7 @@ export function checkMilestoneProposal(args: Record<string, unknown>, scope: Pro
     const words = line(args.due, MAX_DUE_WORDS, 'due');
     if (typeof words !== 'string') return words;
     const parsed = parseDay(words, scope.today ?? localDay());
-    if (parsed === undefined) return { error: `the core cannot tell the day from '${words}': ask the user for the day, or leave due out` };
+    if (parsed === undefined) return { error: `the core cannot tell the day from '${words}': ask the user which day with user.ask; never leave out a due the user said` };
     due = parsed.day;
   }
   if (!Array.isArray(args.cards)) return { error: 'cards must be a list of card titles ([] when the user named none)' };
@@ -272,16 +272,16 @@ export async function proposalAnswerOf(sql: Queryable, approvalId: string, propo
 
 /** What the chat reads once the user decided a proposed milestone, written by code. */
 export function milestoneAnswerText(proposal: MilestoneProposal, state: string, outcome: ProposalAnswer): string {
-  if (state !== 'approved') return 'Va bene: non ho creato la milestone. Se cambi idea, chiedimela di nuovo o creala dalla Bacheca.';
+  if (state !== 'approved') return 'Va bene: non ho creato la milestone. Se cambi idea, chiedimela di nuovo o creala dal «Cardwall».';
   if (outcome === 'full') {
-    return `Non sono riuscita a creare la milestone «${proposal.title}»: ${proposal.project} ha già ${String(MAX_OPEN_MILESTONES)} milestone aperte. Chiudine una dalla Bacheca e chiedimela di nuovo.`;
+    return `Non sono riuscita a creare la milestone «${proposal.title}»: ${proposal.project} ha già ${String(MAX_OPEN_MILESTONES)} milestone aperte. Chiudine una dal «Cardwall» e chiedimela di nuovo.`;
   }
   if (outcome === 'duplicate') {
-    return `Non ho creato la milestone «${proposal.title}»: ${proposal.project} ne ha già una aperta con questo nome. Spostaci le card dalla Bacheca.`;
+    return `Non ho creato la milestone «${proposal.title}»: ${proposal.project} ne ha già una aperta con questo nome. Spostaci le card dal «Cardwall».`;
   }
-  if (outcome === 'failed') return `Non sono riuscita a creare la milestone «${proposal.title}»: guarda la Bacheca di ${proposal.project} e chiedimela di nuovo se manca.`;
+  if (outcome === 'failed') return `Non sono riuscita a creare la milestone «${proposal.title}»: guarda il «Cardwall» di ${proposal.project} e chiedimela di nuovo se manca.`;
   const due = proposal.due === null ? '' : `, scade ${dayText(proposal.due)}`;
-  const where = `La trovi nella Bacheca scegliendo ${proposal.project} nel filtro.`;
+  const where = `La trovi nel «Cardwall» scegliendo ${proposal.project} nel filtro.`;
   if (proposal.cards.length === 0) return `Ho creato la milestone «${proposal.title}» di ${proposal.project}${due}, ancora senza card: spostaci le card trascinandole nella sua fascia. ${where}`;
   const lines = proposal.cards.map((card, index) => `${String(index + 1)}. ${card}`);
   const count = proposal.cards.length === 1 ? 'una card in Inbox, assegnata a te e non avviata' : `${String(proposal.cards.length)} card in Inbox, assegnate a te e non avviate`;

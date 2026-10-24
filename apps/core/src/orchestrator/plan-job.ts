@@ -5,12 +5,15 @@ import { maxLabel, type Label } from '@arianna/policy';
 import { addressedBrief } from '../addressed.ts';
 import { checkPlan, requestPlan } from '../card-plans.ts';
 import { PROJECT_NAME } from '../cardwall.ts';
+import { localDay } from '../commitment-dates.ts';
 import { CHAT_AGENT, loadConversation } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import { scheduleTask, type StepContext, type StepOutcome } from '../engine.ts';
 import { appendEvent } from '../events.ts';
 import { contextOf } from '../finance-mark.ts';
 import { passGateway } from '../gateway.ts';
+import { conversationProject } from '../participants.ts';
+import { milestoneOfBrief } from '../plan-milestone.ts';
 import { openReply } from '../reply.ts';
 import { createTask, loadTask, type Task } from '../tasks.ts';
 import { PLANNER_PROMPT, plannerBrief, plannerChoice, writePlan } from './claude-plan.ts';
@@ -155,10 +158,15 @@ export async function planCardStep(deps: PlanCardDeps, ctx: StepContext): Promis
   }
   const checked = checkPlan(args, assignees);
   if ('error' in checked) return { kind: 'wait-user', reason: `the planner wrote an invalid plan: ${checked.error}`, usage };
+  // «/progetta la milestone Accessi che…» (D-313, seguito 3): the milestone from the user's words, never from the planner;
+  // only in a work conversation with a project, where it can be made.
+  const conversationId = parent?.conversationId ?? null;
+  const project = conversationId === null ? undefined : await conversationProject(sql, conversationId);
+  const milestone = project === undefined ? undefined : milestoneOfBrief(request, localDay());
   const approvalId = await sql.begin(async (tx) => {
     // The quota's wait is over; a plan written by another model than the project asked for says so (D-235).
     await tx`UPDATE tasks SET note = ${note} WHERE id = ${task.id} AND note IS DISTINCT FROM ${note}`;
-    return requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked, ...(note === null ? {} : { writtenBy: note }) });
+    return requestPlan(tx, { taskId: task.id, step, label: planLabel, plan: checked, ...(note === null ? {} : { writtenBy: note }), ...(milestone === undefined ? {} : { milestone }) });
   });
   return { kind: 'confirm', approvalId, usage };
 }

@@ -1,6 +1,7 @@
 import type { LoadedAgent } from '@arianna/agents';
 import { maxLabel, type Label } from '@arianna/policy';
 
+import { PROJECT_NAME } from './cardwall.ts';
 import { ChatError, isUuid } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -114,6 +115,18 @@ export async function participantsAt(sql: Queryable, conversationId: string, sin
 /** The context message of Arianna's turn: who is in the conversation besides her and the user. */
 export function participantsNote(agents: readonly string[]): string | undefined {
   return agents.length === 0 ? undefined : `In this conversation: ${agents.join(', ')}.`;
+}
+
+/** The note of a work conversation's project (D-313): the model leaves the project out of the tools that take one. */
+export function projectNote(project: string): string {
+  return `This is a work conversation of the project ${project}: when the user names no other project, it is this one (leave "project" out of milestone.propose).`;
+}
+
+/** The project of a work conversation (the container of its workspace, D-145), or undefined. */
+export async function conversationProject(sql: Queryable, conversationId: string): Promise<string | undefined> {
+  const [row] = await sql<{ workspace: string | null }[]>`SELECT workspace FROM conversations WHERE id = ${conversationId} AND mode = 'work'`;
+  const project = row?.workspace?.split(':')[0];
+  return project !== undefined && PROJECT_NAME.test(project) ? project : undefined;
 }
 
 export interface Entry {

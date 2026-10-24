@@ -483,3 +483,66 @@ test('«Elimina» purges the card «Piano» with the conversation: the request a
   const plan = await loadApproval(db().sql, approvalId);
   assert.deepEqual([plan?.state, plan?.detail], ['expired', { purged: true }]);
 });
+
+/** «/progetta <brief>» planned on the local model and waiting: the chat task, the card «Piano» and its approval. */
+async function plannedWith(brief: string, mode: 'work' | 'private'): Promise<{ conversationId: string; task: Task; approvalId: string }> {
+  const conversation = mode === 'work' ? await createConversation(db().sql, { mode, project: 'site', projects: PROJECTS }) : await createConversation(db().sql, { mode });
+  const { task } = await postUserMessage(db().sql, conversation.id, `/progetta ${brief}`, MENTIONABLE);
+  const executor = orchestrator(scripted([MINE]), [], 'local');
+  assert.deepEqual(await drain([task.id], executor), ['answered', 'waiting-approval']);
+  const card = await planCardOf(task.id);
+  return { conversationId: conversation.id, task, approvalId: (await loadTask(db().sql, card.id))?.waitingApprovalId ?? '' };
+}
+
+async function lastSaid(conversationId: string): Promise<string | undefined> {
+  const [said] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE conversation_id = ${conversationId} ORDER BY id DESC LIMIT 1`;
+  return said?.body;
+}
+
+test('«/progetta la milestone …»: the plan shows the milestone, the approval creates it with the cards in it, the same name gets them, «Non ora» and no project make none (D-313, seguito 3)', async () => {
+  const name = `Accessi ${randomUUID().slice(0, 8)}`;
+  const first = await plannedWith(`la milestone «${name}» entro fine novembre che deve fare testi e foto`, 'work');
+  const approval = await loadApproval(db().sql, first.approvalId);
+  assert.equal((approval?.detail.milestone as { title?: string } | undefined)?.title, name);
+  assert.match((approval?.detail.milestone as { due?: string } | undefined)?.due ?? '', /^\d{4}-11-30$/);
+  await recordDecision(db().sql, first.approvalId, 'approved', 'web', undefined, { starts: [] });
+  const milestones = await db().sql<{ id: string; due: string; label: string; approval: string }[]>`
+    SELECT id::text, to_char(due_on, 'MM-DD') AS due, label, approval_id::text AS approval FROM milestones WHERE project = 'site' AND title = ${name}`;
+  assert.deepEqual(milestones.map((row) => [row.due, row.label, row.approval]), [['11-30', 'L2', first.approvalId]]);
+  const inside = await db().sql<{ title: string }[]>`SELECT title FROM tasks WHERE milestone_id = ${milestones[0]?.id ?? ''}::uuid ORDER BY title`;
+  assert.deepEqual(inside.map((row) => row.title), ['Foto', 'Testi']);
+  assert.match((await lastSaid(first.conversationId)) ?? '', new RegExp(`\\n\\nSono nella milestone «${name}» di site, che scade lunedì 30 novembre \\d{4}\\.$`));
+
+  // The same name, in another case: the cards go in the open milestone, never a second one.
+  const second = await plannedWith(`la milestone ${name.toLowerCase()}: testi e foto della seconda pagina`, 'work');
+  await recordDecision(db().sql, second.approvalId, 'approved', 'web', undefined, { starts: [] });
+  const [count] = await db().sql<{ milestones: number; cards: number }[]>`
+    SELECT count(DISTINCT m.id)::int AS milestones, count(t.id)::int AS cards FROM milestones m LEFT JOIN tasks t ON t.milestone_id = m.id WHERE m.project = 'site' AND lower(m.title) = lower(${name})`;
+  assert.deepEqual([count?.milestones, count?.cards], [1, 4]);
+
+  // «Non ora»: no milestone, no card.
+  const other = `Pagamenti ${randomUUID().slice(0, 8)}`;
+  const rejected = await plannedWith(`la milestone «${other}» con carrello e checkout`, 'work');
+  await recordDecision(db().sql, rejected.approvalId, 'rejected', 'web');
+  assert.equal((await db().sql`SELECT 1 FROM milestones WHERE title = ${other}`).length, 0);
+  assert.deepEqual(await cardsOf(rejected.task.id), []);
+
+  // A private conversation has no project: the plan names no milestone, so the card promises none.
+  const alone = `Trasloco ${randomUUID().slice(0, 8)}`;
+  const privately = await plannedWith(`la milestone «${alone}» con scatoloni e furgone`, 'private');
+  assert.equal((await loadApproval(db().sql, privately.approvalId))?.detail.milestone, undefined);
+  await recordDecision(db().sql, privately.approvalId, 'approved', 'web', undefined, { starts: [] });
+  assert.equal((await db().sql`SELECT 1 FROM milestones WHERE title = ${alone}`).length, 0);
+  assert.equal((await cardsOf(privately.task.id)).length, 2);
+  assert.doesNotMatch((await lastSaid(privately.conversationId)) ?? '', /milestone/);
+
+  // The plan edited before the decision keeps its milestone.
+  const kept = `Ordini ${randomUUID().slice(0, 8)}`;
+  const edited = await plannedWith(`la milestone «${kept}» con lista e dettaglio`, 'work');
+  await editPlan(db().sql, edited.approvalId, { title: 'Ordini', cards: [row('Lista', 'user', []), row('Dettaglio', 'user', [1])] }, ['user']);
+  assert.equal(((await loadApproval(db().sql, edited.approvalId))?.detail.milestone as { title?: string } | undefined)?.title, kept);
+
+  // A plan without a milestone has none in its detail.
+  const plain = await plannedWith('il sito della pasticceria', 'work');
+  assert.equal((await loadApproval(db().sql, plain.approvalId))?.detail.milestone, undefined);
+});

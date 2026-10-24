@@ -6,6 +6,7 @@ import { PROJECT_NAME } from './cardwall.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { enqueueJob } from './jobs.ts';
+import { attachPlanMilestone, planMilestoneOf, planMilestoneText, type PlanMilestone } from './plan-milestone.ts';
 import { createTask, loadTask, moveTask, STEP_QUEUE, type Task } from './tasks.ts';
 
 /**
@@ -43,6 +44,8 @@ export interface PlanProposal {
 /** A plan as an approval holds it: with the rows to start, once the user decided it (D-235). */
 export interface StoredPlan extends PlanProposal {
   starts?: number[];
+  /** The milestone a «/progetta» named (D-313, seguito 3): its cards go in it with the approval. */
+  milestone?: PlanMilestone;
 }
 
 /**
@@ -135,7 +138,7 @@ export function checkPlan(args: Record<string, unknown>, assignees: readonly str
 /** The plan of an approval of kind `plan`, or undefined when its detail is not one (purged, or written by hand). */
 export function planOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): StoredPlan | undefined {
   if (approval.kind !== 'plan') return undefined;
-  const { title, cards, starts } = approval.detail;
+  const { title, cards, starts, milestone } = approval.detail;
   if (typeof title !== 'string' || !Array.isArray(cards) || cards.length === 0) return undefined;
   const parsed: PlannedCard[] = [];
   for (const [index, item] of (cards as unknown[]).entries()) {
@@ -155,15 +158,25 @@ export function planOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): Store
   const rows = Array.isArray(starts)
     ? (starts as unknown[]).filter((row): row is number => typeof row === 'number' && Number.isInteger(row) && row >= 1 && row <= parsed.length)
     : undefined;
-  return { title, cards: parsed, ...(rows === undefined ? {} : { starts: rows }) };
+  const named = milestoneOf(milestone);
+  return { title, cards: parsed, ...(rows === undefined ? {} : { starts: rows }), ...(named === undefined ? {} : { milestone: named }) };
+}
+
+/** The milestone of a plan's detail, or undefined (none, or not one). */
+function milestoneOf(value: unknown): PlanMilestone | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { title, due } = value as Record<string, unknown>;
+  if (typeof title !== 'string' || title === '') return undefined;
+  return { title, due: typeof due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null };
 }
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 /** The detail of an approval of kind plan: the cards as the chat and planOf read them. */
-function planDetail(plan: PlanProposal, step: unknown, revision = 0, writtenBy?: unknown): { [key: string]: Json } {
+function planDetail(plan: PlanProposal, step: unknown, revision = 0, writtenBy?: unknown, milestone?: PlanMilestone): { [key: string]: Json } {
   return {
     title: plan.title,
+    ...(milestone === undefined ? {} : { milestone: { title: milestone.title, due: milestone.due } }),
     cards: plan.cards.map((card) => ({ ...card, blockedBy: [...card.blockedBy] })),
     ...(typeof step === 'number' ? { step } : {}),
     ...(revision > 0 ? { edited: true, revision } : {}),
@@ -180,10 +193,10 @@ export function planWrittenBy(detail: Record<string, unknown>): string | undefin
  * Writes the approval of a plan, at the label of what the step had read; returns its id.
  * `writtenBy`: the note of a fallback of the planner, code text (plannerNote).
  */
-export async function requestPlan(tx: Queryable, options: { taskId: string; step: number; label: Label; plan: PlanProposal; writtenBy?: string }): Promise<string> {
+export async function requestPlan(tx: Queryable, options: { taskId: string; step: number; label: Label; plan: PlanProposal; writtenBy?: string; milestone?: PlanMilestone }): Promise<string> {
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
-    VALUES (${options.taskId}, 'plan', ${PLAN_ACTION}, ${tx.json(planDetail(options.plan, options.step, 0, options.writtenBy))}, ${options.label}::privacy_label)
+    VALUES (${options.taskId}, 'plan', ${PLAN_ACTION}, ${tx.json(planDetail(options.plan, options.step, 0, options.writtenBy, options.milestone))}, ${options.label}::privacy_label)
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO approvals returned no row');
   return row.id;
@@ -299,6 +312,8 @@ export async function applyPlanApproval(tx: Queryable, approval: StoredApproval)
     }
     await appendEvent(tx, { kind: 'card.changed', taskId: created.id, label: 'L0', payload: { created: true, plan: approval.id } });
   }
+  // The milestone «/progetta» named (D-313, seguito 3): the cards go in it, created or found open.
+  if (plan.milestone !== undefined) await attachPlanMilestone(tx, { approvalId: approval.id, label: approval.label, project, milestone: plan.milestone, cards: ids });
   // «Avvia subito» (D-235): as «Avvia», to do with the first step queued; one that waits is held back by the engine (D-152).
   for (const row of plan.starts ?? []) {
     const id = ids[row - 1];
@@ -344,9 +359,11 @@ export async function closePlanningCard(tx: Queryable, approval: StoredApproval,
     SELECT c.id::text AS "conversationId" FROM tasks card JOIN tasks request ON request.id = card.parent_id JOIN conversations c ON c.id = request.conversation_id
     WHERE card.id = ${approval.taskId} AND c.purged_at IS NULL AND c.archived_at IS NULL`;
   if (plan !== undefined && origin !== undefined) {
+    const named = approval.state === 'approved' ? plan.milestone : undefined;
+    const body = named === undefined ? planAnswerText(plan, approval.state) : `${planAnswerText(plan, approval.state)}\n\n${planMilestoneText(named, await planMilestoneOf(tx, approval.id), isAtMost(approval.label, 'L2') ? 'full' : 'secret')}`;
     const [line] = await tx<{ id: string }[]>`
       INSERT INTO messages (conversation_id, role, channel, label, body)
-      VALUES (${origin.conversationId}, 'assistant', 'web', ${approval.label}::privacy_label, ${planAnswerText(plan, approval.state)})
+      VALUES (${origin.conversationId}, 'assistant', 'web', ${approval.label}::privacy_label, ${body})
       RETURNING id::text`;
     if (line === undefined) throw new Error('INSERT INTO messages returned no row');
     await appendEvent(tx, { kind: 'message.created', label: 'L0', payload: { conversationId: origin.conversationId, messageId: line.id, role: 'assistant' } });
@@ -377,7 +394,7 @@ export async function editPlan(sql: Sql, approvalId: string, input: Record<strin
       const kinds = [...new Set(texts.flatMap((text) => scanText(text).map((finding) => finding.kind)))];
       if (kinds.length > 0) throw new PlanError('invalid', `a work conversation cannot hold this plan (${kinds.join(', ')}): open a private conversation`);
     }
-    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, planRevision(row.detail) + 1, planWrittenBy(row.detail)))} WHERE id = ${approvalId}::uuid`;
+    await tx`UPDATE approvals SET detail = ${tx.json(planDetail(checked, row.detail.step, planRevision(row.detail) + 1, planWrittenBy(row.detail), milestoneOf(row.detail.milestone)))} WHERE id = ${approvalId}::uuid`;
     // How many cards only: their text stays in the approval.
     await appendEvent(tx, { kind: 'approval.edited', label: 'L0', payload: { approvalId, cards: checked.cards.length } });
     const edited = await loadApproval(tx, approvalId);

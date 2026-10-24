@@ -189,6 +189,19 @@ function dayFrom(text: string, today: string): string | undefined {
     return addDays(today, ahead);
   }
 
+  // "fine novembre", "inizio dicembre 2026", "metà gennaio": the last, the first, the 15th of that month, the next one from today.
+  const part = new RegExp(`\\b(fine|inizio|meta)\\s+(${PLAIN_MONTHS.join('|')})(?:\\s+(\\d{4}))?\\b`).exec(cleaned);
+  if (part !== null) {
+    const month = PLAIN_MONTHS.indexOf(part[2] ?? '') + 1;
+    const pick = (year: number): string => (part[1] === 'fine' ? lastDayOf(year, month) : dayOf(year, month, part[1] === 'inizio' ? 1 : 15));
+    if (part[3] !== undefined) return pick(Number(part[3]));
+    const here = pick(parts(today).year);
+    return here >= today ? here : pick(parts(today).year + 1);
+  }
+  // "fine mese", "fine del mese", "fine anno", "fine dell'anno": of the current month or year.
+  if (/^fine (?:dell'?\s?)?mese$/.test(cleaned)) return lastDayOf(parts(today).year, parts(today).month);
+  if (/^fine (?:dell'?\s?)?anno$/.test(cleaned)) return dayOf(parts(today).year, 12, 31);
+
   // "15/10", "15-10-2026", "15.10.26".
   const numeric = /\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?\b/.exec(cleaned);
   if (numeric !== null) return dateOf(Number(numeric[1]), Number(numeric[2]), numeric[3], today);
@@ -222,6 +235,11 @@ function dateOf(date: number, month: number, yearText: string | undefined, today
   if (day >= today) return day;
   const next = dayOf(current + 1, month, date);
   return isDay(next) ? next : undefined;
+}
+
+/** The last day of a month: the day before the first of the next one. */
+function lastDayOf(year: number, month: number): string {
+  return addDays(month === 12 ? dayOf(year + 1, 1, 1) : dayOf(year, month + 1, 1), -1);
 }
 
 function addMonths(day: string, amount: number): string {

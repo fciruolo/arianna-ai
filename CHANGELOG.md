@@ -6,10 +6,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
+- «/progetta la milestone Accessi che deve fare login, registrazione e recupero password»: il piano mostra la milestone (e la scadenza dopo «entro»), e con «Crea le card» la milestone nasce con le card dentro, o le card vanno in quella aperta con lo stesso nome (D-313).
 - Arianna propone una milestone dalla chat («crea la milestone Accessi su panificio-rossi con design, database e implementazione»): una scheda con titolo, progetto, scadenza, «Fatta quando» e card nuove; solo con «Crea la milestone» nascono la milestone (Privata) e le sue card in Inbox, assegnate a te e non avviate; mai in incognito né nella segretaria (D-313).
 
 ### Corretto
 
+- La scadenza di una milestone o di un impegno scritta come «fine novembre», «inizio dicembre», «metà gennaio», «fine mese» o «fine anno» non si perde più: il core la legge, e se non capisce un giorno Arianna lo chiede invece di lasciarlo fuori (D-313).
+- Le risposte sulle milestone dicono «Cardwall», il nome della pagina, invece di «Bacheca» (D-313).
+- In una conversazione di lavoro Arianna sa di che progetto è, e non chiede più «per quale progetto?» quando le chiedi una milestone (D-313).
 - Le caselle «Bloccata da» del modulo di una milestone hanno un nome accessibile esplicito, il titolo della milestone, mai il suo id, anche per gli strumenti che leggevano il valore (D-313).
 
 ## [0.181.0] - 2026-10-24

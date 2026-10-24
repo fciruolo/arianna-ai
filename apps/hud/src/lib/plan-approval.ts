@@ -5,6 +5,7 @@
  * rows «Avvia subito» sent with the decision. Pure: the component and the
  * tests share it. The core checks everything again.
  */
+import { dayLabel } from './commitments.ts';
 import { agentTitle } from './italian.ts';
 
 export const COMPLEXITIES = ['S', 'M', 'L'] as const;
@@ -67,6 +68,15 @@ export function startsByDefault(row: Pick<PlanDraftRow, 'assignee' | 'blockedBy'
  */
 export function planWrittenBy(detail: Record<string, unknown>): string | undefined {
   return typeof detail.writtenBy === 'string' && detail.writtenBy.trim() !== '' ? detail.writtenBy : undefined;
+}
+
+/** The milestone a «/progetta» named (D-313, seguito 3), with its due day as the chat writes it; undefined when none. */
+export function planMilestone(detail: Record<string, unknown>, today: string): { title: string; due: string | null } | undefined {
+  const milestone = detail.milestone;
+  if (typeof milestone !== 'object' || milestone === null) return undefined;
+  const { title, due } = milestone as Record<string, unknown>;
+  if (typeof title !== 'string' || title.trim() === '') return undefined;
+  return { title, due: typeof due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(due) ? dayLabel(due, today) : null };
 }
 
 /** The plan in an approval's detail, as rows to show and edit; undefined when the detail is not a plan. */

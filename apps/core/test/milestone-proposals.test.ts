@@ -93,7 +93,7 @@ test('the answer, written by code: created with its cards, refused, a full proje
   assert.match(milestoneAnswerText(proposal, 'rejected', 'failed'), /^Va bene: non ho creato la milestone/);
   assert.match(milestoneAnswerText(proposal, 'approved', 'full'), /già 50 milestone aperte/);
   assert.match(milestoneAnswerText(proposal, 'approved', 'duplicate'), /ne ha già una aperta con questo nome/);
-  assert.match(milestoneAnswerText(proposal, 'approved', 'failed'), /^Non sono riuscita a creare la milestone «Accessi»: guarda la Bacheca/);
+  assert.match(milestoneAnswerText(proposal, 'approved', 'failed'), /^Non sono riuscita a creare la milestone «Accessi»: guarda il «Cardwall»/);
 });
 
 test('the tool refuses before reading anything: without the projects of a conversation of Arianna, after a finance read', async () => {

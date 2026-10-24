@@ -38,6 +38,22 @@ test('dates with or without the year, never before today', () => {
   assert.deepEqual(parseDay('il 5', TODAY), { day: '2026-11-05' });
 });
 
+test('the end, the start and the middle of a month or a year (D-313)', () => {
+  assert.deepEqual(parseDay('fine novembre', TODAY), { day: '2026-11-30' });
+  assert.deepEqual(parseDay('entro fine novembre', TODAY), { day: '2026-11-30' });
+  assert.deepEqual(parseDay('a fine febbraio', TODAY), { day: '2027-02-28' });
+  assert.deepEqual(parseDay('inizio dicembre', TODAY), { day: '2026-12-01' });
+  assert.deepEqual(parseDay('metà gennaio', TODAY), { day: '2027-01-15' });
+  assert.deepEqual(parseDay('fine febbraio 2028', TODAY), { day: '2028-02-29' });
+  assert.deepEqual(parseDay('fine mese', TODAY), { day: '2026-10-31' });
+  assert.deepEqual(parseDay('entro la fine del mese', TODAY), { day: '2026-10-31' });
+  assert.deepEqual(parseDay("fine dell'anno", TODAY), { day: '2026-12-31' });
+  // Already past: the next year's; a past year: refused.
+  assert.deepEqual(parseDay('inizio ottobre', TODAY), { day: '2027-10-01' });
+  assert.equal(parseDay('fine settembre 2026', TODAY), undefined);
+  assert.equal(parseDay('fine settimana', TODAY), undefined);
+});
+
 test('a clock in the same words is taken apart', () => {
   assert.deepEqual(parseDay('giovedì alle 15', TODAY), { day: '2026-10-15', time: '15:00' });
   assert.deepEqual(parseDay('domani ore 9.30', TODAY), { day: '2026-10-10', time: '09:30' });

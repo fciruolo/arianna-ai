@@ -18,6 +18,7 @@ import {
   planBody,
   planDraft,
   planStarts,
+  planMilestone,
   planWrittenBy,
   removeRow,
   toggleBlockedBy,
@@ -61,6 +62,8 @@ watch(
 );
 /** Who wrote the plan, when another model than the project asked for (D-235). */
 const writtenBy = computed(() => (props.approval.kind === 'plan' ? planWrittenBy(props.approval.detail) : undefined));
+/** The milestone a «/progetta» named (D-313, seguito 3): its cards go in it with the decision. */
+const milestoneOfPlan = computed(() => (props.approval.kind === 'plan' ? planMilestone(props.approval.detail, todayInput()) : undefined));
 const draft = ref<PlanDraft | undefined>(undefined);
 const planError = ref<string | null>(null);
 /** Who may do a row: the user and the agents Arianna may call, with those the plan already names. */
@@ -334,6 +337,10 @@ const remoteOrigin = onRemoteOrigin(window.location);
           solo quelle con «Avvia subito».
         </p>
         <p v-if="writtenBy !== undefined" class="text-[13px] text-warn">{{ writtenBy }}.</p>
+        <p v-if="milestoneOfPlan !== undefined" class="break-words">
+          Le card vanno nella milestone <strong>«{{ milestoneOfPlan.title }}»</strong><template v-if="milestoneOfPlan.due !== null"> · scade {{ milestoneOfPlan.due }}</template>: la creo quando le crei, o
+          uso quella aperta con lo stesso nome.
+        </p>
         <ol class="flex flex-col gap-1.5">
           <li v-for="(row, index) in plan.rows" :key="index" class="rounded-lg border border-line bg-bg px-3 py-2">
             <p class="flex flex-wrap items-baseline gap-x-2 break-words">
@@ -420,7 +427,7 @@ const remoteOrigin = onRemoteOrigin(window.location);
         <ol v-if="newMilestone.cards.length > 0" class="flex list-decimal flex-col gap-0.5 pl-5 text-[14px]">
           <li v-for="(card, index) in newMilestone.cards" :key="index" class="break-words">{{ card }}</li>
         </ol>
-        <p v-else class="text-[14px] text-muted">Nessuna card nuova: ce le sposti tu dalla Bacheca.</p>
+        <p v-else class="text-[14px] text-muted">Nessuna card nuova: ce le sposti tu dal «Cardwall».</p>
         <p class="text-xs text-muted">{{ PROPOSAL_NOTE }}</p>
       </template>
       <template v-else-if="milestone !== undefined">

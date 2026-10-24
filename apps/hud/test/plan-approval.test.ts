@@ -14,6 +14,7 @@ import {
   planCommandProblem,
   planDraft,
   planStarts,
+  planMilestone,
   planWrittenBy,
   removeRow,
   toggleBlockedBy,
@@ -140,6 +141,14 @@ test('the ticks «Avvia subito» survive a refresh of the same version; an edit 
   assert.equal(edited.revision, 1);
   assert.deepEqual(keepTicks(edited, shown).rows.map((row) => row.start), [true, false, false, true]);
   assert.equal(draft().revision, 0);
+});
+
+test('the milestone a «/progetta» named, with its due day (D-313, seguito 3)', () => {
+  assert.deepEqual(planMilestone({ title: 'Sito', cards: [], milestone: { title: 'Accessi', due: '2026-11-30' } }, '2026-10-24'), { title: 'Accessi', due: 'lunedì 30 novembre' });
+  assert.deepEqual(planMilestone({ milestone: { title: 'Accessi', due: null } }, '2026-10-24'), { title: 'Accessi', due: null });
+  assert.equal(planMilestone({ title: 'Sito', cards: [] }, '2026-10-24'), undefined);
+  assert.equal(planMilestone({ milestone: { title: ' ' } }, '2026-10-24'), undefined);
+  assert.equal(planMilestone({ milestone: 'Accessi' }, '2026-10-24'), undefined);
 });
 
 test('the note of a plan written by another model than the project asked for (D-235)', () => {
