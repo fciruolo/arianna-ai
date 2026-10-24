@@ -18,7 +18,7 @@ import {
 } from '@arianna/agents';
 import { enabledCloudModels, ORCHESTRATOR_AGENT, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig } from '@arianna/config';
 import { JsonFieldStream, LocalModelError, type ChatRequest, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
+import { clearanceFor, createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { contextOf } from '../finance-mark.ts';
 import { answersWithoutDelegation, CHAT_AGENT, characterOn, CLOUD_CHAT_AGENTS, loadConversation } from '../conversations.ts';
@@ -493,8 +493,14 @@ export function answerThought(turns: readonly Pick<Turn, 'thought' | 'thoughtMs'
   return { thought: texts.join('\n\n'), ...(times.length === 0 ? {} : { thoughtMs: times.reduce((sum, ms) => sum + ms, 0) }) };
 }
 
-/** The orchestrator, and who may do a card of a plan now (D-235): the user and the agents the planner may choose. */
-export type Orchestrator = StepExecutor & { planAssignees(): string[] };
+/**
+ * The orchestrator, and who may do a card of a plan now (D-235): the user and the agents the planner may choose.
+ * `warmupRequest` (D-316): the request that warms the local model, see there.
+ */
+export type Orchestrator = StepExecutor & { planAssignees(): string[]; warmupRequest(): Promise<ChatRequest | undefined> };
+
+/** The message of the warm-up (D-316): fixed, L0, never a word of the user's. */
+export const WARMUP_MESSAGE = 'Ciao';
 
 export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
   const { sql } = options;
@@ -992,8 +998,41 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     return decision.decision === 'allow' ? decision.texts[0] : undefined;
   }
 
+  /**
+   * D-316: the first step of Arianna in a new private conversation, as `ask` sends it, with the
+   * fixed WARMUP_MESSAGE in place of the user's and one token: oMLX loads the model, compiles the
+   * grammar of the schema and keeps the blocks of the system prompt. The same tools as that step
+   * (they are in the prompt and in the schema), chosen by the same functions; whether the profile
+   * «Su di te» exists only decides two tool ids, its text never enters. No persona and no profile in
+   * the tail: they come after the examples, so the blocks before them (D-075) are the step's.
+   * Undefined without Arianna's card.
+   */
+  async function warmupRequest(): Promise<ChatRequest | undefined> {
+    const agent = options.agents.get(ORCHESTRATOR_AGENT);
+    if (agent === undefined) return undefined;
+    const tailClearance = minLabel(clearanceFor('private'), agent.card.maxLabel);
+    const delegates = delegateTargets(env, ORCHESTRATOR_AGENT);
+    const shareTargets = delegates.filter((target) => {
+      const card = options.agents.get(target.name)?.card;
+      return card !== undefined && isCloudRoute(delegationRoute(card));
+    });
+    const readsProfile = agent.card.tools.includes(PROFILE_READ);
+    const facts = await listUserFacts(sql);
+    const sharesFacts = orchestratorTools(agent, delegates.length > 0, false, false, false, false, shareTargets.length > 0).includes(PROFILE_SHARE);
+    const profile = profilePart(facts, tailClearance, { readTool: readsProfile, shareTool: sharesFacts });
+    const tools = orchestratorTools(agent, delegates.length > 0, false, false, false, readsProfile && profile?.topicsOnly === true, profile !== undefined && shareTargets.length > 0, true, false, false);
+    return {
+      model: ORCHESTRATOR_MODEL,
+      messages: chatMessages(agent.prompt, tools, [{ role: 'user', content: WARMUP_MESSAGE }], true, '', delegates, 'self', ''),
+      schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, true, delegates, 'self') },
+      temperature: 0,
+      maxTokens: 1,
+    };
+  }
+
   return {
     planAssignees: () => ['user', ...delegateTargets(env, ORCHESTRATOR_AGENT).map((target) => target.name)],
+    warmupRequest,
 
     async plan(task: Task, step: number): Promise<RunSpec> {
       const key = `${task.id}:${String(step)}`;

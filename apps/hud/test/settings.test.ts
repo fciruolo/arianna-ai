@@ -411,6 +411,21 @@ test('leaveAfterProblem (I-8, D-130): a whole number from 0 (never) to 100', asy
   for (const bad of [-1, 101, 2.5, '10', Number.NaN]) assert.match(leaveAfterProblem(bad) ?? '', /da 0 \(mai\) a 100/, String(bad));
 });
 
+test('idleMinutesProblem (D-316): a whole number of minutes from 0 (never) to 1440', async () => {
+  const { idleMinutesProblem } = await import('../src/lib/settings.ts');
+  for (const good of [0, 1, 30, 1440]) assert.equal(idleMinutesProblem(good), undefined, String(good));
+  for (const bad of [-1, 1441, 2.5, '30', Number.NaN]) assert.match(idleMinutesProblem(bad) ?? '', /da 0 \(mai\) a 1440/, String(bad));
+});
+
+test('modelStateText (D-316): the state of the models of a server in words', async () => {
+  const { modelStateText } = await import('../src/lib/settings.ts');
+  const hour = (iso: string): string => iso.slice(11, 16);
+  assert.equal(modelStateText({ state: 'loaded', since: null, models: ['qwen-35b'] }, hour), 'In memoria: qwen-35b');
+  assert.match(modelStateText({ state: 'warming', since: null, models: [] }, hour), /^In riscaldamento/);
+  assert.equal(modelStateText({ state: 'idle-unloaded', since: '2026-10-24T14:05:00.000Z', models: [] }, hour), 'Scaricato per inattività alle 14:05');
+  assert.match(modelStateText({ state: 'not-loaded', since: null, models: [] }, hour), /^Non in memoria/);
+});
+
 test('the card "Domini approvati" (D-154): an address or a name becomes the host name', () => {
   assert.equal(fetchSiteOf('x.com'), 'x.com');
   assert.equal(fetchSiteOf('  https://www.YouTube.com/watch?v=1 '), 'youtube.com');

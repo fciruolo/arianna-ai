@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Modello caldo: dopo ogni avvio o riavvio del server dei modelli Arianna carica e prepara il modello della chat in background, così la prima domanda non aspetta il caricamento; saltato con la memoria sotto pressione, durante una chiamata o con altre richieste in corso (D-316).
+- Scarico dei modelli locali dopo `[local] idle_unload_minutes` minuti senza richieste (30 se manca, 0 mai), mai durante una chiamata, un lavoro in corso o una routine imminente; scheda «Modelli in memoria» in Impostazioni → Server dei modelli con i minuti e lo stato del modello (D-316).
+
 ## [0.178.0] - 2026-10-24
 
 ### Aggiunto

@@ -76,8 +76,10 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
   return {
     applied: [
       ...(changed('roles') ? ['roles'] : []),
-      ...(sameServers && changed('local') ? ['local.models'] : []),
+      ...(sameServers && !isDeepStrictEqual(before.local.endpoints, after.local.endpoints) ? ['local.models'] : []),
       ...(sameServers ? [] : ['local.endpoints']),
+      // D-316: read at each check of the core, nothing to restart.
+      ...(before.local.idleUnloadMinutes === after.local.idleUnloadMinutes ? [] : ['local.idle']),
       ...(isDeepStrictEqual(before.cloud.executors, after.cloud.executors) ? [] : ['cloud.executors']),
       ...(isDeepStrictEqual(cloudModels(before), cloudModels(after)) ? [] : ['cloud.models']),
       ...(changed('projects') ? ['projects'] : []),

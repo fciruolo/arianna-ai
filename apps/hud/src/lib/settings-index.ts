@@ -334,7 +334,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   executors: ['executors'],
   projects: ['projects'],
   'project-rules': ['projectRules'],
-  servers: ['endpoints'],
+  servers: ['endpoints', 'localIdle'],
   links: ['fetchSites'],
   'coder-sites': ['coderSites'],
 };

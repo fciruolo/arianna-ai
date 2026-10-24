@@ -5,6 +5,18 @@ import { asArray, asString, asTable, ConfigError, onlyKeys } from './validate.ts
 export interface LocalConfig {
   /** In order of preference: the first is the main server, the others are fallbacks. */
   endpoints: LocalEndpointConfig[];
+  /**
+   * `idle_unload_minutes` (D-316): minutes without a request to a local model
+   * before the core unloads it from the server; 0 never, 30 when absent.
+   */
+  idleUnloadMinutes: number;
+}
+
+export const DEFAULT_IDLE_UNLOAD_MINUTES = 30;
+export const MAX_IDLE_UNLOAD_MINUTES = 1440;
+
+export function isIdleUnloadMinutes(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_IDLE_UNLOAD_MINUTES;
 }
 
 export interface LocalEndpointConfig {
@@ -25,16 +37,18 @@ const NAME = /^[a-z0-9][a-z0-9-]*$/;
 const LOOPBACK_HOSTNAMES = ['127.0.0.1', '[::1]'];
 
 export function parseLocal(value: unknown, roles: Roles = {}): LocalConfig {
-  if (value === undefined) return { endpoints: [] };
+  if (value === undefined) return { endpoints: [], idleUnloadMinutes: DEFAULT_IDLE_UNLOAD_MINUTES };
   const local = asTable(value, 'local');
-  onlyKeys(local, ['endpoints'], 'local');
+  onlyKeys(local, ['endpoints', 'idle_unload_minutes'], 'local');
+  const idle = local.idle_unload_minutes ?? DEFAULT_IDLE_UNLOAD_MINUTES;
+  if (!isIdleUnloadMinutes(idle)) throw new ConfigError(`local.idle_unload_minutes: a whole number from 0 (never) to ${String(MAX_IDLE_UNLOAD_MINUTES)}`);
   const endpoints = asArray(local.endpoints ?? [], 'local.endpoints').map((item, index) =>
     parseEndpoint(item, `local.endpoints[${String(index)}]`, roles),
   );
   const ids = endpoints.map(({ id }) => id);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   if (duplicate !== undefined) throw new ConfigError(`local.endpoints: duplicate id ${duplicate}`);
-  return { endpoints };
+  return { endpoints, idleUnloadMinutes: idle };
 }
 
 function parseEndpoint(value: unknown, where: string, roles: Roles): LocalEndpointConfig {

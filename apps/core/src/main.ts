@@ -104,15 +104,16 @@ import { createImWatcher } from './im-watch.ts';
 import { createMilestoneWatcher } from './milestones.ts';
 import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
 import { createSecretaryTicker } from './reminders.ts';
-import { createRoutineService, createRoutineSummarizer, createRoutineTicker, routineCallScript } from './routines.ts';
+import { createRoutineService, createRoutineSummarizer, createRoutineTicker, routineCallScript, routineDueSoon, ROUTINE_SOON_MS } from './routines.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
+import { createModelWarmth, onServerEvent, type ModelWarmth } from './model-warmth.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
 import { briefCeiling, delegationRoute, localAgentModel, mentionableAgents, mentionBlocks } from './orchestrator/delegate.ts';
 import { createKb, KB_DIR } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
-import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { createOrchestrator, ORCHESTRATOR_MODEL } from './orchestrator/orchestrator.ts';
 import { createNoteReleaser } from './note-release.ts';
 import { createNoteOrganizer, MAX_RESUMED, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
@@ -399,12 +400,16 @@ const settings = watchConfig({
 // take minutes, and the chat must not wait for it.
 // The key of each server the core starts (D-221), read again at every request.
 const localKey = localKeys(config.paths.data, (id) => settings.current().local.endpoints.some((endpoint) => endpoint.id === id && endpoint.command !== undefined));
+// D-316: set once the orchestrator exists; the servers already up are warmed then.
+const warmthRef: { current: ModelWarmth | undefined } = { current: undefined };
 const localServers = createLocalServers({
   home: config.home,
   dataDir: config.paths.data,
   onEvent: (event) => {
     // A server that started or exited holds no model: the memory account starts again.
     if (event.type === 'spawn' || event.type === 'exit') memory.serverReset(event.endpoint);
+    // D-316: a server started, adopted or lost is warmed when it answers; an unload for inactivity is none of these.
+    onServerEvent(warmthRef.current, event, report);
     if (!loggedEvent(event)) return;
     // Codes only: `error` carries a system code or a class name, never data.
     const detail =
@@ -715,6 +720,27 @@ const orchestrator = createOrchestrator({
     );
   },
 });
+// D-316: the model warm after every start of its server, unloaded after `[local] idle_unload_minutes` without requests.
+// Ids, outcomes and times only (L0): the warm-up holds no word of the user's, so no gateway row, message or task.
+const warmth = createModelWarmth({
+  endpoints: () => settings.current().local.endpoints,
+  alias: ORCHESTRATOR_MODEL,
+  request: () => orchestrator.warmupRequest(),
+  model: localModel,
+  memory,
+  callActive: () => callActive(),
+  busy: async () => (await machineBusy(sql)) || (await trialRunning(sql)),
+  soon: () => routineDueSoon(sql, ROUTINE_SOON_MS),
+  idleMinutes: () => settings.current().local.idleUnloadMinutes,
+  onEvent: (event) => {
+    const seconds = (event.ms / 1000).toFixed(1);
+    console.log(`local ${event.endpoint}: warm ${event.outcome}${event.code === undefined ? '' : ` (${event.code})`} in ${seconds} s`);
+    appendEvent(sql, { kind: 'local.warm', label: 'L0', payload: { ...event } }).catch(report);
+  },
+  onError: report,
+});
+warmthRef.current = warmth;
+for (const server of localServers.status()) if (server.state === 'up') warmth.serverUp(server.id).catch(report);
 // D-250: a direct chat left waiting only because the gateway refused its brief ends with Arianna's message.
 closeRefusedDirectWaits(sql).catch(report);
 const refused = [...(claude === undefined ? ['claude'] : []), ...(codex === undefined ? ['codex'] : [])];
@@ -1511,6 +1537,7 @@ const server = await startApiServer({
     },
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
+    warmth: () => warmth.status(),
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), archive: (path) => enqueueArchive(sql, path, true), video: (path) => videoWorker.enqueue(path), videoState: (path) => videoWorker.state(path), wiki: { propose: (page, force) => enqueueWikiNote(sql, page, force), index: (folder) => enqueueWikiIndex(sql, folder) }, arianna: ariannaDocs },
   modelEvals,
@@ -1740,6 +1767,7 @@ async function shutdown(): Promise<void> {
   await routineSummarizer.stop();
   await Promise.all(workers.map((one) => one.stop()));
   await agentBrowser.close();
+  warmth.stop();
   memory.stop();
   await localServers.stop();
   await live.close();

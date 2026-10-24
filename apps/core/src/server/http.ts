@@ -174,6 +174,7 @@ import { OmlxBusyError, type OmlxReleases } from '../omlx-release.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
+import type { WarmthStatus } from '../model-warmth.ts';
 import type { ModelsOverview } from '../models-overview.ts';
 import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, readPageFile, type GraphCache } from '../knowledge.ts';
 import {
@@ -514,6 +515,8 @@ export interface LocalApi {
   log(id: string): string;
   /** The account of the local models and the swap level (D-107, stage E): catalog ids and numbers, L0. */
   memory?(): MemorySnapshot;
+  /** The warm model (D-316): minutes before an unload for inactivity and the state of each server's models, L0. */
+  warmth?(): WarmthStatus | undefined;
 }
 
 export interface ApiServer {
@@ -903,7 +906,8 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
     // With `memory`: the account of the local models and the swap level (D-107, stage E), L0.
     route('GET', '/api/settings', () => {
       const memory = local?.memory?.();
-      return Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [], ...(memory === undefined ? {} : { memory }) } });
+      const warmth = local?.warmth?.();
+      return Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [], ...(memory === undefined ? {} : { memory }), ...(warmth === undefined ? {} : { warmth }) } });
     }),
     // Models, cloud models, characters, [voice]: written at once.
     route('POST', '/api/settings', async (request) => ({ body: need().update(await readJson(request)) })),

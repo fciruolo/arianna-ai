@@ -66,6 +66,9 @@ import {
   fileErrorText,
   keptSections,
   leaveAfterProblem,
+  idleMinutesProblem,
+  MAX_IDLE_MINUTES,
+  modelStateText,
   PLANNERS,
   pollAction,
   SECTION_TEXT,
@@ -97,6 +100,7 @@ import {
   type TelegramForm,
   type VoiceForm,
   type VoiceValues,
+  type WarmthStatus,
 } from '../lib/settings.ts';
 import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
@@ -177,6 +181,7 @@ interface Forms {
   skills: SkillsForm;
   sprites: SettingsValues['sprites'];
   participants: number;
+  localIdle: number;
   voice: VoiceForm;
   push: PushForm;
   notifications: NotificationsForm;
@@ -202,6 +207,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     skills: skillsForm(values.skills, agentSkills),
     sprites: values.sprites,
     participants: values.participants,
+    localIdle: values.localIdle ?? 30,
     voice: voiceForm(values.voice, defaults),
     // An older core sends the keys in [voice].
     push: pushForm(values.push ?? (values.voice as (VoiceValues & { push?: SettingsValues['push'] }) | null)?.push),
@@ -217,10 +223,16 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'push', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'series', 'projectRules', 'agents', 'skills', 'participants', 'localIdle', 'voice', 'push', 'notifications', 'secretary', 'appearance', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites', 'coderSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
+/** The warm model (D-316): what the models of each server are doing; null from an older core. */
+const warmth = ref<WarmthStatus | null>(null);
+/** The hour of an instant, as «14:05». */
+function hourOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
 const forms = ref<Forms | null>(null);
 const loadError = ref<string | null>(null);
 /** The file changed under the page (a 409, or seen by the poll). */
@@ -256,6 +268,7 @@ function reset(section: Section): void {
 function apply(next: SettingsView, keep: readonly Section[] = []): void {
   generation += 1;
   if (next.local !== undefined) local.value = next.local;
+  if (next.warmth !== undefined) warmth.value = next.warmth;
   const old = forms.value;
   const kept = old === null ? [] : keptSections(keep, changed);
   view.value = next;
@@ -338,6 +351,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('skills') && view.value?.values?.skills !== undefined) values.skills = skillsBody(current.skills);
   if (parts.includes('sprites')) values.sprites = current.sprites;
   if (parts.includes('participants')) values.participants = current.participants;
+  // An older core has no unload for inactivity (D-316): nothing to send.
+  if (parts.includes('localIdle') && view.value?.values?.localIdle !== undefined) values.localIdle = current.localIdle;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   if (parts.includes('secretary')) values.secretary = secretaryBody(current.secretary);
   // An older core has no themes (D-103): nothing to send.
@@ -431,6 +446,7 @@ async function poll(): Promise<void> {
   try {
     const next = await loadSettings();
     if (next.local !== undefined) local.value = next.local;
+    if (next.warmth !== undefined) warmth.value = next.warmth;
     const action = pollAction({
       started,
       generation,
@@ -859,8 +875,30 @@ const bar = computed<Bar | null>(() => {
       return exits('fetchSites');
     case 'coder-sites':
       return exits('coderSites');
-    case 'servers':
-      return exits('endpoints');
+    case 'servers': {
+      // The minutes are ordinary (D-316), the servers take the confirmation: one bar, the minutes saved first.
+      const minutes = changed('localIdle');
+      const servers = changed('endpoints');
+      return {
+        dirty: minutes || servers,
+        count: Number(minutes) + Number(servers),
+        privacy: servers,
+        busy: busy.value === 'localIdle' || busy.value === 'endpoints',
+        saved: saved.value === 'localIdle' || saved.value === 'endpoints',
+        error: errors.value.localIdle ?? errors.value.endpoints,
+        invalid: minutes ? idleMinutesProblem(current.localIdle) : undefined,
+        save: () => {
+          void (async () => {
+            if (minutes && !(await save('localIdle'))) return;
+            if (servers) await prepare('endpoints');
+          })();
+        },
+        cancel: () => {
+          reset('localIdle');
+          reset('endpoints');
+        },
+      };
+    }
     default:
       return null;
   }
@@ -1500,6 +1538,29 @@ const grid = 'grid gap-3 sm:grid-cols-6';
               <p v-if="local.length === 0" class="rounded-[10px] border border-dashed border-line-strong p-3.5 text-[14px] text-muted">
                 <b class="font-semibold text-ink">Nessun server dei modelli in uso.</b> Aggiungine uno in Avanzate, per esempio oMLX, con il suo indirizzo e il comando che lo avvia.
               </p>
+
+              <!-- The warm model (D-316): what is in memory, and when an idle model leaves it. -->
+              <SettingsCard
+                v-if="forms !== null && view?.values?.localIdle !== undefined"
+                id="model-memory"
+                title="Modelli in memoria"
+                description="Dopo ogni avvio del server Arianna carica e prepara il suo modello, così la prima domanda non aspetta. Se per un po' nessuno chiede niente ai modelli locali, li scarica per liberare la memoria del Mac: la domanda dopo aspetta che il modello si ricarichi (qualche decina di secondi)."
+                :busy="locked"
+              >
+                <template #header><span class="pill text-ok border-ok/50">Vale subito</span></template>
+                <ul v-if="warmth !== null && warmth.endpoints.length > 0" class="m-0 flex list-none flex-col gap-1 p-0 text-[14px]">
+                  <li v-for="entry in warmth.endpoints" :key="entry.id">
+                    <b class="font-semibold">{{ serverName(entry.id) }}</b>: {{ modelStateText(entry, hourOf) }}
+                  </li>
+                </ul>
+                <div class="flex flex-wrap items-center gap-2 text-[14px]">
+                  <label for="local-idle">Scarica i modelli dopo</label>
+                  <input id="local-idle" v-model.number="forms.localIdle" type="number" min="0" :max="MAX_IDLE_MINUTES" step="1" class="field w-20 px-2 py-1 text-[14px]" />
+                  <span>minuti senza domande</span>
+                </div>
+                <p v-if="idleMinutesProblem(forms.localIdle) !== undefined" class="text-[13px] text-warn">{{ idleMinutesProblem(forms.localIdle) }}</p>
+                <p v-else class="text-[13px] text-muted">0 vuol dire mai: il modello resta sempre in memoria. Mai durante una chiamata, un lavoro in corso o una routine che sta per partire.</p>
+              </SettingsCard>
 
               <details v-if="forms !== null" class="rounded-xl border border-line bg-surface-2 p-4">
                 <summary class="cursor-pointer text-[14px] text-muted">Avanzate: indirizzo e comando di avvio</summary>
